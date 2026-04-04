@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pane & Salute — Produção</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FAFAF8;--surface:#FFFFFF;--border:#E8E4DC;--border-strong:#D4CFC4;
+  --text:#1A1916;--text-muted:#7A756A;--text-hint:#B0AB9F;
+  --amber:#B8720A;--amber-bg:#FDF3E3;--amber-border:#F0C070;
+  --teal:#0A6E52;--teal-bg:#E3F5EE;--teal-border:#70CCA8;
+  --coral:#A8330F;--coral-bg:#FDF0EB;--coral-border:#F0A080;
+  --red-bg:#FDF0F0;--red:#A83030;--red-border:#F09090;
+  --radius:10px;--radius-sm:7px;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;min-height:100vh}
+h1,h2{font-family:'Playfair Display',serif}
+#app{max-width:480px;margin:0 auto;padding:0 0 80px}
+.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1.5rem}
+.login-logo{text-align:center;margin-bottom:2.5rem}
+.login-logo h1{font-size:32px;font-weight:400;letter-spacing:0.5px}
+.login-logo p{font-size:12px;color:var(--text-hint);letter-spacing:3px;text-transform:uppercase;margin-top:6px}
+.login-logo .tagline{font-size:13px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.login-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.login-btn{width:100%;padding:14px 18px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;text-align:left;display:flex;align-items:center;gap:12px;transition:background 0.15s}
+.login-btn:last-child{border-bottom:none}
+.login-btn:hover{background:var(--bg)}
+.login-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0}
+.av-amber{background:var(--amber-bg);color:var(--amber)}
+.av-teal{background:var(--teal-bg);color:var(--teal)}
+.av-coral{background:var(--coral-bg);color:var(--coral)}
+.av-gray{background:#F1EFE8;color:#5F5E5A}
+.login-info .name{font-size:14px;font-weight:500}
+.login-info .role{font-size:12px;color:var(--text-muted)}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px}
+.topbar-logo{font-family:'Playfair Display',serif;font-size:18px;font-weight:400;flex:1}
+.topbar-badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;flex-shrink:0}
+.tb-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border)}
+.tb-teal{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-border)}
+.tb-coral{background:var(--coral-bg);color:var(--coral);border:1px solid var(--coral-border)}
+.tb-gray{background:#F1EFE8;color:#5F5E5A;border:1px solid #D3D1C7}
+.btn-logout{font-size:12px;padding:5px 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:transparent;cursor:pointer;color:var(--text-muted)}
+.btn-logout:hover{background:var(--bg)}
+.deadline{margin:12px 16px 0;padding:9px 14px;border-radius:var(--radius-sm);font-size:13px;display:flex;align-items:center;gap:8px}
+.deadline-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dl-ok{background:var(--teal-bg);border:1px solid var(--teal-border);color:var(--teal)}
+.dl-ok .deadline-dot{background:var(--teal)}
+.dl-locked{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red)}
+.dl-locked .deadline-dot{background:var(--red)}
+.dl-warn{background:var(--amber-bg);border:1px solid var(--amber-border);color:var(--amber)}
+.dl-warn .deadline-dot{background:var(--amber)}
+.nav-tabs{display:flex;padding:0 16px;margin-top:14px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.nav-tabs::-webkit-scrollbar{display:none}
+.nav-tab{font-size:13px;font-weight:500;padding:8px 12px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;background:none;border-top:none;border-left:none;border-right:none;white-space:nowrap;transition:color 0.15s}
+.nav-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.nav-tab:hover:not(.active){color:var(--text)}
+.tab-content{display:none;padding:16px}
+.tab-content.active{display:block}
+.section-label{font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-hint);margin-bottom:10px;margin-top:20px}
+.section-label:first-child{margin-top:0}
+.bread-list{display:flex;flex-direction:column;gap:6px}
+.bread-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;display:flex;align-items:center;gap:10px;transition:border-color 0.15s}
+.bread-row.has-qty{border-color:var(--amber-border);background:var(--amber-bg)}
+.bread-info{flex:1;min-width:0}
+.bread-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bread-days{font-size:11px;color:var(--text-hint);margin-top:1px}
+.qty-wrap{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.qty-btn{width:30px;height:30px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg);cursor:pointer;font-size:18px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;line-height:1;transition:all 0.1s;user-select:none;font-family:monospace}
+.qty-btn:hover{background:var(--surface);border-color:var(--amber-border);color:var(--amber)}
+.qty-btn:active{transform:scale(0.94)}
+.qty-input{width:46px;text-align:center;border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:5px 4px;font-size:15px;font-weight:500;background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;-moz-appearance:textfield}
+.qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none}
+.qty-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.qty-input:disabled{opacity:0.4;background:var(--bg)}
+.obs-area{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--surface);color:var(--text);resize:vertical;min-height:64px;font-family:'DM Sans',sans-serif;transition:border-color 0.15s}
+.obs-area:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.obs-area::placeholder{color:var(--text-hint)}
+.obs-area:disabled{opacity:0.5;background:var(--bg)}
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:480px;margin:0 auto}
+.total-info{font-size:13px;color:var(--text-muted)}
+.total-info strong{color:var(--text);font-size:16px}
+.btn-save{padding:10px 22px;background:var(--amber);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.btn-save:hover{background:#A06209}
+.btn-save:active{transform:scale(0.97)}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1.5rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center}
+.stat-card .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint);margin-bottom:4px}
+.stat-card .val{font-size:24px;font-weight:500}
+.report-table{width:100%;border-collapse:collapse;font-size:13px}
+.report-table th{text-align:left;font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint);padding:6px 8px;border-bottom:1px solid var(--border)}
+.report-table td{padding:8px;border-bottom:1px solid var(--border)}
+.report-table .num{text-align:right;font-weight:500}
+.report-table .zero{color:var(--text-hint)}
+.report-table .total-row td{font-weight:500;background:var(--amber-bg);color:var(--amber)}
+.report-table tr:last-child td{border-bottom:none}
+.empty-report{text-align:center;padding:2rem;color:var(--text-hint);font-size:14px}
+.print-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-top:1rem}
+.print-card h3{font-size:16px;font-weight:500;margin-bottom:4px}
+.print-card .pmeta{font-size:12px;color:var(--text-muted);padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.print-row{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr 1fr 1fr;gap:4px;padding:5px 0;border-bottom:1px solid var(--border);align-items:center;font-size:13px}
+.print-row.ph{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint)}
+.print-row span:not(:first-child){text-align:right}
+.print-row .pname{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.print-row .ptotal{font-weight:500;color:var(--amber)}
+.btn-row{display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap}
+.btn-action{padding:9px 18px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--text);transition:all 0.15s}
+.btn-action:hover{background:var(--bg)}
+.btn-action.primary{background:var(--amber);color:#fff;border-color:var(--amber)}
+.btn-action.primary:hover{background:#A06209}
+.btn-action.danger{background:var(--red-bg);color:var(--red);border-color:var(--red-border)}
+.btn-action.sm{padding:6px 12px;font-size:12px}
+.admin-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.admin-item.inactive{opacity:0.45}
+.admin-info{flex:1;min-width:0}
+.admin-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-meta{font-size:12px;color:var(--text-muted);margin-top:1px}
+.admin-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.toggle{width:40px;height:22px;border-radius:11px;background:var(--border-strong);cursor:pointer;position:relative;border:none;transition:background 0.2s;flex-shrink:0}
+.toggle.on{background:var(--teal)}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left 0.18s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+.toggle.on::after{left:20px}
+.icon-btn{width:28px;height:28px;border:1px solid var(--border);border-radius:var(--radius-sm);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;transition:all 0.15s;flex-shrink:0}
+.icon-btn:hover{background:var(--bg);border-color:var(--border-strong)}
+.icon-btn.edit:hover{color:var(--amber);border-color:var(--amber-border)}
+.icon-btn.del:hover{color:var(--red);border-color:var(--red-border)}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:20px}
+.section-header:first-child{margin-top:0}
+.section-header .section-label{margin:0}
+.field-group{margin-bottom:14px}
+.field-label{font-size:11px;font-weight:500;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-hint);margin-bottom:6px}
+.field-input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;transition:border-color 0.15s}
+.field-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.field-input::placeholder{color:var(--text-hint)}
+.days-selector{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:4px}
+.day-check{display:none}
+.day-label{display:flex;align-items:center;justify-content:center;padding:8px 2px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;font-weight:500;cursor:pointer;color:var(--text-muted);transition:all 0.15s;user-select:none}
+.day-check:checked+.day-label{background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber)}
+.form-actions{display:flex;gap:8px;margin-top:1.25rem}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(26,25,22,0.55);z-index:100;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-sheet{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;padding:1.5rem 1.25rem 2.5rem;width:100%;max-width:480px;max-height:92vh;overflow-y:auto}
+.modal-handle{width:36px;height:4px;background:var(--border-strong);border-radius:2px;margin:0 auto 1.25rem}
+.modal-sheet h3{font-size:16px;font-weight:500;margin-bottom:1.25rem}
+.modal-sheet p{font-size:14px;color:var(--text-muted);margin-bottom:1rem;line-height:1.6}
+.toast{position:fixed;bottom:85px;left:50%;transform:translateX(-50%) translateY(10px);background:#1A1916;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:all 0.25s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media print{
+  .topbar,.nav-tabs,.deadline,.bottom-bar,.btn-row,.no-print,#modal{display:none!important}
+  body{background:#fff}
+  .tab-content{display:block!important;padding:0}
+  .print-card{border:none;padding:0}
+  #app{max-width:100%;padding:0}
+}
+@media(max-width:360px){.nav-tab{padding:8px 8px;font-size:12px}}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="screen-login">
+  <div class="login-page">
+    <div class="login-logo">
+      <h1>Pane & Salute</h1>
+      <p>Sistema de Produção</p>
+      <div class="tagline">Fermentação longa · Qualidade artesanal</div>
+    </div>
+    <div class="login-card">
+      <button class="login-btn" onclick="login('rodrigo')">
+        <div class="login-avatar av-amber">RO</div>
+        <div class="login-info"><div class="name">Rodrigo</div><div class="role">Admin · Lojas JC + JA</div></div>
+      </button>
+      <button class="login-btn" onclick="login('marselle')">
+        <div class="login-avatar av-teal">MA</div>
+        <div class="login-info"><div class="name">Marselle</div><div class="role">Loja Exposição (EX)</div></div>
+      </button>
+      <button class="login-btn" onclick="login('elis')">
+        <div class="login-avatar av-coral">EL</div>
+        <div class="login-info"><div class="name">Elis</div><div class="role">Clientes PJ</div></div>
+      </button>
+      <button class="login-btn" onclick="login('geolar')">
+        <div class="login-avatar av-gray">GE</div>
+        <div class="login-info"><div class="name">Geolar</div><div class="role">Produção · Impressão</div></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="screen-main" style="display:none">
+  <div class="topbar">
+    <div class="topbar-logo">Pane & Salute</div>
+    <span class="topbar-badge" id="user-badge"></span>
+    <button class="btn-logout" onclick="logout()">Sair</button>
+  </div>
+  <div id="deadline-bar"></div>
+  <div class="nav-tabs" id="nav-tabs"></div>
+  <div id="tab-contents"></div>
+</div>
+
+<div id="screen-geolar" style="display:none">
+  <div class="topbar">
+    <div class="topbar-logo">Pane & Salute</div>
+    <span class="topbar-badge tb-gray">Geolar</span>
+    <button class="btn-logout" onclick="logout()">Sair</button>
+  </div>
+  <div style="padding:16px" id="geolar-content"></div>
+</div>
+
+</div>
+
+<div id="modal" class="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal-sheet" id="modal-sheet">
+    <div class="modal-handle"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="bottom-bar-container"></div>
+
+<script>
+const DAYS_PT=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const TODAY_IDX=new Date().getDay();
+
+let BREADS=[
+  {id:'integral',name:'Integral',days:[0,1,2,3,4,5,6],active:true},
+  {id:'sarraceno',name:'Sarraceno de Linhaça',days:[0,1,2,3,4,5,6],active:true},
+  {id:'multigraos',name:'Multigrãos',days:[0,1,2,3,4,5,6],active:true},
+  {id:'baguete',name:'Baguete',days:[0,1,2,3,4,5,6],active:true},
+  {id:'italiano',name:'Italiano',days:[0,1,2,3,4,5,6],active:true},
+  {id:'azeitona',name:'Azeitona',days:[0,1,2,3,4,5,6],active:true},
+  {id:'ciabatta',name:'Ciabatta',days:[0,1,2,3,4,5,6],active:true},
+  {id:'croissant',name:'Croissant',days:[0,1,2,3,4,5,6],active:true},
+  {id:'mini_croissant',name:'Mini Croissant',days:[0,1,2,3,4,5,6],active:true},
+  {id:'forma_milho',name:'Forma de Milho',days:[0,1,2,3,4,5,6],active:true},
+  {id:'forma_multi',name:'Forma Multi',days:[0,1,2,3,4,5,6],active:true},
+  {id:'forma_integral',name:'Forma Integral',days:[0,1,2,3,4,5,6],active:true},
+  {id:'esp_terca',name:'Especial de Terça',days:[2],active:true},
+  {id:'esp_quarta',name:'Especial de Quarta',days:[3],active:true},
+  {id:'esp_quinta',name:'Especial de Quinta',days:[4],active:true},
+  {id:'esp_sexta',name:'Especial de Sexta',days:[5],active:true},
+  {id:'focaccia',name:'Focaccia',days:[5,6],active:true},
+  {id:'pomo',name:'Pomo (Uva/Nozes)',days:[0,1,2,3,4,5,6],active:true},
+];
+let PJ_ITEMS=[
+  {id:'pj_fatiado',name:'Pão Fatiado PJ',active:true},
+  {id:'pj_bisnaga',name:'Bisnaga PJ',active:true},
+  {id:'pj_integral',name:'Integral PJ',active:true},
+  {id:'pj_personalizado',name:'Personalizado PJ',active:true},
+];
+try{let s=localStorage.getItem('ps_breads_v2');if(s)BREADS=JSON.parse(s);}catch(e){}
+try{let s=localStorage.getItem('ps_pj_v2');if(s)PJ_ITEMS=JSON.parse(s);}catch(e){}
+let orders={};
+try{let s=localStorage.getItem('ps_orders_v2');if(s)orders=JSON.parse(s);}catch(e){}
+
+let currentUser=null,currentTab=0,isLocked=false,editingBreadId=null,editingPJId=null;
+
+function todayKey(){return new Date().toISOString().slice(0,10);}
+function nextDayLabel(){const d=new Date();d.setDate(d.getDate()+1);return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});}
+function checkDeadline(){return new Date().getHours()>=4;}
+function getHoursLeft(){const now=new Date(),t=new Date(now);t.setHours(4,0,0,0);if(now.getHours()>=4)return 0;return Math.floor((t-now)/3600000);}
+function todayBreads(){return BREADS.filter(b=>b.active&&b.days.includes(TODAY_IDX));}
+function slugify(str){return str.toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')+Date.now();}
+function saveBreads(){localStorage.setItem('ps_breads_v2',JSON.stringify(BREADS));}
+function savePJ(){localStorage.setItem('ps_pj_v2',JSON.stringify(PJ_ITEMS));}
+function saveOrders(){localStorage.setItem('ps_orders_v2',JSON.stringify(orders));}
+
+function showScreen(id){
+  ['screen-login','screen-main','screen-geolar'].forEach(s=>{
+    document.getElementById(s).style.display=s===id?'block':'none';
+  });
+}
+function login(user){
+  currentUser=user;
+  if(user==='geolar'){showScreen('screen-geolar');renderGeolar();return;}
+  showScreen('screen-main');renderMain();
+}
+function logout(){
+  currentUser=null;showScreen('screen-login');
+  document.getElementById('bottom-bar-container').innerHTML='';
+}
+
+function renderMain(){
+  isLocked=checkDeadline();
+  const u=currentUser;
+  const bm={rodrigo:['tb-amber','Rodrigo'],marselle:['tb-teal','Marselle · EX'],elis:['tb-coral','Elis · PJ']}[u]||['tb-gray',u];
+  const badge=document.getElementById('user-badge');
+  badge.className='topbar-badge '+bm[0];badge.textContent=bm[1];
+  const dl=document.getElementById('deadline-bar'),h=getHoursLeft();
+  if(isLocked)dl.innerHTML=`<div class="deadline dl-locked"><span class="deadline-dot"></span>Pedidos encerrados — prazo das 04h00 passou</div>`;
+  else if(h<=1)dl.innerHTML=`<div class="deadline dl-warn"><span class="deadline-dot"></span>Menos de 1h para o prazo — encerra às 04h00</div>`;
+  else dl.innerHTML=`<div class="deadline dl-ok"><span class="deadline-dot"></span>Prazo aberto · produção de ${nextDayLabel()} · encerra às 04h00</div>`;
+  const tabs=document.getElementById('nav-tabs'),contents=document.getElementById('tab-contents');
+  tabs.innerHTML='';contents.innerHTML='';document.getElementById('bottom-bar-container').innerHTML='';
+  let tabDefs=[];
+  if(u==='rodrigo')tabDefs=[{label:'JC',fn:()=>buildOrderForm('jc')},{label:'JA',fn:()=>buildOrderForm('ja')},{label:'Relatório',fn:()=>buildReport()},{label:'Admin',fn:()=>buildAdmin()}];
+  else if(u==='marselle')tabDefs=[{label:'Loja EX',fn:()=>buildOrderForm('ex')}];
+  else if(u==='elis')tabDefs=[{label:'Pedido PJ',fn:()=>buildPJForm()},{label:'Histórico',fn:()=>buildReport()}];
+  tabDefs.forEach((t,i)=>{
+    const btn=document.createElement('button');
+    btn.className='nav-tab'+(i===0?' active':'');btn.textContent=t.label;btn.onclick=()=>switchTab(i,tabDefs);tabs.appendChild(btn);
+    const div=document.createElement('div');div.className='tab-content'+(i===0?' active':'');div.id='tc-'+i;div.innerHTML=t.fn();contents.appendChild(div);
+  });
+  currentTab=0;renderBottomBar(tabDefs);
+}
+function switchTab(i,tabDefs){
+  currentTab=i;
+  document.querySelectorAll('.nav-tab').forEach((t,idx)=>t.classList.toggle('active',idx===i));
+  document.querySelectorAll('.tab-content').forEach((t,idx)=>t.classList.toggle('active',idx===i));
+  document.getElementById('tc-'+i).innerHTML=tabDefs[i].fn();
+  renderBottomBar(tabDefs);
+}
+function renderBottomBar(tabDefs){
+  const c=document.getElementById('bottom-bar-container'),u=currentUser;
+  if(u==='rodrigo'){if(currentTab===0)c.innerHTML=bbHtml('jc');else if(currentTab===1)c.innerHTML=bbHtml('ja');else c.innerHTML='';}
+  else if(u==='marselle')c.innerHTML=bbHtml('ex');
+  else if(u==='elis'){if(currentTab===0)c.innerHTML=bbHtmlPJ();else c.innerHTML='';}
+  else c.innerHTML='';
+}
+function bbHtml(store){if(isLocked)return '';return `<div class="bottom-bar"><div class="total-info">Total: <strong id="bb-total">${calcTotal(store)}</strong> unidades</div><button class="btn-save" onclick="saveOrder('${store}')">Salvar pedido</button></div>`;}
+function bbHtmlPJ(){return `<div class="bottom-bar"><div class="total-info">Total: <strong id="bb-total">${calcTotal('pj')}</strong> itens</div><button class="btn-save" onclick="saveOrder('pj')">Salvar pedido PJ</button></div>`;}
+function calcTotal(store){const items=store==='pj'?PJ_ITEMS.filter(p=>p.active):todayBreads();return items.reduce((a,b)=>{const el=document.getElementById('qty-'+store+'-'+b.id);return a+(parseInt(el?.value)||0);},0);}
+function updateBBTotal(store){const el=document.getElementById('bb-total');if(el)el.textContent=calcTotal(store);}
+
+function buildOrderForm(store){
+  const breads=todayBreads(),key='order_'+store+'_'+todayKey(),saved=orders[key]||{};
+  const lbl={jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição'}[store]||store.toUpperCase();
+  let html=`<div class="section-label">Pães de ${DAYS_PT[TODAY_IDX]} — ${lbl}</div><div class="bread-list">`;
+  breads.forEach(b=>{
+    const v=saved[b.id]||0,dis=isLocked?' disabled':'';
+    html+=`<div class="bread-row${v>0?' has-qty':''}" id="br-${store}-${b.id}">
+      <div class="bread-info"><div class="bread-name">${b.name}</div><div class="bread-days">${b.days.length===7?'todos os dias':b.days.map(d=>DAYS_PT[d]).join(' · ')}</div></div>
+      <div class="qty-wrap">
+        <button class="qty-btn" onclick="changeQty('${store}','${b.id}',-1)"${dis}>−</button>
+        <input class="qty-input" type="number" inputmode="numeric" min="0" value="${v}" id="qty-${store}-${b.id}" onchange="onQtyChange('${store}','${b.id}')" oninput="onQtyChange('${store}','${b.id}')"${dis}>
+        <button class="qty-btn" onclick="changeQty('${store}','${b.id}',1)"${dis}>+</button>
+      </div></div>`;
+  });
+  html+=`</div><div style="margin-top:14px"><div class="section-label" style="margin-top:0">Observações</div>
+  <textarea class="obs-area" id="obs-${store}" placeholder="Ex: pegar croissant congelado de sábado..."${isLocked?' disabled':''}>${saved._obs||''}</textarea></div>`;
+  if(isLocked)html+=`<div style="margin-top:12px;padding:10px 14px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Pedidos encerrados após 04h00.</div>`;
+  return html;
+}
+
+function buildPJForm(){
+  const key='order_pj_'+todayKey(),saved=orders[key]||{};
+  let html=`<div class="field-group"><div class="field-label">Cliente</div><input class="field-input" type="text" id="pj-client" placeholder="Nome do cliente" value="${saved._client||''}"></div>`;
+  html+=`<div class="field-group"><div class="field-label">Data de entrega</div><input class="field-input" type="date" id="pj-date" value="${saved._date||''}"></div>`;
+  html+=`<div class="section-label">Itens do pedido</div><div class="bread-list">`;
+  PJ_ITEMS.filter(p=>p.active).forEach(p=>{
+    const v=saved[p.id]||0;
+    html+=`<div class="bread-row${v>0?' has-qty':''}" id="br-pj-${p.id}">
+      <div class="bread-info"><div class="bread-name">${p.name}</div></div>
+      <div class="qty-wrap">
+        <button class="qty-btn" onclick="changeQty('pj','${p.id}',-1)">−</button>
+        <input class="qty-input" type="number" inputmode="numeric" min="0" value="${v}" id="qty-pj-${p.id}" onchange="onQtyChange('pj','${p.id}')" oninput="onQtyChange('pj','${p.id}')">
+        <button class="qty-btn" onclick="changeQty('pj','${p.id}',1)">+</button>
+      </div></div>`;
+  });
+  html+=`</div><div style="margin-top:14px"><div class="section-label" style="margin-top:0">Observações</div>
+  <textarea class="obs-area" id="obs-pj" placeholder="Embalagem especial, instruções...">${saved._obs||''}</textarea></div>`;
+  return html;
+}
+
+function changeQty(store,id,delta){
+  const inp=document.getElementById('qty-'+store+'-'+id);if(!inp)return;
+  inp.value=Math.max(0,(parseInt(inp.value)||0)+delta);onQtyChange(store,id);
+}
+function onQtyChange(store,id){
+  const inp=document.getElementById('qty-'+store+'-'+id),row=document.getElementById('br-'+store+'-'+id);
+  if(inp&&row)row.classList.toggle('has-qty',parseInt(inp.value)>0);updateBBTotal(store);
+}
+function saveOrder(store){
+  const key='order_'+store+'_'+todayKey(),data={};
+  const items=store==='pj'?PJ_ITEMS.filter(p=>p.active):todayBreads();
+  items.forEach(b=>{const el=document.getElementById('qty-'+store+'-'+b.id);if(el)data[b.id]=parseInt(el.value)||0;});
+  const obs=document.getElementById('obs-'+store);if(obs)data._obs=obs.value;
+  if(store==='pj'){
+    const c=document.getElementById('pj-client');if(c)data._client=c.value;
+    const d=document.getElementById('pj-date');if(d)data._date=d.value;
+  }
+  orders[key]=data;saveOrders();showToast('Pedido salvo!');
+}
+
+function buildReport(){
+  const breads=todayBreads(),stores=['ex','jc','ja'],key=todayKey();
+  let tots={ex:0,jc:0,ja:0};
+  let html='<div class="stat-row">';
+  stores.forEach(s=>{const sv=orders['order_'+s+'_'+key]||{};let t=0;breads.forEach(b=>{t+=parseInt(sv[b.id]||0);});tots[s]=t;html+=`<div class="stat-card"><div class="lbl">${s.toUpperCase()}</div><div class="val">${t}</div></div>`;});
+  html+='</div>';
+  const grand=Object.values(tots).reduce((a,c)=>a+c,0);
+  if(grand===0)return html+'<div class="empty-report">Nenhum pedido registrado ainda.</div>';
+  html+=`<div class="section-label">Consolidado — ${DAYS_PT[TODAY_IDX]}</div>`;
+  html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">EX</th><th class="num">JC</th><th class="num">JA</th><th class="num">Total</th></tr></thead><tbody>`;
+  breads.forEach(b=>{
+    const vals=stores.map(s=>parseInt((orders['order_'+s+'_'+key]||{})[b.id]||0));
+    const tot=vals.reduce((a,c)=>a+c,0);
+    if(tot>0)html+=`<tr><td>${b.name}</td>${vals.map(v=>`<td class="num${v===0?' zero':''}">${v===0?'—':v}</td>`).join('')}<td class="num">${tot}</td></tr>`;
+  });
+  html+=`<tr class="total-row"><td>Total</td>${stores.map(s=>`<td class="num">${tots[s]}</td>`).join('')}<td class="num">${grand}</td></tr></tbody></table>`;
+  const pjSv=orders['order_pj_'+key]||{},pjIt=PJ_ITEMS.filter(p=>p.active&&(pjSv[p.id]||0)>0);
+  if(pjIt.length){
+    html+=`<div class="section-label" style="margin-top:20px">PJ — ${pjSv._client||'—'} · ${pjSv._date||'—'}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Item</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    pjIt.forEach(p=>{html+=`<tr><td>${p.name}</td><td class="num">${pjSv[p.id]||0}</td></tr>`;});
+    html+='</tbody></table>';
+  }
+  return html;
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────────────
+function buildAdmin(){
+  let html=`<div class="section-header"><div class="section-label">Pães das lojas (${BREADS.length})</div><button class="btn-action primary sm no-print" onclick="openNewBreadModal()">+ Novo pão</button></div>`;
+  if(!BREADS.length){html+='<div class="empty-report">Nenhum pão. Clique em "+ Novo pão" para começar.</div>';}
+  else{
+    BREADS.forEach(b=>{
+      const dLbl=b.days.length===7?'todos os dias':b.days.map(d=>DAYS_PT[d]).join(' · ');
+      html+=`<div class="admin-item${b.active?'':' inactive'}" id="adm-${b.id}">
+        <div class="admin-info"><div class="admin-name">${b.name}</div><div class="admin-meta">${dLbl}</div></div>
+        <div class="admin-actions">
+          <button class="icon-btn edit no-print" onclick="openEditBreadModal('${b.id}')" title="Editar">✎</button>
+          <button class="icon-btn del no-print" onclick="confirmDeleteBread('${b.id}')" title="Excluir">✕</button>
+          <button class="toggle${b.active?' on':''}" id="tog-${b.id}" onclick="toggleBread('${b.id}')"></button>
+        </div></div>`;
+    });
+  }
+  html+=`<div class="section-header" style="margin-top:24px"><div class="section-label">Itens PJ (${PJ_ITEMS.length})</div><button class="btn-action primary sm no-print" onclick="openNewPJModal()">+ Novo item PJ</button></div>`;
+  if(!PJ_ITEMS.length){html+='<div class="empty-report">Nenhum item PJ.</div>';}
+  else{
+    PJ_ITEMS.forEach(p=>{
+      html+=`<div class="admin-item${p.active?'':' inactive'}" id="adm-pj-${p.id}">
+        <div class="admin-info"><div class="admin-name">${p.name}</div><div class="admin-meta">Item exclusivo PJ</div></div>
+        <div class="admin-actions">
+          <button class="icon-btn edit no-print" onclick="openEditPJModal('${p.id}')" title="Editar">✎</button>
+          <button class="icon-btn del no-print" onclick="confirmDeletePJ('${p.id}')" title="Excluir">✕</button>
+          <button class="toggle${p.active?' on':''}" id="tog-pj-${p.id}" onclick="togglePJ('${p.id}')"></button>
+        </div></div>`;
+    });
+  }
+  html+=`<div class="section-label" style="margin-top:24px">Pré-visualização — Geolar</div>`;
+  html+=buildPrintPreview();
+  html+=`<div class="btn-row no-print">
+    <button class="btn-action primary" onclick="generateWhatsApp()">Copiar para WhatsApp</button>
+    <button class="btn-action" onclick="window.print()">Imprimir</button>
+  </div>`;
+  return html;
+}
+
+function toggleBread(id){
+  const b=BREADS.find(x=>x.id===id);if(!b)return;b.active=!b.active;
+  document.getElementById('tog-'+id)?.classList.toggle('on',b.active);
+  document.getElementById('adm-'+id)?.classList.toggle('inactive',!b.active);
+  saveBreads();showToast(b.active?b.name+' ativado':b.name+' desativado');
+}
+function togglePJ(id){
+  const p=PJ_ITEMS.find(x=>x.id===id);if(!p)return;p.active=!p.active;
+  document.getElementById('tog-pj-'+id)?.classList.toggle('on',p.active);
+  document.getElementById('adm-pj-'+id)?.classList.toggle('inactive',!p.active);
+  savePJ();showToast(p.active?p.name+' ativado':p.name+' desativado');
+}
+
+// ── MODAL PÃES ────────────────────────────────────────────────────────
+function openNewBreadModal(){editingBreadId=null;document.getElementById('modal-body').innerHTML=buildBreadForm(null);document.getElementById('modal').classList.add('open');}
+function openEditBreadModal(id){editingBreadId=id;const b=BREADS.find(x=>x.id===id);document.getElementById('modal-body').innerHTML=buildBreadForm(b);document.getElementById('modal').classList.add('open');}
+function buildBreadForm(b){
+  const isEdit=!!b;
+  let html=`<h3>${isEdit?'Editar pão':'Cadastrar novo pão'}</h3>`;
+  html+=`<div class="field-group"><div class="field-label">Nome do pão</div><input class="field-input" id="f-name" type="text" placeholder="Ex: Ciabatta com Ervas, Sourdough..." value="${b?escHtml(b.name):''}"></div>`;
+  html+=`<div class="field-group"><div class="field-label">Dias disponíveis</div><div class="days-selector">`;
+  DAYS_PT.forEach((d,i)=>{const ck=b&&b.days.includes(i)?'checked':'';html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck}><label class="day-label" for="fday-${i}">${d}</label>`;});
+  html+=`</div></div>`;
+  html+=`<div class="form-actions"><button class="btn-action primary" onclick="saveBreadForm()">${isEdit?'Salvar alterações':'Cadastrar pão'}</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+  return html;
+}
+function saveBreadForm(){
+  const name=document.getElementById('f-name')?.value.trim();
+  if(!name){showToast('Digite o nome do pão.');return;}
+  const days=[];document.querySelectorAll('.day-check:checked').forEach(c=>days.push(parseInt(c.value)));
+  if(!days.length){showToast('Selecione pelo menos 1 dia.');return;}
+  if(editingBreadId){const b=BREADS.find(x=>x.id===editingBreadId);if(b){b.name=name;b.days=days;}}
+  else BREADS.push({id:slugify(name),name,days,active:true});
+  saveBreads();closeModal();refreshAdminTab();showToast(editingBreadId?'Pão atualizado!':'Pão cadastrado!');
+}
+function confirmDeleteBread(id){
+  const b=BREADS.find(x=>x.id===id);if(!b)return;
+  document.getElementById('modal-body').innerHTML=`<h3>Excluir pão</h3><p>Tem certeza que deseja excluir <strong>${escHtml(b.name)}</strong>? Esta ação não pode ser desfeita.</p><div class="form-actions"><button class="btn-action danger" onclick="deleteBread('${id}')">Excluir</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+function deleteBread(id){BREADS=BREADS.filter(x=>x.id!==id);saveBreads();closeModal();refreshAdminTab();showToast('Pão excluído.');}
+
+// ── MODAL PJ ──────────────────────────────────────────────────────────
+function openNewPJModal(){editingPJId=null;document.getElementById('modal-body').innerHTML=buildPJItemForm(null);document.getElementById('modal').classList.add('open');}
+function openEditPJModal(id){editingPJId=id;const p=PJ_ITEMS.find(x=>x.id===id);document.getElementById('modal-body').innerHTML=buildPJItemForm(p);document.getElementById('modal').classList.add('open');}
+function buildPJItemForm(p){
+  const isEdit=!!p;
+  return `<h3>${isEdit?'Editar item PJ':'Cadastrar item PJ'}</h3>
+    <div class="field-group"><div class="field-label">Nome do item</div><input class="field-input" id="fpj-name" type="text" placeholder="Ex: Pão de Forma PJ, Kit Café..." value="${p?escHtml(p.name):''}"></div>
+    <div class="form-actions"><button class="btn-action primary" onclick="savePJForm()">${isEdit?'Salvar alterações':'Cadastrar item'}</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+}
+function savePJForm(){
+  const name=document.getElementById('fpj-name')?.value.trim();
+  if(!name){showToast('Digite o nome do item.');return;}
+  if(editingPJId){const p=PJ_ITEMS.find(x=>x.id===editingPJId);if(p)p.name=name;}
+  else PJ_ITEMS.push({id:slugify(name),name,active:true});
+  savePJ();closeModal();refreshAdminTab();showToast(editingPJId?'Item atualizado!':'Item cadastrado!');
+}
+function confirmDeletePJ(id){
+  const p=PJ_ITEMS.find(x=>x.id===id);if(!p)return;
+  document.getElementById('modal-body').innerHTML=`<h3>Excluir item PJ</h3><p>Excluir <strong>${escHtml(p.name)}</strong>?</p><div class="form-actions"><button class="btn-action danger" onclick="deletePJ('${id}')">Excluir</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+function deletePJ(id){PJ_ITEMS=PJ_ITEMS.filter(x=>x.id!==id);savePJ();closeModal();refreshAdminTab();showToast('Item excluído.');}
+
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+function closeModalOutside(e){if(e.target===document.getElementById('modal'))closeModal();}
+function refreshAdminTab(){const idx=currentUser==='rodrigo'?3:-1;if(currentTab===idx){const tc=document.getElementById('tc-'+idx);if(tc)tc.innerHTML=buildAdmin();}}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ── PRINT / WPP ───────────────────────────────────────────────────────
+function buildPrintPreview(){
+  const breads=todayBreads(),stores=['ex','jc','ja'],key=todayKey(),now=new Date().toLocaleString('pt-BR');
+  let html=`<div class="print-card"><h3>Pane & Salute — Produção</h3><div class="pmeta">Para ${nextDayLabel()} · Gerado ${now}</div>
+    <div class="print-row ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>`;
+  let grand=0;
+  breads.forEach(b=>{
+    const vals=stores.map(s=>parseInt((orders['order_'+s+'_'+key]||{})[b.id]||0));
+    const tot=vals.reduce((a,c)=>a+c,0);grand+=tot;
+    html+=`<div class="print-row"><span class="pname">${b.name}</span>${vals.map(v=>`<span>${v}</span>`).join('')}<span class="ptotal">${tot}</span></div>`;
+  });
+  html+=`<div class="print-row" style="font-weight:500;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><span>TOTAL GERAL</span><span></span><span></span><span></span><span class="ptotal">${grand}</span></div>`;
+  const oEX=(orders['order_ex_'+key]||{})._obs,oJC=(orders['order_jc_'+key]||{})._obs,oJA=(orders['order_ja_'+key]||{})._obs;
+  if(oEX||oJC||oJA){html+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">`;if(oEX)html+=`<div style="font-size:12px;margin-bottom:4px"><strong>EX:</strong> ${oEX}</div>`;if(oJC)html+=`<div style="font-size:12px;margin-bottom:4px"><strong>JC:</strong> ${oJC}</div>`;if(oJA)html+=`<div style="font-size:12px"><strong>JA:</strong> ${oJA}</div>`;html+='</div>';}
+  const pjSv=orders['order_pj_'+key]||{},pjIt=PJ_ITEMS.filter(p=>p.active&&(pjSv[p.id]||0)>0);
+  if(pjIt.length){html+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)"><div style="font-size:12px;font-weight:500;margin-bottom:6px">PJ — ${pjSv._client||'—'} · ${pjSv._date||'—'}</div>`;pjIt.forEach(p=>{html+=`<div style="font-size:12px">${p.name}: ${pjSv[p.id]||0}</div>`;});if(pjSv._obs)html+=`<div style="font-size:12px;margin-top:4px;color:var(--text-muted)">Obs: ${pjSv._obs}</div>`;html+='</div>';}
+  html+='</div>';return html;
+}
+function renderGeolar(){document.getElementById('geolar-content').innerHTML=buildPrintPreview()+`<div class="btn-row"><button class="btn-action primary" onclick="window.print()">Imprimir</button><button class="btn-action" onclick="generateWhatsApp()">Copiar texto</button></div>`;}
+function generateWhatsApp(){
+  const key=todayKey(),stores=['ex','jc','ja'],breads=todayBreads();
+  let lines=[`*Pane & Salute — Produção ${nextDayLabel()}*\n`];
+  breads.forEach(b=>{const vals=stores.map(s=>parseInt((orders['order_'+s+'_'+key]||{})[b.id]||0));if(vals.reduce((a,c)=>a+c,0)>0)lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`);});
+  const oEX=(orders['order_ex_'+key]||{})._obs,oJC=(orders['order_jc_'+key]||{})._obs,oJA=(orders['order_ja_'+key]||{})._obs;
+  if(oEX||oJC||oJA){lines.push('');if(oEX)lines.push(`_Obs EX: ${oEX}_`);if(oJC)lines.push(`_Obs JC: ${oJC}_`);if(oJA)lines.push(`_Obs JA: ${oJA}_`);}
+  const pjSv=orders['order_pj_'+key]||{},pjIt=PJ_ITEMS.filter(p=>p.active&&(pjSv[p.id]||0)>0);
+  if(pjIt.length){lines.push('');lines.push(`*PJ — ${pjSv._client||'—'} · ${pjSv._date||'—'}*`);pjIt.forEach(p=>lines.push(`${p.name}: ${pjSv[p.id]||0}`));}
+  const text=lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=>showToast('Copiado! Cole no WhatsApp.')).catch(()=>prompt('Copie o texto:',text));
+}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
+
+showScreen('screen-login');
+</script>
+</body>
+</html>
