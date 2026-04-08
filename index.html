@@ -259,8 +259,29 @@ let currentUser=null,currentTab=0,isLocked=false,editingBreadId=null,editingPJId
 
 function todayKey(){return new Date().toISOString().slice(0,10);}
 function nextDayLabel(){const d=new Date();d.setDate(d.getDate()+1);return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});}
-function checkDeadline(){return new Date().getHours()>=4;}
-function getHoursLeft(){const now=new Date(),t=new Date(now);t.setHours(4,0,0,0);if(now.getHours()>=4)return 0;return Math.floor((t-now)/3600000);}
+function checkDeadline(){
+  // Bloqueia APENAS entre 04h00 e 04h00 do dia seguinte.
+  // Ou seja: das 00h00 às 03h59 o sistema está ABERTO (pedidos para hoje à noite).
+  // Das 04h00 às 23h59 está ABERTO (pedidos para amanhã cedo).
+  // Bloqueia somente na madrugada de 00h00 a 03h59? NÃO — na verdade:
+  // Regra real: prazo é 04h00 da madrugada do dia da produção.
+  // Produção começa às 05h00. Pedidos de segunda (para terça) devem entrar até 04h00 de terça.
+  // Logo: o sistema bloqueia entre 04h00 e 23h59 do dia da produção = NÃO.
+  // Lógica correta: SEMPRE aberto, exceto das 00h00 às 03h59 (madrugada = prazo já passou).
+  const h = new Date().getHours();
+  return h >= 0 && h < 4; // bloqueado das 00h às 03h59
+}
+function getHoursLeft(){
+  const now=new Date();
+  const h=now.getHours();
+  if(h>=4) {
+    // Aberto — horas até as 04h00 do dia seguinte
+    const t=new Date(now); t.setDate(t.getDate()+1); t.setHours(4,0,0,0);
+    return Math.floor((t-now)/3600000);
+  }
+  // Bloqueado (00h-03h59)
+  return 0;
+}
 function todayBreads(){return BREADS.filter(b=>b.active&&b.days.includes(TODAY_IDX));}
 function slugify(str){return str.toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')+Date.now();}
 function saveBreads(){localStorage.setItem('ps_breads_v2',JSON.stringify(BREADS));}
@@ -289,8 +310,8 @@ function renderMain(){
   const badge=document.getElementById('user-badge');
   badge.className='topbar-badge '+bm[0];badge.textContent=bm[1];
   const dl=document.getElementById('deadline-bar'),h=getHoursLeft();
-  if(isLocked)dl.innerHTML=`<div class="deadline dl-locked"><span class="deadline-dot"></span>Pedidos encerrados — prazo das 04h00 passou</div>`;
-  else if(h<=1)dl.innerHTML=`<div class="deadline dl-warn"><span class="deadline-dot"></span>Menos de 1h para o prazo — encerra às 04h00</div>`;
+  if(isLocked)dl.innerHTML=`<div class="deadline dl-locked"><span class="deadline-dot"></span>Pedidos encerrados — prazo das 04h00 passou. Reabrem às 04h00.</div>`;
+  else if(h<=1)dl.innerHTML=`<div class="deadline dl-warn"><span class="deadline-dot"></span>Menos de ${h||'1'}h para o prazo — encerra às 04h00</div>`;
   else dl.innerHTML=`<div class="deadline dl-ok"><span class="deadline-dot"></span>Prazo aberto · produção de ${nextDayLabel()} · encerra às 04h00</div>`;
   const tabs=document.getElementById('nav-tabs'),contents=document.getElementById('tab-contents');
   tabs.innerHTML='';contents.innerHTML='';document.getElementById('bottom-bar-container').innerHTML='';
