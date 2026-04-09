@@ -281,8 +281,10 @@ const sb = {
  
 // ── ESTADO ────────────────────────────────────────────────────────────
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-const _tmrw = new Date(); _tmrw.setDate(_tmrw.getDate()+1);
-const TOMORROW_IDX = _tmrw.getDay();
+// Pedido feito hoje → produção amanhã → entrega depois de amanhã
+// A lista de pães deve mostrar o dia de ENTREGA (depois de amanhã)
+const _delivery = new Date(); _delivery.setDate(_delivery.getDate()+2);
+const DELIVERY_IDX = _delivery.getDay(); // dia que o pão chega na loja
  
 let BREADS = [];
 let currentUser = null, currentTab = 0, isLocked = false;
@@ -300,7 +302,13 @@ function dateLabel(dateStr){
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function nextDayLabel(){
+  // usado no prazo/deadline — produção de amanhã
   const d=new Date(); d.setDate(d.getDate()+1);
+  return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+}
+function deliveryDayLabel(){
+  // usado no header de produção — dia que o pão chega na loja
+  const d=new Date(); d.setDate(d.getDate()+2);
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function checkDeadline(){ const h=new Date().getHours(); return h>=0&&h<4; }
@@ -311,7 +319,7 @@ function getHoursLeft(){
   return Math.floor((t-now)/3600000);
 }
 function parseDays(d){if(Array.isArray(d))return d.map(Number);if(typeof d==="string")return d.replace(/[{}\s]/g,"").split(",").map(Number);return [];}
-function todayBreads(){return BREADS.filter(b=>!b.is_pj&&b.active&&parseDays(b.days).includes(TOMORROW_IDX));}
+function todayBreads(){return BREADS.filter(b=>!b.is_pj&&b.active&&parseDays(b.days).includes(DELIVERY_IDX));}
 function pjBreads(){ return BREADS.filter(b=>b.is_pj&&b.active); }
 function slugify(str){ return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')+Date.now(); }
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -502,8 +510,8 @@ function buildOrderForm(store){
   const breads=todayBreads();
   const saved=currentOrders[store]||{};
   const lbl={jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição'}[store]||store.toUpperCase();
-  let html=`<div class="section-label">Pães de ${DAYS_PT[TOMORROW_IDX]} (amanhã) — ${lbl}</div>`;
-  if(breads.length===0){ html+='<div class="empty-report">Nenhum pão disponível para amanhã.</div>'; return html; }
+  let html=`<div class="section-label">Pães de ${DAYS_PT[DELIVERY_IDX]} — ${lbl}</div>`;
+  if(breads.length===0){ html+='<div class="empty-report">Nenhum pão disponível para '+DAYS_PT[DELIVERY_IDX]+'.</div>'; return html; }
   html+='<div class="bread-list">';
   breads.forEach(b=>{
     const v=(saved[b.id]?.quantity)||0, dis=isLocked?' disabled':'';
@@ -664,8 +672,14 @@ function buildBreadForm(b,isPJ){
   let html=`<h3>${isEdit?'Editar':'Cadastrar'} ${isPJ?'item PJ':'pão'}</h3>`;
   html+=`<div class="field-group"><div class="field-label">Nome</div><input class="field-input" id="f-name" type="text" placeholder="${isPJ?'Ex: Pão Fatiado PJ...':'Ex: Ciabatta, Baguete integral...'}" value="${b?escHtml(b.name):''}"></div>`;
   if(!isPJ){
-    html+=`<div class="field-group"><div class="field-label">Dias disponíveis</div><div class="days-selector">`;
-    DAYS_PT.forEach((d,i)=>{ const ck=b&&parseDays(b.days).includes(i)?'checked':''; html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck}><label class="day-label" for="fday-${i}">${d}</label>`; });
+    html+=`<div class="field-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="field-label" style="margin:0">Dias disponíveis</div>
+        <button type="button" class="btn-action sm" onclick="selectAllDays()" style="font-size:11px;padding:3px 10px">Seg–Sáb</button>
+      </div>
+      <div class="days-selector">`;
+    DAYS_PT.forEach((d,i)=>{ const ck=b&&parseDays(b.days).includes(i)?'checked':''; const dimStyle=i===0?' style="opacity:0.35;cursor:not-allowed"':'';
+html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck} ${i===0?'disabled':''}}><label class="day-label" for="fday-${i}"${dimStyle}>${d}</label>`; });
     html+=`</div></div>`;
   }
   html+=`<div class="form-actions"><button class="btn-action primary" onclick="saveBreadForm(${isPJ})">${isEdit?'Salvar':'Cadastrar'}</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
@@ -702,6 +716,13 @@ async function deleteBread(id){
     closeModal(); refreshAdminTab(); showToast('Excluído.');
   } catch(e){ showToast('Erro ao excluir.'); console.error(e); }
 }
+function selectAllDays(){
+  // Marca Seg(1) a Sáb(6), desmarca Dom(0)
+  [0,1,2,3,4,5,6].forEach(i=>{
+    const el=document.getElementById('fday-'+i);
+    if(el) el.checked = i !== 0;
+  });
+}
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
 function closeModalOutside(e){ if(e.target===document.getElementById('modal')) closeModal(); }
 function refreshAdminTab(){
@@ -713,7 +734,7 @@ function refreshAdminTab(){
 function buildPrintPreview(){
   const breads=todayBreads(), stores=['ex','jc','ja'];
   const now=new Date().toLocaleString('pt-BR');
-  let html=`<div class="print-card"><h3>Pane & Salute — Produção</h3><div class="pmeta">Para ${nextDayLabel()} · Gerado ${now}</div>
+  let html=`<div class="print-card"><h3>Pane & Salute — Produção</h3><div class="pmeta">Para ${deliveryDayLabel()} · Gerado ${now}</div>
     <div class="print-row ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>`;
   let grand=0;
   breads.forEach(b=>{
@@ -765,7 +786,7 @@ async function renderGeolar(dateKey){
  
 function generateWhatsApp(){
   const breads=todayBreads(), stores=['ex','jc','ja'];
-  let lines=[`*Pane & Salute — Produção ${nextDayLabel()}*\n`];
+  let lines=[`*Pane & Salute — Produção ${deliveryDayLabel()}*\n`];
   breads.forEach(b=>{
     const vals=stores.map(s=>parseInt(currentOrders[s]?.[b.id]?.quantity||0));
     if(vals.reduce((a,c)=>a+c,0)>0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`);
