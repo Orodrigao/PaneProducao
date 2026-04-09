@@ -450,10 +450,10 @@ function renderMain(){
     {label:'Relatório',fn:()=>buildReport()},
     {label:'Admin',fn:()=>buildAdmin()},
   ];
-  else if(u==='marselle') tabDefs=[{label:'Loja EX',fn:()=>buildOrderForm('ex')}];
+  else if(u==='marselle') tabDefs=[{label:'Loja EX',fn:()=>buildOrderForm('ex')},{label:'Histórico',fn:()=>buildReport('ex')}];
   else if(u==='elis') tabDefs=[
     {label:'Pedido PJ',fn:()=>buildPJForm()},
-    {label:'Histórico',fn:()=>buildReport()},
+    {label:'Histórico',fn:()=>buildReport('pj')},
   ];
  
   tabDefs.forEach((t,i)=>{
@@ -483,10 +483,12 @@ function refreshCurrentTab(){
     if(currentTab===0) tc.innerHTML=buildOrderForm('jc');
     else if(currentTab===1) tc.innerHTML=buildOrderForm('ja');
     else if(currentTab===2) tc.innerHTML=buildReport();
-  } else if(currentUser==='marselle') tc.innerHTML=buildOrderForm('ex');
-  else if(currentUser==='elis'){
+  } else if(currentUser==='marselle'){
+    if(currentTab===0) tc.innerHTML=buildOrderForm('ex');
+    else tc.innerHTML=buildReport('ex');
+  } else if(currentUser==='elis'){
     if(currentTab===0) tc.innerHTML=buildPJForm();
-    else tc.innerHTML=buildReport();
+    else tc.innerHTML=buildReport('pj');
   }
 }
  
@@ -496,7 +498,7 @@ function renderBottomBar(tabDefs){
     if(currentTab===0) c.innerHTML=bbHtml('jc');
     else if(currentTab===1) c.innerHTML=bbHtml('ja');
     else c.innerHTML='';
-  } else if(u==='marselle') c.innerHTML=bbHtml('ex');
+  } else if(u==='marselle'){ if(currentTab===0) c.innerHTML=bbHtml('ex'); else c.innerHTML=''; }
   else if(u==='elis'){ if(currentTab===0) c.innerHTML=bbHtmlPJ(); else c.innerHTML=''; }
   else c.innerHTML='';
 }
@@ -561,19 +563,58 @@ function onQtyChange(store,id){
 }
  
 // ── REPORT ────────────────────────────────────────────────────────────
-function buildReport(isHistory){
-  const breads=BREADS.filter(b=>!b.is_pj&&b.active); // histórico mostra todos os pães
-  const stores=['ex','jc','ja'];
+function buildReport(storeFilter){
+  // storeFilter: undefined = todos (rodrigo), 'ex' = só EX (marselle), 'pj' = só PJ (elis)
+  const breads=BREADS.filter(b=>!b.is_pj&&b.active);
   const dateKey=currentOrderDate||todayKey();
   const isToday=dateKey===todayKey();
  
   // seletor de data
   let html=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
     <span style="font-size:12px;color:var(--text-muted)">Data:</span>
-    <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value)">
+    <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value,'${storeFilter||''}')">
     ${isToday?'<span style="font-size:11px;color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-border);padding:2px 8px;border-radius:10px">hoje</span>':''}
   </div>`;
  
+  // ── visão PJ (Elis) ──────────────────────────────────────────────
+  if(storeFilter==='pj'){
+    const pjSv=currentOrders['pj']||{};
+    const pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
+    const total=pjIt.reduce((a,p)=>a+(pjSv[p.id]?.quantity||0),0);
+    html+=`<div class="stat-row"><div class="stat-card" style="grid-column:1/-1"><div class="lbl">Total PJ</div><div class="val">${total}</div></div></div>`;
+    if(!pjIt.length){ html+='<div class="empty-report">Nenhum pedido PJ nesta data.</div>'; return html; }
+    const firstRow=Object.values(pjSv)[0]||{};
+    html+=`<div class="section-label">Pedidos PJ — ${dateLabel(dateKey)}</div>`;
+    if(firstRow.pj_client) html+=`<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Cliente: <strong>${escHtml(firstRow.pj_client)}</strong> · Entrega: ${firstRow.pj_delivery_date||'—'}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Item</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
+    html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    return html;
+  }
+ 
+  // ── visão loja única (Marselle = 'ex') ───────────────────────────
+  if(storeFilter && storeFilter!=='pj'){
+    const sv=currentOrders[storeFilter]||{};
+    const storeLabel={ex:'Exposição',jc:'Julio de Castilhos',ja:'Jardim América'}[storeFilter]||storeFilter.toUpperCase();
+    let total=0;
+    const rows=[];
+    breads.forEach(b=>{
+      const qty=parseInt(sv[b.id]?.quantity||0);
+      if(qty>0){ rows.push({name:b.name,qty}); total+=qty; }
+    });
+    html+=`<div class="stat-row"><div class="stat-card" style="grid-column:1/-1"><div class="lbl">${storeLabel}</div><div class="val">${total}</div></div></div>`;
+    if(!rows.length){ html+='<div class="empty-report">Nenhum pedido nesta data.</div>'; return html; }
+    html+=`<div class="section-label">Pedidos — ${dateLabel(dateKey)}</div>`;
+    const obs=sv[Object.keys(sv)[0]]?.obs;
+    if(obs) html+=`<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm)">Obs: ${escHtml(obs)}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    rows.forEach(r=>{ html+=`<tr><td>${escHtml(r.name)}</td><td class="num">${r.qty}</td></tr>`; });
+    html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    return html;
+  }
+ 
+  // ── visão consolidada (Rodrigo) ──────────────────────────────────
+  const stores=['ex','jc','ja'];
   let tots={ex:0,jc:0,ja:0};
   html+='<div class="stat-row">';
   stores.forEach(s=>{
@@ -603,11 +644,10 @@ function buildReport(isHistory){
   return html;
 }
  
-async function changeReportDate(dateKey){
+async function changeReportDate(dateKey, storeFilter){
   await loadTodayOrders(dateKey);
-  // re-render aba ativa
   const tc=document.getElementById('tc-'+currentTab);
-  if(tc) tc.innerHTML=buildReport();
+  if(tc) tc.innerHTML=buildReport(storeFilter||undefined);
 }
  
 // ── ADMIN ─────────────────────────────────────────────────────────────
