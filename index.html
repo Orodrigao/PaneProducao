@@ -301,7 +301,8 @@ function getHoursLeft(){
   const t=new Date(now); t.setDate(t.getDate()+1); t.setHours(4,0,0,0);
   return Math.floor((t-now)/3600000);
 }
-function todayBreads(){ return BREADS.filter(b=>!b.is_pj&&b.active&&b.days.includes(TOMORROW_IDX)); }
+function parseDays(d){if(Array.isArray(d))return d.map(Number);if(typeof d==="string")return d.replace(/[{}\s]/g,"").split(",").map(Number);return [];}
+function todayBreads(){return BREADS.filter(b=>!b.is_pj&&b.active&&parseDays(b.days).includes(TOMORROW_IDX));}
 function pjBreads(){ return BREADS.filter(b=>b.is_pj&&b.active); }
 function slugify(str){ return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')+Date.now(); }
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -493,7 +494,7 @@ function buildOrderForm(store){
   breads.forEach(b=>{
     const v=(saved[b.id]?.quantity)||0, dis=isLocked?' disabled':'';
     html+=`<div class="bread-row${v>0?' has-qty':''}" id="br-${store}-${b.id}">
-      <div class="bread-info"><div class="bread-name">${escHtml(b.name)}</div><div class="bread-days">${b.days.length===7?'todos os dias':b.days.map(d=>DAYS_PT[d]).join(' · ')}</div></div>
+      <div class="bread-info"><div class="bread-name">${escHtml(b.name)}</div><div class="bread-days">${parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}</div></div>
       <div class="qty-wrap">
         <button class="qty-btn" onclick="changeQty('${store}','${b.id}',-1)"${dis}>−</button>
         <input class="qty-input" type="number" inputmode="numeric" min="0" value="${v}" id="qty-${store}-${b.id}" onchange="onQtyChange('${store}','${b.id}')" oninput="onQtyChange('${store}','${b.id}')"${dis}>
@@ -576,7 +577,7 @@ function buildAdmin(){
   let html=`<div class="section-header"><div class="section-label">Pães das lojas (${regular.length})</div><button class="btn-action primary sm no-print" onclick="openNewBreadModal(false)">+ Novo pão</button></div>`;
   if(!regular.length) html+='<div class="empty-report">Nenhum pão. Clique em "+ Novo pão".</div>';
   else regular.forEach(b=>{
-    const dLbl=b.days.length===7?'todos os dias':b.days.map(d=>DAYS_PT[d]).join(' · ');
+    const dLbl=parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ');
     html+=`<div class="admin-item${b.active?'':' inactive'}" id="adm-${b.id}">
       <div class="admin-info"><div class="admin-name">${escHtml(b.name)}</div><div class="admin-meta">${dLbl}</div></div>
       <div class="admin-actions">
@@ -633,7 +634,7 @@ function buildBreadForm(b,isPJ){
   html+=`<div class="field-group"><div class="field-label">Nome</div><input class="field-input" id="f-name" type="text" placeholder="${isPJ?'Ex: Pão Fatiado PJ...':'Ex: Ciabatta, Baguete integral...'}" value="${b?escHtml(b.name):''}"></div>`;
   if(!isPJ){
     html+=`<div class="field-group"><div class="field-label">Dias disponíveis</div><div class="days-selector">`;
-    DAYS_PT.forEach((d,i)=>{ const ck=b&&b.days.includes(i)?'checked':''; html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck}><label class="day-label" for="fday-${i}">${d}</label>`; });
+    DAYS_PT.forEach((d,i)=>{ const ck=b&&parseDays(b.days).includes(i)?'checked':''; html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck}><label class="day-label" for="fday-${i}">${d}</label>`; });
     html+=`</div></div>`;
   }
   html+=`<div class="form-actions"><button class="btn-action primary" onclick="saveBreadForm(${isPJ})">${isEdit?'Salvar':'Cadastrar'}</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
