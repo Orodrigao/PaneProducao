@@ -249,8 +249,9 @@ const sb = {
     if(!r.ok) throw new Error(await r.text());
     return r.json();
   },
-  async upsert(table, data){
-    const r = await fetch(`${SB_URL}/rest/v1/${table}`,{
+  async upsert(table, data, onConflict){
+    const qs = onConflict ? `?on_conflict=${onConflict}` : '';
+    const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`,{
       method:'POST',
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},
       body: JSON.stringify(data)
@@ -290,6 +291,14 @@ let currentOrders = {}; // { store: { bread_id: {qty, obs, ...} } }
  
 // ── UTILS ─────────────────────────────────────────────────────────────
 function todayKey(){ return new Date().toISOString().slice(0,10); }
+function yesterdayKey(){
+  const d=new Date(); d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);
+}
+function dateLabel(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+}
 function nextDayLabel(){
   const d=new Date(); d.setDate(d.getDate()+1);
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
@@ -347,10 +356,14 @@ async function loadBreads(){
   BREADS = await sb.get('breads','order=name.asc');
 }
  
-async function loadTodayOrders(){
+let currentOrderDate = null; // data que está carregada em currentOrders
+ 
+async function loadTodayOrders(dateKey){
+  if(!dateKey) dateKey = todayKey();
+  currentOrderDate = dateKey;
   setSyncDot('syncing');
   try{
-    const rows = await sb.get('orders',`order_date=eq.${todayKey()}&select=store,bread_id,quantity,obs,pj_client,pj_delivery_date`);
+    const rows = await sb.get('orders',`order_date=eq.${dateKey}&select=store,bread_id,quantity,obs,pj_client,pj_delivery_date`);
     currentOrders = {};
     rows.forEach(r=>{
       if(!currentOrders[r.store]) currentOrders[r.store]={};
@@ -371,6 +384,7 @@ async function saveOrder(store){
   items.forEach(b=>{
     const inp = document.getElementById('qty-'+store+'-'+b.id);
     const qty = parseInt(inp?.value)||0;
+    // id determinístico = store+bread_id+date garante upsert correto
     rows.push({store, bread_id:b.id, quantity:qty, order_date:date});
   });
  
@@ -390,7 +404,7 @@ async function saveOrder(store){
   setSyncDot('syncing');
  
   try{
-    await sb.upsert('orders', rows);
+    await sb.upsert('orders', rows, 'store,bread_id,order_date');
     // update local cache
     if(!currentOrders[store]) currentOrders[store]={};
     rows.forEach(r=>{ currentOrders[store][r.bread_id]=r; });
@@ -539,10 +553,21 @@ function onQtyChange(store,id){
 }
  
 // ── REPORT ────────────────────────────────────────────────────────────
-function buildReport(){
-  const breads=todayBreads(), stores=['ex','jc','ja'];
+function buildReport(isHistory){
+  const breads=BREADS.filter(b=>!b.is_pj&&b.active); // histórico mostra todos os pães
+  const stores=['ex','jc','ja'];
+  const dateKey=currentOrderDate||todayKey();
+  const isToday=dateKey===todayKey();
+ 
+  // seletor de data
+  let html=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--text-muted)">Data:</span>
+    <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value)">
+    ${isToday?'<span style="font-size:11px;color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-border);padding:2px 8px;border-radius:10px">hoje</span>':''}
+  </div>`;
+ 
   let tots={ex:0,jc:0,ja:0};
-  let html='<div class="stat-row">';
+  html+='<div class="stat-row">';
   stores.forEach(s=>{
     const sv=currentOrders[s]||{}; let t=0;
     breads.forEach(b=>{ t+=parseInt(sv[b.id]?.quantity||0); }); tots[s]=t;
@@ -550,8 +575,8 @@ function buildReport(){
   });
   html+='</div>';
   const grand=Object.values(tots).reduce((a,c)=>a+c,0);
-  if(grand===0) return html+'<div class="empty-report">Nenhum pedido registrado ainda.</div>';
-  html+=`<div class="section-label">Consolidado — produção de amanhã</div>`;
+  if(grand===0){ html+='<div class="empty-report">Nenhum pedido registrado nesta data.</div>'; return html; }
+  html+=`<div class="section-label">Pedidos de ${dateLabel(dateKey)}</div>`;
   html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">EX</th><th class="num">JC</th><th class="num">JA</th><th class="num">Total</th></tr></thead><tbody>`;
   breads.forEach(b=>{
     const vals=stores.map(s=>parseInt(currentOrders[s]?.[b.id]?.quantity||0));
@@ -567,8 +592,14 @@ function buildReport(){
     pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
     html+='</tbody></table>';
   }
-  html+=`<div style="margin-top:12px;text-align:right"><button class="btn-action sm no-print" onclick="loadTodayOrders()">↻ Atualizar</button></div>`;
   return html;
+}
+ 
+async function changeReportDate(dateKey){
+  await loadTodayOrders(dateKey);
+  // re-render aba ativa
+  const tc=document.getElementById('tc-'+currentTab);
+  if(tc) tc.innerHTML=buildReport();
 }
  
 // ── ADMIN ─────────────────────────────────────────────────────────────
@@ -712,17 +743,23 @@ function buildPrintPreview(){
   html+='</div>'; return html;
 }
  
-async function renderGeolar(){
+async function renderGeolar(dateKey){
+  if(!dateKey) dateKey = yesterdayKey(); // produção do dia = pedidos de ontem
   showLoading('Carregando produção...');
   try{
     await loadBreads();
-    await loadTodayOrders();
+    await loadTodayOrders(dateKey);
   } catch(e){ console.error(e); }
   hideLoading();
-  document.getElementById('geolar-content').innerHTML=buildPrintPreview()+`<div class="btn-row">
+  // seletor de data para o Geolar ver datas anteriores
+  const dateInput = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
+    <span style="font-size:12px;color:var(--text-muted)">Data dos pedidos:</span>
+    <input type="date" id="geolar-date" value="${dateKey}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="renderGeolar(this.value)">
+  </div>`;
+  document.getElementById('geolar-content').innerHTML=dateInput+buildPrintPreview()+`<div class="btn-row">
     <button class="btn-action primary" onclick="window.print()">Imprimir</button>
     <button class="btn-action" onclick="generateWhatsApp()">Copiar texto</button>
-    <button class="btn-action" onclick="renderGeolar()">↻ Atualizar</button>
+    <button class="btn-action" onclick="renderGeolar(document.getElementById('geolar-date').value)">↻ Atualizar</button>
   </div>`;
 }
  
