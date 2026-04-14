@@ -281,10 +281,10 @@ const sb = {
  
 // ── ESTADO ────────────────────────────────────────────────────────────
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-// Pedido feito hoje → produção amanhã → entrega depois de amanhã
-// A lista de pães deve mostrar o dia de ENTREGA (depois de amanhã)
-const _delivery = new Date(); _delivery.setDate(_delivery.getDate()+2);
-const DELIVERY_IDX = _delivery.getDay(); // dia que o pão chega na loja
+// Índice do dia de venda selecionado pelo usuário (1=Seg … 6=Sáb)
+// Calculado automaticamente ao fazer login, mas o usuário pode alterar
+const DELIVERY_MAP = {1:3,2:4,3:5,4:6,5:1,6:1,0:1};
+let DELIVERY_IDX = DELIVERY_MAP[new Date().getDay()] ?? 1;
  
 let BREADS = [];
 let currentUser = null, currentTab = 0, isLocked = false;
@@ -307,8 +307,14 @@ function nextDayLabel(){
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function deliveryDayLabel(){
-  // usado no header de produção — dia que o pão chega na loja
-  const d=new Date(); d.setDate(d.getDate()+2);
+  // dia de venda correto baseado no DELIVERY_MAP
+  const todayIdx = new Date().getDay();
+  const delivIdx = DELIVERY_MAP[todayIdx] ?? 1;
+  const d = new Date();
+  // avança até o próximo dia da semana com índice delivIdx
+  let daysAhead = (delivIdx - todayIdx + 7) % 7;
+  if(daysAhead === 0) daysAhead = 7;
+  d.setDate(d.getDate() + daysAhead);
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function checkDeadline(){ const h=new Date().getHours(); return h>=0&&h<4; }
@@ -508,11 +514,35 @@ function calcTotal(store){ const items=store==='pj'?pjBreads():todayBreads(); re
 function updateBBTotal(store){ const el=document.getElementById('bb-total'); if(el)el.textContent=calcTotal(store); }
  
 // ── ORDER FORM ────────────────────────────────────────────────────────
+function changeDeliveryDay(idx, store){
+  DELIVERY_IDX = parseInt(idx);
+  // re-renderiza o form sem perder o store
+  const tc = document.getElementById('tc-'+currentTab);
+  if(tc) tc.innerHTML = buildOrderForm(store);
+}
+ 
 function buildOrderForm(store){
   const breads=todayBreads();
   const saved=currentOrders[store]||{};
   const lbl={jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição'}[store]||store.toUpperCase();
-  let html=`<div class="section-label">Pães de ${DAYS_PT[DELIVERY_IDX]} — ${lbl}</div>`;
+ 
+  // ── Seletor de dia de venda ──
+  let html=`<div style="margin-bottom:14px">
+    <div class="section-label" style="margin-bottom:8px">Pães para qual dia?</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">`;
+  [1,2,3,4,5,6].forEach(i=>{
+    const active = i===DELIVERY_IDX;
+    html+=`<button onclick="changeDeliveryDay(${i},'${store}')"
+      style="padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;
+      border:1px solid ${active?'var(--amber-border)':'var(--border)'};
+      background:${active?'var(--amber-bg)':'var(--surface)'};
+      color:${active?'var(--amber)':'var(--text-muted)'}">
+      ${DAYS_PT[i]}
+    </button>`;
+  });
+  html+=`</div></div>`;
+ 
+  html+=`<div class="section-label">${DAYS_PT[DELIVERY_IDX]} — ${lbl}</div>`;
   if(breads.length===0){ html+='<div class="empty-report">Nenhum pão disponível para '+DAYS_PT[DELIVERY_IDX]+'.</div>'; return html; }
   html+='<div class="bread-list">';
   breads.forEach(b=>{
@@ -589,6 +619,12 @@ function buildReport(storeFilter){
     html+=`<table class="report-table"><thead><tr><th>Item</th><th class="num">Qtd</th></tr></thead><tbody>`;
     pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
     html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    if(dateKey!==todayKey()){
+      html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir este pedido hoje?</div>
+        <button class="btn-action primary" onclick="duplicateOrders('pj')">Duplicar para hoje</button>
+      </div>`;
+    }
     return html;
   }
  
@@ -610,6 +646,12 @@ function buildReport(storeFilter){
     html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">Qtd</th></tr></thead><tbody>`;
     rows.forEach(r=>{ html+=`<tr><td>${escHtml(r.name)}</td><td class="num">${r.qty}</td></tr>`; });
     html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    if(dateKey!==todayKey()){
+      html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir este pedido hoje?</div>
+        <button class="btn-action primary" onclick="duplicateOrders('${storeFilter}')">Duplicar para hoje</button>
+      </div>`;
+    }
     return html;
   }
  
@@ -641,7 +683,40 @@ function buildReport(storeFilter){
     pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
     html+='</tbody></table>';
   }
+  if(dateKey!==todayKey()){
+    html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir esta produção hoje?</div>
+      <button class="btn-action primary" onclick="duplicateOrders()">Duplicar para hoje</button>
+    </div>`;
+  }
   return html;
+}
+ 
+async function duplicateOrders(storeFilter){
+  // Copia os pedidos da data atual em currentOrders para hoje
+  const stores = storeFilter ? [storeFilter] : ['ex','jc','ja','pj'];
+  const date = todayKey();
+  const allRows = [];
+  stores.forEach(s=>{
+    const sv = currentOrders[s]||{};
+    Object.values(sv).forEach(r=>{
+      if((r.quantity||0)>0){
+        const row = {store:r.store, bread_id:r.bread_id, quantity:r.quantity, order_date:date, obs:r.obs||''};
+        if(s==='pj'){ row.pj_client=r.pj_client||''; row.pj_delivery_date=r.pj_delivery_date||null; }
+        allRows.push(row);
+      }
+    });
+  });
+  if(!allRows.length){ showToast('Nenhum item para duplicar.'); return; }
+  setSyncDot('syncing');
+  try{
+    await sb.upsert('orders', allRows, 'store,bread_id,order_date');
+    await loadTodayOrders(todayKey());
+    showToast('Pedido duplicado para hoje!');
+    // Voltar para aba de pedido
+    const tabIdx = currentUser==='elis'?0:currentUser==='marselle'?0:0;
+    document.querySelectorAll('.nav-tab')[tabIdx]?.click();
+  } catch(e){ setSyncDot('error'); showToast('Erro ao duplicar.'); console.error(e); }
 }
  
 async function changeReportDate(dateKey, storeFilter){
