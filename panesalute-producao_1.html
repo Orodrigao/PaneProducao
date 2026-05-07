@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pane & Salute — Produção</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FAFAF8;--surface:#FFFFFF;--border:#E8E4DC;--border-strong:#D4CFC4;
+  --text:#1A1916;--text-muted:#7A756A;--text-hint:#B0AB9F;
+  --amber:#B8720A;--amber-bg:#FDF3E3;--amber-border:#F0C070;
+  --teal:#0A6E52;--teal-bg:#E3F5EE;--teal-border:#70CCA8;
+  --coral:#A8330F;--coral-bg:#FDF0EB;--coral-border:#F0A080;
+  --red-bg:#FDF0F0;--red:#A83030;--red-border:#F09090;
+  --radius:10px;--radius-sm:7px;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;min-height:100vh}
+h1,h2{font-family:'Playfair Display',serif}
+#app{max-width:480px;margin:0 auto;padding:0 0 80px}
+.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1.5rem}
+.login-logo{text-align:center;margin-bottom:2.5rem}
+.login-logo h1{font-size:32px;font-weight:400;letter-spacing:0.5px}
+.login-logo p{font-size:12px;color:var(--text-hint);letter-spacing:3px;text-transform:uppercase;margin-top:6px}
+.login-logo .tagline{font-size:13px;color:var(--text-muted);margin-top:10px;font-style:italic}
+.login-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.login-btn{width:100%;padding:14px 18px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;text-align:left;display:flex;align-items:center;gap:12px;transition:background 0.15s}
+.login-btn:last-child{border-bottom:none}
+.login-btn:hover{background:var(--bg)}
+.login-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0}
+.av-amber{background:var(--amber-bg);color:var(--amber)}
+.av-teal{background:var(--teal-bg);color:var(--teal)}
+.av-coral{background:var(--coral-bg);color:var(--coral)}
+.av-gray{background:#F1EFE8;color:#5F5E5A}
+.login-info .name{font-size:14px;font-weight:500}
+.login-info .role{font-size:12px;color:var(--text-muted)}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px}
+.topbar-logo{font-family:'Playfair Display',serif;font-size:18px;font-weight:400;flex:1}
+.topbar-badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;flex-shrink:0}
+.tb-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border)}
+.tb-teal{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-border)}
+.tb-coral{background:var(--coral-bg);color:var(--coral);border:1px solid var(--coral-border)}
+.tb-gray{background:#F1EFE8;color:#5F5E5A;border:1px solid #D3D1C7}
+.btn-logout{font-size:12px;padding:5px 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:transparent;cursor:pointer;color:var(--text-muted)}
+.btn-logout:hover{background:var(--bg)}
+.deadline{margin:12px 16px 0;padding:9px 14px;border-radius:var(--radius-sm);font-size:13px;display:flex;align-items:center;gap:8px}
+.deadline-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dl-ok{background:var(--teal-bg);border:1px solid var(--teal-border);color:var(--teal)}
+.dl-ok .deadline-dot{background:var(--teal)}
+.dl-locked{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red)}
+.dl-locked .deadline-dot{background:var(--red)}
+.dl-warn{background:var(--amber-bg);border:1px solid var(--amber-border);color:var(--amber)}
+.dl-warn .deadline-dot{background:var(--amber)}
+.nav-tabs{display:flex;padding:0 16px;margin-top:14px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.nav-tabs::-webkit-scrollbar{display:none}
+.nav-tab{font-size:13px;font-weight:500;padding:8px 12px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;background:none;border-top:none;border-left:none;border-right:none;white-space:nowrap;transition:color 0.15s}
+.nav-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.nav-tab:hover:not(.active){color:var(--text)}
+.tab-content{display:none;padding:16px}
+.tab-content.active{display:block}
+.section-label{font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-hint);margin-bottom:10px;margin-top:20px}
+.section-label:first-child{margin-top:0}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:20px}
+.section-header:first-child{margin-top:0}
+.section-header .section-label{margin:0}
+.bread-list{display:flex;flex-direction:column;gap:6px}
+.bread-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;display:flex;align-items:center;gap:10px;transition:border-color 0.15s}
+.bread-row.has-qty{border-color:var(--amber-border);background:var(--amber-bg)}
+.bread-info{flex:1;min-width:0}
+.bread-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bread-days{font-size:11px;color:var(--text-hint);margin-top:1px}
+.qty-wrap{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.qty-btn{width:30px;height:30px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg);cursor:pointer;font-size:18px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;line-height:1;transition:all 0.1s;user-select:none;font-family:monospace}
+.qty-btn:hover{background:var(--surface);border-color:var(--amber-border);color:var(--amber)}
+.qty-btn:active{transform:scale(0.94)}
+.qty-input{width:46px;text-align:center;border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:5px 4px;font-size:15px;font-weight:500;background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;-moz-appearance:textfield}
+.qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none}
+.qty-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.qty-input:disabled{opacity:0.4;background:var(--bg)}
+.obs-area{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--surface);color:var(--text);resize:vertical;min-height:64px;font-family:'DM Sans',sans-serif;transition:border-color 0.15s}
+.obs-area:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.obs-area::placeholder{color:var(--text-hint)}
+.obs-area:disabled{opacity:0.5;background:var(--bg)}
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:480px;margin:0 auto}
+.total-info{font-size:13px;color:var(--text-muted)}
+.total-info strong{color:var(--text);font-size:16px}
+.btn-save{padding:10px 22px;background:var(--amber);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.btn-save:hover{background:#A06209}
+.btn-save:active{transform:scale(0.97)}
+.btn-save:disabled{background:var(--border-strong);color:var(--text-hint);cursor:not-allowed}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1.5rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center}
+.stat-card .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint);margin-bottom:4px}
+.stat-card .val{font-size:24px;font-weight:500}
+.report-table{width:100%;border-collapse:collapse;font-size:13px}
+.report-table th{text-align:left;font-size:10px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint);padding:6px 8px;border-bottom:1px solid var(--border)}
+.report-table td{padding:8px;border-bottom:1px solid var(--border)}
+.report-table .num{text-align:right;font-weight:500}
+.report-table .zero{color:var(--text-hint)}
+.report-table .total-row td{font-weight:500;background:var(--amber-bg);color:var(--amber)}
+.report-table tr:last-child td{border-bottom:none}
+.empty-report{text-align:center;padding:2rem;color:var(--text-hint);font-size:14px}
+.print-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-top:1rem}
+.print-card h3{font-size:16px;font-weight:500;margin-bottom:4px}
+.print-card .pmeta{font-size:12px;color:var(--text-muted);padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.print-row{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr 1fr 1fr;gap:4px;padding:5px 0;border-bottom:1px solid var(--border);align-items:center;font-size:13px}
+.print-row.ph{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-hint)}
+.print-row span:not(:first-child){text-align:right}
+.print-row .pname{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.print-row .ptotal{font-weight:500;color:var(--amber)}
+.btn-row{display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap}
+.btn-action{padding:9px 18px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--text);transition:all 0.15s}
+.btn-action:hover{background:var(--bg)}
+.btn-action.primary{background:var(--amber);color:#fff;border-color:var(--amber)}
+.btn-action.primary:hover{background:#A06209}
+.btn-action.danger{background:var(--red-bg);color:var(--red);border-color:var(--red-border)}
+.btn-action.sm{padding:6px 12px;font-size:12px}
+.admin-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.admin-item.inactive{opacity:0.45}
+.admin-info{flex:1;min-width:0}
+.admin-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-meta{font-size:12px;color:var(--text-muted);margin-top:1px}
+.admin-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.toggle{width:40px;height:22px;border-radius:11px;background:var(--border-strong);cursor:pointer;position:relative;border:none;transition:background 0.2s;flex-shrink:0}
+.toggle.on{background:var(--teal)}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left 0.18s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+.toggle.on::after{left:20px}
+.icon-btn{width:28px;height:28px;border:1px solid var(--border);border-radius:var(--radius-sm);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;transition:all 0.15s;flex-shrink:0}
+.icon-btn:hover{background:var(--bg);border-color:var(--border-strong)}
+.icon-btn.edit:hover{color:var(--amber);border-color:var(--amber-border)}
+.icon-btn.del:hover{color:var(--red);border-color:var(--red-border)}
+.field-group{margin-bottom:14px}
+.field-label{font-size:11px;font-weight:500;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-hint);margin-bottom:6px}
+.field-input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;transition:border-color 0.15s}
+.field-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,114,10,0.12)}
+.field-input::placeholder{color:var(--text-hint)}
+.days-selector{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:4px}
+.day-check{display:none}
+.day-label{display:flex;align-items:center;justify-content:center;padding:8px 2px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;font-weight:500;cursor:pointer;color:var(--text-muted);transition:all 0.15s;user-select:none}
+.day-check:checked+.day-label{background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber)}
+.form-actions{display:flex;gap:8px;margin-top:1.25rem}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(26,25,22,0.55);z-index:100;align-items:flex-end;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-sheet{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;padding:1.5rem 1.25rem 2.5rem;width:100%;max-width:480px;max-height:92vh;overflow-y:auto}
+.modal-handle{width:36px;height:4px;background:var(--border-strong);border-radius:2px;margin:0 auto 1.25rem}
+.modal-sheet h3{font-size:16px;font-weight:500;margin-bottom:1.25rem}
+.modal-sheet p{font-size:14px;color:var(--text-muted);margin-bottom:1rem;line-height:1.6}
+/* LOADING */
+.loading-overlay{position:fixed;inset:0;background:rgba(250,250,248,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;gap:12px}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--amber);border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay p{font-size:13px;color:var(--text-muted)}
+/* SYNC indicator */
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--teal);display:inline-block;margin-left:6px;vertical-align:middle}
+.sync-dot.syncing{background:var(--amber);animation:pulse 1s infinite}
+.sync-dot.error{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.toast{position:fixed;bottom:85px;left:50%;transform:translateX(-50%) translateY(10px);background:#1A1916;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:all 0.25s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media print{
+  .topbar,.nav-tabs,.deadline,.bottom-bar,.btn-row,.no-print,#modal,.loading-overlay{display:none!important}
+  body{background:#fff}
+  .tab-content{display:block!important;padding:0}
+  .print-card{border:none;padding:0}
+  #app{max-width:100%;padding:0}
+}
+@media(max-width:360px){.nav-tab{padding:8px 8px;font-size:12px}}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="screen-login">
+  <div class="login-page">
+    <div class="login-logo">
+      <h1>Pane & Salute</h1>
+      <p>Sistema de Produção</p>
+      <div class="tagline">Fermentação longa · Qualidade artesanal</div>
+    </div>
+    <div class="login-card">
+      <button class="login-btn" onclick="login('rodrigo')">
+        <div class="login-avatar av-amber">RO</div>
+        <div class="login-info"><div class="name">Rodrigo</div><div class="role">Admin · Lojas JC + JA</div></div>
+      </button>
+      <button class="login-btn" onclick="login('marselle')">
+        <div class="login-avatar av-teal">MA</div>
+        <div class="login-info"><div class="name">Marselle</div><div class="role">Loja Exposição (EX)</div></div>
+      </button>
+      <button class="login-btn" onclick="login('elis')">
+        <div class="login-avatar av-coral">EL</div>
+        <div class="login-info"><div class="name">Elis</div><div class="role">Clientes PJ</div></div>
+      </button>
+      <button class="login-btn" onclick="login('geolar')">
+        <div class="login-avatar av-gray">GE</div>
+        <div class="login-info"><div class="name">Geolar</div><div class="role">Produção · Impressão</div></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="screen-main" style="display:none">
+  <div class="topbar">
+    <div class="topbar-logo">Pane & Salute <span class="sync-dot" id="sync-dot"></span></div>
+    <span class="topbar-badge" id="user-badge"></span>
+    <button class="btn-logout" onclick="logout()">Sair</button>
+  </div>
+  <div id="deadline-bar"></div>
+  <div class="nav-tabs" id="nav-tabs"></div>
+  <div id="tab-contents"></div>
+</div>
+
+<div id="screen-geolar" style="display:none">
+  <div class="topbar">
+    <div class="topbar-logo">Pane & Salute</div>
+    <span class="topbar-badge tb-gray">Geolar</span>
+    <button class="btn-logout" onclick="logout()">Sair</button>
+  </div>
+  <div style="padding:16px" id="geolar-content"></div>
+</div>
+
+</div>
+
+<div id="modal" class="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal-sheet" id="modal-sheet">
+    <div class="modal-handle"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="loading" class="loading-overlay" style="display:none">
+  <div class="spinner"></div>
+  <p id="loading-msg">Carregando...</p>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="bottom-bar-container"></div>
+
+<script>
+// ── CONFIG SUPABASE ───────────────────────────────────────────────────
+const SB_URL = 'https://gohluceldchoitihrimw.supabase.co';
+const SB_KEY = 'sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ';
+
+const sb = {
+  async get(table, params=''){
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}
+    });
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async upsert(table, data, onConflict){
+    const qs = onConflict ? `?on_conflict=${onConflict}` : '';
+    const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`,{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},
+      body: JSON.stringify(data)
+    });
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async patch(table, data, match){
+    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&');
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`,{
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body: JSON.stringify(data)
+    });
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async del(table, match){
+    const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&');
+    const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`,{
+      method:'DELETE',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    if(!r.ok) throw new Error(await r.text());
+  }
+};
+
+// ── ESTADO ────────────────────────────────────────────────────────────
+const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+// ── HORÁRIO BRASÍLIA (UTC-3) — sempre fixo independente do dispositivo ──
+function nowBrasilia(){
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc - 3 * 3600000);
+}
+
+// Índice do dia de venda selecionado pelo usuário (1=Seg … 6=Sáb)
+const DELIVERY_MAP = {1:3,2:4,3:5,4:6,5:1,6:1,0:1};
+let DELIVERY_IDX = DELIVERY_MAP[nowBrasilia().getDay()] ?? 1;
+
+let BREADS = [];
+let currentUser = null, currentTab = 0, isLocked = false;
+let selectedOrderDate = new Date().toISOString().slice(0,10); // data do pedido atual
+const NOTIFY_WHATSAPP = '5554999101524'; // número do Rodrigo para notificações
+let editingBreadId = null, editingPJId = null;
+let currentOrders = {};
+
+// ── UTILS ─────────────────────────────────────────────────────────────
+function todayKey(){
+  const d = nowBrasilia();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function yesterdayKey(){
+  const d = nowBrasilia(); d.setDate(d.getDate()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function dateLabel(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+}
+function nextDayLabel(){
+  const d = nowBrasilia(); d.setDate(d.getDate()+1);
+  return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+}
+function deliveryDayLabel(){
+  const todayIdx = nowBrasilia().getDay();
+  const delivIdx = DELIVERY_MAP[todayIdx] ?? 1;
+  const d = nowBrasilia();
+  let daysAhead = (delivIdx - todayIdx + 7) % 7;
+  if(daysAhead === 0) daysAhead = 7;
+  d.setDate(d.getDate() + daysAhead);
+  return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+}
+function checkDeadline(){
+  return false; // sem limitação de horário — sempre aberto
+}
+function getHoursLeft(){ return 99; } // sem limitação
+function parseDays(d){if(Array.isArray(d))return d.map(Number);if(typeof d==="string")return d.replace(/[{}\s]/g,"").split(",").map(Number);return [];}
+function todayBreads(){return BREADS.filter(b=>!b.is_pj&&b.active&&parseDays(b.days).includes(DELIVERY_IDX));}
+function pjBreads(){ return BREADS.filter(b=>b.is_pj&&b.active); }
+function slugify(str){ return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')+Date.now(); }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setSyncDot(state){ const d=document.getElementById('sync-dot'); if(!d)return; d.className='sync-dot'+(state?' '+state:''); }
+function showScreen(id){
+  ['screen-login','screen-main','screen-geolar'].forEach(s=>{
+    document.getElementById(s).style.display=s===id?'block':'none';
+  });
+}
+function showLoading(msg='Carregando...'){
+  document.getElementById('loading').style.display='flex';
+  document.getElementById('loading-msg').textContent=msg;
+}
+function hideLoading(){ document.getElementById('loading').style.display='none'; }
+async function sendWhatsAppNotification(store, rows, date){
+  const TELEGRAM_TOKEN = '8783234956:AAGhATqrcEWxV9jwZ26ct03mGY9JE9-FSog';
+  const TELEGRAM_CHAT_ID = '688149907';
+
+  const storeLabel = {jc:'JC',ja:'JA',ex:'EX',pj:'PJ'}[store]||store.toUpperCase();
+  const userName = {marselle:'Marselle',elis:'Elis',geolar:'Geolar'}[currentUser]||currentUser;
+  const dateLabel2 = new Date(date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+  const delivLabel = DAYS_PT[DELIVERY_IDX];
+  const items = rows.filter(r=>r.quantity>0);
+  if(!items.length) return;
+
+  let msg = `🍞 *Pane & Salute — Novo pedido*\n`;
+  msg += `👤 ${userName} · Loja ${storeLabel}\n`;
+  msg += `📅 ${dateLabel2} · Pães de ${delivLabel}\n\n`;
+  items.forEach(r=>{
+    const bread = BREADS.find(b=>b.id===r.bread_id);
+    if(bread) msg += `• ${bread.name}: *${r.quantity}*\n`;
+  });
+  const obs = document.getElementById('obs-'+store)?.value;
+  if(obs) msg += `\n📝 Obs: ${obs}`;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: msg,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch(e) {
+    console.error('Erro ao enviar notificação Telegram:', e);
+  }
+}
+
+function showToast(msg,duration=2600){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),duration);
+}
+
+// ── LOGIN ─────────────────────────────────────────────────────────────
+async function login(user){
+  currentUser=user;
+  showLoading('Carregando cardápio...');
+  try{
+    await loadBreads();
+    if(user==='geolar'){ hideLoading(); showScreen('screen-geolar'); await renderGeolar(); return; }
+    hideLoading(); showScreen('screen-main'); renderMain();
+    await loadTodayOrders();
+  } catch(e){
+    hideLoading(); showToast('Erro de conexão. Tente novamente.');
+    console.error(e);
+  }
+}
+function logout(){
+  currentUser=null; BREADS=[]; currentOrders={};
+  showScreen('screen-login');
+  document.getElementById('bottom-bar-container').innerHTML='';
+}
+
+// ── SUPABASE OPERATIONS ───────────────────────────────────────────────
+async function loadBreads(){
+  BREADS = await sb.get('breads','order=name.asc');
+}
+
+let currentOrderDate = null; // data que está carregada em currentOrders
+
+async function loadTodayOrders(dateKey){
+  if(!dateKey) dateKey = todayKey();
+  currentOrderDate = dateKey;
+  setSyncDot('syncing');
+  try{
+    const rows = await sb.get('orders',`order_date=eq.${dateKey}&select=store,bread_id,quantity,obs,pj_client,pj_delivery_date`);
+    currentOrders = {};
+    rows.forEach(r=>{
+      if(!currentOrders[r.store]) currentOrders[r.store]={};
+      currentOrders[r.store][r.bread_id] = r;
+    });
+    setSyncDot('');
+    refreshCurrentTab();
+  } catch(e){
+    setSyncDot('error'); console.error(e);
+  }
+}
+
+async function saveOrder(store){
+  const items = store==='pj' ? pjBreads() : todayBreads();
+  const date = selectedOrderDate || todayKey();
+  const rows = [];
+
+  items.forEach(b=>{
+    const inp = document.getElementById('qty-'+store+'-'+b.id);
+    const qty = parseInt(inp?.value)||0;
+    // id determinístico = store+bread_id+date garante upsert correto
+    rows.push({store, bread_id:b.id, quantity:qty, order_date:date});
+  });
+
+  const obsEl = document.getElementById('obs-'+store);
+  const obs = obsEl?.value||'';
+  // attach obs to first row or standalone
+  rows.forEach(r=>r.obs=obs);
+
+  if(store==='pj'){
+    const client = document.getElementById('pj-client')?.value||'';
+    const delDate = document.getElementById('pj-date')?.value||null;
+    rows.forEach(r=>{ r.pj_client=client; r.pj_delivery_date=delDate||null; });
+  }
+
+  const btn = document.querySelector('.btn-save');
+  if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
+  setSyncDot('syncing');
+
+  try{
+    await sb.upsert('orders', rows, 'store,bread_id,order_date');
+    // update local cache
+    if(!currentOrders[store]) currentOrders[store]={};
+    rows.forEach(r=>{ currentOrders[store][r.bread_id]=r; });
+    setSyncDot('');
+    showToast('Pedido salvo!');
+    // Notificar Rodrigo via WhatsApp
+    if(currentUser !== 'rodrigo'){
+      sendWhatsAppNotification(store, rows, date);
+    }
+  } catch(e){
+    setSyncDot('error'); showToast('Erro ao salvar. Tente novamente.');
+    console.error(e);
+  } finally{
+    if(btn){ btn.disabled=false; btn.textContent='Salvar pedido'; }
+  }
+}
+
+// ── RENDER MAIN ───────────────────────────────────────────────────────
+function renderMain(){
+  isLocked = checkDeadline();
+  const u = currentUser;
+  const bm={rodrigo:['tb-amber','Rodrigo'],marselle:['tb-teal','Marselle · EX'],elis:['tb-coral','Elis · PJ']}[u]||['tb-gray',u];
+  const badge=document.getElementById('user-badge');
+  badge.className='topbar-badge '+bm[0]; badge.textContent=bm[1];
+
+  const dl=document.getElementById('deadline-bar');
+  dl.innerHTML=`<div class="deadline dl-ok"><span class="deadline-dot"></span>Pedidos abertos · Pães de ${deliveryDayLabel()}</div>`;
+
+  const tabs=document.getElementById('nav-tabs'), contents=document.getElementById('tab-contents');
+  tabs.innerHTML=''; contents.innerHTML='';
+  document.getElementById('bottom-bar-container').innerHTML='';
+
+  let tabDefs=[];
+  if(u==='rodrigo') tabDefs=[
+    {label:'JC',fn:()=>buildOrderForm('jc')},
+    {label:'JA',fn:()=>buildOrderForm('ja')},
+    {label:'Relatório',fn:()=>buildReport()},
+    {label:'Admin',fn:()=>buildAdmin()},
+  ];
+  else if(u==='marselle') tabDefs=[{label:'Loja EX',fn:()=>buildOrderForm('ex')},{label:'Histórico',fn:()=>buildReport('ex')}];
+  else if(u==='elis') tabDefs=[
+    {label:'Pedido PJ',fn:()=>buildPJForm()},
+    {label:'Histórico',fn:()=>buildReport('pj')},
+  ];
+
+  tabDefs.forEach((t,i)=>{
+    const btn=document.createElement('button');
+    btn.className='nav-tab'+(i===0?' active':''); btn.textContent=t.label;
+    btn.onclick=()=>switchTab(i,tabDefs); tabs.appendChild(btn);
+    const div=document.createElement('div');
+    div.className='tab-content'+(i===0?' active':''); div.id='tc-'+i;
+    div.innerHTML=t.fn(); contents.appendChild(div);
+  });
+  currentTab=0; renderBottomBar(tabDefs);
+}
+
+function switchTab(i,tabDefs){
+  currentTab=i;
+  document.querySelectorAll('.nav-tab').forEach((t,idx)=>t.classList.toggle('active',idx===i));
+  document.querySelectorAll('.tab-content').forEach((t,idx)=>t.classList.toggle('active',idx===i));
+  document.getElementById('tc-'+i).innerHTML=tabDefs[i].fn();
+  renderBottomBar(tabDefs);
+}
+
+function refreshCurrentTab(){
+  const adminIdx = currentUser==='rodrigo'?3:-1;
+  const tc=document.getElementById('tc-'+currentTab);
+  if(!tc) return;
+  if(currentUser==='rodrigo'){
+    if(currentTab===0) tc.innerHTML=buildOrderForm('jc');
+    else if(currentTab===1) tc.innerHTML=buildOrderForm('ja');
+    else if(currentTab===2) tc.innerHTML=buildReport();
+  } else if(currentUser==='marselle'){
+    if(currentTab===0) tc.innerHTML=buildOrderForm('ex');
+    else tc.innerHTML=buildReport('ex');
+  } else if(currentUser==='elis'){
+    if(currentTab===0) tc.innerHTML=buildPJForm();
+    else tc.innerHTML=buildReport('pj');
+  }
+}
+
+function renderBottomBar(tabDefs){
+  const c=document.getElementById('bottom-bar-container'), u=currentUser;
+  if(u==='rodrigo'){
+    if(currentTab===0) c.innerHTML=bbHtml('jc');
+    else if(currentTab===1) c.innerHTML=bbHtml('ja');
+    else c.innerHTML='';
+  } else if(u==='marselle'){ if(currentTab===0) c.innerHTML=bbHtml('ex'); else c.innerHTML=''; }
+  else if(u==='elis'){ if(currentTab===0) c.innerHTML=bbHtmlPJ(); else c.innerHTML=''; }
+  else c.innerHTML='';
+}
+function bbHtml(store){ if(isLocked)return ''; return `<div class="bottom-bar"><div class="total-info">Total: <strong id="bb-total">${calcTotal(store)}</strong> unidades</div><button class="btn-save" onclick="saveOrder('${store}')">Salvar pedido</button></div>`; }
+function bbHtmlPJ(){ return `<div class="bottom-bar"><div class="total-info">Total: <strong id="bb-total">${calcTotal('pj')}</strong> itens</div><button class="btn-save" onclick="saveOrder('pj')">Salvar pedido PJ</button></div>`; }
+function calcTotal(store){ const items=store==='pj'?pjBreads():todayBreads(); return items.reduce((a,b)=>{ const el=document.getElementById('qty-'+store+'-'+b.id); return a+(parseInt(el?.value)||0); },0); }
+function updateBBTotal(store){ const el=document.getElementById('bb-total'); if(el)el.textContent=calcTotal(store); }
+
+// ── ORDER FORM ────────────────────────────────────────────────────────
+function changeOrderDate(dateStr, store){
+  selectedOrderDate = dateStr;
+  // recarregar pedidos desta data do banco
+  loadTodayOrders(dateStr).then(()=>{
+    const tc=document.getElementById('tc-'+currentTab);
+    if(tc) tc.innerHTML=buildOrderForm(store);
+  });
+}
+
+function changeDeliveryDay(idx, store){
+  DELIVERY_IDX = parseInt(idx);
+  // re-renderiza o form sem perder o store
+  const tc = document.getElementById('tc-'+currentTab);
+  if(tc) tc.innerHTML = buildOrderForm(store);
+}
+
+function buildOrderForm(store){
+  const breads=todayBreads();
+  const saved=currentOrders[store]||{};
+  const lbl={jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição'}[store]||store.toUpperCase();
+
+  // ── Seletor: data do pedido + dia de venda ──
+  let html=`<div style="margin-bottom:16px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">Data do pedido:</span>
+      <input type="date" id="order-date-input" value="${selectedOrderDate}"
+        class="field-input" style="width:auto;padding:6px 10px;font-size:13px;flex:1;min-width:140px"
+        onchange="changeOrderDate(this.value,'${store}')">
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase">Pães para qual dia da semana?</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">`;
+  [1,2,3,4,5,6].forEach(i=>{
+    const active = i===DELIVERY_IDX;
+    html+=`<button onclick="changeDeliveryDay(${i},'${store}')"
+      style="padding:6px 12px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;
+      border:1px solid ${active?'var(--amber-border)':'var(--border)'};
+      background:${active?'var(--amber-bg)':'var(--surface)'};
+      color:${active?'var(--amber)':'var(--text-muted)'}">
+      ${DAYS_PT[i]}
+    </button>`;
+  });
+  html+=`</div></div>`;
+
+  html+=`<div class="section-label">${DAYS_PT[DELIVERY_IDX]} — ${lbl}</div>`;
+  if(breads.length===0){ html+='<div class="empty-report">Nenhum pão disponível para '+DAYS_PT[DELIVERY_IDX]+'.</div>'; return html; }
+  html+='<div class="bread-list">';
+  breads.forEach(b=>{
+    const v=(saved[b.id]?.quantity)||0, dis=isLocked?' disabled':'';
+    html+=`<div class="bread-row${v>0?' has-qty':''}" id="br-${store}-${b.id}">
+      <div class="bread-info"><div class="bread-name">${escHtml(b.name)}</div><div class="bread-days">${parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}</div></div>
+      <div class="qty-wrap">
+        <button class="qty-btn" onclick="changeQty('${store}','${b.id}',-1)"${dis}>−</button>
+        <input class="qty-input" type="number" inputmode="numeric" min="0" value="${v}" id="qty-${store}-${b.id}" onchange="onQtyChange('${store}','${b.id}')" oninput="onQtyChange('${store}','${b.id}')"${dis}>
+        <button class="qty-btn" onclick="changeQty('${store}','${b.id}',1)"${dis}>+</button>
+      </div></div>`;
+  });
+  html+=`</div><div style="margin-top:14px"><div class="section-label" style="margin-top:0">Observações</div>
+  <textarea class="obs-area" id="obs-${store}" placeholder="Ex: reforçar baguete, pegar croissant do congelado..."${isLocked?' disabled':''}>${escHtml((saved[Object.keys(saved)[0]]?.obs)||'')}</textarea></div>`;
+
+  return html;
+}
+
+function buildPJForm(){
+  const saved=currentOrders['pj']||{};
+  const firstRow=Object.values(saved)[0]||{};
+  let html=`<div class="field-group"><div class="field-label">Cliente</div><input class="field-input" type="text" id="pj-client" placeholder="Nome do cliente" value="${escHtml(firstRow.pj_client||'')}"></div>`;
+  html+=`<div class="field-group"><div class="field-label">Data de entrega</div><input class="field-input" type="date" id="pj-date" value="${firstRow.pj_delivery_date||''}"></div>`;
+  html+=`<div class="section-label">Itens do pedido</div><div class="bread-list">`;
+  pjBreads().forEach(p=>{
+    const v=(saved[p.id]?.quantity)||0;
+    html+=`<div class="bread-row${v>0?' has-qty':''}" id="br-pj-${p.id}">
+      <div class="bread-info"><div class="bread-name">${escHtml(p.name)}</div></div>
+      <div class="qty-wrap">
+        <button class="qty-btn" onclick="changeQty('pj','${p.id}',-1)">−</button>
+        <input class="qty-input" type="number" inputmode="numeric" min="0" value="${v}" id="qty-pj-${p.id}" onchange="onQtyChange('pj','${p.id}')" oninput="onQtyChange('pj','${p.id}')">
+        <button class="qty-btn" onclick="changeQty('pj','${p.id}',1)">+</button>
+      </div></div>`;
+  });
+  html+=`</div><div style="margin-top:14px"><div class="section-label" style="margin-top:0">Observações</div>
+  <textarea class="obs-area" id="obs-pj" placeholder="Embalagem, instruções...">${escHtml(firstRow.obs||'')}</textarea></div>`;
+  return html;
+}
+
+function changeQty(store,id,delta){
+  const inp=document.getElementById('qty-'+store+'-'+id); if(!inp)return;
+  inp.value=Math.max(0,(parseInt(inp.value)||0)+delta); onQtyChange(store,id);
+}
+function onQtyChange(store,id){
+  const inp=document.getElementById('qty-'+store+'-'+id), row=document.getElementById('br-'+store+'-'+id);
+  if(inp&&row) row.classList.toggle('has-qty',parseInt(inp.value)>0);
+  updateBBTotal(store);
+}
+
+// ── REPORT ────────────────────────────────────────────────────────────
+function buildReport(storeFilter){
+  // storeFilter: undefined = todos (rodrigo), 'ex' = só EX (marselle), 'pj' = só PJ (elis)
+  const breads=BREADS.filter(b=>!b.is_pj&&b.active);
+  const dateKey=currentOrderDate||todayKey();
+  const isToday=dateKey===todayKey();
+
+  // seletor de data
+  let html=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--text-muted)">Data:</span>
+    <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value,'${storeFilter||''}')">
+    ${isToday?'<span style="font-size:11px;color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-border);padding:2px 8px;border-radius:10px">hoje</span>':''}
+  </div>`;
+
+  // ── visão PJ (Elis) ──────────────────────────────────────────────
+  if(storeFilter==='pj'){
+    const pjSv=currentOrders['pj']||{};
+    const pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
+    const total=pjIt.reduce((a,p)=>a+(pjSv[p.id]?.quantity||0),0);
+    html+=`<div class="stat-row"><div class="stat-card" style="grid-column:1/-1"><div class="lbl">Total PJ</div><div class="val">${total}</div></div></div>`;
+    if(!pjIt.length){ html+='<div class="empty-report">Nenhum pedido PJ nesta data.</div>'; return html; }
+    const firstRow=Object.values(pjSv)[0]||{};
+    html+=`<div class="section-label">Pedidos PJ — ${dateLabel(dateKey)}</div>`;
+    if(firstRow.pj_client) html+=`<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Cliente: <strong>${escHtml(firstRow.pj_client)}</strong> · Entrega: ${firstRow.pj_delivery_date||'—'}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Item</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
+    html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    if(dateKey!==todayKey()){
+      html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir este pedido hoje?</div>
+        <button class="btn-action primary" onclick="duplicateOrders('pj')">Duplicar para hoje</button>
+      </div>`;
+    }
+    return html;
+  }
+
+  // ── visão loja única (Marselle = 'ex') ───────────────────────────
+  if(storeFilter && storeFilter!=='pj'){
+    const sv=currentOrders[storeFilter]||{};
+    const storeLabel={ex:'Exposição',jc:'Julio de Castilhos',ja:'Jardim América'}[storeFilter]||storeFilter.toUpperCase();
+    let total=0;
+    const rows=[];
+    breads.forEach(b=>{
+      const qty=parseInt(sv[b.id]?.quantity||0);
+      if(qty>0){ rows.push({name:b.name,qty}); total+=qty; }
+    });
+    html+=`<div class="stat-row"><div class="stat-card" style="grid-column:1/-1"><div class="lbl">${storeLabel}</div><div class="val">${total}</div></div></div>`;
+    if(!rows.length){ html+='<div class="empty-report">Nenhum pedido nesta data.</div>'; return html; }
+    html+=`<div class="section-label">Pedidos — ${dateLabel(dateKey)}</div>`;
+    const obs=sv[Object.keys(sv)[0]]?.obs;
+    if(obs) html+=`<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm)">Obs: ${escHtml(obs)}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    rows.forEach(r=>{ html+=`<tr><td>${escHtml(r.name)}</td><td class="num">${r.qty}</td></tr>`; });
+    html+=`<tr class="total-row"><td>Total</td><td class="num">${total}</td></tr></tbody></table>`;
+    if(dateKey!==todayKey()){
+      html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir este pedido hoje?</div>
+        <button class="btn-action primary" onclick="duplicateOrders('${storeFilter}')">Duplicar para hoje</button>
+      </div>`;
+    }
+    return html;
+  }
+
+  // ── visão consolidada (Rodrigo) ──────────────────────────────────
+  const stores=['ex','jc','ja'];
+  let tots={ex:0,jc:0,ja:0};
+  html+='<div class="stat-row">';
+  stores.forEach(s=>{
+    const sv=currentOrders[s]||{}; let t=0;
+    breads.forEach(b=>{ t+=parseInt(sv[b.id]?.quantity||0); }); tots[s]=t;
+    html+=`<div class="stat-card"><div class="lbl">${s.toUpperCase()}</div><div class="val">${t}</div></div>`;
+  });
+  html+='</div>';
+  const grand=Object.values(tots).reduce((a,c)=>a+c,0);
+  if(grand===0){ html+='<div class="empty-report">Nenhum pedido registrado nesta data.</div>'; return html; }
+  html+=`<div class="section-label">Pedidos de ${dateLabel(dateKey)}</div>`;
+  html+=`<table class="report-table"><thead><tr><th>Pão</th><th class="num">EX</th><th class="num">JC</th><th class="num">JA</th><th class="num">Total</th></tr></thead><tbody>`;
+  breads.forEach(b=>{
+    const vals=stores.map(s=>parseInt(currentOrders[s]?.[b.id]?.quantity||0));
+    const tot=vals.reduce((a,c)=>a+c,0);
+    if(tot>0) html+=`<tr><td>${escHtml(b.name)}</td>${vals.map(v=>`<td class="num${v===0?' zero':''}">${v===0?'—':v}</td>`).join('')}<td class="num">${tot}</td></tr>`;
+  });
+  html+=`<tr class="total-row"><td>Total</td>${stores.map(s=>`<td class="num">${tots[s]}</td>`).join('')}<td class="num">${grand}</td></tr></tbody></table>`;
+  const pjSv=currentOrders['pj']||{}, pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
+  if(pjIt.length){
+    const firstRow=Object.values(pjSv)[0]||{};
+    html+=`<div class="section-label" style="margin-top:20px">PJ — ${escHtml(firstRow.pj_client||'—')} · ${firstRow.pj_delivery_date||'—'}</div>`;
+    html+=`<table class="report-table"><thead><tr><th>Item</th><th class="num">Qtd</th></tr></thead><tbody>`;
+    pjIt.forEach(p=>{ html+=`<tr><td>${escHtml(p.name)}</td><td class="num">${pjSv[p.id]?.quantity||0}</td></tr>`; });
+    html+='</tbody></table>';
+  }
+  if(dateKey!==todayKey()){
+    html+=`<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Repetir esta produção hoje?</div>
+      <button class="btn-action primary" onclick="duplicateOrders()">Duplicar para hoje</button>
+    </div>`;
+  }
+  return html;
+}
+
+async function duplicateOrders(storeFilter){
+  // Copia os pedidos da data atual em currentOrders para hoje
+  const stores = storeFilter ? [storeFilter] : ['ex','jc','ja','pj'];
+  const date = todayKey();
+  const allRows = [];
+  stores.forEach(s=>{
+    const sv = currentOrders[s]||{};
+    Object.values(sv).forEach(r=>{
+      if((r.quantity||0)>0){
+        const row = {store:r.store, bread_id:r.bread_id, quantity:r.quantity, order_date:date, obs:r.obs||''};
+        if(s==='pj'){ row.pj_client=r.pj_client||''; row.pj_delivery_date=r.pj_delivery_date||null; }
+        allRows.push(row);
+      }
+    });
+  });
+  if(!allRows.length){ showToast('Nenhum item para duplicar.'); return; }
+  setSyncDot('syncing');
+  try{
+    await sb.upsert('orders', allRows, 'store,bread_id,order_date');
+    await loadTodayOrders(todayKey());
+    showToast('Pedido duplicado para hoje!');
+    // Voltar para aba de pedido
+    const tabIdx = currentUser==='elis'?0:currentUser==='marselle'?0:0;
+    document.querySelectorAll('.nav-tab')[tabIdx]?.click();
+  } catch(e){ setSyncDot('error'); showToast('Erro ao duplicar.'); console.error(e); }
+}
+
+async function changeReportDate(dateKey, storeFilter){
+  await loadTodayOrders(dateKey);
+  const tc=document.getElementById('tc-'+currentTab);
+  if(tc) tc.innerHTML=buildReport(storeFilter||undefined);
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────────────
+function buildAdmin(){
+  const regular=BREADS.filter(b=>!b.is_pj), pj=BREADS.filter(b=>b.is_pj);
+  let html=`<div class="section-header"><div class="section-label">Pães das lojas (${regular.length})</div><button class="btn-action primary sm no-print" onclick="openNewBreadModal(false)">+ Novo pão</button></div>`;
+  if(!regular.length) html+='<div class="empty-report">Nenhum pão. Clique em "+ Novo pão".</div>';
+  else regular.forEach(b=>{
+    const dLbl=parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ');
+    html+=`<div class="admin-item${b.active?'':' inactive'}" id="adm-${b.id}">
+      <div class="admin-info"><div class="admin-name">${escHtml(b.name)}</div><div class="admin-meta">${dLbl}</div></div>
+      <div class="admin-actions">
+        <button class="icon-btn edit no-print" onclick="openEditBreadModal('${b.id}')">✎</button>
+        <button class="icon-btn del no-print" onclick="confirmDeleteBread('${b.id}')">✕</button>
+        <button class="toggle${b.active?' on':''}" id="tog-${b.id}" onclick="toggleBread('${b.id}')"></button>
+      </div></div>`;
+  });
+  html+=`<div class="section-header" style="margin-top:24px"><div class="section-label">Itens PJ (${pj.length})</div><button class="btn-action primary sm no-print" onclick="openNewBreadModal(true)">+ Novo item PJ</button></div>`;
+  if(!pj.length) html+='<div class="empty-report">Nenhum item PJ.</div>';
+  else pj.forEach(p=>{
+    html+=`<div class="admin-item${p.active?'':' inactive'}" id="adm-${p.id}">
+      <div class="admin-info"><div class="admin-name">${escHtml(p.name)}</div><div class="admin-meta">Item exclusivo PJ</div></div>
+      <div class="admin-actions">
+        <button class="icon-btn edit no-print" onclick="openEditBreadModal('${p.id}')">✎</button>
+        <button class="icon-btn del no-print" onclick="confirmDeleteBread('${p.id}')">✕</button>
+        <button class="toggle${p.active?' on':''}" id="tog-${p.id}" onclick="toggleBread('${p.id}')"></button>
+      </div></div>`;
+  });
+  html+=`<div class="section-label" style="margin-top:24px">Pré-visualização — Geolar</div>`;
+  html+=buildPrintPreview();
+  html+=`<div class="btn-row no-print">
+    <button class="btn-action primary" onclick="generateWhatsApp()">Copiar para WhatsApp</button>
+    <button class="btn-action" onclick="window.print()">Imprimir</button>
+  </div>`;
+  return html;
+}
+
+// ── TOGGLE BREAD ──────────────────────────────────────────────────────
+async function toggleBread(id){
+  const b=BREADS.find(x=>x.id===id); if(!b)return;
+  b.active=!b.active;
+  document.getElementById('tog-'+id)?.classList.toggle('on',b.active);
+  document.getElementById('adm-'+id)?.classList.toggle('inactive',!b.active);
+  try{ await sb.patch('breads',{active:b.active},{id}); showToast(b.active?b.name+' ativado':b.name+' desativado'); }
+  catch(e){ b.active=!b.active; showToast('Erro ao salvar.'); }
+}
+
+// ── MODAL BREAD ───────────────────────────────────────────────────────
+function openNewBreadModal(isPJ){
+  editingBreadId=null;
+  document.getElementById('modal-body').innerHTML=buildBreadForm(null,isPJ);
+  document.getElementById('modal').classList.add('open');
+}
+function openEditBreadModal(id){
+  editingBreadId=id;
+  const b=BREADS.find(x=>x.id===id);
+  document.getElementById('modal-body').innerHTML=buildBreadForm(b,b?.is_pj);
+  document.getElementById('modal').classList.add('open');
+}
+function buildBreadForm(b,isPJ){
+  const isEdit=!!b;
+  let html=`<h3>${isEdit?'Editar':'Cadastrar'} ${isPJ?'item PJ':'pão'}</h3>`;
+  html+=`<div class="field-group"><div class="field-label">Nome</div><input class="field-input" id="f-name" type="text" placeholder="${isPJ?'Ex: Pão Fatiado PJ...':'Ex: Ciabatta, Baguete integral...'}" value="${b?escHtml(b.name):''}"></div>`;
+  if(!isPJ){
+    html+=`<div class="field-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="field-label" style="margin:0">Dias disponíveis</div>
+        <button type="button" class="btn-action sm" onclick="selectAllDays()" style="font-size:11px;padding:3px 10px">Seg–Sáb</button>
+      </div>
+      <div class="days-selector">`;
+    DAYS_PT.forEach((d,i)=>{ const ck=b&&parseDays(b.days).includes(i)?'checked':''; const dimStyle=i===0?' style="opacity:0.35;cursor:not-allowed"':'';
+html+=`<input type="checkbox" class="day-check" id="fday-${i}" value="${i}" ${ck} ${i===0?'disabled':''}}><label class="day-label" for="fday-${i}"${dimStyle}>${d}</label>`; });
+    html+=`</div></div>`;
+  }
+  html+=`<div class="form-actions"><button class="btn-action primary" onclick="saveBreadForm(${isPJ})">${isEdit?'Salvar':'Cadastrar'}</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+  return html;
+}
+async function saveBreadForm(isPJ){
+  const name=document.getElementById('f-name')?.value.trim();
+  if(!name){ showToast('Digite o nome.'); return; }
+  let days=[0,1,2,3,4,5,6];
+  if(!isPJ){
+    days=[];
+    document.querySelectorAll('.day-check:checked').forEach(c=>days.push(parseInt(c.value)));
+    if(!days.length){ showToast('Selecione pelo menos 1 dia.'); return; }
+  }
+  const id=editingBreadId||slugify(name);
+  const data={id,name,days,active:true,is_pj:isPJ};
+  try{
+    await sb.upsert('breads',[data]);
+    await loadBreads();
+    closeModal();
+    refreshAdminTab();
+    showToast(editingBreadId?'Atualizado!':'Cadastrado!');
+  } catch(e){ showToast('Erro ao salvar.'); console.error(e); }
+}
+function confirmDeleteBread(id){
+  const b=BREADS.find(x=>x.id===id); if(!b)return;
+  document.getElementById('modal-body').innerHTML=`<h3>Excluir ${b.is_pj?'item PJ':'pão'}</h3><p>Excluir <strong>${escHtml(b.name)}</strong>? Esta ação não pode ser desfeita.</p><div class="form-actions"><button class="btn-action danger" onclick="deleteBread('${id}')">Excluir</button><button class="btn-action" onclick="closeModal()">Cancelar</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function deleteBread(id){
+  try{
+    await sb.del('breads',{id});
+    await loadBreads();
+    closeModal(); refreshAdminTab(); showToast('Excluído.');
+  } catch(e){ showToast('Erro ao excluir.'); console.error(e); }
+}
+function selectAllDays(){
+  // Marca Seg(1) a Sáb(6), desmarca Dom(0)
+  [0,1,2,3,4,5,6].forEach(i=>{
+    const el=document.getElementById('fday-'+i);
+    if(el) el.checked = i !== 0;
+  });
+}
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function closeModalOutside(e){ if(e.target===document.getElementById('modal')) closeModal(); }
+function refreshAdminTab(){
+  const idx=currentUser==='rodrigo'?3:-1;
+  if(currentTab===idx){ const tc=document.getElementById('tc-'+idx); if(tc)tc.innerHTML=buildAdmin(); }
+}
+
+// ── PRINT / WHATSAPP ──────────────────────────────────────────────────
+function buildPrintPreview(){
+  const breads=todayBreads(), stores=['ex','jc','ja'];
+  const now=new Date().toLocaleString('pt-BR');
+  let html=`<div class="print-card"><h3>Pane & Salute — Produção</h3><div class="pmeta">Para ${deliveryDayLabel()} · Gerado ${now}</div>
+    <div class="print-row ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>`;
+  let grand=0;
+  breads.forEach(b=>{
+    const vals=stores.map(s=>parseInt(currentOrders[s]?.[b.id]?.quantity||0));
+    const tot=vals.reduce((a,c)=>a+c,0); grand+=tot;
+    html+=`<div class="print-row"><span class="pname">${escHtml(b.name)}</span>${vals.map(v=>`<span>${v}</span>`).join('')}<span class="ptotal">${tot}</span></div>`;
+  });
+  html+=`<div class="print-row" style="font-weight:500;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"><span>TOTAL GERAL</span><span></span><span></span><span></span><span class="ptotal">${grand}</span></div>`;
+  const obsEX=currentOrders.ex?.[Object.keys(currentOrders.ex||{})[0]]?.obs;
+  const obsJC=currentOrders.jc?.[Object.keys(currentOrders.jc||{})[0]]?.obs;
+  const obsJA=currentOrders.ja?.[Object.keys(currentOrders.ja||{})[0]]?.obs;
+  if(obsEX||obsJC||obsJA){
+    html+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">`;
+    if(obsEX)html+=`<div style="font-size:12px;margin-bottom:4px"><strong>EX:</strong> ${escHtml(obsEX)}</div>`;
+    if(obsJC)html+=`<div style="font-size:12px;margin-bottom:4px"><strong>JC:</strong> ${escHtml(obsJC)}</div>`;
+    if(obsJA)html+=`<div style="font-size:12px"><strong>JA:</strong> ${escHtml(obsJA)}</div>`;
+    html+='</div>';
+  }
+  const pjSv=currentOrders['pj']||{}, pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
+  if(pjIt.length){
+    const fr=Object.values(pjSv)[0]||{};
+    html+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)"><div style="font-size:12px;font-weight:500;margin-bottom:6px">PJ — ${escHtml(fr.pj_client||'—')} · ${fr.pj_delivery_date||'—'}</div>`;
+    pjIt.forEach(p=>{ html+=`<div style="font-size:12px">${escHtml(p.name)}: ${pjSv[p.id]?.quantity||0}</div>`; });
+    if(fr.obs)html+=`<div style="font-size:12px;margin-top:4px;color:var(--text-muted)">Obs: ${escHtml(fr.obs)}</div>`;
+    html+='</div>';
+  }
+  html+='</div>'; return html;
+}
+
+async function renderGeolar(dateKey){
+  if(!dateKey) dateKey = yesterdayKey(); // produção do dia = pedidos de ontem
+  showLoading('Carregando produção...');
+  try{
+    await loadBreads();
+    await loadTodayOrders(dateKey);
+  } catch(e){ console.error(e); }
+  hideLoading();
+  // seletor de data para o Geolar ver datas anteriores
+  const dateInput = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
+    <span style="font-size:12px;color:var(--text-muted)">Data dos pedidos:</span>
+    <input type="date" id="geolar-date" value="${dateKey}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="renderGeolar(this.value)">
+  </div>`;
+  document.getElementById('geolar-content').innerHTML=dateInput+buildPrintPreview()+`<div class="btn-row">
+    <button class="btn-action primary" onclick="window.print()">Imprimir</button>
+    <button class="btn-action" onclick="generateWhatsApp()">Copiar texto</button>
+    <button class="btn-action" onclick="renderGeolar(document.getElementById('geolar-date').value)">↻ Atualizar</button>
+  </div>`;
+}
+
+function generateWhatsApp(){
+  const breads=todayBreads(), stores=['ex','jc','ja'];
+  let lines=[`*Pane & Salute — Produção ${deliveryDayLabel()}*\n`];
+  breads.forEach(b=>{
+    const vals=stores.map(s=>parseInt(currentOrders[s]?.[b.id]?.quantity||0));
+    if(vals.reduce((a,c)=>a+c,0)>0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`);
+  });
+  const oEX=currentOrders.ex?.[Object.keys(currentOrders.ex||{})[0]]?.obs;
+  const oJC=currentOrders.jc?.[Object.keys(currentOrders.jc||{})[0]]?.obs;
+  const oJA=currentOrders.ja?.[Object.keys(currentOrders.ja||{})[0]]?.obs;
+  if(oEX||oJC||oJA){ lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`); }
+  const pjSv=currentOrders['pj']||{}, pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
+  if(pjIt.length){
+    const fr=Object.values(pjSv)[0]||{};
+    lines.push(''); lines.push(`*PJ — ${fr.pj_client||'—'} 
