@@ -170,7 +170,7 @@ h1,h2{font-family:'Playfair Display',serif}
 </head>
 <body>
 <div id="app">
- 
+
 <div id="screen-login">
   <div class="login-page">
     <div class="login-logo">
@@ -198,7 +198,7 @@ h1,h2{font-family:'Playfair Display',serif}
     </div>
   </div>
 </div>
- 
+
 <div id="screen-main" style="display:none">
   <div class="topbar">
     <div class="topbar-logo">Pane & Salute <span class="sync-dot" id="sync-dot"></span></div>
@@ -209,7 +209,7 @@ h1,h2{font-family:'Playfair Display',serif}
   <div class="nav-tabs" id="nav-tabs"></div>
   <div id="tab-contents"></div>
 </div>
- 
+
 <div id="screen-geolar" style="display:none">
   <div class="topbar">
     <div class="topbar-logo">Pane & Salute</div>
@@ -218,29 +218,29 @@ h1,h2{font-family:'Playfair Display',serif}
   </div>
   <div style="padding:16px" id="geolar-content"></div>
 </div>
- 
+
 </div>
- 
+
 <div id="modal" class="modal-overlay" onclick="closeModalOutside(event)">
   <div class="modal-sheet" id="modal-sheet">
     <div class="modal-handle"></div>
     <div id="modal-body"></div>
   </div>
 </div>
- 
+
 <div id="loading" class="loading-overlay" style="display:none">
   <div class="spinner"></div>
   <p id="loading-msg">Carregando...</p>
 </div>
- 
+
 <div id="toast" class="toast"></div>
 <div id="bottom-bar-container"></div>
- 
+
 <script>
 // ── CONFIG SUPABASE ───────────────────────────────────────────────────
 const SB_URL = 'https://gohluceldchoitihrimw.supabase.co';
 const SB_KEY = 'sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ';
- 
+
 const sb = {
   async get(table, params=''){
     const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{
@@ -278,52 +278,58 @@ const sb = {
     if(!r.ok) throw new Error(await r.text());
   }
 };
- 
+
 // ── ESTADO ────────────────────────────────────────────────────────────
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+// ── HORÁRIO BRASÍLIA (UTC-3) — sempre fixo independente do dispositivo ──
+function nowBrasilia(){
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc - 3 * 3600000);
+}
+
 // Índice do dia de venda selecionado pelo usuário (1=Seg … 6=Sáb)
-// Calculado automaticamente ao fazer login, mas o usuário pode alterar
 const DELIVERY_MAP = {1:3,2:4,3:5,4:6,5:1,6:1,0:1};
-let DELIVERY_IDX = DELIVERY_MAP[new Date().getDay()] ?? 1;
- 
+let DELIVERY_IDX = DELIVERY_MAP[nowBrasilia().getDay()] ?? 1;
+
 let BREADS = [];
 let currentUser = null, currentTab = 0, isLocked = false;
+let selectedOrderDate = new Date().toISOString().slice(0,10); // data do pedido atual
+const NOTIFY_WHATSAPP = '5554999101524'; // número do Rodrigo para notificações
 let editingBreadId = null, editingPJId = null;
-let currentOrders = {}; // { store: { bread_id: {qty, obs, ...} } }
- 
+let currentOrders = {};
+
 // ── UTILS ─────────────────────────────────────────────────────────────
-function todayKey(){ return new Date().toISOString().slice(0,10); }
+function todayKey(){
+  const d = nowBrasilia();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function yesterdayKey(){
-  const d=new Date(); d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);
+  const d = nowBrasilia(); d.setDate(d.getDate()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function dateLabel(dateStr){
   const d=new Date(dateStr+'T12:00:00');
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function nextDayLabel(){
-  // usado no prazo/deadline — produção de amanhã
-  const d=new Date(); d.setDate(d.getDate()+1);
+  const d = nowBrasilia(); d.setDate(d.getDate()+1);
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
 function deliveryDayLabel(){
-  // dia de venda correto baseado no DELIVERY_MAP
-  const todayIdx = new Date().getDay();
+  const todayIdx = nowBrasilia().getDay();
   const delivIdx = DELIVERY_MAP[todayIdx] ?? 1;
-  const d = new Date();
-  // avança até o próximo dia da semana com índice delivIdx
+  const d = nowBrasilia();
   let daysAhead = (delivIdx - todayIdx + 7) % 7;
   if(daysAhead === 0) daysAhead = 7;
   d.setDate(d.getDate() + daysAhead);
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
 }
-function checkDeadline(){ const h=new Date().getHours(); return h>=0&&h<4; }
-function getHoursLeft(){
-  const now=new Date(),h=now.getHours();
-  if(h<4) return 0;
-  const t=new Date(now); t.setDate(t.getDate()+1); t.setHours(4,0,0,0);
-  return Math.floor((t-now)/3600000);
+function checkDeadline(){
+  return false; // sem limitação de horário — sempre aberto
 }
+function getHoursLeft(){ return 99; } // sem limitação
 function parseDays(d){if(Array.isArray(d))return d.map(Number);if(typeof d==="string")return d.replace(/[{}\s]/g,"").split(",").map(Number);return [];}
 function todayBreads(){return BREADS.filter(b=>!b.is_pj&&b.active&&parseDays(b.days).includes(DELIVERY_IDX));}
 function pjBreads(){ return BREADS.filter(b=>b.is_pj&&b.active); }
@@ -340,11 +346,47 @@ function showLoading(msg='Carregando...'){
   document.getElementById('loading-msg').textContent=msg;
 }
 function hideLoading(){ document.getElementById('loading').style.display='none'; }
+async function sendWhatsAppNotification(store, rows, date){
+  const TELEGRAM_TOKEN = '8783234956:AAGhATqrcEWxV9jwZ26ct03mGY9JE9-FSog';
+  const TELEGRAM_CHAT_ID = '688149907';
+
+  const storeLabel = {jc:'JC',ja:'JA',ex:'EX',pj:'PJ'}[store]||store.toUpperCase();
+  const userName = {marselle:'Marselle',elis:'Elis',geolar:'Geolar'}[currentUser]||currentUser;
+  const dateLabel2 = new Date(date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+  const delivLabel = DAYS_PT[DELIVERY_IDX];
+  const items = rows.filter(r=>r.quantity>0);
+  if(!items.length) return;
+
+  let msg = `🍞 *Pane & Salute — Novo pedido*\n`;
+  msg += `👤 ${userName} · Loja ${storeLabel}\n`;
+  msg += `📅 ${dateLabel2} · Pães de ${delivLabel}\n\n`;
+  items.forEach(r=>{
+    const bread = BREADS.find(b=>b.id===r.bread_id);
+    if(bread) msg += `• ${bread.name}: *${r.quantity}*\n`;
+  });
+  const obs = document.getElementById('obs-'+store)?.value;
+  if(obs) msg += `\n📝 Obs: ${obs}`;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: msg,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch(e) {
+    console.error('Erro ao enviar notificação Telegram:', e);
+  }
+}
+
 function showToast(msg,duration=2600){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),duration);
 }
- 
+
 // ── LOGIN ─────────────────────────────────────────────────────────────
 async function login(user){
   currentUser=user;
@@ -364,14 +406,14 @@ function logout(){
   showScreen('screen-login');
   document.getElementById('bottom-bar-container').innerHTML='';
 }
- 
+
 // ── SUPABASE OPERATIONS ───────────────────────────────────────────────
 async function loadBreads(){
   BREADS = await sb.get('breads','order=name.asc');
 }
- 
+
 let currentOrderDate = null; // data que está carregada em currentOrders
- 
+
 async function loadTodayOrders(dateKey){
   if(!dateKey) dateKey = todayKey();
   currentOrderDate = dateKey;
@@ -389,34 +431,34 @@ async function loadTodayOrders(dateKey){
     setSyncDot('error'); console.error(e);
   }
 }
- 
+
 async function saveOrder(store){
   const items = store==='pj' ? pjBreads() : todayBreads();
-  const date = todayKey();
+  const date = selectedOrderDate || todayKey();
   const rows = [];
- 
+
   items.forEach(b=>{
     const inp = document.getElementById('qty-'+store+'-'+b.id);
     const qty = parseInt(inp?.value)||0;
     // id determinístico = store+bread_id+date garante upsert correto
     rows.push({store, bread_id:b.id, quantity:qty, order_date:date});
   });
- 
+
   const obsEl = document.getElementById('obs-'+store);
   const obs = obsEl?.value||'';
   // attach obs to first row or standalone
   rows.forEach(r=>r.obs=obs);
- 
+
   if(store==='pj'){
     const client = document.getElementById('pj-client')?.value||'';
     const delDate = document.getElementById('pj-date')?.value||null;
     rows.forEach(r=>{ r.pj_client=client; r.pj_delivery_date=delDate||null; });
   }
- 
+
   const btn = document.querySelector('.btn-save');
   if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
   setSyncDot('syncing');
- 
+
   try{
     await sb.upsert('orders', rows, 'store,bread_id,order_date');
     // update local cache
@@ -424,6 +466,10 @@ async function saveOrder(store){
     rows.forEach(r=>{ currentOrders[store][r.bread_id]=r; });
     setSyncDot('');
     showToast('Pedido salvo!');
+    // Notificar Rodrigo via WhatsApp
+    if(currentUser !== 'rodrigo'){
+      sendWhatsAppNotification(store, rows, date);
+    }
   } catch(e){
     setSyncDot('error'); showToast('Erro ao salvar. Tente novamente.');
     console.error(e);
@@ -431,7 +477,7 @@ async function saveOrder(store){
     if(btn){ btn.disabled=false; btn.textContent='Salvar pedido'; }
   }
 }
- 
+
 // ── RENDER MAIN ───────────────────────────────────────────────────────
 function renderMain(){
   isLocked = checkDeadline();
@@ -439,16 +485,14 @@ function renderMain(){
   const bm={rodrigo:['tb-amber','Rodrigo'],marselle:['tb-teal','Marselle · EX'],elis:['tb-coral','Elis · PJ']}[u]||['tb-gray',u];
   const badge=document.getElementById('user-badge');
   badge.className='topbar-badge '+bm[0]; badge.textContent=bm[1];
- 
-  const dl=document.getElementById('deadline-bar'), h=getHoursLeft();
-  if(isLocked) dl.innerHTML=`<div class="deadline dl-locked"><span class="deadline-dot"></span>Pedidos encerrados — reabrem às 04h00</div>`;
-  else if(h<=2) dl.innerHTML=`<div class="deadline dl-warn"><span class="deadline-dot"></span>Menos de ${h}h para o prazo — encerra às 04h00</div>`;
-  else dl.innerHTML=`<div class="deadline dl-ok"><span class="deadline-dot"></span>Prazo aberto · produção de ${nextDayLabel()} · encerra às 04h00</div>`;
- 
+
+  const dl=document.getElementById('deadline-bar');
+  dl.innerHTML=`<div class="deadline dl-ok"><span class="deadline-dot"></span>Pedidos abertos · Pães de ${deliveryDayLabel()}</div>`;
+
   const tabs=document.getElementById('nav-tabs'), contents=document.getElementById('tab-contents');
   tabs.innerHTML=''; contents.innerHTML='';
   document.getElementById('bottom-bar-container').innerHTML='';
- 
+
   let tabDefs=[];
   if(u==='rodrigo') tabDefs=[
     {label:'JC',fn:()=>buildOrderForm('jc')},
@@ -461,7 +505,7 @@ function renderMain(){
     {label:'Pedido PJ',fn:()=>buildPJForm()},
     {label:'Histórico',fn:()=>buildReport('pj')},
   ];
- 
+
   tabDefs.forEach((t,i)=>{
     const btn=document.createElement('button');
     btn.className='nav-tab'+(i===0?' active':''); btn.textContent=t.label;
@@ -472,7 +516,7 @@ function renderMain(){
   });
   currentTab=0; renderBottomBar(tabDefs);
 }
- 
+
 function switchTab(i,tabDefs){
   currentTab=i;
   document.querySelectorAll('.nav-tab').forEach((t,idx)=>t.classList.toggle('active',idx===i));
@@ -480,7 +524,7 @@ function switchTab(i,tabDefs){
   document.getElementById('tc-'+i).innerHTML=tabDefs[i].fn();
   renderBottomBar(tabDefs);
 }
- 
+
 function refreshCurrentTab(){
   const adminIdx = currentUser==='rodrigo'?3:-1;
   const tc=document.getElementById('tc-'+currentTab);
@@ -497,7 +541,7 @@ function refreshCurrentTab(){
     else tc.innerHTML=buildReport('pj');
   }
 }
- 
+
 function renderBottomBar(tabDefs){
   const c=document.getElementById('bottom-bar-container'), u=currentUser;
   if(u==='rodrigo'){
@@ -512,28 +556,43 @@ function bbHtml(store){ if(isLocked)return ''; return `<div class="bottom-bar"><
 function bbHtmlPJ(){ return `<div class="bottom-bar"><div class="total-info">Total: <strong id="bb-total">${calcTotal('pj')}</strong> itens</div><button class="btn-save" onclick="saveOrder('pj')">Salvar pedido PJ</button></div>`; }
 function calcTotal(store){ const items=store==='pj'?pjBreads():todayBreads(); return items.reduce((a,b)=>{ const el=document.getElementById('qty-'+store+'-'+b.id); return a+(parseInt(el?.value)||0); },0); }
 function updateBBTotal(store){ const el=document.getElementById('bb-total'); if(el)el.textContent=calcTotal(store); }
- 
+
 // ── ORDER FORM ────────────────────────────────────────────────────────
+function changeOrderDate(dateStr, store){
+  selectedOrderDate = dateStr;
+  // recarregar pedidos desta data do banco
+  loadTodayOrders(dateStr).then(()=>{
+    const tc=document.getElementById('tc-'+currentTab);
+    if(tc) tc.innerHTML=buildOrderForm(store);
+  });
+}
+
 function changeDeliveryDay(idx, store){
   DELIVERY_IDX = parseInt(idx);
   // re-renderiza o form sem perder o store
   const tc = document.getElementById('tc-'+currentTab);
   if(tc) tc.innerHTML = buildOrderForm(store);
 }
- 
+
 function buildOrderForm(store){
   const breads=todayBreads();
   const saved=currentOrders[store]||{};
   const lbl={jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição'}[store]||store.toUpperCase();
- 
-  // ── Seletor de dia de venda ──
-  let html=`<div style="margin-bottom:14px">
-    <div class="section-label" style="margin-bottom:8px">Pães para qual dia?</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">`;
+
+  // ── Seletor: data do pedido + dia de venda ──
+  let html=`<div style="margin-bottom:16px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">Data do pedido:</span>
+      <input type="date" id="order-date-input" value="${selectedOrderDate}"
+        class="field-input" style="width:auto;padding:6px 10px;font-size:13px;flex:1;min-width:140px"
+        onchange="changeOrderDate(this.value,'${store}')">
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase">Pães para qual dia da semana?</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">`;
   [1,2,3,4,5,6].forEach(i=>{
     const active = i===DELIVERY_IDX;
     html+=`<button onclick="changeDeliveryDay(${i},'${store}')"
-      style="padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;
+      style="padding:6px 12px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;
       border:1px solid ${active?'var(--amber-border)':'var(--border)'};
       background:${active?'var(--amber-bg)':'var(--surface)'};
       color:${active?'var(--amber)':'var(--text-muted)'}">
@@ -541,7 +600,7 @@ function buildOrderForm(store){
     </button>`;
   });
   html+=`</div></div>`;
- 
+
   html+=`<div class="section-label">${DAYS_PT[DELIVERY_IDX]} — ${lbl}</div>`;
   if(breads.length===0){ html+='<div class="empty-report">Nenhum pão disponível para '+DAYS_PT[DELIVERY_IDX]+'.</div>'; return html; }
   html+='<div class="bread-list">';
@@ -557,10 +616,10 @@ function buildOrderForm(store){
   });
   html+=`</div><div style="margin-top:14px"><div class="section-label" style="margin-top:0">Observações</div>
   <textarea class="obs-area" id="obs-${store}" placeholder="Ex: reforçar baguete, pegar croissant do congelado..."${isLocked?' disabled':''}>${escHtml((saved[Object.keys(saved)[0]]?.obs)||'')}</textarea></div>`;
-  if(isLocked) html+=`<div style="margin-top:12px;padding:10px 14px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Pedidos encerrados. Reabrem às 04h00.</div>`;
+
   return html;
 }
- 
+
 function buildPJForm(){
   const saved=currentOrders['pj']||{};
   const firstRow=Object.values(saved)[0]||{};
@@ -581,7 +640,7 @@ function buildPJForm(){
   <textarea class="obs-area" id="obs-pj" placeholder="Embalagem, instruções...">${escHtml(firstRow.obs||'')}</textarea></div>`;
   return html;
 }
- 
+
 function changeQty(store,id,delta){
   const inp=document.getElementById('qty-'+store+'-'+id); if(!inp)return;
   inp.value=Math.max(0,(parseInt(inp.value)||0)+delta); onQtyChange(store,id);
@@ -591,21 +650,21 @@ function onQtyChange(store,id){
   if(inp&&row) row.classList.toggle('has-qty',parseInt(inp.value)>0);
   updateBBTotal(store);
 }
- 
+
 // ── REPORT ────────────────────────────────────────────────────────────
 function buildReport(storeFilter){
   // storeFilter: undefined = todos (rodrigo), 'ex' = só EX (marselle), 'pj' = só PJ (elis)
   const breads=BREADS.filter(b=>!b.is_pj&&b.active);
   const dateKey=currentOrderDate||todayKey();
   const isToday=dateKey===todayKey();
- 
+
   // seletor de data
   let html=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
     <span style="font-size:12px;color:var(--text-muted)">Data:</span>
     <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value,'${storeFilter||''}')">
     ${isToday?'<span style="font-size:11px;color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-border);padding:2px 8px;border-radius:10px">hoje</span>':''}
   </div>`;
- 
+
   // ── visão PJ (Elis) ──────────────────────────────────────────────
   if(storeFilter==='pj'){
     const pjSv=currentOrders['pj']||{};
@@ -627,7 +686,7 @@ function buildReport(storeFilter){
     }
     return html;
   }
- 
+
   // ── visão loja única (Marselle = 'ex') ───────────────────────────
   if(storeFilter && storeFilter!=='pj'){
     const sv=currentOrders[storeFilter]||{};
@@ -654,7 +713,7 @@ function buildReport(storeFilter){
     }
     return html;
   }
- 
+
   // ── visão consolidada (Rodrigo) ──────────────────────────────────
   const stores=['ex','jc','ja'];
   let tots={ex:0,jc:0,ja:0};
@@ -691,7 +750,7 @@ function buildReport(storeFilter){
   }
   return html;
 }
- 
+
 async function duplicateOrders(storeFilter){
   // Copia os pedidos da data atual em currentOrders para hoje
   const stores = storeFilter ? [storeFilter] : ['ex','jc','ja','pj'];
@@ -718,13 +777,13 @@ async function duplicateOrders(storeFilter){
     document.querySelectorAll('.nav-tab')[tabIdx]?.click();
   } catch(e){ setSyncDot('error'); showToast('Erro ao duplicar.'); console.error(e); }
 }
- 
+
 async function changeReportDate(dateKey, storeFilter){
   await loadTodayOrders(dateKey);
   const tc=document.getElementById('tc-'+currentTab);
   if(tc) tc.innerHTML=buildReport(storeFilter||undefined);
 }
- 
+
 // ── ADMIN ─────────────────────────────────────────────────────────────
 function buildAdmin(){
   const regular=BREADS.filter(b=>!b.is_pj), pj=BREADS.filter(b=>b.is_pj);
@@ -759,7 +818,7 @@ function buildAdmin(){
   </div>`;
   return html;
 }
- 
+
 // ── TOGGLE BREAD ──────────────────────────────────────────────────────
 async function toggleBread(id){
   const b=BREADS.find(x=>x.id===id); if(!b)return;
@@ -769,7 +828,7 @@ async function toggleBread(id){
   try{ await sb.patch('breads',{active:b.active},{id}); showToast(b.active?b.name+' ativado':b.name+' desativado'); }
   catch(e){ b.active=!b.active; showToast('Erro ao salvar.'); }
 }
- 
+
 // ── MODAL BREAD ───────────────────────────────────────────────────────
 function openNewBreadModal(isPJ){
   editingBreadId=null;
@@ -844,7 +903,7 @@ function refreshAdminTab(){
   const idx=currentUser==='rodrigo'?3:-1;
   if(currentTab===idx){ const tc=document.getElementById('tc-'+idx); if(tc)tc.innerHTML=buildAdmin(); }
 }
- 
+
 // ── PRINT / WHATSAPP ──────────────────────────────────────────────────
 function buildPrintPreview(){
   const breads=todayBreads(), stores=['ex','jc','ja'];
@@ -878,7 +937,7 @@ function buildPrintPreview(){
   }
   html+='</div>'; return html;
 }
- 
+
 async function renderGeolar(dateKey){
   if(!dateKey) dateKey = yesterdayKey(); // produção do dia = pedidos de ontem
   showLoading('Carregando produção...');
@@ -898,7 +957,7 @@ async function renderGeolar(dateKey){
     <button class="btn-action" onclick="renderGeolar(document.getElementById('geolar-date').value)">↻ Atualizar</button>
   </div>`;
 }
- 
+
 function generateWhatsApp(){
   const breads=todayBreads(), stores=['ex','jc','ja'];
   let lines=[`*Pane & Salute — Produção ${deliveryDayLabel()}*\n`];
@@ -913,14 +972,4 @@ function generateWhatsApp(){
   const pjSv=currentOrders['pj']||{}, pjIt=pjBreads().filter(p=>(pjSv[p.id]?.quantity||0)>0);
   if(pjIt.length){
     const fr=Object.values(pjSv)[0]||{};
-    lines.push(''); lines.push(`*PJ — ${fr.pj_client||'—'} · ${fr.pj_delivery_date||'—'}*`);
-    pjIt.forEach(p=>lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`));
-  }
-  const text=lines.join('\n');
-  navigator.clipboard.writeText(text).then(()=>showToast('Copiado! Cole no WhatsApp.')).catch(()=>prompt('Copie o texto:',text));
-}
- 
-showScreen('screen-login');
-</script>
-</body>
-</html>
+    lines.push(''); lines.push(`*PJ — ${fr.pj_client||'—'} 
