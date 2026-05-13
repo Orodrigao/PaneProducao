@@ -454,6 +454,9 @@ async function saveOrder(store){
   setSyncDot('syncing');
  
   try{
+    // Apaga todos os pedidos anteriores da loja nesta data antes de salvar
+    // Garante que o banco sempre reflita o último save completo
+    await sb.del('orders', {store, order_date: date});
     await sb.upsert('orders', rows, 'store,bread_id,order_date');
     // update local cache
     if(!currentOrders[store]) currentOrders[store]={};
