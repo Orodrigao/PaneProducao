@@ -284,7 +284,7 @@ const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 // Índice do dia de venda selecionado pelo usuário (1=Seg … 6=Sáb)
 // Calculado automaticamente ao fazer login, mas o usuário pode alterar
 const DELIVERY_MAP = {1:2,2:3,3:4,4:6,5:6,6:1,0:1};
-let DELIVERY_IDX = DELIVERY_MAP[new Date().getDay()] ?? 1;
+let DELIVERY_IDX = DELIVERY_MAP[nowBrasilia().getDay()] ?? 1;
  
 let BREADS = [];
 let currentUser = null, currentTab = 0, isLocked = false;
@@ -292,10 +292,19 @@ let editingBreadId = null, editingPJId = null;
 let currentOrders = {}; // { store: { bread_id: {qty, obs, ...} } }
  
 // ── UTILS ─────────────────────────────────────────────────────────────
-function todayKey(){ return new Date().toISOString().slice(0,10); }
+function nowBrasilia(){
+  // UTC-3 fixo (Brasília, sem horário de verão)
+  const now = new Date();
+  const offset = -3 * 60 - now.getTimezoneOffset();
+  return new Date(now.getTime() + offset * 60000);
+}
+function todayKey(){
+  const d = nowBrasilia();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function yesterdayKey(){
-  const d=new Date(); d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);
+  const d = nowBrasilia(); d.setDate(d.getDate()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function dateLabel(dateStr){
   const d=new Date(dateStr+'T12:00:00');
