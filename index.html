@@ -306,6 +306,10 @@ function yesterdayKey(){
   const d = nowBrasilia(); d.setDate(d.getDate()-1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+function nextDayKey(){
+  const d = nowBrasilia(); d.setDate(d.getDate()+1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function dateLabel(dateStr){
   const d=new Date(dateStr+'T12:00:00');
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
@@ -389,11 +393,15 @@ async function login(user){
     await loadBreads();
     if(user==='geolar'){ hideLoading(); showScreen('screen-geolar'); await renderGeolar(); return; }
     hideLoading(); showScreen('screen-main'); renderMain();
-    await loadTodayOrders();
-    // Se hoje está vazio, carrega ontem automaticamente
+    // Carrega pedidos de amanhã (data de produção) — fallback hoje e ontem
+    await loadTodayOrders(nextDayKey());
     const storeKey = {marselle:'ex', elis:'pj', rodrigo:'jc'}[user] || 'jc';
-    const todayHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
-    if(!todayHasOrders){ await loadTodayOrders(yesterdayKey()); }
+    const nextHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
+    if(!nextHasOrders){
+      await loadTodayOrders(todayKey());
+      const todayHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
+      if(!todayHasOrders){ await loadTodayOrders(yesterdayKey()); }
+    }
   } catch(e){
     hideLoading(); showToast('Erro de conexão. Tente novamente.');
     console.error(e);
@@ -432,7 +440,7 @@ async function loadTodayOrders(dateKey){
  
 async function saveOrder(store){
   const items = store==='pj' ? pjBreads() : todayBreads();
-  const date = todayKey();
+  const date = nextDayKey(); // salva como data de produção (amanhã)
   const rows = [];
  
   items.forEach(b=>{
@@ -924,7 +932,7 @@ function buildPrintPreview(){
 }
  
 async function renderGeolar(dateKey){
-  if(!dateKey) dateKey = yesterdayKey(); // produção do dia = pedidos de ontem
+  if(!dateKey) dateKey = todayKey(); // pedidos salvos como data de produção = hoje
   showLoading('Carregando produção...');
   try{
     await loadBreads();
