@@ -642,7 +642,7 @@ function buildReport(storeFilter){
   // seletor de data
   let html=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
     <span style="font-size:12px;color:var(--text-muted)">Data:</span>
-    <input type="date" id="report-date" value="${dateKey}" max="${todayKey()}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value,'${storeFilter||''}')">
+    <input type="date" id="report-date" value="${dateKey}" class="field-input" style="width:auto;padding:6px 10px;font-size:13px" onchange="changeReportDate(this.value,'${storeFilter||''}')">
     ${isToday?'<span style="font-size:11px;color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-border);padding:2px 8px;border-radius:10px">hoje</span>':''}
   </div>`;
  
