@@ -298,15 +298,58 @@ async function loadProducts(){
   return PRODUCTS;
 }
 
+async function loadTodayBreads(){
+  // Busca pães distintos com pedido para hoje (qualquer loja, qty > 0)
+  const date = todayKey();
+  const rows = await sb.get('orders', `order_date=eq.${date}&quantity=gt.0&select=bread_id,breads(id,name,is_pj)`);
+  const seen = new Set();
+  const breads = [];
+  rows.forEach(r => {
+    if(r.breads && !r.breads.is_pj && !seen.has(r.bread_id)){
+      seen.add(r.bread_id);
+      breads.push({ id: r.bread_id, name: r.breads.name, category: 'Pães do Dia', source: 'bread' });
+    }
+  });
+  breads.sort((a,b) => a.name.localeCompare(b.name));
+  return breads;
+}
+
 function groupByCategory(products){
   const cats={};
   products.forEach(p=>{if(!cats[p.category])cats[p.category]=[];cats[p.category].push(p);});
   return cats;
 }
 
-function renderForm(containerId, mode){
-  const cats=groupByCategory(PRODUCTS);
+function renderForm(containerId, mode, todayBreads=[]){
+  // Pães do dia primeiro, depois os outros produtos por categoria
+  const cats = groupByCategory(PRODUCTS);
   let html=`<div class="section-label">Data: ${todayLabel()} &nbsp;&middot;&nbsp; ${currentPerson}</div>`;
+
+  // Pães do dia no topo
+  if(todayBreads.length > 0){
+    html+=`<div class="category-block"><div class="category-title">🍞 Pães do Dia</div>`;
+    todayBreads.forEach(p=>{
+      const key='bread_'+p.id;
+      const val=currentValues[key]||0;
+      html+=`<div class="product-row">
+        <div class="product-name">${p.name}</div>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty('${key}',-1)">&minus;</button>
+          <input class="qty-input${val>0?' has-value':''}" type="number" min="0" step="0.5"
+            id="qty-${key}" value="${val||''}" placeholder="0"
+            oninput="onQtyInput('${key}',this.value)">
+          <button class="qty-btn" onclick="changeQty('${key}',1)">+</button>
+        </div>
+      </div>`;
+    });
+    html+=`</div>`;
+  } else {
+    html+=`<div class="category-block"><div class="category-title">🍞 Pães do Dia</div>
+      <p style="font-size:13px;color:var(--text-hint);padding:12px 0">Nenhum pão com pedido para hoje.</p>
+    </div>`;
+  }
+
+  // Demais categorias
   Object.entries(cats).forEach(([cat,prods])=>{
     html+=`<div class="category-block"><div class="category-title">${cat}</div>`;
     prods.forEach(p=>{
@@ -355,16 +398,26 @@ function updateSummary(mode){
   else{el.innerHTML=`<strong>${items.length}</strong> ${items.length===1?'produto':'produtos'} &middot; total <strong>${total}</strong> un`;}
 }
 
+let TODAY_BREADS = [];
+
 async function openSobra(){
   showLoading('Carregando produtos...');
-  try{await loadProducts();showScreen('screen-sobra');renderForm('sobra-content','sobra');}
+  try{
+    await Promise.all([loadProducts(), loadTodayBreads().then(b=>TODAY_BREADS=b)]);
+    showScreen('screen-sobra');
+    renderForm('sobra-content','sobra',TODAY_BREADS);
+  }
   catch(e){showToast('Erro ao carregar produtos');console.error(e);}
   finally{hideLoading();}
 }
 
 async function openDescarte(){
   showLoading('Carregando produtos...');
-  try{await loadProducts();showScreen('screen-descarte');renderForm('descarte-content','descarte');}
+  try{
+    await Promise.all([loadProducts(), loadTodayBreads().then(b=>TODAY_BREADS=b)]);
+    showScreen('screen-descarte');
+    renderForm('descarte-content','descarte',TODAY_BREADS);
+  }
   catch(e){showToast('Erro ao carregar produtos');console.error(e);}
   finally{hideLoading();}
 }
@@ -377,13 +430,31 @@ async function saveRegistro(mode){
   const table=mode==='sobra'?'sobras':'descartes';
   const date=todayKey();
   try{
-    await sb.del(table,{record_date:date,responsible:currentPerson});
-    const rows=items.map(([product_id,quantity])=>({record_date:date,responsible:currentPerson,product_id,quantity}));
-    await sb.upsert(table,rows,'record_date,responsible,product_id');
+    // Limpa registros anteriores do dia/pessoa
+    await Promise.all([
+      sb.del(table,{record_date:date,responsible:currentPerson,product_source:'catalog'}),
+      sb.del(table,{record_date:date,responsible:currentPerson,product_source:'bread'})
+    ]);
+
+    // Separa pães (bread_<uuid>) de produtos do catálogo
+    const catalogRows=[], breadRows=[];
+    items.forEach(([key,quantity])=>{
+      if(key.startsWith('bread_')){
+        breadRows.push({record_date:date,responsible:currentPerson,product_id:key.replace('bread_',''),quantity,product_source:'bread'});
+      } else {
+        catalogRows.push({record_date:date,responsible:currentPerson,product_id:key,quantity,product_source:'catalog'});
+      }
+    });
+
+    const saves=[];
+    if(catalogRows.length) saves.push(sb.upsert(table,catalogRows,'record_date,responsible,product_id,product_source'));
+    if(breadRows.length)   saves.push(sb.upsert(table,breadRows,'record_date,responsible,product_id,product_source'));
+    await Promise.all(saves);
+
     const total=items.reduce((a,[,v])=>a+v,0);
     showToast(`✅ Salvo! ${items.length} itens (${total} un)`);
     currentValues={};
-    renderForm(mode+'-content',mode);
+    renderForm(mode+'-content',mode,TODAY_BREADS);
   }catch(e){showToast('❌ Erro ao salvar. Tente novamente.');console.error(e);}
   finally{btn.disabled=false;btn.textContent='Salvar';}
 }
