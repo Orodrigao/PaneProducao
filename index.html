@@ -36,7 +36,7 @@ h1,h2{font-family:'Playfair Display',serif}
 .login-info .name{font-size:14px;font-weight:500}
 .login-info .role{font-size:12px;color:var(--text-muted)}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px}
-.topbar-logo{font-family:'Playfair Display',serif;font-size:18px;font-weight:400;flex:1}
+.topbar-logo{font-family:'Playfair Display',serif;font-size:18px;font-weight:400;flex:1;cursor:pointer;user-select:none}
 .topbar-badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;flex-shrink:0}
 .tb-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border)}
 .tb-teal{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-border)}
@@ -201,7 +201,7 @@ h1,h2{font-family:'Playfair Display',serif}
  
 <div id="screen-main" style="display:none">
   <div class="topbar">
-    <div class="topbar-logo">Pane & Salute <span class="sync-dot" id="sync-dot"></span></div>
+    <div class="topbar-logo" onclick="logout()" title="Voltar ao início">Pane & Salute <span class="sync-dot" id="sync-dot"></span></div>
     <span class="topbar-badge" id="user-badge"></span>
     <button class="btn-logout" onclick="logout()">Sair</button>
   </div>
@@ -212,7 +212,7 @@ h1,h2{font-family:'Playfair Display',serif}
  
 <div id="screen-geolar" style="display:none">
   <div class="topbar">
-    <div class="topbar-logo">Pane & Salute</div>
+    <div class="topbar-logo" onclick="logout()" title="Voltar ao início">Pane & Salute</div>
     <span class="topbar-badge tb-gray">Geolar</span>
     <button class="btn-logout" onclick="logout()">Sair</button>
   </div>
