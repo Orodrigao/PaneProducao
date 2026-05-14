@@ -403,16 +403,9 @@ async function login(user){
     await loadBreads();
     if(user==='geolar'){ hideLoading(); showScreen('screen-geolar'); await renderGeolar(); return; }
     hideLoading(); showScreen('screen-main'); renderMain();
-    // Carrega pedidos pela data de venda do dia — fallback hoje e ontem
+    // Carrega pedidos pela data de entrega desta semana — sem fallback para datas antigas
     const defaultDelivDate = deliveryDateKey(DELIVERY_MAP[nowBrasilia().getDay()]);
     await loadTodayOrders(defaultDelivDate);
-    const storeKey = {marselle:'ex', elis:'pj', rodrigo:'jc'}[user] || 'jc';
-    const delivHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
-    if(!delivHasOrders){
-      await loadTodayOrders(todayKey());
-      const todayHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
-      if(!todayHasOrders){ await loadTodayOrders(yesterdayKey()); }
-    }
   } catch(e){
     hideLoading(); showToast('Erro de conexão. Tente novamente.');
     console.error(e);
