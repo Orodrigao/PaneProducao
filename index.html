@@ -390,6 +390,10 @@ async function login(user){
     if(user==='geolar'){ hideLoading(); showScreen('screen-geolar'); await renderGeolar(); return; }
     hideLoading(); showScreen('screen-main'); renderMain();
     await loadTodayOrders();
+    // Se hoje está vazio, carrega ontem automaticamente
+    const storeKey = {marselle:'ex', elis:'pj', rodrigo:'jc'}[user] || 'jc';
+    const todayHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
+    if(!todayHasOrders){ await loadTodayOrders(yesterdayKey()); }
   } catch(e){
     hideLoading(); showToast('Erro de conexão. Tente novamente.');
     console.error(e);
