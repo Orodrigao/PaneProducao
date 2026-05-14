@@ -310,6 +310,16 @@ function nextDayKey(){
   const d = nowBrasilia(); d.setDate(d.getDate()+1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+// Retorna a data ISO do próximo dia de venda (baseado no DELIVERY_IDX atual ou fornecido)
+function deliveryDateKey(delivIdx){
+  if(delivIdx === undefined) delivIdx = DELIVERY_IDX;
+  const todayIdx = nowBrasilia().getDay();
+  const d = nowBrasilia();
+  let daysAhead = (delivIdx - todayIdx + 7) % 7;
+  if(daysAhead === 0) daysAhead = 7;
+  d.setDate(d.getDate() + daysAhead);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function dateLabel(dateStr){
   const d=new Date(dateStr+'T12:00:00');
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
@@ -393,11 +403,12 @@ async function login(user){
     await loadBreads();
     if(user==='geolar'){ hideLoading(); showScreen('screen-geolar'); await renderGeolar(); return; }
     hideLoading(); showScreen('screen-main'); renderMain();
-    // Carrega pedidos de amanhã (data de produção) — fallback hoje e ontem
-    await loadTodayOrders(nextDayKey());
+    // Carrega pedidos pela data de venda do dia — fallback hoje e ontem
+    const defaultDelivDate = deliveryDateKey(DELIVERY_MAP[nowBrasilia().getDay()]);
+    await loadTodayOrders(defaultDelivDate);
     const storeKey = {marselle:'ex', elis:'pj', rodrigo:'jc'}[user] || 'jc';
-    const nextHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
-    if(!nextHasOrders){
+    const delivHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
+    if(!delivHasOrders){
       await loadTodayOrders(todayKey());
       const todayHasOrders = Object.keys(currentOrders[storeKey]||{}).length > 0;
       if(!todayHasOrders){ await loadTodayOrders(yesterdayKey()); }
@@ -440,7 +451,7 @@ async function loadTodayOrders(dateKey){
  
 async function saveOrder(store){
   const items = store==='pj' ? pjBreads() : todayBreads();
-  const date = nextDayKey(); // salva como data de produção (amanhã)
+  const date = deliveryDateKey(); // salva como data de venda (DELIVERY_IDX)
   const rows = [];
  
   items.forEach(b=>{
@@ -932,7 +943,7 @@ function buildPrintPreview(){
 }
  
 async function renderGeolar(dateKey){
-  if(!dateKey) dateKey = todayKey(); // pedidos salvos como data de produção = hoje
+  if(!dateKey) dateKey = deliveryDateKey(DELIVERY_MAP[nowBrasilia().getDay()]); // data de venda do dia
   showLoading('Carregando produção...');
   try{
     await loadBreads();
