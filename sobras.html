@@ -204,6 +204,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <input class="form-input" id="prod-cat" type="text" placeholder="Ex: Bolos, Cookies, Salg&#225;dos, P&#227;es...">
         <div id="cat-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div class="form-group" style="margin:0">
+          <label>Preço de custo (R$)</label>
+          <input class="form-input" id="prod-cost" type="number" min="0" step="0.01" placeholder="0,00">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Unidade</label>
+          <select class="form-select" id="prod-unit">
+            <option value="un">un (unidade)</option>
+            <option value="kg">kg</option>
+            <option value="g">g</option>
+            <option value="L">L</option>
+            <option value="fatia">fatia</option>
+          </select>
+        </div>
+      </div>
       <div style="display:flex;gap:10px">
         <button class="btn-primary" onclick="saveProduct()" id="prod-save-btn">Adicionar</button>
         <button class="btn-cancel" onclick="cancelEdit()" id="prod-cancel-btn" style="display:none">Cancelar</button>
@@ -314,7 +330,7 @@ function goHome(){
 }
 
 async function loadProducts(){
-  PRODUCTS=await sb.get('products_leftovers','active=eq.true&order=category.asc,sort_order.asc,name.asc');
+  PRODUCTS=await sb.get('products','active=eq.true&order=category.asc,sort_order.asc,name.asc');
   return PRODUCTS;
 }
 
@@ -516,7 +532,7 @@ async function loadRelatorio(){
     const [sobras,descartes,prods]=await Promise.all([
       sb.get('sobras',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
       sb.get('descartes',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
-      sb.get('products_leftovers','select=id,name')
+      sb.get('products','select=id,name')
     ]);
     const prodMap={};prods.forEach(p=>prodMap[p.id]=p.name);
     function getName(row){
@@ -535,13 +551,15 @@ async function loadRelatorio(){
       let html=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:${color};margin:16px 0 8px">${title}</div>`;
       Object.entries(byPerson).forEach(([person,items])=>{
         const total=items.reduce((a,r)=>a+parseFloat(r.quantity),0);
+        const totalVal=items.reduce((a,r)=>{const p=prodMap[r.product_id];return a+(p&&p.cost?parseFloat(r.quantity)*p.cost:0);},0);
         html+=`<div style="margin-bottom:12px">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px">${person} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">(${items.length} itens · ${total} un)</span></div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">${person} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">(${items.length} itens · ${total} un${totalVal>0?' · R$ '+totalVal.toFixed(2):''})</span></div>
           <table style="width:100%;border-collapse:collapse;font-size:13px">
-            ${items.map(r=>`<tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:6px 4px;flex:1">${prodMap[r.product_id]||r.product_id}</td>
-              <td style="padding:6px 4px;text-align:right;font-weight:600;color:${color};width:60px">${r.quantity} un</td>
-            </tr>`).join('')}
+            ${items.map(r=>{const p=prodMap[r.product_id];const val=p&&p.cost?parseFloat(r.quantity)*p.cost:0;return`<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:6px 4px">${p?p.name:r.product_id}</td>
+              <td style="padding:6px 4px;text-align:right;color:var(--text-muted);width:50px">${r.quantity} ${p?p.unit:'un'}</td>
+              <td style="padding:6px 4px;text-align:right;font-weight:600;color:${color};width:70px">${val>0?'R$ '+val.toFixed(2):'-'}</td>
+            </tr>`;}).join('')}
           </table>
         </div>`;
       });
@@ -549,16 +567,20 @@ async function loadRelatorio(){
     }
     const total_sobras=sobras.reduce((a,r)=>a+parseFloat(r.quantity),0);
     const total_descartes=descartes.reduce((a,r)=>a+parseFloat(r.quantity),0);
+    const val_sobras=sobras.reduce((a,r)=>{const p=prodMap[r.product_id];return a+(p&&p.cost?parseFloat(r.quantity)*p.cost:0);},0);
+    const val_descartes=descartes.reduce((a,r)=>{const p=prodMap[r.product_id];return a+(p&&p.cost?parseFloat(r.quantity)*p.cost:0);},0);
     el.innerHTML=`
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div style="flex:1;min-width:120px;background:var(--warning-light);border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px">Sobras</div>
           <div style="font-size:24px;font-weight:700;color:var(--warning)">${total_sobras} un</div>
+          ${val_sobras>0?`<div style="font-size:13px;font-weight:600;color:var(--warning)">R$ ${val_sobras.toFixed(2)}</div>`:''}
           <div style="font-size:11px;color:var(--text-muted)">${sobras.length} registros</div>
         </div>
         <div style="flex:1;min-width:120px;background:var(--danger-light);border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px">Descarte</div>
           <div style="font-size:24px;font-weight:700;color:var(--danger)">${total_descartes} un</div>
+          ${val_descartes>0?`<div style="font-size:13px;font-weight:600;color:var(--danger)">R$ ${val_descartes.toFixed(2)}</div>`:''}
           <div style="font-size:11px;color:var(--text-muted)">${descartes.length} registros</div>
         </div>
       </div>
@@ -575,7 +597,7 @@ async function openAdmin(){
   finally{hideLoading();}
 }
 async function refreshAdminProductList(){
-  const all=await sb.get('products_leftovers','order=category.asc,sort_order.asc,name.asc');
+  const all=await sb.get('products','order=category.asc,sort_order.asc,name.asc');
   const cats=[...new Set(all.map(p=>p.category))];
   const wrap=document.getElementById('cat-suggestions');
   wrap.innerHTML=cats.map(c=>`<button onclick="document.getElementById('prod-cat').value='${c}'" style="padding:4px 10px;border:1px solid var(--border);border-radius:20px;background:var(--surface);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;color:var(--text-muted)">${c}</button>`).join('');
@@ -588,7 +610,8 @@ async function refreshAdminProductList(){
       html+=`<div class="product-list-item">
         <span class="pli-name${p.active?'':' pli-inactive'}">${p.name}</span>
         <span class="pli-cat">${p.category}</span>
-        <button class="btn-edit-sm" onclick="editProduct('${p.id}',\`${p.name}\`,\`${p.category}\`)">Editar</button>
+        ${p.cost_price>0?`<span style="font-size:11px;color:var(--success);font-weight:500">R$ ${parseFloat(p.cost_price).toFixed(2)}</span>`:''}
+        <button class="btn-edit-sm" onclick="editProduct('${p.id}',\`${p.name}\`,\`${p.category}\`,${p.cost_price||0},'${p.unit||'un'}')">Editar</button>
         <button class="toggle-active" onclick="toggleActive('${p.id}',${p.active})">${p.active?'Desativar':'Ativar'}</button>
       </div>`;
     });
@@ -603,10 +626,10 @@ async function saveProduct(){
   showLoading('Salvando...');
   try{
     if(editingProductId){
-      await sb.patch('products_leftovers',{id:editingProductId},{name,category:cat});
+      await sb.patch('products',{id:editingProductId},{name,category:cat});
       showToast('✅ Produto atualizado');cancelEdit();
     }else{
-      await sb.insert('products_leftovers',{name,category:cat,active:true,sort_order:0});
+      await sb.insert('products',{name,category:cat,active:true,sort_order:0});
       showToast('✅ Produto adicionado');
       document.getElementById('prod-name').value='';
       document.getElementById('prod-cat').value='';
@@ -635,7 +658,7 @@ function cancelEdit(){
 }
 async function toggleActive(id,current){
   showLoading('Atualizando...');
-  try{await sb.patch('products_leftovers',{id},{active:!current});await refreshAdminProductList();showToast(current?'Produto desativado':'Produto ativado');}
+  try{await sb.patch('products',{id},{active:!current});await refreshAdminProductList();showToast(current?'Produto desativado':'Produto ativado');}
   catch(e){showToast('❌ Erro');}
   finally{hideLoading();}
 }
