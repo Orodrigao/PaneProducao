@@ -529,14 +529,15 @@ async function loadRelatorio(){
   const el=document.getElementById('relatorio-content');
   el.innerHTML='<div style="color:var(--text-hint);font-size:13px">Carregando...</div>';
   try{
-    const [sobras,descartes,prods]=await Promise.all([
+    const [sobras,descartes,prods,breadsRel]=await Promise.all([
       sb.get('sobras',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
       sb.get('descartes',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
-      sb.get('products','select=id,name')
+      sb.get('products','select=*&active=eq.true'),
+      sb.get('breads','select=*&active=eq.true')
     ]);
     const prodMap={};
     prods.forEach(p=>prodMap[p.id]={name:p.name,cost:parseFloat(p.cost_price)||0,unit:p.unit||'un'});
-    breads.forEach(b=>prodMap[b.id]={name:b.name,cost:parseFloat(b.cost_price)||0,unit:b.unit||'un'});
+    breadsRel.forEach(b=>prodMap[b.id]={name:b.name,cost:parseFloat(b.cost_price)||0,unit:b.unit||'un'});
 
     function buildTable(rows,title,color){
       if(!rows.length) return `<div style="color:var(--text-hint);font-size:12px;margin-bottom:8px">Nenhum registro de ${title.toLowerCase()}.</div>`;
