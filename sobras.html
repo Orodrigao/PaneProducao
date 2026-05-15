@@ -618,26 +618,32 @@ async function refreshAdminProductList(){
 async function saveProduct(){
   const name=document.getElementById('prod-name').value.trim();
   const cat=document.getElementById('prod-cat').value.trim();
+  const cost=parseFloat(document.getElementById('prod-cost').value)||0;
+  const unit=document.getElementById('prod-unit').value||'un';
   if(!name||!cat){showToast('⚠️ Preencha nome e categoria');return;}
   showLoading('Salvando...');
   try{
     if(editingProductId){
-      await sb.patch('products',{id:editingProductId},{name,category:cat});
+      await sb.patch('products',{id:editingProductId},{name,category:cat,cost_price:cost,unit});
       showToast('✅ Produto atualizado');cancelEdit();
     }else{
-      await sb.insert('products',{name,category:cat,active:true,sort_order:0});
+      await sb.post('products',{name,category:cat,cost_price:cost,unit,active:true,sort_order:0});
       showToast('✅ Produto adicionado');
       document.getElementById('prod-name').value='';
       document.getElementById('prod-cat').value='';
+      document.getElementById('prod-cost').value='';
+      document.getElementById('prod-unit').value='un';
     }
     await refreshAdminProductList();
   }catch(e){showToast('❌ Erro ao salvar');console.error(e);}
   finally{hideLoading();}
 }
-function editProduct(id,name,cat){
+function editProduct(id,name,cat,cost,unit){
   editingProductId=id;
   document.getElementById('prod-name').value=name;
   document.getElementById('prod-cat').value=cat;
+  document.getElementById('prod-cost').value=cost||'';
+  document.getElementById('prod-unit').value=unit||'un';
   document.getElementById('admin-form-title').textContent='Editar Produto';
   document.getElementById('prod-save-btn').textContent='Salvar alterações';
   document.getElementById('prod-cancel-btn').style.display='inline-block';
@@ -648,6 +654,8 @@ function cancelEdit(){
   editingProductId=null;
   document.getElementById('prod-name').value='';
   document.getElementById('prod-cat').value='';
+  document.getElementById('prod-cost').value='';
+  document.getElementById('prod-unit').value='un';
   document.getElementById('admin-form-title').textContent='Novo Produto';
   document.getElementById('prod-save-btn').textContent='Adicionar';
   document.getElementById('prod-cancel-btn').style.display='none';
