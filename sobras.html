@@ -299,19 +299,20 @@ async function loadProducts(){
 }
 
 async function loadTodayBreads(){
-  // Busca pães distintos com pedido para hoje (qualquer loja, qty > 0)
-  const date = todayKey();
-  const rows = await sb.get('orders', `order_date=eq.${date}&quantity=gt.0&select=bread_id,breads(id,name,is_pj)`);
-  const seen = new Set();
-  const breads = [];
-  rows.forEach(r => {
-    if(r.breads && !r.breads.is_pj && !seen.has(r.bread_id)){
-      seen.add(r.bread_id);
-      breads.push({ id: r.bread_id, name: r.breads.name, category: 'Pães do Dia', source: 'bread' });
-    }
-  });
-  breads.sort((a,b) => a.name.localeCompare(b.name));
-  return breads;
+  try{
+    const date = todayKey();
+    // Passo 1: pegar bread_ids com pedido hoje
+    const orders = await sb.get('orders', `order_date=eq.${date}&quantity=gt.0&select=bread_id`);
+    if(!orders.length) return [];
+    const ids = [...new Set(orders.map(r=>r.bread_id).filter(Boolean))];
+    if(!ids.length) return [];
+    // Passo 2: buscar detalhes dos pães
+    const rows = await sb.get('breads', `id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`);
+    return rows.map(b => ({ id: b.id, name: b.name, category: 'Pães do Dia', source: 'bread' }));
+  }catch(e){
+    console.warn('loadTodayBreads fallback:', e);
+    return []; // não bloqueia o carregamento dos outros produtos
+  }
 }
 
 function groupByCategory(products){
