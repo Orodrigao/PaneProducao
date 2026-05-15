@@ -650,7 +650,7 @@ async function saveRomaneio(){
       const b=isExtra?null:criarBREADS.find(x=>x.id===pid);
       const price=isExtra?0:(PRICES[pid+'_'+currentDestId]||0);
       const name=isExtra?criarExtraNames[pid]:b?b.name:pid;
-      return{romaneio_id:romId,product_id:isExtra?null:pid,product_source:'bread',product_name:name,qty_sent:qty,unit_price:price,item_status:'pendente'};
+      return{romaneio_id:romId,product_id:isExtra?eid:pid,product_source:isExtra?'extra':'bread',product_name:name,qty_sent:qty,unit_price:price,item_status:'pendente'};
     });
     await sb.post('romaneio_items',itemRows);
     showToast('✅ Romaneio criado!');
