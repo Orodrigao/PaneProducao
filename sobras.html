@@ -185,54 +185,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <span class="topbar-badge tb-admin">Admin</span>
     <button class="btn-logout" onclick="goHome()">Sair</button>
   </div>
-  <!-- Abas -->
-  <div style="display:flex;border-bottom:1px solid var(--border);background:var(--surface);padding:0 16px">
-    <button id="tab-btn-produtos" onclick="switchAdminTab('produtos')" style="padding:12px 16px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">Produtos</button>
-    <button id="tab-btn-relatorio" onclick="switchAdminTab('relatorio')" style="padding:12px 16px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-muted)">Relatório</button>
+  <div style="display:flex;align-items:center;border-bottom:1px solid var(--border);background:var(--surface);padding:0 16px">
+    <span style="padding:12px 16px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:var(--accent)">Relatório de Sobras &amp; Descartes</span>
+    <a href="/produtos" style="margin-left:auto;padding:8px 14px;font-size:12px;color:var(--text-muted);font-family:'Inter',sans-serif;text-decoration:none;border:1px solid var(--border);border-radius:6px">📦 Catálogo de Produtos</a>
   </div>
   <div class="admin-wrap">
-    <!-- ABA PRODUTOS -->
-    <div id="tab-produtos">
-    <div class="admin-section">
-      <h3 id="admin-form-title">Novo Produto</h3>
-      <div class="form-group">
-        <label>Nome do produto</label>
-        <input class="form-input" id="prod-name" type="text" placeholder="Ex: Bolo de Fub&#225;">
-      </div>
-      <div class="form-group">
-        <label>Categoria</label>
-        <input class="form-input" id="prod-cat" type="text" placeholder="Ex: Bolos, Cookies, Salg&#225;dos, P&#227;es...">
-        <div id="cat-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-        <div class="form-group" style="margin:0">
-          <label>Preço de custo (R$)</label>
-          <input class="form-input" id="prod-cost" type="number" min="0" step="0.01" placeholder="0,00">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Unidade</label>
-          <select class="form-select" id="prod-unit">
-            <option value="un">un (unidade)</option>
-            <option value="kg">kg</option>
-            <option value="g">g</option>
-            <option value="L">L</option>
-            <option value="fatia">fatia</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:10px">
-        <button class="btn-primary" onclick="saveProduct()" id="prod-save-btn">Adicionar</button>
-        <button class="btn-cancel" onclick="cancelEdit()" id="prod-cancel-btn" style="display:none">Cancelar</button>
-      </div>
-    </div>
-    <div class="admin-section">
-      <h3>Produtos cadastrados</h3>
-      <div id="admin-product-list">Carregando...</div>
-    </div>
-    </div><!-- fim tab-produtos -->
-
-    <!-- ABA RELATÓRIO -->
-    <div id="tab-relatorio" style="display:none">
+    <div id="tab-relatorio">
       <div class="admin-section">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
           <h3 style="margin:0;flex:1">Registro do dia</h3>
@@ -299,7 +257,7 @@ const sb = {
   }
 };
 
-let currentPerson=null, PRODUCTS=[], currentValues={}, editingProductId=null;
+let currentPerson=null, PRODUCTS=[], currentValues={};
 
 function nowBrasilia(){const n=new Date();const o=-3*60-n.getTimezoneOffset();return new Date(n.getTime()+o*60000);}
 function todayKey(){const d=nowBrasilia();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -511,18 +469,7 @@ function checkAdminPass(){
     document.getElementById('admin-pass-input').focus();
   }
 }
-function switchAdminTab(tab){
-  document.getElementById('tab-produtos').style.display=tab==='produtos'?'block':'none';
-  document.getElementById('tab-relatorio').style.display=tab==='relatorio'?'block':'none';
-  document.getElementById('tab-btn-produtos').style.borderBottomColor=tab==='produtos'?'var(--accent)':'transparent';
-  document.getElementById('tab-btn-produtos').style.color=tab==='produtos'?'var(--accent)':'var(--text-muted)';
-  document.getElementById('tab-btn-relatorio').style.borderBottomColor=tab==='relatorio'?'var(--accent)':'transparent';
-  document.getElementById('tab-btn-relatorio').style.color=tab==='relatorio'?'var(--accent)':'var(--text-muted)';
-  if(tab==='relatorio'){
-    if(!document.getElementById('rel-date').value) document.getElementById('rel-date').value=todayKey();
-    loadRelatorio();
-  }
-}
+
 async function loadRelatorio(){
   const date=document.getElementById('rel-date').value;
   if(!date) return;
@@ -588,84 +535,12 @@ async function loadRelatorio(){
 async function openAdmin(){
   showLoading('Carregando...');
   showScreen('screen-admin');
-  try{await refreshAdminProductList();}
+  if(!document.getElementById('rel-date').value) document.getElementById('rel-date').value=todayKey();
+  try{await loadRelatorio();}
   catch(e){showToast('Erro ao carregar');}
   finally{hideLoading();}
 }
-async function refreshAdminProductList(){
-  const all=await sb.get('products','order=category.asc,sort_order.asc,name.asc');
-  const cats=[...new Set(all.map(p=>p.category))];
-  const wrap=document.getElementById('cat-suggestions');
-  wrap.innerHTML=cats.map(c=>`<button onclick="document.getElementById('prod-cat').value='${c}'" style="padding:4px 10px;border:1px solid var(--border);border-radius:20px;background:var(--surface);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;color:var(--text-muted)">${c}</button>`).join('');
-  const grouped={};
-  all.forEach(p=>{if(!grouped[p.category])grouped[p.category]=[];grouped[p.category].push(p);});
-  let html='';
-  Object.entries(grouped).forEach(([cat,prods])=>{
-    html+=`<div style="margin-bottom:16px"><div class="category-title">${cat}</div>`;
-    prods.forEach(p=>{
-      html+=`<div class="product-list-item">
-        <span class="pli-name${p.active?'':' pli-inactive'}">${p.name}</span>
-        <span class="pli-cat">${p.category}</span>
-        ${p.cost_price>0?`<span style="font-size:11px;color:var(--success);font-weight:500">R$ ${parseFloat(p.cost_price).toFixed(2)}</span>`:''}
-        <button class="btn-edit-sm" onclick="editProduct('${p.id}',\`${p.name}\`,\`${p.category}\`,${p.cost_price||0},'${p.unit||'un'}')">Editar</button>
-        <button class="toggle-active" onclick="toggleActive('${p.id}',${p.active})">${p.active?'Desativar':'Ativar'}</button>
-      </div>`;
-    });
-    html+=`</div>`;
-  });
-  document.getElementById('admin-product-list').innerHTML=html||'<p style="color:var(--text-hint);font-size:13px">Nenhum produto cadastrado.</p>';
-}
-async function saveProduct(){
-  const name=document.getElementById('prod-name').value.trim();
-  const cat=document.getElementById('prod-cat').value.trim();
-  const cost=parseFloat(document.getElementById('prod-cost').value)||0;
-  const unit=document.getElementById('prod-unit').value||'un';
-  if(!name||!cat){showToast('⚠️ Preencha nome e categoria');return;}
-  showLoading('Salvando...');
-  try{
-    if(editingProductId){
-      await sb.patch('products',{id:editingProductId},{name,category:cat,cost_price:cost,unit});
-      showToast('✅ Produto atualizado');cancelEdit();
-    }else{
-      await sb.post('products',{name,category:cat,cost_price:cost,unit,active:true,sort_order:0});
-      showToast('✅ Produto adicionado');
-      document.getElementById('prod-name').value='';
-      document.getElementById('prod-cat').value='';
-      document.getElementById('prod-cost').value='';
-      document.getElementById('prod-unit').value='un';
-    }
-    await refreshAdminProductList();
-  }catch(e){showToast('❌ Erro ao salvar');console.error(e);}
-  finally{hideLoading();}
-}
-function editProduct(id,name,cat,cost,unit){
-  editingProductId=id;
-  document.getElementById('prod-name').value=name;
-  document.getElementById('prod-cat').value=cat;
-  document.getElementById('prod-cost').value=cost||'';
-  document.getElementById('prod-unit').value=unit||'un';
-  document.getElementById('admin-form-title').textContent='Editar Produto';
-  document.getElementById('prod-save-btn').textContent='Salvar alterações';
-  document.getElementById('prod-cancel-btn').style.display='inline-block';
-  document.getElementById('prod-name').focus();
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-function cancelEdit(){
-  editingProductId=null;
-  document.getElementById('prod-name').value='';
-  document.getElementById('prod-cat').value='';
-  document.getElementById('prod-cost').value='';
-  document.getElementById('prod-unit').value='un';
-  document.getElementById('admin-form-title').textContent='Novo Produto';
-  document.getElementById('prod-save-btn').textContent='Adicionar';
-  document.getElementById('prod-cancel-btn').style.display='none';
-}
-async function toggleActive(id,current){
-  showLoading('Atualizando...');
-  try{await sb.patch('products',{id},{active:!current});await refreshAdminProductList();showToast(current?'Produto desativado':'Produto ativado');}
-  catch(e){showToast('❌ Erro');}
-  finally{hideLoading();}
-}
+
 </script>
 </body>
 </html>

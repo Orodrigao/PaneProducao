@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/sobras", "destination": "/sobras.html" },
     { "source": "/romaneio", "destination": "/romaneio.html" },
+    { "source": "/produtos", "destination": "/produtos.html" },
     { "source": "/", "destination": "/index.html" }
   ]
 }

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Pane & Salute — Catálogo de Produtos</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#faf9f7;--surface:#ffffff;--border:#e8e4de;--border-strong:#ccc8c0;
+  --text:#1a1a1a;--text-muted:#6b6560;--text-hint:#aaa49c;
+  --accent:#8b7355;--accent-light:#f0ebe3;--accent-hover:#7a6448;
+  --danger:#c0392b;--danger-light:#fdf0ee;
+  --success:#2d7a4f;--success-light:#edf7f1;
+  --warning:#b07d20;--warning-light:#fdf6e3;
+  --radius:12px;--radius-sm:8px;--radius-xs:5px;
+  --shadow:0 2px 12px rgba(0,0,0,0.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.topbar-logo{font-family:'Playfair Display',serif;font-size:18px;font-weight:400;flex:1;user-select:none}
+.topbar-badge{font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase;background:#e8e4de;color:#6b6560}
+.btn-logout{font-size:12px;padding:5px 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:transparent;cursor:pointer;color:var(--text-muted)}
+
+/* SCREENS */
+.screen{display:none;min-height:100vh}
+.screen.active{display:block}
+
+/* LOGIN */
+.login-wrap{max-width:380px;margin:0 auto;padding:60px 20px}
+.login-logo{text-align:center;margin-bottom:2.5rem}
+.login-logo h1{font-family:'Playfair Display',serif;font-size:32px;font-weight:400;color:var(--text)}
+.login-logo p{font-size:11px;color:var(--text-hint);letter-spacing:3px;text-transform:uppercase;margin-top:6px}
+.login-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:28px;box-shadow:var(--shadow)}
+.login-card h2{font-size:15px;font-weight:500;margin-bottom:18px;color:var(--text-muted)}
+.login-input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'Inter',sans-serif;font-size:14px;background:var(--surface);color:var(--text);margin-bottom:14px}
+.login-input:focus{outline:none;border-color:var(--accent)}
+.btn-login{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-login:hover{background:var(--accent-hover)}
+.login-error{color:var(--danger);font-size:12px;text-align:center;margin-top:10px;min-height:18px}
+
+/* MAIN */
+.main-wrap{max-width:680px;margin:0 auto;padding:16px 16px 60px}
+
+/* TABS */
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface);padding:0 16px;position:sticky;top:57px;z-index:50}
+.tab-btn{padding:12px 18px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-muted);transition:all .15s;white-space:nowrap}
+.tab-btn.active{font-weight:600;border-bottom-color:var(--accent);color:var(--accent)}
+
+/* FORM CARD */
+.form-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.form-card h3{font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text)}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.form-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:'Inter',sans-serif;font-size:14px;background:var(--surface);color:var(--text);transition:border-color .15s}
+.form-input:focus{outline:none;border-color:var(--accent)}
+.form-select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-xs);font-family:'Inter',sans-serif;font-size:14px;background:var(--surface);color:var(--text);cursor:pointer;transition:border-color .15s;-webkit-appearance:none}
+.form-select:focus{outline:none;border-color:var(--accent)}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form-actions{display:flex;gap:10px;margin-top:4px}
+.btn-primary{padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-cancel{padding:10px 16px;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:'Inter',sans-serif;font-size:13px;cursor:pointer;transition:all .15s}
+.btn-cancel:hover{border-color:var(--border-strong);color:var(--text)}
+
+/* CHIPS de categoria */
+.cat-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{padding:4px 10px;border:1px solid var(--border);border-radius:20px;background:var(--surface);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;color:var(--text-muted);transition:all .15s}
+.chip:hover{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+
+/* LISTA DE PRODUTOS */
+.list-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow)}
+.list-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.list-header h3{font-size:14px;font-weight:600;flex:1;margin:0}
+.list-count{font-size:12px;font-weight:400;color:var(--text-muted)}
+.category-block{border-bottom:1px solid var(--border)}
+.category-block:last-child{border-bottom:none}
+.category-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-hint);padding:10px 16px 4px;background:var(--bg)}
+.product-item{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)}
+.product-item:last-child{border-bottom:none}
+.pi-name{flex:1;font-size:14px;font-weight:500;word-break:break-word}
+.pi-name.inactive{color:var(--text-hint);text-decoration:line-through}
+.pi-unit{font-size:11px;color:var(--text-muted);background:var(--bg);padding:2px 7px;border-radius:20px;border:1px solid var(--border);white-space:nowrap}
+.pi-cost{font-size:12px;font-weight:600;color:var(--success);white-space:nowrap;min-width:60px;text-align:right}
+.pi-cost.zero{color:var(--text-hint);font-weight:400}
+.btn-edit-sm{padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--surface);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;color:var(--text-muted);transition:all .15s;white-space:nowrap}
+.btn-edit-sm:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+.btn-toggle{padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--surface);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;color:var(--text-muted);transition:all .15s;white-space:nowrap}
+.btn-toggle:hover{border-color:var(--danger);color:var(--danger);background:var(--danger-light)}
+.btn-toggle.ativar:hover{border-color:var(--success);color:var(--success);background:var(--success-light)}
+
+/* EMPTY */
+.empty{padding:24px 16px;text-align:center;color:var(--text-hint);font-size:13px}
+
+/* LOADING OVERLAY */
+.loading-overlay{position:fixed;inset:0;background:rgba(250,249,247,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9000;opacity:0;pointer-events:none;transition:opacity .2s}
+.loading-overlay.show{opacity:1;pointer-events:all}
+.loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;color:var(--text-muted)}
+
+/* TOAST */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;z-index:9999;opacity:0;transition:all .3s;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ===================== SCREEN: LOGIN ===================== -->
+<div class="screen active" id="screen-login">
+  <div class="login-wrap">
+    <div class="login-logo">
+      <h1>Pane & Salute</h1>
+      <p>Catálogo de Produtos</p>
+    </div>
+    <div class="login-card">
+      <h2>Acesso restrito</h2>
+      <input class="login-input" id="pass-input" type="password" placeholder="Senha de administrador"
+        onkeydown="if(event.key==='Enter')checkPass()">
+      <button class="btn-login" onclick="checkPass()">Entrar</button>
+      <div class="login-error" id="login-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SCREEN: MAIN ===================== -->
+<div class="screen" id="screen-main">
+  <div class="topbar">
+    <div class="topbar-logo">Pane &amp; Salute</div>
+    <span class="topbar-badge">Admin</span>
+    <button class="btn-logout" onclick="doLogout()">Sair</button>
+  </div>
+
+  <!-- ABAS -->
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-btn-produtos" onclick="switchTab('produtos')">Confeitaria &amp; Salgados</button>
+    <button class="tab-btn" id="tab-btn-paes" onclick="switchTab('paes')">Pães</button>
+  </div>
+
+  <div class="main-wrap">
+
+    <!-- =================== ABA: PRODUTOS (confeitaria/catalog) =================== -->
+    <div id="tab-produtos">
+
+      <!-- FORM -->
+      <div class="form-card">
+        <h3 id="prod-form-title">Novo Produto</h3>
+        <div class="form-group">
+          <label>Nome</label>
+          <input class="form-input" id="prod-name" type="text" placeholder="Ex: Bolo de Fubá, Cookie de Chocolate...">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          <input class="form-input" id="prod-cat" type="text" placeholder="Ex: Bolos, Cookies, Salgados, Tortas...">
+          <div class="cat-chips" id="prod-cat-chips"></div>
+        </div>
+        <div class="two-col">
+          <div class="form-group" style="margin:0">
+            <label>Custo (R$)</label>
+            <input class="form-input" id="prod-cost" type="number" min="0" step="0.01" placeholder="0,00">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Unidade</label>
+            <select class="form-select" id="prod-unit">
+              <option value="un">un (unidade)</option>
+              <option value="fatia">fatia</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="L">L</option>
+              <option value="ml">ml</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions" style="margin-top:16px">
+          <button class="btn-primary" onclick="saveProd()" id="prod-save-btn">Adicionar</button>
+          <button class="btn-cancel" onclick="cancelProd()" id="prod-cancel-btn" style="display:none">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- LISTA -->
+      <div class="list-card">
+        <div class="list-header">
+          <h3>Produtos cadastrados</h3>
+          <span class="list-count" id="prod-count"></span>
+        </div>
+        <div id="prod-list"><div class="empty">Carregando...</div></div>
+      </div>
+
+    </div><!-- fim tab-produtos -->
+
+    <!-- =================== ABA: PÃES =================== -->
+    <div id="tab-paes" style="display:none">
+
+      <!-- FORM -->
+      <div class="form-card">
+        <h3 id="pao-form-title">Novo Pão</h3>
+        <div class="form-group">
+          <label>Nome</label>
+          <input class="form-input" id="pao-name" type="text" placeholder="Ex: Baguete Tradicional, Ciabatta...">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          <input class="form-input" id="pao-cat" type="text" placeholder="Ex: Pães Especiais, Integrais, Focaccia...">
+          <div class="cat-chips" id="pao-cat-chips"></div>
+        </div>
+        <div class="two-col">
+          <div class="form-group" style="margin:0">
+            <label>Custo (R$)</label>
+            <input class="form-input" id="pao-cost" type="number" min="0" step="0.01" placeholder="0,00">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Unidade</label>
+            <select class="form-select" id="pao-unit">
+              <option value="un">un (unidade)</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="fatia">fatia</option>
+              <option value="L">L</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions" style="margin-top:16px">
+          <button class="btn-primary" onclick="savePao()" id="pao-save-btn">Adicionar</button>
+          <button class="btn-cancel" onclick="cancelPao()" id="pao-cancel-btn" style="display:none">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- LISTA -->
+      <div class="list-card">
+        <div class="list-header">
+          <h3>Pães cadastrados</h3>
+          <span class="list-count" id="pao-count"></span>
+        </div>
+        <div id="pao-list"><div class="empty">Carregando...</div></div>
+      </div>
+
+    </div><!-- fim tab-paes -->
+
+  </div><!-- main-wrap -->
+</div><!-- screen-main -->
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Carregando...</div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://gohluceldchoitihrimw.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvaGx1Y2VsZGNob2l0aWhyaW13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMDkwMDMsImV4cCI6MjA2MTc4NTAwM30.HGhNtAoRR4IVhH0wTOA4KuUkmNGCg07EHnmxmMB3rKQ';
+const ADMIN_PASS='pane2025';
+
+// Estado
+let editingProdId=null;
+let editingPaoId=null;
+
+// ====== SUPABASE ======
+const sb={
+  headers(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};},
+  async get(table,params=''){
+    const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+  async post(table,data){
+    const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:this.headers(),body:JSON.stringify(data)});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+  async patch(table,filters,data){
+    const qs=Object.entries(filters).map(([k,v])=>`${k}=eq.${v}`).join('&');
+    const r=await fetch(`${SB_URL}/rest/v1/${table}?${qs}`,{method:'PATCH',headers:this.headers(),body:JSON.stringify(data)});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  }
+};
+
+// ====== UI HELPERS ======
+function showLoading(t='Carregando...'){document.getElementById('loading-text').textContent=t;document.getElementById('loading-overlay').classList.add('show');}
+function hideLoading(){document.getElementById('loading-overlay').classList.remove('show');}
+function showToast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+
+// ====== AUTH ======
+function checkPass(){
+  const v=document.getElementById('pass-input').value;
+  const err=document.getElementById('login-error');
+  if(v===ADMIN_PASS){
+    err.textContent='';
+    showScreen('screen-main');
+    loadAll();
+  }else{
+    err.textContent='Senha incorreta. Tente novamente.';
+    document.getElementById('pass-input').value='';
+    document.getElementById('pass-input').focus();
+  }
+}
+function doLogout(){
+  document.getElementById('pass-input').value='';
+  document.getElementById('login-error').textContent='';
+  showScreen('screen-login');
+}
+
+// ====== TABS ======
+function switchTab(tab){
+  ['produtos','paes'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===tab?'block':'none';
+    const btn=document.getElementById('tab-btn-'+t);
+    btn.classList.toggle('active',t===tab);
+  });
+}
+
+// ====== LOAD ALL ======
+async function loadAll(){
+  showLoading('Carregando catálogo...');
+  try{
+    await Promise.all([refreshProdList(),refreshPaoList()]);
+  }catch(e){showToast('Erro ao carregar dados');console.error(e);}
+  finally{hideLoading();}
+}
+
+// ====== PRODUTOS (products table) ======
+let PRODS=[];
+
+async function refreshProdList(){
+  PRODS=await sb.get('products','order=category.asc,sort_order.asc,name.asc');
+  renderProdList();
+  // Atualiza chips de categoria
+  const cats=[...new Set(PRODS.filter(p=>p.active).map(p=>p.category))].sort();
+  document.getElementById('prod-cat-chips').innerHTML=cats.map(c=>`<button class="chip" onclick="document.getElementById('prod-cat').value='${c}'">${c}</button>`).join('');
+  document.getElementById('prod-count').textContent=`${PRODS.filter(p=>p.active).length} ativos`;
+}
+
+function renderProdList(){
+  const grouped={};
+  PRODS.forEach(p=>{if(!grouped[p.category])grouped[p.category]=[];grouped[p.category].push(p);});
+  const cats=Object.keys(grouped).sort();
+  if(!cats.length){document.getElementById('prod-list').innerHTML='<div class="empty">Nenhum produto cadastrado.</div>';return;}
+  let html='';
+  cats.forEach(cat=>{
+    const items=grouped[cat];
+    html+=`<div class="category-block">
+      <div class="category-label">${cat}</div>`;
+    items.forEach(p=>{
+      const cost=parseFloat(p.cost_price)||0;
+      html+=`<div class="product-item">
+        <div class="pi-name${p.active?'':' inactive'}">${p.name}</div>
+        <span class="pi-unit">${p.unit||'un'}</span>
+        <span class="pi-cost${cost>0?'':' zero'}">${cost>0?'R$ '+cost.toFixed(2):'—'}</span>
+        <button class="btn-edit-sm" onclick="editProd('${p.id}',\`${escQ(p.name)}\`,\`${escQ(p.category)}\`,${cost},'${p.unit||'un'}')">Editar</button>
+        <button class="btn-toggle${p.active?'':' ativar'}" onclick="toggleProd('${p.id}',${p.active})">${p.active?'Desativar':'Ativar'}</button>
+      </div>`;
+    });
+    html+=`</div>`;
+  });
+  document.getElementById('prod-list').innerHTML=html;
+}
+
+async function saveProd(){
+  const name=document.getElementById('prod-name').value.trim();
+  const cat=document.getElementById('prod-cat').value.trim();
+  const cost=parseFloat(document.getElementById('prod-cost').value)||0;
+  const unit=document.getElementById('prod-unit').value||'un';
+  if(!name){showToast('⚠️ Informe o nome do produto');return;}
+  if(!cat){showToast('⚠️ Informe a categoria');return;}
+  showLoading('Salvando...');
+  try{
+    if(editingProdId){
+      await sb.patch('products',{id:editingProdId},{name,category:cat,cost_price:cost,unit});
+      showToast('✅ Produto atualizado');
+      cancelProd();
+    }else{
+      await sb.post('products',{name,category:cat,cost_price:cost,unit,active:true,sort_order:0});
+      showToast('✅ Produto adicionado');
+      document.getElementById('prod-name').value='';
+      document.getElementById('prod-cat').value='';
+      document.getElementById('prod-cost').value='';
+      document.getElementById('prod-unit').value='un';
+    }
+    await refreshProdList();
+  }catch(e){showToast('❌ Erro ao salvar produto');console.error(e);}
+  finally{hideLoading();}
+}
+
+function editProd(id,name,cat,cost,unit){
+  editingProdId=id;
+  document.getElementById('prod-name').value=name;
+  document.getElementById('prod-cat').value=cat;
+  document.getElementById('prod-cost').value=cost>0?cost:'';
+  document.getElementById('prod-unit').value=unit;
+  document.getElementById('prod-form-title').textContent='Editar Produto';
+  document.getElementById('prod-save-btn').textContent='Salvar alterações';
+  document.getElementById('prod-cancel-btn').style.display='inline-block';
+  document.getElementById('prod-name').focus();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function cancelProd(){
+  editingProdId=null;
+  document.getElementById('prod-name').value='';
+  document.getElementById('prod-cat').value='';
+  document.getElementById('prod-cost').value='';
+  document.getElementById('prod-unit').value='un';
+  document.getElementById('prod-form-title').textContent='Novo Produto';
+  document.getElementById('prod-save-btn').textContent='Adicionar';
+  document.getElementById('prod-cancel-btn').style.display='none';
+}
+
+async function toggleProd(id,current){
+  showLoading('Atualizando...');
+  try{
+    await sb.patch('products',{id},{active:!current});
+    await refreshProdList();
+    showToast(current?'Produto desativado':'Produto ativado');
+  }catch(e){showToast('❌ Erro ao atualizar');}
+  finally{hideLoading();}
+}
+
+// ====== PÃES (breads table) ======
+let PAES=[];
+
+async function refreshPaoList(){
+  PAES=await sb.get('breads','is_pj=eq.false&order=category.asc,name.asc');
+  renderPaoList();
+  // Chips de categoria
+  const cats=[...new Set(PAES.filter(p=>p.active).map(p=>p.category).filter(Boolean))].sort();
+  document.getElementById('pao-cat-chips').innerHTML=cats.map(c=>`<button class="chip" onclick="document.getElementById('pao-cat').value='${c}'">${c}</button>`).join('');
+  document.getElementById('pao-count').textContent=`${PAES.filter(p=>p.active).length} ativos`;
+}
+
+function renderPaoList(){
+  // Agrupa por categoria (breads pode não ter category)
+  const grouped={};
+  PAES.forEach(p=>{
+    const cat=p.category||'Sem categoria';
+    if(!grouped[cat])grouped[cat]=[];
+    grouped[cat].push(p);
+  });
+  const cats=Object.keys(grouped).sort();
+  if(!cats.length){document.getElementById('pao-list').innerHTML='<div class="empty">Nenhum pão cadastrado.</div>';return;}
+  let html='';
+  cats.forEach(cat=>{
+    const items=grouped[cat];
+    html+=`<div class="category-block">
+      <div class="category-label">${cat}</div>`;
+    items.forEach(p=>{
+      const cost=parseFloat(p.cost_price)||0;
+      html+=`<div class="product-item">
+        <div class="pi-name${p.active?'':' inactive'}">${p.name}</div>
+        <span class="pi-unit">${p.unit||'un'}</span>
+        <span class="pi-cost${cost>0?'':' zero'}">${cost>0?'R$ '+cost.toFixed(2):'—'}</span>
+        <button class="btn-edit-sm" onclick="editPao('${p.id}',\`${escQ(p.name)}\`,\`${escQ(p.category||'')}\`,${cost},'${p.unit||'un'}')">Editar</button>
+        <button class="btn-toggle${p.active?'':' ativar'}" onclick="togglePao('${p.id}',${p.active})">${p.active?'Desativar':'Ativar'}</button>
+      </div>`;
+    });
+    html+=`</div>`;
+  });
+  document.getElementById('pao-list').innerHTML=html;
+}
+
+async function savePao(){
+  const name=document.getElementById('pao-name').value.trim();
+  const cat=document.getElementById('pao-cat').value.trim();
+  const cost=parseFloat(document.getElementById('pao-cost').value)||0;
+  const unit=document.getElementById('pao-unit').value||'un';
+  if(!name){showToast('⚠️ Informe o nome do pão');return;}
+  showLoading('Salvando...');
+  try{
+    if(editingPaoId){
+      await sb.patch('breads',{id:editingPaoId},{name,category:cat||null,cost_price:cost,unit});
+      showToast('✅ Pão atualizado');
+      cancelPao();
+    }else{
+      // Gera ID único para pão
+      const newId='b_'+name.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,10)+Date.now();
+      await sb.post('breads',{id:newId,name,category:cat||null,cost_price:cost,unit,active:true,is_pj:false});
+      showToast('✅ Pão adicionado');
+      document.getElementById('pao-name').value='';
+      document.getElementById('pao-cat').value='';
+      document.getElementById('pao-cost').value='';
+      document.getElementById('pao-unit').value='un';
+    }
+    await refreshPaoList();
+  }catch(e){showToast('❌ Erro ao salvar pão');console.error(e);}
+  finally{hideLoading();}
+}
+
+function editPao(id,name,cat,cost,unit){
+  editingPaoId=id;
+  document.getElementById('pao-name').value=name;
+  document.getElementById('pao-cat').value=cat;
+  document.getElementById('pao-cost').value=cost>0?cost:'';
+  document.getElementById('pao-unit').value=unit;
+  document.getElementById('pao-form-title').textContent='Editar Pão';
+  document.getElementById('pao-save-btn').textContent='Salvar alterações';
+  document.getElementById('pao-cancel-btn').style.display='inline-block';
+  document.getElementById('pao-name').focus();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function cancelPao(){
+  editingPaoId=null;
+  document.getElementById('pao-name').value='';
+  document.getElementById('pao-cat').value='';
+  document.getElementById('pao-cost').value='';
+  document.getElementById('pao-unit').value='un';
+  document.getElementById('pao-form-title').textContent='Novo Pão';
+  document.getElementById('pao-save-btn').textContent='Adicionar';
+  document.getElementById('pao-cancel-btn').style.display='none';
+}
+
+async function togglePao(id,current){
+  showLoading('Atualizando...');
+  try{
+    await sb.patch('breads',{id},{active:!current});
+    await refreshPaoList();
+    showToast(current?'Pão desativado':'Pão ativado');
+  }catch(e){showToast('❌ Erro ao atualizar');}
+  finally{hideLoading();}
+}
+
+// ====== UTIL ======
+function escQ(s){return String(s).replace(/`/g,'\\`');}
+
+// Enter para login
+document.getElementById('pass-input').addEventListener('keydown',e=>{if(e.key==='Enter')checkPass();});
+</script>
+</body>
+</html>
