@@ -185,7 +185,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <span class="topbar-badge tb-admin">Admin</span>
     <button class="btn-logout" onclick="goHome()">Sair</button>
   </div>
+  <!-- Abas -->
+  <div style="display:flex;border-bottom:1px solid var(--border);background:var(--surface);padding:0 16px">
+    <button id="tab-btn-produtos" onclick="switchAdminTab('produtos')" style="padding:12px 16px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">Produtos</button>
+    <button id="tab-btn-relatorio" onclick="switchAdminTab('relatorio')" style="padding:12px 16px;border:none;background:transparent;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-muted)">Relatório</button>
+  </div>
   <div class="admin-wrap">
+    <!-- ABA PRODUTOS -->
+    <div id="tab-produtos">
     <div class="admin-section">
       <h3 id="admin-form-title">Novo Produto</h3>
       <div class="form-group">
@@ -206,6 +213,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <h3>Produtos cadastrados</h3>
       <div id="admin-product-list">Carregando...</div>
     </div>
+    </div><!-- fim tab-produtos -->
+
+    <!-- ABA RELATÓRIO -->
+    <div id="tab-relatorio" style="display:none">
+      <div class="admin-section">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <h3 style="margin:0;flex:1">Registro do dia</h3>
+          <input type="date" id="rel-date" class="form-input" style="width:160px" onchange="loadRelatorio()">
+        </div>
+        <div id="relatorio-content">Selecione uma data para ver os registros.</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -474,6 +494,78 @@ function checkAdminPass(){
     document.getElementById('admin-pass-input').value='';
     document.getElementById('admin-pass-input').focus();
   }
+}
+function switchAdminTab(tab){
+  document.getElementById('tab-produtos').style.display=tab==='produtos'?'block':'none';
+  document.getElementById('tab-relatorio').style.display=tab==='relatorio'?'block':'none';
+  document.getElementById('tab-btn-produtos').style.borderBottomColor=tab==='produtos'?'var(--accent)':'transparent';
+  document.getElementById('tab-btn-produtos').style.color=tab==='produtos'?'var(--accent)':'var(--text-muted)';
+  document.getElementById('tab-btn-relatorio').style.borderBottomColor=tab==='relatorio'?'var(--accent)':'transparent';
+  document.getElementById('tab-btn-relatorio').style.color=tab==='relatorio'?'var(--accent)':'var(--text-muted)';
+  if(tab==='relatorio'){
+    if(!document.getElementById('rel-date').value) document.getElementById('rel-date').value=todayKey();
+    loadRelatorio();
+  }
+}
+async function loadRelatorio(){
+  const date=document.getElementById('rel-date').value;
+  if(!date) return;
+  const el=document.getElementById('relatorio-content');
+  el.innerHTML='<div style="color:var(--text-hint);font-size:13px">Carregando...</div>';
+  try{
+    const [sobras,descartes,prods]=await Promise.all([
+      sb.get('sobras',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
+      sb.get('descartes',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
+      sb.get('products_leftovers','select=id,name')
+    ]);
+    const prodMap={};prods.forEach(p=>prodMap[p.id]=p.name);
+    function getName(row){
+      if(row.product_source==='bread'){
+        // tenta achar nos pães carregados
+        const b=PRODUCTS.find?.(x=>false); // fallback
+        return row.product_id;
+      }
+      return prodMap[row.product_id]||row.product_id;
+    }
+    function buildTable(rows,title,color){
+      if(!rows.length) return `<div style="color:var(--text-hint);font-size:12px;margin-bottom:8px">Nenhum registro de ${title.toLowerCase()}.</div>`;
+      // Agrupa por responsável
+      const byPerson={};
+      rows.forEach(r=>{if(!byPerson[r.responsible])byPerson[r.responsible]=[];byPerson[r.responsible].push(r);});
+      let html=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:${color};margin:16px 0 8px">${title}</div>`;
+      Object.entries(byPerson).forEach(([person,items])=>{
+        const total=items.reduce((a,r)=>a+parseFloat(r.quantity),0);
+        html+=`<div style="margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">${person} <span style="font-size:11px;font-weight:400;color:var(--text-muted)">(${items.length} itens · ${total} un)</span></div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            ${items.map(r=>`<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:6px 4px;flex:1">${prodMap[r.product_id]||r.product_id}</td>
+              <td style="padding:6px 4px;text-align:right;font-weight:600;color:${color};width:60px">${r.quantity} un</td>
+            </tr>`).join('')}
+          </table>
+        </div>`;
+      });
+      return html;
+    }
+    const total_sobras=sobras.reduce((a,r)=>a+parseFloat(r.quantity),0);
+    const total_descartes=descartes.reduce((a,r)=>a+parseFloat(r.quantity),0);
+    el.innerHTML=`
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px;background:var(--warning-light);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px">Sobras</div>
+          <div style="font-size:24px;font-weight:700;color:var(--warning)">${total_sobras} un</div>
+          <div style="font-size:11px;color:var(--text-muted)">${sobras.length} registros</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:var(--danger-light);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px">Descarte</div>
+          <div style="font-size:24px;font-weight:700;color:var(--danger)">${total_descartes} un</div>
+          <div style="font-size:11px;color:var(--text-muted)">${descartes.length} registros</div>
+        </div>
+      </div>
+      ${buildTable(sobras,'Sobras','var(--warning)')}
+      ${buildTable(descartes,'Descartes','var(--danger)')}
+    `;
+  }catch(e){el.innerHTML='<div style="color:var(--danger)">Erro ao carregar relatório.</div>';console.error(e);}
 }
 async function openAdmin(){
   showLoading('Carregando...');
