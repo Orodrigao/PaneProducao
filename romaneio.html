@@ -378,11 +378,20 @@ function checkPass(){
 async function loadDestinations(){DESTINATIONS=await sb.get('destinations','active=eq.true&order=name.asc');}
 async function loadBreads(){BREADS=await sb.get('breads','active=eq.true&is_pj=eq.false&order=name.asc');}
 async function loadBreadsByDate(date){
-  // Carrega apenas os pães com pedido na data selecionada
-  const rows=await sb.get('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id,breads(id,name,is_pj)`);
-  const seen=new Set(); const breads=[];
-  rows.forEach(r=>{if(r.breads&&!r.breads.is_pj&&!seen.has(r.bread_id)){seen.add(r.bread_id);breads.push(r.breads);}});
-  return breads.sort((a,b)=>a.name.localeCompare(b.name,'pt'));
+  try{
+    // Passo 1: pegar bread_ids com pedido na data
+    const orders=await sb.get('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id`);
+    if(!orders.length) return BREADS; // fallback: todos os pães
+    const ids=[...new Set(orders.map(r=>r.bread_id).filter(Boolean))];
+    if(!ids.length) return BREADS;
+    // Passo 2: buscar detalhes dos pães
+    const breads=await sb.get('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`);
+    if(!breads.length) return BREADS; // fallback se nenhum ativo
+    return breads;
+  }catch(e){
+    console.warn('loadBreadsByDate fallback:',e);
+    return BREADS; // fallback seguro
+  }
 }
 async function loadPrices(){
   const rows=await sb.get('product_prices','active=eq.true');
@@ -536,9 +545,11 @@ async function onDestChange(){
     // Carrega apenas pães com pedido na data
     criarBREADS=await loadBreadsByDate(date);
     let html='';
-    if(criarBREADS.length===0){
-      html='<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">⚠️ Nenhum pão pedido para esta data.<br>Use o campo abaixo para adicionar manualmente.</div>';
-    }
+    const fromOrders=(criarBREADS!==BREADS&&criarBREADS.length>0);
+    const label=fromOrders
+      ?`<div style="font-size:11px;color:var(--success);margin-bottom:8px">✅ ${criarBREADS.length} pães do pedido de hoje</div>`
+      :`<div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">📋 Todos os pães ativos (sem pedido registrado para esta data)</div>`;
+    html+=label;
     criarBREADS.forEach(b=>{
       html+=`<div class="product-row">
         <div class="product-name">${b.name}</div>
