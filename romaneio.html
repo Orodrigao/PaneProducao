@@ -324,7 +324,7 @@ const sb={
 // ── STATE ──
 let currentUser=null, currentRole=null;
 let DESTINATIONS=[], BREADS=[], PRICES={};
-let criarItems={}, currentDestId=null;
+let criarItems={}, currentDestId=null, criarBREADS=[], criarExtraNames={};
 let pendingEnvioId=null, confRomaneioId=null;
 let adminTab='painel-adm';
 
@@ -377,6 +377,13 @@ function checkPass(){
 // ── LOAD DATA ──
 async function loadDestinations(){DESTINATIONS=await sb.get('destinations','active=eq.true&order=name.asc');}
 async function loadBreads(){BREADS=await sb.get('breads','active=eq.true&is_pj=eq.false&order=name.asc');}
+async function loadBreadsByDate(date){
+  // Carrega apenas os pães com pedido na data selecionada
+  const rows=await sb.get('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id,breads(id,name,is_pj)`);
+  const seen=new Set(); const breads=[];
+  rows.forEach(r=>{if(r.breads&&!r.breads.is_pj&&!seen.has(r.bread_id)){seen.add(r.bread_id);breads.push(r.breads);}});
+  return breads.sort((a,b)=>a.name.localeCompare(b.name,'pt'));
+}
 async function loadPrices(){
   const rows=await sb.get('product_prices','active=eq.true');
   PRICES={};
@@ -490,6 +497,8 @@ async function openDetalhe(romId){
 function openCriar(){
   criarItems={};
   currentDestId=null;
+  criarBREADS=[];
+  criarExtraNames={};
   document.getElementById('criar-date').value=todayKey();
   document.getElementById('criar-obs').value='';
   document.getElementById('criar-trip-info').style.display='none';
@@ -523,9 +532,14 @@ async function onDestChange(){
     document.getElementById('criar-trip-label').textContent=ordinals[tripNum-1]||tripNum+'ª';
     document.getElementById('criar-trip-info').style.display='block';
     criarItems={};
-    // Build product list - all breads
+    criarExtraNames={};
+    // Carrega apenas pães com pedido na data
+    criarBREADS=await loadBreadsByDate(date);
     let html='';
-    BREADS.forEach(b=>{
+    if(criarBREADS.length===0){
+      html='<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">⚠️ Nenhum pão pedido para esta data.<br>Use o campo abaixo para adicionar manualmente.</div>';
+    }
+    criarBREADS.forEach(b=>{
       html+=`<div class="product-row">
         <div class="product-name">${b.name}</div>
         <div class="qty-ctrl">
@@ -536,6 +550,16 @@ async function onDestChange(){
         </div>
       </div>`;
     });
+    // Extras já adicionados
+    Object.keys(criarExtraNames).forEach(eid=>{ html+=renderExtraRow(eid,criarExtraNames[eid]); });
+    // Linha para adicionar pão avulso
+    html+=`<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-hint);margin-bottom:10px">+ Pão especial / avulso</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="extra-name-input" placeholder="Nome do pão..." style="flex:1;font-size:13px">
+        <button class="btn btn-secondary btn-sm" onclick="addExtraItem()" style="white-space:nowrap">Adicionar</button>
+      </div>
+    </div>`;
     document.getElementById('criar-product-list').innerHTML=html;
     document.getElementById('criar-products-wrap').style.display='block';
     document.getElementById('criar-obs-wrap').style.display='block';
@@ -549,6 +573,40 @@ function criarOnInput(id,val){
   const n=parseFloat(val)||0;
   criarItems[id]=n;
   document.getElementById('criar-qty-'+id).classList.toggle('has-value',n>0);
+  updateCriarSummary();
+}
+function renderExtraRow(eid,name){
+  return `<div class="product-row" id="extra-row-${eid}">
+    <div class="product-name" style="color:var(--accent);font-style:italic">${name} <span style="font-size:11px;color:var(--text-hint)">(especial)</span></div>
+    <div class="qty-ctrl">
+      <button class="qty-btn" onclick="criarChangeQty('${eid}',-1)">&minus;</button>
+      <input class="qty-input" type="number" min="0" id="criar-qty-${eid}" value="" placeholder="0"
+        oninput="criarOnInput('${eid}',this.value)">
+      <button class="qty-btn" onclick="criarChangeQty('${eid}',1)">+</button>
+    </div>
+    <button onclick="removeExtraItem('${eid}')" style="background:none;border:none;cursor:pointer;color:var(--text-hint);font-size:16px;padding:2px 4px">✕</button>
+  </div>`;
+}
+function addExtraItem(){
+  const inp=document.getElementById('extra-name-input');
+  const name=inp.value.trim();
+  if(!name){inp.focus();return;}
+  const eid='extra_'+Date.now();
+  criarExtraNames[eid]=name;
+  criarItems[eid]=0;
+  // Insert before the add-row div
+  const addRow=document.querySelector('#criar-product-list > div[style*="dashed"]');
+  const div=document.createElement('div');
+  div.innerHTML=renderExtraRow(eid,name);
+  addRow.parentNode.insertBefore(div.firstChild,addRow);
+  inp.value='';
+  showToast('✅ '+name+' adicionado');
+}
+function removeExtraItem(eid){
+  delete criarExtraNames[eid];
+  delete criarItems[eid];
+  const row=document.getElementById('extra-row-'+eid);
+  if(row)row.remove();
   updateCriarSummary();
 }
 function criarChangeQty(id,delta){
@@ -574,17 +632,24 @@ async function saveRomaneio(){
     const obs=document.getElementById('criar-obs').value.trim();
     const existing=await sb.get('romaneios',`record_date=eq.${date}&destination_id=eq.${currentDestId}`);
     const tripNum=existing.length+1;
-    const rom=await sb.post('romaneios',{record_date:date,destination_id:currentDestId,trip_number:tripNum,status:'separado',created_by:currentUser==='gustavo'?'Gustavo':'Gustavo',obs});
+    const rom=await sb.post('romaneios',{record_date:date,destination_id:currentDestId,trip_number:tripNum,status:'separado',created_by:'Gustavo',obs:obs||null});
     const romId=rom[0].id;
     const itemRows=items.map(([pid,qty])=>{
-      const b=BREADS.find(x=>x.id===pid);
-      const price=PRICES[pid+'_'+currentDestId]||0;
-      return{romaneio_id:romId,product_id:pid,product_source:'bread',product_name:b?b.name:pid,qty_sent:qty,unit_price:price,item_status:'pendente'};
+      const isExtra=pid.startsWith('extra_');
+      const b=isExtra?null:criarBREADS.find(x=>x.id===pid);
+      const price=isExtra?0:(PRICES[pid+'_'+currentDestId]||0);
+      const name=isExtra?criarExtraNames[pid]:b?b.name:pid;
+      return{romaneio_id:romId,product_id:isExtra?null:pid,product_source:'bread',product_name:name,qty_sent:qty,unit_price:price,item_status:'pendente'};
     });
     await sb.post('romaneio_items',itemRows);
     showToast('✅ Romaneio criado!');
     await showPainel();
-  }catch(e){showToast('❌ Erro ao salvar');console.error(e);}
+  }catch(e){
+    const msg=e.message||'';
+    const detail=msg.length>120?msg.substring(0,120)+'...':msg;
+    showToast('❌ Erro: '+detail,5000);
+    console.error('saveRomaneio error:',e);
+  }
   finally{hideLoading();}
 }
 
