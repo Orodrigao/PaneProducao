@@ -372,7 +372,7 @@ function renderForm(containerId, mode, todayBreads=[]){
         <div class="product-name">${p.name}</div>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="changeQty('${key}',-1)">&minus;</button>
-          <input class="qty-input${val>0?' has-value':''}" type="number" min="0" step="0.5"
+          <input class="qty-input${val>0?' has-value':''}" type="number" min="0" step="1"
             id="qty-${key}" value="${val||''}" placeholder="0"
             oninput="onQtyInput('${key}',this.value)">
           <button class="qty-btn" onclick="changeQty('${key}',1)">+</button>
@@ -395,7 +395,7 @@ function renderForm(containerId, mode, todayBreads=[]){
         <div class="product-name">${p.name}</div>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="changeQty('${p.id}',-1)">&minus;</button>
-          <input class="qty-input${val>0?' has-value':''}" type="number" min="0" step="0.5"
+          <input class="qty-input${val>0?' has-value':''}" type="number" min="0" step="1"
             id="qty-${p.id}" value="${val||''}" placeholder="0"
             oninput="onQtyInput('${p.id}',this.value)">
           <button class="qty-btn" onclick="changeQty('${p.id}',1)">+</button>
@@ -534,15 +534,10 @@ async function loadRelatorio(){
       sb.get('descartes',`record_date=eq.${date}&quantity=gt.0&order=responsible.asc,product_id.asc`),
       sb.get('products','select=id,name')
     ]);
-    const prodMap={};prods.forEach(p=>prodMap[p.id]=p.name);
-    function getName(row){
-      if(row.product_source==='bread'){
-        // tenta achar nos pães carregados
-        const b=PRODUCTS.find?.(x=>false); // fallback
-        return row.product_id;
-      }
-      return prodMap[row.product_id]||row.product_id;
-    }
+    const prodMap={};
+    prods.forEach(p=>prodMap[p.id]={name:p.name,cost:parseFloat(p.cost_price)||0,unit:p.unit||'un'});
+    breads.forEach(b=>prodMap[b.id]={name:b.name,cost:parseFloat(b.cost_price)||0,unit:b.unit||'un'});
+
     function buildTable(rows,title,color){
       if(!rows.length) return `<div style="color:var(--text-hint);font-size:12px;margin-bottom:8px">Nenhum registro de ${title.toLowerCase()}.</div>`;
       // Agrupa por responsável
