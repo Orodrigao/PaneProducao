@@ -650,9 +650,15 @@ async function saveRomaneio(){
       const b=isExtra?null:criarBREADS.find(x=>x.id===pid);
       const price=isExtra?0:(PRICES[pid+'_'+currentDestId]||0);
       const name=isExtra?criarExtraNames[pid]:b?b.name:pid;
-      return{romaneio_id:romId,product_id:isExtra?eid:pid,product_source:isExtra?'extra':'bread',product_name:name,qty_sent:qty,unit_price:price,item_status:'pendente'};
+      return{romaneio_id:romId,product_id:pid,product_source:isExtra?'extra':'bread',product_name:name,qty_sent:qty,unit_price:price,item_status:'pendente'};
     });
-    await sb.post('romaneio_items',itemRows);
+    try{
+      await sb.post('romaneio_items',itemRows);
+    }catch(itemErr){
+      // Rollback: apaga o romaneio criado para não ficar vazio
+      try{await sb.del('romaneios',{id:romId});}catch(_){}
+      throw itemErr;
+    }
     showToast('✅ Romaneio criado!');
     await showPainel();
   }catch(e){
@@ -810,6 +816,7 @@ async function renderAdminPainel(){
       <div class="card-actions">
         <button class="btn btn-secondary btn-sm" onclick="openDetalhe('${r.id}')">Ver detalhes</button>
         ${r.status==='com_divergencia'?`<button class="btn btn-success btn-sm" onclick="aprovarDivergencias('${r.id}')">Aprovar diverg.</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteRomaneio('${r.id}')" title="Deletar">🗑</button>
       </div>
     </div>`;
   });
@@ -817,6 +824,17 @@ async function renderAdminPainel(){
   document.getElementById('admin-painel-adm').style.display='block';
 }
 
+async function deleteRomaneio(romId){
+  if(!confirm('Deletar este romaneio e todos os seus itens? Esta ação não pode ser desfeita.'))return;
+  showLoading('Deletando...');
+  try{
+    await sb.del('romaneio_items',{romaneio_id:romId});
+    await sb.del('romaneios',{id:romId});
+    showToast('🗑 Romaneio deletado');
+    await renderAdminPainel();
+  }catch(e){showToast('❌ Erro ao deletar');console.error(e);}
+  finally{hideLoading();}
+}
 async function renderDivergencias(){
   const items=await sb.get('romaneio_items',`item_status=eq.divergencia&select=*,romaneios(record_date,trip_number,destinations(name,code))&order=romaneios(record_date).desc`);
   let html=`<div class="section-label">Divergências pendentes (${items.length})</div>`;
