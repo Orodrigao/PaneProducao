@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estoque Congelado — Pane & Salute</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh}
+  .header{background:#1a2744;color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px}
+  .header h1{font-size:1.15rem;font-weight:700;flex:1}
+  .header .sub{font-size:.8rem;opacity:.7;display:block;font-weight:400}
+  .btn-admin{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:7px 14px;border-radius:6px;font-size:.8rem;cursor:pointer}
+  .btn-admin:hover{background:rgba(255,255,255,.25)}
+  .container{max-width:900px;margin:0 auto;padding:16px}
+  .products-grid{display:flex;flex-direction:column;gap:10px}
+  .product-card{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #2563eb}
+  .product-card.critical{border-left-color:#ef4444;background:#fff8f8}
+  .product-card.warning{border-left-color:#f59e0b}
+  .card-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .card-name{font-weight:700;font-size:1rem;flex:1}
+  .badge-total{background:#1a2744;color:#fff;padding:4px 12px;border-radius:20px;font-size:.9rem;font-weight:700}
+  .badge-total.critical{background:#ef4444}
+  .badge-total.warning{background:#f59e0b}
+  .badge-min{font-size:.75rem;color:#6b7280;margin-left:4px}
+  .locations{display:flex;gap:10px;margin-bottom:12px}
+  .loc-box{flex:1;background:#f8fafc;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0}
+  .loc-icon{font-size:1.3rem}
+  .loc-name{font-size:.7rem;color:#6b7280;margin:2px 0}
+  .loc-qty{font-size:1.4rem;font-weight:700;color:#1a2744}
+  .loc-qty.zero{color:#d1d5db}
+  .card-actions{display:flex;gap:6px}
+  .btn-action{flex:1;padding:7px 0;border:none;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;transition:.15s}
+  .btn-entrada{background:#dcfce7;color:#16a34a}
+  .btn-entrada:hover{background:#bbf7d0}
+  .btn-saida{background:#fee2e2;color:#dc2626}
+  .btn-saida:hover{background:#fecaca}
+  .btn-inventario{background:#e0f2fe;color:#0284c7}
+  .btn-inventario:hover{background:#bae6fd}
+  .btn-historico{background:#f3f4f6;color:#374151}
+  .btn-historico:hover{background:#e5e7eb}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:16px}
+  .modal-overlay.open{display:flex}
+  .modal{background:#fff;border-radius:12px;padding:24px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto}
+  .modal h2{font-size:1.1rem;font-weight:700;margin-bottom:16px;color:#1a2744}
+  .modal-close{float:right;background:none;border:none;font-size:1.4rem;cursor:pointer;color:#6b7280;margin-top:-4px}
+  .form-group{margin-bottom:14px}
+  .form-group label{display:block;font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px}
+  .form-group select,.form-group input,.form-group textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:7px;font-size:.95rem}
+  .form-group textarea{resize:vertical;min-height:60px}
+  .btn-primary{width:100%;padding:11px;background:#1a2744;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer;margin-top:6px}
+  .btn-primary:hover{background:#2a3a5c}
+  .btn-secondary{width:100%;padding:11px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:.9rem;cursor:pointer;margin-top:6px}
+  .history-list{max-height:400px;overflow-y:auto}
+  .history-item{padding:10px 0;border-bottom:1px solid #f0f4f8;display:flex;gap:10px;align-items:flex-start}
+  .history-item:last-child{border-bottom:none}
+  .hist-badge{padding:3px 8px;border-radius:12px;font-size:.7rem;font-weight:700;white-space:nowrap}
+  .hist-badge.entrada{background:#dcfce7;color:#16a34a}
+  .hist-badge.saida{background:#fee2e2;color:#dc2626}
+  .hist-badge.inventario{background:#e0f2fe;color:#0284c7}
+  .hist-info{flex:1}
+  .hist-loc{font-size:.75rem;color:#6b7280}
+  .hist-qty{font-size:.85rem;font-weight:600}
+  .hist-date{font-size:.72rem;color:#9ca3af;display:block;margin-top:2px}
+  .hist-obs{font-size:.75rem;color:#6b7280;margin-top:2px;font-style:italic}
+  .admin-screen{display:none}
+  .admin-screen.open{display:block}
+  .main-screen.hidden{display:none}
+  .section-title{font-size:.85rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px}
+  .admin-product-list{display:flex;flex-direction:column;gap:8px}
+  .admin-product-item{background:#fff;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  .admin-product-item .name{flex:1;font-size:.9rem;font-weight:600}
+  .admin-product-item .unit{font-size:.75rem;color:#6b7280}
+  .min-input{width:70px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;text-align:center}
+  .btn-remove{background:#fee2e2;color:#dc2626;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:.8rem}
+  .btn-remove:hover{background:#fecaca}
+  .add-product-form{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .add-product-form h3{font-size:.95rem;font-weight:700;margin-bottom:12px;color:#1a2744}
+  .form-row{display:flex;gap:10px}
+  .form-row .form-group{flex:1}
+  .btn-add{padding:10px 20px;background:#2563eb;color:#fff;border:none;border-radius:7px;font-size:.9rem;font-weight:600;cursor:pointer}
+  .btn-add:hover{background:#1d4ed8}
+  .back-btn{display:flex;align-items:center;gap:6px;background:none;border:none;color:#6b7280;font-size:.85rem;cursor:pointer;padding:0;margin-bottom:12px}
+  .back-btn:hover{color:#374151}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center}
+  .search-box{flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem}
+  .filter-btn{padding:9px 14px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:.8rem;cursor:pointer;color:#374151}
+  .filter-btn.active{background:#1a2744;color:#fff;border-color:#1a2744}
+  .empty-state{text-align:center;padding:48px 20px;color:#9ca3af}
+  .empty-state .icon{font-size:3rem;margin-bottom:8px}
+  .loading{text-align:center;padding:40px;color:#6b7280}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a2744;color:#fff;padding:12px 20px;border-radius:8px;font-size:.9rem;z-index:200;opacity:0;transition:.3s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.success{background:#16a34a}
+  .toast.error{background:#dc2626}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="flex:1">
+    <h1>❄️ Estoque Congelado <span class="sub">Pane &amp; Salute — Expedição</span></h1>
+  </div>
+  <button class="btn-admin" onclick="showAdminLogin()">⚙️ Admin</button>
+</div>
+
+<div class="container main-screen" id="mainScreen">
+  <div class="toolbar">
+    <input type="text" class="search-box" id="searchBox" placeholder="🔍 Buscar produto..." oninput="renderProducts()">
+    <button class="filter-btn" id="filterCritical" onclick="toggleFilter()">🔴 Críticos</button>
+  </div>
+  <div id="productsList" class="products-grid">
+    <div class="loading">Carregando estoque...</div>
+  </div>
+</div>
+
+<div class="container admin-screen" id="adminScreen">
+  <button class="back-btn" onclick="closeAdmin()">← Voltar ao estoque</button>
+  <div class="add-product-form">
+    <h3>➕ Adicionar produto ao estoque congelado</h3>
+    <div class="form-group">
+      <label>Produto (Pães ou Confeitaria)</label>
+      <select id="adminSelectProduct"><option value="">Carregando...</option></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Estoque Mínimo</label>
+        <input type="number" id="adminMinStock" min="0" value="5" placeholder="0">
+      </div>
+    </div>
+    <button class="btn-add" onclick="addFrozenProduct()">Adicionar</button>
+  </div>
+  <div class="section-title">Produtos no estoque congelado</div>
+  <div id="adminProductList" class="admin-product-list"><div class="loading">Carregando...</div></div>
+</div>
+
+<div class="modal-overlay" id="modalMovimento">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalMovimento')">×</button>
+    <h2 id="modalMovTitle">Registrar Entrada</h2>
+    <div class="form-group">
+      <label>Local</label>
+      <select id="movLocation">
+        <option value="freezer">🧊 Freezer Horizontal</option>
+        <option value="camara">🏪 Câmara Congelada</option>
+      </select>
+    </div>
+    <div class="form-group" id="movQtyGroup">
+      <label>Quantidade</label>
+      <input type="number" id="movQty" min="0" value="1" placeholder="0">
+    </div>
+    <div class="form-group" id="inventarioGroup" style="display:none">
+      <label>Quantidade atual (acerto de inventário)</label>
+      <input type="number" id="movQtyInventario" min="0" value="" placeholder="0">
+      <small style="color:#6b7280;font-size:.75rem;margin-top:4px;display:block">Informe o saldo real contado. O sistema ajusta automaticamente.</small>
+    </div>
+    <div class="form-group">
+      <label>Observação (opcional)</label>
+      <textarea id="movObs" placeholder="Ex: lote 12/05, validade..."></textarea>
+    </div>
+    <div style="font-size:.8rem;color:#6b7280;background:#f8fafc;padding:10px;border-radius:6px;margin-bottom:8px" id="movCurrentInfo"></div>
+    <button class="btn-primary" onclick="saveMovimento()">Salvar</button>
+    <button class="btn-secondary" onclick="closeModal('modalMovimento')">Cancelar</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalHistorico">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalHistorico')">×</button>
+    <h2 id="modalHistTitle">Histórico</h2>
+    <div id="historyContent" class="history-list"><div class="loading">Carregando...</div></div>
+    <button class="btn-secondary" style="margin-top:12px" onclick="closeModal('modalHistorico')">Fechar</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalAdminLogin">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalAdminLogin')">×</button>
+    <h2>🔐 Acesso Admin</h2>
+    <div class="form-group" style="margin-top:8px">
+      <label>Senha</label>
+      <input type="password" id="adminPwd" placeholder="••••••" onkeydown="if(event.key==='Enter')checkAdminPwd()">
+    </div>
+    <button class="btn-primary" onclick="checkAdminPwd()">Entrar</button>
+    <button class="btn-secondary" onclick="closeModal('modalAdminLogin')">Cancelar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://gohluceldchoitihrimw.supabase.co';
+const SB_KEY='sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ';
+const ADMIN_PWD='pane2024';
+const LOC_LABELS={freezer:'🧊 Freezer Horizontal',camara:'🏪 Câmara Congelada'};
+
+const api={
+  headers(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};},
+  async get(table,params=''){
+    const r=await fetch(SB_URL+'/rest/v1/'+table+'?'+params,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+  async post(table,data){
+    const r=await fetch(SB_URL+'/rest/v1/'+table,{method:'POST',headers:this.headers(),body:JSON.stringify(data)});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+  async patch(table,filter,data){
+    const r=await fetch(SB_URL+'/rest/v1/'+table+'?'+filter,{method:'PATCH',headers:this.headers(),body:JSON.stringify(data)});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  }
+};
+
+let frozenProducts=[];
+let frozenStock={};
+let allCatalogProducts=[];
+let showOnlyCritical=false;
+let currentMovFP=null;
+let currentMovType=null;
+
+async function init(){
+  try{
+    await loadStockData();
+    renderProducts();
+  }catch(e){
+    document.getElementById('productsList').innerHTML='<div class="empty-state"><div class="icon">⚠️</div><p>Erro ao carregar dados.<br><small>'+e.message+'</small></p></div>';
+  }
+}
+
+async function loadStockData(){
+  const [fps,stocks]=await Promise.all([
+    api.get('frozen_products','active=eq.true&order=product_name.asc'),
+    api.get('frozen_stock','select=*')
+  ]);
+  frozenProducts=fps;
+  frozenStock={};
+  for(const s of stocks){
+    if(!frozenStock[s.frozen_product_id])frozenStock[s.frozen_product_id]={freezer:0,camara:0};
+    frozenStock[s.frozen_product_id][s.location]=s.quantity;
+  }
+}
+
+function renderProducts(){
+  const q=document.getElementById('searchBox').value.toLowerCase();
+  let list=frozenProducts.filter(fp=>{
+    if(q&&!fp.product_name.toLowerCase().includes(q))return false;
+    if(showOnlyCritical){const t=getTotal(fp.id);if(t>fp.min_stock)return false;}
+    return true;
+  });
+  if(!list.length){
+    document.getElementById('productsList').innerHTML='<div class="empty-state"><div class="icon">❄️</div><p>'+(frozenProducts.length===0?'Nenhum produto configurado.<br><small>Use o Admin para adicionar produtos ao estoque congelado.</small>':'Nenhum produto encontrado.')+'</p></div>';
+    return;
+  }
+  document.getElementById('productsList').innerHTML=list.map(fp=>{
+    const s=frozenStock[fp.id]||{freezer:0,camara:0};
+    const total=s.freezer+s.camara;
+    const isCritical=fp.min_stock>0&&total<=fp.min_stock;
+    const isWarning=fp.min_stock>0&&total>fp.min_stock&&total<=(fp.min_stock*1.5);
+    const cls=isCritical?'critical':isWarning?'warning':'';
+    return '<div class="product-card '+cls+'">'+
+      '<div class="card-header">'+
+        '<span class="card-name">'+fp.product_name+'</span>'+
+        '<span class="badge-total '+cls+'">'+total+' '+fp.unit+'</span>'+
+        (fp.min_stock>0?'<span class="badge-min">mín: '+fp.min_stock+'</span>':'')+
+      '</div>'+
+      '<div class="locations">'+
+        '<div class="loc-box"><div class="loc-icon">🧊</div><div class="loc-name">Freezer Horizontal</div><div class="loc-qty'+(s.freezer===0?' zero':'')+'">'+s.freezer+'</div></div>'+
+        '<div class="loc-box"><div class="loc-icon">🏪</div><div class="loc-name">Câmara Congelada</div><div class="loc-qty'+(s.camara===0?' zero':'')+'">'+s.camara+'</div></div>'+
+      '</div>'+
+      '<div class="card-actions">'+
+        '<button class="btn-action btn-entrada" onclick="openMovimento(\''+fp.id+'\',\'entrada\')">+ Entrada</button>'+
+        '<button class="btn-action btn-saida" onclick="openMovimento(\''+fp.id+'\',\'saida\')">− Saída</button>'+
+        '<button class="btn-action btn-inventario" onclick="openMovimento(\''+fp.id+'\',\'inventario\')">📋 Inventário</button>'+
+        '<button class="btn-action btn-historico" onclick="openHistorico(\''+fp.id+'\')">📜</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function getTotal(fpId){const s=frozenStock[fpId]||{freezer:0,camara:0};return s.freezer+s.camara;}
+
+function toggleFilter(){
+  showOnlyCritical=!showOnlyCritical;
+  document.getElementById('filterCritical').classList.toggle('active',showOnlyCritical);
+  renderProducts();
+}
+
+function openMovimento(fpId,type){
+  currentMovFP=frozenProducts.find(f=>f.id===fpId);
+  currentMovType=type;
+  const titles={entrada:'Registrar Entrada',saida:'Registrar Saída',inventario:'Acerto de Inventário'};
+  document.getElementById('modalMovTitle').textContent=(type==='entrada'?'📥':type==='saida'?'📤':'📋')+' '+titles[type]+' — '+currentMovFP.product_name;
+  document.getElementById('movQtyGroup').style.display=type==='inventario'?'none':'block';
+  document.getElementById('inventarioGroup').style.display=type==='inventario'?'block':'none';
+  if(type!=='inventario')document.getElementById('movQty').value='1';
+  document.getElementById('movObs').value='';
+  const s=frozenStock[fpId]||{freezer:0,camara:0};
+  document.getElementById('movCurrentInfo').innerHTML='Saldo atual → 🧊 Freezer: <b>'+s.freezer+' '+currentMovFP.unit+'</b> &nbsp;|&nbsp; 🏪 Câmara: <b>'+s.camara+' '+currentMovFP.unit+'</b> &nbsp;|&nbsp; Total: <b>'+(s.freezer+s.camara)+'</b>';
+  openModal('modalMovimento');
+}
+
+async function saveMovimento(){
+  const location=document.getElementById('movLocation').value;
+  const obs=document.getElementById('movObs').value.trim();
+  const fp=currentMovFP;
+  const type=currentMovType;
+  const stock=frozenStock[fp.id]||{freezer:0,camara:0};
+  const prevQty=stock[location]||0;
+  let qty,newQty;
+  if(type==='inventario'){
+    qty=parseInt(document.getElementById('movQtyInventario').value);
+    if(isNaN(qty)||qty<0){toast('Informe uma quantidade válida','error');return;}
+    newQty=qty;
+  }else{
+    qty=parseInt(document.getElementById('movQty').value)||0;
+    if(!qty||qty<=0){toast('Informe uma quantidade válida','error');return;}
+    newQty=type==='entrada'?prevQty+qty:prevQty-qty;
+    if(newQty<0){toast('Estoque insuficiente para essa saída','error');return;}
+  }
+  try{
+    const existing=await api.get('frozen_stock','frozen_product_id=eq.'+fp.id+'&location=eq.'+location);
+    if(existing.length){
+      await api.patch('frozen_stock','frozen_product_id=eq.'+fp.id+'&location=eq.'+location,{quantity:newQty,updated_at:new Date().toISOString()});
+    }else{
+      await api.post('frozen_stock',{frozen_product_id:fp.id,location:location,quantity:newQty});
+    }
+    await api.post('frozen_movements',{frozen_product_id:fp.id,location:location,movement_type:type,quantity:type==='inventario'?newQty:qty,previous_quantity:prevQty,obs:obs||null,responsible:'Gustavo'});
+    if(!frozenStock[fp.id])frozenStock[fp.id]={freezer:0,camara:0};
+    frozenStock[fp.id][location]=newQty;
+    closeModal('modalMovimento');
+    renderProducts();
+    const labels={entrada:'Entrada registrada ✓',saida:'Saída registrada ✓',inventario:'Inventário atualizado ✓'};
+    toast(labels[type],'success');
+  }catch(e){toast('Erro ao salvar: '+e.message,'error');}
+}
+
+async function openHistorico(fpId){
+  const fp=frozenProducts.find(f=>f.id===fpId);
+  document.getElementById('modalHistTitle').textContent='📜 Histórico — '+fp.product_name;
+  document.getElementById('historyContent').innerHTML='<div class="loading">Carregando...</div>';
+  openModal('modalHistorico');
+  try{
+    const movs=await api.get('frozen_movements','frozen_product_id=eq.'+fpId+'&order=created_at.desc&limit=50');
+    if(!movs.length){document.getElementById('historyContent').innerHTML='<div class="empty-state" style="padding:24px"><p>Nenhum movimento registrado.</p></div>';return;}
+    const tl={entrada:'Entrada',saida:'Saída',inventario:'Inventário'};
+    document.getElementById('historyContent').innerHTML=movs.map(m=>{
+      const d=new Date(m.created_at);
+      const ds=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      const delta=m.movement_type==='inventario'?'Ajustado para '+m.quantity:m.movement_type==='entrada'?'+'+m.quantity+' ('+m.previous_quantity+'→'+(m.previous_quantity+m.quantity)+')':'-'+m.quantity+' ('+m.previous_quantity+'→'+(m.previous_quantity-m.quantity)+')';
+      return '<div class="history-item"><span class="hist-badge '+m.movement_type+'">'+tl[m.movement_type]+'</span><div class="hist-info"><div class="hist-qty">'+delta+' '+fp.unit+'</div><div class="hist-loc">'+LOC_LABELS[m.location]+' · '+m.responsible+'</div>'+(m.obs?'<div class="hist-obs">'+m.obs+'</div>':'')+'<span class="hist-date">'+ds+'</span></div></div>';
+    }).join('');
+  }catch(e){document.getElementById('historyContent').innerHTML='<p style="color:#dc2626">Erro: '+e.message+'</p>';}
+}
+
+function showAdminLogin(){document.getElementById('adminPwd').value='';openModal('modalAdminLogin');setTimeout(()=>document.getElementById('adminPwd').focus(),100);}
+
+function checkAdminPwd(){
+  if(document.getElementById('adminPwd').value===ADMIN_PWD){closeModal('modalAdminLogin');openAdminScreen();}
+  else{toast('Senha incorreta','error');document.getElementById('adminPwd').value='';}
+}
+
+async function openAdminScreen(){
+  document.getElementById('mainScreen').classList.add('hidden');
+  document.getElementById('adminScreen').classList.add('open');
+  await loadAdminData();
+}
+
+function closeAdmin(){
+  document.getElementById('adminScreen').classList.remove('open');
+  document.getElementById('mainScreen').classList.remove('hidden');
+  loadStockData().then(renderProducts);
+}
+
+async function loadAdminData(){
+  const [breads,products]=await Promise.all([
+    api.get('breads','active=eq.true&order=name.asc&select=id,name,unit'),
+    api.get('products','active=eq.true&order=name.asc&select=id,name,unit,category')
+  ]);
+  allCatalogProducts=[
+    ...breads.map(b=>({id:b.id,name:b.name,unit:b.unit||'un',source:'bread',label:'🍞 '+b.name})),
+    ...products.map(p=>({id:p.id,name:p.name,unit:p.unit||'un',source:'product',label:'🎂 '+p.name+(p.category?' ('+p.category+')':'')}))
+  ];
+  const alreadyIds=frozenProducts.map(f=>f.product_id);
+  const available=allCatalogProducts.filter(p=>!alreadyIds.includes(p.id));
+  const sel=document.getElementById('adminSelectProduct');
+  sel.innerHTML=available.length?available.map(p=>'<option value="'+p.id+'|'+p.source+'|'+p.unit+'">'+p.label+'</option>').join(''):'<option value="">Todos os produtos já foram adicionados</option>';
+  renderAdminList();
+}
+
+function renderAdminList(){
+  const el=document.getElementById('adminProductList');
+  if(!frozenProducts.length){el.innerHTML='<div class="empty-state" style="padding:20px"><p>Nenhum produto configurado.</p></div>';return;}
+  el.innerHTML=frozenProducts.map(fp=>'<div class="admin-product-item"><div><div class="name">'+fp.product_name+'</div><div class="unit">'+fp.unit+' · '+(fp.product_source==='bread'?'Pão':'Confeitaria/Salgado')+'</div></div><div style="display:flex;align-items:center;gap:6px"><label style="font-size:.75rem;color:#6b7280">Mín:</label><input type="number" class="min-input" value="'+fp.min_stock+'" min="0" onchange="updateMinStock(\''+fp.id+'\',this.value)"></div><button class="btn-remove" onclick="removeFrozenProduct(\''+fp.id+'\',\''+fp.product_name.replace(/'/g,"\\'")+'\')">Remover</button></div>').join('');
+}
+
+async function addFrozenProduct(){
+  const val=document.getElementById('adminSelectProduct').value;
+  const minStock=parseInt(document.getElementById('adminMinStock').value)||0;
+  if(!val){toast('Selecione um produto','error');return;}
+  const parts=val.split('|');
+  const pid=parts[0],source=parts[1],unit=parts[2];
+  const prod=allCatalogProducts.find(p=>p.id===pid);
+  if(!prod){toast('Produto não encontrado','error');return;}
+  try{
+    const fp=await api.post('frozen_products',{product_id:pid,product_source:source,product_name:prod.name,unit:unit||'un',min_stock:minStock,active:true});
+    if(fp&&fp.length)frozenProducts.push(fp[0]);
+    toast('Produto adicionado!','success');
+    await loadAdminData();
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+async function updateMinStock(fpId,val){
+  try{
+    await api.patch('frozen_products','id=eq.'+fpId,{min_stock:parseInt(val)||0});
+    const fp=frozenProducts.find(f=>f.id===fpId);
+    if(fp)fp.min_stock=parseInt(val)||0;
+    toast('Mínimo atualizado ✓','success');
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+async function removeFrozenProduct(fpId,name){
+  if(!confirm('Remover "'+name+'" do estoque congelado?\nO histórico será mantido.'))return;
+  try{
+    await api.patch('frozen_products','id=eq.'+fpId,{active:false});
+    frozenProducts=frozenProducts.filter(f=>f.id!==fpId);
+    toast('Produto removido','success');
+    renderAdminList();
+    await loadAdminData();
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function toast(msg,type){const el=document.getElementById('toast');el.textContent=msg;el.className='toast show'+(type?' '+type:'');setTimeout(()=>el.className='toast',2500);}
+document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
+
+init();
+</script>
+</body>
+</html>
