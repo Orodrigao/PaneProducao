@@ -160,6 +160,7 @@
       <select id="movLocation">
         <option value="freezer">🧊 Freezer Horizontal</option>
         <option value="camara">🏪 Câmara Congelada</option>
+        <option value="freezer_loja">🛒 Freezer da Loja</option>
       </select>
     </div>
     <div class="form-group" id="movQtyGroup">
@@ -209,7 +210,7 @@
 const SB_URL='https://gohluceldchoitihrimw.supabase.co';
 const SB_KEY='sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ';
 const ADMIN_PWD='pane2025';
-const LOC_LABELS={freezer:'🧊 Freezer Horizontal',camara:'🏪 Câmara Congelada'};
+const LOC_LABELS={freezer:'🧊 Freezer Horizontal',camara:'🏪 Câmara Congelada',freezer_loja:'🛒 Freezer da Loja'};
 
 const api={
   headers(){return{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'};},
@@ -254,7 +255,7 @@ async function loadStockData(){
   frozenProducts=fps;
   frozenStock={};
   for(const s of stocks){
-    if(!frozenStock[s.frozen_product_id])frozenStock[s.frozen_product_id]={freezer:0,camara:0};
+    if(!frozenStock[s.frozen_product_id])frozenStock[s.frozen_product_id]={freezer:0,camara:0,freezer_loja:0};
     frozenStock[s.frozen_product_id][s.location]=s.quantity;
   }
 }
@@ -271,8 +272,8 @@ function renderProducts(){
     return;
   }
   document.getElementById('productsList').innerHTML=list.map(fp=>{
-    const s=frozenStock[fp.id]||{freezer:0,camara:0};
-    const total=s.freezer+s.camara;
+    const s=frozenStock[fp.id]||{freezer:0,camara:0,freezer_loja:0};
+    const total=s.freezer+s.camara+s.freezer_loja;
     const isCritical=fp.min_stock>0&&total<=fp.min_stock;
     const isWarning=fp.min_stock>0&&total>fp.min_stock&&total<=(fp.min_stock*1.5);
     const cls=isCritical?'critical':isWarning?'warning':'';
@@ -285,6 +286,7 @@ function renderProducts(){
       '<div class="locations">'+
         '<div class="loc-box"><div class="loc-icon">🧊</div><div class="loc-name">Freezer Horizontal</div><div class="loc-qty'+(s.freezer===0?' zero':'')+'">'+s.freezer+'</div></div>'+
         '<div class="loc-box"><div class="loc-icon">🏪</div><div class="loc-name">Câmara Congelada</div><div class="loc-qty'+(s.camara===0?' zero':'')+'">'+s.camara+'</div></div>'+
+        '<div class="loc-box"><div class="loc-icon">🛒</div><div class="loc-name">Freezer da Loja</div><div class="loc-qty'+(s.freezer_loja===0?' zero':'')+'">'+s.freezer_loja+'</div></div>'+
       '</div>'+
       '<div class="card-actions">'+
         '<button class="btn-action btn-entrada" onclick="openMovimento(\''+fp.id+'\',\'entrada\')">+ Entrada</button>'+
@@ -296,7 +298,7 @@ function renderProducts(){
   }).join('');
 }
 
-function getTotal(fpId){const s=frozenStock[fpId]||{freezer:0,camara:0};return s.freezer+s.camara;}
+function getTotal(fpId){const s=frozenStock[fpId]||{freezer:0,camara:0,freezer_loja:0};return s.freezer+s.camara+s.freezer_loja;}
 
 function toggleFilter(){
   showOnlyCritical=!showOnlyCritical;
@@ -313,8 +315,8 @@ function openMovimento(fpId,type){
   document.getElementById('inventarioGroup').style.display=type==='inventario'?'block':'none';
   if(type!=='inventario')document.getElementById('movQty').value='1';
   document.getElementById('movObs').value='';
-  const s=frozenStock[fpId]||{freezer:0,camara:0};
-  document.getElementById('movCurrentInfo').innerHTML='Saldo atual → 🧊 Freezer: <b>'+s.freezer+' '+currentMovFP.unit+'</b> &nbsp;|&nbsp; 🏪 Câmara: <b>'+s.camara+' '+currentMovFP.unit+'</b> &nbsp;|&nbsp; Total: <b>'+(s.freezer+s.camara)+'</b>';
+  const s=frozenStock[fpId]||{freezer:0,camara:0,freezer_loja:0};
+  document.getElementById('movCurrentInfo').innerHTML='Saldo atual → 🧊 Freezer: <b>'+s.freezer+'</b> &nbsp;|&nbsp; 🏪 Câmara: <b>'+s.camara+'</b> &nbsp;|&nbsp; 🛒 Loja: <b>'+s.freezer_loja+'</b> &nbsp;|&nbsp; Total: <b>'+(s.freezer+s.camara+s.freezer_loja)+' '+currentMovFP.unit+'</b>';
   openModal('modalMovimento');
 }
 
@@ -344,7 +346,7 @@ async function saveMovimento(){
       await api.post('frozen_stock',{frozen_product_id:fp.id,location:location,quantity:newQty});
     }
     await api.post('frozen_movements',{frozen_product_id:fp.id,location:location,movement_type:type,quantity:type==='inventario'?newQty:qty,previous_quantity:prevQty,obs:obs||null,responsible:'Gustavo'});
-    if(!frozenStock[fp.id])frozenStock[fp.id]={freezer:0,camara:0};
+    if(!frozenStock[fp.id])frozenStock[fp.id]={freezer:0,camara:0,freezer_loja:0};
     frozenStock[fp.id][location]=newQty;
     closeModal('modalMovimento');
     renderProducts();
