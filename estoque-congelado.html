@@ -457,7 +457,16 @@ async function removeFrozenProduct(fpId,name){
 function renderCatalogDropdown(list){
   const dd=document.getElementById('searchDropdown');
   if(!list.length){dd.innerHTML='<div class="search-dropdown-empty">Nenhum produto disponível</div>';return;}
-  dd.innerHTML=list.map(p=>'<div class="search-dropdown-item" onclick="selectCatalogItem(''+p.id+'|'+p.source+'|'+p.unit+'',''+p.label.replace(/'/g,"\'")+'')" data-val="'+p.id+'|'+p.source+'|'+p.unit+'">'+p.label+'</div>').join('');
+  dd.innerHTML='';
+  list.forEach(p=>{
+    const div=document.createElement('div');
+    div.className='search-dropdown-item';
+    div.textContent=p.label;
+    div.dataset.val=p.id+'|'+p.source+'|'+p.unit;
+    div.dataset.label=p.label;
+    div.addEventListener('click',function(){selectCatalogItem(this.dataset.val,this.dataset.label);});
+    dd.appendChild(div);
+  });
 }
 
 function filterCatalog(q){
