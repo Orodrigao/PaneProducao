@@ -4,6 +4,7 @@
     { "source": "/romaneio", "destination": "/romaneio.html" },
     { "source": "/produtos", "destination": "/produtos.html" },
     { "source": "/estoque-congelado", "destination": "/estoque-congelado.html" },
+    { "source": "/compras", "destination": "/compras.html" },
     { "source": "/", "destination": "/index.html" }
   ]
 }

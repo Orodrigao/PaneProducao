@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lista de Compras – Pane &amp; Salute</title>
+<style>
+  :root {
+    --bg:#f5f3ef;--card:#fff;--primary:#8B4513;--primary-light:#c47a3a;
+    --accent:#d4a843;--danger:#e53e3e;--success:#38a169;--warning:#dd6b20;
+    --text:#2d2d2d;--muted:#888;--border:#e2ddd8;--shadow:0 2px 8px rgba(0,0,0,.08);--radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  .header{background:var(--primary);color:#fff;padding:14px 20px;display:flex;align-items:center;
+    justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+  .header h1{font-size:1.1rem;font-weight:700}
+  .header .user-badge{background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;font-size:.85rem;cursor:pointer}
+  .screen{display:none;padding:20px;max-width:700px;margin:0 auto}
+  .screen.active{display:block}
+  #loginScreen{padding-top:60px;text-align:center}
+  .login-logo{font-size:3rem;margin-bottom:10px}
+  .login-title{font-size:1.4rem;font-weight:700;color:var(--primary);margin-bottom:6px}
+  .login-sub{color:var(--muted);margin-bottom:40px;font-size:.9rem}
+  .user-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:360px;margin:0 auto}
+  .user-btn{background:var(--card);border:2px solid var(--border);border-radius:var(--radius);
+    padding:20px 16px;cursor:pointer;transition:all .2s;text-align:center}
+  .user-btn:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .user-btn .user-icon{font-size:2rem;margin-bottom:6px}
+  .user-btn .user-name{font-weight:700;font-size:1rem;color:var(--primary)}
+  .user-btn .user-sector{font-size:.78rem;color:var(--muted);margin-top:2px}
+  .owner-link{margin-top:30px}
+  .owner-link a{color:var(--muted);font-size:.8rem;cursor:pointer;text-decoration:underline}
+  .owner-form{max-width:300px;margin:0 auto;margin-top:20px}
+  .owner-form input{width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;margin-bottom:10px}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+  .card-title{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:10px}
+  .status-banner{border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:.9rem;font-weight:600;display:flex;align-items:center;gap:8px}
+  .status-draft{background:#fff8e6;color:var(--warning);border:1px solid #f6d860}
+  .status-submitted{background:#fff3cd;color:#856404;border:1px solid #ffc107}
+  .status-completed{background:#d4edda;color:var(--success);border:1px solid #c3e6cb}
+  .item-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .item-row:last-child{border-bottom:none}
+  .item-info{flex:1;min-width:0}
+  .item-name{font-size:.92rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item-unit{font-size:.75rem;color:var(--muted)}
+  .item-qty{width:80px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:.9rem;text-align:center;flex-shrink:0}
+  .item-qty:focus{outline:none;border-color:var(--primary)}
+  .item-qty.has-value{border-color:var(--primary-light);background:#fff8f0}
+  .item-del{width:28px;height:28px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:1rem;flex-shrink:0;border-radius:4px;display:flex;align-items:center;justify-content:center}
+  .item-del:hover{background:#fee;color:var(--danger)}
+  .adhoc-row{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)}
+  .adhoc-row input{flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.88rem}
+  .adhoc-row input:focus{outline:none;border-color:var(--primary)}
+  .adhoc-unit{width:70px;padding:8px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;text-align:center}
+  .adhoc-row button{padding:8px 14px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.88rem;white-space:nowrap}
+  .search-wrap{position:relative;margin-bottom:12px}
+  .search-wrap input{width:100%;padding:10px 36px 10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem}
+  .search-wrap input:focus{outline:none;border-color:var(--primary)}
+  .search-icon{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .search-results{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:0 0 8px 8px;box-shadow:var(--shadow);max-height:200px;overflow-y:auto;z-index:50;display:none}
+  .search-results.open{display:block}
+  .search-result-item{padding:10px 14px;cursor:pointer;font-size:.88rem;border-bottom:1px solid var(--border)}
+  .search-result-item:last-child{border-bottom:none}
+  .search-result-item:hover{background:#f5f0eb}
+  .sr-cat{font-size:.72rem;color:var(--muted)}
+  .search-empty{padding:12px;color:var(--muted);font-size:.85rem;text-align:center}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:11px 20px;border:none;border-radius:8px;cursor:pointer;font-size:.92rem;font-weight:600;transition:all .2s}
+  .btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:#6b3410}
+  .btn-success{background:var(--success);color:#fff}.btn-success:hover{background:#2f855a}
+  .btn-warning{background:var(--warning);color:#fff}.btn-warning:hover{background:#c05621}
+  .btn-outline{background:#fff;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover{background:#faf5f0}
+  .btn-ghost{background:transparent;color:var(--muted);border:1.5px solid var(--border)}.btn-ghost:hover{background:var(--border);color:var(--text)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-full{width:100%;justify-content:center;margin-bottom:10px}
+  .summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.85rem;color:var(--muted);margin-bottom:14px}
+  .filter-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .filter-tab{padding:5px 12px;border:1.5px solid var(--border);border-radius:20px;font-size:.8rem;cursor:pointer;background:#fff;transition:all .15s}
+  .filter-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .sector-card{background:var(--card);border-radius:var(--radius);border:2px solid var(--border);padding:16px;margin-bottom:14px;cursor:pointer;transition:all .2s}
+  .sector-card:hover{border-color:var(--primary)}
+  .sector-card.submitted{border-color:var(--warning)}
+  .sector-card.completed{border-color:var(--success)}
+  .sector-header{display:flex;justify-content:space-between;align-items:center}
+  .sector-name{font-weight:700;font-size:1rem;color:var(--primary)}
+  .sector-badge{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase}
+  .badge-draft{background:#f0f0f0;color:var(--muted)}
+  .badge-submitted{background:#fff3cd;color:#856404}
+  .badge-completed{background:#d4edda;color:var(--success)}
+  .sector-meta{font-size:.8rem;color:var(--muted);margin-top:4px}
+  .sector-progress{height:4px;background:var(--border);border-radius:2px;margin-top:10px}
+  .sector-progress-bar{height:100%;background:var(--success);border-radius:2px;transition:width .3s}
+  .owner-item-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+  .owner-item-row:last-child{border-bottom:none}
+  .owner-check{width:24px;height:24px;border:2px solid var(--border);border-radius:50%;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;font-size:.9rem}
+  .owner-check.checked{background:var(--success);border-color:var(--success);color:#fff}
+  .owner-item-name{flex:1;font-size:.88rem}
+  .owner-item-name.checked{text-decoration:line-through;color:var(--muted)}
+  .owner-item-qty{font-size:.88rem;font-weight:700;color:var(--primary);white-space:nowrap}
+  .owner-item-qty.no-qty{color:var(--muted);font-weight:normal;font-style:italic;font-size:.78rem}
+  .section-divider{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 0 4px}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted)}
+  .empty-icon{font-size:3rem;margin-bottom:10px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:12px 24px;border-radius:8px;font-size:.9rem;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+  .toast.show{opacity:1}
+  .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading-state{text-align:center;padding:40px;color:var(--muted)}
+  .adhoc-badge{display:inline-block;font-size:.7rem;background:#e8f4fd;color:#1a6fa3;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🛒 Lista de Compras</h1>
+  <div id="headerUser" class="user-badge" onclick="goLogin()" style="display:none">
+    👤 <span id="headerUserName"></span>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="screen active">
+  <div class="login-logo">🥐</div>
+  <div class="login-title">Pane &amp; Salute</div>
+  <div class="login-sub">Lista de Compras — Selecione seu nome</div>
+  <div class="user-grid">
+    <div class="user-btn" onclick="loginUser('Geolar','padaria')">
+      <div class="user-icon">👨‍🍳</div>
+      <div class="user-name">Geolar</div>
+      <div class="user-sector">Padaria</div>
+    </div>
+    <div class="user-btn" onclick="loginUser('Fran','cozinha')">
+      <div class="user-icon">👩‍🍳</div>
+      <div class="user-name">Fran</div>
+      <div class="user-sector">Cozinha</div>
+    </div>
+    <div class="user-btn" onclick="loginUser('Liara','loja')">
+      <div class="user-icon">🏪</div>
+      <div class="user-name">Liara</div>
+      <div class="user-sector">Loja</div>
+    </div>
+    <div class="user-btn" onclick="loginUser('Elis','loja')">
+      <div class="user-icon">🏪</div>
+      <div class="user-name">Elis</div>
+      <div class="user-sector">Loja</div>
+    </div>
+  </div>
+  <div class="owner-link"><a onclick="showOwnerLogin()">🔑 Acesso do responsável</a></div>
+  <div id="ownerLoginForm" style="display:none" class="owner-form">
+    <input type="password" id="ownerPwd" placeholder="Senha do responsável" onkeydown="if(event.key==='Enter')ownerLogin()">
+    <button class="btn btn-primary btn-full" onclick="ownerLogin()">Entrar como Responsável</button>
+  </div>
+</div>
+
+<!-- USER LIST -->
+<div id="listScreen" class="screen">
+  <div id="listStatusBanner"></div>
+  <div class="summary-row">
+    <span id="listSectorLabel" style="font-weight:700;color:var(--primary)"></span>
+    <span id="listSummaryCount"></span>
+  </div>
+  <div class="filter-tabs" id="listFilterTabs">
+    <div class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">Todos</div>
+    <div class="filter-tab" data-filter="pending" onclick="setFilter('pending',this)">Sem qtd.</div>
+    <div class="filter-tab" data-filter="filled" onclick="setFilter('filled',this)">Com qtd.</div>
+  </div>
+  <div id="addProductSection" class="card" style="display:none">
+    <div class="card-title">Adicionar produto</div>
+    <div class="search-wrap">
+      <input type="text" id="productSearch" placeholder="Buscar produto..." oninput="searchProducts()" autocomplete="off">
+      <span class="search-icon">🔍</span>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div id="itemsContainer"><div class="loading-state">Carregando lista...</div></div>
+    <div id="adhocSection" style="display:none">
+      <div class="section-divider">Adicionar item avulso</div>
+      <div class="adhoc-row">
+        <input type="text" id="adhocName" placeholder="Nome do item...">
+        <input type="text" id="adhocUnit" class="adhoc-unit" placeholder="un.">
+        <button onclick="addAdhocItem()">+ Adicionar</button>
+      </div>
+    </div>
+  </div>
+  <div id="listActions" style="margin-top:16px"></div>
+</div>
+
+<!-- OWNER OVERVIEW -->
+<div id="ownerScreen" class="screen">
+  <div style="margin-bottom:16px;font-weight:700;color:var(--primary)">Visão Geral — Compras</div>
+  <div id="ownerSectors"></div>
+</div>
+
+<!-- OWNER DETAIL -->
+<div id="ownerDetailScreen" class="screen">
+  <div style="margin-bottom:12px">
+    <button class="btn btn-ghost" onclick="showOwnerScreen()" style="padding:6px 12px;font-size:.85rem">← Voltar</button>
+  </div>
+  <div id="ownerDetailBanner"></div>
+  <div class="summary-row">
+    <span id="ownerDetailTitle" style="font-weight:700;color:var(--primary)"></span>
+    <span id="ownerDetailProgress"></span>
+  </div>
+  <div class="filter-tabs" id="ownerFilterTabs">
+    <div class="filter-tab active" data-filter="all" onclick="setOwnerFilter('all',this)">Todos</div>
+    <div class="filter-tab" data-filter="unchecked" onclick="setOwnerFilter('unchecked',this)">Pendentes</div>
+    <div class="filter-tab" data-filter="checked" onclick="setOwnerFilter('checked',this)">Comprados</div>
+    <div class="filter-tab" data-filter="noqty" onclick="setOwnerFilter('noqty',this)">Sem qtd.</div>
+  </div>
+  <div class="card"><div id="ownerItemsContainer"></div></div>
+  <div id="ownerDetailActions" style="margin-top:16px"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://gohluceldchoitihrimw.supabase.co';
+const SB_KEY='sb_publishable_gohluceldchoitihrimw_a87b02e4de5a2a36dd93a3ca05cc578fd7c7d7f8';
+
+// ⚙️ TELEGRAM — configure após criar o bot:
+// 1) Fale com @BotFather no Telegram → /newbot → copie o token
+// 2) Inicie conversa com seu bot e acesse:
+//    https://api.telegram.org/bot{TOKEN}/getUpdates  para pegar seu chat_id
+const TG_TOKEN='SEU_TOKEN_AQUI';
+const TG_CHAT_ID='SEU_CHAT_ID_AQUI';
+const OWNER_PWD='pane2025';
+const SECTOR_LABELS={padaria:'🥖 Padaria',cozinha:'🍳 Cozinha',loja:'🏪 Loja'};
+const STATUS_LABELS={draft:'Rascunho',submitted:'Lista Enviada',completed:'Concluída'};
+
+let currentUser=null,currentSector=null,isOwner=false;
+let currentList=null,currentItems=[],currentFilter='all';
+let ownerFilter='all',ownerCurrentSector=null,ownerCurrentList=null,ownerCurrentItems=[];
+let allProducts=[];
+
+async function sb(path,opts={}){
+  const r=await fetch(SB_URL+'/rest/v1/'+path,{
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':opts.prefer||'return=representation',...(opts.headers||{})},
+    method:opts.method||'GET',body:opts.body?JSON.stringify(opts.body):undefined
+  });
+  if(!r.ok){const e=await r.text();throw new Error(e);}
+  const ct=r.headers.get('content-type')||'';
+  if(ct.includes('json'))return r.json();
+  return null;
+}
+function toast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function goLogin(){currentUser=null;currentSector=null;isOwner=false;document.getElementById('headerUser').style.display='none';showScreen('loginScreen');}
+function loginUser(name,sector){currentUser=name;currentSector=sector;isOwner=false;document.getElementById('headerUserName').textContent=name;document.getElementById('headerUser').style.display='flex';showScreen('listScreen');loadUserList();}
+function showOwnerLogin(){const f=document.getElementById('ownerLoginForm');f.style.display=f.style.display==='none'?'block':'none';}
+function ownerLogin(){if(document.getElementById('ownerPwd').value!==OWNER_PWD){toast('❌ Senha incorreta');return;}isOwner=true;currentUser='Responsável';document.getElementById('headerUserName').textContent='👑 Responsável';document.getElementById('headerUser').style.display='flex';showScreen('ownerScreen');loadOwnerOverview();}
+
+async function loadUserList(){
+  try{
+    const lists=await sb('purchase_lists?sector=eq.'+currentSector+'&select=*');
+    if(!lists||!lists.length){showError('Lista não encontrada.');return;}
+    currentList=lists[0];
+    const items=await sb('purchase_items?list_id=eq.'+currentList.id+'&select=*,products(name,category)&order=sort_order.asc,created_at.asc');
+    currentItems=items||[];currentFilter='all';renderUserList();
+  }catch(e){showError('Erro: '+e.message);}
+}
+
+function getFilteredItems(){
+  if(currentFilter==='pending')return currentItems.filter(i=>!i.quantity&&!i.is_adhoc);
+  if(currentFilter==='filled')return currentItems.filter(i=>!!i.quantity);
+  return currentItems;
+}
+
+function renderUserList(){
+  const list=currentList,items=currentItems;
+  const isSubmitted=list.status==='submitted',isCompleted=list.status==='completed',readonly=isSubmitted||isCompleted;
+  const banner=document.getElementById('listStatusBanner');
+  if(isSubmitted)banner.innerHTML='<div class="status-banner status-submitted">⏳ Lista enviada em '+formatDate(list.submitted_at)+' por '+(list.submitted_by||'?')+'. Aguardando compras.</div>';
+  else if(isCompleted)banner.innerHTML='<div class="status-banner status-completed">✅ Lista concluída!</div>';
+  else banner.innerHTML='';
+  document.getElementById('listSectorLabel').textContent=SECTOR_LABELS[currentSector]||currentSector;
+  const filled=items.filter(i=>!!i.quantity).length;
+  document.getElementById('listSummaryCount').textContent=filled+'/'+items.length+' com quantidade';
+  document.getElementById('addProductSection').style.display=(!readonly&&currentSector!=='padaria')?'block':'none';
+  document.getElementById('adhocSection').style.display=readonly?'none':'block';
+  const filtered=getFilteredItems(),container=document.getElementById('itemsContainer');
+  if(!filtered.length){container.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div><div>Nenhum item neste filtro.</div></div>';}
+  else{container.innerHTML='';filtered.forEach(item=>container.appendChild(buildItemRow(item,readonly)));}
+  const actions=document.getElementById('listActions');
+  if(!readonly){
+    actions.innerHTML='<button class="btn btn-success btn-full" onclick="submitList()" '+(filled===0?'disabled':'')+'>'
+      +'📤 Enviar Lista ('+filled+' item'+(filled!==1?'s':'')+' com quantidade)</button>'
+      +'<button class="btn btn-ghost btn-full" onclick="clearQuantities()">🔄 Limpar quantidades</button>';
+  }else if(isSubmitted){
+    actions.innerHTML='<div style="text-align:center;color:var(--muted);font-size:.85rem">⏳ Lista enviada — aguardando o responsável finalizar</div>';
+  }else if(isCompleted){
+    actions.innerHTML='<button class="btn btn-outline btn-full" onclick="resetList()">🔄 Iniciar novo ciclo</button>';
+  }
+}
+
+function buildItemRow(item,readonly){
+  const div=document.createElement('div');div.className='item-row';div.dataset.itemId=item.id;
+  const name=item.is_adhoc?item.ad_hoc_name:(item.products&&item.products.name?item.products.name:'—');
+  const unit=item.unit||'',qty=item.quantity||'';
+  const adhocBadge=item.is_adhoc?'<span class="adhoc-badge">avulso</span>':'';
+  div.innerHTML='<div class="item-info"><div class="item-name">'+esc(name)+adhocBadge+'</div>'+(unit?'<div class="item-unit">'+esc(unit)+'</div>':'')+'</div>'
+    +'<input type="number" class="item-qty'+(qty?' has-value':'')+'" value="'+qty+'" placeholder="qtd" min="0" step="0.1" '+(readonly?'disabled':'')
+    +' onchange="updateQty(\''+item.id+'\',this.value,this)" oninput="this.classList.toggle(\'has-value\',!!this.value)">'
+    +(item.is_adhoc&&!readonly?'<button class="item-del" onclick="deleteItem(\''+item.id+'\')" title="Remover">✕</button>':'');
+  return div;
+}
+
+async function updateQty(itemId,val,el){
+  const qty=val===''?null:parseFloat(val);
+  try{
+    await sb('purchase_items?id=eq.'+itemId,{method:'PATCH',prefer:'return=minimal',body:{quantity:qty}});
+    const idx=currentItems.findIndex(i=>i.id===itemId);if(idx>=0)currentItems[idx].quantity=qty;
+    updateSummary();
+  }catch(e){toast('Erro ao salvar: '+e.message);el.value='';}
+}
+
+function updateSummary(){
+  const filled=currentItems.filter(i=>!!i.quantity).length;
+  document.getElementById('listSummaryCount').textContent=filled+'/'+currentItems.length+' com quantidade';
+  const btn=document.querySelector('#listActions .btn-success');
+  if(btn){btn.disabled=filled===0;btn.textContent='📤 Enviar Lista ('+filled+' item'+(filled!==1?'s':'')+' com quantidade)';}
+}
+
+function setFilter(f,el){
+  currentFilter=f;
+  document.querySelectorAll('#listFilterTabs .filter-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const filtered=getFilteredItems(),container=document.getElementById('itemsContainer'),readonly=currentList.status!=='draft';
+  if(!filtered.length)container.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div><div>Nenhum item neste filtro.</div></div>';
+  else{container.innerHTML='';filtered.forEach(item=>container.appendChild(buildItemRow(item,readonly)));}
+}
+
+async function addAdhocItem(){
+  const nameEl=document.getElementById('adhocName'),unitEl=document.getElementById('adhocUnit');
+  const name=nameEl.value.trim();if(!name){toast('Informe o nome do item');return;}
+  try{
+    const[newItem]=await sb('purchase_items',{method:'POST',body:{list_id:currentList.id,ad_hoc_name:name,unit:unitEl.value.trim()||null,is_adhoc:true,sort_order:9999}});
+    currentItems.push(newItem);nameEl.value='';unitEl.value='';
+    setFilter(currentFilter,document.querySelector('#listFilterTabs [data-filter="'+currentFilter+'"]'));
+    updateSummary();toast('✅ Item adicionado');
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function deleteItem(itemId){
+  if(!confirm('Remover este item?'))return;
+  try{
+    await sb('purchase_items?id=eq.'+itemId,{method:'DELETE',prefer:'return=minimal'});
+    currentItems=currentItems.filter(i=>i.id!==itemId);
+    setFilter(currentFilter,document.querySelector('#listFilterTabs [data-filter="'+currentFilter+'"]'));
+    updateSummary();toast('Item removido');
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function submitList(){
+  const filled=currentItems.filter(i=>!!i.quantity);
+  if(!filled.length){toast('Nenhum item com quantidade');return;}
+  if(!confirm('Enviar lista com '+filled.length+' item(s) para compra?'))return;
+  const btn=document.querySelector('.btn-success');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Enviando...';
+  try{
+    await sb('purchase_lists?id=eq.'+currentList.id,{method:'PATCH',prefer:'return=minimal',body:{status:'submitted',submitted_at:new Date().toISOString(),submitted_by:currentUser}});
+    currentList.status='submitted';currentList.submitted_at=new Date().toISOString();currentList.submitted_by=currentUser;
+    await sendTelegramNotification(filled);
+    toast('✅ Lista enviada com sucesso!',3000);renderUserList();
+  }catch(e){toast('Erro ao enviar: '+e.message);btn.disabled=false;btn.textContent='📤 Enviar Lista';}
+}
+
+async function clearQuantities(){
+  if(!confirm('Limpar todas as quantidades?'))return;
+  try{await sb('purchase_items?list_id=eq.'+currentList.id,{method:'PATCH',prefer:'return=minimal',body:{quantity:null}});currentItems.forEach(i=>i.quantity=null);renderUserList();toast('Quantidades limpas');}
+  catch(e){toast('Erro: '+e.message);}
+}
+
+async function resetList(){
+  if(!confirm('Iniciar novo ciclo?'))return;
+  try{
+    await sb('purchase_items?list_id=eq.'+currentList.id,{method:'PATCH',prefer:'return=minimal',body:{quantity:null,checked:false}});
+    await sb('purchase_lists?id=eq.'+currentList.id,{method:'PATCH',prefer:'return=minimal',body:{status:'draft',submitted_at:null,submitted_by:null,completed_at:null}});
+    currentList.status='draft';currentItems.forEach(i=>{i.quantity=null;i.checked=false;});renderUserList();toast('🔄 Novo ciclo iniciado');
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function loadAllProducts(){
+  if(allProducts.length>0)return;
+  try{const items=await sb('products?active=eq.true&select=id,name,category,unit&order=name.asc');allProducts=items||[];}
+  catch(e){}
+}
+
+function searchProducts(){
+  const q=document.getElementById('productSearch').value.trim().toLowerCase();
+  const dd=document.getElementById('searchResults');
+  if(!q){dd.classList.remove('open');return;}
+  const existing=new Set(currentItems.filter(i=>i.product_id).map(i=>i.product_id));
+  const matches=allProducts.filter(p=>!existing.has(p.id)&&p.name.toLowerCase().includes(q)).slice(0,10);
+  dd.innerHTML='';
+  if(!matches.length){dd.innerHTML='<div class="search-empty">Nenhum produto encontrado</div>';}
+  else{matches.forEach(p=>{const div=document.createElement('div');div.className='search-result-item';div.innerHTML='<div>'+esc(p.name)+'</div><div class="sr-cat">'+esc(p.category||'')+(p.unit?' · '+p.unit:'')+'</div>';div.addEventListener('click',()=>addProductFromSearch(p));dd.appendChild(div);});}
+  dd.classList.add('open');
+}
+
+async function addProductFromSearch(product){
+  document.getElementById('searchResults').classList.remove('open');document.getElementById('productSearch').value='';
+  try{
+    const[newItem]=await sb('purchase_items',{method:'POST',body:{list_id:currentList.id,product_id:product.id,unit:product.unit||null,sort_order:9000}});
+    newItem.products={name:product.name,category:product.category};currentItems.push(newItem);
+    setFilter(currentFilter,document.querySelector('#listFilterTabs [data-filter="'+currentFilter+'"]'));
+    updateSummary();toast('✅ Produto adicionado');
+  }catch(e){toast('Erro: '+e.message);}
+}
+document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))document.getElementById('searchResults')?.classList.remove('open');});
+
+async function sendTelegramNotification(filledItems){
+  if(TG_TOKEN==='SEU_TOKEN_AQUI'||TG_CHAT_ID==='SEU_CHAT_ID_AQUI'){console.warn('Telegram não configurado.');return;}
+  const sectorLabel=SECTOR_LABELS[currentSector]||currentSector;
+  const lines=filledItems.map(i=>{const name=i.is_adhoc?i.ad_hoc_name:(i.products&&i.products.name?i.products.name:'?');return '• '+name+': *'+i.quantity+'* '+(i.unit||'');});
+  const msg='🛒 *Nova lista de compras enviada!*\n\n'+'👤 Enviado por: *'+currentUser+'*\n'+'🏷️ Setor: *'+sectorLabel+'*\n'+'📋 Itens: *'+filledItems.length+'*\n\n'+lines.slice(0,30).join('\n')+(lines.length>30?'\n_...e mais '+(lines.length-30)+' itens_':'')+'\n\n🔗 Acesse: https://pane-producao.vercel.app/compras';
+  try{await fetch('https://api.telegram.org/bot'+TG_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT_ID,text:msg,parse_mode:'Markdown'})});}
+  catch(e){console.error('Telegram error:',e);}
+}
+
+async function loadOwnerOverview(){
+  try{
+    const lists=await sb('purchase_lists?select=*&order=sector.asc');
+    const container=document.getElementById('ownerSectors');container.innerHTML='';
+    for(const list of(lists||[])){
+      const items=await sb('purchase_items?list_id=eq.'+list.id+'&select=id,quantity,checked');
+      const total=(items||[]).length,filled=(items||[]).filter(i=>i.quantity).length,checked2=(items||[]).filter(i=>i.checked).length;
+      const pct=filled>0?Math.round((checked2/filled)*100):0;
+      const card=document.createElement('div');card.className='sector-card'+(list.status!=='draft'?' '+list.status:'');
+      card.innerHTML='<div class="sector-header"><div class="sector-name">'+(SECTOR_LABELS[list.sector]||list.sector)+'</div>'
+        +'<div class="sector-badge badge-'+list.status+'">'+(STATUS_LABELS[list.status]||list.status)+'</div></div>'
+        +'<div class="sector-meta">'+(filled>0?filled+' itens com quantidade · '+checked2+' comprados':'Nenhum item preenchido ainda')
+        +(list.submitted_at?' · Enviado '+formatDate(list.submitted_at):'')+' </div>'
+        +(filled>0?'<div class="sector-progress"><div class="sector-progress-bar" style="width:'+pct+'%"></div></div>':'');
+      card.addEventListener('click',()=>openOwnerDetail(list));container.appendChild(card);
+    }
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function openOwnerDetail(list){
+  ownerCurrentList=list;ownerCurrentSector=list.sector;ownerFilter='all';showScreen('ownerDetailScreen');
+  try{
+    const items=await sb('purchase_items?list_id=eq.'+list.id+'&select=*,products(name,category)&order=sort_order.asc,created_at.asc');
+    ownerCurrentItems=items||[];renderOwnerDetail();
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+function renderOwnerDetail(){
+  const list=ownerCurrentList,items=ownerCurrentItems;
+  const banner=document.getElementById('ownerDetailBanner');
+  if(list.status==='submitted')banner.innerHTML='<div class="status-banner status-submitted">⏳ Enviado por <strong>'+(list.submitted_by||'?')+'</strong> em '+formatDate(list.submitted_at)+'</div>';
+  else if(list.status==='completed')banner.innerHTML='<div class="status-banner status-completed">✅ Lista concluída em '+formatDate(list.completed_at)+'</div>';
+  else banner.innerHTML='<div class="status-banner status-draft">📝 Lista em rascunho — aguardando envio</div>';
+  document.getElementById('ownerDetailTitle').textContent=SECTOR_LABELS[list.sector]||list.sector;
+  const filled=items.filter(i=>i.quantity),checked=items.filter(i=>i.checked);
+  document.getElementById('ownerDetailProgress').textContent=checked.length+'/'+filled.length+' comprados';
+  renderOwnerItems();
+  const actions=document.getElementById('ownerDetailActions');
+  if(list.status==='submitted'){
+    actions.innerHTML='<button class="btn btn-success btn-full" onclick="completeList()">✅ Finalizar lista ('+checked.length+'/'+filled.length+' comprados)</button>'
+      +'<button class="btn btn-ghost btn-full" onclick="loadOwnerOverview();showOwnerScreen()">← Voltar à visão geral</button>';
+  }else if(list.status==='draft'){
+    actions.innerHTML='<div style="text-align:center;color:var(--muted);font-size:.85rem">Aguardando o responsável de '+(SECTOR_LABELS[list.sector]||list.sector)+' enviar a lista.</div>';
+  }else{
+    actions.innerHTML='<button class="btn btn-outline btn-full" onclick="ownerResetList()">🔄 Reiniciar ciclo</button>';
+  }
+}
+
+function renderOwnerItems(){
+  const items=ownerCurrentItems,list=ownerCurrentList,container=document.getElementById('ownerItemsContainer');
+  let filtered;
+  if(ownerFilter==='unchecked')filtered=items.filter(i=>i.quantity&&!i.checked);
+  else if(ownerFilter==='checked')filtered=items.filter(i=>i.checked);
+  else if(ownerFilter==='noqty')filtered=items.filter(i=>!i.quantity);
+  else filtered=items.filter(i=>i.quantity||i.is_adhoc);
+  if(!filtered.length){container.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div><div>Nenhum item neste filtro.</div></div>';return;}
+  container.innerHTML='';
+  const readonly=list.status!=='submitted';
+  filtered.forEach(item=>{
+    const name=item.is_adhoc?item.ad_hoc_name:(item.products&&item.products.name?item.products.name:'—');
+    const qty=item.quantity?(item.quantity+' '+(item.unit||'')).trim():null;
+    const adhocBadge=item.is_adhoc?'<span class="adhoc-badge">avulso</span>':'';
+    const row=document.createElement('div');row.className='owner-item-row';
+    row.innerHTML='<div class="owner-check'+(item.checked?' checked':'')
+      +'" onclick="'+(readonly?'':('toggleCheck(\''+item.id+'\',this)'))+'" style="'+(readonly?'cursor:default;opacity:.5':'')+'">'+(item.checked?'✓':'')+'</div>'
+      +'<div class="owner-item-name'+(item.checked?' checked':'')+'">'+esc(name)+adhocBadge+'</div>'
+      +'<div class="owner-item-qty'+(qty?'':' no-qty')+'">'+(qty||'sem qtd.')+'</div>';
+    container.appendChild(row);
+  });
+}
+
+function setOwnerFilter(f,el){
+  ownerFilter=f;document.querySelectorAll('#ownerFilterTabs .filter-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');renderOwnerItems();
+}
+
+async function toggleCheck(itemId,el){
+  const item=ownerCurrentItems.find(i=>i.id===itemId);if(!item)return;
+  const newVal=!item.checked;
+  try{
+    await sb('purchase_items?id=eq.'+itemId,{method:'PATCH',prefer:'return=minimal',body:{checked:newVal}});
+    item.checked=newVal;el.classList.toggle('checked',newVal);el.textContent=newVal?'✓':'';
+    const nameEl=el.nextElementSibling;if(nameEl)nameEl.classList.toggle('checked',newVal);
+    const checked=ownerCurrentItems.filter(i=>i.checked).length,filled=ownerCurrentItems.filter(i=>i.quantity).length;
+    document.getElementById('ownerDetailProgress').textContent=checked+'/'+filled+' comprados';
+    const btn=document.querySelector('#ownerDetailActions .btn-success');
+    if(btn)btn.textContent='✅ Finalizar lista ('+checked+'/'+filled+' comprados)';
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function completeList(){
+  if(!confirm('Finalizar lista?'))return;
+  try{
+    await sb('purchase_lists?id=eq.'+ownerCurrentList.id,{method:'PATCH',prefer:'return=minimal',body:{status:'completed',completed_at:new Date().toISOString()}});
+    ownerCurrentList.status='completed';renderOwnerDetail();toast('✅ Lista finalizada!');
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+async function ownerResetList(){
+  if(!confirm('Reiniciar ciclo desta lista?'))return;
+  try{
+    await sb('purchase_items?list_id=eq.'+ownerCurrentList.id,{method:'PATCH',prefer:'return=minimal',body:{quantity:null,checked:false}});
+    await sb('purchase_lists?id=eq.'+ownerCurrentList.id,{method:'PATCH',prefer:'return=minimal',body:{status:'draft',submitted_at:null,submitted_by:null,completed_at:null}});
+    ownerCurrentList.status='draft';ownerCurrentItems.forEach(i=>{i.quantity=null;i.checked=false;});renderOwnerDetail();toast('🔄 Ciclo reiniciado');
+  }catch(e){toast('Erro: '+e.message);}
+}
+
+function showOwnerScreen(){showScreen('ownerScreen');loadOwnerOverview();}
+
+function showError(msg){document.getElementById('itemsContainer').innerHTML='<div class="empty-state"><div class="empty-icon">⚠️</div><div>'+msg+'</div></div>';}
+function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function formatDate(iso){if(!iso)return'';const d=new Date(iso);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+
+document.addEventListener('DOMContentLoaded',()=>loadAllProducts());
+</script>
+</body>
+</html>
