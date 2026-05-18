@@ -80,6 +80,15 @@
   .form-row .form-group{flex:1}
   .btn-add{padding:10px 20px;background:#2563eb;color:#fff;border:none;border-radius:7px;font-size:.9rem;font-weight:600;cursor:pointer}
   .btn-add:hover{background:#1d4ed8}
+  .search-select-wrap{position:relative}
+  .search-select-input{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:7px;font-size:.95rem;background:#fff}
+  .search-select-input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+  .search-dropdown{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-top:none;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,.1);display:none}
+  .search-dropdown.open{display:block}
+  .search-dropdown-item{padding:10px 12px;cursor:pointer;font-size:.9rem;border-bottom:1px solid #f3f4f6}
+  .search-dropdown-item:last-child{border-bottom:none}
+  .search-dropdown-item:hover,.search-dropdown-item.selected{background:#eff6ff;color:#1d4ed8}
+  .search-dropdown-empty{padding:12px;color:#9ca3af;font-size:.85rem;text-align:center}
   .back-btn{display:flex;align-items:center;gap:6px;background:none;border:none;color:#6b7280;font-size:.85rem;cursor:pointer;padding:0;margin-bottom:12px}
   .back-btn:hover{color:#374151}
   .toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center}
@@ -120,7 +129,15 @@
     <h3>➕ Adicionar produto ao estoque congelado</h3>
     <div class="form-group">
       <label>Produto (Pães ou Confeitaria)</label>
-      <select id="adminSelectProduct"><option value="">Carregando...</option></select>
+      <div class="search-select-wrap">
+        <input type="text" class="search-select-input" id="adminSearchInput"
+          placeholder="🔍 Digite para buscar: bol, cro, bagu..."
+          oninput="filterCatalog(this.value)"
+          onfocus="showDropdown()"
+          autocomplete="off">
+        <div class="search-dropdown" id="searchDropdown"></div>
+      </div>
+      <input type="hidden" id="adminSelectProduct" value="">
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -384,8 +401,11 @@ async function loadAdminData(){
   ];
   const alreadyIds=frozenProducts.map(f=>f.product_id);
   const available=allCatalogProducts.filter(p=>!alreadyIds.includes(p.id));
-  const sel=document.getElementById('adminSelectProduct');
-  sel.innerHTML=available.length?available.map(p=>'<option value="'+p.id+'|'+p.source+'|'+p.unit+'">'+p.label+'</option>').join(''):'<option value="">Todos os produtos já foram adicionados</option>';
+  window._availableCatalog=available;
+  document.getElementById('adminSearchInput').value='';
+  document.getElementById('adminSelectProduct').value='';
+  document.getElementById('searchDropdown').classList.remove('open');
+  renderCatalogDropdown(available);
   renderAdminList();
 }
 
@@ -398,7 +418,7 @@ function renderAdminList(){
 async function addFrozenProduct(){
   const val=document.getElementById('adminSelectProduct').value;
   const minStock=parseInt(document.getElementById('adminMinStock').value)||0;
-  if(!val){toast('Selecione um produto','error');return;}
+  if(!val){toast('Digite e selecione um produto da lista','error');return;}
   const parts=val.split('|');
   const pid=parts[0],source=parts[1],unit=parts[2];
   const prod=allCatalogProducts.find(p=>p.id===pid);
@@ -430,6 +450,41 @@ async function removeFrozenProduct(fpId,name){
     await loadAdminData();
   }catch(e){toast('Erro: '+e.message,'error');}
 }
+
+
+function renderCatalogDropdown(list){
+  const dd=document.getElementById('searchDropdown');
+  if(!list.length){dd.innerHTML='<div class="search-dropdown-empty">Nenhum produto disponível</div>';return;}
+  dd.innerHTML=list.map(p=>'<div class="search-dropdown-item" onclick="selectCatalogItem(''+p.id+'|'+p.source+'|'+p.unit+'',''+p.label.replace(/'/g,"\'")+'')" data-val="'+p.id+'|'+p.source+'|'+p.unit+'">'+p.label+'</div>').join('');
+}
+
+function filterCatalog(q){
+  const dd=document.getElementById('searchDropdown');
+  dd.classList.add('open');
+  document.getElementById('adminSelectProduct').value='';
+  if(!window._availableCatalog){return;}
+  const filtered=q.trim()===''?window._availableCatalog:window._availableCatalog.filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));
+  renderCatalogDropdown(filtered);
+}
+
+function showDropdown(){
+  const dd=document.getElementById('searchDropdown');
+  dd.classList.add('open');
+  filterCatalog(document.getElementById('adminSearchInput').value);
+}
+
+function selectCatalogItem(val,label){
+  document.getElementById('adminSelectProduct').value=val;
+  document.getElementById('adminSearchInput').value=label.replace(/^[🍞🎂]\s*/,'');
+  document.getElementById('searchDropdown').classList.remove('open');
+}
+
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.search-select-wrap')){
+    const dd=document.getElementById('searchDropdown');
+    if(dd) dd.classList.remove('open');
+  }
+});
 
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
