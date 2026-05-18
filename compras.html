@@ -287,9 +287,10 @@ function renderUserList(){
       +'📤 Enviar Lista ('+filled+' item'+(filled!==1?'s':'')+' com quantidade)</button>'
       +'<button class="btn btn-ghost btn-full" onclick="clearQuantities()">🔄 Limpar quantidades</button>';
   }else if(isSubmitted){
-    actions.innerHTML='<div style="text-align:center;color:var(--muted);font-size:.85rem">⏳ Lista enviada — aguardando o responsável finalizar</div>';
+    actions.innerHTML='<button class="btn btn-outline btn-full" onclick="editList()">✏️ Editar / Corrigir lista</button>'
+      +'<button class="btn btn-ghost btn-full" onclick="resetList()">🔄 Novo ciclo (limpar tudo)</button>';
   }else if(isCompleted){
-    actions.innerHTML='<button class="btn btn-outline btn-full" onclick="resetList()">🔄 Iniciar novo ciclo</button>';
+    actions.innerHTML='<button class="btn btn-outline btn-full" onclick="resetList()">🔄 Novo ciclo (limpar tudo)</button>';
   }
 }
 
@@ -351,6 +352,12 @@ async function deleteItem(itemId){
   }catch(e){toast('Erro: '+e.message);}
 }
 
+async function editList(){
+  try{
+    await sb('purchase_lists?id=eq.'+currentList.id,{method:'PATCH',prefer:'return=minimal',body:{status:'draft',submitted_at:null,submitted_by:null}});
+    currentList.status='draft';renderUserList();toast('✏️ Lista aberta para edição');
+  }catch(e){toast('Erro: '+e.message);}
+}
 async function submitList(){
   const filled=currentItems.filter(i=>!!i.quantity);
   if(!filled.length){toast('Nenhum item com quantidade');return;}
