@@ -56,7 +56,7 @@ function deliveryDayLabel(delivIdx: number) {
 }
 function checkDeadline() {
   const h = nowBrasilia().getHours()
-  return h >= 0 && h < 4
+  return false // pedidos sempre abertos
 }
 function getHoursLeft() {
   const h = nowBrasilia().getHours()
