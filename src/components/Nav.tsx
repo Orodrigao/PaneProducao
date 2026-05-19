@@ -8,6 +8,7 @@ const links = [
   { href: '/romaneio',          label: 'Romaneio',  icon: '🚚' },
   { href: '/estoque-congelado', label: 'Congelado', icon: '🧊' },
   { href: '/compras',           label: 'Compras',   icon: '🛒' },
+  { href: '/estoque',           label: 'Estoque',   icon: '📊' },
   { href: '/produtos',          label: 'Produtos',  icon: '📦' },
 ]
 
