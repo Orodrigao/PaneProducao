@@ -91,7 +91,7 @@ export default function EstoqueCongeladoPage() {
   }
 
   const addFromCatalog = async (p: any) => {
-    const { error } = await supabase.from('frozen_products').insert({ product_name:p.name, unit:p.unit||null, active:true })
+    const { error } = await supabase.from('frozen_products').insert({ product_id:p.id, product_name:p.name, unit:p.unit||null, active:true })
     if (!error) { showToast('✅ Produto adicionado'); setAdminSearch(''); setAdminResults([]); load() }
     else showToast('Erro: '+error.message)
   }
