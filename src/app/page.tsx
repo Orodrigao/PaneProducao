@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 const SB_URL = 'https://gohluceldchoitihrimw.supabase.co'
 const SB_KEY = 'sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ'
-const TG_TOKEN = '8765075650:AAH42hOI1M3BnYunUmczyOJUkUNaysah5v8'
-const TG_CHAT_ID = '688149907'
+const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
+const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
