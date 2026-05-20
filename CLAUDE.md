@@ -1,5 +1,7 @@
 # CLAUDE.md — Pane & Salute ERP
 
+> 🧠 **Antes de qualquer trabalho nesta sessão, ler [lessons.md](lessons.md) se existir.** É um log append-only de erros que cometi em sessões anteriores neste projeto. Quando o usuário pegar um erro novo, apêndo entrada no final do arquivo. Não deletar entradas existentes.
+
 ERP interno de uma padaria artesanal com 3 lojas em Caxias do Sul (RS). O sistema responde à pergunta "para onde vai o dinheiro?" — não substitui o PDV fiscal (CNM), complementa.
 
 - **Produto, escopo, usuários, módulos:** [docs/PRD.md](docs/PRD.md)
