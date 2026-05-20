@@ -1,6 +1,6 @@
 // src/lib/auth.ts — autenticacao PIN-based, Supabase REST, cache localStorage
 
-export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio'
+export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
 
 export interface AppUser {
   id: string
@@ -19,12 +19,14 @@ const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:    ['/', '/sobras', '/romaneio', '/estoque-congelado', '/compras', '/estoque', '/produtos', '/admin/usuarios'],
-  producao: ['/', '/sobras'],
-  vendas:   ['/', '/sobras', '/romaneio'],
-  estoque:  ['/', '/estoque-congelado', '/estoque'],
-  compras:  ['/compras', '/estoque', '/produtos'],
-  romaneio: ['/romaneio'],
+  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/compras', '/estoque', '/produtos', '/admin/usuarios'],
+  producao:   ['/', '/sobras'],
+  vendas:     ['/', '/sobras', '/romaneio'],
+  estoque:    ['/', '/estoque-congelado', '/estoque'],
+  compras:    ['/compras', '/estoque', '/produtos'],
+  romaneio:   ['/romaneio'],
+  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio'],
+  expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
 export const USERS_FALLBACK: AppUser[] = [
@@ -40,11 +42,12 @@ export const USERS_FALLBACK: AppUser[] = [
 
 interface SBUser {
   id: string
-  username: string
+  name: string
   display_name: string
   pin: string
   role: Role
   active: boolean
+  routes: string[] | null
 }
 
 export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
@@ -55,9 +58,11 @@ export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
     if (!res.ok) return null
     const rows: SBUser[] = await res.json()
     return rows.map(r => ({
-      id: r.id, username: r.username, displayName: r.display_name,
+      id: r.id, username: r.name, displayName: r.display_name,
       pin: r.pin, role: r.role, active: r.active,
-      allowedRoutes: DEFAULT_ROUTES_BY_ROLE[r.role] ?? [],
+      allowedRoutes: (Array.isArray(r.routes) && r.routes.length > 0)
+        ? r.routes
+        : (DEFAULT_ROUTES_BY_ROLE[r.role] ?? []),
     }))
   } catch { return null }
 }
@@ -135,6 +140,7 @@ export function roleLabel(role: Role): string {
   const map: Record<Role, string> = {
     admin: 'Administrador', producao: 'Producao', vendas: 'Vendas',
     estoque: 'Estoque', compras: 'Compras', romaneio: 'Romaneio',
+    financeiro: 'Financeiro', expedicao: 'Expedicao',
   }
   return map[role] ?? role
 }
@@ -143,6 +149,7 @@ export function roleColor(role: Role): string {
   const map: Record<Role, string> = {
     admin: '#7c3aed', producao: '#d97706', vendas: '#059669',
     estoque: '#2563eb', compras: '#dc2626', romaneio: '#0891b2',
+    financeiro: '#0a6e52', expedicao: '#1a6e8a',
   }
   return map[role] ?? '#6b7280'
 }
