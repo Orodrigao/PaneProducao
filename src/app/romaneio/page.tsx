@@ -1,12 +1,14 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const ADMIN_PASS = 'pane2025'
 const H = { 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' }
 
-type Screen = 'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
+type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
 type Role = 'gustavo'|'cleo'|'marselle'|'rodrigo'
 type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 
@@ -65,7 +67,8 @@ async function sbDel(table:string, match:Record<string,string>) {
 
 // ── Main ──────────────────────────────────────────────────────────
 export default function RomaneioPage() {
-  const [screen, setScreen] = useState<Screen>('login')
+  const router = useRouter()
+  const [screen, setScreen] = useState<Screen>('init')
   const [role, setRole] = useState<Role|null>(null)
   const [dests, setDests] = useState<Destination[]>([])
   const [breads, setBreads] = useState<Bread[]>([])
@@ -154,7 +157,39 @@ export default function RomaneioPage() {
     } catch(e) { hideLoad(); showToast('Erro') }
   }
 
-  const goHome = () => { setRole(null); setScreen('login') }
+  const goHome = () => {
+    setRole(null); setScreen('login')
+    authLogout(); router.push('/login')
+  }
+
+  // Auto-resolve: usa o user globalmente autenticado (PIN) ao invés do seletor interno.
+  // Admins vão direto pro screen='admin'. Demais entram via doLogin no screen='painel'.
+  useEffect(() => {
+    const globalUser = getCurrentUser()
+    if (!globalUser) { router.replace('/login'); return }
+    if (globalUser.role === 'admin') {
+      setRole('rodrigo')
+      showLoad('Carregando...')
+      ;(async () => {
+        try {
+          await loadBase()
+          await loadAdminPainel()
+          hideLoad()
+          setScreen('admin')
+        } catch(e) { hideLoad(); showToast('Erro') }
+      })()
+      return
+    }
+    let internalRole: Role | null = null
+    if (globalUser.id === 'gustavo')           internalRole = 'gustavo'
+    else if (globalUser.id === 'marselle')     internalRole = 'marselle'
+    else if (globalUser.role === 'expedicao')  internalRole = 'gustavo'
+    else if (globalUser.role === 'producao'
+          || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy até ter perm real
+    if (internalRole) doLogin(internalRole)
+    else router.replace(firstAllowedRoute(globalUser))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router])
 
   // ── painel ──────────────────────────────────────────────────────
   const refreshPainel = async () => {
@@ -479,36 +514,10 @@ export default function RomaneioPage() {
         </div>
       )}
 
-      {/* ── LOGIN ── */}
-      {screen==='login' && (
-        <div className="login-page">
-          <div className="login-logo">
-            <h1>Pane &amp; Salute</h1>
-            <p>ROMANEIO</p>
-            <div className="tagline">Expedição &amp; Conferência</div>
-          </div>
-          <div className="login-card">
-            {[
-              {key:'gustavo',name:'Gustavo',role:'Separação / Expedição',cls:'av-amber'},
-              {key:'cleo',name:'Cléo',role:'Expedição',cls:'av-teal'},
-              {key:'marselle',name:'Marselle',role:'Conferência EX',cls:'av-coral'},
-            ].map(u=>(
-              <button key={u.key} className="login-btn" onClick={()=>doLogin(u.key as Role)}>
-                <div className={`login-avatar ${u.cls}`}>{u.name[0]}</div>
-                <div className="login-info">
-                  <div className="name">{u.name}</div>
-                  <div className="role">{u.role}</div>
-                </div>
-              </button>
-            ))}
-            <button className="login-btn" onClick={tryAdminLogin}>
-              <div className="login-avatar av-gray">R</div>
-              <div className="login-info">
-                <div className="name">Rodrigo</div>
-                <div className="role">Administrador</div>
-              </div>
-            </button>
-          </div>
+      {/* ── INIT / LOGIN (auto-resolvido via PIN global; seletor interno removido) ── */}
+      {(screen==='init' || screen==='login') && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--muted)' }}>
+          <p>Carregando...</p>
         </div>
       )}
 
@@ -518,7 +527,7 @@ export default function RomaneioPage() {
           <div className="topbar">
             <div className="topbar-logo" onClick={goHome} style={{cursor:'pointer'}}>Pane &amp; Salute</div>
             <span className={`topbar-badge ${role==='gustavo'?'tb-amber':role==='cleo'?'tb-teal':role==='marselle'?'tb-coral':'tb-gray'}`}>
-              {role==='gustavo'?'Gustavo':role==='cleo'?'Cléo':role==='marselle'?'Marselle / EX':'Rodrigo'}
+              {(getCurrentUser()?.displayName) || 'Rodrigo'}{role==='marselle' ? ' / EX' : ''}
             </span>
             <button className="btn-logout" onClick={goHome}>Sair</button>
           </div>
