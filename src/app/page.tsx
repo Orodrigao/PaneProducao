@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -10,7 +12,7 @@ const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
 type UserKey = 'rodrigo'|'marselle'|'elis'|'geolar'
 type Store = 'jc'|'ja'|'ex'|'pj'
-type Screen = 'login'|'main'|'geolar'
+type Screen = 'init'|'login'|'main'|'geolar'
 
 interface Bread { id:string; name:string; days:any; active:boolean; is_pj:boolean }
 interface OrderRow { store:string; bread_id:string; quantity:number; obs:string; pj_client?:string; pj_delivery_date?:string; order_date:string }
@@ -109,7 +111,8 @@ async function sbDel(table:string, match:Record<string,string>) {
 
 // ── Main Component ──────────────────────────────────────────────────
 export default function ProducaoPage() {
-  const [screen, setScreen] = useState<Screen>('login')
+  const router = useRouter()
+  const [screen, setScreen] = useState<Screen>('init')
   const [currentUser, setCurrentUser] = useState<UserKey|null>(null)
   const [breads, setBreads] = useState<Bread[]>([])
   const [orders, setOrders] = useState<OrderMap>({})
@@ -220,7 +223,26 @@ export default function ProducaoPage() {
     setBreads([]); setOrders({}); setQtys({}); setObsMap({})
     setActiveTab(0)
     setScreen('login')
+    authLogout()
+    router.push('/login')
   }
+
+  // Auto-resolve: usa o user globalmente autenticado (do PIN) ao invés do seletor interno
+  useEffect(() => {
+    const globalUser = getCurrentUser()
+    if (!globalUser) {
+      router.replace('/login')
+      return
+    }
+    let userKey: UserKey | null = null
+    if (globalUser.role === 'admin')           userKey = 'rodrigo'
+    else if (globalUser.role === 'expedicao')  userKey = 'marselle'
+    else if (globalUser.role === 'financeiro') userKey = 'elis'
+    else if (globalUser.role === 'producao')   userKey = 'geolar'
+    if (userKey) login(userKey)
+    else router.replace(firstAllowedRoute(globalUser))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router])
 
   // ── day change ──────────────────────────────────────────────────
   const changeDelivDay = async (idx: number) => {
@@ -433,7 +455,11 @@ export default function ProducaoPage() {
   const setQty = (key: string, val: number) => setQtys(prev=>({...prev,[key]:Math.max(0,val)}))
 
   // ── Render ───────────────────────────────────────────────────────
-  if (screen === 'login') return <LoginScreen onLogin={login} />
+  if (screen === 'init' || screen === 'login') return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--muted)' }}>
+      <p>Carregando...</p>
+    </div>
+  )
   if (screen === 'geolar') return (
     <GeolarScreen
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
@@ -451,9 +477,11 @@ export default function ProducaoPage() {
   const isReportTab = tabDefs[activeTab]?.label === 'Relatório' || tabDefs[activeTab]?.label === 'Histórico'
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
 
-  const userBadge = currentUser === 'rodrigo' ? { cls:'tb-amber', lbl:'Rodrigo' }
-    : currentUser === 'marselle' ? { cls:'tb-teal', lbl:'Marselle · EX' }
-    : { cls:'tb-coral', lbl:'Elis · PJ' }
+  const globalUser = getCurrentUser()
+  const displayName = globalUser?.displayName ?? ''
+  const userBadge = currentUser === 'rodrigo' ? { cls:'tb-amber', lbl: displayName || 'Rodrigo' }
+    : currentUser === 'marselle' ? { cls:'tb-teal', lbl: `${displayName || 'Marselle'} · EX` }
+    : { cls:'tb-coral', lbl: `${displayName || 'Elis'} · PJ` }
 
   const hoursLeft = getHoursLeft()
   const deadlineBar = isLocked
