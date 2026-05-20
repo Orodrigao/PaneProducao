@@ -22,20 +22,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Se já logado, redireciona
-    const current = getCurrentUser()
-    if (current) {
-      router.replace(firstAllowedRoute(current))
-      return
-    }
-    // Carrega usuários
+    // Sempre refresca o cache antes de qualquer decisão de redirect.
+    // Sem isso, allowedRoutes stale do localStorage trava o usuário em loop.
     fetchUsersFromSupabase().then(remote => {
-      if (remote) {
-        cacheUsers(remote)
-        setUsers(remote.filter(u => u.active))
-      } else {
-        setUsers(getCachedUsers().filter(u => u.active))
+      if (remote) cacheUsers(remote)
+      const current = getCurrentUser()
+      if (current && current.allowedRoutes.length > 0) {
+        router.replace(firstAllowedRoute(current))
+        return
       }
+      setUsers((remote ?? getCachedUsers()).filter(u => u.active))
       setLoading(false)
     })
   }, [router])

@@ -117,7 +117,15 @@ export function getCurrentUser(): AppUser | null {
   const id = localStorage.getItem(SESSION_KEY)
   if (!id) return null
   const users = getCachedUsers()
-  return users.find(u => u.id === id && u.active) ?? null
+  const user = users.find(u => u.id === id && u.active)
+  if (!user) return null
+  // Safety net: cache stale com allowedRoutes vazio (ex: usuário criado em deploy buggy
+  // que não tinha a role no DEFAULT_ROUTES_BY_ROLE). Limpa sessão e força re-login.
+  if (user.role !== 'admin' && user.allowedRoutes.length === 0) {
+    localStorage.removeItem(SESSION_KEY)
+    return null
+  }
+  return user
 }
 
 export function logout() {
