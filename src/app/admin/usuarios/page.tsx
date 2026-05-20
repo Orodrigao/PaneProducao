@@ -9,6 +9,19 @@ import {
   DEFAULT_ROUTES_BY_ROLE,
 } from '@/lib/auth'
 
+const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
+
+const ROUTE_OPTIONS = [
+  { href: '/',                  label: 'Produção',          icon: '🍞' },
+  { href: '/sobras',            label: 'Sobras',            icon: '♻️' },
+  { href: '/romaneio',          label: 'Romaneio',          icon: '🚚' },
+  { href: '/estoque-congelado', label: 'Congelado',         icon: '🧊' },
+  { href: '/compras',           label: 'Lista de Compras',  icon: '🛒' },
+  { href: '/estoque',           label: 'Estoque',           icon: '📊' },
+  { href: '/produtos',          label: 'Produtos',          icon: '📦' },
+  { href: '/admin/usuarios',    label: 'Admin (usuários)',  icon: '⚙️' },
+]
+
 // ---- Modal de PIN ----
 function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (pin: string) => void }) {
   const [pin, setPin] = useState('')
@@ -42,39 +55,127 @@ function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => voi
 }
 
 // ---- Modal de novo usuário ----
-function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id' | 'allowedRoutes'>) => void }) {
+function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) => void }) {
   const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true })
+  const [routes, setRoutes] = useState<string[]>(DEFAULT_ROUTES_BY_ROLE.producao)
   const [err, setErr] = useState('')
+
+  function setRole(r: Role) {
+    setForm(f => ({ ...f, role: r }))
+    setRoutes(DEFAULT_ROUTES_BY_ROLE[r] ?? [])
+    setErr('')
+  }
+
+  function toggleRoute(r: string) {
+    setRoutes(curr => curr.includes(r) ? curr.filter(x => x !== r) : [...curr, r])
+  }
 
   function handleSave() {
     if (!form.username || !form.displayName) return setErr('Preencha nome de usuário e nome de exibição')
     if (form.pin.length < 4) return setErr('PIN deve ter 4 dígitos')
-    onSave(form)
+    if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
+    onSave({ ...form, allowedRoutes: routes })
   }
 
-  const input = (placeholder: string, field: keyof typeof form, type = 'text') => (
-    <input type={type} placeholder={placeholder} value={String(form[field])}
-      onChange={e => setForm(f => ({ ...f, [field]: type === 'password' ? e.target.value.replace(/\D/g,'') : e.target.value }))}
-      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box' as const }} />
-  )
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '320px' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '16px' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '20px', width: '360px', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ margin: '0 0 16px', fontSize: '1rem' }}>Novo Usuário</h3>
-        {input('Username (login)', 'username')}
-        {input('Nome de exibição', 'displayName')}
-        {input('PIN (4 dígitos)', 'pin', 'password')}
-        <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px' }}>
-          {(['admin','producao','vendas','estoque','compras','romaneio'] as Role[]).map(r => (
-            <option key={r} value={r}>{roleLabel(r)}</option>
-          ))}
+
+        <input type="text" placeholder="Username (login)" value={form.username}
+          onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box' }} />
+        <input type="text" placeholder="Nome de exibição" value={form.displayName}
+          onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box' }} />
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="PIN (4 dígitos)" value={form.pin}
+          onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px', boxSizing: 'border-box' }} />
+
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Cargo</label>
+        <select value={form.role} onChange={e => setRole(e.target.value as Role)}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+          {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
         </select>
+
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Acesso a módulos (pré-marcado pelos defaults da role)</label>
+        <div style={{ background: '#f9f9f9', borderRadius: '8px', padding: '8px 10px', marginBottom: '12px' }}>
+          {ROUTE_OPTIONS.map(opt => (
+            <label key={opt.href} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)} />
+              <span>{opt.icon} {opt.label}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '0.7rem' }}>{opt.href}</span>
+            </label>
+          ))}
+        </div>
+
         {err && <p style={{ color: '#dc2626', fontSize: '0.8rem', margin: '0 0 10px' }}>{err}</p>}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>Cancelar</button>
           <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Criar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Modal de edição ----
+function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[] }) => void }) {
+  const [role, setRole] = useState<Role>(user.role)
+  const [displayName, setDisplayName] = useState(user.displayName)
+  const [routes, setRoutes] = useState<string[]>(user.allowedRoutes)
+  const [err, setErr] = useState('')
+
+  function toggleRoute(r: string) {
+    setRoutes(curr => curr.includes(r) ? curr.filter(x => x !== r) : [...curr, r])
+  }
+
+  function applyRoleDefaults() {
+    setRoutes(DEFAULT_ROUTES_BY_ROLE[role] ?? [])
+  }
+
+  function handleSave() {
+    if (!displayName.trim()) return setErr('Nome de exibição não pode estar vazio')
+    if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
+    onSave({ role, displayName: displayName.trim(), allowedRoutes: routes })
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '16px' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '20px', width: '360px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: '1rem' }}>Editar — {user.displayName}</h3>
+        <p style={{ margin: '0 0 14px', fontSize: '0.72rem', color: 'var(--muted)' }}>id: <code>{user.id}</code> · username: @{user.username}</p>
+
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Nome de exibição</label>
+        <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px', boxSizing: 'border-box' }} />
+
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Cargo</label>
+        <select value={role} onChange={e => setRole(e.target.value as Role)}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+          {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+        </select>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Acesso a módulos</label>
+          <button type="button" onClick={applyRoleDefaults} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.72rem', textDecoration: 'underline' }}>
+            Usar padrão da role
+          </button>
+        </div>
+        <div style={{ background: '#f9f9f9', borderRadius: '8px', padding: '8px 10px', marginBottom: '12px' }}>
+          {ROUTE_OPTIONS.map(opt => (
+            <label key={opt.href} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
+              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)} />
+              <span>{opt.icon} {opt.label}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '0.7rem' }}>{opt.href}</span>
+            </label>
+          ))}
+        </div>
+
+        {err && <p style={{ color: '#dc2626', fontSize: '0.8rem', margin: '0 0 10px' }}>{err}</p>}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Salvar</button>
         </div>
       </div>
     </div>
@@ -88,6 +189,7 @@ export default function AdminUsuariosPage() {
   const [loading, setLoading]       = useState(true)
   const [pinModal, setPinModal]     = useState<AppUser | null>(null)
   const [newModal, setNewModal]     = useState(false)
+  const [editModal, setEditModal]   = useState<AppUser | null>(null)
   const [msg, setMsg]               = useState('')
 
   useEffect(() => {
@@ -130,11 +232,21 @@ export default function AdminUsuariosPage() {
     } else flash('Erro ao atualizar')
   }
 
-  async function handleCreate(data: Omit<AppUser, 'id' | 'allowedRoutes'>) {
+  async function handleCreate(data: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) {
     const ok = await createUserInSupabase(data)
     if (ok) { await loadUsers(); flash('Usuário criado!') }
-    else flash('Erro ao criar usuário')
+    else flash('Erro ao criar usuário (username pode já existir)')
     setNewModal(false)
+  }
+
+  async function handleEdit(user: AppUser, updates: { role: Role; displayName: string; allowedRoutes: string[] }) {
+    const ok = await updateUserInSupabase(user.id, updates)
+    if (ok) {
+      const updated = users.map(u => u.id === user.id ? { ...u, ...updates } : u)
+      setUsers(updated); cacheUsers(updated)
+      flash('Usuário atualizado!')
+    } else flash('Erro ao atualizar')
+    setEditModal(null)
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}><p>Carregando...</p></div>
@@ -175,6 +287,10 @@ export default function AdminUsuariosPage() {
                 style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: '0.75rem' }}>
                 PIN
               </button>
+              <button onClick={() => setEditModal(user)}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: '0.75rem' }}>
+                Editar
+              </button>
               <button onClick={() => handleToggle(user)}
                 style={{
                   padding: '6px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
@@ -189,6 +305,7 @@ export default function AdminUsuariosPage() {
 
       {pinModal && <PinModal user={pinModal} onClose={() => setPinModal(null)} onSave={pin => handlePinSave(pinModal, pin)} />}
       {newModal && <NewUserModal onClose={() => setNewModal(false)} onSave={handleCreate} />}
+      {editModal && <EditUserModal user={editModal} onClose={() => setEditModal(null)} onSave={updates => handleEdit(editModal, updates)} />}
     </div>
   )
 }

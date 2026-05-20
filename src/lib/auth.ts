@@ -67,23 +67,51 @@ export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
   } catch { return null }
 }
 
-export async function createUserInSupabase(user: Omit<AppUser, 'id' | 'allowedRoutes'>): Promise<boolean> {
+// Slugifica username pra gerar id estável (lowercase, sem acento, sem espaço).
+function slugifyUserId(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+export async function createUserInSupabase(
+  user: Omit<AppUser, 'id'> & { allowedRoutes?: string[] }
+): Promise<boolean> {
   try {
+    const id = slugifyUserId(user.username)
+    if (!id) return false
+    const body = {
+      id,
+      name: user.username,
+      display_name: user.displayName,
+      pin: user.pin,
+      role: user.role,
+      active: user.active,
+      routes: user.allowedRoutes && user.allowedRoutes.length > 0 ? user.allowedRoutes : null,
+    }
     const res = await fetch(SB_URL + '/rest/v1/app_users', {
       method: 'POST',
       headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({ username: user.username, display_name: user.displayName, pin: user.pin, role: user.role, active: user.active }),
+      body: JSON.stringify(body),
     })
     return res.ok
   } catch { return false }
 }
 
-export async function updateUserInSupabase(id: string, updates: Partial<Pick<AppUser, 'pin' | 'active' | 'role'>>): Promise<boolean> {
+export async function updateUserInSupabase(
+  id: string,
+  updates: Partial<Pick<AppUser, 'pin' | 'active' | 'role' | 'displayName' | 'allowedRoutes'>>
+): Promise<boolean> {
   try {
     const body: Record<string, unknown> = {}
-    if (updates.pin    !== undefined) body.pin    = updates.pin
-    if (updates.active !== undefined) body.active = updates.active
-    if (updates.role   !== undefined) body.role   = updates.role
+    if (updates.pin           !== undefined) body.pin          = updates.pin
+    if (updates.active        !== undefined) body.active       = updates.active
+    if (updates.role          !== undefined) body.role         = updates.role
+    if (updates.displayName   !== undefined) body.display_name = updates.displayName
+    if (updates.allowedRoutes !== undefined) body.routes       = updates.allowedRoutes
     const res = await fetch(SB_URL + '/rest/v1/app_users?id=eq.' + id, {
       method: 'PATCH',
       headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
