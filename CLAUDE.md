@@ -119,8 +119,7 @@ Para entender o app, abrir nesta ordem:
 - **TZ Brasília manual.** [src/app/page.tsx](src/app/page.tsx) tem `nowBrasilia()` (offset `-180` em runtime). Datas vêm UTC do banco; sempre passar pelo helper. Não usar `new Date()` direto para "hoje".
 - **Multi-loja sem registry.** As 3 lojas aparecem como string `store` (`jc`, `ja`, `ex`, `pj`). Não há tabela `stores`. Antes de adicionar valor novo, grep pelos existentes.
 - **Tailwind misto com inline styles.** Módulos novos (compras, estoque, fornecedores) usam classes; antigos (page raiz, sobras, romaneio) usam inline. Não unificar sem alinhar.
-- **🔥 Telegram bot token hardcoded em [src/app/page.tsx](src/app/page.tsx)** (variáveis `TG_TOKEN`, `TG_CHAT_ID`). **Está vazado no histórico do git público.** Refactor pendente após rotação via BotFather (ver TODOs).
-- **🔥 Chaves Supabase também hardcoded** em `supabase.ts`, `auth.ts`, `page.tsx`. A publishable key OK ser pública, mas migrar para env var é higiene.
+- **Chaves externas em env vars.** Em produção + `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_CHAT_ID`. **Atenção:** `NEXT_PUBLIC_*` são **inlined no bundle JS** no build — qualquer cliente vê os valores. Só usar para chaves seguras pra serem públicas (anon/publishable, tokens com escopo restrito). `SUPABASE_SERVICE_KEY` e `SUPABASE_DB_PASSWORD` ficam só no `.pane-secrets` e **nunca** no client.
 - **Telegram notifica em `/compras`** — enviar lista dispara mensagem no bot. Preservar até decidirmos o contrário.
 
 ## Comandos: auto-aprovar vs sempre confirmar
@@ -142,9 +141,3 @@ Para entender o app, abrir nesta ordem:
 
 Não há staging — `main` = produção. Cada push é visto pela equipe na hora seguinte.
 
-## TODOs surfaceados (não-bloqueantes mas reais)
-
-- 🔥 **Rotacionar Telegram bot token** (BotFather `/revoke` no bot do Pane) → atualizar `.pane-secrets` → refactor `page.tsx` para `process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN` → adicionar var na Vercel
-- 🔥 **Verificar revogação do token Vercel** `vcp_5SoBma...` antigo (estava em `deploy.bat` deletado; pode estar vivo ainda)
-- 📝 Migrar `SB_URL` e `SB_KEY` para env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`) — higiene
-- 📝 Decidir se `_GUIA_INFRA.md`, `docs/TASKS.md` entram no repo ou ficam local-only
