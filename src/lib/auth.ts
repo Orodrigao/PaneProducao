@@ -12,8 +12,8 @@ export interface AppUser {
   allowedRoutes: string[]
 }
 
-const SB_URL   = 'https://gohluceldchoitihrimw.supabase.co'
-const SB_KEY   = 'sb_publishable_Su-BxUMybE1ysGiLxqNilg_YhYgItOJ'
+const SB_URL   = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SB_KEY   = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
