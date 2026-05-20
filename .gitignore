@@ -6,3 +6,4 @@ out/
 tsconfig.tsbuildinfo
 .vercel
 supabase/.temp/
+_GUIA_INFRA.md
