@@ -1,6 +1,11 @@
 # CLAUDE.md — Pane & Salute ERP
 
-> 🧠 **Antes de qualquer trabalho nesta sessão, ler [lessons.md](lessons.md) se existir.** É um log append-only de erros que cometi em sessões anteriores neste projeto. Quando o usuário pegar um erro novo, apêndo entrada no final do arquivo. Não deletar entradas existentes.
+> 🧠 **Antes de qualquer trabalho nesta sessão, ler estes arquivos se existirem:**
+> 1. **[agent-rules.md](agent-rules.md)** — 12 regras de como opero neste projeto (Plan Mode, verificação, simplicidade, etc.)
+> 2. **[lessons.md](lessons.md)** — log append-only de erros que cometi em sessões anteriores (não repetir)
+> 3. **[tasks/todo.md](tasks/todo.md)** — plano da tarefa atual, se houver uma em curso
+>
+> **Workflow:** usuário pegou erro novo → apêndo entrada em `lessons.md`. Tarefa multi-step → escrevo plano em `tasks/todo.md` antes de codar, valido com o usuário.
 
 ERP interno de uma padaria artesanal com 3 lojas em Caxias do Sul (RS). O sistema responde à pergunta "para onde vai o dinheiro?" — não substitui o PDV fiscal (CNM), complementa.
 
