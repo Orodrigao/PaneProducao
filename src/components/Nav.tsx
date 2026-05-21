@@ -5,6 +5,7 @@ import { getCurrentUser, canAccess, logout } from '@/lib/auth'
 
 const ALL_LINKS = [
   { href: '/',                  label: 'Produção',  icon: '🍞' },
+  { href: '/forno',             label: 'Forno',     icon: '🔥' },
   { href: '/sobras',            label: 'Sobras',    icon: '♻️' },
   { href: '/romaneio',          label: 'Romaneio',  icon: '🚚' },
   { href: '/estoque-congelado', label: 'Congelado', icon: '🧊' },

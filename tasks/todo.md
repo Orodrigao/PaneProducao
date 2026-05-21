@@ -1,114 +1,137 @@
-# TODO — Módulo /relatorios + primeiro relatório (Sobras/Descartes)
+# TODO — PR-B: Módulo /forno (Sander confirma produção) + infra de stock
 
 **Criado:** 2026-05-20
-**Status:** done ✅ (PR-A completo, testado, em produção)
+**Status:** done (PR-B; aguardando teste manual; PR-B2 do romaneio é o próximo)
 
 ## Contexto / objetivo
 
-Construir o módulo de relatórios que será o lar de **vários** relatórios futuros (romaneios, produção, congelados snapshot+giro, financeiro). Esta tarefa entrega:
-- **Esqueleto do módulo** (`/relatorios` com index de cards, rota nova no Nav, integração com sistema de routes per-user)
-- **Primeiro relatório completo**: histórico unificado de Sobras + Descartes
-- **Componentes reutilizáveis** em `src/components/reports/` que os próximos relatórios consomem
+Sander (e Geolar/admin) confirma todo dia **o que efetivamente foi assado** + **o que foi perdido no processo** (queimou, fora do padrão, etc). Cada confirmação alimenta o estoque "central" de pães. Esta PR estabelece a infra de stock e captura no forno.
 
-Os outros relatórios mencionados (romaneios, produção, congelados, financeiro) ficam **planejados** mas implementados em PRs futuros.
+PR seguintes consomem essa infra:
+- **PR-B2:** `/romaneio` enviado → debita central, credita loja destino
+- **PR-B3:** `/sobras` descarte → debita loja (precisa `app_users.store`)
+- **PR-B4:** Tela de visibilidade de estoque por loja
+- **PR-B5:** Sub-locais (freezers nomeados por loja: EX-Freezer-1..4, JA-Freezer-1)
+
+PR-C (`/relatorios/producao`) consome `production_actuals` pra comparativo pedido × realizado.
 
 ## Decisões já tomadas
 
-- **Audiência:** configurável via routes do `/admin/usuarios` (admin decide quem vê). Default: admins têm acesso; outros não. Admin pode dar pra Elis, por exemplo, manualmente.
-- **Sobras + Descartes:** mesma tela com filtro de modo (`Sobras | Descartes | Ambos`).
-- **Arquitetura:** módulo `/relatorios` desde já, com subrotas por relatório.
+- ✅ PRs sequenciais (B, B2, B3, ...)
+- ✅ Pães PJ incluídos no /forno (orders.is_pj=true com pj_delivery_date=hoje)
+- ✅ Descarte no forno tem motivo (Queimou / Fora do padrão / Outros)
+- ✅ Cada usuário tem loja física (definir no PR-B3 via `app_users.store`)
+- ✅ Stock por loja (cada loja é independente — definir no PR-B2/B3)
+- ✅ EX tem 4 freezers; JA tem 1 (definir nomes no PR-B5)
 
-## Plano
+## Plano (PR-B atual)
 
-### 1. Componentes reutilizáveis (`src/components/reports/`)
+### 1. Schema (Supabase via MCP)
 
-- [x] `PeriodFilter.tsx` — date range picker com presets (Hoje · 7d · 30d · Mês · Custom). Emite `{ from: Date, to: Date }`.
-- [x] `SegmentedFilter.tsx` — controle de 2-4 botões pra filtros binários/ternários (ex: `Sobras | Descartes | Ambos`).
-- [x] `KPICard.tsx` — card com label + valor grande + helper text. Suporta unidade (`un`, `kg`, etc.).
-- [x] `ReportTable.tsx` — tabela com header sortable, virtualization opcional pra muitas linhas (descartar virtualization pro v1), row click opcional.
-- [x] `csvExport.ts` — helper que converte `Array<Record>` em CSV string + dispara download via Blob URL.
+- [x] **`production_actuals`** — registro do que Sander confirmou (audit + UNIQUE por dia+pão)
+  ```sql
+  CREATE TABLE production_actuals (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_date date NOT NULL,
+    bread_id text NOT NULL REFERENCES breads(id),
+    quantity_baked numeric NOT NULL DEFAULT 0,
+    quantity_loss numeric NOT NULL DEFAULT 0,
+    loss_reason text,
+    recorded_by text NOT NULL,
+    obs text,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    UNIQUE (bread_id, record_date)
+  );
+  CREATE INDEX idx_prod_actuals_date ON production_actuals(record_date);
+  ```
 
-### 2. Página index `/relatorios/page.tsx`
+- [x] **`bread_movements`** — log de TODAS as movimentações de pão (forno+, romaneio-, descarte-, ajuste)
+  ```sql
+  CREATE TABLE bread_movements (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    movement_type text NOT NULL,
+      -- 'forno_entrada': +N em central (PR-B)
+      -- 'forno_descarte': -N em central (PR-B)
+      -- 'romaneio_envio': -N em central + +N em loja (PR-B2)
+      -- 'descarte_loja': -N em loja (PR-B3)
+      -- 'ajuste': +/-N manual (futuro)
+    bread_id text NOT NULL,
+    location text NOT NULL, -- 'central' | 'jc' | 'ja' | 'ex' | 'pj'
+    quantity numeric NOT NULL, -- positive=entrada, negative=saída
+    reference_id text, -- id do registro de origem (production_actuals.id, etc)
+    reference_type text,
+    recorded_by text NOT NULL,
+    obs text,
+    created_at timestamptz DEFAULT now()
+  );
+  CREATE INDEX idx_bread_mov_location_bread ON bread_movements(location, bread_id);
+  CREATE INDEX idx_bread_mov_date ON bread_movements(created_at DESC);
+  ```
 
-- [x] Lista de cards, um por relatório disponível. Cada card: ícone + título + descrição curta + link.
-- [x] Cards exibidos baseados na `allowedRoutes` do usuário — se o user tem `/relatorios/sobras-descartes`, mostra o card. Senão esconde.
-- [x] Card "Em breve" pra relatórios planejados mas não implementados (romaneios, produção, congelados, financeiro). Disabled visualmente.
+### 2. Módulo `/forno/page.tsx`
 
-### 3. Primeiro relatório `/relatorios/sobras-descartes/page.tsx`
+- [x] Date picker no topo (default hoje; permite últimos 7 dias)
+- [x] Carrega:
+  - Pães regulares com `orders.quantity > 0` na data (sum por bread_id)
+  - Pães PJ com `orders.pj_delivery_date = data` e quantity > 0
+  - `production_actuals` existentes pra essa data (pra pré-preencher)
+- [x] Linha por pão:
+  - Nome do pão (+ badge "PJ" se for is_pj)
+  - **Planejado:** soma `orders.quantity` na data
+  - **Assado:** input numérico (-/+ buttons + número), pré-preenchido com planejado OU com production_actuals.quantity_baked se já registrado
+  - **+ Registrar descarte** (collapsed por default; expande pra mostrar input qtd + select de motivo)
+- [x] Botão **"💾 Salvar produção do dia"**:
+  - Upsert em `production_actuals` (uma linha por pão)
+  - Insert em `bread_movements`: 1 `forno_entrada` (quantity=+baked) + 1 `forno_descarte` (quantity=-loss) por pão com valores > 0
+  - Idempotência: deletar `bread_movements` antigos da data antes de inserir os novos (re-save substitui)
+- [x] Toast de sucesso/erro
+- [x] Header: nome do usuário logado (recorded_by)
 
-- [x] **Carregamento:** 3 queries em paralelo: `sobras`, `descartes`, `breads + products` (pra resolver nomes). Cache local.
-- [x] **Filtros (barra topo):**
-  - PeriodFilter (default: últimos 30 dias)
-  - SegmentedFilter modo (Sobras | Descartes | Ambos, default: Ambos)
-  - Dropdown responsável (Todos + lista)
-- [x] **KPIs (4 cards):**
-  - Total sobras (qty)
-  - Total descartes (qty)
-  - # registros
-  - Top produto (com mais quantidade no período)
-- [x] **Tabela:** colunas `Data · Responsável · Modo · Produto · Categoria · Quantidade · Obs`. Sort default: data desc.
-- [x] **Export:** botão "Exportar CSV" no canto da tabela usando `csvExport.ts`.
+### 3. Nav + permissões
 
-### 4. Integração
+- [x] [src/components/Nav.tsx](src/components/Nav.tsx): adicionar `/forno` com ícone 🔥
+- [x] [src/lib/auth.ts](src/lib/auth.ts) `DEFAULT_ROUTES_BY_ROLE.producao`: incluir `/forno`
+- [x] [src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx) `ROUTE_OPTIONS`: adicionar `/forno`
+- [x] SQL: ativar Sander + setar routes (`/forno` + talvez `/` para ver pedidos pra contextualizar)
+- [x] SQL: adicionar `/forno` às routes de Geolar e admins (Rodrigão/Suélen)
 
-- [x] [src/components/Nav.tsx](src/components/Nav.tsx): adicionar entrada `Relatórios` (ícone `📈`) na lista `ALL_LINKS`. Visibilidade segue `canAccess` (já filtra pelas routes).
-- [x] [src/lib/auth.ts](src/lib/auth.ts) → `DEFAULT_ROUTES_BY_ROLE.admin`: adicionar `/relatorios` e `/relatorios/sobras-descartes`. Outras roles ficam sem por default.
-- [x] [src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx) → `ROUTE_OPTIONS`: adicionar entradas pra `/relatorios` e `/relatorios/sobras-descartes` (assim admin pode marcar pra outros usuários).
-- [x] SQL: atualizar routes dos admins existentes (Rodrigão e Suélen) pra incluir as novas rotas.
-
-### 5. Verificação
+### 4. Verificação
 
 - [x] `npx tsc --noEmit` verde
-- [x] `npm run build` verde — 2 rotas novas prerenderizadas estáticas
-- [x] Manual: Rodrigão acessa `/relatorios` → vê card de Sobras/Descartes → entra → filtra por última semana → exporta CSV → confere dados ✅
+- [x] `npm run build` verde — `/forno` prerenderizada
+- [x] SQL: confirmar tabelas criadas + indexes
+- [x] Teste manual (Rodrigão admin):
+  - Abre `/forno`
+  - Vê pães do dia com planejado correto
+  - Ajusta "Assado" + adiciona "Descarte" com motivo
+  - Salva
+  - Recarrega → valores persistem
+  - SQL via MCP: confere `production_actuals` (1 linha por pão) e `bread_movements` (forno_entrada + forno_descarte)
+  - Re-save com valores diferentes → bread_movements substituído (idempotente)
 
-## Bônus além do escopo original
+## Fora de escopo (PR-B)
 
-- [x] Valores monetários (R$) no relatório — KPIs + coluna + alerta de cobertura
-- [x] Editor de cost_price dos pães em `/produtos` (nova aba "🍞 Pães")
-- [x] Bug fix latente: `/produtos` usava campo `cost` mas DB tinha `cost_price` (correção do display + persistência)
-- [x] CSV separado por `;` + números em locale BR (Excel pt-BR abre limpo)
-- [x] 3 lições novas em `lessons.md`
-
-## Roadmap dos próximos relatórios (escopo planejado, implementação separada)
-
-Em ordem de valor + dependência:
-
-| # | Relatório | Dados | Complexidade | Notas |
-|---|---|---|---|---|
-| 2 | `/relatorios/romaneios` | `romaneios`, `rom_items`, `destinations` | Baixa-Média | Lista de entregas + filtro por status, conferência divergente |
-| 3 | `/relatorios/producao` | `orders`, `order_items`, `breads` | Baixa | Pedidos por dia/loja, comparativo período-vs-período |
-| 4 | `/relatorios/congelados/snapshot` | `frozen_stock`, `frozen_products` | Baixa | O que tem hoje, por local (Freezer H./Câmara/Freezer Loja) |
-| 5 | `/relatorios/congelados/giro` | `frozen_movements` | **Alta** | Days-of-supply, alerta de overproduction ("fez 100, demorou 60 dias pra escoar"). Análise de séries temporais. KPI próprio: produtos parados >X dias |
-| 6 | `/relatorios/financeiro` | dependente da Fase 2 do PLAN.md | Alta | Bloqueado até leitura de NF / import de vendas |
-
-## Fora de escopo (desta tarefa)
-
-- **Gráficos** (line/bar/pie) — começamos só com tabela + KPIs. Adicionar charts em report específico quando claramente ajudar (giro de congelados é candidato forte). Lib provável: Recharts ou Chart.js, decidir quando precisar.
-- **Filtro por produto individual** — usar Categoria por enquanto. Filtro de produto específico se virar reclamação.
-- **Salvar filtros favoritos** — URL-encoding seria nice mas não-bloqueante.
-- **Exportar PDF** — CSV abre no Excel; PDF é nice-to-have pra depois.
-- **Permission view-only granular** (deferido já 2x; segue deferido).
-- **Drill-down entre relatórios** — clicar num produto no relatório de sobras ir pro relatório de produção desse produto. Bom design, futuro.
+- **Per-loja stock** (PR-B2/B3): forno só alimenta `central`. Lojas têm stock próprio que romaneio/descarte mexem.
+- **Per-user loja mapping** (PR-B3): `app_users.store` ainda não existe; vem com sobras/descartes.
+- **Freezers nomeados** (PR-B5): EX-Freezer1..4, JA-Freezer1.
+- **Tela de visibilidade de estoque** (PR-B4): saber "quanto tem onde" agora. PR-B só GRAVA, não LÊ saldo.
+- **Múltiplos turnos** (manhã/tarde): 1 registro por pão por dia. Re-save substitui.
+- **Relatório de produção** (PR-C): pedido × realizado. Próximo.
+- **Alerta automático de divergência** ("planejado 50, assado 10 — confirma?"): UX nice-to-have, futuro.
+- **Edit histórico granular**: date picker permite voltar 7 dias, mais que isso só via SQL.
 
 ## Estimativa
 
-| Arquivo | Linhas |
+| Item | Linhas |
 |---|---|
-| `src/components/reports/PeriodFilter.tsx` (novo) | ~60 |
-| `src/components/reports/SegmentedFilter.tsx` (novo) | ~30 |
-| `src/components/reports/KPICard.tsx` (novo) | ~30 |
-| `src/components/reports/ReportTable.tsx` (novo) | ~90 |
-| `src/components/reports/csvExport.ts` (novo) | ~25 |
-| `src/app/relatorios/page.tsx` (novo) | ~90 |
-| `src/app/relatorios/sobras-descartes/page.tsx` (novo) | ~220 |
-| `src/components/Nav.tsx` (edit) | +3 |
-| `src/lib/auth.ts` (edit) | +2 |
-| `src/app/admin/usuarios/page.tsx` (edit) | +4 |
-| SQL (manual via MCP) | 2 statements |
-| **Total novo** | **~545 linhas** |
-
-Tarefa grande mas contida — todas as 545 linhas estão na construção do módulo + 1º relatório. Não toca em lógica de outros módulos.
+| Migration SQL (2 tabelas + indexes) | ~30 |
+| `src/app/forno/page.tsx` (novo) | ~280 |
+| `src/components/Nav.tsx` (+1 link) | +1 |
+| `src/lib/auth.ts` (+1 entrada DEFAULT_ROUTES) | +1 |
+| `src/app/admin/usuarios/page.tsx` (+1 ROUTE_OPTIONS) | +1 |
+| SQL: ativar Sander + UPDATE routes Sander/Geolar/admins | 1 statement |
+| **Total** | **~315 linhas** |
 
 ## Notas durante execução
 

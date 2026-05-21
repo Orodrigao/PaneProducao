@@ -13,6 +13,7 @@ const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 
 
 const ROUTE_OPTIONS = [
   { href: '/',                  label: 'Produção',          icon: '🍞' },
+  { href: '/forno',             label: 'Forno (confirmar)', icon: '🔥' },
   { href: '/sobras',            label: 'Sobras',            icon: '♻️' },
   { href: '/romaneio',          label: 'Romaneio',          icon: '🚚' },
   { href: '/estoque-congelado', label: 'Congelado',         icon: '🧊' },
