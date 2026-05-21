@@ -29,8 +29,16 @@ interface DisplayRow {
   product: string
   category: string
   quantity: number
+  valor: number | null
   obs: string
   _modoRaw: 'sobra' | 'descarte'
+  _hasCost: boolean
+}
+
+interface ProductInfo {
+  name: string
+  category: string
+  cost: number | null
 }
 
 function toISODate(d: Date): string {
@@ -43,6 +51,10 @@ function formatDateBR(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
+function formatBRL(v: number): string {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
 export default function SobrasDescartesReport() {
   const router = useRouter()
   const [range, setRange] = useState<{ from: Date; to: Date } | null>(null)
@@ -50,20 +62,28 @@ export default function SobrasDescartesReport() {
   const [responsible, setResponsible] = useState<string>('all')
 
   const [rows, setRows] = useState<MergedRow[]>([])
-  const [breadsMap, setBreadsMap] = useState<Map<string, { name: string; category: string }>>(new Map())
-  const [productsMap, setProductsMap] = useState<Map<string, { name: string; category: string }>>(new Map())
+  const [breadsMap, setBreadsMap] = useState<Map<string, ProductInfo>>(new Map())
+  const [productsMap, setProductsMap] = useState<Map<string, ProductInfo>>(new Map())
   const [loading, setLoading] = useState(true)
 
-  // Lookups (pães e produtos) carregam uma vez
+  // Lookups (pães e produtos) carregam uma vez — incluindo cost_price
   useEffect(() => {
     Promise.all([
-      supabase.from('breads').select('id,name'),
-      supabase.from('products').select('id,name,category'),
+      supabase.from('breads').select('id,name,cost_price'),
+      supabase.from('products').select('id,name,category,cost_price'),
     ]).then(([b, p]) => {
-      const bm = new Map<string, { name: string; category: string }>()
-      ;(b.data || []).forEach((x: any) => bm.set(x.id, { name: x.name, category: 'Pães' }))
-      const pm = new Map<string, { name: string; category: string }>()
-      ;(p.data || []).forEach((x: any) => pm.set(x.id, { name: x.name, category: x.category || '—' }))
+      const bm = new Map<string, ProductInfo>()
+      ;(b.data || []).forEach((x: any) => bm.set(x.id, {
+        name: x.name,
+        category: 'Pães',
+        cost: x.cost_price !== null && x.cost_price !== undefined ? Number(x.cost_price) : null,
+      }))
+      const pm = new Map<string, ProductInfo>()
+      ;(p.data || []).forEach((x: any) => pm.set(x.id, {
+        name: x.name,
+        category: x.category || '—',
+        cost: x.cost_price !== null && x.cost_price !== undefined ? Number(x.cost_price) : null,
+      }))
       setBreadsMap(bm)
       setProductsMap(pm)
     })
@@ -94,13 +114,16 @@ export default function SobrasDescartesReport() {
     return Array.from(set).sort()
   }, [rows])
 
-  // Filtros locais + resolução de nome de produto + ordenação por data desc
+  // Filtros locais + resolução de nome+custo + cálculo de valor + ordenação por data desc
   const filteredRows: DisplayRow[] = useMemo(() => {
     return rows
       .filter(r => modo === 'ambos' || r.modo === modo)
       .filter(r => responsible === 'all' || r.responsible === responsible)
       .map(r => {
         const lookup = r.product_source === 'bread' ? breadsMap.get(r.product_id) : productsMap.get(r.product_id)
+        const cost = lookup?.cost ?? null
+        const hasCost = cost !== null && cost > 0
+        const valor = hasCost ? Number((r.quantity * (cost as number)).toFixed(2)) : null
         return {
           date: r.record_date,
           responsible: r.responsible,
@@ -108,31 +131,39 @@ export default function SobrasDescartesReport() {
           product: lookup?.name ?? '(desconhecido)',
           category: lookup?.category ?? '—',
           quantity: r.quantity,
+          valor,
           obs: r.obs ?? '',
           _modoRaw: r.modo,
+          _hasCost: hasCost,
         }
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   }, [rows, modo, responsible, breadsMap, productsMap])
 
-  // KPIs
+  // KPIs (incluindo valores monetários)
   const kpis = useMemo(() => {
     const sobras = filteredRows.filter(r => r._modoRaw === 'sobra')
     const descartes = filteredRows.filter(r => r._modoRaw === 'descarte')
     const sobrasTotal = sobras.reduce((s, r) => s + r.quantity, 0)
     const descartesTotal = descartes.reduce((s, r) => s + r.quantity, 0)
+    const sobrasValor = sobras.reduce((s, r) => s + (r.valor ?? 0), 0)
+    const descartesValor = descartes.reduce((s, r) => s + (r.valor ?? 0), 0)
     const records = filteredRows.length
+    const semCusto = filteredRows.filter(r => !r._hasCost).length
 
+    // Top produto por VALOR (não por quantidade — alinhado com o objetivo do relatório)
     const byProduct = new Map<string, number>()
     filteredRows.forEach(r => {
-      byProduct.set(r.product, (byProduct.get(r.product) || 0) + r.quantity)
+      if (r.valor !== null) {
+        byProduct.set(r.product, (byProduct.get(r.product) ?? 0) + r.valor)
+      }
     })
-    let topProduct = '—'; let topQty = 0
-    byProduct.forEach((qty, name) => {
-      if (qty > topQty) { topQty = qty; topProduct = name }
+    let topProduct = '—'; let topValor = 0
+    byProduct.forEach((v, n) => {
+      if (v > topValor) { topValor = v; topProduct = n }
     })
 
-    return { sobrasTotal, descartesTotal, records, topProduct, topQty }
+    return { sobrasTotal, descartesTotal, sobrasValor, descartesValor, records, semCusto, topProduct, topValor }
   }, [filteredRows])
 
   function handleExport() {
@@ -145,6 +176,7 @@ export default function SobrasDescartesReport() {
         Produto: r.product,
         Categoria: r.category,
         Quantidade: r.quantity,
+        Valor_BRL: r.valor !== null ? r.valor.toFixed(2) : '',
         Obs: r.obs,
       })),
       `sobras-descartes-${toISODate(range.from)}-a-${toISODate(range.to)}.csv`
@@ -157,8 +189,9 @@ export default function SobrasDescartesReport() {
     { key: 'modo',        label: 'Modo' },
     { key: 'product',     label: 'Produto' },
     { key: 'category',    label: 'Categoria' },
-    { key: 'quantity',    label: 'Qtd', align: 'right', format: (v) => (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) },
-    { key: 'obs',         label: 'Obs', sortable: false },
+    { key: 'quantity',    label: 'Qtd',   align: 'right', format: (v) => (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) },
+    { key: 'valor',       label: 'Valor', align: 'right', format: (v) => v === null ? <span style={{color:'var(--muted)'}}>—</span> : formatBRL(v as number) },
+    { key: 'obs',         label: 'Obs',   sortable: false },
   ]
 
   return (
@@ -172,7 +205,7 @@ export default function SobrasDescartesReport() {
 
       <h1 style={{ margin: '0 0 4px', fontSize: '1.4rem', fontWeight: 700 }}>♻️ Sobras & Descartes</h1>
       <p style={{ margin: '0 0 20px', color: 'var(--muted)', fontSize: '0.9rem' }}>
-        Histórico unificado com filtros por período, modo e responsável.
+        Histórico unificado com filtros por período, modo e responsável. Valor monetário = <code>quantidade × custo cadastrado</code>.
       </p>
 
       {/* Filtros */}
@@ -194,12 +227,20 @@ export default function SobrasDescartesReport() {
         </select>
       </div>
 
+      {/* Alerta de cobertura — quando há registros sem custo */}
+      {kpis.semCusto > 0 && (
+        <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', padding: '8px 14px', borderRadius: 8, fontSize: '0.82rem', marginBottom: '12px' }}>
+          ⚠️ <strong>{kpis.semCusto}</strong> {kpis.semCusto === 1 ? 'registro' : 'registros'} sem custo cadastrado — valor monetário pode estar subestimado. Atualize em{' '}
+          <a href="/produtos" style={{ color: '#92400e', textDecoration: 'underline', fontWeight: 600 }}>/produtos</a>.
+        </div>
+      )}
+
       {/* KPIs */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-        <KPICard label="Total Sobras"    value={kpis.sobrasTotal}    unit="un" accent="#0a6e52" />
-        <KPICard label="Total Descartes" value={kpis.descartesTotal} unit="un" accent="#dc2626" />
+        <KPICard label="Valor Sobras"    value={formatBRL(kpis.sobrasValor)}    accent="#0a6e52" helper={`${kpis.sobrasTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
+        <KPICard label="Valor Descartes" value={formatBRL(kpis.descartesValor)} accent="#dc2626" helper={`${kpis.descartesTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
         <KPICard label="Registros"       value={kpis.records} />
-        <KPICard label="Top produto"     value={kpis.topProduct}     helper={`${kpis.topQty.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un total`} />
+        <KPICard label="Top produto"     value={kpis.topProduct} helper={kpis.topValor > 0 ? `${formatBRL(kpis.topValor)} no período` : '—'} />
       </div>
 
       {/* Export */}
