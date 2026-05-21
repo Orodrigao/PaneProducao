@@ -1,7 +1,7 @@
 # TODO — PR-B: Módulo /forno (Sander confirma produção) + infra de stock
 
 **Criado:** 2026-05-20
-**Status:** done (PR-B; aguardando teste manual; PR-B2 do romaneio é o próximo)
+**Status:** done ✅ (PR-B completo, testado E2E em produção. 23 actuals + 24 movements verificados no DB. PR-B2 do romaneio é o próximo.)
 
 ## Contexto / objetivo
 
