@@ -20,6 +20,8 @@ const ROUTE_OPTIONS = [
   { href: '/estoque',           label: 'Estoque',           icon: '📊' },
   { href: '/produtos',          label: 'Produtos',          icon: '📦' },
   { href: '/admin/usuarios',    label: 'Admin (usuários)',  icon: '⚙️' },
+  { href: '/relatorios',                  label: 'Relatórios (acesso)',  icon: '📈' },
+  { href: '/relatorios/sobras-descartes', label: '└ Sobras & Descartes', icon: '♻️' },
 ]
 
 // ---- Modal de PIN ----

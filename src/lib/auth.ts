@@ -19,7 +19,7 @@ const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/compras', '/estoque', '/produtos', '/admin/usuarios'],
+  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/compras', '/estoque', '/produtos', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
   producao:   ['/', '/sobras'],
   vendas:     ['/', '/sobras', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
