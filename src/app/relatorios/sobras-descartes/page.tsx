@@ -168,15 +168,18 @@ export default function SobrasDescartesReport() {
 
   function handleExport() {
     if (!range) return
+    // Formata números em locale BR (vírgula decimal) — alinhado com separador `;`
+    const brNumber = (v: number, dec = 2) =>
+      v.toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
     csvExport(
       filteredRows.map(r => ({
-        Data: r.date,
+        Data: formatDateBR(r.date),
         Responsavel: r.responsible,
         Modo: r.modo,
         Produto: r.product,
         Categoria: r.category,
-        Quantidade: r.quantity,
-        Valor_BRL: r.valor !== null ? r.valor.toFixed(2) : '',
+        Quantidade: brNumber(r.quantity, Number.isInteger(r.quantity) ? 0 : 2),
+        'Valor (R$)': r.valor !== null ? brNumber(r.valor) : '',
         Obs: r.obs,
       })),
       `sobras-descartes-${toISODate(range.from)}-a-${toISODate(range.to)}.csv`
