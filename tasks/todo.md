@@ -1,7 +1,7 @@
 # TODO — Módulo /relatorios + primeiro relatório (Sobras/Descartes)
 
 **Criado:** 2026-05-20
-**Status:** done (PR-A; aguardando teste manual e início do PR-B do Sander)
+**Status:** done ✅ (PR-A completo, testado, em produção)
 
 ## Contexto / objetivo
 
@@ -60,7 +60,15 @@ Os outros relatórios mencionados (romaneios, produção, congelados, financeiro
 
 - [x] `npx tsc --noEmit` verde
 - [x] `npm run build` verde — 2 rotas novas prerenderizadas estáticas
-- [x] Manual: Rodrigão acessa `/relatorios` → vê card de Sobras/Descartes → entra → filtra por última semana → exporta CSV → confere dados
+- [x] Manual: Rodrigão acessa `/relatorios` → vê card de Sobras/Descartes → entra → filtra por última semana → exporta CSV → confere dados ✅
+
+## Bônus além do escopo original
+
+- [x] Valores monetários (R$) no relatório — KPIs + coluna + alerta de cobertura
+- [x] Editor de cost_price dos pães em `/produtos` (nova aba "🍞 Pães")
+- [x] Bug fix latente: `/produtos` usava campo `cost` mas DB tinha `cost_price` (correção do display + persistência)
+- [x] CSV separado por `;` + números em locale BR (Excel pt-BR abre limpo)
+- [x] 3 lições novas em `lessons.md`
 
 ## Roadmap dos próximos relatórios (escopo planejado, implementação separada)
 
