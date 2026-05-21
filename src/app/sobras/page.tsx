@@ -31,7 +31,10 @@ export default function SobrasPage() {
     const { data: saved } = await supabase.from(table).select('*')
       .eq('record_date', todayKey()).eq('responsible', user)
     const vals: Record<string,number> = {}
-    ;(saved||[]).forEach((r:any)=>{ vals[r.product_id || ('bread_'+r.bread_id)] = r.quantity })
+    ;(saved||[]).forEach((r:any)=>{
+      const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
+      vals[key] = r.quantity
+    })
     setQtys(vals)
   }, [mode, user])
 
@@ -51,7 +54,8 @@ export default function SobrasPage() {
         const isBread = id.startsWith('bread_')
         return {
           record_date: date, responsible: user,
-          ...(isBread ? { bread_id: id.replace('bread_',''), product_source:'bread' } : { product_id: id, product_source:'catalog' }),
+          product_id: isBread ? id.replace('bread_','') : id,
+          product_source: isBread ? 'bread' : 'catalog',
           quantity
         }
       })
