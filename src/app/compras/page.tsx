@@ -1,28 +1,32 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { AppUser, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { formatDate, showToast } from '@/lib/utils'
 
-const TG_TOKEN  = '8765075650:AAH42hOI1M3BnYunUmczyOJUkUNaysah5v8'
-const TG_CHAT_ID = '688149907'
-const OWNER_PWD = 'pane2025'
+const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
+const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const SECTOR_LABELS: Record<string,string> = { padaria:'🥖 Padaria', cozinha:'🍳 Cozinha', loja:'🏪 Loja' }
-const USERS = [
-  { name:'Geolar', sector:'padaria', icon:'👨‍🍳' },
-  { name:'Fran',   sector:'cozinha', icon:'👩‍🍳' },
-  { name:'Liara',  sector:'loja',    icon:'🏪'   },
-  { name:'Elis',   sector:'loja',    icon:'🏪'   },
-]
 
 interface PurchaseList { id:string; sector:string; status:string; submitted_at:string|null; submitted_by:string|null; completed_at:string|null }
 interface PurchaseItem { id:string; list_id:string; product_id:string|null; ad_hoc_name:string|null; unit:string|null; quantity:number|null; checked:boolean; is_adhoc:boolean; sort_order:number; products?: { name:string } }
 
+// Mapa user.id → setor (substitui o seletor hardcoded antigo).
+// Admin vai pra visão "owner" automaticamente.
+function resolveRole(user: AppUser): { sector: string|null; isOwner: boolean } {
+  if (user.role === 'admin') return { sector: null, isOwner: true }
+  if (user.id === 'geolar')  return { sector: 'padaria', isOwner: false }
+  if (user.id === 'fran')    return { sector: 'cozinha', isOwner: false }
+  if (['liara','elis','samuel','rose','atendente_ex'].includes(user.id)) return { sector: 'loja', isOwner: false }
+  return { sector: null, isOwner: false } // sem acesso (será redirecionado)
+}
+
 export default function ComprasPage() {
-  const [user, setUser]     = useState<string|null>(null)
+  const router = useRouter()
+  const [user, setUser]     = useState<{ name: string; id: string }|null>(null)
   const [sector, setSector] = useState<string|null>(null)
   const [isOwner, setIsOwner] = useState(false)
-  const [ownerPwd, setOwnerPwd] = useState('')
-  const [showOwnerLogin, setShowOwnerLogin] = useState(false)
   const [list, setList]     = useState<PurchaseList|null>(null)
   const [items, setItems]   = useState<PurchaseItem[]>([])
   const [filter, setFilter] = useState<'all'|'pending'|'filled'>('all')
@@ -36,6 +40,28 @@ export default function ComprasPage() {
   const [ownerItems, setOwnerItems] = useState<PurchaseItem[]>([])
   const [ownerList, setOwnerList] = useState<PurchaseList|null>(null)
   const [ownerFilter, setOwnerFilter] = useState<'all'|'unchecked'|'checked'|'noqty'>('all')
+
+  // Resolve identidade via PIN global. Sem seletor interno paralelo.
+  useEffect(() => {
+    const u = getCurrentUser()
+    if (!u) { router.replace('/login'); return }
+    const r = resolveRole(u)
+    if (r.isOwner) {
+      setIsOwner(true)
+      setUser({ name: u.displayName, id: u.id })
+    } else if (r.sector) {
+      setSector(r.sector)
+      setUser({ name: u.displayName, id: u.id })
+    } else {
+      // Usuário sem mapeamento de setor → manda pra firstAllowedRoute
+      router.replace(firstAllowedRoute(u))
+    }
+  }, [router])
+
+  function handleLogout() {
+    authLogout()
+    router.push('/login')
+  }
 
   const loadList = useCallback(async () => {
     if (!sector) return
@@ -75,11 +101,12 @@ export default function ComprasPage() {
   }
 
   const submit = async () => {
+    if (!user) return
     const filled = items.filter(i=>i.quantity)
     if (!filled.length) { showToast('Nenhum item com quantidade'); return }
     if (!confirm(`Enviar lista com ${filled.length} item(s)?`)) return
     setSaving(true)
-    await supabase.from('purchase_lists').update({ status:'submitted', submitted_at: new Date().toISOString(), submitted_by: user }).eq('id', list!.id)
+    await supabase.from('purchase_lists').update({ status:'submitted', submitted_at: new Date().toISOString(), submitted_by: user.name }).eq('id', list!.id)
     setList(prev => prev ? {...prev, status:'submitted'} : prev)
     await sendTelegram(filled)
     showToast('✅ Lista enviada!'); setSaving(false)
@@ -101,8 +128,9 @@ export default function ComprasPage() {
   }
 
   const sendTelegram = async (filled: PurchaseItem[]) => {
+    if (!user || !sector) return
     const lines = filled.map(i=>`• ${i.is_adhoc?i.ad_hoc_name:i.products?.name||'?'}: ${i.quantity} ${i.unit||''}`)
-    const msg = `🛒 *Nova lista de compras!*\n\n👤 *${user}* — ${SECTOR_LABELS[sector!]}\n📋 ${filled.length} itens\n\n${lines.slice(0,25).join('\n')}${lines.length>25?`\n_...+${lines.length-25}_`:''}\n\n🔗 pane-producao.vercel.app/compras`
+    const msg = `🛒 *Nova lista de compras!*\n\n👤 *${user.name}* — ${SECTOR_LABELS[sector]}\n📋 ${filled.length} itens\n\n${lines.slice(0,25).join('\n')}${lines.length>25?`\n_...+${lines.length-25}_`:''}\n\n🔗 pane-producao.vercel.app/compras`
     await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' }) }).catch(()=>{})
   }
 
@@ -158,31 +186,10 @@ export default function ComprasPage() {
   const readonly = list?.status !== 'draft'
   const searchResults = search.length>1 ? allProducts.filter(p=>!items.find(i=>i.product_id===p.id)&&p.name.toLowerCase().includes(search.toLowerCase())).slice(0,8) : []
 
-  // ── LOGIN ──
-  if (!user && !isOwner) return (
-    <div style={{padding:'20px',maxWidth:500,margin:'0 auto',textAlign:'center'}}>
-      <div style={{fontSize:'2.5rem',marginBottom:8}}>🥐</div>
-      <div style={{fontWeight:700,fontSize:'1.3rem',color:'var(--primary)',marginBottom:4}}>Pane & Salute</div>
-      <div style={{color:'var(--muted)',marginBottom:30,fontSize:'.9rem'}}>Lista de Compras</div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,maxWidth:360,margin:'0 auto 20px'}}>
-        {USERS.map(u=>(
-          <button key={u.name} onClick={()=>{setUser(u.name);setSector(u.sector)}} style={{background:'white',border:'2px solid var(--border)',borderRadius:'var(--radius)',padding:'18px 12px',cursor:'pointer',textAlign:'center'}}>
-            <div style={{fontSize:'1.8rem',marginBottom:4}}>{u.icon}</div>
-            <div style={{fontWeight:700,color:'var(--primary)'}}>{u.name}</div>
-            <div style={{fontSize:'.75rem',color:'var(--muted)'}}>{SECTOR_LABELS[u.sector]}</div>
-          </button>
-        ))}
-      </div>
-      <button onClick={()=>setShowOwnerLogin(!showOwnerLogin)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.85rem',textDecoration:'underline'}}>🔑 Acesso do responsável</button>
-      {showOwnerLogin && (
-        <div style={{marginTop:16}}>
-          <input type="password" placeholder="Senha" value={ownerPwd} onChange={e=>setOwnerPwd(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&(ownerPwd===OWNER_PWD?setIsOwner(true):showToast('Senha incorreta'))}
-            style={{width:'100%',maxWidth:280,padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'1rem',marginBottom:8}}/>
-          <br/>
-          <button className="btn btn-primary" onClick={()=>ownerPwd===OWNER_PWD?setIsOwner(true):showToast('Senha incorreta')}>Entrar</button>
-        </div>
-      )}
+  // Loading state enquanto resolve user
+  if (!user) return (
+    <div style={{padding:'40px',textAlign:'center',color:'var(--muted)'}}>
+      <p>Carregando...</p>
     </div>
   )
 
@@ -190,8 +197,8 @@ export default function ComprasPage() {
   if (isOwner && ownerView==='overview') return (
     <div style={{padding:'20px',maxWidth:600,margin:'0 auto'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>👑 Visão Geral — Compras</span>
-        <button onClick={()=>{setIsOwner(false);setUser(null)}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.85rem'}}>Sair</button>
+        <span style={{fontWeight:700,color:'var(--primary)'}}>👑 Visão Geral — Compras <span style={{fontSize:'.78rem',color:'var(--muted)',fontWeight:500}}>· {user.name}</span></span>
+        <button onClick={handleLogout} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.85rem'}}>Sair</button>
       </div>
       {ownerLists.map((l:any)=>(
         <div key={l.id} onClick={()=>openOwnerDetail(l)} style={{background:'white',borderRadius:'var(--radius)',border:`2px solid ${l.status==='submitted'?'var(--warning)':l.status==='completed'?'var(--success)':'var(--border)'}`,padding:16,marginBottom:12,cursor:'pointer'}}>
@@ -253,8 +260,8 @@ export default function ComprasPage() {
   return (
     <div style={{padding:'16px',maxWidth:600,margin:'0 auto'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>{SECTOR_LABELS[sector!]} — {user}</span>
-        <button onClick={()=>{setUser(null);setSector(null)}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.8rem'}}>Trocar</button>
+        <span style={{fontWeight:700,color:'var(--primary)'}}>{sector ? SECTOR_LABELS[sector] : ''} — {user.name}</span>
+        <button onClick={handleLogout} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.8rem'}}>Sair</button>
       </div>
       {list?.status==='submitted' && <div className="status-banner status-submitted">⏳ Lista enviada em {formatDate(list.submitted_at||'')} por {list.submitted_by}. Aguardando compras.</div>}
       {list?.status==='completed' && <div className="status-banner status-completed">✅ Lista concluída!</div>}
