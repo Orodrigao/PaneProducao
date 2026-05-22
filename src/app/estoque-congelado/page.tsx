@@ -67,14 +67,16 @@ export default function EstoqueCongeladoPage() {
   const [historico, setHistorico] = useState<any[]>([])
   const [adminAuthed, setAdminAuthed] = useState(false)
   const [adminPwd, setAdminPwd] = useState('')
-  const [allProducts, setAllProducts] = useState<any[]>([])
+  // Catálogo unificado: products + breads (com tag _source pra inserir corretamente em frozen_products)
+  type CatalogItem = { id: string; name: string; unit: string|null; _source: 'product'|'bread' }
+  const [allProducts, setAllProducts] = useState<CatalogItem[]>([])
   const [adminSearch, setAdminSearch] = useState('')
-  const [adminResults, setAdminResults] = useState<any[]>([])
+  const [adminResults, setAdminResults] = useState<CatalogItem[]>([])
   const [newProdName, setNewProdName] = useState('')
   // Modal "+ Adicionar produto" pra qualquer user com store (sem senha admin)
   const [addOpen, setAddOpen]         = useState(false)
   const [addSearch, setAddSearch]     = useState('')
-  const [addResults, setAddResults]   = useState<any[]>([])
+  const [addResults, setAddResults]   = useState<CatalogItem[]>([])
   const [addManualName, setAddManualName] = useState('')
   const [addStores, setAddStores] = useState<string[]|null>(null) // null = global; ['jc','ja'] = múltiplas
 
@@ -113,7 +115,15 @@ export default function EstoqueCongeladoPage() {
   useEffect(() => { load() }, [load])
   useEffect(() => { if (tab==='historico') loadHistorico() }, [tab, loadHistorico])
   useEffect(() => {
-    supabase.from('products').select('id,name,unit').eq('active',true).order('name').then(({data})=>setAllProducts(data||[]))
+    // Catálogo = products + breads (eles congelam pão também). Source vira product_source no insert.
+    Promise.all([
+      supabase.from('products').select('id,name,unit').eq('active', true),
+      supabase.from('breads').select('id,name,unit').eq('active', true),
+    ]).then(([{data: ps}, {data: bs}]) => {
+      const fromProducts: CatalogItem[] = (ps||[]).map((p:any) => ({ id: p.id, name: p.name, unit: p.unit, _source: 'product' }))
+      const fromBreads:   CatalogItem[] = (bs||[]).map((b:any) => ({ id: b.id, name: b.name, unit: b.unit, _source: 'bread' }))
+      setAllProducts([...fromProducts, ...fromBreads].sort((a, b) => a.name.localeCompare(b.name)))
+    })
   }, [])
 
   const openMov = (fp: FrozenProduct) => {
@@ -162,11 +172,17 @@ export default function EstoqueCongeladoPage() {
     setAdminSearch(q)
     if (q.length < 2) { setAdminResults([]); return }
     const existing = new Set(products.map(p=>p.product_name.toLowerCase()))
-    setAdminResults(allProducts.filter(p=>!existing.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,8))
+    setAdminResults(allProducts.filter(p=>!existing.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,15))
   }
 
-  const addFromCatalog = async (p: any) => {
-    const { error } = await supabase.from('frozen_products').insert({ product_id:p.id, product_name:p.name, unit:p.unit||null, active:true })
+  const addFromCatalog = async (p: CatalogItem) => {
+    const { error } = await supabase.from('frozen_products').insert({
+      product_id: p.id,
+      product_source: p._source,
+      product_name: p.name,
+      unit: p.unit || 'un',
+      active: true,
+    })
     if (!error) { showToast('✅ Produto adicionado'); setAdminSearch(''); setAdminResults([]); load() }
     else showToast('Erro: '+error.message)
   }
@@ -200,11 +216,16 @@ export default function EstoqueCongeladoPage() {
     setAddSearch(q)
     if (q.length < 2) { setAddResults([]); return }
     const existing = new Set(products.map(p => p.product_name.toLowerCase()))
-    setAddResults(allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8))
+    setAddResults(allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 15))
   }
-  async function submitAddFromCatalog(p: any) {
+  async function submitAddFromCatalog(p: CatalogItem) {
     const { error } = await supabase.from('frozen_products').insert({
-      product_id: p.id, product_name: p.name, unit: p.unit || null, active: true, visible_stores: addStores
+      product_id: p.id,
+      product_source: p._source,
+      product_name: p.name,
+      unit: p.unit || 'un',
+      active: true,
+      visible_stores: addStores,
     })
     if (error) { showToast('Erro: '+error.message); return }
     showToast('✅ Produto adicionado')
@@ -341,8 +362,11 @@ export default function EstoqueCongeladoPage() {
                   style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
                 {adminResults.length>0 && (
                   <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
-                    {adminResults.map((p:any)=>(
-                      <div key={p.id} onClick={()=>addFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>{p.name}</div>
+                    {adminResults.map(p=>(
+                      <div key={`${p._source}_${p.id}`} onClick={()=>addFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
+                        {p.name}
+                        {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -409,8 +433,11 @@ export default function EstoqueCongeladoPage() {
                 style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
               {addResults.length>0 && (
                 <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
-                  {addResults.map((p:any)=>(
-                    <div key={p.id} onClick={()=>submitAddFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>{p.name}</div>
+                  {addResults.map(p=>(
+                    <div key={`${p._source}_${p.id}`} onClick={()=>submitAddFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
+                      {p.name}
+                      {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
+                    </div>
                   ))}
                 </div>
               )}
