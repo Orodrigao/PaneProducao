@@ -53,7 +53,7 @@ function normalizeStores(s: unknown): string[] | null {
 interface StockMap { [fpId: string]: Record<string, number> }
 
 export default function EstoqueCongeladoPage() {
-  const [user, setUser]         = useState<{displayName:string; store:string|null}|null>(null)
+  const [user, setUser]         = useState<{displayName:string; store:string|null; pin:string}|null>(null)
   const [products, setProducts] = useState<FrozenProduct[]>([])
   const [stock, setStock]       = useState<StockMap>({})
   const [search, setSearch]     = useState('')
@@ -80,7 +80,7 @@ export default function EstoqueCongeladoPage() {
 
   useEffect(() => {
     const u = getCurrentUser()
-    if (u) setUser({ displayName: u.displayName, store: u.store ?? null })
+    if (u) setUser({ displayName: u.displayName, store: u.store ?? null, pin: u.pin })
   }, [])
 
   const locsVisible = visibleLocations(user?.store ?? null)
@@ -321,10 +321,14 @@ export default function EstoqueCongeladoPage() {
 
         {tab==='admin' && !adminAuthed && (
           <div style={{maxWidth:300,margin:'40px auto',textAlign:'center'}}>
-            <input type="password" placeholder="Senha admin" value={adminPwd} onChange={e=>setAdminPwd(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&(adminPwd===ADMIN_PWD?setAdminAuthed(true):showToast('Senha incorreta'))}
-              style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,marginBottom:8,fontSize:'1rem'}}/>
-            <button className="btn btn-primary btn-full" onClick={()=>adminPwd===ADMIN_PWD?setAdminAuthed(true):showToast('Senha incorreta')}>Entrar</button>
+            <div style={{fontSize:'.85rem',color:'var(--muted)',marginBottom:10}}>
+              Confirme seu PIN ({user?.displayName}) para acessar a gestão{user?.store ? ` da loja ${user.store.toUpperCase()}` : ''}.
+            </div>
+            <input type="password" inputMode="numeric" maxLength={4} placeholder="PIN (4 dígitos)" value={adminPwd}
+              onChange={e=>setAdminPwd(e.target.value.replace(/\D/g,''))}
+              onKeyDown={e=>e.key==='Enter'&&(adminPwd===user?.pin?setAdminAuthed(true):showToast('PIN incorreto'))}
+              style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,marginBottom:8,fontSize:'1rem',textAlign:'center'}}/>
+            <button className="btn btn-primary btn-full" onClick={()=>adminPwd===user?.pin?setAdminAuthed(true):showToast('PIN incorreto')}>Entrar</button>
           </div>
         )}
 
@@ -353,10 +357,17 @@ export default function EstoqueCongeladoPage() {
               </div>
             </div>
             <div className="card">
-              <div className="card-title">Cadastrados ({products.length})</div>
-              {products.map(p=>(
+              <div className="card-title">Cadastrados ({products.filter(visibleByStore).length}{!isAdmin && user?.store ? ` · ${user.store.toUpperCase()}` : ''})</div>
+              {products.filter(visibleByStore).map(p=>(
                 <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'.88rem'}}>
-                  <span>{p.product_name}</span>
+                  <span>
+                    {p.product_name}
+                    {p.visible_stores && p.visible_stores.length > 0 && (
+                      <span style={{marginLeft:6,background:'#dbeafe',color:'#1e40af',padding:'1px 5px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>
+                        {p.visible_stores.map(s => s.toUpperCase()).join(', ')}
+                      </span>
+                    )}
+                  </span>
                   <span style={{color:'var(--muted)'}}>{getTotal(p.id)} unid.</span>
                 </div>
               ))}
