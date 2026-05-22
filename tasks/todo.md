@@ -1,98 +1,68 @@
-# TODO — PR-B3: app_users.store + /sobras unifica auth + descarte de pão move estoque
+# TODO — PR-B4: Tela de saldo de estoque de pães por loja
 
 **Criado:** 2026-05-21
-**Status:** done (PR-B3 código pronto; aguardando teste manual; PR-B4 do estoque-por-loja é o próximo)
+**Status:** planning
 
 ## Contexto / objetivo
 
-Hoje `/sobras` tem seletor interno paralelo (mesmo bug do / e /romaneio), `responsible` é string editável, e descarte não move estoque. Esta PR fecha 3 lacunas de uma vez:
+Hoje temos `bread_movements` populadas pelos 3 fluxos (forno entrada/descarte, romaneio envio, sobras descarte de pão). **Saldo atual = SUM(quantity) por bread_id + location.** Mas não tem tela pra visualizar isso.
 
-1. Adiciona **loja física** a cada usuário (jc/ja/ex/null)
-2. Refactor do `/sobras` pra usar PIN global (anti-impersonation)
-3. Descarte de **pão** (`product_source='bread'`) gera `bread_movements` (-N na loja do usuário)
+PR-B4 entrega: tela `/estoque-paes` com saldo atual de pão por loja. Cada user vê só a loja dele; admin tem dropdown pra trocar.
 
-Descarte de produtos não-pão (catálogo) continua só registrado em `descartes`. Stock infra pra catálogo fica pra PR futura quando o catalog production tiver fluxo.
+## Escopo
 
-## Decisões já tomadas
+### Schema
+Nada novo. Lê de `bread_movements` (já existe).
 
-- ✅ Refactor /sobras incluído (vale o custo extra pra ter loja confiável)
-- ✅ Só pão move estoque por enquanto
-- ✅ Mapeamento de loja:
-  - **EX:** Marselle + novo user "Atendente EX"
-  - **JA:** novo user "Cléo" (atendente JA + motorista JC)
-  - **JC:** Liara, Samuel, Rose, Fran, Geolar, Sander, Gustavo, Elis
-  - **NULL:** Rodrigão, Suélen (admins, sem loja física)
+### Page: `/estoque-paes/page.tsx`
 
-## Plano
+- **Auth/filtro:** lê `getCurrentUser`. Usuário com store: filtro fixo na loja dele. Admin: dropdown (default JC, opções JC/JA/EX/central).
+- **Query:** `supabase.from('bread_movements').select('bread_id, location, quantity').eq('location', selectedStore)` + agrupa por bread_id em JS.
+- **Lookup de nomes:** `supabase.from('breads').select('id,name,is_pj,unit')`.
+- **Display:** lista de pães com saldo, ordenada por nome. Search/filter por nome.
+- **KPIs no topo (3 cards):**
+  - Total de unidades em estoque
+  - Nº de variedades com saldo > 0
+  - Top variedade (maior saldo)
+- **Tabela:** Pão · Unidade · Saldo · (admin extra: location se "todas" selecionada)
+- **Linha zerada:** mostra normalmente, com saldo=0 (não filtra).
+- **Linha negativa:** destacar vermelho (sinaliza problema de tracking — ex: descarte sem entrada).
 
-### 1. Schema + dados via SQL
+### Nav + permissões
+- [src/components/Nav.tsx](src/components/Nav.tsx): novo link `/estoque-paes` com ícone (sugestão: 🥖 ou 📦; já temos 🍞 na Produção e 🧊 no Congelado — preciso de algo distinto. Pensei em **🥯** ou **📊** — admin opina)
+- [src/lib/auth.ts](src/lib/auth.ts) `DEFAULT_ROUTES_BY_ROLE`: adicionar `/estoque-paes` em admin, producao, expedicao, financeiro, compras (basicamente todo mundo que toca em pão)
+- [src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx) `ROUTE_OPTIONS`: adicionar
+- SQL: adicionar `/estoque-paes` às routes de admins (Rodrigão, Suélen) + Marselle, Geolar, Liara, Gustavo, Elis, Sander, etc.
 
-- [x] `ALTER TABLE app_users ADD COLUMN store text` (nullable)
-- [x] INSERT user `atendente_ex`: role='expedicao', pin='1010', routes=`['/sobras', '/estoque-congelado']`, store='ex'
-- [x] INSERT user `cleo`: role='expedicao', pin='2020', routes=`['/romaneio', '/sobras', '/estoque-congelado']`, store='ja'
-- [x] UPDATE store=`ex` em marselle
-- [x] UPDATE store=`jc` em liara, samuel, rose, fran, geolar, sander, gustavo, elis
-- [x] Rodrigão/Suélen ficam com store=NULL (admins)
+### Verificação
+- `npx tsc --noEmit` verde
+- `npm run build` verde
+- SQL spot-check: rodar a mesma query da UI no MCP, comparar com o que aparece em produção
+- Manual: Marselle vê só EX (5/3/10 dos testes anteriores se ainda houver), Rodrigão troca dropdown e vê todos
 
-### 2. Backend ([src/lib/auth.ts](src/lib/auth.ts))
+## Decisões abertas pra confirmar
 
-- [x] Interface `AppUser` ganha `store?: string | null`
-- [x] Interface `SBUser` ganha `store?: string | null`
-- [x] `fetchUsersFromSupabase` mapeia `store` do DB
-- [x] `createUserInSupabase` aceita `store` opcional no body
-- [x] `updateUserInSupabase` aceita `store` no Partial
-
-### 3. UI admin/usuarios ([src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx))
-
-- [x] EditUserModal: dropdown de loja (`jc | ja | ex | (sem loja)`)
-- [x] NewUserModal: mesmo dropdown
-- [x] handleEdit e handleCreate passam `store` no payload
-
-### 4. Refactor /sobras ([src/app/sobras/page.tsx](src/app/sobras/page.tsx))
-
-- [x] Remover constante `USERS = ['Suélen','Liara',...]`
-- [x] Remover tela de selector de usuário
-- [x] Usar `getCurrentUser()` do auth global; `responsible` agora vem do `user.displayName`
-- [x] Tela inicial vai direto pra selector de modo (Sobras / Descartes)
-- [x] AuthGuard já protege a rota (não precisa re-check)
-
-### 5. Movimento de estoque no descarte de pão
-
-- [x] No `save()` do /sobras quando `mode === 'descarte'`:
-  - Buscar `user.store` do user logado
-  - Se store está set E item.product_source === 'bread' E quantity > 0:
-    - Após insert em `descartes`, gera `bread_movements`: `quantity: -N`, `location: store`, `movement_type: 'descarte_loja'`, `reference_type: 'descarte'`, `reference_id: <descarte.id>`
-  - Se store é null (admin/Sander/Rodrigão registrando teste): pula movement, registra apenas em `descartes`. Log no console.
-  - Items de catálogo: continuam só em `descartes`, sem movement.
-
-### 6. Bonus: Cléo no romaneio ([src/app/romaneio/page.tsx](src/app/romaneio/page.tsx))
-
-- [x] No useEffect de auto-resolve, adicionar `else if (globalUser.id === 'cleo') internalRole = 'cleo'` antes do fallback expedicao→gustavo. Permite Cléo logar e marcar romaneios como enviado (papel dela).
-
-### 7. Verificação
-
-- [x] `npx tsc --noEmit` verde
-- [x] `npm run build` verde
-- [x] SQL: confirmar coluna `store` populada nos usuários certos
-- [x] Teste manual eu rodo via SQL (criar descarte de pão como user da JC, verificar movement em location='jc')
+1. **Localização da página:** rota nova `/estoque-paes` (separado) OU tab "Pães" em `/estoque` (que hoje é só insumos)? Recomendo separado pra não bloatar /estoque agora.
+2. **Admin: ver tudo de uma vez?** Por default mostra UMA loja (com dropdown). Botão "Comparar lojas" pode mostrar tabela com colunas por loja. Sugiro deixar comparar pra depois (escopo simples agora).
+3. **Ícone na Nav:** 🥯 / 📊 / outro? (já temos 🍞 Produção, 🧊 Congelado).
 
 ## Fora de escopo
 
-- **Catalog stock** (cookies, bolos, focaccias): descartes desses produtos ainda só são registrados, não movem estoque. Fica pra PR futura quando criar `catalog_movements`.
-- **Sobras** continuam não movendo estoque (decisão do usuário: sobras podem ser reaproveitadas).
-- **PR-B4** (tela de saldo por loja): próximo.
-- **PR-B5** (sub-locais tipo EX-Freezer-1..4): futuro, fora desta sequência.
+- **Estoque consolidado (pão + congelado + insumos) em uma tela** — viria depois de unificar catálogos (Estágio C do plano de produtos).
+- **Histórico de movimentos detalhado** — `bread_movements` já tem; pode virar tab futura ou um /relatorios/movimentos.
+- **Edição direta de saldo (ajuste de inventário)** — operação delicada; deixa pra PR separado se virar necessidade.
+- **Alertas de stock mínimo** — feature legítima futura.
 
 ## Estimativa
 
 | Item | Linhas |
 |---|---|
-| SQL (ALTER + 2 INSERT + UPDATEs) | ~12 statements |
-| auth.ts | +15 |
-| admin/usuarios EditUserModal+NewUserModal | +30 |
-| sobras refactor + movement logic | ~80 (remove +50 / adiciona +130) |
-| romaneio (Cléo mapping) | +1 |
-| **Total** | **~125 linhas** |
+| `src/app/estoque-paes/page.tsx` (novo) | ~180 |
+| `src/components/Nav.tsx` (+1 link) | +1 |
+| `src/lib/auth.ts` (+1 entrada em vários roles) | +5 |
+| `src/app/admin/usuarios/page.tsx` (+1 ROUTE_OPTIONS) | +1 |
+| SQL: adicionar route aos usuários relevantes | 1 statement |
+| **Total** | **~190 linhas** |
 
 ## Notas durante execução
 

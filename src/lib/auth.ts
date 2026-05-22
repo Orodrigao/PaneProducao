@@ -20,14 +20,14 @@ const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/compras', '/estoque', '/produtos', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
-  producao:   ['/', '/sobras', '/forno'],
-  vendas:     ['/', '/sobras', '/romaneio'],
-  estoque:    ['/', '/estoque-congelado', '/estoque'],
-  compras:    ['/compras', '/estoque', '/produtos'],
-  romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio'],
-  expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
+  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/estoque', '/produtos', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
+  producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
+  vendas:     ['/', '/sobras', '/romaneio', '/estoque-paes'],
+  estoque:    ['/', '/estoque-congelado', '/estoque', '/estoque-paes'],
+  compras:    ['/compras', '/estoque', '/produtos', '/estoque-paes'],
+  romaneio:   ['/romaneio', '/estoque-paes'],
+  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes'],
+  expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes'],
 }
 
 export const USERS_FALLBACK: AppUser[] = [

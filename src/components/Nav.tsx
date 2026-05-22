@@ -9,6 +9,7 @@ const ALL_LINKS = [
   { href: '/sobras',            label: 'Sobras',    icon: '♻️' },
   { href: '/romaneio',          label: 'Romaneio',  icon: '🚚' },
   { href: '/estoque-congelado', label: 'Congelado', icon: '🧊' },
+  { href: '/estoque-paes',      label: 'Saldo Pães',icon: '📊' },
   { href: '/compras',           label: 'Compras',   icon: '🛒' },
   { href: '/estoque',           label: 'Estoque',   icon: '📊' },
   { href: '/produtos',          label: 'Produtos',  icon: '📦' },
