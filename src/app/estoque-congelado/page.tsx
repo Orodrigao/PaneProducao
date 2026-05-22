@@ -170,9 +170,18 @@ export default function EstoqueCongeladoPage() {
 
   const searchAdmin = (q: string) => {
     setAdminSearch(q)
-    if (q.length < 2) { setAdminResults([]); return }
     const existing = new Set(products.map(p=>p.product_name.toLowerCase()))
-    setAdminResults(allProducts.filter(p=>!existing.has(p.name.toLowerCase())&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,15))
+    // Busca vazia (q<2): mostra TODOS os breads ativos (catálogo oficial de pães)
+    // Busca preenchida: filtra ambos, breads primeiro, products limitado a 10
+    if (q.length < 2) {
+      const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
+      setAdminResults(allBreads)
+      return
+    }
+    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase()))
+    const breads = matching.filter(p => p._source === 'bread')
+    const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
+    setAdminResults([...breads, ...prods])
   }
 
   const addFromCatalog = async (p: CatalogItem) => {
@@ -214,9 +223,16 @@ export default function EstoqueCongeladoPage() {
   }
   function searchAddCatalog(q: string) {
     setAddSearch(q)
-    if (q.length < 2) { setAddResults([]); return }
     const existing = new Set(products.map(p => p.product_name.toLowerCase()))
-    setAddResults(allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 15))
+    if (q.length < 2) {
+      const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
+      setAddResults(allBreads)
+      return
+    }
+    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase()))
+    const breads = matching.filter(p => p._source === 'bread')
+    const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
+    setAddResults([...breads, ...prods])
   }
   async function submitAddFromCatalog(p: CatalogItem) {
     const { error } = await supabase.from('frozen_products').insert({
@@ -358,7 +374,8 @@ export default function EstoqueCongeladoPage() {
             <div className="card">
               <div className="card-title">Buscar produto do catálogo</div>
               <div style={{position:'relative'}}>
-                <input placeholder="Digite o nome..." value={adminSearch} onChange={e=>searchAdmin(e.target.value)}
+                <input placeholder="Digite ou clique pra ver pães..." value={adminSearch}
+                  onChange={e=>searchAdmin(e.target.value)} onFocus={()=>searchAdmin(adminSearch)}
                   style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
                 {adminResults.length>0 && (
                   <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
@@ -429,7 +446,8 @@ export default function EstoqueCongeladoPage() {
 
             <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:4}}>Buscar do catálogo de produtos</label>
             <div style={{position:'relative',marginBottom:12}}>
-              <input placeholder="Digite o nome..." value={addSearch} onChange={e=>searchAddCatalog(e.target.value)}
+              <input placeholder="Digite ou clique pra ver pães..." value={addSearch}
+                onChange={e=>searchAddCatalog(e.target.value)} onFocus={()=>searchAddCatalog(addSearch)}
                 style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
               {addResults.length>0 && (
                 <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
