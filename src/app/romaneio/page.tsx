@@ -298,10 +298,50 @@ export default function RomaneioPage() {
   // ── envio ──────────────────────────────────────────────────────
   const confirmEnvio = async () => {
     if (!envioRomId) return
+    const romId = envioRomId
     setEnvioRomId(null)
     showLoad('Confirmando envio...')
     try {
-      await sbPatch('romaneios',{ status:'enviado', sent_by:role==='cleo'?'Cléo':'Gustavo', sent_at:new Date().toISOString() },{id:envioRomId})
+      const sentBy = role === 'cleo' ? 'Cléo' : 'Gustavo'
+      await sbPatch('romaneios', { status: 'enviado', sent_by: sentBy, sent_at: new Date().toISOString() }, { id: romId })
+
+      // Gera movimentações de estoque: -N em 'central', +N no destino.
+      // Idempotente: se já existirem movements pra esse romaneio, pula (evita duplicata em re-envio).
+      try {
+        const existing = await sbGet('bread_movements', `reference_id=eq.${romId}&reference_type=eq.romaneio&select=id&limit=1`)
+        if (!existing || existing.length === 0) {
+          const [items, romData] = await Promise.all([
+            sbGet('romaneio_items', `romaneio_id=eq.${romId}&product_source=eq.bread&qty_sent=gt.0&select=product_id,qty_sent`),
+            sbGet('romaneios', `id=eq.${romId}&select=destination_id,destinations(code)`),
+          ])
+          const destCode: string | undefined = romData?.[0]?.destinations?.code
+          if (destCode && items && items.length > 0) {
+            const destLoc = destCode.toLowerCase()
+            const movements: any[] = []
+            items.forEach((it: any) => {
+              const q = Number(it.qty_sent) || 0
+              if (q <= 0) return
+              movements.push(
+                { movement_type: 'romaneio_envio', bread_id: it.product_id, location: 'central', quantity: -q, reference_id: romId, reference_type: 'romaneio', recorded_by: sentBy },
+                { movement_type: 'romaneio_envio', bread_id: it.product_id, location: destLoc,   quantity:  q, reference_id: romId, reference_type: 'romaneio', recorded_by: sentBy },
+              )
+            })
+            if (movements.length > 0) {
+              await fetch(`${SB_URL}/rest/v1/bread_movements`, {
+                method: 'POST',
+                headers: { ...H, Prefer: 'return=minimal' },
+                body: JSON.stringify(movements),
+              })
+            }
+          }
+        }
+      } catch (movErr) {
+        // Movimentações falharam mas o status já foi atualizado. Loga e segue —
+        // melhor o romaneio ficar marcado como enviado do que travar a UI.
+        // Retry manual via SQL se precisar.
+        console.error('[romaneio] erro ao gerar bread_movements:', movErr)
+      }
+
       showToast('✅ Romaneio marcado como enviado!')
       await loadPainel()
     } catch(e) { showToast('❌ Erro') }
