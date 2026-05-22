@@ -210,6 +210,26 @@ export default function EstoqueCongeladoPage() {
   // Admin (sem store) vê tudo. Outros veem produtos globais + onde a loja deles aparece em visible_stores.
   const isAdmin = !user?.store
   const visibleByStore = (p: FrozenProduct) => isAdmin || !p.visible_stores || p.visible_stores.includes(user?.store ?? '')
+
+  // Permissão de excluir: admin (sem store) pode tudo; user com store só pode excluir
+  // produtos cuja única loja visível é a dele (evita apagar globais ou de outras lojas)
+  const canDeleteProduct = (p: FrozenProduct): boolean => {
+    if (isAdmin) return true
+    if (!user?.store) return false
+    return !!p.visible_stores && p.visible_stores.length === 1 && p.visible_stores[0] === user.store
+  }
+
+  const deleteFrozenProduct = async (p: FrozenProduct) => {
+    const total = getTotal(p.id)
+    const warning = total > 0
+      ? `⚠️ "${p.product_name}" ainda tem ${total} unidade(s) em estoque.\n\nDesativar mesmo assim? (Histórico de movimentações fica preservado.)`
+      : `Desativar "${p.product_name}"?\n\n(Histórico de movimentações fica preservado.)`
+    if (!confirm(warning)) return
+    const { error } = await supabase.from('frozen_products').update({ active: false }).eq('id', p.id)
+    if (error) { showToast('Erro: ' + error.message); return }
+    showToast(`✅ ${p.product_name} removido`)
+    load()
+  }
   const filtered = products
     .filter(visibleByStore)
     .filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
@@ -406,8 +426,8 @@ export default function EstoqueCongeladoPage() {
             <div className="card">
               <div className="card-title">Cadastrados ({products.filter(visibleByStore).length}{!isAdmin && user?.store ? ` · ${user.store.toUpperCase()}` : ''})</div>
               {products.filter(visibleByStore).map(p=>(
-                <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'.88rem'}}>
-                  <span>
+                <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'.88rem',gap:8}}>
+                  <span style={{flex:1,minWidth:0}}>
                     {p.product_name}
                     {p.visible_stores && p.visible_stores.length > 0 && (
                       <span style={{marginLeft:6,background:'#dbeafe',color:'#1e40af',padding:'1px 5px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>
@@ -415,7 +435,13 @@ export default function EstoqueCongeladoPage() {
                       </span>
                     )}
                   </span>
-                  <span style={{color:'var(--muted)'}}>{getTotal(p.id)} unid.</span>
+                  <span style={{color:'var(--muted)',whiteSpace:'nowrap'}}>{getTotal(p.id)} unid.</span>
+                  {canDeleteProduct(p) && (
+                    <button onClick={()=>deleteFrozenProduct(p)} title="Excluir"
+                      style={{background:'none',border:'none',cursor:'pointer',padding:'4px 6px',fontSize:'1rem',color:'#dc2626',lineHeight:1}}>
+                      🗑
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
