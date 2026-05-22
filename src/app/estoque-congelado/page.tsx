@@ -41,7 +41,7 @@ function visibleLocations(store: string | null): string[] {
   return Object.values(LOCATIONS_BY_STORE).flat()
 }
 
-interface FrozenProduct { id:string; product_name:string; unit:string|null; min_qty:number|null; active:boolean }
+interface FrozenProduct { id:string; product_name:string; unit:string|null; min_qty:number|null; active:boolean; store: string|null }
 interface StockMap { [fpId: string]: Record<string, number> }
 
 export default function EstoqueCongeladoPage() {
@@ -63,6 +63,12 @@ export default function EstoqueCongeladoPage() {
   const [adminSearch, setAdminSearch] = useState('')
   const [adminResults, setAdminResults] = useState<any[]>([])
   const [newProdName, setNewProdName] = useState('')
+  // Modal "+ Adicionar produto" pra qualquer user com store (sem senha admin)
+  const [addOpen, setAddOpen]         = useState(false)
+  const [addSearch, setAddSearch]     = useState('')
+  const [addResults, setAddResults]   = useState<any[]>([])
+  const [addManualName, setAddManualName] = useState('')
+  const [addStoreChoice, setAddStoreChoice] = useState<string|null>(null) // null = global
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -158,7 +164,43 @@ export default function EstoqueCongeladoPage() {
     setNewProdName(''); load(); showToast('✅ Produto adicionado')
   }
 
-  const filtered = products.filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
+  // Admin (sem store) vê tudo. Outros veem produtos globais + da loja deles.
+  const isAdmin = !user?.store
+  const visibleByStore = (p: FrozenProduct) => isAdmin || !p.store || p.store === user?.store
+  const filtered = products
+    .filter(visibleByStore)
+    .filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
+
+  // Quem pode adicionar produtos: qualquer user com store + admins
+  const canAdd = !!user
+  function openAddModal() {
+    setAddSearch(''); setAddResults([]); setAddManualName('')
+    setAddStoreChoice(user?.store ?? null) // user com store → pré-fixado; admin → "global" como default
+    setAddOpen(true)
+  }
+  function searchAddCatalog(q: string) {
+    setAddSearch(q)
+    if (q.length < 2) { setAddResults([]); return }
+    const existing = new Set(products.map(p => p.product_name.toLowerCase()))
+    setAddResults(allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8))
+  }
+  async function submitAddFromCatalog(p: any) {
+    const { error } = await supabase.from('frozen_products').insert({
+      product_id: p.id, product_name: p.name, unit: p.unit || null, active: true, store: addStoreChoice
+    })
+    if (error) { showToast('Erro: '+error.message); return }
+    showToast('✅ Produto adicionado')
+    setAddOpen(false); load()
+  }
+  async function submitAddManual() {
+    if (!addManualName.trim()) return
+    const { error } = await supabase.from('frozen_products').insert({
+      product_name: addManualName.trim(), active: true, store: addStoreChoice
+    })
+    if (error) { showToast('Erro: '+error.message); return }
+    showToast('✅ Produto adicionado')
+    setAddOpen(false); load()
+  }
 
   return (
     <div style={{maxWidth:600,margin:'0 auto'}}>
@@ -181,8 +223,16 @@ export default function EstoqueCongeladoPage() {
       <div style={{padding:16}}>
         {tab==='estoque' && (
           <>
-            <input placeholder="🔍 Buscar produto..." value={search} onChange={e=>setSearch(e.target.value)}
-              style={{width:'100%',padding:'9px 12px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem',marginBottom:12}}/>
+            <div style={{display:'flex',gap:8,marginBottom:12}}>
+              <input placeholder="🔍 Buscar produto..." value={search} onChange={e=>setSearch(e.target.value)}
+                style={{flex:1,padding:'9px 12px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              {canAdd && (
+                <button onClick={openAddModal}
+                  style={{padding:'9px 14px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.85rem',fontWeight:700,whiteSpace:'nowrap'}}>
+                  + Adicionar
+                </button>
+              )}
+            </div>
             {filtered.length===0 ? (
               <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>
                 {products.length===0?'Nenhum produto configurado. Use o Admin para adicionar.':'Nenhum resultado.'}
@@ -195,7 +245,14 @@ export default function EstoqueCongeladoPage() {
                 <div key={fp.id} className="card" style={{borderLeft:`4px solid ${low?'var(--danger)':'var(--border)'}`,cursor:'pointer'}} onClick={()=>openMov(fp)}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                     <div>
-                      <div style={{fontWeight:700,fontSize:'.95rem'}}>{fp.product_name}</div>
+                      <div style={{fontWeight:700,fontSize:'.95rem'}}>
+                        {fp.product_name}
+                        {fp.store && (
+                          <span style={{marginLeft:6,background:'#dbeafe',color:'#1e40af',padding:'2px 6px',borderRadius:4,fontSize:'.65rem',fontWeight:700}}>
+                            🏪 {fp.store.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
                       {fp.unit && <div style={{fontSize:'.75rem',color:'var(--muted)'}}>{fp.unit}</div>}
                     </div>
                     <div style={{textAlign:'right'}}>
@@ -289,6 +346,58 @@ export default function EstoqueCongeladoPage() {
           </>
         )}
       </div>
+
+      {/* Modal: Adicionar produto (qualquer user com store) */}
+      {addOpen && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-end',zIndex:200}} onClick={e=>e.target===e.currentTarget&&setAddOpen(false)}>
+          <div style={{background:'white',width:'100%',borderRadius:'12px 12px 0 0',padding:20,maxHeight:'85vh',overflowY:'auto'}}>
+            <div style={{fontWeight:700,marginBottom:4,fontSize:'1rem'}}>+ Adicionar produto congelado</div>
+            <div style={{fontSize:'.78rem',color:'var(--muted)',marginBottom:12}}>
+              {isAdmin
+                ? 'Admin: escolha a loja (ou "global" pra todos verem).'
+                : `Esse produto vai ser cadastrado para a loja ${(user?.store || '').toUpperCase()} (só vocês veem).`}
+            </div>
+
+            {isAdmin && (
+              <>
+                <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:4}}>Loja</label>
+                <select value={addStoreChoice ?? ''} onChange={e=>setAddStoreChoice(e.target.value || null)}
+                  style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,marginBottom:12,fontSize:'.9rem'}}>
+                  <option value="">🌐 Global (todas as lojas veem)</option>
+                  <option value="jc">JC — Júlio</option>
+                  <option value="ja">JA — Jardim América</option>
+                  <option value="ex">EX — Exposição</option>
+                </select>
+              </>
+            )}
+
+            <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:4}}>Buscar do catálogo de produtos</label>
+            <div style={{position:'relative',marginBottom:12}}>
+              <input placeholder="Digite o nome..." value={addSearch} onChange={e=>searchAddCatalog(e.target.value)}
+                style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              {addResults.length>0 && (
+                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
+                  {addResults.map((p:any)=>(
+                    <div key={p.id} onClick={()=>submitAddFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>{p.name}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{borderTop:'1px dashed var(--border)',paddingTop:12,marginBottom:14}}>
+              <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:4}}>Ou adicionar manualmente</label>
+              <div style={{display:'flex',gap:6}}>
+                <input placeholder="Nome do produto" value={addManualName} onChange={e=>setAddManualName(e.target.value)}
+                  style={{flex:1,padding:8,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.9rem'}}/>
+                <button onClick={submitAddManual} disabled={!addManualName.trim()}
+                  style={{padding:'8px 14px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:addManualName.trim()?'pointer':'default',opacity:addManualName.trim()?1:.5,fontWeight:600}}>+</button>
+              </div>
+            </div>
+
+            <button className="btn btn-ghost btn-full" onClick={()=>setAddOpen(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       {movFP && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-end',zIndex:200}} onClick={e=>e.target===e.currentTarget&&setMovFP(null)}>
