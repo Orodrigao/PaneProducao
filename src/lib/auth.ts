@@ -10,6 +10,7 @@ export interface AppUser {
   role: Role
   active: boolean
   allowedRoutes: string[]
+  store: string | null  // jc | ja | ex | null (admins sem loja física)
 }
 
 const SB_URL   = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -30,14 +31,14 @@ export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
 }
 
 export const USERS_FALLBACK: AppUser[] = [
-  { id: 'fb1', username: 'rodrigo',   displayName: 'Rodrigo',    pin: '1234', role: 'admin',    active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.admin },
-  { id: 'fb2', username: 'suelen',    displayName: 'Suelen',     pin: '1111', role: 'admin',    active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.admin },
-  { id: 'fb3', username: 'producao1', displayName: 'Producao 1', pin: '2222', role: 'producao', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.producao },
-  { id: 'fb4', username: 'producao2', displayName: 'Producao 2', pin: '3333', role: 'producao', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.producao },
-  { id: 'fb5', username: 'vendas1',   displayName: 'Vendas 1',   pin: '4444', role: 'vendas',   active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.vendas },
-  { id: 'fb6', username: 'estoque1',  displayName: 'Estoque 1',  pin: '5555', role: 'estoque',  active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.estoque },
-  { id: 'fb7', username: 'compras1',  displayName: 'Compras 1',  pin: '6666', role: 'compras',  active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.compras },
-  { id: 'fb8', username: 'romaneio1', displayName: 'Romaneio 1', pin: '7777', role: 'romaneio', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.romaneio },
+  { id: 'fb1', username: 'rodrigo',   displayName: 'Rodrigo',    pin: '1234', role: 'admin',    active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.admin,    store: null },
+  { id: 'fb2', username: 'suelen',    displayName: 'Suelen',     pin: '1111', role: 'admin',    active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.admin,    store: null },
+  { id: 'fb3', username: 'producao1', displayName: 'Producao 1', pin: '2222', role: 'producao', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.producao, store: 'jc' },
+  { id: 'fb4', username: 'producao2', displayName: 'Producao 2', pin: '3333', role: 'producao', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.producao, store: 'jc' },
+  { id: 'fb5', username: 'vendas1',   displayName: 'Vendas 1',   pin: '4444', role: 'vendas',   active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.vendas,   store: 'jc' },
+  { id: 'fb6', username: 'estoque1',  displayName: 'Estoque 1',  pin: '5555', role: 'estoque',  active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.estoque,  store: 'jc' },
+  { id: 'fb7', username: 'compras1',  displayName: 'Compras 1',  pin: '6666', role: 'compras',  active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.compras,  store: 'jc' },
+  { id: 'fb8', username: 'romaneio1', displayName: 'Romaneio 1', pin: '7777', role: 'romaneio', active: true, allowedRoutes: DEFAULT_ROUTES_BY_ROLE.romaneio, store: 'ja' },
 ]
 
 interface SBUser {
@@ -48,6 +49,7 @@ interface SBUser {
   role: Role
   active: boolean
   routes: string[] | null
+  store: string | null
 }
 
 export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
@@ -63,6 +65,7 @@ export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
       allowedRoutes: (Array.isArray(r.routes) && r.routes.length > 0)
         ? r.routes
         : (DEFAULT_ROUTES_BY_ROLE[r.role] ?? []),
+      store: r.store ?? null,
     }))
   } catch { return null }
 }
@@ -91,6 +94,7 @@ export async function createUserInSupabase(
       role: user.role,
       active: user.active,
       routes: user.allowedRoutes && user.allowedRoutes.length > 0 ? user.allowedRoutes : null,
+      store: user.store ?? null,
     }
     const res = await fetch(SB_URL + '/rest/v1/app_users', {
       method: 'POST',
@@ -103,7 +107,7 @@ export async function createUserInSupabase(
 
 export async function updateUserInSupabase(
   id: string,
-  updates: Partial<Pick<AppUser, 'pin' | 'active' | 'role' | 'displayName' | 'allowedRoutes'>>
+  updates: Partial<Pick<AppUser, 'pin' | 'active' | 'role' | 'displayName' | 'allowedRoutes' | 'store'>>
 ): Promise<boolean> {
   try {
     const body: Record<string, unknown> = {}
@@ -112,6 +116,7 @@ export async function updateUserInSupabase(
     if (updates.role          !== undefined) body.role         = updates.role
     if (updates.displayName   !== undefined) body.display_name = updates.displayName
     if (updates.allowedRoutes !== undefined) body.routes       = updates.allowedRoutes
+    if (updates.store         !== undefined) body.store        = updates.store
     const res = await fetch(SB_URL + '/rest/v1/app_users?id=eq.' + id, {
       method: 'PATCH',
       headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },

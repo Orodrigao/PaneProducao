@@ -1,137 +1,98 @@
-# TODO — PR-B: Módulo /forno (Sander confirma produção) + infra de stock
+# TODO — PR-B3: app_users.store + /sobras unifica auth + descarte de pão move estoque
 
-**Criado:** 2026-05-20
-**Status:** done ✅ (PR-B completo, testado E2E em produção. 23 actuals + 24 movements verificados no DB. PR-B2 do romaneio é o próximo.)
+**Criado:** 2026-05-21
+**Status:** done (PR-B3 código pronto; aguardando teste manual; PR-B4 do estoque-por-loja é o próximo)
 
 ## Contexto / objetivo
 
-Sander (e Geolar/admin) confirma todo dia **o que efetivamente foi assado** + **o que foi perdido no processo** (queimou, fora do padrão, etc). Cada confirmação alimenta o estoque "central" de pães. Esta PR estabelece a infra de stock e captura no forno.
+Hoje `/sobras` tem seletor interno paralelo (mesmo bug do / e /romaneio), `responsible` é string editável, e descarte não move estoque. Esta PR fecha 3 lacunas de uma vez:
 
-PR seguintes consomem essa infra:
-- **PR-B2:** `/romaneio` enviado → debita central, credita loja destino
-- **PR-B3:** `/sobras` descarte → debita loja (precisa `app_users.store`)
-- **PR-B4:** Tela de visibilidade de estoque por loja
-- **PR-B5:** Sub-locais (freezers nomeados por loja: EX-Freezer-1..4, JA-Freezer-1)
+1. Adiciona **loja física** a cada usuário (jc/ja/ex/null)
+2. Refactor do `/sobras` pra usar PIN global (anti-impersonation)
+3. Descarte de **pão** (`product_source='bread'`) gera `bread_movements` (-N na loja do usuário)
 
-PR-C (`/relatorios/producao`) consome `production_actuals` pra comparativo pedido × realizado.
+Descarte de produtos não-pão (catálogo) continua só registrado em `descartes`. Stock infra pra catálogo fica pra PR futura quando o catalog production tiver fluxo.
 
 ## Decisões já tomadas
 
-- ✅ PRs sequenciais (B, B2, B3, ...)
-- ✅ Pães PJ incluídos no /forno (orders.is_pj=true com pj_delivery_date=hoje)
-- ✅ Descarte no forno tem motivo (Queimou / Fora do padrão / Outros)
-- ✅ Cada usuário tem loja física (definir no PR-B3 via `app_users.store`)
-- ✅ Stock por loja (cada loja é independente — definir no PR-B2/B3)
-- ✅ EX tem 4 freezers; JA tem 1 (definir nomes no PR-B5)
+- ✅ Refactor /sobras incluído (vale o custo extra pra ter loja confiável)
+- ✅ Só pão move estoque por enquanto
+- ✅ Mapeamento de loja:
+  - **EX:** Marselle + novo user "Atendente EX"
+  - **JA:** novo user "Cléo" (atendente JA + motorista JC)
+  - **JC:** Liara, Samuel, Rose, Fran, Geolar, Sander, Gustavo, Elis
+  - **NULL:** Rodrigão, Suélen (admins, sem loja física)
 
-## Plano (PR-B atual)
+## Plano
 
-### 1. Schema (Supabase via MCP)
+### 1. Schema + dados via SQL
 
-- [x] **`production_actuals`** — registro do que Sander confirmou (audit + UNIQUE por dia+pão)
-  ```sql
-  CREATE TABLE production_actuals (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    record_date date NOT NULL,
-    bread_id text NOT NULL REFERENCES breads(id),
-    quantity_baked numeric NOT NULL DEFAULT 0,
-    quantity_loss numeric NOT NULL DEFAULT 0,
-    loss_reason text,
-    recorded_by text NOT NULL,
-    obs text,
-    created_at timestamptz DEFAULT now(),
-    updated_at timestamptz DEFAULT now(),
-    UNIQUE (bread_id, record_date)
-  );
-  CREATE INDEX idx_prod_actuals_date ON production_actuals(record_date);
-  ```
+- [x] `ALTER TABLE app_users ADD COLUMN store text` (nullable)
+- [x] INSERT user `atendente_ex`: role='expedicao', pin='1010', routes=`['/sobras', '/estoque-congelado']`, store='ex'
+- [x] INSERT user `cleo`: role='expedicao', pin='2020', routes=`['/romaneio', '/sobras', '/estoque-congelado']`, store='ja'
+- [x] UPDATE store=`ex` em marselle
+- [x] UPDATE store=`jc` em liara, samuel, rose, fran, geolar, sander, gustavo, elis
+- [x] Rodrigão/Suélen ficam com store=NULL (admins)
 
-- [x] **`bread_movements`** — log de TODAS as movimentações de pão (forno+, romaneio-, descarte-, ajuste)
-  ```sql
-  CREATE TABLE bread_movements (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    movement_type text NOT NULL,
-      -- 'forno_entrada': +N em central (PR-B)
-      -- 'forno_descarte': -N em central (PR-B)
-      -- 'romaneio_envio': -N em central + +N em loja (PR-B2)
-      -- 'descarte_loja': -N em loja (PR-B3)
-      -- 'ajuste': +/-N manual (futuro)
-    bread_id text NOT NULL,
-    location text NOT NULL, -- 'central' | 'jc' | 'ja' | 'ex' | 'pj'
-    quantity numeric NOT NULL, -- positive=entrada, negative=saída
-    reference_id text, -- id do registro de origem (production_actuals.id, etc)
-    reference_type text,
-    recorded_by text NOT NULL,
-    obs text,
-    created_at timestamptz DEFAULT now()
-  );
-  CREATE INDEX idx_bread_mov_location_bread ON bread_movements(location, bread_id);
-  CREATE INDEX idx_bread_mov_date ON bread_movements(created_at DESC);
-  ```
+### 2. Backend ([src/lib/auth.ts](src/lib/auth.ts))
 
-### 2. Módulo `/forno/page.tsx`
+- [x] Interface `AppUser` ganha `store?: string | null`
+- [x] Interface `SBUser` ganha `store?: string | null`
+- [x] `fetchUsersFromSupabase` mapeia `store` do DB
+- [x] `createUserInSupabase` aceita `store` opcional no body
+- [x] `updateUserInSupabase` aceita `store` no Partial
 
-- [x] Date picker no topo (default hoje; permite últimos 7 dias)
-- [x] Carrega:
-  - Pães regulares com `orders.quantity > 0` na data (sum por bread_id)
-  - Pães PJ com `orders.pj_delivery_date = data` e quantity > 0
-  - `production_actuals` existentes pra essa data (pra pré-preencher)
-- [x] Linha por pão:
-  - Nome do pão (+ badge "PJ" se for is_pj)
-  - **Planejado:** soma `orders.quantity` na data
-  - **Assado:** input numérico (-/+ buttons + número), pré-preenchido com planejado OU com production_actuals.quantity_baked se já registrado
-  - **+ Registrar descarte** (collapsed por default; expande pra mostrar input qtd + select de motivo)
-- [x] Botão **"💾 Salvar produção do dia"**:
-  - Upsert em `production_actuals` (uma linha por pão)
-  - Insert em `bread_movements`: 1 `forno_entrada` (quantity=+baked) + 1 `forno_descarte` (quantity=-loss) por pão com valores > 0
-  - Idempotência: deletar `bread_movements` antigos da data antes de inserir os novos (re-save substitui)
-- [x] Toast de sucesso/erro
-- [x] Header: nome do usuário logado (recorded_by)
+### 3. UI admin/usuarios ([src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx))
 
-### 3. Nav + permissões
+- [x] EditUserModal: dropdown de loja (`jc | ja | ex | (sem loja)`)
+- [x] NewUserModal: mesmo dropdown
+- [x] handleEdit e handleCreate passam `store` no payload
 
-- [x] [src/components/Nav.tsx](src/components/Nav.tsx): adicionar `/forno` com ícone 🔥
-- [x] [src/lib/auth.ts](src/lib/auth.ts) `DEFAULT_ROUTES_BY_ROLE.producao`: incluir `/forno`
-- [x] [src/app/admin/usuarios/page.tsx](src/app/admin/usuarios/page.tsx) `ROUTE_OPTIONS`: adicionar `/forno`
-- [x] SQL: ativar Sander + setar routes (`/forno` + talvez `/` para ver pedidos pra contextualizar)
-- [x] SQL: adicionar `/forno` às routes de Geolar e admins (Rodrigão/Suélen)
+### 4. Refactor /sobras ([src/app/sobras/page.tsx](src/app/sobras/page.tsx))
 
-### 4. Verificação
+- [x] Remover constante `USERS = ['Suélen','Liara',...]`
+- [x] Remover tela de selector de usuário
+- [x] Usar `getCurrentUser()` do auth global; `responsible` agora vem do `user.displayName`
+- [x] Tela inicial vai direto pra selector de modo (Sobras / Descartes)
+- [x] AuthGuard já protege a rota (não precisa re-check)
+
+### 5. Movimento de estoque no descarte de pão
+
+- [x] No `save()` do /sobras quando `mode === 'descarte'`:
+  - Buscar `user.store` do user logado
+  - Se store está set E item.product_source === 'bread' E quantity > 0:
+    - Após insert em `descartes`, gera `bread_movements`: `quantity: -N`, `location: store`, `movement_type: 'descarte_loja'`, `reference_type: 'descarte'`, `reference_id: <descarte.id>`
+  - Se store é null (admin/Sander/Rodrigão registrando teste): pula movement, registra apenas em `descartes`. Log no console.
+  - Items de catálogo: continuam só em `descartes`, sem movement.
+
+### 6. Bonus: Cléo no romaneio ([src/app/romaneio/page.tsx](src/app/romaneio/page.tsx))
+
+- [x] No useEffect de auto-resolve, adicionar `else if (globalUser.id === 'cleo') internalRole = 'cleo'` antes do fallback expedicao→gustavo. Permite Cléo logar e marcar romaneios como enviado (papel dela).
+
+### 7. Verificação
 
 - [x] `npx tsc --noEmit` verde
-- [x] `npm run build` verde — `/forno` prerenderizada
-- [x] SQL: confirmar tabelas criadas + indexes
-- [x] Teste manual (Rodrigão admin):
-  - Abre `/forno`
-  - Vê pães do dia com planejado correto
-  - Ajusta "Assado" + adiciona "Descarte" com motivo
-  - Salva
-  - Recarrega → valores persistem
-  - SQL via MCP: confere `production_actuals` (1 linha por pão) e `bread_movements` (forno_entrada + forno_descarte)
-  - Re-save com valores diferentes → bread_movements substituído (idempotente)
+- [x] `npm run build` verde
+- [x] SQL: confirmar coluna `store` populada nos usuários certos
+- [x] Teste manual eu rodo via SQL (criar descarte de pão como user da JC, verificar movement em location='jc')
 
-## Fora de escopo (PR-B)
+## Fora de escopo
 
-- **Per-loja stock** (PR-B2/B3): forno só alimenta `central`. Lojas têm stock próprio que romaneio/descarte mexem.
-- **Per-user loja mapping** (PR-B3): `app_users.store` ainda não existe; vem com sobras/descartes.
-- **Freezers nomeados** (PR-B5): EX-Freezer1..4, JA-Freezer1.
-- **Tela de visibilidade de estoque** (PR-B4): saber "quanto tem onde" agora. PR-B só GRAVA, não LÊ saldo.
-- **Múltiplos turnos** (manhã/tarde): 1 registro por pão por dia. Re-save substitui.
-- **Relatório de produção** (PR-C): pedido × realizado. Próximo.
-- **Alerta automático de divergência** ("planejado 50, assado 10 — confirma?"): UX nice-to-have, futuro.
-- **Edit histórico granular**: date picker permite voltar 7 dias, mais que isso só via SQL.
+- **Catalog stock** (cookies, bolos, focaccias): descartes desses produtos ainda só são registrados, não movem estoque. Fica pra PR futura quando criar `catalog_movements`.
+- **Sobras** continuam não movendo estoque (decisão do usuário: sobras podem ser reaproveitadas).
+- **PR-B4** (tela de saldo por loja): próximo.
+- **PR-B5** (sub-locais tipo EX-Freezer-1..4): futuro, fora desta sequência.
 
 ## Estimativa
 
 | Item | Linhas |
 |---|---|
-| Migration SQL (2 tabelas + indexes) | ~30 |
-| `src/app/forno/page.tsx` (novo) | ~280 |
-| `src/components/Nav.tsx` (+1 link) | +1 |
-| `src/lib/auth.ts` (+1 entrada DEFAULT_ROUTES) | +1 |
-| `src/app/admin/usuarios/page.tsx` (+1 ROUTE_OPTIONS) | +1 |
-| SQL: ativar Sander + UPDATE routes Sander/Geolar/admins | 1 statement |
-| **Total** | **~315 linhas** |
+| SQL (ALTER + 2 INSERT + UPDATEs) | ~12 statements |
+| auth.ts | +15 |
+| admin/usuarios EditUserModal+NewUserModal | +30 |
+| sobras refactor + movement logic | ~80 (remove +50 / adiciona +130) |
+| romaneio (Cléo mapping) | +1 |
+| **Total** | **~125 linhas** |
 
 ## Notas durante execução
 

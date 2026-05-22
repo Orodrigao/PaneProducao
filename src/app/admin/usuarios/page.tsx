@@ -59,7 +59,7 @@ function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => voi
 
 // ---- Modal de novo usuário ----
 function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) => void }) {
-  const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true })
+  const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true, store: null as string | null })
   const [routes, setRoutes] = useState<string[]>(DEFAULT_ROUTES_BY_ROLE.producao)
   const [err, setErr] = useState('')
 
@@ -101,6 +101,15 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
           {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
         </select>
 
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Loja física</label>
+        <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+          <option value="">(sem loja — admin/sem físico)</option>
+          <option value="jc">JC — Júlio</option>
+          <option value="ja">JA — Jardim América</option>
+          <option value="ex">EX — Exposição</option>
+        </select>
+
         <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Acesso a módulos (pré-marcado pelos defaults da role)</label>
         <div style={{ background: '#f9f9f9', borderRadius: '8px', padding: '8px 10px', marginBottom: '12px' }}>
           {ROUTE_OPTIONS.map(opt => (
@@ -123,10 +132,11 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
 }
 
 // ---- Modal de edição ----
-function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[] }) => void }) {
+function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[]; store: string | null }) => void }) {
   const [role, setRole] = useState<Role>(user.role)
   const [displayName, setDisplayName] = useState(user.displayName)
   const [routes, setRoutes] = useState<string[]>(user.allowedRoutes)
+  const [store, setStore] = useState<string | null>(user.store ?? null)
   const [err, setErr] = useState('')
 
   function toggleRoute(r: string) {
@@ -140,7 +150,7 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
   function handleSave() {
     if (!displayName.trim()) return setErr('Nome de exibição não pode estar vazio')
     if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
-    onSave({ role, displayName: displayName.trim(), allowedRoutes: routes })
+    onSave({ role, displayName: displayName.trim(), allowedRoutes: routes, store })
   }
 
   return (
@@ -157,6 +167,15 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
         <select value={role} onChange={e => setRole(e.target.value as Role)}
           style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
           {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+        </select>
+
+        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Loja física</label>
+        <select value={store ?? ''} onChange={e => setStore(e.target.value || null)}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+          <option value="">(sem loja — admin/sem físico)</option>
+          <option value="jc">JC — Júlio</option>
+          <option value="ja">JA — Jardim América</option>
+          <option value="ex">EX — Exposição</option>
         </select>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -242,7 +261,7 @@ export default function AdminUsuariosPage() {
     setNewModal(false)
   }
 
-  async function handleEdit(user: AppUser, updates: { role: Role; displayName: string; allowedRoutes: string[] }) {
+  async function handleEdit(user: AppUser, updates: { role: Role; displayName: string; allowedRoutes: string[]; store: string | null }) {
     const ok = await updateUserInSupabase(user.id, updates)
     if (ok) {
       const updated = users.map(u => u.id === user.id ? { ...u, ...updates } : u)

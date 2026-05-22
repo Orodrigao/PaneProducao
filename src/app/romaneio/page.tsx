@@ -183,6 +183,7 @@ export default function RomaneioPage() {
     let internalRole: Role | null = null
     if (globalUser.id === 'gustavo')           internalRole = 'gustavo'
     else if (globalUser.id === 'marselle')     internalRole = 'marselle'
+    else if (globalUser.id === 'cleo')         internalRole = 'cleo' // atendente JA + motorista JC, marca enviado
     else if (globalUser.role === 'expedicao')  internalRole = 'gustavo'
     else if (globalUser.role === 'producao'
           || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy até ter perm real

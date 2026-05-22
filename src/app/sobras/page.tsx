@@ -1,22 +1,37 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getCurrentUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
-
-const USERS = ['Suélen','Liara','Samuel','Rose','Fran']
 
 interface Product { id: string; name: string; category: string; unit: string | null }
 interface Bread   { id: string; name: string; unit: string | null }
 
+interface CurrentUser {
+  id: string
+  displayName: string
+  store: string | null
+}
+
 export default function SobrasPage() {
-  const [user, setUser]       = useState<string|null>(null)
-  const [mode, setMode]       = useState<'sobra'|'descarte'|null>(null)
+  const router = useRouter()
+  const [user, setUser]         = useState<CurrentUser|null>(null)
+  const [mode, setMode]         = useState<'sobra'|'descarte'|null>(null)
   const [products, setProducts] = useState<Product[]>([])
-  const [breads, setBreads]   = useState<Bread[]>([])
-  const [qtys, setQtys]       = useState<Record<string,number>>({})
-  const [saving, setSaving]   = useState(false)
+  const [breads, setBreads]     = useState<Bread[]>([])
+  const [qtys, setQtys]         = useState<Record<string,number>>({})
+  const [saving, setSaving]     = useState(false)
+
+  // Identidade vem do PIN global (não tem mais seletor interno paralelo)
+  useEffect(() => {
+    const u = getCurrentUser()
+    if (!u) { router.replace('/login'); return }
+    setUser({ id: u.id, displayName: u.displayName, store: u.store ?? null })
+  }, [router])
 
   const loadData = useCallback(async () => {
+    if (!user) return
     const [{ data: prods }, { data: bds }, { data: orders }] = await Promise.all([
       supabase.from('products').select('id,name,category,unit').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
       supabase.from('breads').select('id,name,unit').eq('active', true).eq('is_pj', false).order('name'),
@@ -26,10 +41,10 @@ export default function SobrasPage() {
     setProducts(prods || [])
     setBreads((bds||[]).filter((b:any)=>todayBreadIds.has(b.id)))
 
-    // Load existing saved values for today
+    // Pré-carrega valores já salvos hoje pelo mesmo usuário
     const table = mode === 'sobra' ? 'sobras' : 'descartes'
     const { data: saved } = await supabase.from(table).select('*')
-      .eq('record_date', todayKey()).eq('responsible', user)
+      .eq('record_date', todayKey()).eq('responsible', user.displayName)
     const vals: Record<string,number> = {}
     ;(saved||[]).forEach((r:any)=>{
       const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
@@ -43,24 +58,55 @@ export default function SobrasPage() {
   const setQty = (id: string, val: number) => setQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
 
   const save = async () => {
+    if (!user) return
     const items = Object.entries(qtys).filter(([,v])=>v>0)
     if (!items.length) { showToast('Nenhuma quantidade preenchida'); return }
     setSaving(true)
     const table = mode === 'sobra' ? 'sobras' : 'descartes'
     const date = todayKey()
     try {
-      await supabase.from(table).delete().eq('record_date', date).eq('responsible', user!)
+      // Idempotência: pra descarte, apaga bread_movements antigos antes de re-inserir os descartes
+      if (mode === 'descarte') {
+        const { data: oldRecords } = await supabase.from('descartes').select('id')
+          .eq('record_date', date).eq('responsible', user.displayName)
+        const oldIds = (oldRecords||[]).map((r:any)=>r.id)
+        if (oldIds.length > 0) {
+          await supabase.from('bread_movements').delete()
+            .in('reference_id', oldIds).eq('reference_type','descarte')
+        }
+      }
+      await supabase.from(table).delete().eq('record_date', date).eq('responsible', user.displayName)
+
       const rows = items.map(([id, quantity]) => {
         const isBread = id.startsWith('bread_')
         return {
-          record_date: date, responsible: user,
+          record_date: date, responsible: user.displayName,
           product_id: isBread ? id.replace('bread_','') : id,
           product_source: isBread ? 'bread' : 'catalog',
           quantity
         }
       })
-      const { error } = await supabase.from(table).insert(rows)
+      const { data: inserted, error } = await supabase.from(table).insert(rows).select('id, product_id, product_source, quantity')
       if (error) throw error
+
+      // Stock movements: só pra DESCARTE de PÃO e se user tem loja atribuída
+      if (mode === 'descarte' && user.store && inserted) {
+        const movements = (inserted as any[])
+          .filter(r => r.product_source === 'bread' && Number(r.quantity) > 0)
+          .map(r => ({
+            movement_type: 'descarte_loja',
+            bread_id: r.product_id,
+            location: user.store,
+            quantity: -Number(r.quantity),
+            reference_id: r.id,
+            reference_type: 'descarte',
+            recorded_by: user.displayName,
+          }))
+        if (movements.length > 0) {
+          await supabase.from('bread_movements').insert(movements)
+        }
+      }
+
       showToast(`✅ ${mode==='sobra'?'Sobras':'Descartes'} salvo${mode==='sobra'?'s':'s'}!`)
       setMode(null); setQtys({})
     } catch(e:any) { showToast('Erro: '+e.message) }
@@ -72,41 +118,36 @@ export default function SobrasPage() {
   }, {})
   const filled = Object.values(qtys).filter(v=>v>0).length
 
-  // ── SELECT USER ──
   if (!user) return (
-    <div style={{padding:'20px',maxWidth:500,margin:'0 auto'}}>
-      <div style={{background:'var(--primary)',color:'white',padding:'14px 20px',marginBottom:20,borderRadius:'var(--radius)',fontWeight:700,fontSize:'1.1rem'}}>
-        ♻️ Sobras & Descartes
-      </div>
-      <p style={{color:'var(--muted)',marginBottom:16,fontSize:'.9rem'}}>📅 {todayLabel()}</p>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        {USERS.map(u=>(
-          <button key={u} onClick={()=>setUser(u)} style={{
-            padding:'16px',border:'2px solid var(--border)',borderRadius:'var(--radius)',
-            background:'white',cursor:'pointer',fontWeight:600,fontSize:'1rem',color:'var(--primary)'
-          }}>{u}</button>
-        ))}
-      </div>
+    <div style={{padding:'40px',textAlign:'center',color:'var(--muted)'}}>
+      <p>Carregando...</p>
     </div>
   )
 
   // ── SELECT MODE ──
   if (!mode) return (
     <div style={{padding:'20px',maxWidth:500,margin:'0 auto'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
-        <button onClick={()=>setUser(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'1.2rem'}}>←</button>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>👤 {user}</span>
+      <div style={{background:'var(--primary)',color:'white',padding:'14px 20px',marginBottom:16,borderRadius:'var(--radius)',fontWeight:700,fontSize:'1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span>♻️ Sobras &amp; Descartes</span>
+        <span style={{fontSize:'.78rem',fontWeight:600,background:'rgba(255,255,255,.2)',padding:'4px 10px',borderRadius:8}}>
+          {user.displayName}{user.store ? ` · ${user.store.toUpperCase()}` : ''}
+        </span>
       </div>
+      <p style={{color:'var(--muted)',marginBottom:16,fontSize:'.9rem'}}>📅 {todayLabel()}</p>
       <div style={{display:'flex',flexDirection:'column',gap:12}}>
         <button onClick={()=>setMode('sobra')} className="card" style={{textAlign:'left',cursor:'pointer',border:'2px solid var(--border)'}}>
           <div style={{fontSize:'1.5rem',marginBottom:4}}>📦</div>
           <div style={{fontWeight:700,fontSize:'1rem'}}>Registrar Sobras</div>
-          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>O que sobrou no fechamento do dia</div>
+          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>O que sobrou no fechamento. Não move estoque (sobras podem voltar à venda).</div>
         </button>
         <button onClick={()=>setMode('descarte')} className="card" style={{textAlign:'left',cursor:'pointer',border:'2px solid var(--border)'}}>
           <div style={{fontSize:'1.5rem',marginBottom:4}}>🗑️</div>
           <div style={{fontWeight:700,fontSize:'1rem'}}>Registrar Descarte</div>
-          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>O que foi descartado</div>
+          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>
+            O que foi descartado. {user.store
+              ? `Pães debitam do estoque da loja ${user.store.toUpperCase()}.`
+              : 'Sem loja atribuída — não move estoque (admin/teste).'}
+          </div>
         </button>
       </div>
     </div>
@@ -118,7 +159,8 @@ export default function SobrasPage() {
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
         <button onClick={()=>{setMode(null);setQtys({})}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'1.2rem'}}>←</button>
         <span style={{fontWeight:700,color:'var(--primary)'}}>
-          {mode==='sobra'?'📦 Sobras':'🗑️ Descartes'} — {user}
+          {mode==='sobra'?'📦 Sobras':'🗑️ Descartes'} — {user.displayName}
+          {user.store && <span style={{fontSize:'.78rem',color:'var(--muted)',marginLeft:8,fontWeight:500}}>· {user.store.toUpperCase()}</span>}
         </span>
       </div>
       <p style={{color:'var(--muted)',fontSize:'.8rem',marginBottom:16,paddingLeft:32}}>📅 {todayLabel()}</p>
