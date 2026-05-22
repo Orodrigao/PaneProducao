@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getCurrentUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
 const LOC_LABELS: Record<string,string> = { freezer:'🧊 Freezer Horizontal', camara:'🏪 Câmara Congelada', freezer_loja:'🛒 Freezer da Loja' }
@@ -12,6 +13,7 @@ interface FrozenProduct { id:string; product_name:string; unit:string|null; min_
 interface StockMap { [fpId: string]: { freezer:number; camara:number; freezer_loja:number } }
 
 export default function EstoqueCongeladoPage() {
+  const [user, setUser]         = useState<{displayName:string; store:string|null}|null>(null)
   const [products, setProducts] = useState<FrozenProduct[]>([])
   const [stock, setStock]       = useState<StockMap>({})
   const [search, setSearch]     = useState('')
@@ -50,6 +52,10 @@ export default function EstoqueCongeladoPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const u = getCurrentUser()
+    if (u) setUser({ displayName: u.displayName, store: u.store ?? null })
+  }, [])
   useEffect(() => { if (tab==='historico') loadHistorico() }, [tab, loadHistorico])
   useEffect(() => {
     supabase.from('products').select('id,name,unit').eq('active',true).order('name').then(({data})=>setAllProducts(data||[]))
@@ -73,7 +79,7 @@ export default function EstoqueCongeladoPage() {
       } else {
         await supabase.from('frozen_stock').insert({ frozen_product_id:movFP.id, location:movLoc, quantity:newQty })
       }
-      await supabase.from('frozen_movements').insert({ frozen_product_id:movFP.id, location:movLoc, movement_type:movType, quantity:movType==='inventario'?newQty:qty, previous_quantity:cur, obs:movObs||null, responsible:'Gustavo' })
+      await supabase.from('frozen_movements').insert({ frozen_product_id:movFP.id, location:movLoc, movement_type:movType, quantity:movType==='inventario'?newQty:qty, previous_quantity:cur, obs:movObs||null, responsible: user?.displayName || 'desconhecido' })
       setStock(prev => ({ ...prev, [movFP.id]: { ...(prev[movFP.id]||{freezer:0,camara:0,freezer_loja:0}), [movLoc]: newQty } }))
       showToast(`✅ ${movType==='entrada'?'Entrada':movType==='saida'?'Saída':'Inventário'} registrada`)
       setMovFP(null)
@@ -108,8 +114,14 @@ export default function EstoqueCongeladoPage() {
     <div style={{maxWidth:600,margin:'0 auto'}}>
       <div style={{background:'var(--primary)',color:'white',padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <span style={{fontWeight:700}}>❄️ Estoque Congelado</span>
-        <span style={{fontSize:'.85rem',opacity:.8}}>Gustavo</span>
+        <span style={{fontSize:'.85rem',opacity:.8}}>{user?.displayName || ''}{user?.store ? ` · ${user.store.toUpperCase()}` : ''}</span>
       </div>
+
+      {user?.store && user.store !== 'jc' && (
+        <div style={{background:'#fef3c7',border:'1px solid #fcd34d',color:'#92400e',padding:'10px 14px',fontSize:'.82rem'}}>
+          ⚠️ Estoque congelado ainda é <strong>global</strong> (todos os freezers misturados). Você está vendo dados que incluem a JC. Loja-separation chega no PR-B5.
+        </div>
+      )}
 
       <div style={{display:'flex',borderBottom:'2px solid var(--border)'}}>
         {(['estoque','historico','admin'] as const).map(t=>(
