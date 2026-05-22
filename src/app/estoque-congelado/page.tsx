@@ -168,17 +168,22 @@ export default function EstoqueCongeladoPage() {
     return locsVisible.reduce((sum, loc) => sum + (s[loc] || 0), 0)
   }
 
+  // Normaliza removendo acentos pra busca "pao" casar com "Pão"
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  // Categoria conceitual: 'pao'/'pães'/etc → mostra TODOS os breads (Ciabatta, Brioche são pão tb)
+  const PAO_KEYWORDS = new Set(['pao', 'paes', 'pão', 'pães'])
+
   const searchAdmin = (q: string) => {
     setAdminSearch(q)
     const existing = new Set(products.map(p=>p.product_name.toLowerCase()))
-    // Busca vazia (q<2): mostra TODOS os breads ativos (catálogo oficial de pães)
-    // Busca preenchida: filtra ambos, breads primeiro, products limitado a 10
-    if (q.length < 2) {
+    const qNorm = normalize(q.trim())
+    // Vazio ou termo de categoria "pão" → todos breads ativos
+    if (qNorm.length < 2 || PAO_KEYWORDS.has(qNorm)) {
       const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
       setAdminResults(allBreads)
       return
     }
-    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase()))
+    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && normalize(p.name).includes(qNorm))
     const breads = matching.filter(p => p._source === 'bread')
     const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
     setAdminResults([...breads, ...prods])
@@ -224,12 +229,13 @@ export default function EstoqueCongeladoPage() {
   function searchAddCatalog(q: string) {
     setAddSearch(q)
     const existing = new Set(products.map(p => p.product_name.toLowerCase()))
-    if (q.length < 2) {
+    const qNorm = normalize(q.trim())
+    if (qNorm.length < 2 || PAO_KEYWORDS.has(qNorm)) {
       const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
       setAddResults(allBreads)
       return
     }
-    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && p.name.toLowerCase().includes(q.toLowerCase()))
+    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && normalize(p.name).includes(qNorm))
     const breads = matching.filter(p => p._source === 'bread')
     const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
     setAddResults([...breads, ...prods])
