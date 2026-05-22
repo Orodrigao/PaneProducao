@@ -41,7 +41,15 @@ function visibleLocations(store: string | null): string[] {
   return Object.values(LOCATIONS_BY_STORE).flat()
 }
 
-interface FrozenProduct { id:string; product_name:string; unit:string|null; min_qty:number|null; active:boolean; store: string|null }
+interface FrozenProduct { id:string; product_name:string; unit:string|null; min_qty:number|null; active:boolean; visible_stores: string[]|null }
+
+// Normaliza visible_stores aceitando formato legacy (string única) durante transição.
+function normalizeStores(s: unknown): string[] | null {
+  if (s == null) return null
+  if (Array.isArray(s)) return s.length > 0 ? s as string[] : null
+  if (typeof s === 'string') return [s]
+  return null
+}
 interface StockMap { [fpId: string]: Record<string, number> }
 
 export default function EstoqueCongeladoPage() {
@@ -68,7 +76,7 @@ export default function EstoqueCongeladoPage() {
   const [addSearch, setAddSearch]     = useState('')
   const [addResults, setAddResults]   = useState<any[]>([])
   const [addManualName, setAddManualName] = useState('')
-  const [addStoreChoice, setAddStoreChoice] = useState<string|null>(null) // null = global
+  const [addStores, setAddStores] = useState<string[]|null>(null) // null = global; ['jc','ja'] = múltiplas
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -82,7 +90,12 @@ export default function EstoqueCongeladoPage() {
       supabase.from('frozen_products').select('*').eq('active', true).order('product_name'),
       supabase.from('frozen_stock').select('*'),
     ])
-    setProducts(fps||[])
+    // Normaliza visible_stores (aceita legacy string ou novo array)
+    const normalized = (fps||[]).map((p:any) => ({
+      ...p,
+      visible_stores: normalizeStores(p.visible_stores ?? p.store)
+    }))
+    setProducts(normalized)
     const sm: StockMap = {}
     ;(ss||[]).forEach((s:any) => {
       const loc = normalizeLocation(s.location)
@@ -164,9 +177,9 @@ export default function EstoqueCongeladoPage() {
     setNewProdName(''); load(); showToast('✅ Produto adicionado')
   }
 
-  // Admin (sem store) vê tudo. Outros veem produtos globais + da loja deles.
+  // Admin (sem store) vê tudo. Outros veem produtos globais + onde a loja deles aparece em visible_stores.
   const isAdmin = !user?.store
-  const visibleByStore = (p: FrozenProduct) => isAdmin || !p.store || p.store === user?.store
+  const visibleByStore = (p: FrozenProduct) => isAdmin || !p.visible_stores || p.visible_stores.includes(user?.store ?? '')
   const filtered = products
     .filter(visibleByStore)
     .filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
@@ -175,8 +188,13 @@ export default function EstoqueCongeladoPage() {
   const canAdd = !!user
   function openAddModal() {
     setAddSearch(''); setAddResults([]); setAddManualName('')
-    setAddStoreChoice(user?.store ?? null) // user com store → pré-fixado; admin → "global" como default
+    setAddStores(user?.store ? [user.store] : null) // user com store → só a loja dele; admin → global por default
     setAddOpen(true)
+  }
+  function toggleAddStore(s: string) {
+    const cur = addStores ?? []
+    const next = cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]
+    setAddStores(next.length === 0 ? null : next)
   }
   function searchAddCatalog(q: string) {
     setAddSearch(q)
@@ -186,7 +204,7 @@ export default function EstoqueCongeladoPage() {
   }
   async function submitAddFromCatalog(p: any) {
     const { error } = await supabase.from('frozen_products').insert({
-      product_id: p.id, product_name: p.name, unit: p.unit || null, active: true, store: addStoreChoice
+      product_id: p.id, product_name: p.name, unit: p.unit || null, active: true, visible_stores: addStores
     })
     if (error) { showToast('Erro: '+error.message); return }
     showToast('✅ Produto adicionado')
@@ -195,7 +213,7 @@ export default function EstoqueCongeladoPage() {
   async function submitAddManual() {
     if (!addManualName.trim()) return
     const { error } = await supabase.from('frozen_products').insert({
-      product_name: addManualName.trim(), active: true, store: addStoreChoice
+      product_name: addManualName.trim(), active: true, visible_stores: addStores
     })
     if (error) { showToast('Erro: '+error.message); return }
     showToast('✅ Produto adicionado')
@@ -247,9 +265,9 @@ export default function EstoqueCongeladoPage() {
                     <div>
                       <div style={{fontWeight:700,fontSize:'.95rem'}}>
                         {fp.product_name}
-                        {fp.store && (
+                        {fp.visible_stores && fp.visible_stores.length > 0 && (
                           <span style={{marginLeft:6,background:'#dbeafe',color:'#1e40af',padding:'2px 6px',borderRadius:4,fontSize:'.65rem',fontWeight:700}}>
-                            🏪 {fp.store.toUpperCase()}
+                            🏪 {fp.visible_stores.map(s => s.toUpperCase()).join(', ')}
                           </span>
                         )}
                       </div>
@@ -354,20 +372,23 @@ export default function EstoqueCongeladoPage() {
             <div style={{fontWeight:700,marginBottom:4,fontSize:'1rem'}}>+ Adicionar produto congelado</div>
             <div style={{fontSize:'.78rem',color:'var(--muted)',marginBottom:12}}>
               {isAdmin
-                ? 'Admin: escolha a loja (ou "global" pra todos verem).'
+                ? 'Admin: marque as lojas que veem. Sem nenhuma marcada = visível pra todas (global).'
                 : `Esse produto vai ser cadastrado para a loja ${(user?.store || '').toUpperCase()} (só vocês veem).`}
             </div>
 
             {isAdmin && (
               <>
-                <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:4}}>Loja</label>
-                <select value={addStoreChoice ?? ''} onChange={e=>setAddStoreChoice(e.target.value || null)}
-                  style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,marginBottom:12,fontSize:'.9rem'}}>
-                  <option value="">🌐 Global (todas as lojas veem)</option>
-                  <option value="jc">JC — Júlio</option>
-                  <option value="ja">JA — Jardim América</option>
-                  <option value="ex">EX — Exposição</option>
-                </select>
+                <label style={{fontSize:'.8rem',color:'var(--muted)',display:'block',marginBottom:6}}>
+                  Lojas que veem {!addStores && <span style={{color:'var(--primary)'}}>(🌐 global)</span>}
+                </label>
+                <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                  {(['jc','ja','ex'] as const).map(s => (
+                    <label key={s} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',border:'1.5px solid var(--border)',borderRadius:8,cursor:'pointer',background: (addStores?.includes(s) ? '#dbeafe' : 'white')}}>
+                      <input type="checkbox" checked={addStores?.includes(s) ?? false} onChange={()=>toggleAddStore(s)}/>
+                      <span style={{fontWeight:600,fontSize:'.85rem'}}>{s.toUpperCase()}</span>
+                    </label>
+                  ))}
+                </div>
               </>
             )}
 
