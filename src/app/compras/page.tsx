@@ -134,6 +134,26 @@ export default function ComprasPage() {
     await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' }) }).catch(()=>{})
   }
 
+  const copyAsText = (sourceItems: PurchaseItem[], sec: string, submittedBy?: string|null) => {
+    const filled = sourceItems.filter(i => i.quantity)
+    if (!filled.length) { showToast('Nenhum item com quantidade'); return }
+    const today = new Date().toLocaleDateString('pt-BR')
+    const who = submittedBy || user?.name || '—'
+    const header = `🛒 Lista de Compras — ${SECTOR_LABELS[sec] || sec}\n👤 ${who} · ${today}\n\n`
+    const lines = filled.map(i => {
+      const nm = i.is_adhoc ? i.ad_hoc_name : (i.products?.name || '?')
+      const unit = i.unit ? ' ' + i.unit : ''
+      return `• ${nm}: ${i.quantity}${unit}`
+    })
+    const footer = `\n\n${filled.length} ${filled.length === 1 ? 'item' : 'itens'}`
+    const text = header + lines.join('\n') + footer
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(()=>showToast('📋 Copiado!')).catch(()=>prompt('Copie:', text))
+    } else {
+      prompt('Copie:', text)
+    }
+  }
+
   const addFromSearch = async (p: any) => {
     if (!list) return
     const { data } = await supabase.from('purchase_items').insert({ list_id:list.id, product_id:p.id, unit:p.unit||null, sort_order:9000 }).select('*,products(name)')
@@ -248,6 +268,7 @@ export default function ComprasPage() {
           })}
         </div>
         <div style={{marginTop:16}}>
+          <button className="btn btn-outline btn-full" onClick={()=>copyAsText(ownerItems, ownerList.sector, ownerList.submitted_by)} disabled={oFilled.length===0}>📋 Copiar texto</button>
           {ownerList.status==='submitted' && <button className="btn btn-success btn-full" onClick={completeList}>✅ Finalizar lista ({oChecked.length}/{oFilled.length})</button>}
           {ownerList.status==='completed' && <button className="btn btn-outline btn-full" onClick={ownerReset}>🔄 Reiniciar ciclo</button>}
           {ownerList.status==='draft' && <div style={{textAlign:'center',color:'var(--muted)',fontSize:'.85rem'}}>Aguardando envio do setor {SECTOR_LABELS[ownerList.sector]}.</div>}
@@ -333,15 +354,20 @@ export default function ComprasPage() {
             <button className="btn btn-success btn-full" onClick={submit} disabled={saving||filledCount===0}>
               {saving?<span className="spinner"/>:`📤 Enviar Lista (${filledCount} item${filledCount!==1?'s':''})`}
             </button>
+            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!)} disabled={filledCount===0}>📋 Copiar texto</button>
             <button className="btn btn-ghost btn-full" onClick={async()=>{ await supabase.from('purchase_items').update({quantity:null}).eq('list_id',list!.id); setItems(prev=>prev.map(i=>({...i,quantity:null}))); showToast('Quantidades limpas') }}>🔄 Limpar quantidades</button>
           </>
         ) : list?.status==='submitted' ? (
           <>
+            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!, list?.submitted_by)}>📋 Copiar texto</button>
             <button className="btn btn-outline btn-full" onClick={editList}>✏️ Editar / Corrigir lista</button>
             <button className="btn btn-ghost btn-full" onClick={resetList}>🔄 Novo ciclo (limpar tudo)</button>
           </>
         ) : (
-          <button className="btn btn-outline btn-full" onClick={resetList}>🔄 Novo ciclo (limpar tudo)</button>
+          <>
+            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!)}>📋 Copiar texto</button>
+            <button className="btn btn-outline btn-full" onClick={resetList}>🔄 Novo ciclo (limpar tudo)</button>
+          </>
         )}
       </div>
     </div>
