@@ -48,6 +48,43 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 
 ---
 
+## 🔄 Em andamento — PR-C: Clientes PJ + Tabelas de preço
+
+### ✅ PR-C1 (entregue) — Schema + cadastro de clientes
+- Tabelas criadas: `customers`, `price_tiers`, `price_tier_items`, `customer_price_overrides`
+- Extensão em `orders`: customer_id, unit_price, pack_size, pricing_unit, order_type ('producao'|'pj'|'encomenda')
+- Coluna `is_special` em breads e products (produto fora dos catálogos normais)
+- `/clientes/page.tsx` — CRUD: nome, doc, contato, tabela default, desconto base, delivery hours, notas
+- Acesso: admin (Rodrigão, Suélen) + financeiro (Elis)
+
+### 🔲 PR-C2 — Cadastro de tabelas de preço + overrides
+- `/tabelas-preco/page.tsx` — criar/editar tabelas
+- Listar produtos (breads + products) com preço, pricing_unit (un|kg), pack_size
+- Cópia de tabela (criar variação)
+- Aba "Overrides por cliente" — exceções pontuais
+- Preview "preço efetivo por cliente" mostrando overrides destacados
+
+### 🔲 PR-C3 — Refatorar pedido PJ
+- Modal de pedido PJ em `/` passa a usar customer_id (dropdown de clientes ativos)
+- Lista produtos do tier do cliente
+- Input em PACOTES (mostra unidades resultantes); valida múltiplo de pack_size
+- Calcula preço (override > tier × (1 - discount_pct/100))
+- Congela unit_price + pack_size + pricing_unit em `orders` na hora
+- Default data entrega = hoje + delivery_hours do cliente; editável
+
+### 🔲 PR-C4 — Relatórios PJ
+- `/relatorios/pj` — vendas por cliente, ticket médio, top produtos
+- Filtro por período
+
+### 🔲 PR-C5 (futuro) — Encomendas
+- Cliente físico avulso pede pra dia específico (ex: 3 focaccias pra sexta)
+- Reusa schema de customers (sem tier obrigatório)
+- Pode usar Produto Especial (is_special) — sob demanda
+- order_type='encomenda' em orders
+- Tela própria ou aba em /
+
+---
+
 ## 🔲 Backlog — Catálogo (sugerido pelo Rodrigão, maio 2026)
 
 ### Categoria em `products`

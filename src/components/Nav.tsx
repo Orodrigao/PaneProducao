@@ -13,6 +13,7 @@ const ALL_LINKS = [
   { href: '/compras',           label: 'Compras',   icon: '🛒' },
   { href: '/estoque',           label: 'Estoque',   icon: '📊' },
   { href: '/produtos',          label: 'Produtos',  icon: '📦' },
+  { href: '/clientes',          label: 'Clientes',  icon: '👥' },
   { href: '/relatorios',        label: 'Relatórios',icon: '📈' },
   { href: '/admin/usuarios',    label: 'Admin',     icon: '⚙️', adminOnly: true },
 ]
