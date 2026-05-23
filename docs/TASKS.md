@@ -57,12 +57,12 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - `/clientes/page.tsx` — CRUD: nome, doc, contato, tabela default, desconto base, delivery hours, notas
 - Acesso: admin (Rodrigão, Suélen) + financeiro (Elis)
 
-### 🔲 PR-C2 — Cadastro de tabelas de preço + overrides
-- `/tabelas-preco/page.tsx` — criar/editar tabelas
-- Listar produtos (breads + products) com preço, pricing_unit (un|kg), pack_size
-- Cópia de tabela (criar variação)
-- Aba "Overrides por cliente" — exceções pontuais
-- Preview "preço efetivo por cliente" mostrando overrides destacados
+### ✅ PR-C2 (entregue) — Cadastro de tabelas de preço + overrides
+- `/tabelas-preco/page.tsx` com 2 abas: Tabelas + Preços por cliente
+- Aba Tabelas: lista de tabelas; drill-down pra editar nome/descrição/ativo, adicionar produtos via busca, inputs inline pra preço/un/pack, remover item, copiar tabela inteira
+- Aba Preços por cliente: select cliente, mostra preço de tabela + desconto aplicado + override; cria/edita/remove override inline (override em destaque amarelo)
+- Catálogo PJ: breads ativos + products com is_pj OR is_special
+- Acesso: admin + financeiro (rota /tabelas-preco)
 
 ### 🔲 PR-C3 — Refatorar pedido PJ
 - Modal de pedido PJ em `/` passa a usar customer_id (dropdown de clientes ativos)

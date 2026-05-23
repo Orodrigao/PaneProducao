@@ -20,13 +20,13 @@ const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/estoque', '/produtos', '/clientes', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
+  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
   compras:    ['/compras', '/estoque', '/produtos', '/estoque-paes'],
   romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes'],
+  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco'],
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
