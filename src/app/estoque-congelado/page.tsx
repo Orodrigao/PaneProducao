@@ -41,7 +41,7 @@ function visibleLocations(store: string | null): string[] {
   return Object.values(LOCATIONS_BY_STORE).flat()
 }
 
-interface FrozenProduct { id:string; product_name:string; unit:string|null; min_qty:number|null; active:boolean; visible_stores: string[]|null }
+interface FrozenProduct { id:string; product_name:string; unit:string|null; min_stock:number|null; active:boolean; visible_stores: string[]|null }
 
 // Normaliza visible_stores aceitando formato legacy (string única) durante transição.
 function normalizeStores(s: unknown): string[] | null {
@@ -79,6 +79,12 @@ export default function EstoqueCongeladoPage() {
   const [addResults, setAddResults]   = useState<CatalogItem[]>([])
   const [addManualName, setAddManualName] = useState('')
   const [addStores, setAddStores] = useState<string[]|null>(null) // null = global; ['jc','ja'] = múltiplas
+  // Editar produto cadastrado (nome, unit, min_stock, visible_stores se admin)
+  const [editFP, setEditFP] = useState<FrozenProduct|null>(null)
+  const [editName, setEditName] = useState('')
+  const [editUnit, setEditUnit] = useState('')
+  const [editMinQty, setEditMinQty] = useState('')
+  const [editStores, setEditStores] = useState<string[]|null>(null)
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -190,12 +196,14 @@ export default function EstoqueCongeladoPage() {
   }
 
   const addFromCatalog = async (p: CatalogItem) => {
+    const visStores = user?.store ? [user.store] : null
     const { error } = await supabase.from('frozen_products').insert({
       product_id: p.id,
       product_source: p._source,
       product_name: p.name,
       unit: p.unit || 'un',
       active: true,
+      visible_stores: visStores,
     })
     if (!error) { showToast('✅ Produto adicionado'); setAdminSearch(''); setAdminResults([]); load() }
     else showToast('Erro: '+error.message)
@@ -203,7 +211,9 @@ export default function EstoqueCongeladoPage() {
 
   const addManual = async () => {
     if (!newProdName.trim()) return
-    await supabase.from('frozen_products').insert({ product_name:newProdName, active:true })
+    // user com store → produto fica visível só pra loja dele; admin → global
+    const visStores = user?.store ? [user.store] : null
+    await supabase.from('frozen_products').insert({ product_name:newProdName, active:true, visible_stores: visStores })
     setNewProdName(''); load(); showToast('✅ Produto adicionado')
   }
 
@@ -217,6 +227,33 @@ export default function EstoqueCongeladoPage() {
     if (isAdmin) return true
     if (!user?.store) return false
     return !!p.visible_stores && p.visible_stores.length === 1 && p.visible_stores[0] === user.store
+  }
+
+  // Editar: admin pode tudo; user com store pode editar produtos da loja DELE (single-store)
+  const canEditProduct = (p: FrozenProduct): boolean => canDeleteProduct(p)
+
+  const openEdit = (p: FrozenProduct) => {
+    setEditFP(p)
+    setEditName(p.product_name)
+    setEditUnit(p.unit || 'un')
+    setEditMinQty(p.min_stock != null ? String(p.min_stock) : '')
+    setEditStores(p.visible_stores)
+  }
+
+  const saveEdit = async () => {
+    if (!editFP) return
+    if (!editName.trim()) { showToast('Nome obrigatório'); return }
+    const payload: Record<string, unknown> = {
+      product_name: editName.trim(),
+      unit: editUnit.trim() || 'un',
+      min_stock: editMinQty.trim() === '' ? 0 : Number(editMinQty) || 0,
+    }
+    // Só admin pode mexer em visible_stores (user com store fica travado na loja dele)
+    if (isAdmin) payload.visible_stores = editStores
+    const { error } = await supabase.from('frozen_products').update(payload).eq('id', editFP.id)
+    if (error) { showToast('Erro: ' + error.message); return }
+    showToast('✅ Produto atualizado')
+    setEditFP(null); load()
   }
 
   const deleteFrozenProduct = async (p: FrozenProduct) => {
@@ -321,7 +358,7 @@ export default function EstoqueCongeladoPage() {
             ) : filtered.map(fp=>{
               const s = stock[fp.id] || {}
               const total = getTotal(fp.id)
-              const low = fp.min_qty && total < fp.min_qty
+              const low = fp.min_stock && total < fp.min_stock
               return (
                 <div key={fp.id} className="card" style={{borderLeft:`4px solid ${low?'var(--danger)':'var(--border)'}`,cursor:'pointer'}} onClick={()=>openMov(fp)}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
@@ -338,7 +375,7 @@ export default function EstoqueCongeladoPage() {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:700,fontSize:'1.1rem',color:low?'var(--danger)':'var(--primary)'}}>{total}</div>
-                      {fp.min_qty && <div style={{fontSize:'.72rem',color:'var(--muted)'}}>mín: {fp.min_qty}</div>}
+                      {fp.min_stock != null && fp.min_stock > 0 && <div style={{fontSize:'.72rem',color:'var(--muted)'}}>mín: {fp.min_stock}</div>}
                     </div>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -436,6 +473,12 @@ export default function EstoqueCongeladoPage() {
                     )}
                   </span>
                   <span style={{color:'var(--muted)',whiteSpace:'nowrap'}}>{getTotal(p.id)} unid.</span>
+                  {canEditProduct(p) && (
+                    <button onClick={()=>openEdit(p)} title="Editar"
+                      style={{background:'none',border:'none',cursor:'pointer',padding:'4px 6px',fontSize:'1rem',lineHeight:1}}>
+                      ✏️
+                    </button>
+                  )}
                   {canDeleteProduct(p) && (
                     <button onClick={()=>deleteFrozenProduct(p)} title="Excluir"
                       style={{background:'none',border:'none',cursor:'pointer',padding:'4px 6px',fontSize:'1rem',color:'#dc2626',lineHeight:1}}>
@@ -448,6 +491,69 @@ export default function EstoqueCongeladoPage() {
           </>
         )}
       </div>
+
+      {/* Modal: Editar produto */}
+      {editFP && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}}
+             onClick={e=>e.target===e.currentTarget&&setEditFP(null)}>
+          <div style={{background:'white',borderRadius:12,padding:20,maxWidth:480,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
+            <div style={{fontWeight:700,fontSize:'1.05rem',marginBottom:14}}>✏️ Editar produto</div>
+
+            <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Nome *</label>
+            <input value={editName} onChange={e=>setEditName(e.target.value)}
+              style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem',marginBottom:10}}/>
+
+            <div style={{display:'flex',gap:10,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Unidade</label>
+                <input value={editUnit} onChange={e=>setEditUnit(e.target.value)}
+                  placeholder="un / kg / cx"
+                  style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Estoque mínimo</label>
+                <input type="number" min={0} value={editMinQty} onChange={e=>setEditMinQty(e.target.value)}
+                  placeholder="0"
+                  style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <>
+                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:6,fontWeight:600}}>
+                  Lojas que veem {!editStores && <span style={{color:'var(--primary)'}}>(🌐 global)</span>}
+                </label>
+                <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+                  {(['jc','ja','ex'] as const).map(s => {
+                    const checked = editStores?.includes(s) ?? false
+                    return (
+                      <label key={s} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',border:'1.5px solid var(--border)',borderRadius:8,cursor:'pointer',background: checked ? '#dbeafe' : 'white'}}>
+                        <input type="checkbox" checked={checked} onChange={()=>{
+                          const cur = editStores ?? []
+                          const next = checked ? cur.filter(x=>x!==s) : [...cur, s]
+                          setEditStores(next.length === 0 ? null : next)
+                        }}/>
+                        <span style={{fontWeight:600,fontSize:'.85rem'}}>{s.toUpperCase()}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setEditFP(null)}
+                style={{padding:'10px 16px',background:'white',border:'1.5px solid var(--border)',borderRadius:8,cursor:'pointer',fontSize:'.88rem',fontWeight:600}}>
+                Cancelar
+              </button>
+              <button onClick={saveEdit}
+                style={{padding:'10px 18px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.88rem',fontWeight:700}}>
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Adicionar produto (qualquer user com store) */}
       {addOpen && (
