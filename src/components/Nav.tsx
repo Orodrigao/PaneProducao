@@ -15,6 +15,7 @@ const ALL_LINKS = [
   { href: '/produtos',          label: 'Produtos',  icon: '📦' },
   { href: '/clientes',          label: 'Clientes',  icon: '👥' },
   { href: '/tabelas-preco',     label: 'Tabelas',   icon: '📋' },
+  { href: '/pedidos-pj',        label: 'Pedidos PJ',icon: '🧾' },
   { href: '/relatorios',        label: 'Relatórios',icon: '📈' },
   { href: '/admin/usuarios',    label: 'Admin',     icon: '⚙️', adminOnly: true },
 ]

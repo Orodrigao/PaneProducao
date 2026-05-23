@@ -64,13 +64,18 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - Catálogo PJ: breads ativos + products com is_pj OR is_special
 - Acesso: admin + financeiro (rota /tabelas-preco)
 
-### 🔲 PR-C3 — Refatorar pedido PJ
-- Modal de pedido PJ em `/` passa a usar customer_id (dropdown de clientes ativos)
-- Lista produtos do tier do cliente
-- Input em PACOTES (mostra unidades resultantes); valida múltiplo de pack_size
-- Calcula preço (override > tier × (1 - discount_pct/100))
-- Congela unit_price + pack_size + pricing_unit em `orders` na hora
-- Default data entrega = hoje + delivery_hours do cliente; editável
+### ✅ PR-C3a (entregue) — Tela /pedidos-pj + schema de datas
+- Migration: ALTER orders ADD delivery_date, production_date, product_source, product_name
+- `/pedidos-pj/page.tsx` com 2 abas: Novo Pedido + Lista
+- Novo Pedido: dropdown cliente → autopreenche tabela/desconto/datas; busca produtos do catálogo do cliente (tier+overrides com preço já calculado); linhas com pack editável; total monetário
+- Validação: delivery não pode cair em domingo (warning); production_date = delivery - 24h (default editável)
+- Lista: pedidos agrupados (customer+order_date+delivery_date); badge de status (agendado/em produção/entregue); modal de visualização com botão "Adiantar pra hoje"
+- Acesso: admin + financeiro
+
+### 🔲 PR-C3b — Integração com produção (próximo)
+- `/` (Pedidos de Produção) e `/forno` precisam agregar PJ por production_date
+- Mostrar totais somados (lojas + PJ) com breakdown
+- Geolar pode antecipar pedidos PJ direto do `/`
 
 ### 🔲 PR-C4 — Relatórios PJ
 - `/relatorios/pj` — vendas por cliente, ticket médio, top produtos

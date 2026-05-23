@@ -23,6 +23,7 @@ const ROUTE_OPTIONS = [
   { href: '/produtos',          label: 'Produtos',          icon: '📦' },
   { href: '/clientes',          label: 'Clientes PJ',       icon: '👥' },
   { href: '/tabelas-preco',     label: 'Tabelas de Preço',  icon: '📋' },
+  { href: '/pedidos-pj',        label: 'Pedidos PJ',        icon: '🧾' },
   { href: '/admin/usuarios',    label: 'Admin (usuários)',  icon: '⚙️' },
   { href: '/relatorios',                  label: 'Relatórios (acesso)',  icon: '📈' },
   { href: '/relatorios/sobras-descartes', label: '└ Sobras & Descartes', icon: '♻️' },
