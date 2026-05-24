@@ -72,10 +72,18 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - Lista: pedidos agrupados (customer+order_date+delivery_date); badge de status (agendado/em produção/entregue); modal de visualização com botão "Adiantar pra hoje"
 - Acesso: admin + financeiro
 
-### 🔲 PR-C3b — Integração com produção (próximo)
-- `/` (Pedidos de Produção) e `/forno` precisam agregar PJ por production_date
-- Mostrar totais somados (lojas + PJ) com breakdown
-- Geolar pode antecipar pedidos PJ direto do `/`
+### ✅ PR-C3b (entregue) — Integração com produção
+- `/forno`: query refatorada — lojas via `store != 'pj'` + `order_date`;
+  PJ via `store = 'pj'` filtrado por `production_date` (novos) OU
+  `pj_delivery_date` (legados sem production_date)
+- Aviso no topo: "🧾 N pedido(s) PJ produzindo neste dia → Ver detalhes"
+  linkando pra /pedidos-pj
+- Breakdown por bread: "Planejado: 240 · 180 lojas + 60 PJ"
+- `/` (Pedidos de Produção) sem mudança — fluxo das lojas + pedido PJ
+  texto-livre antigo continuam funcionando paralelo; migração total
+  fica pra PR futuro
+- Antecipar pedido continua só em /pedidos-pj (Geolar vai lá pelo
+  link no aviso)
 
 ### 🔲 PR-C4 — Relatórios PJ
 - `/relatorios/pj` — vendas por cliente, ticket médio, top produtos

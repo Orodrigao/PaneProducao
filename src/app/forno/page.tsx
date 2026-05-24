@@ -42,6 +42,8 @@ export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
   const [breads, setBreads] = useState<Bread[]>([])
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
+  const [pjMap, setPjMap]           = useState<Map<string, number>>(new Map())  // qtd PJ por bread_id
+  const [pjOrderCount, setPjOrderCount] = useState(0)  // qtd de pedidos PJ no dia
   const [forms, setForms] = useState<Record<string, FormState>>({})
   const [expandedDescarte, setExpandedDescarte] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
@@ -56,17 +58,29 @@ export default function FornoPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [resReg, resPJ, resActuals] = await Promise.all([
-        supabase.from('orders').select('bread_id, quantity').eq('order_date', date).gt('quantity', 0),
-        supabase.from('orders').select('bread_id, quantity').eq('pj_delivery_date', date).gt('quantity', 0),
+      const [resLojas, resPj, resActuals] = await Promise.all([
+        // Pedidos das lojas: store != 'pj' + order_date = date
+        supabase.from('orders').select('bread_id, quantity').neq('store', 'pj').eq('order_date', date).gt('quantity', 0),
+        // TODOS pedidos PJ — filtra JS por production_date (novos) OU pj_delivery_date (legados)
+        supabase.from('orders').select('id, bread_id, quantity, production_date, pj_delivery_date').eq('store', 'pj').gt('quantity', 0),
         supabase.from('production_actuals').select('*').eq('record_date', date),
       ])
 
-      const ordersAll = [...(resReg.data || []), ...(resPJ.data || [])]
+      // PJ filtrado pela data correta:
+      //   - se tem production_date: usa ele (pedido novo do /pedidos-pj)
+      //   - senão: cai no pj_delivery_date (pedidos legados feitos em /)
+      const pjRowsFiltered = (resPj.data || []).filter((o: any) =>
+        o.production_date ? o.production_date === date : o.pj_delivery_date === date
+      )
+      const pjOrderIds = new Set(pjRowsFiltered.map((r: any) => r.id))
+
+      const lojasRows = resLojas.data || []
+      const ordersAll = [...lojasRows, ...pjRowsFiltered]
       const breadIds = Array.from(new Set(ordersAll.map((o: any) => o.bread_id)))
 
       if (breadIds.length === 0) {
-        setBreads([]); setPlannedMap(new Map()); setForms({}); setExpandedDescarte({})
+        setBreads([]); setPlannedMap(new Map()); setPjMap(new Map()); setPjOrderCount(0)
+        setForms({}); setExpandedDescarte({})
         setLoading(false)
         return
       }
@@ -81,10 +95,16 @@ export default function FornoPage() {
       setBreads(sortedBreads)
 
       const planned = new Map<string, number>()
+      const pj      = new Map<string, number>()
       ordersAll.forEach((o: any) => {
         planned.set(o.bread_id, (planned.get(o.bread_id) || 0) + Number(o.quantity))
       })
+      pjRowsFiltered.forEach((o: any) => {
+        pj.set(o.bread_id, (pj.get(o.bread_id) || 0) + Number(o.quantity))
+      })
       setPlannedMap(planned)
+      setPjMap(pj)
+      setPjOrderCount(pjOrderIds.size)
 
       const initial: Record<string, FormState> = {}
       const expanded: Record<string, boolean> = {}
@@ -264,6 +284,17 @@ export default function FornoPage() {
         </select>
       </div>
 
+      {pjOrderCount > 0 && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <span style={{ color: '#1e40af' }}>
+            🧾 <strong>{pjOrderCount}</strong> pedido(s) PJ produzindo neste dia
+          </span>
+          <a href="/pedidos-pj" style={{ color: '#1e40af', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
+            Ver detalhes →
+          </a>
+        </div>
+      )}
+
       {breads.length === 0 ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
           <p>Nenhum pão com pedido para {formatDateBR(date)}.</p>
@@ -277,6 +308,8 @@ export default function FornoPage() {
           {breads.map(b => {
             const f = forms[b.id]
             const planned = plannedMap.get(b.id) || 0
+            const pjQty  = pjMap.get(b.id) || 0
+            const lojaQty = planned - pjQty
             const isExpanded = expandedDescarte[b.id]
 
             return (
@@ -293,8 +326,13 @@ export default function FornoPage() {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'right' }}>
                     Planejado: <strong style={{ color: 'var(--text)' }}>{planned}</strong>
+                    {pjQty > 0 && (
+                      <div style={{ fontSize: '0.68rem', marginTop: 2, color: '#1e40af' }}>
+                        {lojaQty > 0 ? `${lojaQty} lojas + ` : ''}{pjQty} PJ
+                      </div>
+                    )}
                   </div>
                 </div>
 
