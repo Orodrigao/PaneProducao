@@ -16,6 +16,7 @@ const ALL_LINKS = [
   { href: '/clientes',          label: 'Clientes',  icon: '👥' },
   { href: '/tabelas-preco',     label: 'Tabelas',   icon: '📋' },
   { href: '/pedidos-pj',        label: 'Pedidos PJ',icon: '🧾' },
+  { href: '/simulador-desconto',label: 'Simulador', icon: '✨' },
   { href: '/relatorios',        label: 'Relatórios',icon: '📈' },
   { href: '/admin/usuarios',    label: 'Admin',     icon: '⚙️', adminOnly: true },
 ]
