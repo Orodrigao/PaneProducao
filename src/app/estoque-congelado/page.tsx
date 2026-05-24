@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
-const ADMIN_PWD = 'pane2025'
-
 // Novo modelo: locais nomeados por loja. Cada loja tem suas próprias subdivisões.
 const LOCATIONS_BY_STORE: Record<string, string[]> = {
   jc: ['jc-freezer', 'jc-camara', 'jc-freezer-loja'],

@@ -5,7 +5,6 @@ import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/a
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const ADMIN_PASS = 'pane2025'
 const H = { 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' }
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
@@ -77,9 +76,6 @@ export default function RomaneioPage() {
   const [loadingMsg, setLoadingMsg] = useState('Carregando...')
   // painel
   const [romaneios, setRomaneios] = useState<Romaneio[]>([])
-  // admin pass modal
-  const [showPassModal, setShowPassModal] = useState(false)
-  const [passInput, setPassInput] = useState('')
   // detalhe
   const [detailRom, setDetailRom] = useState<Romaneio|null>(null)
   const [detailItems, setDetailItems] = useState<RomItem[]>([])
@@ -141,20 +137,6 @@ export default function RomaneioPage() {
       hideLoad()
       setScreen('painel')
     } catch(e) { hideLoad(); showToast('Erro de conexão') }
-  }
-
-  const tryAdminLogin = () => { setPassInput(''); setShowPassModal(true) }
-  const checkPass = async () => {
-    if (passInput !== ADMIN_PASS) { showToast('❌ Senha incorreta'); setPassInput(''); return }
-    setShowPassModal(false)
-    setRole('rodrigo')
-    showLoad('Carregando...')
-    try {
-      await loadBase()
-      await loadAdminPainel()
-      hideLoad()
-      setScreen('admin')
-    } catch(e) { hideLoad(); showToast('Erro') }
   }
 
   const goHome = () => {
@@ -527,24 +509,6 @@ export default function RomaneioPage() {
       {/* LOADING */}
       {loading && <div className="loading-overlay" style={{display:'flex'}}><div className="spinner"/><p>{loadingMsg}</p></div>}
 
-      {/* ADMIN PASS MODAL */}
-      {showPassModal && (
-        <div className="modal-overlay open" onClick={e=>{if(e.target===e.currentTarget){setShowPassModal(false)}}}>
-          <div className="modal-sheet">
-            <div className="modal-handle"/>
-            <div style={{padding:'20px 16px'}}>
-              <h3 style={{marginBottom:16}}>Acesso Administrativo</h3>
-              <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px',marginBottom:14}} type="password"
-                placeholder="Senha..." value={passInput} onChange={e=>setPassInput(e.target.value)}
-                onKeyDown={e=>e.key==='Enter'&&checkPass()}/>
-              <div style={{display:'flex',gap:10}}>
-                <button className="btn-save" onClick={checkPass}>Entrar</button>
-                <button className="btn-action" onClick={()=>setShowPassModal(false)}>Cancelar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ENVIO CONFIRM MODAL */}
       {envioRomId && (

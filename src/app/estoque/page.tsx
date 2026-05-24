@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { showToast } from '@/lib/utils'
 import Link from 'next/link'
 
-const ADMIN_PWD = 'pane2025'
-
 interface StockBalance {
   id: string
   product_id: string
@@ -27,19 +25,12 @@ interface Movement {
 }
 
 export default function EstoquePage() {
-  const [auth, setAuth]         = useState(false)
-  const [pwd, setPwd]           = useState('')
   const [tab, setTab]           = useState<'saldo'|'movimentos'>('saldo')
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
   const [search, setSearch]     = useState('')
   const [loading, setLoading]   = useState(false)
   const [filter, setFilter]     = useState<'todos'|'com_saldo'|'zerado'>('com_saldo')
-
-  const login = () => {
-    if (pwd === ADMIN_PWD) setAuth(true)
-    else { showToast('Senha incorreta'); setPwd('') }
-  }
 
   const loadBalances = async () => {
     setLoading(true)
@@ -62,8 +53,8 @@ export default function EstoquePage() {
   }
 
   useEffect(() => {
-    if (auth) { loadBalances(); loadMovements() }
-  }, [auth])
+    loadBalances(); loadMovements()
+  }, [])
 
   const filtered = balances.filter(b => {
     const matchSearch = b.products?.name?.toLowerCase().includes(search.toLowerCase())
@@ -80,29 +71,6 @@ export default function EstoquePage() {
   const mvBg: Record<string, string>        = { entrada: 'var(--teal-bg)', saida: 'var(--coral-bg)', ajuste: 'var(--amber-bg)', descarte: 'var(--red-bg)' }
   const mvSign: Record<string, string>      = { entrada: '+', saida: '−', ajuste: '±', descarte: '−' }
 
-  if (!auth) {
-    return (
-      <div className="login-page">
-        <div className="login-logo">
-          <h1>Pane &amp; Salute</h1>
-          <p style={{ fontSize: '11px', color: 'var(--text-hint)', letterSpacing: '3px', textTransform: 'uppercase', marginTop: '6px' }}>ESTOQUE DE INSUMOS</p>
-          <p className="tagline">Controle de saldo e custos</p>
-        </div>
-        <div className="login-card" style={{ padding: '24px' }}>
-          <input
-            type="password" placeholder="Senha de acesso"
-            value={pwd} onChange={e => setPwd(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && login()}
-            style={{ width: '100%', padding: '12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '15px', marginBottom: '12px', outline: 'none' }}
-          />
-          <button onClick={login} style={{ width: '100%', padding: '13px', background: 'var(--amber)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}>
-            Entrar
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div id="app">
       <div className="topbar">
@@ -110,7 +78,6 @@ export default function EstoquePage() {
         <Link href="/fornecedores" style={{ fontSize: '12px', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', textDecoration: 'none', marginRight: '4px' }}>
           Fornecedores
         </Link>
-        <button className="btn-logout" onClick={() => setAuth(false)}>Sair</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', padding: '14px 16px 0' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 10px', textAlign: 'center' }}>

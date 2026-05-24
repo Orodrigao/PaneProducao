@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { showToast } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 
-const ADMIN_PWD = 'pane2025'
-
 interface EntryItem {
   product_id: string
   product_name: string
@@ -20,8 +18,6 @@ export default function EstoqueEntradaPage() {
   const router = useRouter()
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const [auth, setAuth]               = useState(false)
-  const [pwd, setPwd]                 = useState('')
   const [suppliers, setSuppliers]     = useState<Supplier[]>([])
   const [products, setProducts]       = useState<Product[]>([])
   const [supplierId, setSupplierId]   = useState('')
@@ -33,16 +29,10 @@ export default function EstoqueEntradaPage() {
   const [showSearch, setShowSearch]   = useState(false)
   const [saving, setSaving]           = useState(false)
 
-  const login = () => {
-    if (pwd === ADMIN_PWD) setAuth(true)
-    else { showToast('Senha incorreta'); setPwd('') }
-  }
-
   useEffect(() => {
-    if (!auth) return
     supabase.from('suppliers').select('id,name').eq('active', true).order('name').then(({ data }) => setSuppliers(data || []))
     supabase.from('products').select('id,name,unit,category').eq('active', true).order('name').then(({ data }) => setProducts(data || []))
-  }, [auth])
+  }, [])
 
   useEffect(() => {
     if (showSearch) setTimeout(() => searchRef.current?.focus(), 50)
@@ -145,25 +135,6 @@ export default function EstoqueEntradaPage() {
       showToast('Erro ao salvar. Tente novamente.')
     }
     setSaving(false)
-  }
-
-  if (!auth) {
-    return (
-      <div className="login-page">
-        <div className="login-logo">
-          <h1>Pane &amp; Salute</h1>
-          <p style={{ fontSize: '11px', color: 'var(--text-hint)', letterSpacing: '3px', textTransform: 'uppercase', marginTop: '6px' }}>ENTRADA DE ESTOQUE</p>
-        </div>
-        <div className="login-card" style={{ padding: '24px' }}>
-          <input type="password" placeholder="Senha de acesso" value={pwd}
-            onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()}
-            style={{ width: '100%', padding: '12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '15px', marginBottom: '12px', outline: 'none' }} />
-          <button onClick={login} style={{ width: '100%', padding: '13px', background: 'var(--amber)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}>
-            Entrar
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (

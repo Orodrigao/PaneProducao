@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { showToast } from '@/lib/utils'
 import Link from 'next/link'
 
-const ADMIN_PWD = 'pane2025'
-
 interface Supplier {
   id: string; name: string; cnpj: string | null; phone: string | null
   email: string | null; notes: string | null; active: boolean
@@ -14,8 +12,6 @@ interface Supplier {
 const emptyForm = { name: '', cnpj: '', phone: '', email: '', notes: '' }
 
 export default function FornecedoresPage() {
-  const [auth, setAuth]         = useState(false)
-  const [pwd, setPwd]           = useState('')
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState<Supplier | null>(null)
@@ -23,17 +19,12 @@ export default function FornecedoresPage() {
   const [saving, setSaving]     = useState(false)
   const [search, setSearch]     = useState('')
 
-  const login = () => {
-    if (pwd === ADMIN_PWD) setAuth(true)
-    else { showToast('Senha incorreta'); setPwd('') }
-  }
-
   const load = async () => {
     const { data } = await supabase.from('suppliers').select('*').order('name')
     setSuppliers(data || [])
   }
 
-  useEffect(() => { if (auth) load() }, [auth])
+  useEffect(() => { load() }, [])
 
   const openNew = () => {
     setEditing(null)
@@ -81,27 +72,6 @@ export default function FornecedoresPage() {
     { key: 'notes', label: 'Observações',   type: 'text',  placeholder: 'Condições de pagamento, prazo...' },
   ] as const
 
-  if (!auth) {
-    return (
-      <div className="login-page">
-        <div className="login-logo">
-          <h1>Pane &amp; Salute</h1>
-          <p style={{ fontSize: '11px', color: 'var(--text-hint)', letterSpacing: '3px', textTransform: 'uppercase', marginTop: '6px' }}>FORNECEDORES</p>
-        </div>
-        <div className="login-card" style={{ padding: '24px' }}>
-          <input
-            type="password" placeholder="Senha de acesso" value={pwd}
-            onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()}
-            style={{ width: '100%', padding: '12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '15px', marginBottom: '12px', outline: 'none' }}
-          />
-          <button onClick={login} style={{ width: '100%', padding: '13px', background: 'var(--amber)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}>
-            Entrar
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   const SupplierCard = ({ s }: { s: Supplier }) => (
     <div style={{
       background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
@@ -134,7 +104,6 @@ export default function FornecedoresPage() {
       <div className="topbar">
         <Link href="/estoque" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)', padding: '0 8px 0 0', lineHeight: 1, textDecoration: 'none' }}>←</Link>
         <span className="topbar-logo">Fornecedores</span>
-        <button className="btn-logout" onClick={() => setAuth(false)}>Sair</button>
       </div>
 
       <div style={{ padding: '16px' }}>
