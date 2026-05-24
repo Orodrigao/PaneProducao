@@ -13,7 +13,6 @@ interface Bread {
   cost_price: number|null; active: boolean; is_pj: boolean
 }
 
-const ADMIN_PWD = 'pane2025'
 const CATEGORIES = ['Bolos','Brownie','Bruschettas','Confeitaria','Cookies','Croissant','Doce',
   'Focaccias','Folhados & Doces','Lanches','Muffins','Pastas & Pesto','Pizza Redonda',
   'Pizza Romana','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados','Salgados','Sopas & Cremes','INSUMOS']
@@ -28,8 +27,6 @@ export default function ProdutosPage() {
   const [editItem, setEditItem] = useState<Partial<Product>|null>(null)
   const [isNew, setIsNew]       = useState(false)
   const [breadCostEdits, setBreadCostEdits] = useState<Record<string, string>>({})
-  const [authed, setAuthed]     = useState(false)
-  const [pwd, setPwd]           = useState('')
 
   useEffect(()=>{ load() },[])
 
@@ -98,19 +95,6 @@ export default function ProdutosPage() {
 
   const breadsFiltered = breads.filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()))
   const breadsWithoutCost = breads.filter(b => b.active && (b.cost_price === null || Number(b.cost_price) === 0)).length
-
-  if (!authed) return (
-    <div style={{padding:'20px',maxWidth:400,margin:'40px auto',textAlign:'center'}}>
-      <div style={{fontSize:'2rem',marginBottom:10}}>📦</div>
-      <div style={{fontWeight:700,fontSize:'1.2rem',color:'var(--primary)',marginBottom:20}}>Catálogo</div>
-      <input type="password" placeholder="Senha de acesso" value={pwd} onChange={e=>setPwd(e.target.value)}
-        onKeyDown={e=>e.key==='Enter'&&(pwd===ADMIN_PWD?setAuthed(true):showToast('Senha incorreta'))}
-        style={{width:'100%',padding:12,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'1rem',marginBottom:10}}/>
-      <button className="btn btn-primary btn-full" onClick={()=>pwd===ADMIN_PWD?setAuthed(true):showToast('Senha incorreta')}>
-        Entrar
-      </button>
-    </div>
-  )
 
   return (
     <div style={{padding:'16px',maxWidth:700,margin:'0 auto'}}>
