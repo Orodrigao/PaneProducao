@@ -181,20 +181,27 @@ export default function SimuladorDescontoPage() {
   }
 
   // ===== Chamar IA =====
+  // Usamos fetch direto (não supabase.functions.invoke) pra conseguir ler o body
+  // de respostas non-2xx — invoke esconde o erro real do servidor.
   const analisarIA = async () => {
     if (!hasMinInputs) { showToast('Preencha todos os campos antes de analisar'); return }
     setAiLoading(true); setAiText(''); setAiError('')
     const custName = customers.find(c => c.id === customerId)?.name || customerNameFree.trim() || ''
     const prodName = catalog.find(p => `${p.source}_${p.id}` === productKey)?.name || productNameFree.trim() || ''
+    const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     try {
-      const { data, error } = await supabase.functions.invoke('analisar-desconto', {
-        body: {
+      const resp = await fetch(`${SB_URL}/functions/v1/analisar-desconto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` },
+        body: JSON.stringify({
           price, cmv, discount, currentVolume, promisedVolume,
           customerName: custName || undefined,
           productName: prodName || undefined,
-        }
+        }),
       })
-      if (error) throw error
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`)
       if (data?.error) throw new Error(data.error)
       setAiText(data?.analysis || '(resposta vazia)')
       saveToHistory({ customerName: custName, productName: prodName })
