@@ -40,6 +40,11 @@ export default function TabelasPrecoPage() {
   // Loading
   const [loading, setLoading] = useState(true)
 
+  // Drafts dos inputs nome/descrição da tabela — salvam onBlur/Enter,
+  // não a cada keystroke (evita PATCH + toast por tecla).
+  const [tierNameDraft, setTierNameDraft] = useState('')
+  const [tierDescDraft, setTierDescDraft] = useState('')
+
   useEffect(() => {
     const u = getCurrentUser()
     if (u) setUser({ displayName: u.displayName })
@@ -69,6 +74,30 @@ export default function TabelasPrecoPage() {
   // ========== TABELAS ==========
 
   const selTier = tiers.find(t => t.id === selTierId) || null
+
+  // Sincroniza drafts quando troca a tabela selecionada
+  useEffect(() => {
+    if (selTier) {
+      setTierNameDraft(selTier.name)
+      setTierDescDraft(selTier.description ?? '')
+    }
+  }, [selTier?.id])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commitTierName = () => {
+    if (!selTier) return
+    const v = tierNameDraft.trim()
+    if (!v) { setTierNameDraft(selTier.name); showToast('Nome obrigatório'); return }
+    if (v === selTier.name) return
+    updateTier({ name: v })
+  }
+
+  const commitTierDesc = () => {
+    if (!selTier) return
+    const v = tierDescDraft.trim()
+    const cur = selTier.description ?? ''
+    if (v === cur) return
+    updateTier({ description: v || null })
+  }
   const itemsOfSel = useMemo(() => items.filter(i => i.tier_id === selTierId).sort((a,b) => a.product_name.localeCompare(b.product_name)), [items, selTierId])
   const itemsKeySet = useMemo(() => new Set(itemsOfSel.map(i => `${i.product_source}_${i.product_id}`)), [itemsOfSel])
 
@@ -280,9 +309,15 @@ export default function TabelasPrecoPage() {
               </button>
 
               <div className="card" style={{marginBottom:14}}>
-                <input value={selTier.name} onChange={e=>updateTier({name:e.target.value})}
+                <input value={tierNameDraft}
+                  onChange={e=>setTierNameDraft(e.target.value)}
+                  onBlur={commitTierName}
+                  onKeyDown={e=>{ if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                   style={{width:'100%',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'1rem',fontWeight:700,marginBottom:8}}/>
-                <input value={selTier.description || ''} onChange={e=>updateTier({description:e.target.value || null})}
+                <input value={tierDescDraft}
+                  onChange={e=>setTierDescDraft(e.target.value)}
+                  onBlur={commitTierDesc}
+                  onKeyDown={e=>{ if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                   placeholder="Descrição (opcional)"
                   style={{width:'100%',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.85rem',marginBottom:10}}/>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
