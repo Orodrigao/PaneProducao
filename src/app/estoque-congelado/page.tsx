@@ -24,6 +24,20 @@ const LOCATION_LABELS: Record<string, string> = {
 
 const STORE_LABELS: Record<string, string> = { jc: 'JC', ja: 'JA', ex: 'EX' }
 
+// Cor por loja pra distinguir os badges de freezer quando admin vê os 8 locais juntos.
+const STORE_COLORS: Record<string, { chipBg:string, chipFg:string, locBg:string }> = {
+  jc: { chipBg:'#dbeafe', chipFg:'#1e40af', locBg:'#eff6ff' }, // azul
+  ja: { chipBg:'#d1fae5', chipFg:'#065f46', locBg:'#ecfdf5' }, // verde
+  ex: { chipBg:'#fed7aa', chipFg:'#9a3412', locBg:'#fff7ed' }, // laranja
+}
+
+// Extrai a loja de um id de location ('jc-freezer' → 'jc').
+function locStoreKey(loc: string): string {
+  return loc.split('-')[0]
+}
+
+const STORE_ORDER = ['jc', 'ja', 'ex'] as const
+
 // Normaliza nomes antigos pra novos (transição até o UPDATE do DB rodar)
 function normalizeLocation(loc: string): string {
   if (loc === 'freezer')       return 'jc-freezer'
@@ -39,7 +53,7 @@ function visibleLocations(store: string | null): string[] {
   return Object.values(LOCATIONS_BY_STORE).flat()
 }
 
-interface FrozenProduct { id:string; product_name:string; unit:string|null; min_stock:number|null; active:boolean; visible_stores: string[]|null }
+interface FrozenProduct { id:string; product_name:string; unit:string|null; min_stock:number|null; active:boolean; visible_stores: string[]|null; product_id?:string|null; product_source?:string|null }
 
 // Normaliza visible_stores aceitando formato legacy (string única) durante transição.
 function normalizeStores(s: unknown): string[] | null {
@@ -71,6 +85,8 @@ export default function EstoqueCongeladoPage() {
   const [adminSearch, setAdminSearch] = useState('')
   const [adminResults, setAdminResults] = useState<CatalogItem[]>([])
   const [newProdName, setNewProdName] = useState('')
+  // Bloqueia disparo concorrente de qualquer botão "Adicionar" (mata double-click).
+  const [addingProduct, setAddingProduct] = useState(false)
   // Modal "+ Adicionar produto" pra qualquer user com store (sem senha admin)
   const [addOpen, setAddOpen]         = useState(false)
   const [addSearch, setAddSearch]     = useState('')
@@ -179,22 +195,22 @@ export default function EstoqueCongeladoPage() {
 
   const searchAdmin = (q: string) => {
     setAdminSearch(q)
-    const existing = new Set(products.map(p=>p.product_name.toLowerCase()))
     const qNorm = normalize(q.trim())
     // Vazio ou termo de categoria "pão" → todos breads ativos
     if (qNorm.length < 2 || PAO_KEYWORDS.has(qNorm)) {
-      const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
+      const allBreads = allProducts.filter(p => p._source === 'bread')
       setAdminResults(allBreads)
       return
     }
-    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && normalize(p.name).includes(qNorm))
+    const matching = allProducts.filter(p => normalize(p.name).includes(qNorm))
     const breads = matching.filter(p => p._source === 'bread')
     const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
     setAdminResults([...breads, ...prods])
   }
 
-  const addFromCatalog = async (p: CatalogItem) => {
-    const visStores = user?.store ? [user.store] : null
+  // Tenta inserir produto do catálogo. Se já existir (índice único product_id+product_source ativo)
+  // mescla a loja em visible_stores ao invés de criar duplicata.
+  async function upsertCatalogProduct(p: CatalogItem, visStores: string[]|null): Promise<string> {
     const { error } = await supabase.from('frozen_products').insert({
       product_id: p.id,
       product_source: p._source,
@@ -203,16 +219,56 @@ export default function EstoqueCongeladoPage() {
       active: true,
       visible_stores: visStores,
     })
-    if (!error) { showToast('✅ Produto adicionado'); setAdminSearch(''); setAdminResults([]); load() }
-    else showToast('Erro: '+error.message)
+    if (!error) return '✅ Produto adicionado'
+    if ((error as { code?: string }).code !== '23505') return 'Erro: ' + error.message
+    // Já existe ativo: busca a linha e mescla visible_stores
+    const { data: existing, error: selErr } = await supabase
+      .from('frozen_products')
+      .select('id, visible_stores')
+      .eq('product_id', p.id)
+      .eq('product_source', p._source)
+      .eq('active', true)
+      .maybeSingle()
+    if (selErr || !existing) return 'Erro ao localizar produto existente'
+    const cur = normalizeStores(existing.visible_stores)
+    // Já global → não muda nada
+    if (cur == null) return '✅ Já cadastrado (visível pra todas as lojas)'
+    // Novo cadastro pede global → torna global
+    if (visStores == null) {
+      const { error: upErr } = await supabase.from('frozen_products').update({ visible_stores: null }).eq('id', existing.id)
+      if (upErr) return 'Erro: ' + upErr.message
+      return '✅ Já cadastrado — agora visível pra todas as lojas'
+    }
+    // Mescla
+    const next = Array.from(new Set([...cur, ...visStores]))
+    const unchanged = next.length === cur.length && next.every(s => cur.includes(s))
+    if (unchanged) return '✅ Já cadastrado para sua loja'
+    const { error: upErr } = await supabase.from('frozen_products').update({ visible_stores: next }).eq('id', existing.id)
+    if (upErr) return 'Erro: ' + upErr.message
+    return '✅ Já existia — agora também aparece na sua loja'
+  }
+
+  const addFromCatalog = async (p: CatalogItem) => {
+    if (addingProduct) return
+    setAddingProduct(true)
+    const visStores = user?.store ? [user.store] : null
+    const msg = await upsertCatalogProduct(p, visStores)
+    showToast(msg)
+    setAdminSearch(''); setAdminResults([])
+    await load()
+    setAddingProduct(false)
   }
 
   const addManual = async () => {
+    if (addingProduct) return
     if (!newProdName.trim()) return
+    setAddingProduct(true)
     // user com store → produto fica visível só pra loja dele; admin → global
     const visStores = user?.store ? [user.store] : null
-    await supabase.from('frozen_products').insert({ product_name:newProdName, active:true, visible_stores: visStores })
-    setNewProdName(''); load(); showToast('✅ Produto adicionado')
+    const { error } = await supabase.from('frozen_products').insert({ product_name:newProdName, active:true, visible_stores: visStores })
+    if (error) showToast('Erro: ' + error.message)
+    else { setNewProdName(''); await load(); showToast('✅ Produto adicionado') }
+    setAddingProduct(false)
   }
 
   // Admin (sem store) vê tudo. Outros veem produtos globais + onde a loja deles aparece em visible_stores.
@@ -269,6 +325,18 @@ export default function EstoqueCongeladoPage() {
     .filter(visibleByStore)
     .filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
 
+  // Estado de cada item do catálogo (na busca) frente ao que já está cadastrado.
+  // 'new' = ainda não existe; 'add-to-mine' = existe mas não pra esta loja-alvo;
+  // 'already-here' = já existe pra esta loja-alvo (ou é global).
+  function catalogItemState(p: CatalogItem, targetStores: string[]|null): 'new' | 'already-here' | 'add-to-mine' {
+    const fp = products.find(fp => fp.product_id === p.id && fp.product_source === p._source)
+    if (!fp) return 'new'
+    if (fp.visible_stores == null) return 'already-here' // global
+    if (targetStores == null) return 'add-to-mine' // admin tornando global
+    const missing = targetStores.some(s => !fp.visible_stores!.includes(s))
+    return missing ? 'add-to-mine' : 'already-here'
+  }
+
   // Quem pode adicionar produtos: qualquer user com store + admins
   const canAdd = !!user
   function openAddModal() {
@@ -283,39 +351,36 @@ export default function EstoqueCongeladoPage() {
   }
   function searchAddCatalog(q: string) {
     setAddSearch(q)
-    const existing = new Set(products.map(p => p.product_name.toLowerCase()))
     const qNorm = normalize(q.trim())
     if (qNorm.length < 2 || PAO_KEYWORDS.has(qNorm)) {
-      const allBreads = allProducts.filter(p => p._source === 'bread' && !existing.has(p.name.toLowerCase()))
+      const allBreads = allProducts.filter(p => p._source === 'bread')
       setAddResults(allBreads)
       return
     }
-    const matching = allProducts.filter(p => !existing.has(p.name.toLowerCase()) && normalize(p.name).includes(qNorm))
+    const matching = allProducts.filter(p => normalize(p.name).includes(qNorm))
     const breads = matching.filter(p => p._source === 'bread')
     const prods  = matching.filter(p => p._source === 'product').slice(0, 10)
     setAddResults([...breads, ...prods])
   }
   async function submitAddFromCatalog(p: CatalogItem) {
-    const { error } = await supabase.from('frozen_products').insert({
-      product_id: p.id,
-      product_source: p._source,
-      product_name: p.name,
-      unit: p.unit || 'un',
-      active: true,
-      visible_stores: addStores,
-    })
-    if (error) { showToast('Erro: '+error.message); return }
-    showToast('✅ Produto adicionado')
-    setAddOpen(false); load()
+    if (addingProduct) return
+    setAddingProduct(true)
+    const msg = await upsertCatalogProduct(p, addStores)
+    showToast(msg)
+    setAddOpen(false)
+    await load()
+    setAddingProduct(false)
   }
   async function submitAddManual() {
+    if (addingProduct) return
     if (!addManualName.trim()) return
+    setAddingProduct(true)
     const { error } = await supabase.from('frozen_products').insert({
       product_name: addManualName.trim(), active: true, visible_stores: addStores
     })
-    if (error) { showToast('Erro: '+error.message); return }
-    showToast('✅ Produto adicionado')
-    setAddOpen(false); load()
+    if (error) showToast('Erro: '+error.message)
+    else { showToast('✅ Produto adicionado'); setAddOpen(false); await load() }
+    setAddingProduct(false)
   }
 
   return (
@@ -376,12 +441,26 @@ export default function EstoqueCongeladoPage() {
                       {fp.min_stock != null && fp.min_stock > 0 && <div style={{fontSize:'.72rem',color:'var(--muted)'}}>mín: {fp.min_stock}</div>}
                     </div>
                   </div>
-                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                    {locsVisible.map(loc=>(
-                      <span key={loc} style={{fontSize:'.75rem',padding:'2px 8px',background:'#f0f0f0',borderRadius:20}}>
-                        {(LOCATION_LABELS[loc] || loc).split(' ')[0]} {s[loc]||0}
-                      </span>
-                    ))}
+                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                    {STORE_ORDER.map(sk => {
+                      const locs = locsVisible.filter(l => locStoreKey(l) === sk)
+                      if (locs.length === 0) return null
+                      const c = STORE_COLORS[sk]
+                      return (
+                        <div key={sk} style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                          {isAdmin && (
+                            <span style={{fontSize:'.62rem',fontWeight:700,padding:'2px 6px',background:c.chipBg,color:c.chipFg,borderRadius:4,letterSpacing:'.5px'}}>
+                              {sk.toUpperCase()}
+                            </span>
+                          )}
+                          {locs.map(loc=>(
+                            <span key={loc} title={LOCATION_LABELS[loc] || loc} style={{fontSize:'.75rem',padding:'2px 8px',background:c.locBg,borderRadius:20,border:`1px solid ${c.chipBg}`}}>
+                              {(LOCATION_LABELS[loc] || loc).split(' ')[0]} {s[loc]||0}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
@@ -440,12 +519,20 @@ export default function EstoqueCongeladoPage() {
                   style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
                 {adminResults.length>0 && (
                   <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
-                    {adminResults.map(p=>(
-                      <div key={`${p._source}_${p.id}`} onClick={()=>addFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
-                        {p.name}
-                        {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
-                      </div>
-                    ))}
+                    {adminResults.map(p=>{
+                      const st = catalogItemState(p, user?.store ? [user.store] : null)
+                      const dim = st === 'already-here'
+                      return (
+                        <div key={`${p._source}_${p.id}`}
+                          onClick={()=>{ if (dim) showToast('Já cadastrado'); else addFromCatalog(p) }}
+                          style={{padding:'9px 12px',cursor:dim?'default':'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)',opacity:dim?.55:1}}>
+                          {p.name}
+                          {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
+                          {st === 'already-here' && <span style={{marginLeft:6,background:'#e5e7eb',color:'#374151',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>✓ JÁ CADASTRADO</span>}
+                          {st === 'add-to-mine' && <span style={{marginLeft:6,background:'#fed7aa',color:'#9a3412',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>+ HABILITAR</span>}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -455,7 +542,7 @@ export default function EstoqueCongeladoPage() {
               <div style={{display:'flex',gap:6}}>
                 <input placeholder="Nome do produto" value={newProdName} onChange={e=>setNewProdName(e.target.value)}
                   style={{flex:1,padding:8,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.85rem'}}/>
-                <button onClick={addManual} style={{padding:'8px 12px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:'pointer'}}>+</button>
+                <button onClick={addManual} disabled={addingProduct || !newProdName.trim()} style={{padding:'8px 12px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:addingProduct?'wait':'pointer',opacity:(addingProduct||!newProdName.trim())?.5:1}}>+</button>
               </div>
             </div>
             <div className="card">
@@ -587,12 +674,20 @@ export default function EstoqueCongeladoPage() {
                 style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
               {addResults.length>0 && (
                 <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:200,overflowY:'auto'}}>
-                  {addResults.map(p=>(
-                    <div key={`${p._source}_${p.id}`} onClick={()=>submitAddFromCatalog(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
-                      {p.name}
-                      {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
-                    </div>
-                  ))}
+                  {addResults.map(p=>{
+                    const st = catalogItemState(p, addStores)
+                    const dim = st === 'already-here'
+                    return (
+                      <div key={`${p._source}_${p.id}`}
+                        onClick={()=>{ if (dim) showToast('Já cadastrado'); else submitAddFromCatalog(p) }}
+                        style={{padding:'9px 12px',cursor:dim?'default':'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)',opacity:dim?.55:1}}>
+                        {p.name}
+                        {p._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>🥖 PÃO</span>}
+                        {st === 'already-here' && <span style={{marginLeft:6,background:'#e5e7eb',color:'#374151',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>✓ JÁ CADASTRADO</span>}
+                        {st === 'add-to-mine' && <span style={{marginLeft:6,background:'#fed7aa',color:'#9a3412',padding:'1px 6px',borderRadius:3,fontSize:'.62rem',fontWeight:700}}>+ HABILITAR</span>}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -602,8 +697,8 @@ export default function EstoqueCongeladoPage() {
               <div style={{display:'flex',gap:6}}>
                 <input placeholder="Nome do produto" value={addManualName} onChange={e=>setAddManualName(e.target.value)}
                   style={{flex:1,padding:8,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.9rem'}}/>
-                <button onClick={submitAddManual} disabled={!addManualName.trim()}
-                  style={{padding:'8px 14px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:addManualName.trim()?'pointer':'default',opacity:addManualName.trim()?1:.5,fontWeight:600}}>+</button>
+                <button onClick={submitAddManual} disabled={addingProduct || !addManualName.trim()}
+                  style={{padding:'8px 14px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:addingProduct?'wait':(addManualName.trim()?'pointer':'default'),opacity:(addingProduct||!addManualName.trim())?.5:1,fontWeight:600}}>+</button>
               </div>
             </div>
 
