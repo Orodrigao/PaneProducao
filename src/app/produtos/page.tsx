@@ -27,6 +27,7 @@ export default function ProdutosPage() {
   const [editItem, setEditItem] = useState<Partial<Product>|null>(null)
   const [isNew, setIsNew]       = useState(false)
   const [breadCostEdits, setBreadCostEdits] = useState<Record<string, string>>({})
+  const [newBread, setNewBread] = useState<Partial<Bread>|null>(null)
 
   useEffect(()=>{ load() },[])
 
@@ -85,6 +86,33 @@ export default function ProdutosPage() {
     setBreads(prev => prev.map(x => x.id===b.id ? {...x,active:!b.active} : x))
   }
 
+  // id de breads é text (não uuid). Padrão dos existentes: slug + timestamp ms.
+  function makeBreadId(name: string): string {
+    const slug = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')
+    return `${slug}${Date.now()}`
+  }
+
+  async function saveNewBread() {
+    if (!newBread?.name?.trim()) { showToast('Nome obrigatório'); return }
+    const cost = newBread.cost_price === null || newBread.cost_price === undefined || (newBread.cost_price as any) === ''
+      ? 0 : Number(newBread.cost_price)
+    if (!Number.isFinite(cost) || cost < 0) { showToast('Custo inválido'); return }
+    try {
+      const { error } = await supabase.from('breads').insert({
+        id: makeBreadId(newBread.name),
+        name: newBread.name.trim(),
+        unit: newBread.unit?.trim() || 'un',
+        cost_price: cost,
+        active: true,
+        is_pj: !!newBread.is_pj,
+      })
+      if (error) throw error
+      showToast('✅ Pão criado')
+      setNewBread(null)
+      load()
+    } catch(e:any) { showToast('Erro: '+e.message) }
+  }
+
   const cats = ['Todos',...new Set(products.map(p=>p.category).filter(Boolean))]
   const filtered = products.filter(p=>{
     const matchCat = catFilter==='Todos' || p.category===catFilter
@@ -101,10 +129,15 @@ export default function ProdutosPage() {
       {/* Header */}
       <div style={{background:'var(--primary)',color:'white',padding:'14px 16px',borderRadius:'var(--radius)',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <span style={{fontWeight:700}}>📦 Catálogo</span>
-        {tab==='produtos' && (
+        {tab==='produtos' ? (
           <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0]})}}
             style={{background:'white',color:'var(--primary)',border:'none',borderRadius:6,padding:'6px 12px',fontWeight:700,cursor:'pointer'}}>
             + Novo
+          </button>
+        ) : (
+          <button onClick={()=>setNewBread({name:'',unit:'un',cost_price:null,is_pj:false})}
+            style={{background:'white',color:'var(--primary)',border:'none',borderRadius:6,padding:'6px 12px',fontWeight:700,cursor:'pointer'}}>
+            + Novo pão
           </button>
         )}
       </div>
@@ -226,6 +259,51 @@ export default function ProdutosPage() {
             <div style={{display:'flex',gap:8}}>
               <button className="btn btn-success" style={{flex:1}} onClick={save}>💾 Salvar</button>
               <button className="btn btn-ghost" onClick={()=>setEditItem(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL — Novo pão */}
+      {newBread && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-end',zIndex:200}}
+          onClick={e=>e.target===e.currentTarget&&setNewBread(null)}>
+          <div style={{background:'white',width:'100%',borderRadius:'12px 12px 0 0',padding:20,maxHeight:'80vh',overflowY:'auto'}}>
+            <div style={{fontWeight:700,marginBottom:16,fontSize:'1rem'}}>🍞 Novo pão</div>
+
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Nome *</label>
+              <input value={newBread.name||''} onChange={e=>setNewBread(prev=>({...prev,name:e.target.value}))}
+                autoFocus placeholder="ex: Pão de Hotdog"
+                style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+            </div>
+
+            <div style={{display:'flex',gap:10,marginBottom:12}}>
+              <div style={{flex:1}}>
+                <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Unidade</label>
+                <input value={newBread.unit||''} onChange={e=>setNewBread(prev=>({...prev,unit:e.target.value}))}
+                  placeholder="un / kg"
+                  style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Custo (R$)</label>
+                <input type="number" step="0.01" min="0"
+                  value={newBread.cost_price ?? ''}
+                  onChange={e=>setNewBread(prev=>({...prev,cost_price: e.target.value === '' ? null : Number(e.target.value)}))}
+                  placeholder="0.00"
+                  style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+              </div>
+            </div>
+
+            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:'.85rem',color:'var(--muted)',cursor:'pointer',marginBottom:16}}>
+              <input type="checkbox" checked={!!newBread.is_pj}
+                onChange={e=>setNewBread(prev=>({...prev,is_pj:e.target.checked}))}/>
+              Pão exclusivo PJ (atacado / clientes específicos)
+            </label>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-success" style={{flex:1}} onClick={saveNewBread}>💾 Criar pão</button>
+              <button className="btn btn-ghost" onClick={()=>setNewBread(null)}>Cancelar</button>
             </div>
           </div>
         </div>

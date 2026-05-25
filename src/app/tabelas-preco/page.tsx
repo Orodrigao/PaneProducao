@@ -93,6 +93,26 @@ export default function TabelasPrecoPage() {
     loadAll()
   }
 
+  const deleteTier = async () => {
+    if (!selTier) return
+    const itemsCount = items.filter(i => i.tier_id === selTier.id).length
+    const usingThis = customers.filter(c => c.default_tier_id === selTier.id)
+    const lines = [`Excluir tabela "${selTier.name}"?`, '']
+    if (itemsCount > 0) lines.push(`• ${itemsCount} produto(s) configurado(s) ficam preservados.`)
+    if (usingThis.length > 0) {
+      const names = usingThis.slice(0,3).map(c=>c.name).join(', ') + (usingThis.length > 3 ? '...' : '')
+      lines.push(`⚠️ ${usingThis.length} cliente(s) usam essa tabela como padrão: ${names}`)
+      lines.push('Eles ficarão sem tabela default — ajuste em /clientes.')
+    }
+    lines.push('', '(Soft delete: a tabela fica desativada, histórico preservado.)')
+    if (!confirm(lines.join('\n'))) return
+    const { error } = await supabase.from('price_tiers').update({ active: false }).eq('id', selTier.id)
+    if (error) { showToast('Erro: ' + error.message); return }
+    showToast('✅ Tabela excluída')
+    setSelTierId(null)
+    await loadAll()
+  }
+
   const duplicateTier = async () => {
     if (!selTier) return
     const newName = prompt(`Copiar "${selTier.name}" como:`, `${selTier.name} (cópia)`)
@@ -265,12 +285,16 @@ export default function TabelasPrecoPage() {
                 <input value={selTier.description || ''} onChange={e=>updateTier({description:e.target.value || null})}
                   placeholder="Descrição (opcional)"
                   style={{width:'100%',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.85rem',marginBottom:10}}/>
-                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
                   <button onClick={duplicateTier}
                     style={{padding:'6px 12px',background:'#f3f4f6',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',fontSize:'.8rem',fontWeight:600}}>
                     📋 Copiar tabela
                   </button>
-                  <label style={{display:'flex',alignItems:'center',gap:6,fontSize:'.82rem',color:'var(--muted)',cursor:'pointer'}}>
+                  <button onClick={deleteTier}
+                    style={{padding:'6px 12px',background:'#fee2e2',border:'1px solid #fecaca',color:'#b91c1c',borderRadius:6,cursor:'pointer',fontSize:'.8rem',fontWeight:600}}>
+                    🗑 Excluir tabela
+                  </button>
+                  <label style={{display:'flex',alignItems:'center',gap:6,fontSize:'.82rem',color:'var(--muted)',cursor:'pointer',marginLeft:'auto'}}>
                     <input type="checkbox" checked={selTier.active} onChange={e=>updateTier({active:e.target.checked})}/>
                     Tabela ativa
                   </label>
@@ -331,20 +355,20 @@ export default function TabelasPrecoPage() {
             <>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:8,flexWrap:'wrap'}}>
                 <span style={{fontSize:'.85rem',color:'var(--muted)'}}>
-                  {tiers.length} tabela(s) cadastrada(s)
+                  {tiers.filter(t=>t.active).length} tabela(s) cadastrada(s)
                 </span>
                 <button onClick={()=>setNewTierOpen(true)}
                   style={{padding:'8px 14px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.85rem',fontWeight:700}}>
                   + Nova tabela
                 </button>
               </div>
-              {tiers.length === 0 ? (
+              {tiers.filter(t=>t.active).length === 0 ? (
                 <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>
                   Nenhuma tabela cadastrada. Comece criando a primeira (ex: "Atacado A", "Eventos").
                 </div>
               ) : (
                 <div style={{display:'grid',gap:10}}>
-                  {tiers.map(t => {
+                  {tiers.filter(t=>t.active).map(t => {
                     const count = items.filter(i => i.tier_id === t.id).length
                     return (
                       <div key={t.id} onClick={()=>setSelTierId(t.id)}
