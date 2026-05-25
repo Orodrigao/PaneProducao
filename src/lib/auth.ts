@@ -26,7 +26,7 @@ export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
   estoque:    ['/', '/estoque-congelado', '/estoque'],
   compras:    ['/compras', '/estoque', '/produtos', '/estoque-paes'],
   romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/simulador-desconto'],
+  financeiro: ['/', '/sobras', '/compras', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/simulador-desconto', '/relatorios'],
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 

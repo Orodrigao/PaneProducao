@@ -21,6 +21,13 @@ const ALL_REPORTS: ReportCard[] = [
     status: 'ready',
   },
   {
+    href: '/relatorios/pj',
+    title: 'Vendas PJ',
+    description: 'Vendas para clientes PJ por período: total, ticket médio, ranking de clientes e top produtos. Exporta CSV.',
+    icon: '🤝',
+    status: 'ready',
+  },
+  {
     href: '/relatorios/romaneios',
     title: 'Romaneios',
     description: 'Entregas por período, status (separado/enviado/conferido), divergências e fechamentos.',
