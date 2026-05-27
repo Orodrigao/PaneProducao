@@ -275,12 +275,13 @@ export default function EstoqueCongeladoPage() {
   const isAdmin = !user?.store
   const visibleByStore = (p: FrozenProduct) => isAdmin || !p.visible_stores || p.visible_stores.includes(user?.store ?? '')
 
-  // Permissão de excluir: admin (sem store) pode tudo; user com store só pode excluir
-  // produtos cuja única loja visível é a dele (evita apagar globais ou de outras lojas)
+  // Permissão de excluir: admin pode tudo; user com store pode excluir qualquer
+  // produto que ele enxerga (incluindo globais). Globais ganham confirm extra
+  // em deleteFrozenProduct avisando que afeta todas as lojas. Soft delete = recuperável.
   const canDeleteProduct = (p: FrozenProduct): boolean => {
     if (isAdmin) return true
     if (!user?.store) return false
-    return !!p.visible_stores && p.visible_stores.length === 1 && p.visible_stores[0] === user.store
+    return !p.visible_stores || p.visible_stores.includes(user.store)
   }
 
   // Editar: admin pode tudo; user com store pode editar produtos da loja DELE (single-store)
@@ -312,10 +313,23 @@ export default function EstoqueCongeladoPage() {
 
   const deleteFrozenProduct = async (p: FrozenProduct) => {
     const total = getTotal(p.id)
-    const warning = total > 0
-      ? `⚠️ "${p.product_name}" ainda tem ${total} unidade(s) em estoque.\n\nDesativar mesmo assim? (Histórico de movimentações fica preservado.)`
-      : `Desativar "${p.product_name}"?\n\n(Histórico de movimentações fica preservado.)`
-    if (!confirm(warning)) return
+    const isGlobal = !p.visible_stores
+    const lines: string[] = []
+    if (isGlobal && !isAdmin) {
+      lines.push(`⚠️ "${p.product_name}" é GLOBAL — visível pra TODAS as lojas (JC, JA, EX).`)
+      lines.push('Remover vai esconder pra todo mundo, não só pra sua loja.')
+      lines.push('')
+    }
+    if (total > 0) {
+      lines.push(`"${p.product_name}" ainda tem ${total} unidade(s) em estoque.`)
+      lines.push('')
+      lines.push('Desativar mesmo assim?')
+    } else {
+      lines.push(`Desativar "${p.product_name}"?`)
+    }
+    lines.push('')
+    lines.push('(Histórico de movimentações fica preservado.)')
+    if (!confirm(lines.join('\n'))) return
     const { error } = await supabase.from('frozen_products').update({ active: false }).eq('id', p.id)
     if (error) { showToast('Erro: ' + error.message); return }
     showToast(`✅ ${p.product_name} removido`)
