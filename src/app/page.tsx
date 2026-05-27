@@ -259,6 +259,12 @@ export default function ProducaoPage() {
         const map = await loadOrders(defDate)
         setGeolarOrders(map)
         setOrders(map)
+        // Carrega Itens JC pra mesma data — Geolar precisa ver não-pães também
+        try {
+          const items = await loadProdItems()
+          setProdDate(defDate)
+          await loadProdProduction(defDate, items)
+        } catch(e) { /* não bloqueia login */ }
         hideLoad()
         setScreen('geolar')
         return
@@ -468,12 +474,16 @@ export default function ProducaoPage() {
   // ── geolar ───────────────────────────────────────────────────────
   const loadGeolar = async (dateKey: string) => {
     setGeolarDate(dateKey)
+    setProdDate(dateKey)
     showLoad('Carregando produção...')
     try {
       await loadBreads()
       const map = await loadOrders(dateKey)
       setGeolarOrders(map)
       setOrders(map)
+      // Recarrega Itens JC pra mesma data
+      const items = await loadProdItems()
+      await loadProdProduction(dateKey, items)
     } catch(e) { showToast('Erro ao carregar.') }
     finally { hideLoad() }
   }
@@ -497,6 +507,18 @@ export default function ProducaoPage() {
       const fr = Object.values(pjSv)[0] as any
       lines.push(''); lines.push(`*PJ — ${fr?.pj_client||'—'} · ${fr?.pj_delivery_date||'—'}*`)
       pjItems.forEach(p => lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`))
+    }
+    // Itens JC (não-pães) — só inclui se algum tem qty > 0
+    const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
+    if (itensWithQty.length) {
+      const groupedJC: Record<string, ProdItem[]> = {}
+      itensWithQty.forEach(p => { (groupedJC[p.category] ??= []).push(p) })
+      lines.push(''); lines.push(`*Itens JC — Produção*`)
+      Object.keys(groupedJC).forEach(cat => {
+        lines.push(`_${cat}_`)
+        groupedJC[cat].forEach(p => lines.push(`${p.name}: ${prodQtys[p.id]||0}`))
+      })
+      if (prodObs) lines.push(`📝 ${prodObs}`)
     }
     const text = lines.join('\n')
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(()=>showToast('Copiado! Cole no WhatsApp.')).catch(()=>prompt('Copie:',text))
@@ -541,6 +563,7 @@ export default function ProducaoPage() {
     <GeolarScreen
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
       delivIdx={delivIdx}
+      prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       onDateChange={loadGeolar}
       onWhatsApp={()=>generateWhatsApp(geolarOrders)}
       onLogout={logout}
@@ -1139,11 +1162,12 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
 
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
+  prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
   onDateChange:(d:string)=>void; onWhatsApp:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, geolarDate, delivIdx, onDateChange, onWhatsApp, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   let grand = 0
@@ -1190,6 +1214,38 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, onDateChange, onWh
             {pjBreads.map(p=><div key={p.id} style={{fontSize:12}}>{p.name}: {pjSv[p.id]?.quantity||0}</div>)}
           </div>}
         </div>
+
+        {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
+        {(() => {
+          const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
+          if (!itensWithQty.length) return null
+          const grouped: Record<string, ProdItem[]> = {}
+          itensWithQty.forEach(p => { (grouped[p.category] ??= []).push(p) })
+          const cats = Object.keys(grouped)
+          const totalQty = itensWithQty.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
+          return (
+            <div className="print-card" style={{marginTop:16}}>
+              <h3>Itens JC — Produção</h3>
+              <div className="pmeta">Para {dLabel} · {totalQty} unidades</div>
+              {cats.map(cat => (
+                <div key={cat} style={{marginTop:10}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:'.04em'}}>{cat}</div>
+                  {grouped[cat].map(p => (
+                    <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:13}}>
+                      <span>{p.name}</span>
+                      <strong>{prodQtys[p.id]}</strong>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {prodObs && (
+                <div style={{marginTop:10,fontSize:12,color:'var(--text-muted)',padding:'8px 10px',background:'var(--amber-bg)',borderRadius:'var(--radius-sm)'}}>
+                  📝 {prodObs}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         <div className="btn-row" style={{marginTop:12}}>
           <button className="btn-save" onClick={()=>window.print()}>Imprimir</button>
