@@ -107,9 +107,11 @@ export default function EncomendasPage() {
 
   // ===== Itens =====
   const filteredCatalog = useMemo(() => {
+    // Sem busca: dropdown fechado. Catálogo tem ~325 produtos + 35 pães,
+    // mostrar tudo polui a tela e cobre o botão Salvar (position:absolute).
+    if (search.trim().length < 1) return []
     const used = new Set(lines.map(l => `${l.product_source}_${l.product_id}`))
     const avail = catalog.filter(c => !used.has(`${c._source}_${c.id}`))
-    if (search.trim().length < 1) return avail.slice(0, 15)
     const q = search.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
     return avail.filter(c => c.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').includes(q)).slice(0, 15)
   }, [catalog, lines, search])
