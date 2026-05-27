@@ -10,11 +10,17 @@ const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
+// Categorias de products que NAO entram em "Itens JC" (lista de producao nao-pao).
+// INSUMOS = ingredientes; Paes* = ja tem fluxo em /forno via tabela breads.
+const NON_PRODUCT_CATS = ['INSUMOS','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados']
+
 type UserKey = 'rodrigo'|'marselle'|'elis'|'geolar'
 type Store = 'jc'|'ja'|'ex'|'pj'
 type Screen = 'init'|'login'|'main'|'geolar'
 
 interface Bread { id:string; name:string; days:any; active:boolean; is_pj:boolean }
+interface ProdItem { id:string; name:string; category:string; unit:string|null }
+interface ProdProductionRow { product_id:string; quantity:number; obs:string|null }
 interface OrderRow { store:string; bread_id:string; quantity:number; obs:string; pj_client?:string; pj_delivery_date?:string; order_date:string }
 type OrderMap = Record<string, Record<string, OrderRow>>
 type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
@@ -140,6 +146,12 @@ export default function ProducaoPage() {
   // geolar date picker
   const [geolarDate, setGeolarDate] = useState(todayKey())
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
+  // Itens JC (producao de nao-paes — bolos, salgados, doces, etc)
+  const [prodItems, setProdItems] = useState<ProdItem[]>([])
+  const [prodQtys, setProdQtys]   = useState<Record<string,number>>({})
+  const [prodObs, setProdObs]     = useState('')
+  const [prodDate, setProdDate]   = useState(todayKey())
+  const [prodSaving, setProdSaving] = useState(false)
 
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
   const hideLoad = () => setLoading(false)
@@ -166,6 +178,53 @@ export default function ProducaoPage() {
       throw e
     }
   }, [])
+
+  // Itens JC — carregar produtos elegiveis (uma vez) + producao do dia
+  const loadProdItems = useCallback(async () => {
+    const cats = NON_PRODUCT_CATS.map(c => `"${c}"`).join(',')
+    const data: ProdItem[] = await sbGet('products', `active=eq.true&category=not.in.(${encodeURIComponent(cats)})&select=id,name,category,unit&order=category.asc,name.asc`)
+    setProdItems(data)
+    return data
+  }, [])
+
+  const loadProdProduction = useCallback(async (dateKey: string, items: ProdItem[]) => {
+    const rows: ProdProductionRow[] = await sbGet('product_production', `store=eq.jc&production_date=eq.${dateKey}&select=product_id,quantity,obs`)
+    const qs: Record<string,number> = {}
+    items.forEach(p => { qs[p.id] = 0 })
+    let firstObs = ''
+    rows.forEach(r => {
+      qs[r.product_id] = Number(r.quantity) || 0
+      if (!firstObs && r.obs) firstObs = r.obs
+    })
+    setProdQtys(qs)
+    setProdObs(firstObs)
+  }, [])
+
+  const saveItensJC = async () => {
+    if (!prodItems.length) return
+    setProdSaving(true)
+    setSyncState('syncing')
+    try {
+      await sbDel('product_production', { store: 'jc', production_date: prodDate })
+      const rows = prodItems
+        .map(p => ({
+          store: 'jc',
+          product_id: p.id,
+          quantity: prodQtys[p.id] || 0,
+          production_date: prodDate,
+          obs: prodObs || null,
+        }))
+        .filter(r => r.quantity > 0)
+      if (rows.length > 0) {
+        await sbUpsert('product_production', rows, 'store,product_id,production_date')
+      }
+      setSyncState('')
+      showToast('Lista de itens salva!')
+    } catch(e) {
+      setSyncState('error')
+      showToast('Erro ao salvar. Tente novamente.')
+    } finally { setProdSaving(false) }
+  }
 
   const initOrderState = useCallback((map: OrderMap, bds: Bread[]) => {
     const newQtys: Record<string,number> = {}
@@ -210,6 +269,13 @@ export default function ProducaoPage() {
       setOrderDate(defDate)
       initOrderState(map, bds)
       setActiveTab(0)
+      // Rodrigão: pré-carrega catálogo de Itens JC pra evitar lag ao clicar a aba
+      if (user === 'rodrigo') {
+        try {
+          const items = await loadProdItems()
+          await loadProdProduction(prodDate, items)
+        } catch(e) { /* não bloqueia login */ }
+      }
       hideLoad()
       setScreen('main')
     } catch(e) {
@@ -446,10 +512,21 @@ export default function ProducaoPage() {
   }
 
   const tabDefs = currentUser === 'rodrigo'
-    ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Relatório',store:null},{label:'Admin',store:null}]
+    ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Itens JC',store:null},{label:'Relatório',store:null},{label:'Admin',store:null}]
     : currentUser === 'marselle'
     ? [{label:'Loja EX',store:'ex'},{label:'Histórico',store:null}]
     : [{label:'Pedido PJ',store:'pj'},{label:'Histórico',store:null}]
+
+  const changeProdDate = async (newDate: string) => {
+    setProdDate(newDate)
+    showLoad('Carregando lista...')
+    try {
+      await loadProdProduction(newDate, prodItems)
+    } catch(e) { showToast('Erro ao carregar.') }
+    finally { hideLoad() }
+  }
+  const setProdQty = (id: string, val: number) => setProdQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
+  const calcProdTotal = () => prodItems.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
 
   // ── render helpers ───────────────────────────────────────────────
   const setQty = (key: string, val: number) => setQtys(prev=>({...prev,[key]:Math.max(0,val)}))
@@ -476,6 +553,7 @@ export default function ProducaoPage() {
   const isOrderTab = activeStore === 'jc' || activeStore === 'ja' || activeStore === 'ex' || activeStore === 'pj'
   const isReportTab = tabDefs[activeTab]?.label === 'Relatório' || tabDefs[activeTab]?.label === 'Histórico'
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
+  const isItensTab = tabDefs[activeTab]?.label === 'Itens JC'
 
   const globalUser = getCurrentUser()
   const displayName = globalUser?.displayName ?? ''
@@ -560,6 +638,17 @@ export default function ProducaoPage() {
             onWhatsApp={()=>generateWhatsApp(orders)}
           />
         )}
+        {isItensTab && (
+          <ItensJCForm
+            prodItems={prodItems}
+            prodQtys={prodQtys}
+            prodObs={prodObs}
+            prodDate={prodDate}
+            onDateChange={changeProdDate}
+            onQtyChange={setProdQty}
+            onObsChange={setProdObs}
+          />
+        )}
       </div>
 
       {/* Bottom bar */}
@@ -568,6 +657,14 @@ export default function ProducaoPage() {
           <div className="total-info">Total: <strong>{calcTotal(activeStore as Store)}</strong> unidades</div>
           <button className="btn-save" disabled={saving} onClick={()=>saveOrder(activeStore as Store)}>
             {saving ? 'Salvando...' : activeStore==='pj'?'Salvar pedido PJ':'Salvar pedido'}
+          </button>
+        </div>
+      )}
+      {isItensTab && (
+        <div className="bottom-bar">
+          <div className="total-info">Total: <strong>{calcProdTotal()}</strong> unidades</div>
+          <button className="btn-save" disabled={prodSaving} onClick={saveItensJC}>
+            {prodSaving ? 'Salvando...' : 'Salvar lista'}
           </button>
         </div>
       )}
@@ -969,6 +1066,72 @@ function BreadFormModal({ editingBread, form, onChange, onSave, onCancel, saving
       <div style={{display:'flex',gap:10,marginTop:20}}>
         <button className="btn-save" onClick={onSave} disabled={saving}>{saving?'Salvando...':editingBread?'Salvar':'Cadastrar'}</button>
         <button className="btn-action" onClick={onCancel}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+interface ItensJCFormProps {
+  prodItems: ProdItem[]
+  prodQtys: Record<string, number>
+  prodObs: string
+  prodDate: string
+  onDateChange: (d: string) => void
+  onQtyChange: (id: string, val: number) => void
+  onObsChange: (obs: string) => void
+}
+
+function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQtyChange, onObsChange }: ItensJCFormProps) {
+  // Agrupa por categoria preservando ordem alfabética (do query)
+  const grouped = prodItems.reduce<Record<string, ProdItem[]>>((acc, p) => {
+    (acc[p.category] ??= []).push(p)
+    return acc
+  }, {})
+  const cats = Object.keys(grouped) // já ordenado pela query
+  const isToday = prodDate === todayKey()
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>
+        <div className="section-label" style={{marginBottom:6,marginTop:0}}>Data de produção</div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <input type="date" value={prodDate}
+            className="obs-area" style={{width:'auto',padding:'8px 12px',fontSize:13,minHeight:'auto'}}
+            onChange={e=>onDateChange(e.target.value)}/>
+          {isToday && <span style={{fontSize:11,color:'var(--teal)',background:'var(--teal-bg)',border:'1px solid var(--teal-border)',padding:'2px 8px',borderRadius:10}}>hoje</span>}
+        </div>
+      </div>
+
+      {prodItems.length === 0 ? (
+        <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0'}}>Nenhum produto ativo no catálogo (categorias não-pão).</div>
+      ) : cats.map(cat => (
+        <div key={cat} style={{marginBottom:16}}>
+          <div className="section-label">{cat} ({grouped[cat].length})</div>
+          <div className="bread-list">
+            {grouped[cat].map(p => {
+              const val = prodQtys[p.id] || 0
+              return (
+                <div key={p.id} className={`bread-row${val>0?' has-qty':''}`}>
+                  <div className="bread-info">
+                    <div className="bread-name">{p.name}</div>
+                    {p.unit && <div className="bread-days">{p.unit}</div>}
+                  </div>
+                  <div className="qty-wrap">
+                    <button className="qty-btn" onClick={()=>onQtyChange(p.id, val-1)}>−</button>
+                    <input className="qty-input" type="number" inputMode="numeric" min={0} value={val || ''} placeholder="0"
+                      onChange={e=>onQtyChange(p.id, parseInt(e.target.value) || 0)}/>
+                    <button className="qty-btn" onClick={()=>onQtyChange(p.id, val+1)}>+</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{marginTop:14}}>
+        <div className="section-label" style={{marginTop:0}}>Observações</div>
+        <textarea className="obs-area" placeholder="Notas para a equipe de produção..." value={prodObs} onChange={e=>onObsChange(e.target.value)}/>
       </div>
     </div>
   )
