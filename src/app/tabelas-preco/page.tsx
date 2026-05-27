@@ -58,7 +58,7 @@ export default function TabelasPrecoPage() {
       supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
       supabase.from('customer_price_overrides').select('*').eq('active', true),
       supabase.from('breads').select('id,name,unit').eq('active', true),
-      supabase.from('products').select('id,name,unit').eq('active', true).or('is_pj.eq.true,is_special.eq.true'),
+      supabase.from('products').select('id,name,unit').eq('active', true).neq('category', 'INSUMOS'),
     ])
     setTiers((tRes.data || []) as PriceTier[])
     setItems((iRes.data || []) as TierItem[])
@@ -338,7 +338,7 @@ export default function TabelasPrecoPage() {
 
               <div className="card" style={{marginBottom:14,position:'relative'}}>
                 <div className="card-title">+ Adicionar produto</div>
-                <input placeholder="Buscar pão ou produto PJ..." value={search} onChange={e=>setSearch(e.target.value)}
+                <input placeholder="Buscar pão ou produto..." value={search} onChange={e=>setSearch(e.target.value)}
                   style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
                 {filteredCatalog.length > 0 && (
                   <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:240,overflowY:'auto',boxShadow:'0 4px 12px rgba(0,0,0,.08)'}}>
