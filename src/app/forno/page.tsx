@@ -44,6 +44,8 @@ export default function FornoPage() {
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
   const [pjMap, setPjMap]           = useState<Map<string, number>>(new Map())  // qtd PJ por bread_id
   const [pjOrderCount, setPjOrderCount] = useState(0)  // qtd de pedidos PJ no dia
+  const [encMap, setEncMap]         = useState<Map<string, number>>(new Map())  // qtd encomendas por bread_id
+  const [encOrderCount, setEncOrderCount] = useState(0)
   const [forms, setForms] = useState<Record<string, FormState>>({})
   const [expandedDescarte, setExpandedDescarte] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
@@ -58,11 +60,13 @@ export default function FornoPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [resLojas, resPj, resActuals] = await Promise.all([
-        // Pedidos das lojas: store != 'pj' + order_date = date
-        supabase.from('orders').select('bread_id, quantity').neq('store', 'pj').eq('order_date', date).gt('quantity', 0),
+      const [resLojas, resPj, resEnc, resActuals] = await Promise.all([
+        // Pedidos das lojas: store != 'pj' e != 'encomenda' + order_date = date
+        supabase.from('orders').select('bread_id, quantity').not('store', 'in', '("pj","encomenda")').eq('order_date', date).gt('quantity', 0),
         // TODOS pedidos PJ — filtra JS por production_date (novos) OU pj_delivery_date (legados)
         supabase.from('orders').select('id, bread_id, quantity, production_date, pj_delivery_date').eq('store', 'pj').gt('quantity', 0),
+        // Encomendas — só product_source='bread' entra no forno (products não passam por aqui)
+        supabase.from('orders').select('id, bread_id, quantity, product_source').eq('order_type', 'encomenda').eq('production_date', date).gt('quantity', 0),
         supabase.from('production_actuals').select('*').eq('record_date', date),
       ])
 
@@ -74,12 +78,16 @@ export default function FornoPage() {
       )
       const pjOrderIds = new Set(pjRowsFiltered.map((r: any) => r.id))
 
+      // Encomendas: só linhas com produto que existe em breads (product_source='bread')
+      const encRows = (resEnc.data || []).filter((o: any) => o.product_source === 'bread')
+
       const lojasRows = resLojas.data || []
-      const ordersAll = [...lojasRows, ...pjRowsFiltered]
+      const ordersAll = [...lojasRows, ...pjRowsFiltered, ...encRows]
       const breadIds = Array.from(new Set(ordersAll.map((o: any) => o.bread_id)))
 
       if (breadIds.length === 0) {
         setBreads([]); setPlannedMap(new Map()); setPjMap(new Map()); setPjOrderCount(0)
+        setEncMap(new Map()); setEncOrderCount(0)
         setForms({}); setExpandedDescarte({})
         setLoading(false)
         return
@@ -96,15 +104,21 @@ export default function FornoPage() {
 
       const planned = new Map<string, number>()
       const pj      = new Map<string, number>()
+      const enc     = new Map<string, number>()
       ordersAll.forEach((o: any) => {
         planned.set(o.bread_id, (planned.get(o.bread_id) || 0) + Number(o.quantity))
       })
       pjRowsFiltered.forEach((o: any) => {
         pj.set(o.bread_id, (pj.get(o.bread_id) || 0) + Number(o.quantity))
       })
+      encRows.forEach((o: any) => {
+        enc.set(o.bread_id, (enc.get(o.bread_id) || 0) + Number(o.quantity))
+      })
       setPlannedMap(planned)
       setPjMap(pj)
       setPjOrderCount(pjOrderIds.size)
+      setEncMap(enc)
+      setEncOrderCount(encRows.length)
 
       const initial: Record<string, FormState> = {}
       const expanded: Record<string, boolean> = {}
@@ -295,6 +309,17 @@ export default function FornoPage() {
         </div>
       )}
 
+      {encOrderCount > 0 && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <span style={{ color: '#9a3412' }}>
+            🎂 <strong>{encOrderCount}</strong> encomenda(s) produzindo neste dia
+          </span>
+          <a href="/encomendas" style={{ color: '#9a3412', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
+            Ver detalhes →
+          </a>
+        </div>
+      )}
+
       {breads.length === 0 ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
           <p>Nenhum pão com pedido para {formatDateBR(date)}.</p>
@@ -309,8 +334,14 @@ export default function FornoPage() {
             const f = forms[b.id]
             const planned = plannedMap.get(b.id) || 0
             const pjQty  = pjMap.get(b.id) || 0
-            const lojaQty = planned - pjQty
+            const encQty = encMap.get(b.id) || 0
+            const lojaQty = planned - pjQty - encQty
             const isExpanded = expandedDescarte[b.id]
+            // Só mostra breakdown quando misto (2+ fontes contribuem)
+            const breakdownParts: string[] = []
+            if (lojaQty > 0) breakdownParts.push(`${lojaQty} lojas`)
+            if (pjQty > 0)   breakdownParts.push(`${pjQty} PJ`)
+            if (encQty > 0)  breakdownParts.push(`${encQty} encomenda${encQty > 1 ? 's' : ''}`)
 
             return (
               <div key={b.id} style={{
@@ -328,9 +359,9 @@ export default function FornoPage() {
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'right' }}>
                     Planejado: <strong style={{ color: 'var(--text)' }}>{planned}</strong>
-                    {pjQty > 0 && (
-                      <div style={{ fontSize: '0.68rem', marginTop: 2, color: '#1e40af' }}>
-                        {lojaQty > 0 ? `${lojaQty} lojas + ` : ''}{pjQty} PJ
+                    {breakdownParts.length > 1 && (
+                      <div style={{ fontSize: '0.68rem', marginTop: 2, color: 'var(--muted)' }}>
+                        {breakdownParts.join(' + ')}
                       </div>
                     )}
                   </div>
