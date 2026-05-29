@@ -22,6 +22,7 @@ export default function ProdutosPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
   const [loading, setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
   const [catFilter, setCat]     = useState('Todos')
   const [editItem, setEditItem] = useState<Partial<Product>|null>(null)
@@ -33,13 +34,21 @@ export default function ProdutosPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: ps }, { data: bs }] = await Promise.all([
-      supabase.from('products').select('*').order('category').order('name'),
-      supabase.from('breads').select('*').order('name'),
-    ])
-    setProducts(ps||[])
-    setBreads(bs||[])
-    setLoading(false)
+    setLoadError(null)
+    try {
+      const [pRes, bRes] = await Promise.all([
+        supabase.from('products').select('*').order('category').order('name'),
+        supabase.from('breads').select('*').order('name'),
+      ])
+      if (pRes.error) throw pRes.error
+      if (bRes.error) throw bRes.error
+      setProducts(pRes.data||[])
+      setBreads(bRes.data||[])
+    } catch(e:any) {
+      setLoadError(e?.message || 'Falha ao carregar os dados.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function save() {
@@ -177,7 +186,16 @@ export default function ProdutosPage() {
         </div>
       )}
 
-      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Carregando...</div> : (
+      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Carregando...</div> : loadError ? (
+        <div style={{textAlign:'center',padding:30}}>
+          <div style={{color:'#b91c1c',fontSize:'.9rem',marginBottom:14}}>⚠️ Não foi possível carregar os dados.</div>
+          <div style={{color:'var(--muted)',fontSize:'.78rem',marginBottom:16}}>{loadError}</div>
+          <button onClick={()=>load()}
+            style={{padding:'8px 16px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.85rem',fontWeight:700}}>
+            Tentar de novo
+          </button>
+        </div>
+      ) : (
         tab === 'produtos' ? (
           Object.entries(grouped).map(([cat, items])=>(
             <div key={cat} className="card">
