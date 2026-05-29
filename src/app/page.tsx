@@ -1181,20 +1181,31 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
   const pjBreads = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
   const dLabel = (() => { const d=new Date(geolarDate+'T12:00:00'); return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'}) })()
 
+  const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
+  const hasBreads = printRows.length > 0 || pjBreads.length > 0
+
+  // Impressão de listas separadas: aplica classe no #app que oculta o outro card via @media print
+  const [printScope, setPrintScope] = useState<''|'breads'|'itens'>('')
+  useEffect(() => {
+    if (!printScope) return
+    window.print()
+    setPrintScope('')
+  }, [printScope])
+
   return (
-    <div id="app">
+    <div id="app" className={printScope==='breads' ? 'print-only-breads' : printScope==='itens' ? 'print-only-itens' : ''}>
       <div className="topbar">
         <div className="topbar-logo" onClick={onLogout} style={{cursor:'pointer'}}>Pane &amp; Salute</div>
         <span className="topbar-badge tb-gray">Geolar</span>
         <button className="btn-logout" onClick={onLogout}>Sair</button>
       </div>
       <div style={{padding:'16px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:'1rem'}}>
+        <div className="no-print" style={{display:'flex',alignItems:'center',gap:8,marginBottom:'1rem'}}>
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Data dos pedidos:</span>
           <input type="date" value={geolarDate} className="obs-area" style={{width:'auto',padding:'6px 10px',fontSize:13,minHeight:'auto'}} onChange={e=>onDateChange(e.target.value)}/>
         </div>
 
-        <div className="print-card">
+        <div className="print-card print-breads">
           <h3>Pane &amp; Salute — Produção</h3>
           <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
           <div className="print-row ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
@@ -1217,14 +1228,13 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
 
         {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
         {(() => {
-          const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
           if (!itensWithQty.length) return null
           const grouped: Record<string, ProdItem[]> = {}
           itensWithQty.forEach(p => { (grouped[p.category] ??= []).push(p) })
           const cats = Object.keys(grouped)
           const totalQty = itensWithQty.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
           return (
-            <div className="print-card" style={{marginTop:16}}>
+            <div className="print-card print-itens" style={{marginTop:16}}>
               <h3>Itens JC — Produção</h3>
               <div className="pmeta">Para {dLabel} · {totalQty} unidades</div>
               {cats.map(cat => (
@@ -1248,7 +1258,8 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
         })()}
 
         <div className="btn-row" style={{marginTop:12}}>
-          <button className="btn-save" onClick={()=>window.print()}>Imprimir</button>
+          <button className="btn-save" disabled={!hasBreads} onClick={()=>setPrintScope('breads')}>🥖 Imprimir pães</button>
+          <button className="btn-save" disabled={!itensWithQty.length} onClick={()=>setPrintScope('itens')}>🧁 Imprimir Itens JC</button>
           <button className="btn-action" onClick={onWhatsApp}>Copiar texto</button>
           <button className="btn-action" onClick={()=>onDateChange(geolarDate)}>↻ Atualizar</button>
         </div>
