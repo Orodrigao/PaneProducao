@@ -1,83 +1,117 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { getCurrentUser, canAccess, logout } from '@/lib/auth'
+import {
+  ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
+  Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
+  Users, Building2, Cake, Table2, SlidersHorizontal, Settings, LogOut,
+  type LucideIcon,
+} from 'lucide-react'
 
-const ALL_LINKS = [
-  { href: '/',                  label: 'Produção',  icon: '🍞' },
-  { href: '/forno',             label: 'Forno',     icon: '🔥' },
-  { href: '/sobras',            label: 'Sobras',    icon: '♻️' },
-  { href: '/romaneio',          label: 'Romaneio',  icon: '🚚' },
-  { href: '/estoque-congelado', label: 'Congelado', icon: '🧊' },
-  { href: '/estoque-paes',      label: 'Saldo Pães',icon: '📊' },
-  { href: '/compras',           label: 'Compras',   icon: '🛒' },
-  { href: '/estoque',           label: 'Estoque',   icon: '📊' },
-  { href: '/produtos',          label: 'Produtos',  icon: '📦' },
-  { href: '/clientes',          label: 'Clientes',  icon: '👥' },
-  { href: '/tabelas-preco',     label: 'Tabelas',   icon: '📋' },
-  { href: '/pedidos-pj',        label: 'Pedidos PJ',icon: '🧾' },
-  { href: '/encomendas',        label: 'Encomendas',icon: '🎂' },
-  { href: '/simulador-desconto',label: 'Simulador', icon: '✨' },
-  { href: '/relatorios',        label: 'Relatórios',icon: '📈' },
-  { href: '/admin/usuarios',    label: 'Admin',     icon: '⚙️', adminOnly: true },
+interface NavLink { href: string; label: string; Icon: LucideIcon; adminOnly?: boolean }
+
+const PRIMARY: NavLink[] = [
+  { href: '/',          label: 'Produção',   Icon: ClipboardList },
+  { href: '/forno',     label: 'Forno',      Icon: Flame },
+  { href: '/romaneio',  label: 'Romaneio',   Icon: Truck },
+  { href: '/relatorios',label: 'Relatórios', Icon: BarChart3 },
+]
+
+const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
+  { group: 'Operação', items: [
+    { href: '/sobras',            label: 'Sobras',    Icon: Recycle },
+    { href: '/estoque-congelado', label: 'Congelado', Icon: Snowflake },
+    { href: '/estoque-paes',      label: 'Saldo Pães',Icon: Scale },
+    { href: '/estoque',           label: 'Estoque',   Icon: Boxes },
+  ]},
+  { group: 'Comercial', items: [
+    { href: '/compras',     label: 'Compras',    Icon: ShoppingCart },
+    { href: '/produtos',    label: 'Produtos',   Icon: Croissant },
+    { href: '/clientes',    label: 'Clientes',   Icon: Users },
+    { href: '/pedidos-pj',  label: 'Pedidos PJ', Icon: Building2 },
+    { href: '/encomendas',  label: 'Encomendas', Icon: Cake },
+  ]},
+  { group: 'Gestão', items: [
+    { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
+    { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
+    { href: '/admin/usuarios',     label: 'Admin',     Icon: Settings, adminOnly: true },
+  ]},
 ]
 
 export default function Nav() {
   const pathname = usePathname()
   const router = useRouter()
   const user = getCurrentUser()
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   // Na tela de login não mostra a Nav
   if (pathname === '/login' || !user) return null
 
-  const links = ALL_LINKS.filter(l => {
-    if ((l as any).adminOnly && user.role !== 'admin') return false
+  const allowed = (l: NavLink) => {
+    if (l.adminOnly && user.role !== 'admin') return false
     return canAccess(user, l.href)
-  })
+  }
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/')
+
+  const primary = PRIMARY.filter(allowed)
+  const moreGroups = MORE_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(allowed) }))
+    .filter(g => g.items.length > 0)
+  const moreActive = moreGroups.some(g => g.items.some(i => isActive(i.href)))
 
   function handleLogout() {
+    setSheetOpen(false)
     logout()
     router.replace('/login')
   }
 
   return (
-    <nav style={{
-      position: 'fixed', bottom: 0, left: 0, right: 0,
-      background: 'white', borderTop: '1px solid var(--border)',
-      display: 'flex', zIndex: 100, boxShadow: '0 -2px 8px rgba(0,0,0,0.08)'
-    }}>
-      {links.map(l => {
-        const active = l.href === '/'
-          ? pathname === '/'
-          : pathname === l.href || pathname.startsWith(l.href + '/')
-        return (
-          <Link key={l.href} href={l.href} style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            padding: '8px 2px 6px', textDecoration: 'none',
-            color: active ? 'var(--primary)' : 'var(--muted)',
-            borderTop: active ? '2px solid var(--primary)' : '2px solid transparent',
-            fontSize: '0.62rem', fontWeight: active ? 700 : 400, gap: '2px'
-          }}>
-            <span style={{ fontSize: '1.2rem' }}>{l.icon}</span>
-            {l.label}
+    <>
+      <nav className="ps-nav">
+        {primary.map(l => (
+          <Link key={l.href} href={l.href} className={'ps-navitem' + (isActive(l.href) ? ' active' : '')}>
+            <span className="nic"><l.Icon size={22} strokeWidth={1.85} /></span>
+            <span>{l.label}</span>
           </Link>
-        )
-      })}
+        ))}
+        <button className={'ps-navitem' + (moreActive ? ' active' : '')} onClick={() => setSheetOpen(true)} aria-label="Mais seções">
+          <span className="nic"><LayoutGrid size={22} strokeWidth={1.85} /></span>
+          <span>Mais</span>
+        </button>
+      </nav>
 
-      {/* Botão de sair */}
-      <button
-        onClick={handleLogout}
-        title={`Sair (${user.displayName})`}
-        style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '8px 2px 6px', border: 'none', background: 'none', cursor: 'pointer',
-          color: 'var(--muted)', borderTop: '2px solid transparent',
-          fontSize: '0.62rem', fontWeight: 400, gap: '2px'
-        }}
-      >
-        <span style={{ fontSize: '1.2rem' }}>🚪</span>
-        Sair
-      </button>
-    </nav>
+      {sheetOpen && (
+        <div className="ps-sheet-overlay" onClick={() => setSheetOpen(false)}>
+          <div className="ps-sheet" onClick={e => e.stopPropagation()}>
+            <div className="ps-sheet-grab" />
+            <h3>Todas as seções</h3>
+            {moreGroups.map(g => (
+              <div key={g.group}>
+                <div className="ps-sheet-sep">{g.group}</div>
+                <div className="ps-sheet-grid">
+                  {g.items.map(it => (
+                    <Link key={it.href} href={it.href} onClick={() => setSheetOpen(false)}
+                      className={'ps-sheet-item' + (isActive(it.href) ? ' active' : '')}>
+                      <span className="si"><it.Icon size={22} strokeWidth={1.85} /></span>
+                      <span>{it.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="ps-sheet-sep">Conta</div>
+            <div className="ps-sheet-grid">
+              <button className="ps-sheet-item" onClick={handleLogout}>
+                <span className="si" style={{ color: 'var(--berry)' }}><LogOut size={22} strokeWidth={1.85} /></span>
+                <span>Sair</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
