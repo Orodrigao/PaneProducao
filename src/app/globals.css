@@ -374,3 +374,58 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-fadein{ animation:psfadein .35s ease; }
 @keyframes psfadein{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:none;} }
 .ps-empty{ color:var(--ink-faint); text-align:center; padding:40px 0; font-weight:600; font-family:var(--font-ui); }
+
+/* ── Loading (shell) ───────────────────────────────────────────── */
+.ps-loading{ min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:var(--flour-deep); color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; }
+.ps-spinner{ width:34px; height:34px; border:3px solid var(--ps-line); border-top-color:var(--crust); border-radius:50%; animation:spin .7s linear infinite; }
+
+/* ── LOGIN (ps) ────────────────────────────────────────────────── */
+.ps-login{ min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px 18px calc(28px + env(safe-area-inset-bottom)); font-family:var(--font-ui); color:var(--ps-ink); background:radial-gradient(1200px 600px at 50% -10%, rgba(216,154,60,.10), transparent 60%), var(--flour); }
+.ps-login-box{ width:100%; max-width:380px; display:flex; flex-direction:column; align-items:center; }
+.ps-login-logo{ text-align:center; margin-bottom:26px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.ps-login-mark{ width:60px; height:60px; border-radius:17px; background:linear-gradient(180deg,var(--crust),var(--crust-deep)); color:#FCEFDD; display:grid; place-items:center; font-family:var(--font-display); font-weight:700; font-size:32px; box-shadow:var(--sh-2); }
+.ps-login-logo h1{ font-family:var(--font-display); font-weight:600; font-size:26px; letter-spacing:.2px; color:var(--ps-ink); }
+.ps-login-logo p{ font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; margin-top:-2px; }
+.ps-login-grid{ display:grid; grid-template-columns:1fr 1fr; gap:11px; width:100%; }
+.ps-login-user{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:18px 10px; border:1px solid var(--ps-line); background:var(--cream); border-radius:var(--r-card); cursor:pointer; transition:.15s; box-shadow:var(--sh-1); }
+.ps-login-user:hover{ border-color:var(--honey-line); background:var(--honey-tint); transform:translateY(-2px); }
+.ps-login-user:active{ transform:translateY(0); }
+.ps-login-av{ width:46px; height:46px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; font-size:18px; }
+.ps-login-name{ font-size:14.5px; font-weight:700; color:var(--ps-ink); }
+.ps-login-role{ font-size:11.5px; font-weight:600; }
+.ps-login-pin{ width:100%; max-width:300px; display:flex; flex-direction:column; align-items:center; }
+.ps-login-back{ align-self:flex-start; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:13.5px; cursor:pointer; padding:4px 0; margin-bottom:14px; }
+.ps-login-back:hover{ color:var(--crust); }
+.ps-login-sel{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+.ps-login-sel .ps-login-av{ width:48px; height:48px; font-size:19px; }
+.ps-login-sel b{ font-size:16px; font-weight:700; color:var(--ps-ink); }
+.ps-login-sel small{ display:block; font-size:12px; font-weight:600; margin-top:1px; }
+.ps-pin-dots{ display:flex; gap:14px; justify-content:center; margin-bottom:10px; }
+.ps-pin-dot{ width:14px; height:14px; border-radius:50%; background:var(--ps-line); transition:.12s; }
+.ps-pin-dot.on{ background:var(--crust); transform:scale(1.05); }
+.ps-login-err{ color:var(--berry); font-size:13px; font-weight:600; margin-bottom:6px; min-height:18px; }
+.ps-keypad{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; width:100%; margin-top:14px; }
+.ps-key{ height:60px; border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); color:var(--ps-ink); font-family:var(--font-ui); font-weight:700; font-size:23px; cursor:pointer; box-shadow:var(--sh-1); transition:.1s; display:grid; place-items:center; }
+.ps-key:hover{ background:var(--honey-tint); border-color:var(--honey-line); }
+.ps-key:active{ transform:scale(.96); }
+.ps-key.ghost{ background:transparent; border:0; box-shadow:none; cursor:default; }
+.ps-key.back{ color:var(--ink-soft); font-size:20px; }
+
+/* ── FORNO (ps helpers) ────────────────────────────────────────── */
+.ps-forno-intro{ font-size:13.5px; color:var(--ink-soft); margin:12px 0 4px; line-height:1.45; }
+.ps-banner{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:12px 0 4px; padding:11px 14px; border-radius:var(--r-ctrl); font-size:13px; font-weight:600; box-shadow:var(--sh-1); }
+.ps-banner.honey{ background:var(--honey-tint); border:1px solid var(--honey-line); color:#7A5418; }
+.ps-banner.crust{ background:var(--crust-tint); border:1px solid var(--honey-line); color:var(--crust-deep); }
+.ps-banner a{ color:inherit; font-weight:700; text-decoration:none; font-size:12.5px; white-space:nowrap; }
+.ps-banner a:hover{ text-decoration:underline; }
+.ps-card-meta{ text-align:right; font-size:12px; color:var(--ink-faint); font-weight:600; line-height:1.25; }
+.ps-card-meta b{ color:var(--ps-ink); font-size:14px; }
+.ps-card-meta small{ display:block; font-size:11px; margin-top:2px; }
+.ps-pjbadge{ margin-left:7px; background:var(--crust-tint); color:var(--crust); padding:2px 7px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:.04em; vertical-align:middle; }
+.ps-flabel{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; margin-bottom:7px; }
+.ps-discard-btn{ align-self:flex-start; border:0; background:transparent; color:var(--berry); font-family:var(--font-ui); font-weight:700; font-size:13px; cursor:pointer; padding:2px 0; }
+.ps-discard{ background:var(--berry-tint); border:1px solid #E6B5AC; border-radius:var(--r-ctrl); padding:12px; display:flex; flex-direction:column; gap:10px; }
+.ps-discard .ps-flabel{ color:var(--berry); margin:0; }
+.ps-discard-cancel{ align-self:flex-start; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:12px; cursor:pointer; padding:0; }
+.ps-select{ border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); padding:10px 12px; font-family:var(--font-ui); font-size:14px; font-weight:600; color:var(--ps-ink); width:100%; }
+.ps-select:focus{ outline:2px solid var(--honey); outline-offset:1px; }

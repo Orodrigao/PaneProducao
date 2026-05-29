@@ -1,36 +1,44 @@
-# TODO — Redesign visual "Pane & Salute" (Produção + nav)
+# TODO — Redesign visual "Pane & Salute" — Login + Forno
 
 **Criado:** 2026-05-29
-**Status:** implementado (tsc+build verdes) — aguardando verificação visual
-**Origem:** handoff do Claude Design (`Producao.html`). Escopo aprovado: **Produção + nova nav inferior**.
+**Status:** em implementação
+**Origem:** follow-up do PR #5 (redesign Produção + nav). Escopo aprovado pelo usuário: **Login + Forno primeiro**, depois Geolar/Relatório/Admin em PR separado.
 
-## Sistema visual
-- Paleta quente (farinha/creme/crosta/mel) via CSS vars novas (`--flour`, `--crust`, `--honey`...). Namespace `ps-*` (não colide com vars/classes atuais).
-- Fontes: Spectral (títulos) + Hanken Grotesk (UI) via Google Fonts. Aplicadas só dentro do escopo `ps-*`.
-- Ícones: `lucide-react`.
+## Sistema visual (já existente, namespace `ps-*`)
+Reusar tokens/classes do PR #5 em `globals.css`: `ps-canvas`, `ps-shell`, `ps-header`,
+`ps-wordmark`/`ps-mark`/`ps-brand`, `ps-userchip`/`ps-avatar`, `ps-pad`, `ps-label`,
+`ps-days`/`ps-day`, `ps-section`, `ps-grid`/`ps-card`/`ps-card-head`/`ps-pname`,
+`ps-stepper`/`ps-step`/`ps-qty`, `ps-totalbar`/`ps-total-num`/`ps-save`, `ps-empty`.
+Ícones Lucide. Fontes Spectral + Hanken (já no layout).
 
 ## Arquivos
-1. **`package.json`** — add `lucide-react`.
-2. **`src/app/layout.tsx`** — `<link>` Google Fonts (Spectral + Hanken Grotesk). Ajustar padding do body p/ nova nav.
-3. **`src/app/globals.css`** — colar tokens + classes `ps-*` (header, deadline, tabs, days, card, stepper, totalbar, nav, sheet) do design. Sem mexer no body/headings globais.
-4. **`src/components/Nav.tsx`** — reescrever para `ps-nav`: 4 primários (Produção/Forno/Romaneio/Relatórios) + botão **Mais** → bottom-sheet agrupado (Operação/Comercial/Gestão) + Sair. Filtrado por `canAccess`. Ícones Lucide.
-5. **`src/app/page.tsx`** — reescrever o render da tela `main` (não a lógica):
-   - `ps-shell` + `ps-header` (logo/wordmark + chip de usuário + sair)
-   - `ps-deadline` (banner de prazo — reusa `isLocked`/`hoursLeft`)
-   - `ps-tabs` (tabDefs atuais)
-   - aba de pedido: `ps-days` (delivIdx 1..6) + `ps-section` + `ps-grid`/`ps-card`/`ps-stepper` + `ps-totalbar` (Salvar pedido)
-   - PJ: preserva cliente/data
-   - Relatório/Admin: mantém funcional dentro do shell (polish fino fica p/ follow-up)
+1. **`src/app/globals.css`** — adicionar bloco focado:
+   - `ps-login-*` (wrap centralizado, logo, grid de usuários, card de PIN, keypad, dots).
+   - `ps-banner` (+`honey`/`crust`) p/ avisos PJ/encomenda do Forno.
+   - helpers Forno: `ps-forno-intro`, `ps-flabel`, `ps-pjbadge`, `ps-discard*`.
+   Sem mexer no que já existe.
+2. **`src/app/login/page.tsx`** — reescrever só o render:
+   - `ps-login` wrap (fundo farinha) + logo (mark "P" + Spectral).
+   - estado 1: grid de usuários (`ps-login-user`, avatar `roleColor`, nome, `roleLabel`).
+   - estado 2: header do usuário + dots de PIN + keypad numérico grande.
+   - **Preservar lógica:** fetchUsersFromSupabase/cache/redirect, authenticate, handlePin/Backspace/attemptLogin.
+3. **`src/app/forno/page.tsx`** — reescrever só o render:
+   - `ps-canvas`>`ps-shell`>`ps-header` (wordmark "Forno" + userchip).
+   - seletor de dia em `ps-days` (Hoje/Ontem/dd/mm, 8 dias).
+   - avisos PJ/encomenda em `ps-banner`.
+   - cada pão = `ps-card` (nome + badge PJ + planejado/breakdown), "Assado" em `ps-stepper`,
+     descarte em bloco expansível (`ps-stepper` + select motivo).
+   - barra fixa `ps-totalbar` (total assado/descarte + `ps-save`).
+   - **Preservar lógica:** loadData (orders/PJ/enc/actuals), save (idempotência + bread_movements),
+     adjustField, toggleDescarte, updateForm.
 
 ## Preservar (lógica intacta)
-Pedidos Supabase, delivIdx/DELIVERY_MAP, Telegram, Geolar (tela à parte — restyle fica p/ follow-up), Admin CRUD de pães, ItensJC, ReportView, auth/roles.
+Login: auth flow inteiro. Forno: queries Supabase, idempotência, movements, datas locais.
 
 ## Verificação
 - `npx tsc --noEmit` + `npm run build` verdes.
-- Conferência visual: limitada no preview (sem Supabase/login real); validar layout no preview e, idealmente, em produção depois.
+- Visual: limitado no preview (sem Supabase/login real); validar layout e, idealmente, em produção depois.
 
-## Fora de escopo (follow-up)
-- Login e Forno no novo visual.
-- Restyle detalhado de Relatório/Admin/Geolar.
-- Tweaks (cor/fonte/densidade) do protótipo.
-- Logo real (`logo-ink.png`) — por ora wordmark em Spectral; posso adicionar o asset depois.
+## Fora de escopo (próximo PR)
+- Geolar, ReportView, Admin CRUD detalhados.
+- Tweaks do protótipo, logo real (`logo-ink.png`).
