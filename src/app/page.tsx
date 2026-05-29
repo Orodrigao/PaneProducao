@@ -488,37 +488,43 @@ export default function ProducaoPage() {
     finally { hideLoad() }
   }
 
-  const generateWhatsApp = (ordMap: OrderMap) => {
-    const bds = breads.filter(b=>!b.is_pj&&b.active)
+  const generateWhatsApp = (ordMap: OrderMap, scope: 'all'|'breads'|'itens' = 'all') => {
     const stores: Store[] = ['ex','jc','ja']
     const dLabel = deliveryDayLabel(delivIdx)
-    let lines = [`*Pane & Salute — Produção ${dLabel}*\n`]
-    bds.forEach(b => {
-      const vals = stores.map(s => ordMap[s]?.[b.id]?.quantity || 0)
-      if (vals.reduce((a,c)=>a+c,0) > 0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`)
-    })
-    const oEX = Object.values(ordMap['ex']||{})[0]?.obs
-    const oJC = Object.values(ordMap['jc']||{})[0]?.obs
-    const oJA = Object.values(ordMap['ja']||{})[0]?.obs
-    if (oEX||oJC||oJA) { lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`) }
-    const pjSv = ordMap['pj'] || {}
-    const pjItems = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
-    if (pjItems.length) {
-      const fr = Object.values(pjSv)[0] as any
-      lines.push(''); lines.push(`*PJ — ${fr?.pj_client||'—'} · ${fr?.pj_delivery_date||'—'}*`)
-      pjItems.forEach(p => lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`))
+    const lines: string[] = []
+    if (scope !== 'itens') {
+      const bds = breads.filter(b=>!b.is_pj&&b.active)
+      lines.push(`*Pane & Salute — Produção ${dLabel}*\n`)
+      bds.forEach(b => {
+        const vals = stores.map(s => ordMap[s]?.[b.id]?.quantity || 0)
+        if (vals.reduce((a,c)=>a+c,0) > 0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`)
+      })
+      const oEX = Object.values(ordMap['ex']||{})[0]?.obs
+      const oJC = Object.values(ordMap['jc']||{})[0]?.obs
+      const oJA = Object.values(ordMap['ja']||{})[0]?.obs
+      if (oEX||oJC||oJA) { lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`) }
+      const pjSv = ordMap['pj'] || {}
+      const pjItems = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
+      if (pjItems.length) {
+        const fr = Object.values(pjSv)[0] as any
+        lines.push(''); lines.push(`*PJ — ${fr?.pj_client||'—'} · ${fr?.pj_delivery_date||'—'}*`)
+        pjItems.forEach(p => lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`))
+      }
     }
     // Itens JC (não-pães) — só inclui se algum tem qty > 0
-    const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
-    if (itensWithQty.length) {
-      const groupedJC: Record<string, ProdItem[]> = {}
-      itensWithQty.forEach(p => { (groupedJC[p.category] ??= []).push(p) })
-      lines.push(''); lines.push(`*Itens JC — Produção*`)
-      Object.keys(groupedJC).forEach(cat => {
-        lines.push(`_${cat}_`)
-        groupedJC[cat].forEach(p => lines.push(`${p.name}: ${prodQtys[p.id]||0}`))
-      })
-      if (prodObs) lines.push(`📝 ${prodObs}`)
+    if (scope !== 'breads') {
+      const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
+      if (itensWithQty.length) {
+        const groupedJC: Record<string, ProdItem[]> = {}
+        itensWithQty.forEach(p => { (groupedJC[p.category] ??= []).push(p) })
+        if (lines.length) lines.push('')
+        lines.push(`*Itens JC — Produção*`)
+        Object.keys(groupedJC).forEach(cat => {
+          lines.push(`_${cat}_`)
+          groupedJC[cat].forEach(p => lines.push(`${p.name}: ${prodQtys[p.id]||0}`))
+        })
+        if (prodObs) lines.push(`📝 ${prodObs}`)
+      }
     }
     const text = lines.join('\n')
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(()=>showToast('Copiado! Cole no WhatsApp.')).catch(()=>prompt('Copie:',text))
@@ -565,7 +571,7 @@ export default function ProducaoPage() {
       delivIdx={delivIdx}
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       onDateChange={loadGeolar}
-      onWhatsApp={()=>generateWhatsApp(geolarOrders)}
+      onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope)}
       onLogout={logout}
       loading={loading} loadingMsg={loadingMsg}
     />
@@ -1163,7 +1169,7 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
   prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
-  onDateChange:(d:string)=>void; onWhatsApp:()=>void; onLogout:()=>void
+  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
@@ -1226,6 +1232,12 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
           </div>}
         </div>
 
+        {/* Botões da lista de pães */}
+        <div className="btn-row" style={{marginTop:10}}>
+          <button className="btn-save" disabled={!hasBreads} onClick={()=>setPrintScope('breads')}>🖨 Imprimir pães</button>
+          <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp('breads')}>📋 Copiar texto</button>
+        </div>
+
         {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
         {(() => {
           if (!itensWithQty.length) return null
@@ -1257,10 +1269,15 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
           )
         })()}
 
-        <div className="btn-row" style={{marginTop:12}}>
-          <button className="btn-save" disabled={!hasBreads} onClick={()=>setPrintScope('breads')}>🥖 Imprimir pães</button>
-          <button className="btn-save" disabled={!itensWithQty.length} onClick={()=>setPrintScope('itens')}>🧁 Imprimir Itens JC</button>
-          <button className="btn-action" onClick={onWhatsApp}>Copiar texto</button>
+        {/* Botões da lista de Itens JC */}
+        {itensWithQty.length > 0 && (
+          <div className="btn-row" style={{marginTop:10}}>
+            <button className="btn-save" onClick={()=>setPrintScope('itens')}>🖨 Imprimir Itens JC</button>
+            <button className="btn-action" onClick={()=>onWhatsApp('itens')}>📋 Copiar texto</button>
+          </div>
+        )}
+
+        <div className="btn-row" style={{marginTop:16}}>
           <button className="btn-action" onClick={()=>onDateChange(geolarDate)}>↻ Atualizar</button>
         </div>
       </div>
