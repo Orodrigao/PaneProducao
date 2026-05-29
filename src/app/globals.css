@@ -230,3 +230,147 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
   #app.print-only-breads .print-itens { display: none !important; }
   #app.print-only-itens  .print-breads { display: none !important; }
 }
+
+/* ============================================================
+   REDESIGN "Pane & Salute" (handoff Claude Design) — namespace ps-*
+   Tokens próprios (não colidem com as vars acima). Aplicados só
+   dentro de .ps-shell / .ps-nav — outras telas ficam intactas.
+   ============================================================ */
+:root{
+  --flour:#F4ECDD; --flour-deep:#EADFC9;
+  --cream:#FFFDF8; --cream-raise:#FFFFFF;
+  --ps-ink:#2A2018; --ink-soft:#6E5E4C; --ink-faint:#A2917A;
+  --ps-line:#E8DBC2; --line-soft:#F0E7D6;
+  --crust:#8E4E22; --crust-deep:#713E1B; --crust-tint:#F3E7D7;
+  --honey:#D89A3C; --honey-deep:#BE832B; --honey-tint:#FBEFD7; --honey-line:#ECC988;
+  --berry:#A8392B; --berry-tint:#F6E4DF; --sage:#6B7A52;
+  --font-display:'Spectral',Georgia,'Times New Roman',serif;
+  --font-ui:'Hanken Grotesk',system-ui,-apple-system,sans-serif;
+  --r-card:16px; --r-ctrl:12px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(74,48,24,.05),0 1px 1px rgba(74,48,24,.04);
+  --sh-2:0 2px 4px rgba(74,48,24,.05),0 6px 16px rgba(74,48,24,.07);
+  --sh-pop:0 12px 40px rgba(58,38,18,.18);
+  --pad-card:16px; --gap-list:12px; --shell-w:560px;
+}
+
+/* Shell (coluna app) */
+.ps-canvas{ min-height:100vh; background:radial-gradient(1200px 600px at 50% -10%, rgba(216,154,60,.07), transparent 60%), var(--flour-deep); display:flex; justify-content:center; align-items:flex-start; }
+.ps-shell{ width:100%; max-width:var(--shell-w); min-height:100vh; margin:0 auto; background:var(--flour); color:var(--ps-ink); font-family:var(--font-ui); position:relative; display:flex; flex-direction:column; box-shadow:0 0 0 1px rgba(120,85,40,.06), 0 30px 80px -30px rgba(58,38,18,.3); }
+.ps-shell *{ box-sizing:border-box; }
+.ps-scroll{ flex:1; overflow-y:auto; padding-bottom:172px; }
+.ps-pad{ padding:0 16px; }
+
+/* Header */
+.ps-header{ position:sticky; top:0; z-index:40; background:color-mix(in srgb, var(--flour) 86%, transparent); backdrop-filter:saturate(1.2) blur(10px); border-bottom:1px solid var(--ps-line); padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.ps-wordmark{ display:flex; align-items:center; gap:11px; min-width:0; }
+.ps-mark{ width:38px; height:38px; flex:none; border-radius:11px; background:linear-gradient(180deg,var(--crust),var(--crust-deep)); color:#FCEFDD; display:grid; place-items:center; font-family:var(--font-display); font-weight:700; font-size:20px; box-shadow:var(--sh-1); }
+.ps-brand{ display:flex; flex-direction:column; line-height:1.05; min-width:0; }
+.ps-brand b{ font-family:var(--font-display); font-weight:600; font-size:19px; letter-spacing:.2px; color:var(--ps-ink); white-space:nowrap; }
+.ps-brand span{ font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-faint); font-weight:600; margin-top:2px; }
+.ps-userwrap{ display:flex; align-items:center; gap:8px; flex:none; }
+.ps-userchip{ display:flex; align-items:center; gap:8px; background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-pill); padding:5px 12px 5px 5px; box-shadow:var(--sh-1); }
+.ps-avatar{ width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; font-size:13px; flex:none; }
+.ps-userchip b{ font-size:13.5px; font-weight:600; color:var(--ps-ink); }
+.ps-iconbtn{ width:38px; height:38px; border-radius:11px; flex:none; background:var(--cream); border:1px solid var(--ps-line); color:var(--ink-soft); display:grid; place-items:center; transition:.15s; }
+.ps-iconbtn:hover{ background:var(--berry-tint); color:var(--berry); border-color:var(--berry-tint); }
+
+/* Banner de prazo */
+.ps-deadline{ margin:14px 16px 4px; display:flex; align-items:center; gap:12px; padding:13px 15px; border-radius:14px; background:linear-gradient(180deg,#FCF1DA,#F9E9C8); border:1px solid var(--honey-line); color:#7A5418; box-shadow:var(--sh-1); }
+.ps-deadline.urgent{ background:linear-gradient(180deg,var(--berry-tint),#F3D8D1); border-color:#E6B5AC; color:#8A2C20; }
+.ps-deadline .ps-dl-ic{ width:34px; height:34px; border-radius:10px; flex:none; background:rgba(216,154,60,.22); color:var(--honey-deep); display:grid; place-items:center; }
+.ps-deadline.urgent .ps-dl-ic{ background:rgba(168,57,43,.16); color:var(--berry); }
+.ps-dl-txt{ display:flex; flex-direction:column; line-height:1.2; }
+.ps-dl-txt b{ font-size:14px; font-weight:700; }
+.ps-dl-txt span{ font-size:12px; opacity:.85; margin-top:1px; }
+
+/* Abas */
+.ps-tabs{ display:flex; gap:4px; margin:14px 0 4px; padding:4px; border-radius:14px; background:var(--line-soft); overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.ps-tabs::-webkit-scrollbar{ display:none; }
+.ps-tab{ flex:1 0 auto; white-space:nowrap; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:14px; padding:9px 16px; border-radius:10px; transition:.15s; }
+.ps-tab[aria-selected="true"]{ background:var(--cream-raise); color:var(--crust); box-shadow:var(--sh-1); }
+
+/* Seletor de dia */
+.ps-label{ font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; margin:18px 0 9px; }
+.ps-days{ display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+.ps-days::-webkit-scrollbar{ display:none; }
+.ps-day{ flex:1 0 auto; min-width:52px; min-height:46px; border:1px solid var(--ps-line); background:var(--cream); border-radius:13px; color:var(--ink-soft); font-family:var(--font-ui); font-weight:700; font-size:14.5px; transition:.15s; display:flex; align-items:center; justify-content:center; }
+.ps-day:hover{ border-color:var(--honey-line); }
+.ps-day[aria-pressed="true"]{ background:linear-gradient(180deg,var(--honey),var(--honey-deep)); border-color:var(--honey-deep); color:#fff; box-shadow:0 4px 12px rgba(190,131,43,.32); }
+
+/* Cabeçalho de seção */
+.ps-section{ display:flex; align-items:center; gap:10px; margin:22px 0 12px; }
+.ps-section .bar{ width:4px; height:20px; border-radius:3px; background:var(--crust); }
+.ps-section b{ font-family:var(--font-display); font-weight:600; font-size:18px; color:var(--ps-ink); }
+.ps-section .meta{ margin-left:auto; font-size:11.5px; color:var(--ink-faint); font-weight:600; background:var(--cream); border:1px solid var(--ps-line); padding:4px 10px; border-radius:var(--r-pill); }
+
+/* Grid + card de produto */
+.ps-grid{ display:grid; grid-template-columns:1fr; gap:var(--gap-list); }
+@media (min-width:520px){ .ps-grid{ grid-template-columns:1fr 1fr; } }
+.ps-card{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); padding:var(--pad-card); display:flex; flex-direction:column; gap:12px; box-shadow:var(--sh-1); transition:.18s; position:relative; overflow:hidden; }
+.ps-card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:transparent; transition:.18s; }
+.ps-card.active{ background:var(--honey-tint); border-color:var(--honey-line); box-shadow:0 2px 10px rgba(190,131,43,.12); }
+.ps-card.active::before{ background:var(--honey); }
+.ps-card-head{ display:flex; flex-direction:column; gap:7px; }
+.ps-pname{ font-size:16.5px; font-weight:700; color:var(--ps-ink); letter-spacing:-.01em; line-height:1.15; }
+.ps-pdays{ display:flex; flex-wrap:wrap; gap:5px; }
+.ps-pday{ font-size:10.5px; font-weight:600; letter-spacing:.02em; color:var(--ink-faint); background:var(--line-soft); padding:2px 7px; border-radius:6px; }
+.ps-pday.on{ color:var(--crust); background:var(--crust-tint); }
+
+/* Stepper */
+.ps-stepper{ display:flex; align-items:center; gap:8px; }
+.ps-step{ width:46px; height:46px; flex:none; border-radius:12px; border:1px solid var(--ps-line); background:var(--cream-raise); color:var(--crust); display:grid; place-items:center; transition:.12s; box-shadow:var(--sh-1); }
+.ps-step:hover{ background:var(--crust); color:#fff; border-color:var(--crust); }
+.ps-step:active{ transform:translateY(1px); }
+.ps-step:disabled{ opacity:.4; cursor:not-allowed; }
+.ps-step:disabled:hover{ background:var(--cream-raise); color:var(--crust); border-color:var(--ps-line); }
+.ps-qty{ flex:1; min-width:0; height:46px; text-align:center; border:1px solid var(--ps-line); border-radius:12px; background:var(--cream-raise); font-family:var(--font-ui); font-weight:800; font-size:19px; color:var(--ps-ink); font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
+.ps-qty:focus{ outline:2px solid var(--honey); outline-offset:1px; }
+.ps-qty.zero{ color:var(--ink-faint); }
+.ps-qty::-webkit-outer-spin-button,.ps-qty::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+
+/* Observações / textarea no shell */
+.ps-textarea{ width:100%; margin-top:6px; border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); padding:10px 12px; font-family:var(--font-ui); font-size:14px; color:var(--ps-ink); min-height:64px; resize:vertical; }
+.ps-textarea:focus{ outline:2px solid var(--honey); outline-offset:1px; }
+.ps-input{ border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); padding:10px 12px; font-family:var(--font-ui); font-size:14px; color:var(--ps-ink); }
+.ps-input:focus{ outline:2px solid var(--honey); outline-offset:1px; }
+
+/* Barra de total */
+.ps-totalbar{ position:fixed; left:50%; transform:translateX(-50%); bottom:72px; width:100%; max-width:var(--shell-w); z-index:45; background:color-mix(in srgb, var(--cream) 92%, transparent); backdrop-filter:blur(12px) saturate(1.2); border-top:1px solid var(--ps-line); padding:12px 16px; display:flex; align-items:center; gap:14px; box-shadow:0 -8px 24px -12px rgba(58,38,18,.25); }
+.ps-total-num{ display:flex; flex-direction:column; line-height:1.05; }
+.ps-total-num b{ font-family:var(--font-display); font-weight:700; font-size:26px; color:var(--ps-ink); font-variant-numeric:tabular-nums; }
+.ps-total-num span{ font-size:11px; color:var(--ink-faint); letter-spacing:.1em; text-transform:uppercase; font-weight:600; }
+.ps-save{ margin-left:auto; border:0; border-radius:13px; background:linear-gradient(180deg,var(--crust),var(--crust-deep)); color:#FCEFDD; font-family:var(--font-ui); font-weight:700; font-size:15.5px; padding:14px 22px; display:flex; align-items:center; gap:9px; box-shadow:0 6px 18px -4px rgba(142,78,34,.5), inset 0 1px 0 rgba(255,255,255,.15); transition:.15s; white-space:nowrap; }
+.ps-save:hover{ filter:brightness(1.06); transform:translateY(-1px); }
+.ps-save:active{ transform:translateY(0); }
+.ps-save:disabled{ opacity:.6; cursor:not-allowed; }
+.ps-save.saved{ background:linear-gradient(180deg,var(--sage),#586543); }
+
+/* Nav inferior */
+.ps-nav{ position:fixed; left:50%; transform:translateX(-50%); bottom:0; width:100%; max-width:var(--shell-w); z-index:46; background:var(--cream); border-top:1px solid var(--ps-line); display:flex; padding:8px 6px calc(8px + env(safe-area-inset-bottom)); box-shadow:0 -2px 12px -6px rgba(58,38,18,.2); }
+.ps-navitem{ flex:1; border:0; background:transparent; border-radius:12px; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; color:var(--ink-faint); font-family:var(--font-ui); transition:.15s; position:relative; text-decoration:none; }
+.ps-navitem span{ font-size:10.5px; font-weight:600; letter-spacing:.01em; }
+.ps-navitem .nic{ width:24px; height:24px; display:grid; place-items:center; transition:.15s; }
+.ps-navitem.active{ color:var(--crust); }
+.ps-navitem.active .nic{ transform:translateY(-1px); }
+.ps-navitem.active::after{ content:""; position:absolute; top:-8px; left:50%; transform:translateX(-50%); width:22px; height:3px; border-radius:3px; background:var(--crust); }
+.ps-navitem:hover{ color:var(--ink-soft); }
+
+/* Sheet "Mais" */
+.ps-sheet-overlay{ position:fixed; inset:0; z-index:60; background:rgba(42,32,24,.42); backdrop-filter:blur(2px); display:flex; align-items:flex-end; justify-content:center; animation:psfade .2s ease; }
+@keyframes psfade{ from{opacity:0;} to{opacity:1;} }
+.ps-sheet{ width:100%; max-width:var(--shell-w); background:var(--flour); color:var(--ps-ink); font-family:var(--font-ui); border-radius:22px 22px 0 0; padding:10px 16px calc(20px + env(safe-area-inset-bottom)); box-shadow:var(--sh-pop); animation:psslideup .26s cubic-bezier(.2,.8,.2,1); max-height:80vh; overflow-y:auto; }
+@keyframes psslideup{ from{ transform:translateY(100%);} to{ transform:translateY(0);} }
+.ps-sheet-grab{ width:38px; height:4px; border-radius:3px; background:var(--ps-line); margin:6px auto 14px; }
+.ps-sheet h3{ font-family:var(--font-display); font-weight:600; font-size:17px; margin:0 0 14px; color:var(--ps-ink); }
+.ps-sheet-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+@media (max-width:380px){ .ps-sheet-grid{ grid-template-columns:repeat(3,1fr); } }
+.ps-sheet-item{ border:1px solid var(--ps-line); background:var(--cream); border-radius:14px; padding:13px 6px; display:flex; flex-direction:column; align-items:center; gap:7px; color:var(--ink-soft); font-family:var(--font-ui); transition:.15s; min-height:74px; justify-content:center; text-decoration:none; cursor:pointer; }
+.ps-sheet-item.active{ background:var(--honey-tint); border-color:var(--honey-line); color:var(--crust); }
+.ps-sheet-item:hover{ background:var(--honey-tint); border-color:var(--honey-line); color:var(--crust); transform:translateY(-2px); }
+.ps-sheet-item span{ font-size:11px; font-weight:600; text-align:center; line-height:1.15; }
+.ps-sheet-item .si{ width:24px; height:24px; display:grid; place-items:center; color:var(--crust); }
+.ps-sheet-sep{ font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; margin:18px 0 9px; }
+
+.ps-fadein{ animation:psfadein .35s ease; }
+@keyframes psfadein{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:none;} }
+.ps-empty{ color:var(--ink-faint); text-align:center; padding:40px 0; font-weight:600; font-family:var(--font-ui); }

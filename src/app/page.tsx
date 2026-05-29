@@ -2,12 +2,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { LogOut, Clock, AlarmClock, Save, Minus, Plus } from 'lucide-react'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
 const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:'Quinta',5:'Sexta',6:'Sábado'}
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
 // Categorias de products que NAO entram em "Itens JC" (lista de producao nao-pao).
@@ -586,117 +588,127 @@ export default function ProducaoPage() {
 
   const globalUser = getCurrentUser()
   const displayName = globalUser?.displayName ?? ''
-  const userBadge = currentUser === 'rodrigo' ? { cls:'tb-amber', lbl: displayName || 'Rodrigo' }
-    : currentUser === 'marselle' ? { cls:'tb-teal', lbl: `${displayName || 'Marselle'} · EX` }
-    : { cls:'tb-coral', lbl: `${displayName || 'Elis'} · PJ` }
+  const userName = displayName || (currentUser === 'rodrigo' ? 'Rodrigo' : currentUser === 'marselle' ? 'Marselle' : 'Elis')
+  const avatarColor = currentUser === 'rodrigo' ? '#8E4E22' : currentUser === 'marselle' ? '#2C7A8C' : '#A8392B'
+  const userInitial = userName.trim().charAt(0).toUpperCase()
 
   const hoursLeft = getHoursLeft()
-  const deadlineBar = isLocked
-    ? <div className="deadline dl-locked"><span className="deadline-dot"/><span>Pedidos encerrados — reabrem às 04h00</span></div>
-    : hoursLeft <= 2
-    ? <div className="deadline dl-warn"><span className="deadline-dot"/><span>Menos de {hoursLeft}h para o prazo — encerra às 04h00</span></div>
-    : <div className="deadline dl-ok"><span className="deadline-dot"/><span>Pedidos abertos · Pães de {deliveryDayLabel(delivIdx)}</span></div>
+  const dlUrgent = isLocked || hoursLeft <= 2
+  const dlTitle = isLocked ? 'Pedidos encerrados' : hoursLeft <= 2 ? 'Prazo encerrando' : 'Pedido aberto'
+  const dlSub = isLocked ? 'Reabrem às 04h00'
+    : hoursLeft <= 2 ? `Menos de ${hoursLeft}h — encerra às 04h00`
+    : `Pães de ${deliveryDayLabel(delivIdx)} · até 04h00`
 
   return (
-    <div id="app">
-      {/* Topbar */}
-      <div className="topbar">
-        <div className="topbar-logo" onClick={logout} style={{cursor:'pointer'}}>
-          Pane &amp; Salute{' '}
-          {syncState==='syncing'&&<span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#B8720A',marginLeft:4}}/>}
-          {syncState==='error'&&<span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#c00',marginLeft:4}}/>}
+    <div className="ps-canvas">
+      <div className="ps-shell ps-fadein">
+        {/* Header */}
+        <header className="ps-header">
+          <div className="ps-wordmark" onClick={logout} style={{cursor:'pointer'}}>
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Pane &amp; Salute</b>
+              <span>Produção{syncState==='syncing'?' · sincronizando':syncState==='error'?' · erro':''}</span>
+            </div>
+          </div>
+          <div className="ps-userwrap">
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background:avatarColor}}>{userInitial}</div>
+              <b>{userName}</b>
+            </div>
+            <button className="ps-iconbtn" onClick={logout} title="Sair" aria-label="Sair"><LogOut size={18} strokeWidth={1.85}/></button>
+          </div>
+        </header>
+
+        {/* Banner de prazo */}
+        <div className={'ps-deadline' + (dlUrgent ? ' urgent' : '')}>
+          <div className="ps-dl-ic">{dlUrgent ? <AlarmClock size={19} strokeWidth={1.85}/> : <Clock size={19} strokeWidth={1.85}/>}</div>
+          <div className="ps-dl-txt"><b>{dlTitle}</b><span>{dlSub}</span></div>
         </div>
-        <span className={`topbar-badge ${userBadge.cls}`}>{userBadge.lbl}</span>
-        <button className="btn-logout" onClick={logout}>Sair</button>
-      </div>
 
-      {/* Deadline bar */}
-      <div style={{margin:'12px 16px 0'}}>{deadlineBar}</div>
+        <div className="ps-pad" style={{paddingBottom:176}}>
+          {/* Abas */}
+          <div className="ps-tabs" role="tablist">
+            {tabDefs.map((t,i) => (
+              <button key={i} role="tab" aria-selected={i===activeTab} className="ps-tab" onClick={()=>setActiveTab(i)}>{t.label}</button>
+            ))}
+          </div>
 
-      {/* Nav tabs */}
-      <div className="nav-tabs">
-        {tabDefs.map((t,i) => (
-          <button key={i} className={`nav-tab${i===activeTab?' active':''}`} onClick={()=>setActiveTab(i)}>{t.label}</button>
-        ))}
-      </div>
+          {isOrderTab && activeStore && (
+            <OrderForm
+              store={activeStore as Store}
+              breads={activeStore==='pj'?pjBreads:todayBreads}
+              isPJ={activeStore==='pj'}
+              delivIdx={delivIdx}
+              isLocked={isLocked}
+              qtys={qtys}
+              obs={obsMap[activeStore]||''}
+              pjClient={pjClient}
+              pjDate={pjDate}
+              onDelivChange={changeDelivDay}
+              onQtyChange={(key,val)=>setQty(key,val)}
+              onObsChange={(obs)=>setObsMap(prev=>({...prev,[activeStore]:obs}))}
+              onPjClientChange={setPjClient}
+              onPjDateChange={setPjDate}
+            />
+          )}
+          {isReportTab && (
+            <ReportView
+              currentUser={currentUser!}
+              storeFilter={currentUser==='marselle'?'ex':currentUser==='elis'?'pj':undefined}
+              breads={breads}
+              reportDate={reportDate}
+              reportOrders={reportOrders}
+              pjBreads={pjBreads}
+              todayBds={todayBreads}
+              onDateChange={changeReportDate}
+              onDuplicate={duplicateOrders}
+            />
+          )}
+          {isAdminTab && (
+            <AdminView
+              breads={breads}
+              orders={orders}
+              delivIdx={delivIdx}
+              pjBreads={pjBreads}
+              todayBds={todayBreads}
+              onNewBread={openNewBread}
+              onEditBread={openEditBread}
+              onDeleteBread={confirmDelete}
+              onToggleBread={toggleBread}
+              onWhatsApp={()=>generateWhatsApp(orders)}
+            />
+          )}
+          {isItensTab && (
+            <ItensJCForm
+              prodItems={prodItems}
+              prodQtys={prodQtys}
+              prodObs={prodObs}
+              prodDate={prodDate}
+              onDateChange={changeProdDate}
+              onQtyChange={setProdQty}
+              onObsChange={setProdObs}
+            />
+          )}
+        </div>
 
-      {/* Tab content */}
-      <div style={{padding:'16px'}}>
-        {isOrderTab && activeStore && (
-          <OrderForm
-            store={activeStore as Store}
-            breads={activeStore==='pj'?pjBreads:todayBreads}
-            isPJ={activeStore==='pj'}
-            delivIdx={delivIdx}
-            isLocked={isLocked}
-            qtys={qtys}
-            obs={obsMap[activeStore]||''}
-            pjClient={pjClient}
-            pjDate={pjDate}
-            onDelivChange={changeDelivDay}
-            onQtyChange={(key,val)=>setQty(key,val)}
-            onObsChange={(obs)=>setObsMap(prev=>({...prev,[activeStore]:obs}))}
-            onPjClientChange={setPjClient}
-            onPjDateChange={setPjDate}
-          />
-        )}
-        {isReportTab && (
-          <ReportView
-            currentUser={currentUser!}
-            storeFilter={currentUser==='marselle'?'ex':currentUser==='elis'?'pj':undefined}
-            breads={breads}
-            reportDate={reportDate}
-            reportOrders={reportOrders}
-            pjBreads={pjBreads}
-            todayBds={todayBreads}
-            onDateChange={changeReportDate}
-            onDuplicate={duplicateOrders}
-          />
-        )}
-        {isAdminTab && (
-          <AdminView
-            breads={breads}
-            orders={orders}
-            delivIdx={delivIdx}
-            pjBreads={pjBreads}
-            todayBds={todayBreads}
-            onNewBread={openNewBread}
-            onEditBread={openEditBread}
-            onDeleteBread={confirmDelete}
-            onToggleBread={toggleBread}
-            onWhatsApp={()=>generateWhatsApp(orders)}
-          />
+        {/* Barra de total */}
+        {isOrderTab && !isLocked && activeStore && (
+          <div className="ps-totalbar">
+            <div className="ps-total-num"><b>{calcTotal(activeStore as Store)}</b><span>unidades</span></div>
+            <button className="ps-save" disabled={saving} onClick={()=>saveOrder(activeStore as Store)}>
+              <Save size={19} strokeWidth={1.85}/>{saving ? 'Salvando...' : activeStore==='pj'?'Salvar pedido PJ':'Salvar pedido'}
+            </button>
+          </div>
         )}
         {isItensTab && (
-          <ItensJCForm
-            prodItems={prodItems}
-            prodQtys={prodQtys}
-            prodObs={prodObs}
-            prodDate={prodDate}
-            onDateChange={changeProdDate}
-            onQtyChange={setProdQty}
-            onObsChange={setProdObs}
-          />
+          <div className="ps-totalbar">
+            <div className="ps-total-num"><b>{calcProdTotal()}</b><span>unidades</span></div>
+            <button className="ps-save" disabled={prodSaving} onClick={saveItensJC}>
+              <Save size={19} strokeWidth={1.85}/>{prodSaving ? 'Salvando...' : 'Salvar lista'}
+            </button>
+          </div>
         )}
-      </div>
-
-      {/* Bottom bar */}
-      {isOrderTab && !isLocked && activeStore && (
-        <div className="bottom-bar">
-          <div className="total-info">Total: <strong>{calcTotal(activeStore as Store)}</strong> unidades</div>
-          <button className="btn-save" disabled={saving} onClick={()=>saveOrder(activeStore as Store)}>
-            {saving ? 'Salvando...' : activeStore==='pj'?'Salvar pedido PJ':'Salvar pedido'}
-          </button>
-        </div>
-      )}
-      {isItensTab && (
-        <div className="bottom-bar">
-          <div className="total-info">Total: <strong>{calcProdTotal()}</strong> unidades</div>
-          <button className="btn-save" disabled={prodSaving} onClick={saveItensJC}>
-            {prodSaving ? 'Salvando...' : 'Salvar lista'}
-          </button>
-        </div>
-      )}
 
       {/* Modal */}
       {modal !== 'none' && (
@@ -735,8 +747,9 @@ export default function ProducaoPage() {
         </div>
       )}
 
-      {/* Toast */}
-      <div id="prod-toast" className="toast"/>
+        {/* Toast */}
+        <div id="prod-toast" className="toast"/>
+      </div>
     </div>
   )
 }
@@ -785,55 +798,56 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClien
   const storeName = {jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição',pj:'PJ'}[store]||store.toUpperCase()
 
   return (
-    <div>
+    <div className="ps-fadein">
       {isPJ ? (
         <>
-          <div style={{marginBottom:14}}>
-            <div className="section-label" style={{marginBottom:6,marginTop:0}}>Cliente</div>
-            <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px'}} type="text" placeholder="Nome do cliente" value={pjClient} onChange={e=>onPjClientChange(e.target.value)} disabled={isLocked}/>
-          </div>
-          <div style={{marginBottom:14}}>
-            <div className="section-label" style={{marginBottom:6,marginTop:0}}>Data de entrega</div>
-            <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px'}} type="date" value={pjDate} onChange={e=>onPjDateChange(e.target.value)} disabled={isLocked}/>
-          </div>
+          <div className="ps-label">Cliente</div>
+          <input className="ps-input" style={{width:'100%'}} type="text" placeholder="Nome do cliente" value={pjClient} onChange={e=>onPjClientChange(e.target.value)} disabled={isLocked}/>
+          <div className="ps-label">Data de entrega</div>
+          <input className="ps-input" style={{width:'100%'}} type="date" value={pjDate} onChange={e=>onPjDateChange(e.target.value)} disabled={isLocked}/>
         </>
       ) : (
-        <div style={{marginBottom:14}}>
-          <div className="section-label" style={{marginBottom:8,marginTop:0}}>Pães para qual dia?</div>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+        <>
+          <div className="ps-label">Pães para qual dia?</div>
+          <div className="ps-days" role="group">
             {[1,2,3,4,5,6].map(i=>(
-              <button key={i} onClick={()=>onDelivChange(i)} style={{
-                padding:'7px 14px',borderRadius:'var(--radius-sm)',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
-                border:`1px solid ${i===delivIdx?'var(--amber-border)':'var(--border)'}`,
-                background:i===delivIdx?'var(--amber-bg)':'var(--surface)',
-                color:i===delivIdx?'var(--amber)':'var(--text-muted)'
-              }}>{DAYS_PT[i]}</button>
+              <button key={i} className="ps-day" aria-pressed={i===delivIdx} onClick={()=>onDelivChange(i)}>{DAYS_PT[i]}</button>
             ))}
           </div>
-        </div>
+        </>
       )}
 
-      {!isPJ && <div className="section-label">{DAYS_PT[delivIdx]} — {storeName}</div>}
-      {isPJ && <div className="section-label">Itens do pedido</div>}
+      <div className="ps-section">
+        <div className="bar"/>
+        <b>{isPJ ? 'Itens do pedido' : DAY_FULL_PT[delivIdx]}</b>
+        <span className="meta">{storeName}</span>
+      </div>
 
       {breads.length === 0 ? (
-        <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0'}}>Nenhum pão disponível para {DAYS_PT[delivIdx]}.</div>
+        <div className="ps-empty">Nenhum pão disponível para {DAY_FULL_PT[delivIdx]}.</div>
       ) : (
-        <div className="bread-list">
+        <div className="ps-grid">
           {breads.map(b=>{
             const key = `${store}-${b.id}`
             const val = qtys[key]||0
+            const bdays = parseDays(b.days)
             return (
-              <div key={b.id} className={`bread-row${val>0?' has-qty':''}`}>
-                <div className="bread-info">
-                  <div className="bread-name">{b.name}</div>
-                  {!isPJ&&<div className="bread-days">{parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}</div>}
+              <div key={b.id} className={'ps-card'+(val>0?' active':'')}>
+                <div className="ps-card-head">
+                  <div className="ps-pname">{b.name}</div>
+                  {!isPJ && (
+                    <div className="ps-pdays">
+                      {[1,2,3,4,5,6].map(i=>(
+                        <span key={i} className={'ps-pday'+(bdays.includes(i)?' on':'')}>{DAYS_PT[i]}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="qty-wrap">
-                  <button className="qty-btn" onClick={()=>onQtyChange(key,val-1)} disabled={isLocked}>−</button>
-                  <input className="qty-input" type="number" inputMode="numeric" min={0} value={val||''} placeholder="0"
+                <div className="ps-stepper">
+                  <button className="ps-step" disabled={isLocked||val<=0} onClick={()=>onQtyChange(key,val-1)} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85}/></button>
+                  <input className={'ps-qty'+(val===0?' zero':'')} type="number" inputMode="numeric" min={0} value={val||''} placeholder="0"
                     onChange={e=>onQtyChange(key,parseInt(e.target.value)||0)} disabled={isLocked}/>
-                  <button className="qty-btn" onClick={()=>onQtyChange(key,val+1)} disabled={isLocked}>+</button>
+                  <button className="ps-step" disabled={isLocked} onClick={()=>onQtyChange(key,val+1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85}/></button>
                 </div>
               </div>
             )
@@ -841,11 +855,10 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClien
         </div>
       )}
 
-      <div style={{marginTop:14}}>
-        <div className="section-label" style={{marginTop:0}}>Observações</div>
-        <textarea className="obs-area" placeholder="Ex: reforçar baguete, pegar croissant do congelado..." value={obs} onChange={e=>onObsChange(e.target.value)} disabled={isLocked}/>
-      </div>
-      {isLocked&&<div style={{marginTop:12,padding:'10px 14px',background:'var(--red-bg)',border:'1px solid var(--red-border)',borderRadius:'var(--radius-sm)',fontSize:13,color:'var(--red)'}}>Pedidos encerrados. Reabrem às 04h00.</div>}
+      <div className="ps-label">Observações</div>
+      <textarea className="ps-textarea" placeholder="Ex: reforçar baguete, pegar croissant do congelado..." value={obs} onChange={e=>onObsChange(e.target.value)} disabled={isLocked}/>
+
+      {isLocked && <div style={{marginTop:12,padding:'10px 14px',background:'var(--berry-tint)',border:'1px solid #E6B5AC',borderRadius:'var(--r-ctrl)',fontSize:13,color:'var(--berry)',fontWeight:600}}>Pedidos encerrados. Reabrem às 04h00.</div>}
     </div>
   )
 }
@@ -1120,36 +1133,36 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
   const isToday = prodDate === todayKey()
 
   return (
-    <div>
-      <div style={{marginBottom:14}}>
-        <div className="section-label" style={{marginBottom:6,marginTop:0}}>Data de produção</div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <input type="date" value={prodDate}
-            className="obs-area" style={{width:'auto',padding:'8px 12px',fontSize:13,minHeight:'auto'}}
-            onChange={e=>onDateChange(e.target.value)}/>
-          {isToday && <span style={{fontSize:11,color:'var(--teal)',background:'var(--teal-bg)',border:'1px solid var(--teal-border)',padding:'2px 8px',borderRadius:10}}>hoje</span>}
-        </div>
+    <div className="ps-fadein">
+      <div className="ps-label">Data de produção</div>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <input type="date" value={prodDate} className="ps-input" onChange={e=>onDateChange(e.target.value)}/>
+        {isToday && <span style={{fontSize:11,color:'var(--sage)',background:'var(--honey-tint)',border:'1px solid var(--honey-line)',padding:'3px 10px',borderRadius:999,fontWeight:700}}>hoje</span>}
       </div>
 
       {prodItems.length === 0 ? (
-        <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0'}}>Nenhum produto ativo no catálogo (categorias não-pão).</div>
+        <div className="ps-empty">Nenhum produto ativo no catálogo (categorias não-pão).</div>
       ) : cats.map(cat => (
-        <div key={cat} style={{marginBottom:16}}>
-          <div className="section-label">{cat} ({grouped[cat].length})</div>
-          <div className="bread-list">
+        <div key={cat}>
+          <div className="ps-section">
+            <div className="bar"/>
+            <b>{cat}</b>
+            <span className="meta">{grouped[cat].length} {grouped[cat].length===1?'item':'itens'}</span>
+          </div>
+          <div className="ps-grid">
             {grouped[cat].map(p => {
               const val = prodQtys[p.id] || 0
               return (
-                <div key={p.id} className={`bread-row${val>0?' has-qty':''}`}>
-                  <div className="bread-info">
-                    <div className="bread-name">{p.name}</div>
-                    {p.unit && <div className="bread-days">{p.unit}</div>}
+                <div key={p.id} className={'ps-card'+(val>0?' active':'')}>
+                  <div className="ps-card-head">
+                    <div className="ps-pname">{p.name}</div>
+                    {p.unit && <div className="ps-pdays"><span className="ps-pday">{p.unit}</span></div>}
                   </div>
-                  <div className="qty-wrap">
-                    <button className="qty-btn" onClick={()=>onQtyChange(p.id, val-1)}>−</button>
-                    <input className="qty-input" type="number" inputMode="numeric" min={0} value={val || ''} placeholder="0"
+                  <div className="ps-stepper">
+                    <button className="ps-step" disabled={val<=0} onClick={()=>onQtyChange(p.id, val-1)} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85}/></button>
+                    <input className={'ps-qty'+(val===0?' zero':'')} type="number" inputMode="numeric" min={0} value={val || ''} placeholder="0"
                       onChange={e=>onQtyChange(p.id, parseInt(e.target.value) || 0)}/>
-                    <button className="qty-btn" onClick={()=>onQtyChange(p.id, val+1)}>+</button>
+                    <button className="ps-step" onClick={()=>onQtyChange(p.id, val+1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85}/></button>
                   </div>
                 </div>
               )
@@ -1158,10 +1171,8 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
         </div>
       ))}
 
-      <div style={{marginTop:14}}>
-        <div className="section-label" style={{marginTop:0}}>Observações</div>
-        <textarea className="obs-area" placeholder="Notas para a equipe de produção..." value={prodObs} onChange={e=>onObsChange(e.target.value)}/>
-      </div>
+      <div className="ps-label">Observações</div>
+      <textarea className="ps-textarea" placeholder="Notas para a equipe de produção..." value={prodObs} onChange={e=>onObsChange(e.target.value)}/>
     </div>
   )
 }
