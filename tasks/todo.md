@@ -18,10 +18,10 @@
 - [x] 3. Estoque-Pães — PR #9 (merged)
 - [x] 4. Sobras — PR #10 (merged)
 - [x] 5. Estoque (index + entrada) — PR #11 (merged)
-- [ ] 6. Estoque-Congelado ← **EM ANDAMENTO**
+- [x] 6. Estoque-Congelado — PR #12 (merged)
 
 ### Tier 3 — regular
-- [ ] 7. Encomendas
+- [ ] 7. Encomendas ← **EM ANDAMENTO**
 - [ ] 8. Compras (cuidado: integração Telegram, não quebrar)
 - [ ] 9. Fornecedores
 
