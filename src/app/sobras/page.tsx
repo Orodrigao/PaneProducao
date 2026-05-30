@@ -1,22 +1,17 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronLeft, Minus, Plus, Save, Package, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
 
 interface Product { id: string; name: string; category: string; unit: string | null }
 interface Bread   { id: string; name: string; unit: string | null }
 
-interface CurrentUser {
-  id: string
-  displayName: string
-  store: string | null
-}
-
 export default function SobrasPage() {
   const router = useRouter()
-  const [user, setUser]         = useState<CurrentUser|null>(null)
+  const [user, setUser]         = useState<AppUser | null>(null)
   const [mode, setMode]         = useState<'sobra'|'descarte'|null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
@@ -27,7 +22,7 @@ export default function SobrasPage() {
   useEffect(() => {
     const u = getCurrentUser()
     if (!u) { router.replace('/login'); return }
-    setUser({ id: u.id, displayName: u.displayName, store: u.store ?? null })
+    setUser(u)
   }, [router])
 
   const loadData = useCallback(async () => {
@@ -119,89 +114,140 @@ export default function SobrasPage() {
   const filled = Object.values(qtys).filter(v=>v>0).length
 
   if (!user) return (
-    <div style={{padding:'40px',textAlign:'center',color:'var(--muted)'}}>
+    <div className="ps-loading">
+      <div className="ps-spinner"/>
       <p>Carregando...</p>
     </div>
   )
 
+  const userDisplay = user.displayName
+
   // ── SELECT MODE ──
   if (!mode) return (
-    <div style={{padding:'20px',maxWidth:500,margin:'0 auto'}}>
-      <div style={{background:'var(--primary)',color:'white',padding:'14px 20px',marginBottom:16,borderRadius:'var(--radius)',fontWeight:700,fontSize:'1.1rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <span>♻️ Sobras &amp; Descartes</span>
-        <span style={{fontSize:'.78rem',fontWeight:600,background:'rgba(255,255,255,.2)',padding:'4px 10px',borderRadius:8}}>
-          {user.displayName}{user.store ? ` · ${user.store.toUpperCase()}` : ''}
-        </span>
-      </div>
-      <p style={{color:'var(--muted)',marginBottom:16,fontSize:'.9rem'}}>📅 {todayLabel()}</p>
-      <div style={{display:'flex',flexDirection:'column',gap:12}}>
-        <button onClick={()=>setMode('sobra')} className="card" style={{textAlign:'left',cursor:'pointer',border:'2px solid var(--border)'}}>
-          <div style={{fontSize:'1.5rem',marginBottom:4}}>📦</div>
-          <div style={{fontWeight:700,fontSize:'1rem'}}>Registrar Sobras</div>
-          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>O que sobrou no fechamento. Não move estoque (sobras podem voltar à venda).</div>
-        </button>
-        <button onClick={()=>setMode('descarte')} className="card" style={{textAlign:'left',cursor:'pointer',border:'2px solid var(--border)'}}>
-          <div style={{fontSize:'1.5rem',marginBottom:4}}>🗑️</div>
-          <div style={{fontWeight:700,fontSize:'1rem'}}>Registrar Descarte</div>
-          <div style={{color:'var(--muted)',fontSize:'.85rem'}}>
-            O que foi descartado. {user.store
-              ? `Pães debitam do estoque da loja ${user.store.toUpperCase()}.`
-              : 'Sem loja atribuída — não move estoque (admin/teste).'}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Sobras &amp; Descartes</b>
+              <span>{todayLabel()}</span>
+            </div>
           </div>
-        </button>
+          <div className="ps-userchip">
+            <div className="ps-avatar" style={{background: roleColor(user.role)}}>{userDisplay.charAt(0).toUpperCase()}</div>
+            <b>{userDisplay}{user.store ? ` / ${user.store.toUpperCase()}` : ''}</b>
+          </div>
+        </header>
+
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">♻️ O que registrar?</h1>
+          <p className="ps-page-lead">Escolha entre sobras (não move estoque) ou descarte (debita do estoque da loja).</p>
+
+          <div style={{display:'flex', flexDirection:'column', gap:12}}>
+            <button onClick={()=>setMode('sobra')} className="ps-report-card" style={{textAlign:'left'}}>
+              <div className="icon"><Package size={28}/></div>
+              <h3>Registrar Sobras</h3>
+              <p>O que sobrou no fechamento. Não move estoque (sobras podem voltar à venda).</p>
+            </button>
+            <button onClick={()=>setMode('descarte')} className="ps-report-card" style={{textAlign:'left'}}>
+              <div className="icon"><Trash2 size={26}/></div>
+              <h3>Registrar Descarte</h3>
+              <p>
+                O que foi descartado. {user.store
+                  ? `Pães debitam do estoque da loja ${user.store.toUpperCase()}.`
+                  : 'Sem loja atribuída — não move estoque (admin/teste).'}
+              </p>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
 
   // ── FORM ──
   return (
-    <div style={{padding:'20px',maxWidth:600,margin:'0 auto'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
-        <button onClick={()=>{setMode(null);setQtys({})}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'1.2rem'}}>←</button>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>
-          {mode==='sobra'?'📦 Sobras':'🗑️ Descartes'} — {user.displayName}
-          {user.store && <span style={{fontSize:'.78rem',color:'var(--muted)',marginLeft:8,fontWeight:500}}>· {user.store.toUpperCase()}</span>}
-        </span>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <button className="ps-iconbtn" onClick={()=>{setMode(null);setQtys({})}} aria-label="Voltar">
+              <ChevronLeft size={20}/>
+            </button>
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>{mode==='sobra' ? 'Sobras' : 'Descartes'}</b>
+              <span>{todayLabel()}</span>
+            </div>
+          </div>
+          <div className="ps-userchip">
+            <div className="ps-avatar" style={{background: roleColor(user.role)}}>{userDisplay.charAt(0).toUpperCase()}</div>
+            <b>{userDisplay}{user.store ? ` / ${user.store.toUpperCase()}` : ''}</b>
+          </div>
+        </header>
+
+        <div className="ps-scroll ps-pad">
+          {breads.length > 0 && (
+            <>
+              <div className="ps-label">🍞 Pães do dia</div>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                {breads.map(b=>(
+                  <ItemRow key={'bread_'+b.id} id={'bread_'+b.id} name={b.name} unit={b.unit} qty={qtys['bread_'+b.id]||0} onChange={setQty}/>
+                ))}
+              </div>
+            </>
+          )}
+
+          {Object.entries(grouped).map(([cat, items])=>(
+            <div key={cat}>
+              <div className="ps-label">{cat}</div>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                {items.map(p=>(
+                  <ItemRow key={p.id} id={p.id} name={p.name} unit={p.unit} qty={qtys[p.id]||0} onChange={setQty}/>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {breads.length === 0 && Object.keys(grouped).length === 0 && (
+            <div className="ps-empty">Sem itens pra registrar hoje.</div>
+          )}
+        </div>
+
+        <div className="ps-totalbar">
+          <div className="ps-total-num">
+            <b>{filled}</b>
+            <span>item{filled!==1?'s':''} preenchido{filled!==1?'s':''}</span>
+          </div>
+          <button className="ps-save" onClick={save} disabled={saving || filled===0}>
+            {saving ? <span className="ps-spinner" style={{width:16,height:16,borderWidth:2}}/> : <><Save size={16}/> Salvar</>}
+          </button>
+        </div>
       </div>
-      <p style={{color:'var(--muted)',fontSize:'.8rem',marginBottom:16,paddingLeft:32}}>📅 {todayLabel()}</p>
-
-      {breads.length>0 && (
-        <div className="card">
-          <div className="card-title">🍞 Pães do dia</div>
-          {breads.map(b=>(
-            <ItemRow key={'bread_'+b.id} id={'bread_'+b.id} name={b.name} unit={b.unit} qty={qtys['bread_'+b.id]||0} onChange={setQty}/>
-          ))}
-        </div>
-      )}
-
-      {Object.entries(grouped).map(([cat, items])=>(
-        <div key={cat} className="card">
-          <div className="card-title">{cat}</div>
-          {items.map(p=>(
-            <ItemRow key={p.id} id={p.id} name={p.name} unit={p.unit} qty={qtys[p.id]||0} onChange={setQty}/>
-          ))}
-        </div>
-      ))}
-
-      <button className="btn btn-success btn-full" onClick={save} disabled={saving||filled===0}>
-        {saving ? <span className="spinner"/> : `💾 Salvar ${filled} item${filled!==1?'s':''}`}
-      </button>
     </div>
   )
 }
 
 function ItemRow({ id, name, unit, qty, onChange }: { id:string; name:string; unit:string|null; qty:number; onChange:(id:string,v:number)=>void }) {
   return (
-    <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-      <div style={{flex:1}}>
-        <div style={{fontSize:'.9rem',fontWeight:600}}>{name}</div>
-        {unit && <div style={{fontSize:'.75rem',color:'var(--muted)'}}>{unit}</div>}
+    <div className={`ps-card ${qty>0?'active':''}`} style={{padding:'12px 14px', gap:8}}>
+      <div className="ps-card-head" style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', gap:10}}>
+        <div style={{flex:1, minWidth:0}}>
+          <div className="ps-pname" style={{fontSize:14.5}}>{name}</div>
+          {unit && <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{unit}</div>}
+        </div>
+        <div className="ps-stepper" style={{flex:'none'}}>
+          <button className="ps-step" style={{width:36, height:36}} onClick={()=>onChange(id, qty-1)} disabled={qty<=0} aria-label="Diminuir">
+            <Minus size={16}/>
+          </button>
+          <input className={`ps-qty ${qty===0?'zero':''}`} style={{width:64, height:36, fontSize:15}}
+            type="number" value={qty||''} min={0} step={0.1} placeholder="0"
+            onChange={e=>onChange(id, parseFloat(e.target.value)||0)}/>
+          <button className="ps-step" style={{width:36, height:36}} onClick={()=>onChange(id, qty+1)} aria-label="Aumentar">
+            <Plus size={16}/>
+          </button>
+        </div>
       </div>
-      <button onClick={()=>onChange(id,qty-1)} style={{width:28,height:28,border:'1px solid var(--border)',borderRadius:6,background:'white',cursor:'pointer',fontSize:'1rem'}}>−</button>
-      <input type="number" value={qty||''} min={0} step={0.1} placeholder="0"
-        onChange={e=>onChange(id,parseFloat(e.target.value)||0)}
-        style={{width:60,textAlign:'center',padding:'4px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.9rem'}}/>
-      <button onClick={()=>onChange(id,qty+1)} style={{width:28,height:28,border:'1px solid var(--border)',borderRadius:6,background:'white',cursor:'pointer',fontSize:'1rem'}}>+</button>
     </div>
   )
 }
