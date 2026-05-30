@@ -17,10 +17,8 @@
 ### Tier 2 — operação diária (sheet "Mais", alto uso)
 - [x] 3. Estoque-Pães — PR #9 (merged)
 - [x] 4. Sobras — PR #10 (merged)
-- [ ] 5. Estoque (index + entrada) ← **EM ANDAMENTO**
-- [ ] 4. Sobras
-- [ ] 5. Estoque
-- [ ] 6. Estoque-Congelado
+- [x] 5. Estoque (index + entrada) — PR #11 (merged)
+- [ ] 6. Estoque-Congelado ← **EM ANDAMENTO**
 
 ### Tier 3 — regular
 - [ ] 7. Encomendas
