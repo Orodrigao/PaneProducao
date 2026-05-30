@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       app_users: {
@@ -50,6 +25,7 @@ export type Database = {
           pin: string
           role: string
           routes: Json
+          store: string | null
           updated_at: string
         }
         Insert: {
@@ -62,6 +38,7 @@ export type Database = {
           pin: string
           role: string
           routes?: Json
+          store?: string | null
           updated_at?: string
         }
         Update: {
@@ -74,7 +51,47 @@ export type Database = {
           pin?: string
           role?: string
           routes?: Json
+          store?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      bread_movements: {
+        Row: {
+          bread_id: string
+          created_at: string | null
+          id: string
+          location: string
+          movement_type: string
+          obs: string | null
+          quantity: number
+          recorded_by: string
+          reference_id: string | null
+          reference_type: string | null
+        }
+        Insert: {
+          bread_id: string
+          created_at?: string | null
+          id?: string
+          location: string
+          movement_type: string
+          obs?: string | null
+          quantity: number
+          recorded_by: string
+          reference_id?: string | null
+          reference_type?: string | null
+        }
+        Update: {
+          bread_id?: string
+          created_at?: string | null
+          id?: string
+          location?: string
+          movement_type?: string
+          obs?: string | null
+          quantity?: number
+          recorded_by?: string
+          reference_id?: string | null
+          reference_type?: string | null
         }
         Relationships: []
       }
@@ -86,6 +103,7 @@ export type Database = {
           days: number[]
           id: string
           is_pj: boolean | null
+          is_special: boolean
           name: string
           unit: string | null
         }
@@ -96,6 +114,7 @@ export type Database = {
           days?: number[]
           id: string
           is_pj?: boolean | null
+          is_special?: boolean
           name: string
           unit?: string | null
         }
@@ -106,10 +125,105 @@ export type Database = {
           days?: number[]
           id?: string
           is_pj?: boolean | null
+          is_special?: boolean
           name?: string
           unit?: string | null
         }
         Relationships: []
+      }
+      customer_price_overrides: {
+        Row: {
+          active: boolean
+          created_at: string
+          customer_id: string
+          id: string
+          pack_size: number
+          pricing_unit: string
+          product_id: string
+          product_name: string
+          product_source: string
+          unit_price: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          customer_id: string
+          id?: string
+          pack_size?: number
+          pricing_unit?: string
+          product_id: string
+          product_name: string
+          product_source: string
+          unit_price: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          customer_id?: string
+          id?: string
+          pack_size?: number
+          pricing_unit?: string
+          product_id?: string
+          product_name?: string
+          product_source?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_price_overrides_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          active: boolean
+          contact: string | null
+          created_at: string
+          default_tier_id: string | null
+          delivery_hours: number
+          discount_pct: number
+          doc: string | null
+          id: string
+          name: string
+          notes: string | null
+        }
+        Insert: {
+          active?: boolean
+          contact?: string | null
+          created_at?: string
+          default_tier_id?: string | null
+          delivery_hours?: number
+          discount_pct?: number
+          doc?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+        }
+        Update: {
+          active?: boolean
+          contact?: string | null
+          created_at?: string
+          default_tier_id?: string | null
+          delivery_hours?: number
+          discount_pct?: number
+          doc?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_default_tier_id_fkey"
+            columns: ["default_tier_id"]
+            isOneToOne: false
+            referencedRelation: "price_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       descartes: {
         Row: {
@@ -227,7 +341,9 @@ export type Database = {
           product_id: string | null
           product_name: string
           product_source: string
+          store: string | null
           unit: string
+          visible_stores: string[] | null
         }
         Insert: {
           active?: boolean
@@ -237,7 +353,9 @@ export type Database = {
           product_id?: string | null
           product_name: string
           product_source?: string
+          store?: string | null
           unit?: string
+          visible_stores?: string[] | null
         }
         Update: {
           active?: boolean
@@ -247,7 +365,9 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           product_source?: string
+          store?: string | null
           unit?: string
+          visible_stores?: string[] | null
         }
         Relationships: []
       }
@@ -286,36 +406,148 @@ export type Database = {
       orders: {
         Row: {
           bread_id: string
+          customer_id: string | null
+          delivery_date: string | null
           id: string
           obs: string | null
           order_date: string
+          order_type: string
+          pack_size: number | null
           pj_client: string | null
           pj_delivery_date: string | null
+          pricing_unit: string | null
+          product_name: string | null
+          product_source: string | null
+          production_date: string | null
           quantity: number | null
           store: string
+          unit_price: number | null
           updated_at: string | null
+          walkin_name: string | null
+          walkin_phone: string | null
         }
         Insert: {
           bread_id: string
+          customer_id?: string | null
+          delivery_date?: string | null
           id?: string
           obs?: string | null
           order_date?: string
+          order_type?: string
+          pack_size?: number | null
           pj_client?: string | null
           pj_delivery_date?: string | null
+          pricing_unit?: string | null
+          product_name?: string | null
+          product_source?: string | null
+          production_date?: string | null
           quantity?: number | null
           store: string
+          unit_price?: number | null
           updated_at?: string | null
+          walkin_name?: string | null
+          walkin_phone?: string | null
         }
         Update: {
           bread_id?: string
+          customer_id?: string | null
+          delivery_date?: string | null
           id?: string
           obs?: string | null
           order_date?: string
+          order_type?: string
+          pack_size?: number | null
           pj_client?: string | null
           pj_delivery_date?: string | null
+          pricing_unit?: string | null
+          product_name?: string | null
+          product_source?: string | null
+          production_date?: string | null
           quantity?: number | null
           store?: string
+          unit_price?: number | null
           updated_at?: string | null
+          walkin_name?: string | null
+          walkin_phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_tier_items: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          pack_size: number
+          pricing_unit: string
+          product_id: string
+          product_name: string
+          product_source: string
+          tier_id: string
+          unit_price: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          pack_size?: number
+          pricing_unit?: string
+          product_id: string
+          product_name: string
+          product_source: string
+          tier_id: string
+          unit_price: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          pack_size?: number
+          pricing_unit?: string
+          product_id?: string
+          product_name?: string
+          product_source?: string
+          tier_id?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_tier_items_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "price_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_tiers: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
         }
         Relationships: []
       }
@@ -360,6 +592,83 @@ export type Database = {
           },
         ]
       }
+      product_production: {
+        Row: {
+          id: string
+          obs: string | null
+          product_id: string
+          production_date: string
+          quantity: number
+          store: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          obs?: string | null
+          product_id: string
+          production_date: string
+          quantity?: number
+          store?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          obs?: string | null
+          product_id?: string
+          production_date?: string
+          quantity?: number
+          store?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_production_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      production_actuals: {
+        Row: {
+          bread_id: string
+          created_at: string | null
+          id: string
+          loss_reason: string | null
+          obs: string | null
+          quantity_baked: number
+          quantity_loss: number
+          record_date: string
+          recorded_by: string
+          updated_at: string | null
+        }
+        Insert: {
+          bread_id: string
+          created_at?: string | null
+          id?: string
+          loss_reason?: string | null
+          obs?: string | null
+          quantity_baked?: number
+          quantity_loss?: number
+          record_date: string
+          recorded_by: string
+          updated_at?: string | null
+        }
+        Update: {
+          bread_id?: string
+          created_at?: string | null
+          id?: string
+          loss_reason?: string | null
+          obs?: string | null
+          quantity_baked?: number
+          quantity_loss?: number
+          record_date?: string
+          recorded_by?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           active: boolean | null
@@ -367,6 +676,8 @@ export type Database = {
           cost_price: number | null
           created_at: string | null
           id: string
+          is_special: boolean
+          kind: string | null
           name: string
           sort_order: number | null
           unit: string | null
@@ -377,6 +688,8 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_special?: boolean
+          kind?: string | null
           name: string
           sort_order?: number | null
           unit?: string | null
@@ -387,6 +700,8 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_special?: boolean
+          kind?: string | null
           name?: string
           sort_order?: number | null
           unit?: string | null
@@ -954,9 +1269,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
