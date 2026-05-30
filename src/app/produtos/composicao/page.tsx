@@ -57,7 +57,7 @@ function ComposicaoInner() {
   }
 
   async function addComponent(source: 'bread' | 'product', componentId: string) {
-    const qty = parseFloat(newQty.replace(',', '.'))
+    const qty = parseInt(newQty, 10)
     if (!qty || qty <= 0) { showToast('Quantidade inválida'); return }
     try {
       const { data, error } = await supabase
@@ -76,7 +76,7 @@ function ComposicaoInner() {
   }
 
   async function updateQty(componentId: string, raw: string) {
-    const qty = parseFloat(raw.replace(',', '.'))
+    const qty = parseInt(raw, 10)
     if (!qty || qty <= 0) { showToast('Quantidade inválida'); return }
     try {
       const { error } = await supabase
@@ -204,13 +204,14 @@ function ComposicaoInner() {
                       </div>
                       <input
                         type="number"
-                        step="0.01"
-                        min="0.01"
+                        step="1"
+                        min="1"
+                        inputMode="numeric"
                         value={qtyEdits[e.id] ?? String(e.quantity)}
-                        onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value}))}
+                        onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d]/g, '')}))}
                         onBlur={ev => {
                           const v = ev.target.value
-                          if (v && parseFloat(v.replace(',','.')) !== Number(e.quantity)) updateQty(e.id, v)
+                          if (v && parseInt(v, 10) !== Number(e.quantity)) updateQty(e.id, v)
                           else setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
                         }}
                         disabled={!isKit}
@@ -260,10 +261,11 @@ function ComposicaoInner() {
                     </div>
                     <input
                       type="number"
-                      step="0.01"
-                      min="0.01"
+                      step="1"
+                      min="1"
+                      inputMode="numeric"
                       value={newQty}
-                      onChange={e => setNewQty(e.target.value)}
+                      onChange={e => setNewQty(e.target.value.replace(/[^\d]/g, ''))}
                       placeholder="Qtd"
                       className="ps-input"
                       style={{width:80, textAlign:'right'}}
