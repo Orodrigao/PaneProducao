@@ -106,7 +106,14 @@ export default function SobrasPage() {
         }
 
         // (b) Descarte de KIT → cascade: debita pães-componentes (qty_componente × qty_kit)
-        const kitRows = (inserted as any[]).filter(r => r.product_source === 'catalog' && Number(r.quantity) > 0)
+        // Só produtos com kind='kit' AGORA cascateiam. Componentes de um ex-kit
+        // (reclassificado pra final/insumo) não devem mover pão, mesmo que rows
+        // antigos em product_components ainda existam — schema permite essa
+        // inconsistência por design (FK não checa kind).
+        const kitIds = new Set(products.filter(p => p.kind === 'kit').map(p => p.id))
+        const kitRows = (inserted as any[]).filter(r =>
+          r.product_source === 'catalog' && Number(r.quantity) > 0 && kitIds.has(r.product_id)
+        )
         if (kitRows.length > 0) {
           const kitProductIds = kitRows.map(r => r.product_id)
           const { data: comps } = await supabase
