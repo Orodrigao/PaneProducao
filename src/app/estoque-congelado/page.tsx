@@ -139,7 +139,11 @@ export default function EstoqueCongeladoPage() {
   }, [])
 
   const openMov = (fp: FrozenProduct) => {
-    setMovFP(fp); setMovType('entrada'); setMovLoc(locsVisible[0] || ''); setMovQty(''); setMovObs('')
+    // Default movLoc = primeiro local visível com saldo > 0 (não o primeiro da lista cego).
+    // Isso evita o user dar saída de Freezer Horizontal quando o estoque está no Freezer da Loja.
+    const s = stock[fp.id] || {}
+    const locWithStock = locsVisible.find(l => (s[l] || 0) > 0)
+    setMovFP(fp); setMovType('entrada'); setMovLoc(locWithStock || locsVisible[0] || ''); setMovQty(''); setMovObs('')
   }
 
   const saveMov = async () => {
@@ -148,6 +152,13 @@ export default function EstoqueCongeladoPage() {
     if (isNaN(qty) || qty <= 0) { showToast('Quantidade inválida'); return }
     setSaving(true)
     const cur = stock[movFP.id]?.[movLoc] || 0
+    // Pra saída: validar que tem saldo no local selecionado. Sem isso, registrava o
+    // movement mas o saldo continuava 0 (max(0, 0-qty)) e o user achava que tinha funcionado.
+    if (movType === 'saida' && qty > cur) {
+      setSaving(false)
+      showToast(`Saldo insuficiente em ${LOCATION_LABELS[movLoc] || movLoc} (atual: ${cur})`)
+      return
+    }
     const newQty = movType==='inventario' ? qty : movType==='entrada' ? cur+qty : Math.max(0, cur-qty)
     try {
       const { data: ex } = await supabase.from('frozen_stock').select('id, location').eq('frozen_product_id', movFP.id)
@@ -724,8 +735,16 @@ export default function EstoqueCongeladoPage() {
             <div className="ps-fieldgroup" style={{marginBottom:10}}>
               <div className="ps-fieldlabel">Local</div>
               <select value={movLoc} onChange={e=>setMovLoc(e.target.value)} className="ps-select">
-                {locsVisible.map(loc=><option key={loc} value={loc}>{LOCATION_LABELS[loc] || loc}</option>)}
+                {locsVisible.map(loc=>{
+                  const q = stock[movFP.id]?.[loc] || 0
+                  return <option key={loc} value={loc}>{LOCATION_LABELS[loc] || loc} · {q}</option>
+                })}
               </select>
+              {movLoc && (
+                <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:4}}>
+                  Saldo atual neste local: <b style={{color:'var(--ps-ink)'}}>{stock[movFP.id]?.[movLoc] || 0}</b>
+                </div>
+              )}
             </div>
 
             <div className="ps-fieldgroup" style={{marginBottom:10}}>
