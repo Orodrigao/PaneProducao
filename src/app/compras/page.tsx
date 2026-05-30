@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronLeft, Plus, X, Send, Copy, Pencil, RotateCw, Check, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { AppUser, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { AppUser, getCurrentUser, firstAllowedRoute, roleColor } from '@/lib/auth'
 import { formatDate, showToast } from '@/lib/utils'
 
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
@@ -12,18 +13,18 @@ const SECTOR_LABELS: Record<string,string> = { padaria:'🥖 Padaria', cozinha:'
 interface PurchaseList { id:string; sector:string; status:string; submitted_at:string|null; submitted_by:string|null; completed_at:string|null }
 interface PurchaseItem { id:string; list_id:string; product_id:string|null; ad_hoc_name:string|null; unit:string|null; quantity:number|null; checked:boolean; is_adhoc:boolean; sort_order:number; products?: { name:string } }
 
-// Mapa user.id → setor (substitui o seletor hardcoded antigo).
-// Admin vai pra visão "owner" automaticamente.
+// Mapa user.id → setor. Admin vai pra visão "owner".
 function resolveRole(user: AppUser): { sector: string|null; isOwner: boolean } {
   if (user.role === 'admin') return { sector: null, isOwner: true }
   if (user.id === 'geolar')  return { sector: 'padaria', isOwner: false }
   if (user.id === 'fran')    return { sector: 'cozinha', isOwner: false }
   if (['liara','elis','samuel','rose','atendente_ex'].includes(user.id)) return { sector: 'loja', isOwner: false }
-  return { sector: null, isOwner: false } // sem acesso (será redirecionado)
+  return { sector: null, isOwner: false }
 }
 
 export default function ComprasPage() {
   const router = useRouter()
+  const [authUser, setAuthUser] = useState<AppUser | null>(null)
   const [user, setUser]     = useState<{ name: string; id: string }|null>(null)
   const [sector, setSector] = useState<string|null>(null)
   const [isOwner, setIsOwner] = useState(false)
@@ -41,10 +42,10 @@ export default function ComprasPage() {
   const [ownerList, setOwnerList] = useState<PurchaseList|null>(null)
   const [ownerFilter, setOwnerFilter] = useState<'all'|'unchecked'|'checked'|'noqty'>('all')
 
-  // Resolve identidade via PIN global. Sem seletor interno paralelo.
   useEffect(() => {
     const u = getCurrentUser()
     if (!u) { router.replace('/login'); return }
+    setAuthUser(u)
     const r = resolveRole(u)
     if (r.isOwner) {
       setIsOwner(true)
@@ -53,15 +54,9 @@ export default function ComprasPage() {
       setSector(r.sector)
       setUser({ name: u.displayName, id: u.id })
     } else {
-      // Usuário sem mapeamento de setor → manda pra firstAllowedRoute
       router.replace(firstAllowedRoute(u))
     }
   }, [router])
-
-  function handleLogout() {
-    authLogout()
-    router.push('/login')
-  }
 
   const loadList = useCallback(async () => {
     if (!sector) return
@@ -206,32 +201,75 @@ export default function ComprasPage() {
   const readonly = list?.status !== 'draft'
   const searchResults = search.length>1 ? allProducts.filter(p=>!items.find(i=>i.product_id===p.id)&&p.name.toLowerCase().includes(search.toLowerCase())).slice(0,8) : []
 
-  // Loading state enquanto resolve user
   if (!user) return (
-    <div style={{padding:'40px',textAlign:'center',color:'var(--muted)'}}>
+    <div className="ps-loading">
+      <div className="ps-spinner"/>
       <p>Carregando...</p>
     </div>
   )
 
+  const statusCls = (status: string) => status==='submitted' ? 'enviado' : status==='completed' ? 'conferido' : 'separado'
+  const statusLabel = (status: string) => status==='submitted' ? 'Enviada' : status==='completed' ? 'Concluída' : 'Rascunho'
+
+  function PsHeader({ subtitle, onBack }: { subtitle?: string; onBack?: () => void }) {
+    return (
+      <header className="ps-header">
+        <div className="ps-wordmark">
+          {onBack && (
+            <button className="ps-iconbtn" onClick={onBack} aria-label="Voltar">
+              <ChevronLeft size={20}/>
+            </button>
+          )}
+          <div className="ps-mark">P</div>
+          <div className="ps-brand">
+            <b>Compras</b>
+            {subtitle && <span>{subtitle}</span>}
+          </div>
+        </div>
+        {authUser && (
+          <div className="ps-userchip">
+            <div className="ps-avatar" style={{background: roleColor(authUser.role)}}>{authUser.displayName.charAt(0).toUpperCase()}</div>
+            <b>{authUser.displayName}</b>
+          </div>
+        )}
+      </header>
+    )
+  }
+
   // ── OWNER OVERVIEW ──
   if (isOwner && ownerView==='overview') return (
-    <div style={{padding:'20px',maxWidth:600,margin:'0 auto'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>👑 Visão Geral — Compras <span style={{fontSize:'.78rem',color:'var(--muted)',fontWeight:500}}>· {user.name}</span></span>
-        <button onClick={handleLogout} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.85rem'}}>Sair</button>
-      </div>
-      {ownerLists.map((l:any)=>(
-        <div key={l.id} onClick={()=>openOwnerDetail(l)} style={{background:'white',borderRadius:'var(--radius)',border:`2px solid ${l.status==='submitted'?'var(--warning)':l.status==='completed'?'var(--success)':'var(--border)'}`,padding:16,marginBottom:12,cursor:'pointer'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontWeight:700,color:'var(--primary)'}}>{SECTOR_LABELS[l.sector]||l.sector}</span>
-            <span style={{fontSize:'.72rem',fontWeight:700,padding:'3px 10px',borderRadius:20,background:l.status==='submitted'?'#fff3cd':l.status==='completed'?'#d4edda':'#f0f0f0',color:l.status==='submitted'?'#856404':l.status==='completed'?'var(--success)':'var(--muted)'}}>
-              {l.status==='submitted'?'Enviada':l.status==='completed'?'Concluída':'Rascunho'}
-            </span>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <PsHeader subtitle="Visão geral"/>
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">👑 Listas por setor</h1>
+          <p className="ps-page-lead">Aguardando rascunhos, enviadas pra comprar e concluídas.</p>
+
+          <div style={{display:'flex', flexDirection:'column', gap:12}}>
+            {ownerLists.map((l:any)=>{
+              const borderColor = l.status==='submitted' ? 'var(--honey-deep)'
+                                : l.status==='completed' ? 'var(--sage)'
+                                : 'var(--ps-line)'
+              return (
+                <div key={l.id} onClick={()=>openOwnerDetail(l)} className="ps-card" style={{borderLeft:`4px solid ${borderColor}`, cursor:'pointer'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8}}>
+                    <span className="ps-pname">{SECTOR_LABELS[l.sector]||l.sector}</span>
+                    <span className={`ps-status ${statusCls(l.status)}`}>{statusLabel(l.status)}</span>
+                  </div>
+                  <div style={{fontSize:13, color:'var(--ink-soft)'}}>
+                    {l.filled>0 ? `${l.filled} itens · ${l.checked} comprados` : 'Nenhum item preenchido'}
+                  </div>
+                  {l.filled>0 && (
+                    <div style={{height:5, background:'var(--ps-line)', borderRadius:3, overflow:'hidden'}}>
+                      <div style={{height:'100%', background:'var(--sage)', width:`${Math.round((l.checked/l.filled)*100)}%`}}/>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-          <div style={{fontSize:'.8rem',color:'var(--muted)',marginTop:4}}>{l.filled>0?`${l.filled} itens · ${l.checked} comprados`:'Nenhum item preenchido'}</div>
-          {l.filled>0 && <div style={{height:4,background:'var(--border)',borderRadius:2,marginTop:8}}><div style={{height:'100%',background:'var(--success)',borderRadius:2,width:`${Math.round((l.checked/l.filled)*100)}%`}}/></div>}
         </div>
-      ))}
+      </div>
     </div>
   )
 
@@ -239,39 +277,71 @@ export default function ComprasPage() {
   if (isOwner && ownerView==='detail' && ownerList) {
     const oFilled = ownerItems.filter(i=>i.quantity); const oChecked = ownerItems.filter(i=>i.checked)
     return (
-      <div style={{padding:'16px',maxWidth:600,margin:'0 auto'}}>
-        <button onClick={()=>{setOwnerView('overview');loadOwnerOverview()}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',marginBottom:12,fontSize:'.9rem'}}>← Voltar</button>
-        <div style={{fontWeight:700,color:'var(--primary)',marginBottom:4}}>{SECTOR_LABELS[ownerList.sector]}</div>
-        <div style={{fontSize:'.85rem',color:'var(--muted)',marginBottom:12}}>{oChecked.length}/{oFilled.length} comprados</div>
-        {ownerList.status==='submitted' && <div className="status-banner status-submitted">⏳ Enviado por <strong>{ownerList.submitted_by}</strong> em {formatDate(ownerList.submitted_at||'')}</div>}
-        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-          {(['all','unchecked','checked','noqty'] as const).map(f=>(
-            <button key={f} onClick={()=>setOwnerFilter(f)} style={{padding:'5px 10px',borderRadius:20,border:'1.5px solid var(--border)',background:ownerFilter===f?'var(--primary)':'white',color:ownerFilter===f?'white':'var(--text)',fontSize:'.78rem',cursor:'pointer'}}>
-              {f==='all'?'Todos':f==='unchecked'?'Pendentes':f==='checked'?'Comprados':'Sem qtd.'}
-            </button>
-          ))}
-        </div>
-        <div className="card">
-          {ownerFiltered.map(i=>{
-            const nm = i.is_adhoc?i.ad_hoc_name:(i.products?.name||'—')
-            const qty = i.quantity?(i.quantity+' '+(i.unit||'')).trim():null
-            return (
-              <div key={i.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-                <div onClick={()=>ownerList.status==='submitted'&&toggleCheck(i.id,i.checked)}
-                  style={{width:24,height:24,border:'2px solid var(--border)',borderRadius:'50%',cursor:ownerList.status==='submitted'?'pointer':'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:i.checked?'var(--success)':'white',borderColor:i.checked?'var(--success)':'var(--border)',color:'white',fontSize:'.85rem'}}>
-                  {i.checked?'✓':''}
-                </div>
-                <div style={{flex:1,fontSize:'.88rem',textDecoration:i.checked?'line-through':'none',color:i.checked?'var(--muted)':'inherit'}}>{nm}</div>
-                <div style={{fontSize:'.88rem',fontWeight:700,color:qty?'var(--primary)':'var(--muted)',fontStyle:qty?'normal':'italic'}}>{qty||'sem qtd.'}</div>
+      <div className="ps-canvas">
+        <div className="ps-shell">
+          <PsHeader subtitle={SECTOR_LABELS[ownerList.sector]} onBack={()=>{setOwnerView('overview');loadOwnerOverview()}}/>
+          <div className="ps-scroll ps-pad">
+            <h1 className="ps-page-title">{SECTOR_LABELS[ownerList.sector]}</h1>
+            <p className="ps-page-lead">{oChecked.length}/{oFilled.length} comprados</p>
+
+            {ownerList.status==='submitted' && (
+              <div className="ps-banner honey">
+                ⏳ Enviado por <b>{ownerList.submitted_by}</b> em {formatDate(ownerList.submitted_at||'')}
               </div>
-            )
-          })}
-        </div>
-        <div style={{marginTop:16}}>
-          <button className="btn btn-outline btn-full" onClick={()=>copyAsText(ownerItems, ownerList.sector, ownerList.submitted_by)} disabled={oFilled.length===0}>📋 Copiar texto</button>
-          {ownerList.status==='submitted' && <button className="btn btn-success btn-full" onClick={completeList}>✅ Finalizar lista ({oChecked.length}/{oFilled.length})</button>}
-          {ownerList.status==='completed' && <button className="btn btn-outline btn-full" onClick={ownerReset}>🔄 Reiniciar ciclo</button>}
-          {ownerList.status==='draft' && <div style={{textAlign:'center',color:'var(--muted)',fontSize:'.85rem'}}>Aguardando envio do setor {SECTOR_LABELS[ownerList.sector]}.</div>}
+            )}
+            {ownerList.status==='completed' && (
+              <div className="ps-banner crust">✅ Lista concluída!</div>
+            )}
+
+            <div className="ps-presets" style={{marginTop:14, marginBottom:14}}>
+              {(['all','unchecked','checked','noqty'] as const).map(f=>(
+                <button key={f} onClick={()=>setOwnerFilter(f)} className={`ps-preset ${ownerFilter===f?'active':''}`}>
+                  {f==='all'?'Todos':f==='unchecked'?'Pendentes':f==='checked'?'Comprados':'Sem qtd.'}
+                </button>
+              ))}
+            </div>
+
+            <div className="ps-card" style={{padding:'4px 14px'}}>
+              {ownerFiltered.length === 0 ? (
+                <div className="ps-empty">Nenhum item neste filtro.</div>
+              ) : ownerFiltered.map(i=>{
+                const nm = i.is_adhoc?i.ad_hoc_name:(i.products?.name||'—')
+                const qty = i.quantity?(i.quantity+' '+(i.unit||'')).trim():null
+                const canCheck = ownerList.status==='submitted'
+                return (
+                  <div key={i.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
+                    <button onClick={()=>canCheck && toggleCheck(i.id, i.checked)} disabled={!canCheck}
+                      style={{width:26, height:26, border:'2px solid', borderRadius:'50%', cursor:canCheck?'pointer':'default', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:i.checked?'var(--sage)':'var(--cream-raise)', borderColor:i.checked?'var(--sage)':'var(--ps-line)', color:'#fff', padding:0}}>
+                      {i.checked && <Check size={14}/>}
+                    </button>
+                    <div style={{flex:1, fontSize:14, textDecoration:i.checked?'line-through':'none', color:i.checked?'var(--ink-faint)':'var(--ps-ink)', fontWeight:600}}>{nm}</div>
+                    <div style={{fontSize:13, fontWeight:700, color:qty?'var(--crust)':'var(--ink-faint)', fontStyle:qty?'normal':'italic', fontVariantNumeric:'tabular-nums'}}>{qty||'sem qtd.'}</div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{marginTop:16, display:'flex', flexDirection:'column', gap:8}}>
+              <button className="ps-btn ghost block" onClick={()=>copyAsText(ownerItems, ownerList.sector, ownerList.submitted_by)} disabled={oFilled.length===0}>
+                <Copy size={14}/> Copiar texto
+              </button>
+              {ownerList.status==='submitted' && (
+                <button className="ps-btn success block" onClick={completeList}>
+                  <Check size={16}/> Finalizar lista ({oChecked.length}/{oFilled.length})
+                </button>
+              )}
+              {ownerList.status==='completed' && (
+                <button className="ps-btn ghost block" onClick={ownerReset}>
+                  <RotateCw size={14}/> Reiniciar ciclo
+                </button>
+              )}
+              {ownerList.status==='draft' && (
+                <div style={{textAlign:'center', color:'var(--ink-faint)', fontSize:13}}>
+                  Aguardando envio do setor {SECTOR_LABELS[ownerList.sector]}.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -279,96 +349,132 @@ export default function ComprasPage() {
 
   // ── USER LIST ──
   return (
-    <div style={{padding:'16px',maxWidth:600,margin:'0 auto'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <span style={{fontWeight:700,color:'var(--primary)'}}>{sector ? SECTOR_LABELS[sector] : ''} — {user.name}</span>
-        <button onClick={handleLogout} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.8rem'}}>Sair</button>
-      </div>
-      {list?.status==='submitted' && <div className="status-banner status-submitted">⏳ Lista enviada em {formatDate(list.submitted_at||'')} por {list.submitted_by}. Aguardando compras.</div>}
-      {list?.status==='completed' && <div className="status-banner status-completed">✅ Lista concluída!</div>}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <PsHeader subtitle={sector ? SECTOR_LABELS[sector] : ''}/>
+        <div className="ps-scroll ps-pad">
+          {list?.status==='submitted' && (
+            <div className="ps-banner honey" style={{marginTop:14}}>
+              ⏳ Lista enviada em {formatDate(list.submitted_at||'')} por <b>{list.submitted_by}</b>. Aguardando compras.
+            </div>
+          )}
+          {list?.status==='completed' && (
+            <div className="ps-banner crust" style={{marginTop:14}}>✅ Lista concluída!</div>
+          )}
 
-      <div style={{fontSize:'.85rem',color:'var(--muted)',marginBottom:10}}>{filledCount}/{items.length} com quantidade</div>
+          <div style={{fontSize:13, color:'var(--ink-soft)', marginTop:14, marginBottom:10}}>
+            <b style={{color:'var(--ps-ink)'}}>{filledCount}</b>/{items.length} com quantidade
+          </div>
 
-      <div style={{display:'flex',gap:6,marginBottom:12}}>
-        {(['all','pending','filled'] as const).map(f=>(
-          <button key={f} onClick={()=>setFilter(f)} style={{padding:'5px 10px',borderRadius:20,border:'1.5px solid var(--border)',background:filter===f?'var(--primary)':'white',color:filter===f?'white':'var(--text)',fontSize:'.78rem',cursor:'pointer'}}>
-            {f==='all'?'Todos':f==='pending'?'Sem qtd.':'Com qtd.'}
-          </button>
-        ))}
-      </div>
+          <div className="ps-presets" style={{marginBottom:12}}>
+            {(['all','pending','filled'] as const).map(f=>(
+              <button key={f} onClick={()=>setFilter(f)} className={`ps-preset ${filter===f?'active':''}`}>
+                {f==='all'?'Todos':f==='pending'?'Sem qtd.':'Com qtd.'}
+              </button>
+            ))}
+          </div>
 
-      {!readonly && sector!=='padaria' && (
-        <div className="card" style={{marginBottom:12}}>
-          <div style={{position:'relative'}}>
-            <input placeholder="🔍 Buscar produto para adicionar..." value={search} onChange={e=>setSearch(e.target.value)}
-              style={{width:'100%',padding:'9px 12px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-            {searchResults.length>0 && (
-              <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:180,overflowY:'auto'}}>
-                {searchResults.map((p:any)=>(
-                  <div key={p.id} onClick={()=>addFromSearch(p)} style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
-                    <div>{p.name}</div><div style={{fontSize:'.72rem',color:'var(--muted)'}}>{p.category}</div>
+          {!readonly && sector!=='padaria' && (
+            <div className="ps-fieldgroup" style={{position:'relative', marginBottom:12}}>
+              <div className="ps-fieldlabel">+ Adicionar produto</div>
+              <div style={{position:'relative'}}>
+                <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+                <input placeholder="Buscar produto..." value={search} onChange={e=>setSearch(e.target.value)}
+                  className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
+              </div>
+              {searchResults.length>0 && (
+                <div style={{position:'absolute', top:'100%', left:0, right:0, background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'0 0 var(--r-ctrl) var(--r-ctrl)', zIndex:50, maxHeight:200, overflowY:'auto', boxShadow:'var(--sh-2)'}}>
+                  {searchResults.map((p:any)=>(
+                    <div key={p.id} onClick={()=>addFromSearch(p)}
+                      style={{padding:'10px 12px', cursor:'pointer', fontSize:13, borderBottom:'1px solid var(--line-soft)', fontFamily:'var(--font-ui)'}}>
+                      <div style={{fontWeight:600}}>{p.name}</div>
+                      <div style={{fontSize:11, color:'var(--ink-faint)'}}>{p.category}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="ps-card" style={{padding:'4px 14px'}}>
+            {filtered.length===0 ? (
+              <div className="ps-empty">Nenhum item neste filtro.</div>
+            ) : filtered.map(i=>{
+              const nm = i.is_adhoc?i.ad_hoc_name:(i.products?.name||'—')
+              return (
+                <div key={i.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)'}}>
+                      {nm}
+                      {i.is_adhoc && <span className="ps-store-chip ja" style={{marginLeft:6}}>avulso</span>}
+                    </div>
+                    {i.unit && <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{i.unit}</div>}
                   </div>
-                ))}
+                  <input type="number" defaultValue={i.quantity||''} placeholder="qtd" min={0} step={0.1} disabled={readonly}
+                    onBlur={e=>updateQty(i.id, e.target.value)}
+                    className={`ps-input ${i.quantity ? 'has-value' : ''}`}
+                    style={{width:74, padding:'6px 8px', textAlign:'center', fontSize:14, fontWeight:700, background:i.quantity?'var(--honey-tint)':'var(--cream-raise)', borderColor:i.quantity?'var(--honey-line)':'var(--ps-line)'}}/>
+                  {i.is_adhoc && !readonly && (
+                    <button onClick={()=>deleteItem(i.id)} className="ps-iconbtn" style={{width:28, height:28, color:'var(--berry)'}} aria-label="Remover">
+                      <X size={14}/>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            {!readonly && (
+              <div style={{borderTop:'1px dashed var(--ps-line)', paddingTop:12, marginTop:8, paddingBottom:8}}>
+                <div className="ps-flabel" style={{marginBottom:6}}>+ Adicionar item avulso</div>
+                <div style={{display:'flex', gap:6}}>
+                  <input placeholder="Nome do item..." value={adhocName} onChange={e=>setAdhocName(e.target.value)}
+                    className="ps-input" style={{flex:1, fontSize:13}}/>
+                  <input placeholder="un." value={adhocUnit} onChange={e=>setAdhocUnit(e.target.value)}
+                    className="ps-input" style={{width:60, textAlign:'center', fontSize:12}}/>
+                  <button onClick={addAdhoc} className="ps-btn primary" disabled={!adhocName.trim()}>
+                    <Plus size={14}/>
+                  </button>
+                </div>
               </div>
             )}
           </div>
-        </div>
-      )}
 
-      <div className="card">
-        {filtered.length===0 ? <div style={{textAlign:'center',padding:30,color:'var(--muted)'}}>Nenhum item neste filtro.</div> :
-          filtered.map(i=>{
-            const nm = i.is_adhoc?i.ad_hoc_name:(i.products?.name||'—')
-            return (
-              <div key={i.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-                <div style={{flex:1,fontSize:'.9rem',fontWeight:600}}>
-                  {nm}
-                  {i.is_adhoc && <span style={{fontSize:'.7rem',background:'#e8f4fd',color:'#1a6fa3',borderRadius:4,padding:'1px 5px',marginLeft:4}}>avulso</span>}
-                  {i.unit && <div style={{fontSize:'.72rem',color:'var(--muted)'}}>{i.unit}</div>}
-                </div>
-                <input type="number" defaultValue={i.quantity||''} placeholder="qtd" min={0} step={0.1} disabled={readonly}
-                  onBlur={e=>updateQty(i.id,e.target.value)}
-                  style={{width:70,textAlign:'center',padding:'6px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.9rem',background:i.quantity?'#fff8f0':'white',borderColor:i.quantity?'var(--primary-light)':'var(--border)'}}/>
-                {i.is_adhoc && !readonly && <button onClick={()=>deleteItem(i.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:'.9rem'}}>✕</button>}
-              </div>
-            )
-          })
-        }
-        {!readonly && (
-          <div style={{borderTop:'1px dashed var(--border)',paddingTop:12,marginTop:12}}>
-            <div style={{fontSize:'.75rem',fontWeight:700,color:'var(--muted)',textTransform:'uppercase',marginBottom:8}}>Adicionar item avulso</div>
-            <div style={{display:'flex',gap:6}}>
-              <input placeholder="Nome do item..." value={adhocName} onChange={e=>setAdhocName(e.target.value)}
-                style={{flex:1,padding:'8px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.85rem'}}/>
-              <input placeholder="un." value={adhocUnit} onChange={e=>setAdhocUnit(e.target.value)}
-                style={{width:55,padding:'8px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.82rem',textAlign:'center'}}/>
-              <button onClick={addAdhoc} style={{padding:'8px 12px',background:'var(--primary)',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'.85rem'}}>+</button>
-            </div>
+          <div style={{marginTop:14, display:'flex', flexDirection:'column', gap:8}}>
+            {!readonly ? (
+              <>
+                <button className="ps-btn success block" onClick={submit} disabled={saving || filledCount===0}>
+                  {saving ? <span className="ps-spinner" style={{width:14, height:14, borderWidth:2}}/> : <><Send size={14}/> Enviar Lista ({filledCount} item{filledCount!==1?'s':''})</>}
+                </button>
+                <button className="ps-btn ghost block" onClick={()=>copyAsText(items, sector!)} disabled={filledCount===0}>
+                  <Copy size={14}/> Copiar texto
+                </button>
+                <button className="ps-btn ghost block" onClick={async()=>{ await supabase.from('purchase_items').update({quantity:null}).eq('list_id',list!.id); setItems(prev=>prev.map(i=>({...i,quantity:null}))); showToast('Quantidades limpas') }}>
+                  <RotateCw size={14}/> Limpar quantidades
+                </button>
+              </>
+            ) : list?.status==='submitted' ? (
+              <>
+                <button className="ps-btn ghost block" onClick={()=>copyAsText(items, sector!, list?.submitted_by)}>
+                  <Copy size={14}/> Copiar texto
+                </button>
+                <button className="ps-btn ghost block" onClick={editList}>
+                  <Pencil size={14}/> Editar / Corrigir lista
+                </button>
+                <button className="ps-btn ghost block" onClick={resetList}>
+                  <RotateCw size={14}/> Novo ciclo (limpar tudo)
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="ps-btn ghost block" onClick={()=>copyAsText(items, sector!)}>
+                  <Copy size={14}/> Copiar texto
+                </button>
+                <button className="ps-btn ghost block" onClick={resetList}>
+                  <RotateCw size={14}/> Novo ciclo (limpar tudo)
+                </button>
+              </>
+            )}
           </div>
-        )}
-      </div>
-
-      <div style={{marginTop:12}}>
-        {!readonly ? (
-          <>
-            <button className="btn btn-success btn-full" onClick={submit} disabled={saving||filledCount===0}>
-              {saving?<span className="spinner"/>:`📤 Enviar Lista (${filledCount} item${filledCount!==1?'s':''})`}
-            </button>
-            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!)} disabled={filledCount===0}>📋 Copiar texto</button>
-            <button className="btn btn-ghost btn-full" onClick={async()=>{ await supabase.from('purchase_items').update({quantity:null}).eq('list_id',list!.id); setItems(prev=>prev.map(i=>({...i,quantity:null}))); showToast('Quantidades limpas') }}>🔄 Limpar quantidades</button>
-          </>
-        ) : list?.status==='submitted' ? (
-          <>
-            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!, list?.submitted_by)}>📋 Copiar texto</button>
-            <button className="btn btn-outline btn-full" onClick={editList}>✏️ Editar / Corrigir lista</button>
-            <button className="btn btn-ghost btn-full" onClick={resetList}>🔄 Novo ciclo (limpar tudo)</button>
-          </>
-        ) : (
-          <>
-            <button className="btn btn-outline btn-full" onClick={()=>copyAsText(items, sector!)}>📋 Copiar texto</button>
-            <button className="btn btn-outline btn-full" onClick={resetList}>🔄 Novo ciclo (limpar tudo)</button>
-          </>
-        )}
+        </div>
       </div>
     </div>
   )
