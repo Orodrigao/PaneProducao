@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, Layers } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -138,10 +138,12 @@ export default function ProdutosPage() {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
     return matchCat && matchKind && matchSearch
   })
-  const kindCounts = products.reduce<Record<'kit'|'insumo'|'final', number>>((acc, p) => {
-    if (p.kind === 'kit' || p.kind === 'insumo' || p.kind === 'final') acc[p.kind]++
-    return acc
-  }, { kit:0, insumo:0, final:0 })
+  const kindCounts = { kit: 0, insumo: 0, final: 0 }
+  for (const p of products) {
+    if (p.kind === 'kit') kindCounts.kit++
+    else if (p.kind === 'insumo') kindCounts.insumo++
+    else if (p.kind === 'final') kindCounts.final++
+  }
   const grouped = filtered.reduce((acc:Record<string,Product[]>,p)=>{ (acc[p.category]??=[]).push(p); return acc },{})
 
   const breadsFiltered = breads.filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()))
@@ -265,8 +267,8 @@ export default function ProdutosPage() {
                         </div>
                       </div>
                       {p.kind === 'kit' && (
-                        <button disabled title="Composição (cadastro de componentes) chega na Fase B" className="ps-iconbtn" style={{width:30, height:30, opacity:.4, cursor:'not-allowed'}}>
-                          <Layers size={14}/>
+                        <button disabled title="Composição (cadastro de componentes) chega na Fase B" className="ps-iconbtn" style={{width:30, height:30, opacity:.4, cursor:'not-allowed', fontSize:14}}>
+                          📋
                         </button>
                       )}
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
