@@ -26,8 +26,8 @@
 - [x] 9. Fornecedores — PR #15 (merged)
 
 ### Tier 4 — admin / baixa frequência
-- [ ] 10. Produtos ← **EM ANDAMENTO**
-- [ ] 11. Tabelas-Preço
+- [x] 10. Produtos — PR #16 (merged)
+- [ ] 11. Tabelas-Preço ← **EM ANDAMENTO**
 - [ ] 12. Clientes
 - [ ] 13. Pedidos-PJ
 - [ ] 14. Simulador-Desconto
