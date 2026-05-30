@@ -250,7 +250,7 @@ export default function SimuladorDescontoPage() {
           {loading ? (
             <div className="ps-empty">Carregando dados...</div>
           ) : (
-            <div style={{display:'grid', gridTemplateColumns:'minmax(280px, 1fr) minmax(280px, 1fr)', gap:14}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr', gap:14}} className="ps-sim-grid">
               {/* LEFT: INPUTS */}
               <div style={{display:'grid', gap:12}}>
                 <div className="ps-card" style={{gap:10}}>

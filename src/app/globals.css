@@ -475,6 +475,11 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-loc-chip.ja{ background:#E3F0E0; border-color:#C5D5BA; color:var(--sage); }
 .ps-loc-chip.ex{ background:var(--crust-tint); border-color:var(--honey-line); color:var(--crust); }
 
+/* Simulador-Desconto: grid 2-col só em viewports largos */
+@media (min-width: 720px) {
+  .ps-sim-grid{ grid-template-columns: 1fr 1fr !important; }
+}
+
 /* Tabela (fechamento) */
 .ps-table-wrap{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); overflow:hidden; box-shadow:var(--sh-1); }
 .ps-table{ width:100%; border-collapse:collapse; font-family:var(--font-ui); font-size:13px; color:var(--ps-ink); }
