@@ -44,16 +44,18 @@
 
 ---
 
-## Fase C — Baixa em cascata (impacto operacional, mais arriscado)
+## Fase C — Baixa em cascata (descarte + romaneio + venda)
 
-- [ ] **C1** — `/sobras`: ao gravar sobra/descarte de um item com `kind='kit'`, expandir pra components:
-  - Continuar gravando o row em `sobras`/`descartes` do kit (pra histórico/relatório)
-  - **Adicionalmente** gravar N rows extras em `bread_movements` ou `stock_movements` (cada component × quantity × qty do kit)
-  - Tag `reference_type='kit_cascade'` pra rastrear origem
-- [ ] **C2** — `/romaneio` (envio): ao confirmar envio de um kit, igual ao C1 — debita components do estoque da loja origem em `bread_movements` (loja de origem).
-- [ ] **C3** — Auditoria: SQL pra ver se há kits hoje com `kind='kit'` SEM components cadastrados. Avisar admin/financeiro pra cadastrar antes da Fase C entrar em produção (senão silenciosamente nada muda).
+**Modelo confirmado com Rodrigão:** kit = estado intermediário "prateleira". Sobra ≠ baixa (pão tá lá, vai vender amanhã ou virar descarte). Só **descarte**, **romaneio** e **venda** (PJ/encomendas) fazem baixa real dos pães-componentes.
 
-**Saída da fase C:** estoque de pães fica consistente com venda de kits. Habilita relatório de "consumo real de pão por kit/dia".
+- [ ] **C1 — Descarte cascade** — `/sobras` modo descarte: ao gravar descarte de produto com `kind='kit'`, debitar pães-componentes do estoque da loja (em `bread_movements` com `reference_type='descarte_kit'`). Multiplicação: `qty_kit × qty_componente`. Idempotência: limpar movimentos antigos de `descarte_kit` junto com `descarte`. Componentes do tipo `product` (não-pão) ficam fora desta fase — só pão cascateia (alinhado com o modelo do negócio).
+- [ ] **C2 — Romaneio cascade** — `/romaneio` confirmar envio de kit: debita componentes-pão do estoque da loja origem.
+- [ ] **C3 — Vendas cascade** — `/pedidos-pj` e `/encomendas`: ao gravar pedido de kit, debita componentes-pão do estoque da loja origem.
+- [ ] **C4 — Auditoria pré-rollout** — SQL: kits ativos sem components cadastrados. Mostrar contagem pro Rodrigão antes da Fase C entrar em produção (senão o cascade silenciosamente não faz nada e o estoque vira ficção).
+
+**Saída da fase C:** estoque de pão reflete consumo real via kits. Habilita relatório "consumo de pão por kit/dia/loja".
+
+**Cada subfase = 1 PR.** Mesclo só depois de teste em preview.
 
 ---
 

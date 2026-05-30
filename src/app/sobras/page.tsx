@@ -6,8 +6,9 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
 
-interface Product { id: string; name: string; category: string; unit: string | null }
+interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null }
 interface Bread   { id: string; name: string; unit: string | null }
+interface Component { parent_product_id: string; component_source: string; component_id: string; quantity: number }
 
 export default function SobrasPage() {
   const router = useRouter()
@@ -28,7 +29,7 @@ export default function SobrasPage() {
   const loadData = useCallback(async () => {
     if (!user) return
     const [{ data: prods }, { data: bds }, { data: orders }] = await Promise.all([
-      supabase.from('products').select('id,name,category,unit').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
+      supabase.from('products').select('id,name,category,unit,kind').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
       supabase.from('breads').select('id,name,unit').eq('active', true).eq('is_pj', false).order('name'),
       supabase.from('orders').select('bread_id').eq('order_date', todayKey()).gt('quantity', 0),
     ])
@@ -60,14 +61,15 @@ export default function SobrasPage() {
     const table = mode === 'sobra' ? 'sobras' : 'descartes'
     const date = todayKey()
     try {
-      // Idempotência: pra descarte, apaga bread_movements antigos antes de re-inserir os descartes
+      // Idempotência: pra descarte, apaga bread_movements antigos (diretos + cascade de kit)
+      // antes de re-inserir os descartes
       if (mode === 'descarte') {
         const { data: oldRecords } = await supabase.from('descartes').select('id')
           .eq('record_date', date).eq('responsible', user.displayName)
         const oldIds = (oldRecords||[]).map((r:any)=>r.id)
         if (oldIds.length > 0) {
           await supabase.from('bread_movements').delete()
-            .in('reference_id', oldIds).eq('reference_type','descarte')
+            .in('reference_id', oldIds).in('reference_type', ['descarte','descarte_kit'])
         }
       }
       await supabase.from(table).delete().eq('record_date', date).eq('responsible', user.displayName)
@@ -84,9 +86,11 @@ export default function SobrasPage() {
       const { data: inserted, error } = await supabase.from(table).insert(rows).select('id, product_id, product_source, quantity')
       if (error) throw error
 
-      // Stock movements: só pra DESCARTE de PÃO e se user tem loja atribuída
+      // Stock movements pra DESCARTE (precisa de loja atribuída ao user)
+      let cascadeBreadCount = 0
       if (mode === 'descarte' && user.store && inserted) {
-        const movements = (inserted as any[])
+        // (a) Descarte direto de pão → debita o próprio pão
+        const directMovements = (inserted as any[])
           .filter(r => r.product_source === 'bread' && Number(r.quantity) > 0)
           .map(r => ({
             movement_type: 'descarte_loja',
@@ -97,12 +101,44 @@ export default function SobrasPage() {
             reference_type: 'descarte',
             recorded_by: user.displayName,
           }))
-        if (movements.length > 0) {
-          await supabase.from('bread_movements').insert(movements)
+        if (directMovements.length > 0) {
+          await supabase.from('bread_movements').insert(directMovements)
+        }
+
+        // (b) Descarte de KIT → cascade: debita pães-componentes (qty_componente × qty_kit)
+        const kitRows = (inserted as any[]).filter(r => r.product_source === 'catalog' && Number(r.quantity) > 0)
+        if (kitRows.length > 0) {
+          const kitProductIds = kitRows.map(r => r.product_id)
+          const { data: comps } = await supabase
+            .from('product_components')
+            .select('parent_product_id,component_source,component_id,quantity')
+            .in('parent_product_id', kitProductIds)
+            .eq('component_source', 'bread')
+          const cascadeMovements: any[] = []
+          for (const kit of kitRows) {
+            const kitQty = Number(kit.quantity)
+            const breadComps = (comps || []).filter((c: any) => c.parent_product_id === kit.product_id)
+            for (const c of breadComps as any[]) {
+              cascadeMovements.push({
+                movement_type: 'descarte_loja',
+                bread_id: c.component_id,
+                location: user.store,
+                quantity: -(Number(c.quantity) * kitQty),
+                reference_id: kit.id,
+                reference_type: 'descarte_kit',
+                recorded_by: user.displayName,
+              })
+            }
+          }
+          if (cascadeMovements.length > 0) {
+            await supabase.from('bread_movements').insert(cascadeMovements)
+            cascadeBreadCount = cascadeMovements.length
+          }
         }
       }
 
-      showToast(`✅ ${mode==='sobra'?'Sobras':'Descartes'} salvo${mode==='sobra'?'s':'s'}!`)
+      const cascadeNote = cascadeBreadCount > 0 ? ` (+${cascadeBreadCount} pães debitados via kit)` : ''
+      showToast(`✅ ${mode==='sobra'?'Sobras':'Descartes'} salvo${mode==='sobra'?'s':'s'}!${cascadeNote}`)
       setMode(null); setQtys({})
     } catch(e:any) { showToast('Erro: '+e.message) }
     finally { setSaving(false) }
