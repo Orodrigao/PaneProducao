@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { showToast } from '@/lib/utils'
 import Link from 'next/link'
+import { Plus, Search } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import KPICard from '@/components/reports/KPICard'
 
 interface StockBalance {
   id: string
@@ -25,12 +27,15 @@ interface Movement {
 }
 
 export default function EstoquePage() {
+  const [user, setUser]         = useState<AppUser | null>(null)
   const [tab, setTab]           = useState<'saldo'|'movimentos'>('saldo')
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
   const [search, setSearch]     = useState('')
   const [loading, setLoading]   = useState(false)
   const [filter, setFilter]     = useState<'todos'|'com_saldo'|'zerado'>('com_saldo')
+
+  useEffect(() => { setUser(getCurrentUser()) }, [])
 
   const loadBalances = async () => {
     setLoading(true)
@@ -67,103 +72,131 @@ export default function EstoquePage() {
   const total      = balances.length
 
   const mvTypeLabel: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Ajuste', descarte: 'Descarte' }
-  const mvColor: Record<string, string>     = { entrada: 'var(--teal)', saida: 'var(--coral)', ajuste: 'var(--amber)', descarte: 'var(--red)' }
-  const mvBg: Record<string, string>        = { entrada: 'var(--teal-bg)', saida: 'var(--coral-bg)', ajuste: 'var(--amber-bg)', descarte: 'var(--red-bg)' }
   const mvSign: Record<string, string>      = { entrada: '+', saida: '−', ajuste: '±', descarte: '−' }
 
   return (
-    <div id="app">
-      <div className="topbar">
-        <span className="topbar-logo">Pane &amp; Salute</span>
-        <Link href="/fornecedores" style={{ fontSize: '12px', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', textDecoration: 'none', marginRight: '4px' }}>
-          Fornecedores
-        </Link>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', padding: '14px 16px 0' }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--teal)' }}>{inStock}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>com saldo</div>
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-muted)' }}>{total - inStock}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>zerados</div>
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--amber-border)', borderRadius: 'var(--radius)', padding: '12px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--amber)' }}>R${totalValue.toFixed(0)}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>est. custo</div>
-        </div>
-      </div>
-      <div className="nav-tabs" style={{ marginTop: '14px' }}>
-        <button className={`nav-tab ${tab === 'saldo' ? 'active' : ''}`} onClick={() => setTab('saldo')}>Saldo atual</button>
-        <button className={`nav-tab ${tab === 'movimentos' ? 'active' : ''}`} onClick={() => setTab('movimentos')}>Movimentações</button>
-      </div>
-      {tab === 'saldo' && (
-        <div style={{ padding: '12px 16px' }}>
-          <input type="text" placeholder="🔍 Buscar insumo..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px', background: 'var(--surface)', marginBottom: '10px', outline: 'none' }} />
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-            {(['com_saldo', 'todos', 'zerado'] as const).map(f => (
-              <button key={f} onClick={() => setFilter(f)} style={{
-                padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', border: '1px solid',
-                background: filter === f ? 'var(--amber)' : 'transparent',
-                color: filter === f ? 'white' : 'var(--text-muted)',
-                borderColor: filter === f ? 'var(--amber)' : 'var(--border)',
-              }}>
-                {f === 'com_saldo' ? 'Com saldo' : f === 'todos' ? 'Todos' : 'Zerados'}
-              </button>
-            ))}
-          </div>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Carregando...</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
-              {balances.length === 0 ? 'Nenhum saldo registrado ainda. Faça uma entrada para começar.' : 'Nenhum resultado.'}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Estoque</b>
+              <span>Insumos</span>
             </div>
-          ) : (
-            filtered.map(b => (
-              <div key={b.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '13px 14px', marginBottom: '7px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
-                  <div style={{ fontWeight: 500, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.products?.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Custo médio: R$ {b.average_cost.toFixed(4)}/{b.products?.unit}</div>
+          </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
+
+        <div className="ps-scroll ps-pad">
+          {/* KPIs */}
+          <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
+            <KPICard label="Com saldo" value={inStock} accent="sage"/>
+            <KPICard label="Zerados"   value={total - inStock}/>
+            <KPICard label="Est. custo" value={`R$ ${totalValue.toFixed(0)}`} accent="honey"/>
+          </div>
+
+          {/* Tabs */}
+          <div className="ps-tabs" role="tablist" style={{marginTop:16}}>
+            <button className="ps-tab" role="tab" aria-selected={tab==='saldo'} onClick={() => setTab('saldo')}>Saldo atual</button>
+            <button className="ps-tab" role="tab" aria-selected={tab==='movimentos'} onClick={() => setTab('movimentos')}>Movimentações</button>
+          </div>
+
+          {tab === 'saldo' && (
+            <>
+              <div className="ps-filters" style={{marginTop:14}}>
+                <div style={{flex:1, minWidth:180, position:'relative'}}>
+                  <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+                  <input type="text" placeholder="Buscar insumo..." value={search} onChange={e => setSearch(e.target.value)}
+                    className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: b.quantity > 0 ? 'var(--teal)' : 'var(--text-hint)' }}>
-                    {b.quantity % 1 === 0 ? b.quantity : b.quantity.toFixed(3)}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{b.products?.unit}</div>
+                <div className="ps-presets">
+                  {(['com_saldo', 'todos', 'zerado'] as const).map(f => (
+                    <button key={f} onClick={() => setFilter(f)} className={`ps-preset ${filter === f ? 'active' : ''}`}>
+                      {f === 'com_saldo' ? 'Com saldo' : f === 'todos' ? 'Todos' : 'Zerados'}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))
+
+              {loading ? (
+                <div className="ps-empty">Carregando...</div>
+              ) : filtered.length === 0 ? (
+                <div className="ps-empty">
+                  {balances.length === 0 ? 'Nenhum saldo registrado ainda. Faça uma entrada para começar.' : 'Nenhum resultado.'}
+                </div>
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                  {filtered.map(b => (
+                    <div key={b.id} className="ps-card" style={{padding:'12px 14px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
+                        <div style={{flex:1, minWidth:0}}>
+                          <div className="ps-pname" style={{fontSize:14.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{b.products?.name}</div>
+                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                            Custo médio: R$ {b.average_cost.toFixed(4)}/{b.products?.unit}
+                          </div>
+                        </div>
+                        <div style={{textAlign:'right', flexShrink:0}}>
+                          <div style={{fontSize:20, fontWeight:700, color: b.quantity > 0 ? 'var(--sage)' : 'var(--ink-faint)', fontVariantNumeric:'tabular-nums'}}>
+                            {b.quantity % 1 === 0 ? b.quantity : b.quantity.toFixed(3)}
+                          </div>
+                          <div style={{fontSize:11, color:'var(--ink-faint)'}}>{b.products?.unit}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'movimentos' && (
+            <>
+              <div style={{height:14}}/>
+              {movements.length === 0 ? (
+                <div className="ps-empty">Nenhuma movimentação ainda.</div>
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                  {movements.map(m => (
+                    <div key={m.id} className="ps-card" style={{padding:'12px 14px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10}}>
+                        <div style={{flex:1, minWidth:0}}>
+                          <div className="ps-pname" style={{fontSize:14, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{m.products?.name}</div>
+                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                            {new Date(m.created_at).toLocaleDateString('pt-BR')} · {m.created_by || '—'}
+                          </div>
+                        </div>
+                        <div style={{textAlign:'right', flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:3}}>
+                          <span className={`ps-status ${m.movement_type}`}>
+                            {mvSign[m.movement_type]}{Math.abs(m.quantity)} {m.products?.unit}
+                          </span>
+                          <div style={{fontSize:10, color:'var(--ink-faint)', textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>{mvTypeLabel[m.movement_type]}</div>
+                          {m.unit_cost && <div style={{fontSize:11, color:'var(--ink-faint)'}}>R$ {m.unit_cost.toFixed(4)}/un</div>}
+                        </div>
+                      </div>
+                      {m.notes && <div style={{fontSize:12, color:'var(--ink-soft)', marginTop:6, fontStyle:'italic'}}>{m.notes}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
-      {tab === 'movimentos' && (
-        <div style={{ padding: '12px 16px' }}>
-          {movements.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>Nenhuma movimentação ainda.</div>
-          ) : movements.map(m => (
-            <div key={m.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', marginBottom: '7px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0, marginRight: '10px' }}>
-                  <div style={{ fontWeight: 500, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.products?.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{new Date(m.created_at).toLocaleDateString('pt-BR')} · {m.created_by || '—'}</div>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', background: mvBg[m.movement_type] || 'var(--bg)', color: mvColor[m.movement_type] || 'var(--text)' }}>
-                    {mvSign[m.movement_type]}{Math.abs(m.quantity)} {m.products?.unit}
-                  </span>
-                  <div style={{ fontSize: '10px', color: 'var(--text-hint)', marginTop: '3px' }}>{mvTypeLabel[m.movement_type]}</div>
-                  {m.unit_cost && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>R$ {m.unit_cost.toFixed(4)}/un</div>}
-                </div>
-              </div>
-              {m.notes && <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '5px', fontStyle: 'italic' }}>{m.notes}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-      <Link href="/estoque/entrada" style={{ position: 'fixed', bottom: '90px', right: '20px', background: 'var(--amber)', color: 'white', borderRadius: '50px', padding: '13px 20px', fontWeight: 600, fontSize: '14px', textDecoration: 'none', boxShadow: '0 4px 14px rgba(184,114,10,0.45)', display: 'flex', alignItems: 'center', gap: '6px', zIndex: 90 }}>
-        + Entrada
-      </Link>
+
+        {/* FAB Nova entrada */}
+        <Link href="/estoque/entrada"
+          style={{position:'fixed', bottom:88, right:'max(20px, calc(50% - 250px))', background:'linear-gradient(180deg, var(--crust), var(--crust-deep))', color:'#FCEFDD',
+            borderRadius:'var(--r-pill)', padding:'13px 20px', fontWeight:700, fontSize:14, textDecoration:'none',
+            boxShadow:'0 6px 18px -4px rgba(142,78,34,.5), inset 0 1px 0 rgba(255,255,255,.15)',
+            display:'flex', alignItems:'center', gap:6, zIndex:45, fontFamily:'var(--font-ui)'}}>
+          <Plus size={16}/> Entrada
+        </Link>
+      </div>
     </div>
   )
 }

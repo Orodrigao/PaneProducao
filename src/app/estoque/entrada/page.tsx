@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { ChevronLeft, Plus, X, Search, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { showToast } from '@/lib/utils'
-import { useRouter } from 'next/navigation'
 
 interface EntryItem {
   product_id: string
@@ -138,129 +139,136 @@ export default function EstoqueEntradaPage() {
   }
 
   return (
-    <div id="app">
-      <div className="topbar">
-        <button onClick={() => router.push('/estoque')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-muted)', padding: '0 8px 0 0', lineHeight: 1 }}>←</button>
-        <span className="topbar-logo">Nova Entrada</span>
-        <span className="topbar-badge tb-amber">Estoque</span>
-      </div>
-
-      <div style={{ padding: '16px' }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px', marginBottom: '14px' }}>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Fornecedor</label>
-            <select value={supplierId} onChange={e => setSupplierId(e.target.value)}
-              style={{ width: '100%', padding: '10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px', background: 'white' }}>
-              <option value="">Sem fornecedor / compra direta</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-            <div>
-              <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Data</label>
-              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
-                style={{ width: '100%', padding: '10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Nº NF / Recibo</label>
-              <input type="text" placeholder="Opcional" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
-                style={{ width: '100%', padding: '10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px' }} />
-            </div>
-          </div>
-          <div>
-            <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Observações</label>
-            <input type="text" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)}
-              style={{ width: '100%', padding: '10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px' }} />
-          </div>
-        </div>
-
-        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
-          Produtos comprados
-        </div>
-
-        {items.map((it, idx) => {
-          const subtotal = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_cost) || 0)
-          return (
-            <div key={it.product_id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <div style={{ fontWeight: 500, fontSize: '14px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>{it.product_name}</div>
-                <button onClick={() => removeItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--coral)', fontSize: '20px', lineHeight: 1, flexShrink: 0 }}>×</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Qtd ({it.unit})</label>
-                  <input type="number" inputMode="decimal" placeholder="0" value={it.quantity}
-                    onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                    style={{ width: '100%', padding: '9px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '15px', outline: 'none' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Custo unitário (R$)</label>
-                  <input type="number" inputMode="decimal" placeholder="0,00" value={it.unit_cost}
-                    onChange={e => updateItem(idx, 'unit_cost', e.target.value)}
-                    style={{ width: '100%', padding: '9px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '15px', outline: 'none' }} />
-                </div>
-              </div>
-              {subtotal > 0 && (
-                <div style={{ fontSize: '13px', color: 'var(--teal)', marginTop: '7px', fontWeight: 600 }}>
-                  = R$ {subtotal.toFixed(2)}
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        <div style={{ background: 'var(--surface)', border: `1px dashed ${showSearch ? 'var(--amber)' : 'var(--border-strong)'}`, borderRadius: 'var(--radius)', padding: '12px', marginBottom: '14px' }}>
-          {showSearch ? (
-            <>
-              <input ref={searchRef} type="text" placeholder="🔍 Nome do produto..." value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', padding: '10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '14px', marginBottom: '8px', outline: 'none' }} />
-              {search.length > 0 ? (
-                filteredProducts.length > 0 ? filteredProducts.map(p => (
-                  <div key={p.id} onClick={() => addProduct(p)}
-                    style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px', background: 'var(--bg)' }}>
-                    <span style={{ fontSize: '14px' }}>{p.name}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>{p.unit}</span>
-                  </div>
-                )) : (
-                  <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontSize: '13px' }}>Nenhum produto encontrado</div>
-                )
-              ) : (
-                <div style={{ textAlign: 'center', padding: '8px', color: 'var(--text-hint)', fontSize: '13px' }}>Digite o nome do produto</div>
-              )}
-              <button onClick={() => { setShowSearch(false); setSearch('') }}
-                style={{ fontSize: '13px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', display: 'block', marginTop: '4px' }}>
-                Cancelar
-              </button>
-            </>
-          ) : (
-            <button onClick={() => setShowSearch(true)}
-              style={{ width: '100%', padding: '10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--amber)', fontWeight: 600, fontSize: '14px' }}>
-              + Adicionar produto
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <button className="ps-iconbtn" onClick={() => router.push('/estoque')} aria-label="Voltar">
+              <ChevronLeft size={20}/>
             </button>
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Nova Entrada</b>
+              <span>Estoque</span>
+            </div>
+          </div>
+        </header>
+
+        <div className="ps-scroll ps-pad">
+          <div className="ps-card" style={{marginTop:14, gap:10}}>
+            <div className="ps-fieldgroup">
+              <div className="ps-fieldlabel">Fornecedor</div>
+              <select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="ps-select">
+                <option value="">Sem fornecedor / compra direta</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="ps-fieldrow">
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Data</div>
+                <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} className="ps-input"/>
+              </div>
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Nº NF / Recibo</div>
+                <input type="text" placeholder="Opcional" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} className="ps-input"/>
+              </div>
+            </div>
+            <div className="ps-fieldgroup">
+              <div className="ps-fieldlabel">Observações</div>
+              <input type="text" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} className="ps-input"/>
+            </div>
+          </div>
+
+          <div className="ps-label">Produtos comprados</div>
+
+          {items.length === 0 && !showSearch && (
+            <div className="ps-empty" style={{padding:'20px 0'}}>Nenhum produto adicionado ainda.</div>
+          )}
+
+          {items.map((it, idx) => {
+            const subtotal = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_cost) || 0)
+            return (
+              <div key={it.product_id} className="ps-card" style={{padding:'12px 14px', marginBottom:8}}>
+                <div className="ps-card-head" style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', gap:8}}>
+                  <div className="ps-pname" style={{fontSize:14, flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{it.product_name}</div>
+                  <button onClick={() => removeItem(idx)} className="ps-iconbtn" style={{width:30, height:30}} aria-label="Remover">
+                    <X size={14}/>
+                  </button>
+                </div>
+                <div className="ps-fieldrow">
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Qtd ({it.unit})</div>
+                    <input type="number" inputMode="decimal" placeholder="0" value={it.quantity}
+                      onChange={e => updateItem(idx, 'quantity', e.target.value)} className="ps-input"/>
+                  </div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Custo unitário (R$)</div>
+                    <input type="number" inputMode="decimal" placeholder="0,00" value={it.unit_cost}
+                      onChange={e => updateItem(idx, 'unit_cost', e.target.value)} className="ps-input"/>
+                  </div>
+                </div>
+                {subtotal > 0 && (
+                  <div style={{fontSize:13, color:'var(--sage)', fontWeight:700, textAlign:'right'}}>
+                    = R$ {subtotal.toFixed(2)}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          <div className="ps-card" style={{borderStyle:'dashed', borderColor:showSearch?'var(--honey-deep)':'var(--ps-line)', padding:12, marginBottom:14}}>
+            {showSearch ? (
+              <>
+                <div style={{position:'relative', marginBottom:8}}>
+                  <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+                  <input ref={searchRef} type="text" placeholder="Nome do produto..." value={search}
+                    onChange={e => setSearch(e.target.value)} className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px'}}/>
+                </div>
+                {search.length > 0 ? (
+                  filteredProducts.length > 0 ? filteredProducts.map(p => (
+                    <div key={p.id} onClick={() => addProduct(p)}
+                      style={{padding:'10px 12px', borderRadius:'var(--r-ctrl)', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3, background:'var(--cream-raise)'}}>
+                      <span style={{fontSize:14}}>{p.name}</span>
+                      <span style={{fontSize:12, color:'var(--ink-faint)', flexShrink:0}}>{p.unit}</span>
+                    </div>
+                  )) : (
+                    <div style={{textAlign:'center', padding:12, color:'var(--ink-faint)', fontSize:13}}>Nenhum produto encontrado</div>
+                  )
+                ) : (
+                  <div style={{textAlign:'center', padding:8, color:'var(--ink-faint)', fontSize:13}}>Digite o nome do produto</div>
+                )}
+                <button onClick={() => { setShowSearch(false); setSearch('') }} className="ps-btn ghost sm" style={{marginTop:4}}>
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setShowSearch(true)} className="ps-btn block" style={{background:'transparent', boxShadow:'none', color:'var(--crust)'}}>
+                <Plus size={16}/> Adicionar produto
+              </button>
+            )}
+          </div>
+
+          {items.length > 0 && (
+            <div className="ps-banner honey">
+              <span>
+                <b>Total da entrada · R$ {totalValue.toFixed(2)}</b>
+                <small style={{display:'block', fontWeight:500, fontSize:12, opacity:.85, marginTop:2}}>
+                  {validItems.length} de {items.length} item(s) preenchido(s)
+                </small>
+              </span>
+            </div>
           )}
         </div>
 
-        {items.length > 0 && (
-          <div style={{ background: 'var(--amber-bg)', border: '1px solid var(--amber-border)', borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontWeight: 600, color: 'var(--amber)', fontSize: '14px' }}>Total da entrada</div>
-              <div style={{ fontSize: '12px', color: 'var(--amber)', opacity: 0.7 }}>{validItems.length} de {items.length} item(s) preenchido(s)</div>
-            </div>
-            <span style={{ fontWeight: 700, fontSize: '20px', color: 'var(--amber)' }}>R$ {totalValue.toFixed(2)}</span>
+        <div className="ps-totalbar">
+          <div className="ps-total-num">
+            <b>R$ {totalValue.toFixed(2)}</b>
+            <span>{validItems.length} item{validItems.length!==1?'s':''}</span>
           </div>
-        )}
-
-        <button onClick={save} disabled={saving || validItems.length === 0}
-          style={{
-            width: '100%', padding: '14px',
-            background: validItems.length > 0 ? 'var(--amber)' : 'var(--border)',
-            color: validItems.length > 0 ? 'white' : 'var(--text-muted)',
-            border: 'none', borderRadius: 'var(--radius)', fontSize: '15px', fontWeight: 600,
-            cursor: validItems.length > 0 ? 'pointer' : 'default', opacity: saving ? 0.6 : 1,
-          }}>
-          {saving ? 'Salvando...' : `Registrar entrada${validItems.length > 0 ? ` (${validItems.length} item${validItems.length > 1 ? 's' : ''})` : ''}`}
-        </button>
+          <button onClick={save} disabled={saving || validItems.length === 0} className="ps-save">
+            <Save size={16}/> {saving ? 'Salvando...' : 'Registrar'}
+          </button>
+        </div>
       </div>
     </div>
   )
