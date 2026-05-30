@@ -49,7 +49,7 @@
 **Modelo confirmado com Rodrigão:** kit = estado intermediário "prateleira". Sobra ≠ baixa (pão tá lá, vai vender amanhã ou virar descarte). Só **descarte**, **romaneio** e **venda** (PJ/encomendas) fazem baixa real dos pães-componentes.
 
 - [ ] **C1 — Descarte cascade** — `/sobras` modo descarte: ao gravar descarte de produto com `kind='kit'`, debitar pães-componentes do estoque da loja (em `bread_movements` com `reference_type='descarte_kit'`). Multiplicação: `qty_kit × qty_componente`. Idempotência: limpar movimentos antigos de `descarte_kit` junto com `descarte`. Componentes do tipo `product` (não-pão) ficam fora desta fase — só pão cascateia (alinhado com o modelo do negócio).
-- [ ] **C2 — Romaneio cascade** — `/romaneio` confirmar envio de kit: debita componentes-pão do estoque da loja origem.
+- [x] **C2 — Romaneio cascade** — `/romaneio` confirmar envio: itens com `product_source!='bread'` e cujo produto é `kind='kit'` agora cascateiam — pra cada componente-pão, gera par de bread_movements `-central/+destino` multiplicado por `qty_sent × qty_componente`. `reference_type='romaneio_kit'` separa da cascata direta. Idempotência amplia o gate pra cobrir os 2 tipos. No-op em romaneios sem kits.
 - [ ] **C3 — Vendas cascade** — `/pedidos-pj` e `/encomendas`: ao gravar pedido de kit, debita componentes-pão do estoque da loja origem.
 - [ ] **C4 — Auditoria pré-rollout** — SQL: kits ativos sem components cadastrados. Mostrar contagem pro Rodrigão antes da Fase C entrar em produção (senão o cascade silenciosamente não faz nada e o estoque vira ficção).
 
