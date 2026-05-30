@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
@@ -267,9 +268,9 @@ export default function ProdutosPage() {
                         </div>
                       </div>
                       {p.kind === 'kit' && (
-                        <button disabled title="Composição (cadastro de componentes) chega na Fase B" className="ps-iconbtn" style={{width:30, height:30, opacity:.4, cursor:'not-allowed', fontSize:14}}>
+                        <Link href={`/produtos/composicao?id=${p.id}`} title="Cadastrar composição do kit" className="ps-iconbtn" style={{width:30, height:30, fontSize:14}}>
                           📋
-                        </button>
+                        </Link>
                       )}
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
                         {p.active?'✓ Ativo':'Inativo'}
