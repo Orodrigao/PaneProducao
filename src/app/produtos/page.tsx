@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
 interface Product {
@@ -18,6 +20,7 @@ const CATEGORIES = ['Bolos','Brownie','Bruschettas','Confeitaria','Cookies','Cro
   'Pizza Romana','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados','Salgados','Sopas & Cremes','INSUMOS']
 
 export default function ProdutosPage() {
+  const [user, setUser]         = useState<AppUser | null>(null)
   const [tab, setTab]           = useState<'produtos'|'paes'>('produtos')
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
@@ -30,7 +33,7 @@ export default function ProdutosPage() {
   const [breadCostEdits, setBreadCostEdits] = useState<Record<string, string>>({})
   const [newBread, setNewBread] = useState<Partial<Bread>|null>(null)
 
-  useEffect(()=>{ load() },[])
+  useEffect(()=>{ setUser(getCurrentUser()); load() },[])
 
   async function load() {
     setLoading(true)
@@ -54,7 +57,6 @@ export default function ProdutosPage() {
   async function save() {
     if (!editItem?.name?.trim()) { showToast('Nome obrigatório'); return }
     const body: any = { ...editItem }
-    // normaliza cost_price (string do input -> number ou null)
     if (body.cost_price === '' || body.cost_price === undefined) body.cost_price = null
     else if (body.cost_price !== null) body.cost_price = Number(body.cost_price)
     try {
@@ -95,7 +97,6 @@ export default function ProdutosPage() {
     setBreads(prev => prev.map(x => x.id===b.id ? {...x,active:!b.active} : x))
   }
 
-  // id de breads é text (não uuid). Padrão dos existentes: slug + timestamp ms.
   function makeBreadId(name: string): string {
     const slug = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')
     return `${slug}${Date.now()}`
@@ -134,149 +135,178 @@ export default function ProdutosPage() {
   const breadsWithoutCost = breads.filter(b => b.active && (b.cost_price === null || Number(b.cost_price) === 0)).length
 
   return (
-    <div style={{padding:'16px',maxWidth:700,margin:'0 auto'}}>
-      {/* Header */}
-      <div style={{background:'var(--primary)',color:'white',padding:'14px 16px',borderRadius:'var(--radius)',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontWeight:700}}>📦 Catálogo</span>
-        {tab==='produtos' ? (
-          <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0]})}}
-            style={{background:'white',color:'var(--primary)',border:'none',borderRadius:6,padding:'6px 12px',fontWeight:700,cursor:'pointer'}}>
-            + Novo
-          </button>
-        ) : (
-          <button onClick={()=>setNewBread({name:'',unit:'un',cost_price:null,is_pj:false})}
-            style={{background:'white',color:'var(--primary)',border:'none',borderRadius:6,padding:'6px 12px',fontWeight:700,cursor:'pointer'}}>
-            + Novo pão
-          </button>
-        )}
-      </div>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Catálogo</b>
+              <span>Produtos &amp; Pães</span>
+            </div>
+          </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-      {/* Tabs */}
-      <div style={{display:'flex',gap:6,marginBottom:12}}>
-        <button onClick={()=>setTab('produtos')}
-          style={{flex:1,padding:'10px',borderRadius:8,border:'1.5px solid var(--border)',background:tab==='produtos'?'var(--primary)':'white',color:tab==='produtos'?'white':'var(--text)',fontWeight:700,cursor:'pointer',fontSize:'.9rem'}}>
-          🥐 Produtos ({products.filter(p=>p.active).length})
-        </button>
-        <button onClick={()=>setTab('paes')}
-          style={{flex:1,padding:'10px',borderRadius:8,border:'1.5px solid var(--border)',background:tab==='paes'?'var(--primary)':'white',color:tab==='paes'?'white':'var(--text)',fontWeight:700,cursor:'pointer',fontSize:'.9rem'}}>
-          🍞 Pães ({breads.filter(b=>b.active).length})
-        </button>
-      </div>
-
-      {/* Search */}
-      <input placeholder={tab==='produtos' ? "🔍 Buscar produto..." : "🔍 Buscar pão..."} value={search} onChange={e=>setSearch(e.target.value)}
-        style={{width:'100%',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem',marginBottom:10}}/>
-
-      {/* Category filter — só Produtos */}
-      {tab==='produtos' && (
-        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:6,marginBottom:12}}>
-          {cats.map(c=>(
-            <button key={c} onClick={()=>setCat(c)}
-              style={{padding:'5px 12px',borderRadius:20,border:'1.5px solid var(--border)',background:catFilter===c?'var(--primary)':'white',color:catFilter===c?'white':'var(--text)',fontSize:'.78rem',whiteSpace:'nowrap',cursor:'pointer'}}>
-              {c}
+        <div className="ps-pad" style={{marginTop:14}}>
+          <div className="ps-tabs" role="tablist">
+            <button role="tab" aria-selected={tab==='produtos'} onClick={()=>setTab('produtos')} className="ps-tab">
+              🥐 Produtos ({products.filter(p=>p.active).length})
             </button>
-          ))}
+            <button role="tab" aria-selected={tab==='paes'} onClick={()=>setTab('paes')} className="ps-tab">
+              🍞 Pães ({breads.filter(b=>b.active).length})
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Alerta: pães sem custo */}
-      {tab==='paes' && breadsWithoutCost > 0 && (
-        <div style={{background:'#fef3c7',border:'1px solid #fcd34d',color:'#92400e',padding:'10px 14px',borderRadius:8,fontSize:'.82rem',marginBottom:12}}>
-          ⚠️ <strong>{breadsWithoutCost}</strong> {breadsWithoutCost === 1 ? 'pão ativo sem custo cadastrado' : 'pães ativos sem custo cadastrado'}. Preencha pra aparecer com valor nos relatórios.
-        </div>
-      )}
+        <div className="ps-scroll ps-pad">
+          {/* Action row: search + new */}
+          <div style={{display:'flex', gap:8, marginTop:14, marginBottom:12}}>
+            <div style={{flex:1, position:'relative'}}>
+              <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+              <input placeholder={tab==='produtos' ? "Buscar produto..." : "Buscar pão..."} value={search} onChange={e=>setSearch(e.target.value)}
+                className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
+            </div>
+            {tab==='produtos' ? (
+              <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0]})}} className="ps-btn primary">
+                <Plus size={14}/> Novo
+              </button>
+            ) : (
+              <button onClick={()=>setNewBread({name:'',unit:'un',cost_price:null,is_pj:false})} className="ps-btn primary">
+                <Plus size={14}/> Novo pão
+              </button>
+            )}
+          </div>
 
-      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Carregando...</div> : loadError ? (
-        <div style={{textAlign:'center',padding:30}}>
-          <div style={{color:'#b91c1c',fontSize:'.9rem',marginBottom:14}}>⚠️ Não foi possível carregar os dados.</div>
-          <div style={{color:'var(--muted)',fontSize:'.78rem',marginBottom:16}}>{loadError}</div>
-          <button onClick={()=>load()}
-            style={{padding:'8px 16px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.85rem',fontWeight:700}}>
-            Tentar de novo
-          </button>
-        </div>
-      ) : (
-        tab === 'produtos' ? (
-          Object.entries(grouped).map(([cat, items])=>(
-            <div key={cat} className="card">
-              <div className="card-title">{cat} ({items.length})</div>
-              {items.map(p=>(
-                <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:p.active?1:0.5}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:'.9rem',fontWeight:600}}>{p.name}</div>
-                    <div style={{fontSize:'.75rem',color:'var(--muted)'}}>{p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}</div>
-                  </div>
-                  <button onClick={()=>toggleActive(p)} style={{fontSize:'.75rem',padding:'3px 8px',borderRadius:20,border:'1px solid var(--border)',background:'white',cursor:'pointer',color:p.active?'var(--success)':'var(--muted)'}}>
-                    {p.active?'✓ Ativo':'Inativo'}
-                  </button>
-                  <button onClick={()=>{setIsNew(false);setEditItem({...p})}} style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem',color:'var(--muted)'}}>✏️</button>
+          {/* Category filter — só Produtos */}
+          {tab==='produtos' && (
+            <div className="ps-presets" style={{overflowX:'auto', paddingBottom:6, marginBottom:12, flexWrap:'nowrap'}}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setCat(c)} className={`ps-preset ${catFilter===c?'active':''}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Alerta: pães sem custo */}
+          {tab==='paes' && breadsWithoutCost > 0 && (
+            <div className="ps-warning">
+              <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+              <span>
+                <strong>{breadsWithoutCost}</strong> {breadsWithoutCost === 1 ? 'pão ativo sem custo cadastrado' : 'pães ativos sem custo cadastrado'}. Preencha pra aparecer com valor nos relatórios.
+              </span>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="ps-empty">Carregando...</div>
+          ) : loadError ? (
+            <div className="ps-empty">
+              <AlertTriangle size={36} style={{display:'block', margin:'0 auto 8px', color:'var(--berry)', opacity:.6}}/>
+              <div style={{color:'var(--berry)', fontSize:14, fontWeight:600, marginBottom:8}}>Não foi possível carregar os dados.</div>
+              <div style={{color:'var(--ink-faint)', fontSize:12, marginBottom:14}}>{loadError}</div>
+              <button onClick={()=>load()} className="ps-btn primary">
+                <RotateCw size={14}/> Tentar de novo
+              </button>
+            </div>
+          ) : tab === 'produtos' ? (
+            <div style={{display:'flex', flexDirection:'column', gap:12}}>
+              {Object.entries(grouped).map(([cat, items])=>(
+                <div key={cat} className="ps-card" style={{padding:'4px 14px'}}>
+                  <div className="ps-flabel" style={{paddingTop:10}}>{cat} ({items.length})</div>
+                  {items.map(p=>(
+                    <div key={p.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)', opacity:p.active?1:0.5}}>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)'}}>{p.name}</div>
+                        <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                          {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
+                        </div>
+                      </div>
+                      <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
+                        {p.active?'✓ Ativo':'Inativo'}
+                      </button>
+                      <button onClick={()=>{setIsNew(false);setEditItem({...p})}} className="ps-iconbtn" style={{width:30, height:30}}>
+                        <Pencil size={14}/>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
-          ))
-        ) : (
-          <div className="card">
-            <div className="card-title">Pães ({breadsFiltered.length})</div>
-            {breadsFiltered.map(b=>{
-              const editing = breadCostEdits[b.id]
-              const current = b.cost_price !== null && b.cost_price !== undefined ? String(b.cost_price) : ''
-              const dirty = editing !== undefined && editing !== current
-              return (
-                <div key={b.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:b.active?1:0.5}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:'.9rem',fontWeight:600}}>
-                      {b.name}
-                      {b.is_pj && <span style={{marginLeft:6,color:'var(--muted)',fontSize:'.72rem'}}>(PJ)</span>}
+          ) : (
+            <div className="ps-card" style={{padding:'4px 14px'}}>
+              <div className="ps-flabel" style={{paddingTop:10}}>Pães ({breadsFiltered.length})</div>
+              {breadsFiltered.map(b=>{
+                const editing = breadCostEdits[b.id]
+                const current = b.cost_price !== null && b.cost_price !== undefined ? String(b.cost_price) : ''
+                const dirty = editing !== undefined && editing !== current
+                return (
+                  <div key={b.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)', opacity:b.active?1:0.5}}>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)'}}>
+                        {b.name}
+                        {b.is_pj && <span className="ps-store-chip jc" style={{marginLeft:6}}>PJ</span>}
+                      </div>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{b.unit || 'un'}</div>
                     </div>
-                    <div style={{fontSize:'.72rem',color:'var(--muted)'}}>{b.unit || 'un'}</div>
-                  </div>
-                  <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <span style={{fontSize:'.78rem',color:'var(--muted)'}}>R$</span>
-                    <input type="number" step="0.01" min="0"
-                      value={editing ?? current}
-                      placeholder="0.00"
-                      onChange={e=>setBreadCostEdits(prev=>({...prev,[b.id]:e.target.value}))}
-                      style={{width:80,padding:'5px 8px',border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.85rem',textAlign:'right'}}/>
-                    <button onClick={()=>saveBreadCost(b)} disabled={!dirty}
-                      style={{padding:'5px 10px',borderRadius:6,border:'none',background:dirty?'var(--primary)':'#e5e5e5',color:dirty?'white':'var(--muted)',cursor:dirty?'pointer':'default',fontSize:'.75rem',fontWeight:600}}>
-                      💾
+                    <div style={{display:'flex', alignItems:'center', gap:4}}>
+                      <span style={{fontSize:12, color:'var(--ink-soft)'}}>R$</span>
+                      <input type="number" step="0.01" min="0"
+                        value={editing ?? current}
+                        placeholder="0.00"
+                        onChange={e=>setBreadCostEdits(prev=>({...prev,[b.id]:e.target.value}))}
+                        className="ps-input" style={{width:84, padding:'5px 8px', fontSize:13, textAlign:'right'}}/>
+                      <button onClick={()=>saveBreadCost(b)} disabled={!dirty} className={`ps-btn sm ${dirty?'primary':''}`} style={!dirty?{opacity:.5, background:'var(--line-soft)', color:'var(--ink-faint)', boxShadow:'none'}:undefined}>
+                        <Save size={12}/>
+                      </button>
+                    </div>
+                    <button onClick={()=>toggleBreadActive(b)} className={`ps-status ${b.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer', minWidth:28, justifyContent:'center'}}>
+                      {b.active?'✓':'×'}
                     </button>
                   </div>
-                  <button onClick={()=>toggleBreadActive(b)} style={{fontSize:'.75rem',padding:'3px 8px',borderRadius:20,border:'1px solid var(--border)',background:'white',cursor:'pointer',color:b.active?'var(--success)':'var(--muted)'}}>
-                    {b.active?'✓':'×'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )
-      )}
-
-      {/* MODAL — só pra Produtos */}
-      {editItem && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-end',zIndex:200}}
-          onClick={e=>e.target===e.currentTarget&&setEditItem(null)}>
-          <div style={{background:'white',width:'100%',borderRadius:'12px 12px 0 0',padding:20,maxHeight:'80vh',overflowY:'auto'}}>
-            <div style={{fontWeight:700,marginBottom:16,fontSize:'1rem'}}>{isNew?'Novo Produto':'Editar Produto'}</div>
-            {([
-              ['Nome', 'name', 'text'],['Unidade', 'unit', 'text'],['Custo (R$)', 'cost_price', 'number']
-            ] as [string,string,string][]).map(([label,field,type])=>(
-              <div key={field} style={{marginBottom:12}}>
-                <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>{label}</label>
-                <input type={type} value={(editItem as any)[field]||''} onChange={e=>setEditItem(prev=>({...prev,[field]:e.target.value}))}
-                  style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-              </div>
-            ))}
-            <div style={{marginBottom:16}}>
-              <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Categoria</label>
-              <select value={editItem.category||''} onChange={e=>setEditItem(prev=>({...prev,category:e.target.value}))}
-                style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}>
-                {CATEGORIES.map(c=><option key={c}>{c}</option>)}
-              </select>
+                )
+              })}
             </div>
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-success" style={{flex:1}} onClick={save}>💾 Salvar</button>
-              <button className="btn btn-ghost" onClick={()=>setEditItem(null)}>Cancelar</button>
+          )}
+        </div>
+      </div>
+
+      {/* MODAL — Produto */}
+      {editItem && (
+        <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&setEditItem(null)}>
+          <div className="ps-sheet">
+            <div className="ps-sheet-grab"/>
+            <h3>{isNew?'Novo Produto':'Editar Produto'}</h3>
+
+            <div style={{display:'flex', flexDirection:'column', gap:10, marginBottom:14}}>
+              {([
+                ['Nome', 'name', 'text'],['Unidade', 'unit', 'text'],['Custo (R$)', 'cost_price', 'number']
+              ] as [string,string,string][]).map(([label,field,type])=>(
+                <div key={field} className="ps-fieldgroup">
+                  <div className="ps-fieldlabel">{label}</div>
+                  <input type={type} value={(editItem as any)[field]||''} onChange={e=>setEditItem(prev=>({...prev,[field]:e.target.value}))}
+                    className="ps-input"/>
+                </div>
+              ))}
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Categoria</div>
+                <select value={editItem.category||''} onChange={e=>setEditItem(prev=>({...prev,category:e.target.value}))} className="ps-select">
+                  {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{display:'flex', gap:8}}>
+              <button onClick={save} className="ps-btn primary" style={{flex:1}}>
+                <Save size={14}/> Salvar
+              </button>
+              <button onClick={()=>setEditItem(null)} className="ps-btn ghost">Cancelar</button>
             </div>
           </div>
         </div>
@@ -284,44 +314,43 @@ export default function ProdutosPage() {
 
       {/* MODAL — Novo pão */}
       {newBread && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'flex-end',zIndex:200}}
-          onClick={e=>e.target===e.currentTarget&&setNewBread(null)}>
-          <div style={{background:'white',width:'100%',borderRadius:'12px 12px 0 0',padding:20,maxHeight:'80vh',overflowY:'auto'}}>
-            <div style={{fontWeight:700,marginBottom:16,fontSize:'1rem'}}>🍞 Novo pão</div>
+        <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&setNewBread(null)}>
+          <div className="ps-sheet">
+            <div className="ps-sheet-grab"/>
+            <h3>🍞 Novo pão</h3>
 
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Nome *</label>
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Nome *</div>
               <input value={newBread.name||''} onChange={e=>setNewBread(prev=>({...prev,name:e.target.value}))}
-                autoFocus placeholder="ex: Pão de Hotdog"
-                style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+                autoFocus placeholder="ex: Pão de Hotdog" className="ps-input"/>
             </div>
 
-            <div style={{display:'flex',gap:10,marginBottom:12}}>
-              <div style={{flex:1}}>
-                <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Unidade</label>
+            <div className="ps-fieldrow" style={{marginBottom:10}}>
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Unidade</div>
                 <input value={newBread.unit||''} onChange={e=>setNewBread(prev=>({...prev,unit:e.target.value}))}
-                  placeholder="un / kg"
-                  style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+                  placeholder="un / kg" className="ps-input"/>
               </div>
-              <div style={{flex:1}}>
-                <label style={{fontSize:'.8rem',fontWeight:600,color:'var(--muted)',display:'block',marginBottom:4}}>Custo (R$)</label>
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Custo (R$)</div>
                 <input type="number" step="0.01" min="0"
                   value={newBread.cost_price ?? ''}
                   onChange={e=>setNewBread(prev=>({...prev,cost_price: e.target.value === '' ? null : Number(e.target.value)}))}
-                  placeholder="0.00"
-                  style={{width:'100%',padding:'10px',border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
+                  placeholder="0.00" className="ps-input"/>
               </div>
             </div>
 
-            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:'.85rem',color:'var(--muted)',cursor:'pointer',marginBottom:16}}>
+            <label style={{display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--ink-soft)', cursor:'pointer', marginBottom:16, padding:'8px 10px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)'}}>
               <input type="checkbox" checked={!!newBread.is_pj}
                 onChange={e=>setNewBread(prev=>({...prev,is_pj:e.target.checked}))}/>
               Pão exclusivo PJ (atacado / clientes específicos)
             </label>
 
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-success" style={{flex:1}} onClick={saveNewBread}>💾 Criar pão</button>
-              <button className="btn btn-ghost" onClick={()=>setNewBread(null)}>Cancelar</button>
+            <div style={{display:'flex', gap:8}}>
+              <button onClick={saveNewBread} className="ps-btn primary" style={{flex:1}}>
+                <Save size={14}/> Criar pão
+              </button>
+              <button onClick={()=>setNewBread(null)} className="ps-btn ghost">Cancelar</button>
             </div>
           </div>
         </div>
