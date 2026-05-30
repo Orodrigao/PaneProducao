@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { AppUser, getCurrentUser, canAccess } from '@/lib/auth'
+import { AppUser, getCurrentUser, canAccess, roleColor, roleLabel } from '@/lib/auth'
 
 interface ReportCard {
   href: string
@@ -69,54 +69,51 @@ export default function RelatoriosIndex() {
   if (!user) return null
 
   return (
-    <div style={{ padding: '20px', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: '1.4rem', fontWeight: 700 }}>📈 Relatórios</h1>
-        <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
-          Informação pra tomar decisão.
-        </p>
-      </div>
-
-      <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {ALL_REPORTS.map(r => {
-          const isReady = r.status === 'ready'
-          const accessible = isReady && canAccess(user, r.href)
-
-          const Card = (
-            <div style={{
-              background: 'white', borderRadius: '12px', padding: '16px',
-              border: '1px solid var(--border)',
-              opacity: isReady ? 1 : 0.55,
-              cursor: accessible ? 'pointer' : 'default',
-              height: '100%',
-            }}>
-              <div style={{ fontSize: '1.4rem', marginBottom: '8px' }}>{r.icon}</div>
-              <h3 style={{ margin: '0 0 6px', fontSize: '1rem', fontWeight: 700 }}>{r.title}</h3>
-              <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.82rem', lineHeight: 1.4 }}>{r.description}</p>
-              {!isReady && (
-                <div style={{ marginTop: '10px' }}>
-                  <span style={{
-                    display: 'inline-block', padding: '3px 8px', borderRadius: '4px',
-                    background: '#fef3c7', color: '#92400e',
-                    fontSize: '0.7rem', fontWeight: 600,
-                  }}>Em breve</span>
-                  {r.blocker && (
-                    <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: 'var(--muted)', fontStyle: 'italic' }}>{r.blocker}</p>
-                  )}
-                </div>
-              )}
-              {isReady && !accessible && (
-                <p style={{ margin: '10px 0 0', fontSize: '0.72rem', color: 'var(--muted)' }}>
-                  (sem permissão — peça acesso ao admin)
-                </p>
-              )}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Relatórios</b>
+              <span>Informação pra decidir</span>
             </div>
-          )
+          </div>
+          <div className="ps-userchip">
+            <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+            <b>{user.displayName}</b>
+          </div>
+        </header>
 
-          return accessible
-            ? <Link key={r.href} href={r.href} style={{ textDecoration: 'none', color: 'inherit' }}>{Card}</Link>
-            : <div key={r.href}>{Card}</div>
-        })}
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">📈 Relatórios</h1>
+          <p className="ps-page-lead">{roleLabel(user.role)} · {ALL_REPORTS.filter(r => r.status === 'ready' && canAccess(user, r.href)).length} disponíveis</p>
+
+          <div className="ps-report-grid">
+            {ALL_REPORTS.map(r => {
+              const isReady = r.status === 'ready'
+              const accessible = isReady && canAccess(user, r.href)
+              const disabledCls = accessible ? '' : 'disabled'
+
+              const body = (
+                <>
+                  <div className="icon">{r.icon}</div>
+                  <h3>{r.title}</h3>
+                  <p>{r.description}</p>
+                  {!isReady && <span className="soon">Em breve</span>}
+                  {!isReady && r.blocker && <p className="blocker">{r.blocker}</p>}
+                  {isReady && !accessible && (
+                    <p className="denied">(sem permissão — peça acesso ao admin)</p>
+                  )}
+                </>
+              )
+
+              return accessible
+                ? <Link key={r.href} href={r.href} className="ps-report-card">{body}</Link>
+                : <div key={r.href} className={`ps-report-card ${disabledCls}`}>{body}</div>
+            })}
+          </div>
+        </div>
       </div>
     </div>
   )

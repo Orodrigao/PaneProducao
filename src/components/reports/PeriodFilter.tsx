@@ -51,26 +51,19 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
   }, [preset, customFrom, customTo])
 
   return (
-    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="ps-presets">
       {(['hoje','7d','30d','mes','custom'] as Preset[]).map(p => (
-        <button key={p} onClick={() => setPreset(p)}
-          style={{
-            padding: '6px 12px', borderRadius: '6px',
-            border: '1px solid var(--border)',
-            background: preset === p ? 'var(--primary)' : 'white',
-            color: preset === p ? 'white' : 'var(--text)',
-            cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
-          }}>
+        <button key={p} onClick={() => setPreset(p)} className={`ps-preset ${preset === p ? 'active' : ''}`}>
           {PRESET_LABELS[p]}
         </button>
       ))}
       {preset === 'custom' && (
         <>
           <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-            style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
-          <span style={{ color: 'var(--muted)' }}>até</span>
+            className="ps-input" style={{padding:'6px 10px', fontSize:13}}/>
+          <span style={{color:'var(--ink-soft)', fontSize:13}}>até</span>
           <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-            style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+            className="ps-input" style={{padding:'6px 10px', fontSize:13}}/>
         </>
       )}
     </div>

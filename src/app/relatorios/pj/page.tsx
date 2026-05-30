@@ -1,6 +1,9 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { Download, ChevronLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import PeriodFilter from '@/components/reports/PeriodFilter'
 import KPICard from '@/components/reports/KPICard'
 import ReportTable, { ReportTableColumn } from '@/components/reports/ReportTable'
@@ -39,11 +42,17 @@ function rowUnits(o: Order): { qty: number; unit: 'un' | 'kg' } {
 }
 
 export default function RelatorioPJ() {
+  const router = useRouter()
+  const [user, setUser] = useState<AppUser | null>(null)
   const [range, setRange]           = useState<{ from: Date; to: Date } | null>(null)
   const [customerId, setCustomerId] = useState<string>('all')
   const [orders, setOrders]         = useState<Order[]>([])
   const [customers, setCustomers]   = useState<Customer[]>([])
   const [loading, setLoading]       = useState(true)
+
+  useEffect(() => {
+    setUser(getCurrentUser())
+  }, [])
 
   useEffect(() => {
     supabase.from('customers').select('id,name').eq('active', true).order('name').then(({ data }) => {
@@ -163,57 +172,72 @@ export default function RelatorioPJ() {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 1000, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>🤝 Vendas PJ</h1>
-        <span style={{ fontSize: '.85rem', color: 'var(--muted)' }}>
-          {loading ? 'carregando...' : `${filteredOrders.length} linha(s) no período`}
-        </span>
-      </div>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <button className="ps-iconbtn" onClick={() => router.push('/relatorios')} aria-label="Voltar">
+              <ChevronLeft size={20}/>
+            </button>
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Vendas PJ</b>
+              <span>Relatório</span>
+            </div>
+          </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-      <div style={{ background: 'white', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <PeriodFilter defaultPreset="30d" onChange={setRange} />
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label style={{ fontSize: '.8rem', color: 'var(--muted)', fontWeight: 600 }}>Cliente:</label>
-          <select value={customerId} onChange={e => setCustomerId(e.target.value)}
-            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: '.85rem', flex: '0 1 260px' }}>
-            <option value="all">Todos</option>
-            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">🤝 Vendas PJ</h1>
+          <p className="ps-page-lead">
+            {loading ? 'carregando...' : `${filteredOrders.length} linha(s) no período`}
+          </p>
+
+          <div className="ps-filters" style={{flexDirection:'column', alignItems:'stretch'}}>
+            <PeriodFilter defaultPreset="30d" onChange={setRange} />
+            <div style={{display:'flex', gap:8, alignItems:'center'}}>
+              <label className="ps-filter-lbl">Cliente:</label>
+              <select value={customerId} onChange={e => setCustomerId(e.target.value)}
+                className="ps-select" style={{flex:'0 1 260px', padding:'6px 10px', fontSize:13}}>
+                <option value="all">Todos</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:14}}>
+            <KPICard label="Vendas totais"   value={formatBRL(kpis.total)}  accent="sage" />
+            <KPICard label="Pedidos"          value={kpis.nPedidos} />
+            <KPICard label="Ticket médio"     value={formatBRL(kpis.ticket)} />
+            <KPICard label="Clientes únicos"  value={kpis.clientes} />
+          </div>
+
+          <div className="ps-section-row">
+            <h2>Por cliente</h2>
+            <button onClick={exportClientes} disabled={vendasPorCliente.length === 0} className="ps-btn ghost sm">
+              <Download size={14}/> CSV
+            </button>
+          </div>
+          <ReportTable columns={colsCliente} rows={vendasPorCliente} loading={loading}
+            initialSortKey="total" initialSortDir="desc"
+            emptyMessage="Nenhum pedido PJ no período." />
+
+          <div className="ps-section-row">
+            <h2>Top produtos</h2>
+            <button onClick={exportProdutos} disabled={topProdutos.length === 0} className="ps-btn ghost sm">
+              <Download size={14}/> CSV
+            </button>
+          </div>
+          <ReportTable columns={colsProduto} rows={topProdutos} loading={loading}
+            initialSortKey="total" initialSortDir="desc"
+            emptyMessage="Nenhum produto vendido no período." />
         </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <KPICard label="Vendas totais" value={formatBRL(kpis.total)} accent="#16a34a" />
-        <KPICard label="Pedidos"        value={kpis.nPedidos} />
-        <KPICard label="Ticket médio"   value={formatBRL(kpis.ticket)} />
-        <KPICard label="Clientes únicos" value={kpis.clientes} />
-      </div>
-
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Por cliente</h2>
-          <button onClick={exportClientes} disabled={vendasPorCliente.length === 0}
-            style={{ padding: '6px 12px', background: vendasPorCliente.length === 0 ? '#e5e7eb' : '#f3f4f6', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, fontSize: '.8rem', fontWeight: 600, cursor: vendasPorCliente.length === 0 ? 'default' : 'pointer' }}>
-            📥 CSV
-          </button>
-        </div>
-        <ReportTable columns={colsCliente} rows={vendasPorCliente} loading={loading}
-          initialSortKey="total" initialSortDir="desc"
-          emptyMessage="Nenhum pedido PJ no período." />
-      </div>
-
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Top produtos</h2>
-          <button onClick={exportProdutos} disabled={topProdutos.length === 0}
-            style={{ padding: '6px 12px', background: topProdutos.length === 0 ? '#e5e7eb' : '#f3f4f6', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, fontSize: '.8rem', fontWeight: 600, cursor: topProdutos.length === 0 ? 'default' : 'pointer' }}>
-            📥 CSV
-          </button>
-        </div>
-        <ReportTable columns={colsProduto} rows={topProdutos} loading={loading}
-          initialSortKey="total" initialSortDir="desc"
-          emptyMessage="Nenhum produto vendido no período." />
       </div>
     </div>
   )
