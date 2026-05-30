@@ -37,7 +37,7 @@
   - `quantity` numeric (default 1)
   - `created_at` timestamptz default now()
   - UNIQUE (parent_product_id, component_source, component_id)
-- [ ] **B2** — `/produtos/[id]/composicao`: tela admin (acessível pelo botão "Composição" em A2). Lista components atuais; busca de bread/product pra adicionar; input numeric de quantity; remover linha. Read-only se kind != 'kit'.
+- [x] **B2** — `/produtos/composicao?id=<uuid>` (query param em vez de dynamic route — combina com padrão estático do app). Lista componentes com chip PÃO/PRODUTO e custo; edit inline de quantidade (blur salva); remoção com confirm. Busca de bread/produto filtra kits, self, ativos, e já-adicionados. Sumário "CMV computado" no final, com aviso se algum componente sem custo. Read-only se kind != 'kit' (banner + inputs disabled). Botão 📋 em /produtos vira <Link> pra essa tela.
 - [ ] **B3** — Em `/produtos` aba Pães e Produtos, mostrar **"CMV computado: R$ X"** abaixo do `cost_price` manual em kits — só quando tem components cadastrados. Cálculo: `Σ (component.cost_price × quantity)`. Se algum component sem custo, indicar "(custo parcial)".
 
 **Saída da fase B:** kits ganham composição visível e CMV sugerido. Ainda nada muda no fluxo operacional.
