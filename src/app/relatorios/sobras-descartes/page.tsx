@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { Download, ChevronLeft, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import PeriodFilter from '@/components/reports/PeriodFilter'
 import SegmentedFilter from '@/components/reports/SegmentedFilter'
 import KPICard from '@/components/reports/KPICard'
@@ -57,6 +59,7 @@ function formatBRL(v: number): string {
 
 export default function SobrasDescartesReport() {
   const router = useRouter()
+  const [user, setUser] = useState<AppUser | null>(null)
   const [range, setRange] = useState<{ from: Date; to: Date } | null>(null)
   const [modo, setModo] = useState<'sobra' | 'descarte' | 'ambos'>('ambos')
   const [responsible, setResponsible] = useState<string>('all')
@@ -65,6 +68,10 @@ export default function SobrasDescartesReport() {
   const [breadsMap, setBreadsMap] = useState<Map<string, ProductInfo>>(new Map())
   const [productsMap, setProductsMap] = useState<Map<string, ProductInfo>>(new Map())
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setUser(getCurrentUser())
+  }, [])
 
   // Lookups (pães e produtos) carregam uma vez — incluindo cost_price
   useEffect(() => {
@@ -193,80 +200,93 @@ export default function SobrasDescartesReport() {
     { key: 'product',     label: 'Produto' },
     { key: 'category',    label: 'Categoria' },
     { key: 'quantity',    label: 'Qtd',   align: 'right', format: (v) => (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) },
-    { key: 'valor',       label: 'Valor', align: 'right', format: (v) => v === null ? <span style={{color:'var(--muted)'}}>—</span> : formatBRL(v as number) },
+    { key: 'valor',       label: 'Valor', align: 'right', format: (v) => v === null ? <span style={{color:'var(--ink-faint)'}}>—</span> : formatBRL(v as number) },
     { key: 'obs',         label: 'Obs',   sortable: false },
   ]
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1100px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <button onClick={() => router.push('/relatorios')}
-          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.85rem', padding: 0 }}>
-          ← Voltar
-        </button>
-      </div>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <button className="ps-iconbtn" onClick={() => router.push('/relatorios')} aria-label="Voltar">
+              <ChevronLeft size={20}/>
+            </button>
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Sobras & Descartes</b>
+              <span>Relatório</span>
+            </div>
+          </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-      <h1 style={{ margin: '0 0 4px', fontSize: '1.4rem', fontWeight: 700 }}>♻️ Sobras & Descartes</h1>
-      <p style={{ margin: '0 0 20px', color: 'var(--muted)', fontSize: '0.9rem' }}>
-        Histórico unificado com filtros por período, modo e responsável. Valor monetário = <code>quantidade × custo cadastrado</code>.
-      </p>
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">♻️ Sobras & Descartes</h1>
+          <p className="ps-page-lead">
+            Histórico unificado com filtros por período, modo e responsável.
+            Valor monetário = <code>quantidade × custo cadastrado</code>.
+          </p>
 
-      {/* Filtros */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
-        <PeriodFilter onChange={setRange} />
-        <SegmentedFilter
-          options={[
-            { value: 'ambos',    label: 'Ambos' },
-            { value: 'sobra',    label: 'Sobras' },
-            { value: 'descarte', label: 'Descartes' },
-          ]}
-          value={modo}
-          onChange={(v) => setModo(v as 'sobra' | 'descarte' | 'ambos')}
-        />
-        <select value={responsible} onChange={e => setResponsible(e.target.value)}
-          style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}>
-          <option value="all">Todos os responsáveis</option>
-          {allResponsibles.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </div>
+          {/* Filtros */}
+          <div className="ps-filters">
+            <PeriodFilter onChange={setRange} />
+            <SegmentedFilter
+              options={[
+                { value: 'ambos',    label: 'Ambos' },
+                { value: 'sobra',    label: 'Sobras' },
+                { value: 'descarte', label: 'Descartes' },
+              ]}
+              value={modo}
+              onChange={(v) => setModo(v as 'sobra' | 'descarte' | 'ambos')}
+            />
+            <select value={responsible} onChange={e => setResponsible(e.target.value)}
+              className="ps-select" style={{padding:'6px 10px', fontSize:13, flex:'0 1 220px'}}>
+              <option value="all">Todos os responsáveis</option>
+              {allResponsibles.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
 
-      {/* Alerta de cobertura — quando há registros sem custo */}
-      {kpis.semCusto > 0 && (
-        <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', padding: '8px 14px', borderRadius: 8, fontSize: '0.82rem', marginBottom: '12px' }}>
-          ⚠️ <strong>{kpis.semCusto}</strong> {kpis.semCusto === 1 ? 'registro' : 'registros'} sem custo cadastrado — valor monetário pode estar subestimado. Atualize em{' '}
-          <a href="/produtos" style={{ color: '#92400e', textDecoration: 'underline', fontWeight: 600 }}>/produtos</a>.
+          {/* Alerta de cobertura — quando há registros sem custo */}
+          {kpis.semCusto > 0 && (
+            <div className="ps-warning">
+              <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+              <span>
+                <strong>{kpis.semCusto}</strong> {kpis.semCusto === 1 ? 'registro' : 'registros'} sem custo cadastrado — valor monetário pode estar subestimado. Atualize em{' '}
+                <a href="/produtos">/produtos</a>.
+              </span>
+            </div>
+          )}
+
+          {/* KPIs */}
+          <div style={{display:'flex', flexWrap:'wrap', gap:12, marginBottom:14}}>
+            <KPICard label="Valor Sobras"    value={formatBRL(kpis.sobrasValor)}    accent="sage"  helper={`${kpis.sobrasTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
+            <KPICard label="Valor Descartes" value={formatBRL(kpis.descartesValor)} accent="berry" helper={`${kpis.descartesTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
+            <KPICard label="Registros"       value={kpis.records} />
+            <KPICard label="Top produto"     value={kpis.topProduct} helper={kpis.topValor > 0 ? `${formatBRL(kpis.topValor)} no período` : '—'} />
+          </div>
+
+          {/* Export */}
+          <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
+            <button onClick={handleExport} disabled={filteredRows.length === 0} className="ps-btn ghost sm">
+              <Download size={14}/> Exportar CSV
+            </button>
+          </div>
+
+          {/* Tabela */}
+          <ReportTable
+            columns={columns}
+            rows={filteredRows}
+            loading={loading}
+            emptyMessage="Sem registros no período/filtros selecionados."
+          />
         </div>
-      )}
-
-      {/* KPIs */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-        <KPICard label="Valor Sobras"    value={formatBRL(kpis.sobrasValor)}    accent="#0a6e52" helper={`${kpis.sobrasTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
-        <KPICard label="Valor Descartes" value={formatBRL(kpis.descartesValor)} accent="#dc2626" helper={`${kpis.descartesTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
-        <KPICard label="Registros"       value={kpis.records} />
-        <KPICard label="Top produto"     value={kpis.topProduct} helper={kpis.topValor > 0 ? `${formatBRL(kpis.topValor)} no período` : '—'} />
       </div>
-
-      {/* Export */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
-        <button onClick={handleExport}
-          disabled={filteredRows.length === 0}
-          style={{
-            padding: '8px 14px', borderRadius: '6px', border: '1px solid var(--border)',
-            background: 'white', cursor: filteredRows.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: filteredRows.length === 0 ? 0.5 : 1,
-            fontSize: '0.85rem', fontWeight: 600,
-          }}>
-          📥 Exportar CSV
-        </button>
-      </div>
-
-      {/* Tabela */}
-      <ReportTable
-        columns={columns}
-        rows={filteredRows}
-        loading={loading}
-        emptyMessage="Sem registros no período/filtros selecionados."
-      />
     </div>
   )
 }

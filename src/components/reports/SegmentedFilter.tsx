@@ -13,18 +13,10 @@ interface Props {
 
 export default function SegmentedFilter({ options, value, onChange }: Props) {
   return (
-    <div style={{ display: 'inline-flex', borderRadius: '8px', border: '1px solid var(--border)', overflow: 'hidden' }}>
-      {options.map((opt, i) => (
+    <div className="ps-segments">
+      {options.map(opt => (
         <button key={opt.value} onClick={() => onChange(opt.value)}
-          style={{
-            padding: '6px 14px',
-            background: value === opt.value ? 'var(--primary)' : 'white',
-            color: value === opt.value ? 'white' : 'var(--text)',
-            border: 'none',
-            borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem', fontWeight: 600,
-          }}>
+          className={`ps-seg ${value === opt.value ? 'active' : ''}`}>
           {opt.label}
         </button>
       ))}

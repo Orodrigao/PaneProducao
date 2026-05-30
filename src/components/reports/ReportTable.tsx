@@ -44,41 +44,39 @@ export default function ReportTable<T extends Record<string, any>>({
     else { setSortKey(key); setSortDir('asc') }
   }
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>Carregando...</div>
-  if (rows.length === 0) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>{emptyMessage}</div>
+  if (loading) return <div className="ps-empty">Carregando...</div>
+  if (rows.length === 0) return <div className="ps-empty">{emptyMessage}</div>
 
   return (
-    <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)', background: 'white' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+    <div className="ps-table-wrap" style={{overflowX:'auto'}}>
+      <table className="ps-table">
         <thead>
-          <tr style={{ background: '#f9f9f9', borderBottom: '1px solid var(--border)' }}>
-            {columns.map(col => (
-              <th key={col.key}
-                onClick={() => toggleSort(col.key, col.sortable)}
-                style={{
-                  textAlign: col.align ?? 'left',
-                  padding: '10px 12px',
-                  fontWeight: 600, fontSize: '0.7rem',
-                  color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em',
-                  cursor: col.sortable === false ? 'default' : 'pointer',
-                  userSelect: 'none', whiteSpace: 'nowrap',
-                }}>
-                {col.label}
-                {sortKey === col.key && col.sortable !== false && (
-                  <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>
-                )}
-              </th>
-            ))}
+          <tr>
+            {columns.map(col => {
+              const sortable = col.sortable !== false
+              const alignCls = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : ''
+              return (
+                <th key={col.key}
+                  className={[sortable ? 'sortable' : '', alignCls].filter(Boolean).join(' ')}
+                  onClick={() => toggleSort(col.key, col.sortable)}>
+                  {col.label}
+                  {sortKey === col.key && sortable && (
+                    <span style={{marginLeft:4}}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+            <tr key={i}>
               {columns.map(col => {
                 const value = row[col.key]
                 const display = col.format ? col.format(value, row) : String(value ?? '')
+                const alignCls = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : ''
                 return (
-                  <td key={col.key} style={{ textAlign: col.align ?? 'left', padding: '8px 12px' }}>
+                  <td key={col.key} className={alignCls}>
                     {display}
                   </td>
                 )
