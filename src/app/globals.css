@@ -460,6 +460,10 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-status.pendente{ background:var(--honey-tint); color:#7A5418; border-color:var(--honey-line); }
 .ps-status.ok{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }
 .ps-status.divergencia{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+.ps-status.entrada{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }
+.ps-status.saida{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+.ps-status.ajuste{ background:var(--honey-tint); color:var(--honey-deep); border-color:var(--honey-line); }
+.ps-status.descarte{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
 
 /* Tabela (fechamento) */
 .ps-table-wrap{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); overflow:hidden; box-shadow:var(--sh-1); }
