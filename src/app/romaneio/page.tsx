@@ -304,19 +304,38 @@ export default function RomaneioPage() {
       await sbPatch('romaneios', { status: 'enviado', sent_by: sentBy, sent_at: new Date().toISOString() }, { id: romId })
 
       // Gera movimentações de estoque: -N em 'central', +N no destino.
-      // Idempotente: se já existirem movements pra esse romaneio, pula (evita duplicata em re-envio).
+      // Cobre 2 fontes:
+      //   (a) Itens-pão diretos (product_source='bread') — comportamento original.
+      //   (b) Cascade de KIT (product_source!='bread' + products.kind='kit') — debita
+      //       pães-componentes da composição. reference_type='romaneio_kit' separa
+      //       das movimentações diretas pra reportagem/auditoria.
+      // Idempotente: se já existirem movements pra esse romaneio (qualquer reference_type),
+      // pula tudo. Evita duplicata em re-envio.
       try {
-        const existing = await sbGet('bread_movements', `reference_id=eq.${romId}&reference_type=eq.romaneio&select=id&limit=1`)
+        const existing = await sbGet('bread_movements', `reference_id=eq.${romId}&reference_type=in.(romaneio,romaneio_kit)&select=id&limit=1`)
         if (!existing || existing.length === 0) {
-          const [items, romData] = await Promise.all([
-            sbGet('romaneio_items', `romaneio_id=eq.${romId}&product_source=eq.bread&qty_sent=gt.0&select=product_id,qty_sent`),
+          const [items, romData, kits] = await Promise.all([
+            sbGet('romaneio_items', `romaneio_id=eq.${romId}&qty_sent=gt.0&select=product_id,product_source,qty_sent`),
             sbGet('romaneios', `id=eq.${romId}&select=destination_id,destinations(code)`),
+            sbGet('products', `kind=eq.kit&select=id`),
           ])
           const destCode: string | undefined = romData?.[0]?.destinations?.code
           if (destCode && items && items.length > 0) {
             const destLoc = destCode.toLowerCase()
+            const kitIdSet = new Set((kits || []).map((k: any) => k.id))
+            const breadItems = (items as any[]).filter(it => it.product_source === 'bread')
+            const kitItems   = (items as any[]).filter(it => it.product_source !== 'bread' && kitIdSet.has(it.product_id))
+
+            // Carrega components-pão dos kits envolvidos
+            let components: any[] = []
+            if (kitItems.length > 0) {
+              const idsCsv = kitItems.map(k => `"${k.product_id}"`).join(',')
+              components = (await sbGet('product_components', `parent_product_id=in.(${idsCsv})&component_source=eq.bread&select=parent_product_id,component_id,quantity`)) || []
+            }
+
             const movements: any[] = []
-            items.forEach((it: any) => {
+            // (a) diretos
+            breadItems.forEach((it: any) => {
               const q = Number(it.qty_sent) || 0
               if (q <= 0) return
               movements.push(
@@ -324,6 +343,20 @@ export default function RomaneioPage() {
                 { movement_type: 'romaneio_envio', bread_id: it.product_id, location: destLoc,   quantity:  q, reference_id: romId, reference_type: 'romaneio', recorded_by: sentBy },
               )
             })
+            // (b) cascade de kit
+            kitItems.forEach((it: any) => {
+              const kitQty = Number(it.qty_sent) || 0
+              if (kitQty <= 0) return
+              const myComps = components.filter((c: any) => c.parent_product_id === it.product_id)
+              myComps.forEach((c: any) => {
+                const total = Number(c.quantity) * kitQty
+                movements.push(
+                  { movement_type: 'romaneio_envio', bread_id: c.component_id, location: 'central', quantity: -total, reference_id: romId, reference_type: 'romaneio_kit', recorded_by: sentBy },
+                  { movement_type: 'romaneio_envio', bread_id: c.component_id, location: destLoc,   quantity:  total, reference_id: romId, reference_type: 'romaneio_kit', recorded_by: sentBy },
+                )
+              })
+            })
+
             if (movements.length > 0) {
               await fetch(`${SB_URL}/rest/v1/bread_movements`, {
                 method: 'POST',
