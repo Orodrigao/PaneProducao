@@ -23,6 +23,13 @@ interface Bread {
   cost_price: number|null; active: boolean; is_pj: boolean
 }
 
+interface Component {
+  parent_product_id: string
+  component_source: string
+  component_id: string
+  quantity: number
+}
+
 const CATEGORIES = ['Bolos','Brownie','Bruschettas','Confeitaria','Cookies','Croissant','Doce',
   'Focaccias','Folhados & Doces','Lanches','Muffins','Pastas & Pesto','Pizza Redonda',
   'Pizza Romana','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados','Salgados','Sopas & Cremes','INSUMOS']
@@ -32,6 +39,7 @@ export default function ProdutosPage() {
   const [tab, setTab]           = useState<'produtos'|'paes'>('produtos')
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
+  const [components, setComponents] = useState<Component[]>([])
   const [loading, setLoading]   = useState(true)
   const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
@@ -48,14 +56,17 @@ export default function ProdutosPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const [pRes, bRes] = await Promise.all([
+      const [pRes, bRes, cRes] = await Promise.all([
         supabase.from('products').select('*').order('category').order('name'),
         supabase.from('breads').select('*').order('name'),
+        supabase.from('product_components').select('parent_product_id,component_source,component_id,quantity'),
       ])
       if (pRes.error) throw pRes.error
       if (bRes.error) throw bRes.error
+      if (cRes.error) throw cRes.error
       setProducts(pRes.data||[])
       setBreads(bRes.data||[])
+      setComponents((cRes.data||[]) as Component[])
     } catch(e:any) {
       setLoadError(e?.message || 'Falha ao carregar os dados.')
     } finally {
@@ -139,6 +150,19 @@ export default function ProdutosPage() {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
     return matchCat && matchKind && matchSearch
   })
+  // CMV computado por kit: soma (custo do componente × quantidade).
+  // Se algum componente não tem custo cadastrado, marca como parcial.
+  const cmvByKit: Record<string, { total: number; partial: boolean; count: number }> = {}
+  for (const c of components) {
+    const cost = c.component_source === 'bread'
+      ? (breads.find(b => b.id === c.component_id)?.cost_price ?? null)
+      : (products.find(p => p.id === c.component_id)?.cost_price ?? null)
+    const entry = cmvByKit[c.parent_product_id] ??= { total: 0, partial: false, count: 0 }
+    entry.count++
+    if (cost === null || Number(cost) === 0) entry.partial = true
+    else entry.total += Number(cost) * Number(c.quantity)
+  }
+
   const kindCounts = { kit: 0, insumo: 0, final: 0 }
   for (const p of products) {
     if (p.kind === 'kit') kindCounts.kit++
@@ -266,6 +290,13 @@ export default function ProdutosPage() {
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
                         </div>
+                        {p.kind === 'kit' && cmvByKit[p.id] && (
+                          <div style={{fontSize:11, color:'var(--sage)', marginTop:2, fontWeight:600}}>
+                            CMV computado: R$ {cmvByKit[p.id].total.toFixed(2)}
+                            {cmvByKit[p.id].partial && <span style={{color:'var(--berry)', fontWeight:500}}> (parcial)</span>}
+                            <span style={{color:'var(--ink-faint)', fontWeight:400}}> · {cmvByKit[p.id].count} comp.</span>
+                          </div>
+                        )}
                       </div>
                       {p.kind === 'kit' && (
                         <Link href={`/produtos/composicao?id=${p.id}`} title="Cadastrar composição do kit" className="ps-iconbtn" style={{width:30, height:30, fontSize:14}}>
