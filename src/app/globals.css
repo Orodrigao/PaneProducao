@@ -562,6 +562,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 
 /* Aviso/warning banner inline */
 .ps-warning{ background:var(--honey-tint); border:1px solid var(--honey-line); color:#7A5418; padding:10px 14px; border-radius:var(--r-ctrl); font-size:13px; font-weight:500; margin-bottom:12px; display:flex; align-items:flex-start; gap:8px; line-height:1.4; }
+.ps-warning.danger{ background:var(--berry-tint); border-color:#E6B5AC; color:var(--berry); }
 .ps-warning a{ color:inherit; font-weight:700; text-decoration:underline; }
 
 /* Back link */

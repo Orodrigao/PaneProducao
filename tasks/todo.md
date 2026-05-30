@@ -12,10 +12,10 @@
 
 ### Tier 1 — nav primária (todo mundo vê)
 - [x] 1. **Romaneio** — PR #7 (merged)
-- [ ] 2. **Relatórios** + `/relatorios/pj` + `/relatorios/sobras-descartes` ← **EM ANDAMENTO**
+- [x] 2. **Relatórios** + `/relatorios/pj` + `/relatorios/sobras-descartes` — PR #8 (merged)
 
 ### Tier 2 — operação diária (sheet "Mais", alto uso)
-- [ ] 3. Estoque-Pães
+- [ ] 3. Estoque-Pães ← **EM ANDAMENTO**
 - [ ] 4. Sobras
 - [ ] 5. Estoque
 - [ ] 6. Estoque-Congelado
