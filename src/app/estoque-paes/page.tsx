@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Search, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import KPICard from '@/components/reports/KPICard'
 
 interface Bread {
   id: string
@@ -35,7 +37,7 @@ const LOCATION_LABELS: Record<string, string> = {
 }
 
 export default function EstoquePaesPage() {
-  const [user, setUser]         = useState<{displayName:string; store:string|null}|null>(null)
+  const [user, setUser]         = useState<AppUser | null>(null)
   const [breads, setBreads]     = useState<Bread[]>([])
   const [movements, setMovements] = useState<BreadMovement[]>([])
   const [selectedLoc, setSelectedLoc] = useState<string>('central')
@@ -46,7 +48,7 @@ export default function EstoquePaesPage() {
   useEffect(() => {
     const u = getCurrentUser()
     if (!u) return
-    setUser({ displayName: u.displayName, store: u.store ?? null })
+    setUser(u)
     // Não-admin: filtro travado na loja dele. Admin (sem store): default 'central'.
     if (u.store) setSelectedLoc(u.store)
     else setSelectedLoc('central')
@@ -98,110 +100,114 @@ export default function EstoquePaesPage() {
   }, [saldoRows])
 
   const isAdmin = !user?.store
+  const hasNegative = saldoRows.some(r => r.saldo < 0)
 
   if (!ready) return (
-    <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Carregando...</div>
+    <div className="ps-loading">
+      <div className="ps-spinner"/>
+      <p>Carregando...</p>
+    </div>
   )
 
   return (
-    <div style={{padding:'20px',maxWidth:800,margin:'0 auto'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,gap:10,flexWrap:'wrap'}}>
-        <h1 style={{margin:0,fontSize:'1.3rem',fontWeight:700}}>📊 Saldo de Pães</h1>
-        {user && (
-          <span style={{fontSize:'.78rem',color:'var(--muted)'}}>
-            {user.displayName}{user.store ? ` · ${user.store.toUpperCase()}` : ' · (admin)'}
-          </span>
-        )}
-      </div>
-
-      <p style={{margin:'0 0 16px',color:'var(--muted)',fontSize:'.85rem'}}>
-        Saldo atual de pães por local. Calculado a partir das movimentações (forno + romaneio + descartes).
-      </p>
-
-      {/* Filtros */}
-      <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
-        <label style={{fontSize:'.85rem',color:'var(--muted)',fontWeight:600}}>Local:</label>
-        {isAdmin ? (
-          <select value={selectedLoc} onChange={e => setSelectedLoc(e.target.value)}
-            style={{padding:'6px 10px',borderRadius:6,border:'1px solid var(--border)',fontSize:'.85rem',background:'white'}}>
-            {LOCATIONS.map(loc => (
-              <option key={loc} value={loc}>{LOCATION_LABELS[loc]}</option>
-            ))}
-          </select>
-        ) : (
-          <span style={{padding:'4px 10px',background:'#dbeafe',color:'#1e40af',borderRadius:6,fontSize:'.85rem',fontWeight:600}}>
-            {LOCATION_LABELS[selectedLoc] || selectedLoc}
-          </span>
-        )}
-        <input placeholder="🔍 Buscar pão..." value={search} onChange={e=>setSearch(e.target.value)}
-          style={{flex:1,minWidth:180,padding:'6px 10px',border:'1px solid var(--border)',borderRadius:6,fontSize:'.85rem'}}/>
-      </div>
-
-      {/* KPIs */}
-      <div style={{display:'flex',gap:12,marginBottom:16,flexWrap:'wrap'}}>
-        <div style={{flex:'1 1 140px',background:'white',borderRadius:12,padding:'14px 16px',border:'1px solid var(--border)',borderTop:'3px solid #0a6e52',minWidth:140}}>
-          <div style={{fontSize:'.7rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Total de unidades</div>
-          <div style={{fontSize:'1.5rem',fontWeight:700,marginTop:4,color:'#0a6e52'}}>
-            {kpis.total.toLocaleString('pt-BR')}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Saldo de Pães</b>
+              <span>{user?.store ? user.store.toUpperCase() : 'Admin'}</span>
+            </div>
           </div>
-        </div>
-        <div style={{flex:'1 1 140px',background:'white',borderRadius:12,padding:'14px 16px',border:'1px solid var(--border)',minWidth:140}}>
-          <div style={{fontSize:'.7rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Variedades com saldo</div>
-          <div style={{fontSize:'1.5rem',fontWeight:700,marginTop:4}}>
-            {kpis.variedades}
-          </div>
-        </div>
-        <div style={{flex:'1 1 180px',background:'white',borderRadius:12,padding:'14px 16px',border:'1px solid var(--border)',minWidth:140}}>
-          <div style={{fontSize:'.7rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Top variedade</div>
-          <div style={{fontSize:'1rem',fontWeight:700,marginTop:4,lineHeight:1.2}}>
-            {kpis.top}
-            {kpis.topSaldo > 0 && <span style={{fontSize:'.75rem',color:'var(--muted)',marginLeft:6,fontWeight:400}}>({kpis.topSaldo})</span>}
-          </div>
-        </div>
-      </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-      {/* Tabela */}
-      {loading ? (
-        <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Carregando saldos...</div>
-      ) : saldoRows.length === 0 ? (
-        <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>
-          {breads.length === 0 ? 'Nenhum pão cadastrado.' : 'Nenhum pão encontrado.'}
-        </div>
-      ) : (
-        <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',overflow:'hidden'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.88rem'}}>
-            <thead>
-              <tr style={{background:'#f9f9f9',borderBottom:'1px solid var(--border)'}}>
-                <th style={{textAlign:'left',padding:'10px 12px',fontSize:'.72rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Pão</th>
-                <th style={{textAlign:'right',padding:'10px 12px',fontSize:'.72rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap'}}>Saldo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {saldoRows.map(r => {
-                const neg = r.saldo < 0
-                const empty = r.saldo === 0
-                return (
-                  <tr key={r.bread_id} style={{borderBottom:'1px solid #f0f0f0'}}>
-                    <td style={{padding:'8px 12px'}}>
-                      {r.bread_name}
-                      {r.is_pj && <span style={{marginLeft:6,background:'#dbeafe',color:'#1e40af',padding:'2px 6px',borderRadius:4,fontSize:'.62rem',fontWeight:700}}>PJ</span>}
-                      {r.unit && <span style={{marginLeft:8,fontSize:'.72rem',color:'var(--muted)'}}>{r.unit}</span>}
-                    </td>
-                    <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:neg?'#dc2626':empty?'var(--muted)':'inherit'}}>
-                      {r.saldo.toLocaleString('pt-BR')}
-                    </td>
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">📊 Saldo de Pães</h1>
+          <p className="ps-page-lead">
+            Saldo atual de pães por local. Calculado a partir das movimentações (forno + romaneio + descartes).
+          </p>
+
+          {/* Filtros */}
+          <div className="ps-filters">
+            <label className="ps-filter-lbl">Local:</label>
+            {isAdmin ? (
+              <select value={selectedLoc} onChange={e => setSelectedLoc(e.target.value)}
+                className="ps-select" style={{padding:'6px 10px', fontSize:13, flex:'0 1 220px'}}>
+                {LOCATIONS.map(loc => (
+                  <option key={loc} value={loc}>{LOCATION_LABELS[loc]}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="ps-status enviado">{LOCATION_LABELS[selectedLoc] || selectedLoc}</span>
+            )}
+            <div style={{flex:1, minWidth:180, position:'relative'}}>
+              <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+              <input placeholder="Buscar pão..." value={search} onChange={e=>setSearch(e.target.value)}
+                className="ps-input" style={{width:'100%', padding:'6px 10px 6px 30px', fontSize:13}}/>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div style={{display:'flex', gap:12, marginBottom:14, flexWrap:'wrap'}}>
+            <KPICard label="Total de unidades"   value={kpis.total} accent="sage" />
+            <KPICard label="Variedades com saldo" value={kpis.variedades} />
+            <KPICard label="Top variedade"       value={kpis.top} helper={kpis.topSaldo > 0 ? `${kpis.topSaldo} un` : '—'} />
+          </div>
+
+          {/* Aviso de saldos negativos */}
+          {hasNegative && (
+            <div className="ps-warning danger">
+              <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+              <span>Saldos negativos indicam descartes/saídas sem entrada correspondente (precisa investigar tracking).</span>
+            </div>
+          )}
+
+          {/* Tabela */}
+          {loading ? (
+            <div className="ps-empty">Carregando saldos...</div>
+          ) : saldoRows.length === 0 ? (
+            <div className="ps-empty">
+              {breads.length === 0 ? 'Nenhum pão cadastrado.' : 'Nenhum pão encontrado.'}
+            </div>
+          ) : (
+            <div className="ps-table-wrap" style={{overflowX:'auto'}}>
+              <table className="ps-table">
+                <thead>
+                  <tr>
+                    <th>Pão</th>
+                    <th className="right">Saldo</th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {saldoRows.some(r => r.saldo < 0) && (
-            <div style={{padding:'8px 12px',background:'#fef2f2',color:'#dc2626',fontSize:'.78rem',borderTop:'1px solid #fecaca'}}>
-              ⚠️ Saldos negativos indicam descartes/saídas sem entrada correspondente (precisa investigar tracking).
+                </thead>
+                <tbody>
+                  {saldoRows.map(r => {
+                    const neg = r.saldo < 0
+                    const empty = r.saldo === 0
+                    return (
+                      <tr key={r.bread_id}>
+                        <td>
+                          {r.bread_name}
+                          {r.is_pj && <span className="ps-pjbadge">PJ</span>}
+                          {r.unit && <span style={{marginLeft:8, fontSize:11, color:'var(--ink-faint)'}}>{r.unit}</span>}
+                        </td>
+                        <td className="right" style={{fontWeight:700, color: neg ? 'var(--berry)' : empty ? 'var(--ink-faint)' : 'var(--ps-ink)', fontVariantNumeric:'tabular-nums'}}>
+                          {r.saldo.toLocaleString('pt-BR')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
