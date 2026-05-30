@@ -21,8 +21,8 @@
 - [x] 6. Estoque-Congelado — PR #12 (merged)
 
 ### Tier 3 — regular
-- [ ] 7. Encomendas ← **EM ANDAMENTO**
-- [ ] 8. Compras (cuidado: integração Telegram, não quebrar)
+- [x] 7. Encomendas — PR #13 (merged)
+- [ ] 8. Compras (cuidado: integração Telegram, não quebrar) ← **EM ANDAMENTO**
 - [ ] 9. Fornecedores
 
 ### Tier 4 — admin / baixa frequência
