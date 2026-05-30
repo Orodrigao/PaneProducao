@@ -28,8 +28,8 @@
 ### Tier 4 — admin / baixa frequência
 - [x] 10. Produtos — PR #16 (merged)
 - [x] 11. Tabelas-Preço — PR #17 (merged)
-- [ ] 12. Clientes ← **EM ANDAMENTO**
-- [ ] 13. Pedidos-PJ
+- [x] 12. Clientes — PR #18 (merged)
+- [ ] 13. Pedidos-PJ ← **EM ANDAMENTO**
 - [ ] 14. Simulador-Desconto
 - [ ] 15. Admin
 
