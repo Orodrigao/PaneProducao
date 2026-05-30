@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package } from 'lucide-react'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -27,6 +28,12 @@ function slugExtra() { return 'extra_'+Date.now() }
 function showToast(msg:string, dur=2800) {
   const el=document.getElementById('rom-toast'); if(!el)return;
   el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),dur)
+}
+function roleInfo(r: Role | null) {
+  if (r === 'gustavo')  return { name: 'Gustavo',  loja: 'JC', color: '#8E4E22' }
+  if (r === 'cleo')     return { name: 'Cléo',     loja: 'JA', color: '#BE832B' }
+  if (r === 'marselle') return { name: 'Marselle', loja: 'EX', color: '#6B7A52' }
+  return { name: 'Rodrigo', loja: 'Admin', color: '#2A2018' }
 }
 
 // ── Supabase ────────────────────────────────────────────────────────
@@ -498,438 +505,595 @@ export default function RomaneioPage() {
   // ── derived ──────────────────────────────────────────────────────
   const criarTotalItems = Object.values(criarQtys).filter(v=>v>0).length
   const criarTotalQty = Object.values(criarQtys).reduce((a,c)=>a+c,0)
-
   const ordinals = ['1ª','2ª','3ª','4ª','5ª']
+  const info = roleInfo(role)
+  const userDisplay = getCurrentUser()?.displayName || info.name
+
+  // ── Render: shell helpers ──────────────────────────────────────
+  const Header = ({ subtitle, onBack }: { subtitle?: string; onBack?: () => void }) => (
+    <header className="ps-header">
+      <div className="ps-wordmark">
+        {onBack && (
+          <button className="ps-iconbtn" onClick={onBack} aria-label="Voltar">
+            <ChevronLeft size={20}/>
+          </button>
+        )}
+        <div className="ps-mark">P</div>
+        <div className="ps-brand">
+          <b>Romaneios</b>
+          {subtitle && <span>{subtitle}</span>}
+        </div>
+      </div>
+      <div className="ps-userchip">
+        <div className="ps-avatar" style={{background: info.color}}>{userDisplay.charAt(0).toUpperCase()}</div>
+        <b>{userDisplay}{role==='marselle' ? ' / EX' : ''}</b>
+      </div>
+    </header>
+  )
 
   // ── Render ──────────────────────────────────────────────────────
   return (
-    <div>
+    <>
       {/* TOAST */}
-      <div id="rom-toast" className="toast"/>
-      {/* LOADING */}
-      {loading && <div className="loading-overlay" style={{display:'flex'}}><div className="spinner"/><p>{loadingMsg}</p></div>}
+      <div id="rom-toast" className="ps-toast"/>
 
+      {/* LOADING overlay */}
+      {loading && (
+        <div className="ps-loading-overlay">
+          <div className="ps-spinner"/>
+          <p>{loadingMsg}</p>
+        </div>
+      )}
 
       {/* ENVIO CONFIRM MODAL */}
       {envioRomId && (
-        <div className="modal-overlay open" onClick={e=>{if(e.target===e.currentTarget)setEnvioRomId(null)}}>
-          <div className="modal-sheet">
-            <div className="modal-handle"/>
-            <div style={{padding:'20px 16px'}}>
-              <h3 style={{marginBottom:12}}>Confirmar Envio</h3>
-              <p style={{color:'var(--text-muted)',fontSize:14,marginBottom:20}}>Confirmar que o romaneio foi enviado para a loja?</p>
-              <div style={{display:'flex',gap:10}}>
-                <button className="btn-save" onClick={confirmEnvio}>Confirmar Envio ✓</button>
-                <button className="btn-action" onClick={()=>setEnvioRomId(null)}>Cancelar</button>
-              </div>
+        <div className="ps-sheet-overlay" onClick={e=>{if(e.target===e.currentTarget)setEnvioRomId(null)}}>
+          <div className="ps-sheet confirm">
+            <div className="ps-sheet-grab"/>
+            <h3>Confirmar Envio</h3>
+            <p>Confirmar que o romaneio foi enviado para a loja?</p>
+            <div className="actions">
+              <button className="ps-btn primary" onClick={confirmEnvio}>
+                <Truck size={16}/> Confirmar Envio
+              </button>
+              <button className="ps-btn ghost" onClick={()=>setEnvioRomId(null)}>Cancelar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── INIT / LOGIN (auto-resolvido via PIN global; seletor interno removido) ── */}
+      {/* INIT / LOGIN (auto-resolvido via PIN global; seletor interno removido) */}
       {(screen==='init' || screen==='login') && (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--muted)' }}>
+        <div className="ps-loading">
+          <div className="ps-spinner"/>
           <p>Carregando...</p>
         </div>
       )}
 
-      {/* ── PAINEL ── */}
+      {/* PAINEL */}
       {screen==='painel' && (
-        <div id="app">
-          <div className="topbar">
-            <div className="topbar-logo" onClick={goHome} style={{cursor:'pointer'}}>Pane &amp; Salute</div>
-            <span className={`topbar-badge ${role==='gustavo'?'tb-amber':role==='cleo'?'tb-teal':role==='marselle'?'tb-coral':'tb-gray'}`}>
-              {(getCurrentUser()?.displayName) || 'Rodrigo'}{role==='marselle' ? ' / EX' : ''}
-            </span>
-            <button className="btn-logout" onClick={goHome}>Sair</button>
-          </div>
-          <div style={{padding:'16px'}}>
-            {role==='gustavo' && (
-              <button className="btn-save" style={{width:'100%',marginBottom:16,padding:'12px'}} onClick={openCriar}>
-                + Novo Romaneio
-              </button>
-            )}
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-              <div className="section-label" style={{margin:0}}>Hoje — {fmtDate(todayKey())}</div>
-              <button className="btn-action" style={{fontSize:12,padding:'4px 10px'}} onClick={refreshPainel}>↻ Atualizar</button>
-            </div>
-            {romaneios.length===0 ? (
-              <div style={{textAlign:'center',padding:'40px 20px',color:'var(--text-muted)'}}>
-                <div style={{fontSize:48,marginBottom:12}}>📦</div>
-                <div>Nenhum romaneio hoje.</div>
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <Header subtitle={`Hoje · ${fmtDate(todayKey())}`}/>
+            <div className="ps-scroll ps-pad">
+              {role==='gustavo' && (
+                <button className="ps-btn primary block" style={{marginTop:16}} onClick={openCriar}>
+                  <Plus size={18}/> Novo Romaneio
+                </button>
+              )}
+
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'18px 0 12px'}}>
+                <div className="ps-label" style={{margin:0}}>Hoje · {fmtDate(todayKey())}</div>
+                <button className="ps-btn ghost sm" onClick={refreshPainel}>
+                  <RotateCw size={14}/> Atualizar
+                </button>
               </div>
-            ) : romaneios.map(r=>(
-              <div key={r.id} className="card" style={{marginBottom:12}}>
-                <div className="card-header">
-                  <div>
-                    <div className="card-title">{r.destinations?.name} — Viagem {r.trip_number}</div>
-                    <div className="card-meta">
-                      Criado por {r.created_by}
-                      {r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}
-                      {r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}
+
+              {romaneios.length===0 ? (
+                <div className="ps-empty">
+                  <Package size={36} style={{display:'block',margin:'0 auto 8px',opacity:.4}}/>
+                  Nenhum romaneio hoje.
+                </div>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                  {romaneios.map(r=>(
+                    <div key={r.id} className="ps-card">
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div className="ps-pname">{r.destinations?.name} · Viagem {r.trip_number}</div>
+                          <div className="ps-card-meta" style={{textAlign:'left',marginTop:4}}>
+                            Criado por {r.created_by}
+                            {r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}
+                            {r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}
+                          </div>
+                        </div>
+                        <span className={`ps-status ${r.status}`}>{statusLabel(r.status)}</span>
+                      </div>
+                      {r.obs && <div style={{fontSize:12,color:'var(--ink-soft)'}}>{r.obs}</div>}
+                      <div className="ps-item-actions">
+                        <button className="ps-btn ghost sm" onClick={()=>openDetalhe(r.id)}>
+                          <Eye size={14}/> Ver itens
+                        </button>
+                        {role==='cleo'&&r.status==='separado'&&(
+                          <button className="ps-btn info sm" onClick={()=>setEnvioRomId(r.id)}>
+                            <Truck size={14}/> Marcar Enviado
+                          </button>
+                        )}
+                        {role==='marselle'&&r.status==='enviado'&&r.destinations?.code==='EX'&&(
+                          <button className="ps-btn success sm" onClick={()=>openConferencia(r.id)}>
+                            <CheckCheck size={14}/> Conferir chegada
+                          </button>
+                        )}
+                        {role==='rodrigo'&&r.status==='com_divergencia'&&(
+                          <button className="ps-btn success sm" onClick={()=>aprovarDiverg(r.id)}>
+                            <Check size={14}/> Aprovar diverg.
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <span className={`status s-${r.status}`}>{statusLabel(r.status)}</span>
+                  ))}
                 </div>
-                {r.obs&&<div style={{fontSize:12,color:'var(--text-muted)',marginBottom:8}}>{r.obs}</div>}
-                <div className="card-actions">
-                  <button className="btn btn-secondary btn-sm" onClick={()=>openDetalhe(r.id)}>Ver itens</button>
-                  {role==='cleo'&&r.status==='separado'&&(
-                    <button className="btn btn-info btn-sm" onClick={()=>setEnvioRomId(r.id)}>Marcar Enviado ✓</button>
-                  )}
-                  {role==='marselle'&&r.status==='enviado'&&r.destinations?.code==='EX'&&(
-                    <button className="btn btn-success btn-sm" onClick={()=>openConferencia(r.id)}>Conferir chegada</button>
-                  )}
-                  {role==='rodrigo'&&r.status==='com_divergencia'&&(
-                    <button className="btn btn-success btn-sm" onClick={()=>aprovarDiverg(r.id)}>Aprovar diverg.</button>
-                  )}
-                </div>
-              </div>
-            ))}
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── DETALHE ── */}
+      {/* DETALHE */}
       {screen==='detalhe' && detailRom && (
-        <div id="app">
-          <div className="topbar">
-            <div className="topbar-logo">Pane &amp; Salute</div>
-            <span className={`status s-${detailRom.status}`}>{statusLabel(detailRom.status)}</span>
-            <button className="btn-logout" onClick={()=>setScreen('painel')}>← Voltar</button>
-          </div>
-          <div style={{padding:'16px'}}>
-            <div className="card" style={{marginBottom:16}}>
-              <div className="card-title">{detailRom.destinations?.name} — Viagem {detailRom.trip_number}</div>
-              <div className="card-meta">Data: {fmtDate(detailRom.record_date)} · Criado por: {detailRom.created_by}</div>
-              {detailRom.sent_at&&<div className="card-meta">Enviado por {detailRom.sent_by} em {fmtDateTime(detailRom.sent_at)}</div>}
-              {detailRom.confirmed_at&&<div className="card-meta">Conferido por {detailRom.confirmed_by} em {fmtDateTime(detailRom.confirmed_at)}</div>}
-              {detailRom.obs&&<div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>{detailRom.obs}</div>}
-            </div>
-            <div className="section-label">Itens</div>
-            {detailItems.length===0&&<div style={{color:'var(--text-muted)',fontSize:13}}>Nenhum item.</div>}
-            {detailItems.map(it=>(
-              <div key={it.id} className="conf-row">
-                <div className="conf-row-header">
-                  <span style={{fontWeight:500}}>{it.product_name}</span>
-                  <span className={`status s-${it.item_status||'pendente'}`}>{it.item_status||'pendente'}</span>
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <Header onBack={()=>setScreen('painel')} subtitle={statusLabel(detailRom.status)}/>
+            <div className="ps-scroll ps-pad">
+              <div className="ps-card" style={{marginTop:16}}>
+                <div className="ps-pname">{detailRom.destinations?.name} · Viagem {detailRom.trip_number}</div>
+                <div className="ps-card-meta" style={{textAlign:'left'}}>
+                  Data: {fmtDate(detailRom.record_date)} · Criado por: {detailRom.created_by}
+                  {detailRom.sent_at && <><br/>Enviado por {detailRom.sent_by} em {fmtDateTime(detailRom.sent_at)}</>}
+                  {detailRom.confirmed_at && <><br/>Conferido por {detailRom.confirmed_by} em {fmtDateTime(detailRom.confirmed_at)}</>}
                 </div>
-                <div style={{fontSize:13,color:'var(--text-muted)',display:'flex',gap:16,flexWrap:'wrap'}}>
-                  <span>Enviado: <strong>{it.qty_sent}</strong></span>
-                  {it.qty_received!=null&&<span>Recebido: <strong>{it.qty_received}</strong></span>}
-                  {it.qty_accepted!=null&&<span>Aceito: <strong>{it.qty_accepted}</strong></span>}
-                  {it.unit_price!=null&&it.unit_price>0&&<span>R$ {Number(it.unit_price).toFixed(2)}/un</span>}
-                </div>
-                {it.divergence_reason&&<div style={{fontSize:12,color:'var(--red)',marginTop:4}}>Divergência: {it.divergence_reason}</div>}
-                {it.obs&&<div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>{it.obs}</div>}
+                {detailRom.obs && <div style={{fontSize:13,color:'var(--ink-soft)',marginTop:4}}>{detailRom.obs}</div>}
+                <span className={`ps-status ${detailRom.status}`} style={{alignSelf:'flex-start'}}>{statusLabel(detailRom.status)}</span>
               </div>
-            ))}
-            {role==='rodrigo'&&detailRom.status==='com_divergencia'&&(
-              <div style={{marginTop:16}}>
-                <button className="btn-save" style={{width:'100%'}} onClick={()=>aprovarDiverg(detailRom.id)}>Aprovar divergências ✓</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* ── CRIAR ── */}
-      {screen==='criar' && (
-        <div id="app">
-          <div className="topbar">
-            <div className="topbar-logo">Pane &amp; Salute</div>
-            <span className="topbar-badge tb-amber">Gustavo</span>
-            <button className="btn-logout" onClick={()=>setScreen('painel')}>← Voltar</button>
-          </div>
-          <div style={{padding:'16px'}}>
-            <div className="section-label" style={{marginTop:0}}>Data</div>
-            <input type="date" value={criarDate} className="obs-area" style={{minHeight:'auto',padding:'8px 12px',marginBottom:14}}
-              onChange={e=>{ setCriarDate(e.target.value); if(criarDestId) onDestChange(criarDestId) }}/>
-
-            <div className="section-label">Destino</div>
-            <select className="obs-area" style={{minHeight:'auto',padding:'8px 12px',marginBottom:14}}
-              value={criarDestId} onChange={e=>onDestChange(e.target.value)}>
-              <option value="">Selecione o destino...</option>
-              {dests.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-
-            {criarDestId && (
-              <div style={{background:'var(--teal-bg)',border:'1px solid var(--teal-border)',borderRadius:'var(--radius-sm)',padding:'8px 12px',marginBottom:14,fontSize:13,color:'var(--teal)'}}>
-                {ordinals[criarTrip-1]||criarTrip+'ª'} viagem para este destino
-              </div>
-            )}
-
-            {criarBreads.length > 0 && (
-              <>
-                <div className="section-label">Produtos</div>
-                <div className="bread-list">
-                  {criarBreads.map(b=>{
-                    const qty = criarQtys[b.id]||0
-                    return (
-                      <div key={b.id} className={`bread-row${qty>0?' has-qty':''}`}>
-                        <div className="bread-info"><div className="bread-name">{b.name}</div></div>
-                        <div className="qty-wrap">
-                          <button className="qty-btn" onClick={()=>criarChangeQty(b.id,-1)}>−</button>
-                          <input className="qty-input" type="number" min={0} value={qty||''} placeholder="0"
-                            onChange={e=>setCriarQtys(prev=>({...prev,[b.id]:parseInt(e.target.value)||0}))}/>
-                          <button className="qty-btn" onClick={()=>criarChangeQty(b.id,1)}>+</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {/* Extras */}
-                  {Object.entries(criarExtras).map(([eid,name])=>{
-                    const qty = criarQtys[eid]||0
-                    return (
-                      <div key={eid} className={`bread-row${qty>0?' has-qty':''}`}>
-                        <div className="bread-info">
-                          <div className="bread-name" style={{color:'var(--amber)',fontStyle:'italic'}}>{name} <span style={{fontSize:11,color:'var(--text-hint)'}}>(especial)</span></div>
-                        </div>
-                        <div className="qty-wrap">
-                          <button className="qty-btn" onClick={()=>criarChangeQty(eid,-1)}>−</button>
-                          <input className="qty-input" type="number" min={0} value={qty||''} placeholder="0"
-                            onChange={e=>setCriarQtys(prev=>({...prev,[eid]:parseInt(e.target.value)||0}))}/>
-                          <button className="qty-btn" onClick={()=>criarChangeQty(eid,1)}>+</button>
-                          <button onClick={()=>removeExtra(eid)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-hint)',fontSize:16}}>✕</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Add extra */}
-                <div style={{marginTop:14,paddingTop:12,borderTop:'1px dashed var(--border)'}}>
-                  <div className="section-label" style={{marginTop:0}}>+ Pão especial / avulso</div>
-                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px',flex:1,fontSize:13}}
-                      placeholder="Nome do pão..." value={criarExtraInput}
-                      onChange={e=>setCriarExtraInput(e.target.value)}
-                      onKeyDown={e=>e.key==='Enter'&&addExtra()}/>
-                    <button className="btn-action" style={{padding:'8px 14px',whiteSpace:'nowrap'}} onClick={addExtra}>Adicionar</button>
-                  </div>
-                </div>
-
-                <div style={{marginTop:14}}>
-                  <div className="section-label" style={{marginTop:0}}>Observações</div>
-                  <textarea className="obs-area" placeholder="Observações sobre o romaneio..." value={criarObs} onChange={e=>setCriarObs(e.target.value)}/>
-                </div>
-
-                <div style={{position:'sticky',bottom:70,background:'var(--surface)',borderTop:'1px solid var(--border)',padding:'12px 0',display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:16}}>
-                  <div style={{fontSize:13,color:'var(--text-muted)'}}>
-                    {criarTotalItems ? <><strong>{criarTotalItems}</strong> produtos · <strong>{criarTotalQty}</strong> un</> : 'Nenhum item'}
-                  </div>
-                  <button className="btn-save" onClick={saveRomaneio}>Criar Romaneio</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── CONFERENCIA ── */}
-      {screen==='conferencia' && confRom && (
-        <div id="app">
-          <div className="topbar">
-            <div className="topbar-logo">Pane &amp; Salute</div>
-            <span className="topbar-badge tb-coral">Marselle / EX</span>
-            <button className="btn-logout" onClick={()=>setScreen('painel')}>← Voltar</button>
-          </div>
-          <div style={{padding:'16px'}}>
-            <div className="card" style={{marginBottom:16}}>
-              <div className="card-title">{confRom.destinations?.name} — Viagem {confRom.trip_number}</div>
-              <div className="card-meta">Enviado por {confRom.sent_by||'?'} em {fmtDateTime(confRom.sent_at)}</div>
-            </div>
-            <div className="section-label">Confirme o que chegou ({confItems.length} itens)</div>
-            {confItems.map(it=>{
-              const cd = confData[it.id]
-              if (!cd) return null
-              const hasDiverg = cd.rec!==it.qty_sent || cd.acc!==cd.rec
-              return (
-                <div key={it.id} className="conf-row">
-                  <div className="conf-row-header">
-                    <span style={{fontWeight:500}}>{it.product_name}</span>
-                    <span style={{fontSize:13,color:'var(--text-muted)'}}>Enviado: <strong>{it.qty_sent}</strong></span>
-                  </div>
-                  {cd.refused ? (
-                    <div style={{background:'var(--red-bg)',border:'1px solid var(--red-border)',borderRadius:'var(--radius-sm)',padding:10,marginTop:4}}>
-                      <div style={{fontSize:13,fontWeight:600,color:'var(--red)',marginBottom:8}}>✕ Item recusado</div>
-                      <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px',marginBottom:8,borderColor:'var(--red)'}}
-                        placeholder="Motivo da recusa (obrigatório)..."
-                        value={cd.refuseReason} onChange={e=>updateConf(it.id,'refuseReason',e.target.value)}/>
-                      <div style={{display:'flex',gap:8}}>
-                        <button className="btn-save" style={{flex:1,background:'var(--red)',fontSize:13,padding:'8px'}} onClick={()=>{}}>Confirmar recusa</button>
-                        <button className="btn-action" onClick={()=>desfazerRecusa(it.id,it.qty_sent)}>Desfazer</button>
-                      </div>
+              <div className="ps-label" style={{marginTop:20}}>Itens</div>
+              {detailItems.length===0 && <div className="ps-empty">Nenhum item.</div>}
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {detailItems.map(it=>(
+                  <div key={it.id} className="ps-item">
+                    <div className="ps-item-head">
+                      <div className="ps-item-name">{it.product_name}</div>
+                      <span className={`ps-status ${it.item_status||'pendente'}`}>{it.item_status||'pendente'}</span>
                     </div>
-                  ) : (
-                    <>
-                      <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
-                        <div style={{flex:1,minWidth:120}}>
-                          <div style={{fontSize:11,color:'var(--text-hint)',marginBottom:4}}>Recebido</div>
-                          <input className="qty-input" style={{width:'100%'}} type="number" min={0}
-                            value={cd.rec} onChange={e=>updateConf(it.id,'rec',parseInt(e.target.value)||0)}/>
+                    <div className="ps-item-meta">
+                      <span>Enviado: <b>{it.qty_sent}</b></span>
+                      {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
+                      {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
+                      {it.unit_price!=null && it.unit_price>0 && <span>R$ {Number(it.unit_price).toFixed(2)}/un</span>}
+                    </div>
+                    {it.divergence_reason && (
+                      <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>
+                        <AlertTriangle size={12} style={{verticalAlign:-2,marginRight:4}}/>
+                        {it.divergence_reason}
+                      </div>
+                    )}
+                    {it.obs && <div style={{fontSize:12,color:'var(--ink-soft)'}}>{it.obs}</div>}
+                  </div>
+                ))}
+              </div>
+
+              {role==='rodrigo' && detailRom.status==='com_divergencia' && (
+                <button className="ps-btn primary block" style={{marginTop:18}} onClick={()=>aprovarDiverg(detailRom.id)}>
+                  <Check size={16}/> Aprovar divergências
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CRIAR */}
+      {screen==='criar' && (
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <Header onBack={()=>setScreen('painel')} subtitle="Novo romaneio"/>
+            <div className="ps-scroll ps-pad">
+              <div className="ps-label" style={{marginTop:16}}>Data</div>
+              <input type="date" value={criarDate} className="ps-input" style={{width:'100%'}}
+                onChange={e=>{ setCriarDate(e.target.value); if(criarDestId) onDestChange(criarDestId) }}/>
+
+              <div className="ps-label">Destino</div>
+              <select className="ps-select" value={criarDestId} onChange={e=>onDestChange(e.target.value)}>
+                <option value="">Selecione o destino...</option>
+                {dests.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+
+              {criarDestId && (
+                <div className="ps-banner honey" style={{marginTop:14}}>
+                  <span>{ordinals[criarTrip-1]||criarTrip+'ª'} viagem para este destino</span>
+                </div>
+              )}
+
+              {criarBreads.length > 0 && (
+                <>
+                  <div className="ps-label">Produtos</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {criarBreads.map(b=>{
+                      const qty = criarQtys[b.id]||0
+                      return (
+                        <div key={b.id} className={`ps-card ${qty>0?'active':''}`}>
+                          <div className="ps-card-head">
+                            <div className="ps-pname">{b.name}</div>
+                          </div>
+                          <div className="ps-stepper">
+                            <button className="ps-step" onClick={()=>criarChangeQty(b.id,-1)} disabled={qty<=0} aria-label="Diminuir">
+                              <span style={{fontSize:20,fontWeight:700}}>−</span>
+                            </button>
+                            <input className={`ps-qty ${qty===0?'zero':''}`} type="number" min={0} value={qty||''} placeholder="0"
+                              onChange={e=>setCriarQtys(prev=>({...prev,[b.id]:parseInt(e.target.value)||0}))}/>
+                            <button className="ps-step" onClick={()=>criarChangeQty(b.id,1)} aria-label="Aumentar">
+                              <span style={{fontSize:20,fontWeight:700}}>+</span>
+                            </button>
+                          </div>
                         </div>
-                        <div style={{flex:1,minWidth:120}}>
-                          <div style={{fontSize:11,color:'var(--text-hint)',marginBottom:4}}>Aceito/Cobrável</div>
-                          <input className="qty-input" style={{width:'100%'}} type="number" min={0}
-                            value={cd.acc} onChange={e=>updateConf(it.id,'acc',parseInt(e.target.value)||0)}/>
+                      )
+                    })}
+
+                    {/* Extras */}
+                    {Object.entries(criarExtras).map(([eid,name])=>{
+                      const qty = criarQtys[eid]||0
+                      return (
+                        <div key={eid} className={`ps-card ${qty>0?'active':''}`}>
+                          <div className="ps-card-head" style={{flexDirection:'row',alignItems:'flex-start',gap:8,justifyContent:'space-between'}}>
+                            <div className="ps-pname" style={{fontStyle:'italic'}}>
+                              {name} <span style={{fontSize:11,color:'var(--ink-faint)',fontStyle:'normal'}}>(especial)</span>
+                            </div>
+                            <button onClick={()=>removeExtra(eid)} className="ps-iconbtn" style={{width:30,height:30,fontSize:14}} aria-label="Remover">
+                              <X size={14}/>
+                            </button>
+                          </div>
+                          <div className="ps-stepper">
+                            <button className="ps-step" onClick={()=>criarChangeQty(eid,-1)} disabled={qty<=0} aria-label="Diminuir">
+                              <span style={{fontSize:20,fontWeight:700}}>−</span>
+                            </button>
+                            <input className={`ps-qty ${qty===0?'zero':''}`} type="number" min={0} value={qty||''} placeholder="0"
+                              onChange={e=>setCriarQtys(prev=>({...prev,[eid]:parseInt(e.target.value)||0}))}/>
+                            <button className="ps-step" onClick={()=>criarChangeQty(eid,1)} aria-label="Aumentar">
+                              <span style={{fontSize:20,fontWeight:700}}>+</span>
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Add extra */}
+                  <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed var(--ps-line)'}}>
+                    <div className="ps-label" style={{marginTop:0}}>+ Pão especial / avulso</div>
+                    <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                      <input className="ps-input" style={{flex:1}}
+                        placeholder="Nome do pão..." value={criarExtraInput}
+                        onChange={e=>setCriarExtraInput(e.target.value)}
+                        onKeyDown={e=>e.key==='Enter'&&addExtra()}/>
+                      <button className="ps-btn" onClick={addExtra}>
+                        <Plus size={14}/> Adicionar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{marginTop:16}}>
+                    <div className="ps-label" style={{marginTop:0}}>Observações</div>
+                    <textarea className="ps-textarea" placeholder="Observações sobre o romaneio..."
+                      value={criarObs} onChange={e=>setCriarObs(e.target.value)}/>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Total bar fixa */}
+            {criarBreads.length > 0 && (
+              <div className="ps-totalbar">
+                <div className="ps-total-num">
+                  <b>{criarTotalItems}</b>
+                  <span>produtos · {criarTotalQty} un</span>
+                </div>
+                <button className="ps-save" onClick={saveRomaneio} disabled={!criarTotalItems}>
+                  <Save size={16}/> Criar Romaneio
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CONFERENCIA */}
+      {screen==='conferencia' && confRom && (
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <Header onBack={()=>setScreen('painel')} subtitle="Conferência"/>
+            <div className="ps-scroll ps-pad">
+              <div className="ps-card" style={{marginTop:16}}>
+                <div className="ps-pname">{confRom.destinations?.name} · Viagem {confRom.trip_number}</div>
+                <div className="ps-card-meta" style={{textAlign:'left'}}>
+                  Enviado por {confRom.sent_by||'?'} em {fmtDateTime(confRom.sent_at)}
+                </div>
+              </div>
+
+              <div className="ps-label">Confirme o que chegou ({confItems.length} itens)</div>
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {confItems.map(it=>{
+                  const cd = confData[it.id]
+                  if (!cd) return null
+                  const hasDiverg = cd.rec!==it.qty_sent || cd.acc!==cd.rec
+                  return (
+                    <div key={it.id} className="ps-card">
+                      <div className="ps-card-head" style={{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                        <div className="ps-pname" style={{flex:1,minWidth:0}}>{it.product_name}</div>
+                        <span style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>Enviado: <b style={{color:'var(--ps-ink)'}}>{it.qty_sent}</b></span>
+                      </div>
+
+                      {cd.refused ? (
+                        <div className="ps-refuse">
+                          <div className="ps-refuse-head">
+                            <X size={14}/> Item recusado
+                          </div>
+                          <input className="ps-input"
+                            placeholder="Motivo da recusa (obrigatório)..."
+                            value={cd.refuseReason} onChange={e=>updateConf(it.id,'refuseReason',e.target.value)}/>
+                          <div style={{display:'flex',gap:8}}>
+                            <button className="ps-btn danger sm" style={{flex:1}}>Confirmar recusa</button>
+                            <button className="ps-btn ghost sm" onClick={()=>desfazerRecusa(it.id,it.qty_sent)}>Desfazer</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="ps-fieldrow">
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Recebido</div>
+                              <input className="ps-qty" type="number" min={0}
+                                value={cd.rec} onChange={e=>updateConf(it.id,'rec',parseInt(e.target.value)||0)}/>
+                            </div>
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Aceito/Cobrável</div>
+                              <input className="ps-qty" type="number" min={0}
+                                value={cd.acc} onChange={e=>updateConf(it.id,'acc',parseInt(e.target.value)||0)}/>
+                            </div>
+                          </div>
+                          {hasDiverg && (
+                            <>
+                              <select className="ps-select"
+                                value={cd.motivo} onChange={e=>updateConf(it.id,'motivo',e.target.value)}>
+                                <option value="">Motivo da divergência...</option>
+                                {['Veio menos','Veio mais','Quebrado','Queimado','Cru','Torto','Fora do padrão','Erro de lançamento','Outro'].map(m=>(
+                                  <option key={m}>{m}</option>
+                                ))}
+                              </select>
+                              <input className="ps-input"
+                                placeholder="Observação (opcional)"
+                                value={cd.itemObs} onChange={e=>updateConf(it.id,'itemObs',e.target.value)}/>
+                            </>
+                          )}
+                          <button className="ps-btn danger sm" onClick={()=>recusarItem(it.id)}>
+                            <X size={14}/> Recusar item
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="ps-totalbar">
+              <div className="ps-total-num">
+                <b>{confItems.length}</b>
+                <span>itens p/ conferir</span>
+              </div>
+              <button className="ps-save" onClick={saveConferencia}>
+                <CheckCheck size={16}/> Salvar Conferência
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN */}
+      {screen==='admin' && (
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <Header subtitle="Painel Admin"/>
+            <div className="ps-pad" style={{marginTop:14}}>
+              <div className="ps-tabs" role="tablist">
+                {([['painel-adm','Painel'],['divergencias','Divergências'],['fechamento','Fechamento'],['precos','Preços']] as const).map(([tab,label])=>(
+                  <button key={tab} className="ps-tab" role="tab" aria-selected={adminTab===tab} onClick={async()=>{
+                    if(tab==='painel-adm'){showLoad('...');try{await loadAdminPainel()}catch(e){}finally{hideLoad();setAdminTab('painel-adm')}}
+                    else if(tab==='divergencias'){showLoad('...');try{await loadDiverg()}catch(e){}finally{hideLoad()}}
+                    else if(tab==='precos'){showLoad('...');try{await loadPrecos()}catch(e){}finally{hideLoad()}}
+                    else setAdminTab(tab)
+                  }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="ps-scroll ps-pad">
+              {/* Painel admin */}
+              {adminTab==='painel-adm' && (
+                <>
+                  <div className="ps-label">Hoje · {fmtDate(todayKey())}</div>
+                  {adminRoms.length===0 && (
+                    <div className="ps-empty">
+                      <Package size={36} style={{display:'block',margin:'0 auto 8px',opacity:.4}}/>
+                      Nenhum romaneio hoje.
+                    </div>
+                  )}
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    {adminRoms.map(r=>(
+                      <div key={r.id} className="ps-card">
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div className="ps-pname">{r.destinations?.name} · Viagem {r.trip_number}</div>
+                            <div className="ps-card-meta" style={{textAlign:'left',marginTop:4}}>
+                              {r.created_by}
+                              {r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}
+                              {r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}
+                            </div>
+                          </div>
+                          <span className={`ps-status ${r.status}`}>{statusLabel(r.status)}</span>
+                        </div>
+                        <div className="ps-item-actions">
+                          <button className="ps-btn ghost sm" onClick={()=>openDetalhe(r.id)}>
+                            <Eye size={14}/> Ver detalhes
+                          </button>
+                          {r.status==='com_divergencia' && (
+                            <button className="ps-btn success sm" onClick={()=>aprovarDiverg(r.id)}>
+                              <Check size={14}/> Aprovar diverg.
+                            </button>
+                          )}
+                          <button className="ps-btn danger sm" onClick={()=>deleteRomaneio(r.id)} aria-label="Deletar">
+                            <Trash2 size={14}/>
+                          </button>
                         </div>
                       </div>
-                      {hasDiverg && (
-                        <div style={{marginTop:8}}>
-                          <select className="obs-area" style={{minHeight:'auto',padding:'8px 12px',marginBottom:6}}
-                            value={cd.motivo} onChange={e=>updateConf(it.id,'motivo',e.target.value)}>
-                            <option value="">Motivo da divergência...</option>
-                            {['Veio menos','Veio mais','Quebrado','Queimado','Cru','Torto','Fora do padrão','Erro de lançamento','Outro'].map(m=>(
-                              <option key={m}>{m}</option>
-                            ))}
-                          </select>
-                          <input className="obs-area" style={{minHeight:'auto',padding:'8px 12px'}}
-                            placeholder="Observação (opcional)"
-                            value={cd.itemObs} onChange={e=>updateConf(it.id,'itemObs',e.target.value)}/>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Divergências */}
+              {adminTab==='divergencias' && (
+                <>
+                  <div className="ps-label">Divergências pendentes ({divergItems.length})</div>
+                  {divergItems.length===0 && (
+                    <div className="ps-empty">
+                      <Check size={36} style={{display:'block',margin:'0 auto 8px',opacity:.4}}/>
+                      Nenhuma divergência pendente.
+                    </div>
+                  )}
+                  <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                    {divergItems.map((it:any)=>(
+                      <div key={it.id} className="ps-card">
+                        <div className="ps-pname">{it.product_name}</div>
+                        <div className="ps-card-meta" style={{textAlign:'left'}}>
+                          {it.romaneios?.destinations?.name} · Viagem {it.romaneios?.trip_number} · {fmtDate(it.romaneios?.record_date)}
                         </div>
-                      )}
-                      <button className="btn-action" style={{marginTop:8,width:'100%',color:'var(--red)',borderColor:'var(--red)'}} onClick={()=>recusarItem(it.id)}>
-                        ✕ Recusar item
-                      </button>
+                        <div className="ps-item-meta">
+                          <span>Enviado: <b>{it.qty_sent}</b></span>
+                          <span>Recebido: <b>{it.qty_received??'?'}</b></span>
+                          <span>Aceito: <b>{it.qty_accepted??'?'}</b></span>
+                        </div>
+                        {it.divergence_reason && (
+                          <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>
+                            <AlertTriangle size={12} style={{verticalAlign:-2,marginRight:4}}/>
+                            {it.divergence_reason}
+                          </div>
+                        )}
+                        <div className="ps-item-actions">
+                          <button className="ps-btn success sm" onClick={()=>aprovarItem(it.id)}>
+                            <Check size={14}/> Aprovar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Fechamento */}
+              {adminTab==='fechamento' && (
+                <>
+                  <div className="ps-label">Fechamento EX</div>
+                  <div className="ps-fieldrow">
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">De</div>
+                      <input type="date" value={fechFrom} className="ps-input" onChange={e=>setFechFrom(e.target.value)}/>
+                    </div>
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">Até</div>
+                      <input type="date" value={fechTo} className="ps-input" onChange={e=>setFechTo(e.target.value)}/>
+                    </div>
+                  </div>
+                  <button className="ps-btn primary block" style={{marginTop:14}} onClick={calcFechamento}>
+                    Calcular
+                  </button>
+
+                  {fechResult===null && (
+                    <div style={{color:'var(--ink-soft)',fontSize:13,marginTop:16}}>
+                      Selecione o período e clique em Calcular.
+                    </div>
+                  )}
+                  {fechResult!==null && fechResult.length===0 && (
+                    <div style={{color:'var(--ink-soft)',fontSize:13,marginTop:16}}>
+                      {fechSummary||'Nenhum romaneio no período.'}
+                    </div>
+                  )}
+                  {fechResult!==null && fechResult.length>0 && (
+                    <>
+                      <div style={{fontSize:13,color:'var(--ink-soft)',margin:'16px 0 10px'}}>{fechSummary}</div>
+                      <div className="ps-table-wrap">
+                        <table className="ps-table">
+                          <thead>
+                            <tr>
+                              <th>Produto</th>
+                              <th className="num">Enviado</th>
+                              <th className="num">Aceito</th>
+                              <th className="num">Preço</th>
+                              <th className="num">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fechResult.map((r:any,i:number)=>(
+                              <tr key={i}>
+                                <td>{r.name}</td>
+                                <td className="num">{r.sent}</td>
+                                <td className="num">{r.accepted}</td>
+                                <td className="num">{r.price?`R$ ${Number(r.price).toFixed(2)}`:'—'}</td>
+                                <td className="num">{r.price?`R$ ${(r.accepted*r.price).toFixed(2)}`:'—'}</td>
+                              </tr>
+                            ))}
+                            <tr className="total">
+                              <td>TOTAL</td>
+                              <td className="num">{fechResult.reduce((a:number,r:any)=>a+r.sent,0)}</td>
+                              <td className="num">{fechResult.reduce((a:number,r:any)=>a+r.accepted,0)}</td>
+                              <td/>
+                              <td className="num">R$ {fechResult.reduce((a:number,r:any)=>a+(r.accepted*(r.price||0)),0).toFixed(2)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </>
                   )}
-                </div>
-              )
-            })}
-            <div style={{position:'sticky',bottom:70,background:'var(--surface)',borderTop:'1px solid var(--border)',padding:'12px 0',marginTop:16}}>
-              <button className="btn-save" style={{width:'100%'}} onClick={saveConferencia}>Salvar Conferência ✓</button>
+                </>
+              )}
+
+              {/* Preços */}
+              {adminTab==='precos' && (
+                <>
+                  <div className="ps-label">Preços EX por produto</div>
+                  <div style={{fontSize:12,color:'var(--ink-soft)',marginBottom:12}}>
+                    Valores que a EX paga por unidade. Usados no fechamento semanal.
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {breads.map(b=>(
+                      <div key={b.id} className="ps-item" style={{flexDirection:'row',alignItems:'center',padding:'12px 14px'}}>
+                        <div className="ps-item-name" style={{fontSize:14}}>{b.name}</div>
+                        <div style={{display:'flex',alignItems:'center',gap:8,flex:'none'}}>
+                          <span style={{fontSize:12,color:'var(--ink-soft)'}}>R$</span>
+                          <input className="ps-input" style={{width:90,textAlign:'right',padding:'8px 10px'}}
+                            type="number" min={0} step={0.01} placeholder="0,00"
+                            value={prodPrices[b.id]||''}
+                            onChange={e=>setProdPrices(prev=>({...prev,[b.id]:e.target.value}))}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="ps-btn primary block" style={{marginTop:18}} onClick={savePrecos}>
+                    <Save size={16}/> Salvar preços
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
       )}
-
-      {/* ── ADMIN ── */}
-      {screen==='admin' && (
-        <div id="app">
-          <div className="topbar">
-            <div className="topbar-logo">Pane &amp; Salute</div>
-            <span className="topbar-badge tb-gray">Admin</span>
-            <button className="btn-logout" onClick={goHome}>Sair</button>
-          </div>
-          <div className="nav-tabs">
-            {([['painel-adm','Painel'],['divergencias','Divergências'],['fechamento','Fechamento'],['precos','Preços']] as const).map(([tab,label])=>(
-              <button key={tab} className={`nav-tab${adminTab===tab?' active':''}`} onClick={async()=>{
-                if(tab==='painel-adm'){showLoad('...');try{await loadAdminPainel()}catch(e){}finally{hideLoad();setAdminTab('painel-adm')}}
-                else if(tab==='divergencias'){showLoad('...');try{await loadDiverg()}catch(e){}finally{hideLoad()}}
-                else if(tab==='precos'){showLoad('...');try{await loadPrecos()}catch(e){}finally{hideLoad()}}
-                else setAdminTab(tab)
-              }}>{label}</button>
-            ))}
-          </div>
-          <div style={{padding:'16px'}}>
-            {/* Painel admin */}
-            {adminTab==='painel-adm' && (
-              <>
-                <div className="section-label" style={{marginTop:0}}>Hoje — {fmtDate(todayKey())}</div>
-                {adminRoms.length===0&&<div style={{textAlign:'center',padding:'40px 20px',color:'var(--text-muted)'}}><div style={{fontSize:48}}>📦</div><div>Nenhum romaneio hoje.</div></div>}
-                {adminRoms.map(r=>(
-                  <div key={r.id} className="card" style={{marginBottom:12}}>
-                    <div className="card-header">
-                      <div>
-                        <div className="card-title">{r.destinations?.name} — Viagem {r.trip_number}</div>
-                        <div className="card-meta">{r.created_by}{r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}{r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}</div>
-                      </div>
-                      <span className={`status s-${r.status}`}>{statusLabel(r.status)}</span>
-                    </div>
-                    <div className="card-actions">
-                      <button className="btn btn-secondary btn-sm" onClick={()=>openDetalhe(r.id)}>Ver detalhes</button>
-                      {r.status==='com_divergencia'&&<button className="btn btn-success btn-sm" onClick={()=>aprovarDiverg(r.id)}>Aprovar diverg.</button>}
-                      <button className="btn btn-danger btn-sm" onClick={()=>deleteRomaneio(r.id)}>🗑</button>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-            {/* Divergências */}
-            {adminTab==='divergencias' && (
-              <>
-                <div className="section-label" style={{marginTop:0}}>Divergências pendentes ({divergItems.length})</div>
-                {divergItems.length===0&&<div style={{textAlign:'center',padding:'40px 20px',color:'var(--text-muted)'}}><div style={{fontSize:48}}>✅</div><div>Nenhuma divergência pendente.</div></div>}
-                {divergItems.map((it:any)=>(
-                  <div key={it.id} className="card" style={{marginBottom:12}}>
-                    <div style={{fontWeight:500,marginBottom:4}}>{it.product_name}</div>
-                    <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:8}}>{it.romaneios?.destinations?.name} — Viagem {it.romaneios?.trip_number} — {fmtDate(it.romaneios?.record_date)}</div>
-                    <div style={{fontSize:13,marginBottom:8}}>
-                      Enviado: <strong>{it.qty_sent}</strong> · Recebido: <strong>{it.qty_received??'?'}</strong> · Aceito: <strong>{it.qty_accepted??'?'}</strong>
-                      {it.divergence_reason&&<><br/><span style={{color:'var(--red)'}}>Motivo: {it.divergence_reason}</span></>}
-                    </div>
-                    <div style={{display:'flex',gap:8}}>
-                      <button className="btn btn-success btn-sm" onClick={()=>aprovarItem(it.id)}>Aprovar</button>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-            {/* Fechamento */}
-            {adminTab==='fechamento' && (
-              <>
-                <div className="section-label" style={{marginTop:0}}>Fechamento EX</div>
-                <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
-                  <div style={{flex:1,minWidth:130}}>
-                    <div style={{fontSize:11,color:'var(--text-hint)',marginBottom:4}}>De</div>
-                    <input type="date" value={fechFrom} className="obs-area" style={{minHeight:'auto',padding:'8px 12px'}} onChange={e=>setFechFrom(e.target.value)}/>
-                  </div>
-                  <div style={{flex:1,minWidth:130}}>
-                    <div style={{fontSize:11,color:'var(--text-hint)',marginBottom:4}}>Até</div>
-                    <input type="date" value={fechTo} className="obs-area" style={{minHeight:'auto',padding:'8px 12px'}} onChange={e=>setFechTo(e.target.value)}/>
-                  </div>
-                </div>
-                <button className="btn-save" onClick={calcFechamento} style={{marginBottom:16}}>Calcular</button>
-                {fechResult===null && <div style={{color:'var(--text-muted)',fontSize:13}}>Selecione o período e clique em Calcular.</div>}
-                {fechResult!==null && fechResult.length===0 && <div style={{color:'var(--text-muted)',fontSize:13}}>{fechSummary||'Nenhum romaneio no período.'}</div>}
-                {fechResult!==null && fechResult.length>0 && (
-                  <>
-                    <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:12}}>{fechSummary}</div>
-                    <table className="report-table">
-                      <thead><tr><th>Produto</th><th className="num">Enviado</th><th className="num">Aceito</th><th className="num">Preço</th><th className="num">Total</th></tr></thead>
-                      <tbody>
-                        {fechResult.map((r:any,i:number)=>(
-                          <tr key={i}><td>{r.name}</td><td className="num">{r.sent}</td><td className="num">{r.accepted}</td>
-                            <td className="num">{r.price?`R$ ${Number(r.price).toFixed(2)}`:'—'}</td>
-                            <td className="num">{r.price?`R$ ${(r.accepted*r.price).toFixed(2)}`:'—'}</td>
-                          </tr>
-                        ))}
-                        <tr>
-                          <td><strong>TOTAL</strong></td>
-                          <td className="num"><strong>{fechResult.reduce((a:number,r:any)=>a+r.sent,0)}</strong></td>
-                          <td className="num"><strong>{fechResult.reduce((a:number,r:any)=>a+r.accepted,0)}</strong></td>
-                          <td/>
-                          <td className="num"><strong>R$ {fechResult.reduce((a:number,r:any)=>a+(r.accepted*(r.price||0)),0).toFixed(2)}</strong></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </>
-            )}
-            {/* Preços */}
-            {adminTab==='precos' && (
-              <>
-                <div className="section-label" style={{marginTop:0}}>Preços EX por produto</div>
-                <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:12}}>Valores que a EX paga por unidade. Usados no fechamento semanal.</div>
-                {breads.map(b=>(
-                  <div key={b.id} className="bread-row" style={{marginBottom:6}}>
-                    <div className="bread-info"><div className="bread-name">{b.name}</div></div>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:12,color:'var(--text-muted)'}}>R$</span>
-                      <input className="qty-input" style={{width:80}} type="number" min={0} step={0.01} placeholder="0,00"
-                        value={prodPrices[b.id]||''} onChange={e=>setProdPrices(prev=>({...prev,[b.id]:e.target.value}))}/>
-                    </div>
-                  </div>
-                ))}
-                <button className="btn-save" style={{marginTop:16,width:'100%'}} onClick={savePrecos}>Salvar preços</button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   )
 }

@@ -429,3 +429,73 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-discard-cancel{ align-self:flex-start; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:12px; cursor:pointer; padding:0; }
 .ps-select{ border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); padding:10px 12px; font-family:var(--font-ui); font-size:14px; font-weight:600; color:var(--ps-ink); width:100%; }
 .ps-select:focus{ outline:2px solid var(--honey); outline-offset:1px; }
+
+/* ── ROMANEIO (ps helpers) ─────────────────────────────────────── */
+/* Botão genérico para ações dentro de cards */
+.ps-btn{ display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border:1px solid var(--ps-line); border-radius:10px; background:var(--cream); color:var(--ps-ink); font-family:var(--font-ui); font-weight:600; font-size:13px; cursor:pointer; transition:.12s; white-space:nowrap; box-shadow:var(--sh-1); }
+.ps-btn:hover{ background:var(--honey-tint); border-color:var(--honey-line); color:var(--crust); }
+.ps-btn:active{ transform:translateY(1px); }
+.ps-btn:disabled{ opacity:.5; cursor:not-allowed; }
+.ps-btn.ghost{ background:transparent; border-color:var(--ps-line); box-shadow:none; color:var(--ink-soft); }
+.ps-btn.ghost:hover{ background:var(--cream); }
+.ps-btn.primary{ background:linear-gradient(180deg,var(--crust),var(--crust-deep)); color:#FCEFDD; border-color:var(--crust-deep); }
+.ps-btn.primary:hover{ filter:brightness(1.06); color:#FCEFDD; }
+.ps-btn.success{ background:linear-gradient(180deg,var(--sage),#586543); color:#fff; border-color:#586543; }
+.ps-btn.success:hover{ filter:brightness(1.06); color:#fff; }
+.ps-btn.info{ background:linear-gradient(180deg,var(--honey),var(--honey-deep)); color:#fff; border-color:var(--honey-deep); }
+.ps-btn.info:hover{ filter:brightness(1.06); color:#fff; }
+.ps-btn.danger{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+.ps-btn.danger:hover{ background:var(--berry); color:#fff; border-color:var(--berry); }
+.ps-btn.sm{ padding:6px 11px; font-size:12px; }
+.ps-btn.block{ width:100%; padding:12px 18px; font-size:14px; }
+
+/* Status pills */
+.ps-status{ display:inline-flex; align-items:center; font-size:11px; font-weight:700; padding:3px 10px; border-radius:var(--r-pill); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; border:1px solid transparent; }
+.ps-status.separado{ background:var(--line-soft); color:var(--ink-soft); border-color:var(--ps-line); }
+.ps-status.enviado{ background:var(--honey-tint); color:var(--honey-deep); border-color:var(--honey-line); }
+.ps-status.conferido{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }
+.ps-status.com_divergencia{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+.ps-status.aprovado{ background:var(--crust-tint); color:var(--crust); border-color:var(--honey-line); }
+.ps-status.fechado{ background:var(--ps-ink); color:var(--cream); }
+.ps-status.pendente{ background:var(--honey-tint); color:#7A5418; border-color:var(--honey-line); }
+.ps-status.ok{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }
+.ps-status.divergencia{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+
+/* Tabela (fechamento) */
+.ps-table-wrap{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); overflow:hidden; box-shadow:var(--sh-1); }
+.ps-table{ width:100%; border-collapse:collapse; font-family:var(--font-ui); font-size:13px; color:var(--ps-ink); }
+.ps-table th, .ps-table td{ padding:10px 12px; text-align:left; border-bottom:1px solid var(--line-soft); }
+.ps-table th{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-faint); background:var(--line-soft); }
+.ps-table .num{ text-align:right; font-variant-numeric:tabular-nums; }
+.ps-table tr:last-child td{ border-bottom:0; }
+.ps-table tr.total td{ background:var(--honey-tint); font-weight:800; color:var(--ps-ink); }
+
+/* Loading overlay (vs ps-loading full-page) */
+.ps-loading-overlay{ position:fixed; inset:0; z-index:300; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:color-mix(in srgb, var(--flour-deep) 78%, transparent); backdrop-filter:blur(4px); color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; }
+
+/* Toast */
+.ps-toast{ position:fixed; bottom:170px; left:50%; transform:translateX(-50%); background:var(--ps-ink); color:var(--cream); padding:12px 22px; border-radius:var(--r-pill); font-family:var(--font-ui); font-size:13.5px; font-weight:600; z-index:999; opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; box-shadow:var(--sh-pop); max-width:90vw; white-space:nowrap; }
+.ps-toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+
+/* Field group (label sobre input) */
+.ps-fieldgroup{ display:flex; flex-direction:column; gap:5px; flex:1; min-width:120px; }
+.ps-fieldlabel{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); font-weight:700; }
+.ps-fieldrow{ display:flex; gap:12px; flex-wrap:wrap; }
+
+/* Confirm sheet (variante do sheet "Mais") */
+.ps-sheet.confirm{ padding:18px 18px calc(22px + env(safe-area-inset-bottom)); }
+.ps-sheet.confirm h3{ font-family:var(--font-display); font-weight:700; font-size:18px; margin:8px 0 8px; color:var(--ps-ink); }
+.ps-sheet.confirm p{ color:var(--ink-soft); font-size:14px; line-height:1.45; margin:0 0 18px; }
+.ps-sheet.confirm .actions{ display:flex; gap:10px; flex-wrap:wrap; }
+
+/* Linha de item (item-row) — alternativa compacta ao ps-card */
+.ps-item{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); padding:14px; display:flex; flex-direction:column; gap:10px; box-shadow:var(--sh-1); }
+.ps-item-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.ps-item-name{ font-size:15px; font-weight:700; color:var(--ps-ink); flex:1; min-width:0; line-height:1.2; }
+.ps-item-meta{ font-size:12px; color:var(--ink-soft); display:flex; gap:14px; flex-wrap:wrap; }
+.ps-item-meta b{ color:var(--ps-ink); font-weight:700; }
+.ps-item-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Refuse block dentro da conferência */
+.ps-refuse{ background:var(--berry-tint); border:1px solid #E6B5AC; border-radius:var(--r-ctrl); padding:12px; display:flex; flex-direction:column; gap:10px; }
+.ps-refuse-head{ font-size:13px; font-weight:700; color:var(--berry); display:flex; align-items:center; gap:6px; }

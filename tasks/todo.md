@@ -1,44 +1,92 @@
-# TODO — Redesign visual "Pane & Salute" — Login + Forno
+# TODO — Padronização visual `ps-*` em todas as telas
 
-**Criado:** 2026-05-29
-**Status:** em implementação
-**Origem:** follow-up do PR #5 (redesign Produção + nav). Escopo aprovado pelo usuário: **Login + Forno primeiro**, depois Geolar/Relatório/Admin em PR separado.
+**Criado:** 2026-05-30
+**Origem:** após PR #5 (Produção + Nav) e PR #6 (Login + Forno), padronizar o restante do app no sistema `ps-*` que está locked em `globals.css` linhas 235-431.
 
-## Sistema visual (já existente, namespace `ps-*`)
-Reusar tokens/classes do PR #5 em `globals.css`: `ps-canvas`, `ps-shell`, `ps-header`,
-`ps-wordmark`/`ps-mark`/`ps-brand`, `ps-userchip`/`ps-avatar`, `ps-pad`, `ps-label`,
-`ps-days`/`ps-day`, `ps-section`, `ps-grid`/`ps-card`/`ps-card-head`/`ps-pname`,
-`ps-stepper`/`ps-step`/`ps-qty`, `ps-totalbar`/`ps-total-num`/`ps-save`, `ps-empty`.
-Ícones Lucide. Fontes Spectral + Hanken (já no layout).
+## Princípio
+- Cada tela vira um PR próprio. Smoke test em produção entre uma e outra.
+- Lógica de dados/queries/idempotência **intacta** — só o render muda.
+- Compras/Estoque/Fornecedores já usam Tailwind (não inline), então a migração ali é mais mecânica.
 
-## Arquivos
-1. **`src/app/globals.css`** — adicionar bloco focado:
-   - `ps-login-*` (wrap centralizado, logo, grid de usuários, card de PIN, keypad, dots).
-   - `ps-banner` (+`honey`/`crust`) p/ avisos PJ/encomenda do Forno.
-   - helpers Forno: `ps-forno-intro`, `ps-flabel`, `ps-pjbadge`, `ps-discard*`.
-   Sem mexer no que já existe.
-2. **`src/app/login/page.tsx`** — reescrever só o render:
-   - `ps-login` wrap (fundo farinha) + logo (mark "P" + Spectral).
-   - estado 1: grid de usuários (`ps-login-user`, avatar `roleColor`, nome, `roleLabel`).
-   - estado 2: header do usuário + dots de PIN + keypad numérico grande.
-   - **Preservar lógica:** fetchUsersFromSupabase/cache/redirect, authenticate, handlePin/Backspace/attemptLogin.
-3. **`src/app/forno/page.tsx`** — reescrever só o render:
-   - `ps-canvas`>`ps-shell`>`ps-header` (wordmark "Forno" + userchip).
-   - seletor de dia em `ps-days` (Hoje/Ontem/dd/mm, 8 dias).
-   - avisos PJ/encomenda em `ps-banner`.
-   - cada pão = `ps-card` (nome + badge PJ + planejado/breakdown), "Assado" em `ps-stepper`,
-     descarte em bloco expansível (`ps-stepper` + select motivo).
-   - barra fixa `ps-totalbar` (total assado/descarte + `ps-save`).
-   - **Preservar lógica:** loadData (orders/PJ/enc/actuals), save (idempotência + bread_movements),
-     adjustField, toggleDescarte, updateForm.
+## Fila de prioridades
 
-## Preservar (lógica intacta)
-Login: auth flow inteiro. Forno: queries Supabase, idempotência, movements, datas locais.
+### Tier 1 — nav primária (todo mundo vê)
+- [ ] 1. **Romaneio** ← **EM ANDAMENTO**
+- [ ] 2. **Relatórios** + `/relatorios/pj`
 
-## Verificação
-- `npx tsc --noEmit` + `npm run build` verdes.
-- Visual: limitado no preview (sem Supabase/login real); validar layout e, idealmente, em produção depois.
+### Tier 2 — operação diária (sheet "Mais", alto uso)
+- [ ] 3. Estoque-Pães
+- [ ] 4. Sobras
+- [ ] 5. Estoque
+- [ ] 6. Estoque-Congelado
 
-## Fora de escopo (próximo PR)
-- Geolar, ReportView, Admin CRUD detalhados.
-- Tweaks do protótipo, logo real (`logo-ink.png`).
+### Tier 3 — regular
+- [ ] 7. Encomendas
+- [ ] 8. Compras (cuidado: integração Telegram, não quebrar)
+- [ ] 9. Fornecedores
+
+### Tier 4 — admin / baixa frequência
+- [ ] 10. Produtos
+- [ ] 11. Tabelas-Preço
+- [ ] 12. Clientes
+- [ ] 13. Pedidos-PJ
+- [ ] 14. Simulador-Desconto
+- [ ] 15. Admin
+
+---
+
+## Tela atual: **#1 Romaneio**
+
+**Branch:** `claude/redesign-romaneio`
+**Arquivo:** `src/app/romaneio/page.tsx` (935 linhas, ~5 telas internas)
+
+### Telas internas a reskinnar
+| screen | função | papéis |
+|---|---|---|
+| `painel` | lista romaneios de hoje + ações por papel | gustavo/cleo/marselle |
+| `detalhe` | view read-only de um romaneio | todos |
+| `criar` | gustavo monta romaneio (data/destino/produtos/qtys/obs) | gustavo |
+| `conferencia` | marselle confere chegada (rec/aceito/divergência/recusa) | marselle |
+| `admin` (4 subtabs: painel-adm, divergências, fechamento, preços) | rodrigo | admin |
+| modal `envioRomId` | confirma envio (cleo) | cleo |
+
+### Mapeamento de classes
+| Antigo | Novo |
+|---|---|
+| wrapper `#app` + `topbar` | `ps-canvas` > `ps-shell` > `ps-header` (wordmark + userchip + sair) |
+| `card` + `card-header`/`card-title`/`card-meta` | `ps-card` + `ps-card-head` + `ps-pname` + `ps-card-meta` |
+| `card-actions` com `btn btn-secondary/info/success/sm` | botões com novas variantes `ps-btn`/`ps-btn-*` |
+| `section-label` | `ps-label` |
+| `nav-tabs`/`nav-tab` (admin) | `ps-tabs`/`ps-tab` |
+| `conf-row` | `ps-card` |
+| `qty-input` + `qty-btn` (criar/conferencia) | `ps-stepper` + `ps-qty` |
+| `obs-area` (textarea/select/input) | `ps-textarea` / `ps-select` / `ps-input` |
+| `btn-save` (full-width sticky) | `ps-totalbar` + `ps-save` ou `ps-save` standalone |
+| status pill `status s-*` | novo `ps-status` (separado/enviado/conferido/com_divergencia/aprovado/fechado/pendente) |
+| `modal-overlay`/`modal-sheet` (envio) | `ps-sheet-overlay` + `ps-sheet` |
+| empty state inline | `ps-empty` |
+| `loading-overlay` + spinner | novo `ps-loading-overlay` (vs `ps-loading` full-page existente) |
+| `toast` | re-estiliza com tokens `ps-*` (id `rom-toast` preservado) |
+| `report-table` (fechamento) | novo `ps-table` |
+
+### CSS novo (anexar em globals.css ao final, namespace `ps-*`)
+1. `ps-btn` + variantes (`-ghost`/`-primary`/`-success`/`-danger`/`-sm`) — botões de ação em card
+2. `ps-status` + modificadores de status — cores: honey/crust/sage/berry/teal/ink-faint
+3. `ps-table` — header/cell/num para o fechamento
+4. `ps-loading-overlay` — overlay (vs `ps-loading` full-page)
+5. `ps-toast` — re-estiliza com tokens `ps-*`
+6. `ps-fieldgroup`/`ps-fieldlabel` — pares "Recebido/Aceito" na conferência
+
+### O que preservar (lógica intacta)
+- `loadBase`, `loadPainel`, `loadAdminPainel`, `loadDiverg`, `loadPrecos`
+- `doLogin`, useEffect de auto-resolve por role/store
+- `openCriar`/`onDestChange`/`addExtra`/`removeExtra`/`criarChangeQty`/`saveRomaneio` (incluindo rollback do romaneio se itens falham)
+- `confirmEnvio` com idempotência via `bread_movements` (linhas 290-340)
+- `openConferencia`/`updateConf`/`recusarItem`/`desfazerRecusa`/`saveConferencia` (com flag `hasDiverg`)
+- `aprovarDiverg`/`aprovarItem`/`deleteRomaneio`/`calcFechamento`/`savePrecos`
+- Toast helper, todas as queries Supabase
+
+### Verificação
+- `npx tsc --noEmit` verde
+- `npm run build` verde (24 rotas devem continuar exportando)
+- Smoke test em produção depois do merge: login como Gustavo (criar) + Cléo (enviar) + Marselle (conferir) + Rodrigo (admin)
