@@ -39,6 +39,7 @@ export default function TabelasPrecoPage() {
 
   // Loading
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string|null>(null)
 
   // Drafts dos inputs nome/descrição da tabela — salvam onBlur/Enter,
   // não a cada keystroke (evita PATCH + toast por tecla).
@@ -52,22 +53,30 @@ export default function TabelasPrecoPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [tRes, iRes, cRes, oRes, bRes, pRes] = await Promise.all([
-      supabase.from('price_tiers').select('*').order('name'),
-      supabase.from('price_tier_items').select('*').eq('active', true),
-      supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
-      supabase.from('customer_price_overrides').select('*').eq('active', true),
-      supabase.from('breads').select('id,name,unit').eq('active', true),
-      supabase.from('products').select('id,name,unit').eq('active', true).neq('category', 'INSUMOS'),
-    ])
-    setTiers((tRes.data || []) as PriceTier[])
-    setItems((iRes.data || []) as TierItem[])
-    setCustomers((cRes.data || []) as Customer[])
-    setOverrides((oRes.data || []) as Override[])
-    const breads:   CatalogItem[] = (bRes.data || []).map((b:any) => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
-    const prods:    CatalogItem[] = (pRes.data || []).map((p:any) => ({ id:p.id, name:p.name, unit:p.unit, _source:'product' }))
-    setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
-    setLoading(false)
+    setLoadError(null)
+    try {
+      const [tRes, iRes, cRes, oRes, bRes, pRes] = await Promise.all([
+        supabase.from('price_tiers').select('*').order('name'),
+        supabase.from('price_tier_items').select('*').eq('active', true),
+        supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
+        supabase.from('customer_price_overrides').select('*').eq('active', true),
+        supabase.from('breads').select('id,name,unit').eq('active', true),
+        supabase.from('products').select('id,name,unit').eq('active', true).neq('category', 'INSUMOS'),
+      ])
+      const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
+      if (firstErr) throw firstErr
+      setTiers((tRes.data || []) as PriceTier[])
+      setItems((iRes.data || []) as TierItem[])
+      setCustomers((cRes.data || []) as Customer[])
+      setOverrides((oRes.data || []) as Override[])
+      const breads:   CatalogItem[] = (bRes.data || []).map((b:any) => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
+      const prods:    CatalogItem[] = (pRes.data || []).map((p:any) => ({ id:p.id, name:p.name, unit:p.unit, _source:'product' }))
+      setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
+    } catch (e:any) {
+      setLoadError(e?.message || 'Falha ao carregar os dados.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -299,6 +308,15 @@ export default function TabelasPrecoPage() {
       <div style={{padding:16}}>
         {loading ? (
           <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Carregando...</div>
+        ) : loadError ? (
+          <div style={{padding:30,textAlign:'center'}}>
+            <div style={{color:'#b91c1c',fontSize:'.9rem',marginBottom:14}}>⚠️ Não foi possível carregar os dados.</div>
+            <div style={{color:'var(--muted)',fontSize:'.78rem',marginBottom:16}}>{loadError}</div>
+            <button onClick={()=>loadAll()}
+              style={{padding:'8px 16px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'.85rem',fontWeight:700}}>
+              Tentar de novo
+            </button>
+          </div>
         ) : tab === 'tabelas' ? (
           selTier ? (
             // ===== EDITOR DE TABELA =====

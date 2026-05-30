@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { Minus, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, roleColor, type Role } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
 interface Bread {
@@ -38,6 +39,11 @@ function formatDateBR(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
+function formatDayShort(iso: string): string {
+  const [, m, d] = iso.split('-')
+  return `${d}/${m}`
+}
+
 export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
   const [breads, setBreads] = useState<Bread[]>([])
@@ -50,11 +56,11 @@ export default function FornoPage() {
   const [expandedDescarte, setExpandedDescarte] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [user, setUser] = useState<{ id: string; displayName: string } | null>(null)
+  const [user, setUser] = useState<{ id: string; displayName: string; role: Role } | null>(null)
 
   useEffect(() => {
     const u = getCurrentUser()
-    if (u) setUser({ id: u.id, displayName: u.displayName })
+    if (u) setUser({ id: u.id, displayName: u.displayName, role: u.role })
   }, [])
 
   const loadData = useCallback(async () => {
@@ -263,167 +269,153 @@ export default function FornoPage() {
   }
 
   const dateOptions = Array.from({ length: 8 }, (_, i) => dateKeyOffset(i))
+  const totalBaked = breads.reduce((s, b) => s + (Number(forms[b.id]?.baked) || 0), 0)
+  const totalLoss  = breads.reduce((s, b) => s + (Number(forms[b.id]?.loss) || 0), 0)
+  const userInitial = user ? user.displayName.trim().charAt(0).toUpperCase() : ''
+  const avatarColor = user ? roleColor(user.role) : 'var(--crust)'
 
   if (loading) return (
-    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+    <div className="ps-loading">
+      <div className="ps-spinner" />
       <p>Carregando...</p>
     </div>
   )
 
   return (
-    <div style={{ padding: '20px', maxWidth: '700px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>🔥 Forno</h1>
-        {user && (
-          <span style={{ background: '#fef3c7', padding: '4px 12px', borderRadius: 12, fontSize: '0.78rem', fontWeight: 600, color: '#92400e' }}>
-            {user.displayName}
-          </span>
-        )}
-      </div>
+    <div className="ps-canvas">
+      <div className="ps-shell ps-fadein">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand"><b>Pane &amp; Salute</b><span>Forno</span></div>
+          </div>
+          {user && (
+            <div className="ps-userwrap">
+              <div className="ps-userchip">
+                <div className="ps-avatar" style={{ background: avatarColor }}>{userInitial}</div>
+                <b>{user.displayName}</b>
+              </div>
+            </div>
+          )}
+        </header>
 
-      <p style={{ margin: '0 0 16px', color: 'var(--muted)', fontSize: '0.85rem' }}>
-        Confirme o que foi assado e registre descartes do dia. Alimenta o estoque central de pães.
-      </p>
+        <div className="ps-pad" style={{ paddingBottom: 176 }}>
+          <p className="ps-forno-intro">
+            Confirme o que foi assado e registre descartes do dia. Alimenta o estoque central de pães.
+          </p>
 
-      {/* Date picker */}
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 600 }}>Data:</label>
-        <select value={date} onChange={e => setDate(e.target.value)}
-          style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.85rem' }}>
-          {dateOptions.map((d, i) => (
-            <option key={d} value={d}>
-              {formatDateBR(d)}{i === 0 ? ' (hoje)' : i === 1 ? ' (ontem)' : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {pjOrderCount > 0 && (
-        <div style={{ marginBottom: 12, padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ color: '#1e40af' }}>
-            🧾 <strong>{pjOrderCount}</strong> pedido(s) PJ produzindo neste dia
-          </span>
-          <a href="/pedidos-pj" style={{ color: '#1e40af', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-            Ver detalhes →
-          </a>
-        </div>
-      )}
-
-      {encOrderCount > 0 && (
-        <div style={{ marginBottom: 12, padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ color: '#9a3412' }}>
-            🎂 <strong>{encOrderCount}</strong> encomenda(s) produzindo neste dia
-          </span>
-          <a href="/encomendas" style={{ color: '#9a3412', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-            Ver detalhes →
-          </a>
-        </div>
-      )}
-
-      {breads.length === 0 ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
-          <p>Nenhum pão com pedido para {formatDateBR(date)}.</p>
-        </div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 12, fontSize: '0.85rem', color: 'var(--muted)' }}>
-            {breads.length} {breads.length === 1 ? 'pão' : 'pães'} para confirmar
+          <div className="ps-label">Dia</div>
+          <div className="ps-days" role="group">
+            {dateOptions.map((d, i) => (
+              <button key={d} className="ps-day" aria-pressed={d === date} onClick={() => setDate(d)}>
+                {i === 0 ? 'Hoje' : i === 1 ? 'Ontem' : formatDayShort(d)}
+              </button>
+            ))}
           </div>
 
-          {breads.map(b => {
-            const f = forms[b.id]
-            const planned = plannedMap.get(b.id) || 0
-            const pjQty  = pjMap.get(b.id) || 0
-            const encQty = encMap.get(b.id) || 0
-            const lojaQty = planned - pjQty - encQty
-            const isExpanded = expandedDescarte[b.id]
-            // Só mostra breakdown quando misto (2+ fontes contribuem)
-            const breakdownParts: string[] = []
-            if (lojaQty > 0) breakdownParts.push(`${lojaQty} lojas`)
-            if (pjQty > 0)   breakdownParts.push(`${pjQty} PJ`)
-            if (encQty > 0)  breakdownParts.push(`${encQty} encomenda${encQty > 1 ? 's' : ''}`)
+          {pjOrderCount > 0 && (
+            <div className="ps-banner honey">
+              <span>🧾 {pjOrderCount} pedido(s) PJ produzindo neste dia</span>
+              <a href="/pedidos-pj">Ver detalhes →</a>
+            </div>
+          )}
+          {encOrderCount > 0 && (
+            <div className="ps-banner crust">
+              <span>🎂 {encOrderCount} encomenda(s) produzindo neste dia</span>
+              <a href="/encomendas">Ver detalhes →</a>
+            </div>
+          )}
 
-            return (
-              <div key={b.id} style={{
-                background: 'white', borderRadius: 12, padding: 14,
-                border: '1px solid var(--border)', marginBottom: 10,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                    {b.name}
-                    {b.is_pj && (
-                      <span style={{ marginLeft: 6, background: '#dbeafe', color: '#1e40af', padding: '2px 6px', borderRadius: 4, fontSize: '0.65rem', fontWeight: 700 }}>
-                        PJ
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'right' }}>
-                    Planejado: <strong style={{ color: 'var(--text)' }}>{planned}</strong>
-                    {breakdownParts.length > 1 && (
-                      <div style={{ fontSize: '0.68rem', marginTop: 2, color: 'var(--muted)' }}>
-                        {breakdownParts.join(' + ')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Assado */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--muted)', minWidth: 60 }}>Assado:</span>
-                  <button onClick={() => adjustField(b.id, 'baked', -1)}
-                    style={{ width: 32, height: 32, border: '1px solid var(--border)', borderRadius: 6, background: 'white', cursor: 'pointer', fontSize: '1rem' }}>−</button>
-                  <input type="number" min="0" step="1"
-                    value={f?.baked || '0'}
-                    onChange={e => updateForm(b.id, { baked: e.target.value })}
-                    style={{ width: 70, textAlign: 'center', padding: '6px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: '0.95rem' }} />
-                  <button onClick={() => adjustField(b.id, 'baked', 1)}
-                    style={{ width: 32, height: 32, border: '1px solid var(--border)', borderRadius: 6, background: 'white', cursor: 'pointer', fontSize: '1rem' }}>+</button>
-                </div>
-
-                {/* Descarte */}
-                {!isExpanded ? (
-                  <button onClick={() => toggleDescarte(b.id)}
-                    style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 600 }}>
-                    + Registrar descarte
-                  </button>
-                ) : (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 8, marginTop: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.85rem', color: '#dc2626', minWidth: 60, fontWeight: 600 }}>Descarte:</span>
-                      <button onClick={() => adjustField(b.id, 'loss', -1)}
-                        style={{ width: 30, height: 30, border: '1px solid var(--border)', borderRadius: 6, background: 'white', cursor: 'pointer', fontSize: '0.95rem' }}>−</button>
-                      <input type="number" min="0" step="1"
-                        value={f?.loss || '0'}
-                        onChange={e => updateForm(b.id, { loss: e.target.value })}
-                        style={{ width: 60, textAlign: 'center', padding: '6px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: '0.85rem' }} />
-                      <button onClick={() => adjustField(b.id, 'loss', 1)}
-                        style={{ width: 30, height: 30, border: '1px solid var(--border)', borderRadius: 6, background: 'white', cursor: 'pointer', fontSize: '0.95rem' }}>+</button>
-                      <select value={f?.lossReason || LOSS_REASONS[0]} onChange={e => updateForm(b.id, { lossReason: e.target.value })}
-                        style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: '0.8rem', flex: 1, minWidth: 120 }}>
-                        {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    </div>
-                    <button onClick={() => toggleDescarte(b.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.72rem', padding: '4px 0', marginTop: 4 }}>
-                      ✕ Cancelar descarte
-                    </button>
-                  </div>
-                )}
+          {breads.length === 0 ? (
+            <div className="ps-empty">Nenhum pão com pedido para {formatDateBR(date)}.</div>
+          ) : (
+            <>
+              <div className="ps-section">
+                <div className="bar" />
+                <b>Confirmar produção</b>
+                <span className="meta">{breads.length} {breads.length === 1 ? 'pão' : 'pães'}</span>
               </div>
-            )
-          })}
 
-          <button onClick={save} disabled={saving}
-            style={{
-              width: '100%', padding: '14px', borderRadius: 8, border: 'none',
-              background: saving ? '#a3a3a3' : 'var(--primary)', color: 'white',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              fontSize: '1rem', fontWeight: 700, marginTop: 8,
-            }}>
-            {saving ? 'Salvando...' : '💾 Salvar produção do dia'}
-          </button>
-        </>
-      )}
+              <div className="ps-grid">
+                {breads.map(b => {
+                  const f = forms[b.id]
+                  const planned = plannedMap.get(b.id) || 0
+                  const pjQty  = pjMap.get(b.id) || 0
+                  const encQty = encMap.get(b.id) || 0
+                  const lojaQty = planned - pjQty - encQty
+                  const isExpanded = expandedDescarte[b.id]
+                  // Só mostra breakdown quando misto (2+ fontes contribuem)
+                  const breakdownParts: string[] = []
+                  if (lojaQty > 0) breakdownParts.push(`${lojaQty} lojas`)
+                  if (pjQty > 0)   breakdownParts.push(`${pjQty} PJ`)
+                  if (encQty > 0)  breakdownParts.push(`${encQty} encomenda${encQty > 1 ? 's' : ''}`)
+                  const bakedNum = Number(f?.baked) || 0
+                  const lossNum  = Number(f?.loss) || 0
+
+                  return (
+                    <div key={b.id} className="ps-card">
+                      <div className="ps-card-head" style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                        <div className="ps-pname">
+                          {b.name}
+                          {b.is_pj && <span className="ps-pjbadge">PJ</span>}
+                        </div>
+                        <div className="ps-card-meta">
+                          Planejado <b>{planned}</b>
+                          {breakdownParts.length > 1 && <small>{breakdownParts.join(' + ')}</small>}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="ps-flabel">Assado</div>
+                        <div className="ps-stepper">
+                          <button className="ps-step" onClick={() => adjustField(b.id, 'baked', -1)} disabled={bakedNum <= 0} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85} /></button>
+                          <input className={'ps-qty' + (bakedNum === 0 ? ' zero' : '')} type="number" inputMode="numeric" min={0}
+                            value={f?.baked ?? '0'} onChange={e => updateForm(b.id, { baked: e.target.value })} />
+                          <button className="ps-step" onClick={() => adjustField(b.id, 'baked', 1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85} /></button>
+                        </div>
+                      </div>
+
+                      {!isExpanded ? (
+                        <button className="ps-discard-btn" onClick={() => toggleDescarte(b.id)}>
+                          <Trash2 size={14} strokeWidth={2} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+                          Registrar descarte
+                        </button>
+                      ) : (
+                        <div className="ps-discard">
+                          <div className="ps-flabel">Descarte</div>
+                          <div className="ps-stepper">
+                            <button className="ps-step" onClick={() => adjustField(b.id, 'loss', -1)} disabled={lossNum <= 0} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85} /></button>
+                            <input className={'ps-qty' + (lossNum === 0 ? ' zero' : '')} type="number" inputMode="numeric" min={0}
+                              value={f?.loss ?? '0'} onChange={e => updateForm(b.id, { loss: e.target.value })} />
+                            <button className="ps-step" onClick={() => adjustField(b.id, 'loss', 1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85} /></button>
+                          </div>
+                          <select className="ps-select" value={f?.lossReason || LOSS_REASONS[0]} onChange={e => updateForm(b.id, { lossReason: e.target.value })}>
+                            {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          <button className="ps-discard-cancel" onClick={() => toggleDescarte(b.id)}>✕ Cancelar descarte</button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {breads.length > 0 && (
+          <div className="ps-totalbar">
+            <div className="ps-total-num">
+              <b>{totalBaked}</b>
+              <span>{totalLoss > 0 ? `assados · ${totalLoss} descarte` : 'assados'}</span>
+            </div>
+            <button className="ps-save" onClick={save} disabled={saving}>
+              <Save size={18} strokeWidth={2} />
+              {saving ? 'Salvando...' : 'Salvar produção'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
