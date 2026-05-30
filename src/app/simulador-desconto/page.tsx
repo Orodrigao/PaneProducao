@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Sparkles, Copy, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
-// ===== Tipos =====
 interface Customer { id:string; name:string; default_tier_id:string|null; discount_pct:number; active:boolean }
 interface TierItem {
   id:string; tier_id:string; product_id:string; product_source:'bread'|'product';
@@ -17,9 +17,7 @@ interface Override {
 interface Bread   { id:string; name:string; cost_price:number|null; active:boolean }
 interface Product { id:string; name:string; cost_price:number|null; active:boolean }
 
-interface CatalogProduct {
-  id:string; source:'bread'|'product'; name:string; cost_price:number
-}
+interface CatalogProduct { id:string; source:'bread'|'product'; name:string; cost_price:number }
 
 interface HistoryEntry {
   ts:number
@@ -33,38 +31,33 @@ interface HistoryEntry {
 const HIST_KEY = 'pane_simulador_desconto_hist'
 const HIST_MAX = 10
 
-// ===== Componente =====
 export default function SimuladorDescontoPage() {
-  const [user, setUser] = useState<{displayName:string}|null>(null)
+  const [user, setUser] = useState<AppUser | null>(null)
 
-  // Dados base
   const [customers, setCustomers] = useState<Customer[]>([])
   const [tierItems, setTierItems] = useState<TierItem[]>([])
   const [overrides, setOverrides] = useState<Override[]>([])
   const [catalog, setCatalog]     = useState<CatalogProduct[]>([])
   const [loading, setLoading]     = useState(true)
 
-  // Inputs
   const [customerId, setCustomerId] = useState('')
-  const [productKey, setProductKey] = useState('')  // formato: "source_id"
-  const [customerNameFree, setCustomerNameFree] = useState('')  // se não selecionou cliente
-  const [productNameFree, setProductNameFree]   = useState('')  // se não selecionou produto
+  const [productKey, setProductKey] = useState('')
+  const [customerNameFree, setCustomerNameFree] = useState('')
+  const [productNameFree, setProductNameFree]   = useState('')
   const [price, setPrice]       = useState<number>(0)
   const [cmv, setCmv]           = useState<number>(0)
   const [discount, setDiscount] = useState<number>(0)
   const [currentVolume, setCurrentVolume]   = useState<number>(0)
   const [promisedVolume, setPromisedVolume] = useState<number>(0)
 
-  // IA
   const [aiLoading, setAiLoading] = useState(false)
   const [aiText, setAiText] = useState('')
   const [aiError, setAiError] = useState('')
 
-  // Histórico local
   const [history, setHistory] = useState<HistoryEntry[]>([])
 
   useEffect(() => {
-    const u = getCurrentUser(); if (u) setUser({ displayName: u.displayName })
+    setUser(getCurrentUser())
     try {
       const raw = localStorage.getItem(HIST_KEY)
       if (raw) setHistory(JSON.parse(raw))
@@ -90,44 +83,36 @@ export default function SimuladorDescontoPage() {
   }, [])
   useEffect(() => { loadAll() }, [loadAll])
 
-  // ===== Auto-fill quando seleciona cliente + produto =====
   useEffect(() => {
     if (!customerId || !productKey) return
     const cust = customers.find(c => c.id === customerId)
     const prod = catalog.find(p => `${p.source}_${p.id}` === productKey)
     if (!cust || !prod) return
 
-    // 1. Tenta override do cliente
     const ov = overrides.find(o => o.customer_id === cust.id && o.product_source === prod.source && o.product_id === prod.id)
     if (ov) {
       setPrice(Number(ov.unit_price))
       setCmv(prod.cost_price)
       return
     }
-    // 2. Tenta tier do cliente
     if (cust.default_tier_id) {
       const ti = tierItems.find(t => t.tier_id === cust.default_tier_id && t.product_source === prod.source && t.product_id === prod.id)
       if (ti) {
         const basePrice = Number(ti.unit_price)
-        // desconto base do cliente é aplicado no preço efetivo, mas pra simulador faz mais sentido
-        // usar o preço da TABELA (não-descontado) pra mostrar "preço de venda Tabela B"
         setPrice(basePrice)
         setCmv(prod.cost_price)
         return
       }
     }
-    // 3. Sem cadastro: só preenche CMV
     setCmv(prod.cost_price)
   }, [customerId, productKey, customers, catalog, overrides, tierItems])
 
-  // ===== Quando muda só o produto (sem cliente), preenche CMV =====
   useEffect(() => {
     if (customerId || !productKey) return
     const prod = catalog.find(p => `${p.source}_${p.id}` === productKey)
     if (prod) setCmv(prod.cost_price)
   }, [productKey, customerId, catalog])
 
-  // ===== Cálculos =====
   const calc = useMemo(() => {
     const margin = price - cmv
     const marginPct = price > 0 ? (margin / price) * 100 : 0
@@ -154,7 +139,6 @@ export default function SimuladorDescontoPage() {
 
   const hasMinInputs = price > 0 && cmv > 0 && discount > 0 && currentVolume > 0 && promisedVolume > 0
 
-  // ===== Histórico =====
   const saveToHistory = (extra: { customerName:string; productName:string }) => {
     const entry: HistoryEntry = {
       ts: Date.now(),
@@ -180,9 +164,6 @@ export default function SimuladorDescontoPage() {
     setHistory([]); try { localStorage.removeItem(HIST_KEY) } catch {}
   }
 
-  // ===== Chamar IA =====
-  // Usamos fetch direto (não supabase.functions.invoke) pra conseguir ler o body
-  // de respostas non-2xx — invoke esconde o erro real do servidor.
   const analisarIA = async () => {
     if (!hasMinInputs) { showToast('Preencha todos os campos antes de analisar'); return }
     setAiLoading(true); setAiText(''); setAiError('')
@@ -211,12 +192,11 @@ export default function SimuladorDescontoPage() {
     } finally { setAiLoading(false) }
   }
 
-  // ===== UI helpers =====
-  const verdictBadge = (() => {
-    if (!hasMinInputs) return { label: 'preencha os dados', bg: '#f3f4f6', color: '#6b7280' }
-    if (calc.verdict === 'margem_negativa') return { label: '🚨 MARGEM NEGATIVA', bg: '#fef2f2', color: '#991b1b' }
-    if (calc.verdict === 'nao_vale')        return { label: '❌ NÃO COMPENSA',    bg: '#fef2f2', color: '#991b1b' }
-    return { label: '✅ VALE',  bg: '#f0fdf4', color: '#15803d' }
+  const verdictInfo = (() => {
+    if (!hasMinInputs) return { label: 'preencha os dados', cls: 'separado', color: 'var(--ink-faint)' }
+    if (calc.verdict === 'margem_negativa') return { label: '🚨 MARGEM NEGATIVA', cls: 'com_divergencia', color: 'var(--berry)' }
+    if (calc.verdict === 'nao_vale')        return { label: '❌ NÃO COMPENSA',    cls: 'com_divergencia', color: 'var(--berry)' }
+    return { label: '✅ VALE',  cls: 'conferido', color: 'var(--sage)' }
   })()
 
   const copyResult = () => {
@@ -243,216 +223,235 @@ export default function SimuladorDescontoPage() {
   }
 
   return (
-    <div style={{maxWidth:1100,margin:'0 auto'}}>
-      <div style={{padding:'14px 16px',background:'var(--primary)',color:'white',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
-        <span style={{fontWeight:700}}>✨ Simulador: Desconto vs. Volume</span>
-        {user && <span style={{fontSize:'.78rem',opacity:.85}}>{user.displayName}</span>}
-      </div>
-
-      <div style={{padding:16}}>
-        <p style={{margin:'0 0 14px',color:'var(--muted)',fontSize:'.85rem'}}>
-          Avalia se um desconto pedido pelo cliente compensa, dado o volume prometido. Cálculo + análise contextual por IA (Claude Sonnet 4.5).
-        </p>
-
-        {loading ? (
-          <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Carregando dados...</div>
-        ) : (
-          <div style={{display:'grid',gridTemplateColumns:'minmax(280px, 1fr) minmax(280px, 1fr)',gap:14}}>
-
-            {/* ===== LEFT: INPUTS ===== */}
-            <div style={{display:'grid',gap:12}}>
-              <div className="card">
-                <div className="card-title">CLIENTE / PRODUTO</div>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Cliente cadastrado</label>
-                <select value={customerId} onChange={e=>{ setCustomerId(e.target.value); setCustomerNameFree('') }}
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.88rem',background:'white',marginBottom:8}}>
-                  <option value="">— selecionar (ou usar livre abaixo) —</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                {!customerId && (
-                  <input value={customerNameFree} onChange={e=>setCustomerNameFree(e.target.value)}
-                    placeholder="ou digite o nome livre"
-                    style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.88rem',marginBottom:10}}/>
-                )}
-
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600,marginTop:customerId?6:0}}>Produto</label>
-                <select value={productKey} onChange={e=>{ setProductKey(e.target.value); setProductNameFree('') }}
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.88rem',background:'white',marginBottom:8}}>
-                  <option value="">— selecionar do catálogo —</option>
-                  {catalog.map(p => (
-                    <option key={`${p.source}_${p.id}`} value={`${p.source}_${p.id}`}>
-                      {p.name}{p.source === 'bread' ? ' 🥖' : ''}
-                    </option>
-                  ))}
-                </select>
-                {!productKey && (
-                  <input value={productNameFree} onChange={e=>setProductNameFree(e.target.value)}
-                    placeholder="ou digite o nome livre"
-                    style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.88rem'}}/>
-                )}
-              </div>
-
-              <div className="card">
-                <div className="card-title">PRODUTO / TABELA BASE</div>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Preço de venda (Tabela B) — R$</label>
-                <input type="number" min={0} step={0.01} value={price || ''} onChange={e=>setPrice(Number(e.target.value)||0)}
-                  placeholder="0,00"
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.95rem',marginBottom:10}}/>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>CMV do produto (custo) — R$</label>
-                <input type="number" min={0} step={0.01} value={cmv || ''} onChange={e=>setCmv(Number(e.target.value)||0)}
-                  placeholder="0,00"
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.95rem'}}/>
-              </div>
-
-              <div className="card">
-                <div className="card-title">NEGOCIAÇÃO COM O CLIENTE</div>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Desconto solicitado — %</label>
-                <input type="number" min={0} max={99} step={0.5} value={discount || ''} onChange={e=>setDiscount(Math.min(99, Math.max(0, Number(e.target.value)||0)))}
-                  placeholder="0"
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.95rem',marginBottom:10}}/>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Volume atual do cliente (unid/mês)</label>
-                <input type="number" min={0} step={1} value={currentVolume || ''} onChange={e=>setCurrentVolume(Number(e.target.value)||0)}
-                  placeholder="0"
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.95rem',marginBottom:10}}/>
-                <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Volume prometido com desconto (unid/mês)</label>
-                <input type="number" min={0} step={1} value={promisedVolume || ''} onChange={e=>setPromisedVolume(Number(e.target.value)||0)}
-                  placeholder="0"
-                  style={{width:'100%',padding:9,border:'1.5px solid var(--border)',borderRadius:6,fontSize:'.95rem'}}/>
-              </div>
-
-              <button onClick={analisarIA} disabled={!hasMinInputs || aiLoading}
-                style={{padding:'12px',background:hasMinInputs&&!aiLoading?'var(--primary)':'#e5e7eb',color:hasMinInputs&&!aiLoading?'white':'#9ca3af',border:'none',borderRadius:8,cursor:hasMinInputs&&!aiLoading?'pointer':'default',fontSize:'.92rem',fontWeight:700}}>
-                {aiLoading ? '⏳ Analisando...' : '✨ Analisar com IA →'}
-              </button>
-            </div>
-
-            {/* ===== RIGHT: RESULTADOS ===== */}
-            <div style={{display:'grid',gap:12}}>
-              <div className="card">
-                <div className="card-title">MARGENS</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  <div style={{padding:'10px 12px',background:'#f9fafb',borderRadius:8}}>
-                    <div style={{fontSize:'.7rem',color:'var(--muted)',marginBottom:2}}>Margem atual</div>
-                    <div style={{fontSize:'1.2rem',fontWeight:700,color:'#0a6e52'}}>{calc.marginPct.toFixed(1)}%</div>
-                    <div style={{fontSize:'.78rem',color:'var(--muted)'}}>R$ {calc.margin.toFixed(2)}</div>
-                  </div>
-                  <div style={{padding:'10px 12px',background:'#f9fafb',borderRadius:8}}>
-                    <div style={{fontSize:'.7rem',color:'var(--muted)',marginBottom:2}}>Margem com desconto</div>
-                    <div style={{fontSize:'1.2rem',fontWeight:700,color:calc.newMargin>0?'#0a6e52':'#dc2626'}}>{calc.newMarginPct.toFixed(1)}%</div>
-                    <div style={{fontSize:'.78rem',color:'var(--muted)'}}>R$ {calc.newMargin.toFixed(2)}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="card-title">LUCRO TOTAL (MÊS)</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-                  <div style={{padding:'10px 12px',background:'#f9fafb',borderRadius:8}}>
-                    <div style={{fontSize:'.7rem',color:'var(--muted)',marginBottom:2}}>Sem desconto</div>
-                    <div style={{fontSize:'1.05rem',fontWeight:700}}>R$ {calc.currentProfit.toFixed(2)}</div>
-                  </div>
-                  <div style={{padding:'10px 12px',background:'#f9fafb',borderRadius:8}}>
-                    <div style={{fontSize:'.7rem',color:'var(--muted)',marginBottom:2}}>Com desconto</div>
-                    <div style={{fontSize:'1.05rem',fontWeight:700,color:calc.profitDelta>=0?'#0a6e52':'#dc2626'}}>R$ {calc.promisedProfit.toFixed(2)}</div>
-                  </div>
-                </div>
-
-                <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)',fontSize:'.85rem'}}>
-                  <span style={{color:'var(--muted)'}}>Volume mínimo para empatar</span>
-                  <strong>{calc.breakEven === null ? '—' : `${calc.breakEven} unid`}</strong>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)',fontSize:'.85rem'}}>
-                  <span style={{color:'var(--muted)'}}>Diferença de lucro</span>
-                  <strong style={{color:calc.profitDelta>=0?'#0a6e52':'#dc2626'}}>R$ {calc.profitDelta.toFixed(2)}</strong>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)',fontSize:'.85rem'}}>
-                  <span style={{color:'var(--muted)'}}>Impacto margem (%)</span>
-                  <strong style={{color:calc.marginPctDiff>=0?'#0a6e52':'#dc2626'}}>{calc.marginPctDiff.toFixed(1)}%</strong>
-                </div>
-
-                {calc.breakEven !== null && promisedVolume > 0 && (
-                  <>
-                    <div style={{fontSize:'.72rem',color:'var(--muted)',marginTop:10,marginBottom:4}}>Volume prometido vs. mínimo necessário</div>
-                    <div style={{height:8,background:'#e5e7eb',borderRadius:4,overflow:'hidden'}}>
-                      <div style={{
-                        width: `${Math.min(100, (promisedVolume / calc.breakEven) * 100)}%`,
-                        height:'100%',
-                        background: promisedVolume >= calc.breakEven ? '#15803d' : '#f59e0b',
-                        transition:'width .2s'
-                      }}/>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div style={{padding:'14px 16px',background:verdictBadge.bg,borderRadius:10,borderLeft:`4px solid ${verdictBadge.color}`}}>
-                <div style={{fontWeight:700,fontSize:'1rem',color:verdictBadge.color,marginBottom:6}}>{verdictBadge.label}</div>
-                {hasMinInputs && (
-                  <div style={{fontSize:'.82rem',color:verdictBadge.color,lineHeight:1.5}}>
-                    {calc.verdict === 'margem_negativa' && (
-                      <>O preço com desconto (R$ {calc.newPrice.toFixed(2)}) é menor que o CMV (R$ {cmv.toFixed(2)}). Cada venda gera prejuízo direto. <strong>Não negocie esse desconto.</strong></>
-                    )}
-                    {calc.verdict === 'nao_vale' && (
-                      <>O volume prometido ({promisedVolume} unid) está {calc.volumeShortage} unidades abaixo do mínimo necessário ({calc.breakEven} unid). Você perderia R$ {Math.abs(calc.profitDelta).toFixed(2)}/mês. Ou negocie menos desconto, ou exija mais volume.</>
-                    )}
-                    {calc.verdict === 'vale' && (
-                      <>Volume prometido ({promisedVolume} unid) supera o mínimo de break-even ({calc.breakEven} unid). Ganho líquido de R$ {calc.profitDelta.toFixed(2)}/mês. <em>Atenção: análise não considera custos fixos.</em></>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* IA result */}
-              {(aiText || aiError || aiLoading) && (
-                <div className="card" style={{background:'#fafaf9',borderColor:'#e7e5e4'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                    <div className="card-title" style={{marginBottom:0}}>ANÁLISE — CLAUDE SONNET 4.5</div>
-                    {aiText && (
-                      <button onClick={copyResult}
-                        style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:'.72rem'}}>
-                        📋 Copiar
-                      </button>
-                    )}
-                  </div>
-                  {aiLoading && <div style={{color:'var(--muted)',fontSize:'.85rem'}}>⏳ Consultando IA...</div>}
-                  {aiError && <div style={{color:'#dc2626',fontSize:'.85rem',whiteSpace:'pre-wrap'}}>❌ {aiError}</div>}
-                  {aiText && <div style={{fontSize:'.85rem',lineHeight:1.55,whiteSpace:'pre-wrap',color:'#44403c'}}>{aiText}</div>}
-                </div>
-              )}
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Simulador</b>
+              <span>Desconto × Volume</span>
             </div>
           </div>
-        )}
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-        {/* Histórico */}
-        {history.length > 0 && (
-          <div className="card" style={{marginTop:16}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <div className="card-title" style={{marginBottom:0}}>HISTÓRICO LOCAL ({history.length})</div>
-              <button onClick={clearHistory} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:'.72rem',color:'#dc2626'}}>Limpar</button>
-            </div>
-            <div style={{display:'grid',gap:6}}>
-              {history.map(h => {
-                const vBadge = h.verdict === 'vale' ? { bg:'#dcfce7', color:'#15803d', label:'✅' } : h.verdict === 'nao_vale' ? { bg:'#fef2f2', color:'#991b1b', label:'❌' } : { bg:'#fef2f2', color:'#991b1b', label:'🚨' }
-                return (
-                  <div key={h.ts} onClick={()=>loadFromHistory(h)}
-                    style={{padding:'8px 10px',background:'white',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                    <div style={{flex:1,minWidth:160}}>
-                      <div style={{fontSize:'.85rem',fontWeight:600}}>
-                        {h.customerName || '(sem cliente)'} · {h.productName || '(sem produto)'}
-                      </div>
-                      <div style={{fontSize:'.72rem',color:'var(--muted)'}}>
-                        Preço R$ {h.price.toFixed(2)} · -{h.discount}% · {h.currentVolume}→{h.promisedVolume} un · {new Date(h.ts).toLocaleString('pt-BR')}
-                      </div>
-                    </div>
-                    <span style={{padding:'2px 8px',borderRadius:20,background:vBadge.bg,color:vBadge.color,fontSize:'.72rem',fontWeight:700}}>
-                      {vBadge.label} R$ {h.profitDelta.toFixed(2)}
-                    </span>
+        <div className="ps-scroll ps-pad">
+          <h1 className="ps-page-title">✨ Simulador: Desconto vs. Volume</h1>
+          <p className="ps-page-lead">
+            Avalia se um desconto pedido pelo cliente compensa, dado o volume prometido. Cálculo + análise contextual por IA (Claude Sonnet 4.5).
+          </p>
+
+          {loading ? (
+            <div className="ps-empty">Carregando dados...</div>
+          ) : (
+            <div style={{display:'grid', gridTemplateColumns:'minmax(280px, 1fr) minmax(280px, 1fr)', gap:14}}>
+              {/* LEFT: INPUTS */}
+              <div style={{display:'grid', gap:12}}>
+                <div className="ps-card" style={{gap:10}}>
+                  <div className="ps-flabel">Cliente / Produto</div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Cliente cadastrado</div>
+                    <select value={customerId} onChange={e=>{ setCustomerId(e.target.value); setCustomerNameFree('') }} className="ps-select">
+                      <option value="">— selecionar (ou usar livre abaixo) —</option>
+                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    {!customerId && (
+                      <input value={customerNameFree} onChange={e=>setCustomerNameFree(e.target.value)}
+                        placeholder="ou digite o nome livre" className="ps-input" style={{marginTop:6}}/>
+                    )}
                   </div>
-                )
-              })}
+
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Produto</div>
+                    <select value={productKey} onChange={e=>{ setProductKey(e.target.value); setProductNameFree('') }} className="ps-select">
+                      <option value="">— selecionar do catálogo —</option>
+                      {catalog.map(p => (
+                        <option key={`${p.source}_${p.id}`} value={`${p.source}_${p.id}`}>
+                          {p.name}{p.source === 'bread' ? ' 🥖' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {!productKey && (
+                      <input value={productNameFree} onChange={e=>setProductNameFree(e.target.value)}
+                        placeholder="ou digite o nome livre" className="ps-input" style={{marginTop:6}}/>
+                    )}
+                  </div>
+                </div>
+
+                <div className="ps-card" style={{gap:10}}>
+                  <div className="ps-flabel">Produto / Tabela base</div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Preço de venda (Tabela B) — R$</div>
+                    <input type="number" min={0} step={0.01} value={price || ''} onChange={e=>setPrice(Number(e.target.value)||0)}
+                      placeholder="0,00" className="ps-input"/>
+                  </div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">CMV do produto (custo) — R$</div>
+                    <input type="number" min={0} step={0.01} value={cmv || ''} onChange={e=>setCmv(Number(e.target.value)||0)}
+                      placeholder="0,00" className="ps-input"/>
+                  </div>
+                </div>
+
+                <div className="ps-card" style={{gap:10}}>
+                  <div className="ps-flabel">Negociação com o cliente</div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Desconto solicitado — %</div>
+                    <input type="number" min={0} max={99} step={0.5} value={discount || ''} onChange={e=>setDiscount(Math.min(99, Math.max(0, Number(e.target.value)||0)))}
+                      placeholder="0" className="ps-input"/>
+                  </div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Volume atual (unid/mês)</div>
+                    <input type="number" min={0} step={1} value={currentVolume || ''} onChange={e=>setCurrentVolume(Number(e.target.value)||0)}
+                      placeholder="0" className="ps-input"/>
+                  </div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Volume prometido c/ desconto (unid/mês)</div>
+                    <input type="number" min={0} step={1} value={promisedVolume || ''} onChange={e=>setPromisedVolume(Number(e.target.value)||0)}
+                      placeholder="0" className="ps-input"/>
+                  </div>
+                </div>
+
+                <button onClick={analisarIA} disabled={!hasMinInputs || aiLoading} className="ps-btn primary block">
+                  <Sparkles size={16}/> {aiLoading ? 'Analisando...' : 'Analisar com IA →'}
+                </button>
+              </div>
+
+              {/* RIGHT: RESULTADOS */}
+              <div style={{display:'grid', gap:12}}>
+                <div className="ps-card" style={{gap:10}}>
+                  <div className="ps-flabel">Margens</div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                    <div style={{padding:'10px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)'}}>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginBottom:2, textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Atual</div>
+                      <div style={{fontSize:20, fontWeight:700, color:'var(--sage)', fontFamily:'var(--font-display)'}}>{calc.marginPct.toFixed(1)}%</div>
+                      <div style={{fontSize:12, color:'var(--ink-soft)'}}>R$ {calc.margin.toFixed(2)}</div>
+                    </div>
+                    <div style={{padding:'10px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)'}}>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginBottom:2, textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Com desconto</div>
+                      <div style={{fontSize:20, fontWeight:700, color:calc.newMargin>0?'var(--sage)':'var(--berry)', fontFamily:'var(--font-display)'}}>{calc.newMarginPct.toFixed(1)}%</div>
+                      <div style={{fontSize:12, color:'var(--ink-soft)'}}>R$ {calc.newMargin.toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ps-card" style={{gap:8}}>
+                  <div className="ps-flabel">Lucro total (mês)</div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                    <div style={{padding:'10px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)'}}>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginBottom:2, textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Sem desconto</div>
+                      <div style={{fontSize:16, fontWeight:700, fontFamily:'var(--font-display)'}}>R$ {calc.currentProfit.toFixed(2)}</div>
+                    </div>
+                    <div style={{padding:'10px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)'}}>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginBottom:2, textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Com desconto</div>
+                      <div style={{fontSize:16, fontWeight:700, color:calc.profitDelta>=0?'var(--sage)':'var(--berry)', fontFamily:'var(--font-display)'}}>R$ {calc.promisedProfit.toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                  <div style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderTop:'1px solid var(--line-soft)', fontSize:13, marginTop:6}}>
+                    <span style={{color:'var(--ink-soft)'}}>Volume mínimo p/ empatar</span>
+                    <strong>{calc.breakEven === null ? '—' : `${calc.breakEven} unid`}</strong>
+                  </div>
+                  <div style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderTop:'1px solid var(--line-soft)', fontSize:13}}>
+                    <span style={{color:'var(--ink-soft)'}}>Diferença de lucro</span>
+                    <strong style={{color:calc.profitDelta>=0?'var(--sage)':'var(--berry)', fontVariantNumeric:'tabular-nums'}}>R$ {calc.profitDelta.toFixed(2)}</strong>
+                  </div>
+                  <div style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderTop:'1px solid var(--line-soft)', fontSize:13}}>
+                    <span style={{color:'var(--ink-soft)'}}>Impacto margem (%)</span>
+                    <strong style={{color:calc.marginPctDiff>=0?'var(--sage)':'var(--berry)'}}>{calc.marginPctDiff.toFixed(1)}%</strong>
+                  </div>
+
+                  {calc.breakEven !== null && promisedVolume > 0 && (
+                    <>
+                      <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:8}}>Prometido vs. mínimo</div>
+                      <div style={{height:8, background:'var(--ps-line)', borderRadius:4, overflow:'hidden'}}>
+                        <div style={{
+                          width: `${Math.min(100, (promisedVolume / calc.breakEven) * 100)}%`,
+                          height:'100%',
+                          background: promisedVolume >= calc.breakEven ? 'var(--sage)' : 'var(--honey-deep)',
+                          transition:'width .2s'
+                        }}/>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="ps-card" style={{borderLeft:`4px solid ${verdictInfo.color}`, gap:6}}>
+                  <div style={{fontWeight:700, fontSize:15, color:verdictInfo.color}}>{verdictInfo.label}</div>
+                  {hasMinInputs && (
+                    <div style={{fontSize:13, color:'var(--ink-soft)', lineHeight:1.5}}>
+                      {calc.verdict === 'margem_negativa' && (
+                        <>O preço com desconto (R$ {calc.newPrice.toFixed(2)}) é menor que o CMV (R$ {cmv.toFixed(2)}). Cada venda gera prejuízo direto. <strong>Não negocie esse desconto.</strong></>
+                      )}
+                      {calc.verdict === 'nao_vale' && (
+                        <>O volume prometido ({promisedVolume} unid) está {calc.volumeShortage} unidades abaixo do mínimo necessário ({calc.breakEven} unid). Você perderia R$ {Math.abs(calc.profitDelta).toFixed(2)}/mês. Ou negocie menos desconto, ou exija mais volume.</>
+                      )}
+                      {calc.verdict === 'vale' && (
+                        <>Volume prometido ({promisedVolume} unid) supera o mínimo de break-even ({calc.breakEven} unid). Ganho líquido de R$ {calc.profitDelta.toFixed(2)}/mês. <em>Atenção: análise não considera custos fixos.</em></>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {(aiText || aiError || aiLoading) && (
+                  <div className="ps-card" style={{background:'var(--line-soft)', gap:8}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <div className="ps-flabel" style={{margin:0}}>Análise — Claude Sonnet 4.5</div>
+                      {aiText && (
+                        <button onClick={copyResult} className="ps-btn ghost sm">
+                          <Copy size={12}/> Copiar
+                        </button>
+                      )}
+                    </div>
+                    {aiLoading && <div style={{color:'var(--ink-soft)', fontSize:13}}>⏳ Consultando IA...</div>}
+                    {aiError && <div style={{color:'var(--berry)', fontSize:13, whiteSpace:'pre-wrap'}}>❌ {aiError}</div>}
+                    {aiText && <div style={{fontSize:13, lineHeight:1.55, whiteSpace:'pre-wrap', color:'var(--ps-ink)'}}>{aiText}</div>}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Histórico */}
+          {history.length > 0 && (
+            <div className="ps-card" style={{marginTop:16, gap:8}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <div className="ps-flabel" style={{margin:0}}>Histórico local ({history.length})</div>
+                <button onClick={clearHistory} className="ps-btn danger sm">
+                  <Trash2 size={12}/> Limpar
+                </button>
+              </div>
+              <div style={{display:'grid', gap:6}}>
+                {history.map(h => {
+                  const vBadge = h.verdict === 'vale' ? { cls:'conferido', label:'✅' }
+                              : h.verdict === 'nao_vale' ? { cls:'com_divergencia', label:'❌' }
+                              : { cls:'com_divergencia', label:'🚨' }
+                  return (
+                    <div key={h.ts} onClick={()=>loadFromHistory(h)}
+                      style={{padding:'10px 12px', background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'var(--r-ctrl)', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                      <div style={{flex:1, minWidth:160}}>
+                        <div style={{fontSize:13, fontWeight:600, color:'var(--ps-ink)'}}>
+                          {h.customerName || '(sem cliente)'} · {h.productName || '(sem produto)'}
+                        </div>
+                        <div style={{fontSize:11, color:'var(--ink-faint)'}}>
+                          Preço R$ {h.price.toFixed(2)} · -{h.discount}% · {h.currentVolume}→{h.promisedVolume} un · {new Date(h.ts).toLocaleString('pt-BR')}
+                        </div>
+                      </div>
+                      <span className={`ps-status ${vBadge.cls}`}>
+                        {vBadge.label} R$ {h.profitDelta.toFixed(2)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

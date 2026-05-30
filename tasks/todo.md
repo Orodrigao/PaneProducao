@@ -29,8 +29,8 @@
 - [x] 10. Produtos — PR #16 (merged)
 - [x] 11. Tabelas-Preço — PR #17 (merged)
 - [x] 12. Clientes — PR #18 (merged)
-- [ ] 13. Pedidos-PJ ← **EM ANDAMENTO**
-- [ ] 14. Simulador-Desconto
+- [x] 13. Pedidos-PJ — PR #19 (merged)
+- [ ] 14. Simulador-Desconto ← **EM ANDAMENTO**
 - [ ] 15. Admin
 
 ---
