@@ -21,7 +21,7 @@
   - category = 'INSUMOS' → 'insumo' (256 itens)
   - resto → 'final' (159 itens)
   - Index `idx_products_kind` criado. database.types.ts regenerado.
-- [ ] **A2** — `/produtos`: chip de `kind` ao lado do nome (cores ps-*: honey=kit, sage=insumo, neutro=final). Filtro por kind no header (presets All/Kits/Insumos/Finais). Botão "Composição" só aparece em kind=kit (desabilitado por enquanto, próxima fase).
+- [x] **A2** — `/produtos`: chip `ps-store-chip` ao lado do nome (jc/honey=KIT, ja/sage=INSUMO; finais sem chip pra reduzir ruído). Filtro de presets "Todos / Kits (N) / Insumos (N) / Finais (N)" + filtro de categoria preservado. Botão "Composição" (ícone Layers) em kit, desabilitado com tooltip "chega na Fase B". Modal de edit ganha select "Tipo" (kit/insumo/final). Novo produto entra como 'final' por default.
 
 **Saída da fase A:** ninguém precisa de comportamento novo. Só ganham visibilidade dos kinds.
 

@@ -5,10 +5,17 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
+type Kind = 'kit' | 'insumo' | 'final'
+
 interface Product {
   id: string; name: string; category: string; unit: string|null
   cost_price: number|null; active: boolean; sort_order: number
+  kind: Kind | null
 }
+
+const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
+// Mapeia pro chip ps-store-chip (jc=honey/kit, ja=sage/insumo). 'final' fica neutro.
+const KIND_CHIP_CLS: Record<Kind, string> = { kit: 'jc', insumo: 'ja', final: '' }
 
 interface Bread {
   id: string; name: string; unit: string|null
@@ -28,6 +35,7 @@ export default function ProdutosPage() {
   const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
   const [catFilter, setCat]     = useState('Todos')
+  const [kindFilter, setKindFilter] = useState<'all'|Kind>('all')
   const [editItem, setEditItem] = useState<Partial<Product>|null>(null)
   const [isNew, setIsNew]       = useState(false)
   const [breadCostEdits, setBreadCostEdits] = useState<Record<string, string>>({})
@@ -126,9 +134,16 @@ export default function ProdutosPage() {
   const cats = ['Todos',...new Set(products.map(p=>p.category).filter(Boolean))]
   const filtered = products.filter(p=>{
     const matchCat = catFilter==='Todos' || p.category===catFilter
+    const matchKind = kindFilter==='all' || p.kind===kindFilter
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchSearch
+    return matchCat && matchKind && matchSearch
   })
+  const kindCounts = { kit: 0, insumo: 0, final: 0 }
+  for (const p of products) {
+    if (p.kind === 'kit') kindCounts.kit++
+    else if (p.kind === 'insumo') kindCounts.insumo++
+    else if (p.kind === 'final') kindCounts.final++
+  }
   const grouped = filtered.reduce((acc:Record<string,Product[]>,p)=>{ (acc[p.category]??=[]).push(p); return acc },{})
 
   const breadsFiltered = breads.filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()))
@@ -173,7 +188,7 @@ export default function ProdutosPage() {
                 className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
             </div>
             {tab==='produtos' ? (
-              <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0]})}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0], kind:'final'})}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             ) : (
@@ -182,6 +197,24 @@ export default function ProdutosPage() {
               </button>
             )}
           </div>
+
+          {/* Kind filter — só Produtos */}
+          {tab==='produtos' && (
+            <div className="ps-presets" style={{paddingBottom:6, marginBottom:8, flexWrap:'wrap'}}>
+              <button onClick={()=>setKindFilter('all')} className={`ps-preset ${kindFilter==='all'?'active':''}`}>
+                Todos
+              </button>
+              <button onClick={()=>setKindFilter('kit')} className={`ps-preset ${kindFilter==='kit'?'active':''}`}>
+                🍞 Kits ({kindCounts.kit})
+              </button>
+              <button onClick={()=>setKindFilter('insumo')} className={`ps-preset ${kindFilter==='insumo'?'active':''}`}>
+                🥚 Insumos ({kindCounts.insumo})
+              </button>
+              <button onClick={()=>setKindFilter('final')} className={`ps-preset ${kindFilter==='final'?'active':''}`}>
+                ✨ Finais ({kindCounts.final})
+              </button>
+            </div>
+          )}
 
           {/* Category filter — só Produtos */}
           {tab==='produtos' && (
@@ -223,11 +256,21 @@ export default function ProdutosPage() {
                   {items.map(p=>(
                     <div key={p.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)', opacity:p.active?1:0.5}}>
                       <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)'}}>{p.name}</div>
+                        <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                          {p.name}
+                          {p.kind && p.kind !== 'final' && (
+                            <span className={`ps-store-chip ${KIND_CHIP_CLS[p.kind]}`}>{KIND_LABELS[p.kind]}</span>
+                          )}
+                        </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
                         </div>
                       </div>
+                      {p.kind === 'kit' && (
+                        <button disabled title="Composição (cadastro de componentes) chega na Fase B" className="ps-iconbtn" style={{width:30, height:30, opacity:.4, cursor:'not-allowed', fontSize:14}}>
+                          📋
+                        </button>
+                      )}
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
                         {p.active?'✓ Ativo':'Inativo'}
                       </button>
@@ -298,6 +341,14 @@ export default function ProdutosPage() {
                 <div className="ps-fieldlabel">Categoria</div>
                 <select value={editItem.category||''} onChange={e=>setEditItem(prev=>({...prev,category:e.target.value}))} className="ps-select">
                   {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="ps-fieldgroup">
+                <div className="ps-fieldlabel">Tipo</div>
+                <select value={editItem.kind || 'final'} onChange={e=>setEditItem(prev=>({...prev, kind: e.target.value as Kind}))} className="ps-select">
+                  <option value="final">✨ Produto final (venda direta)</option>
+                  <option value="kit">🍞 Kit (composto por pães/insumos)</option>
+                  <option value="insumo">🥚 Insumo (matéria-prima)</option>
                 </select>
               </div>
             </div>
