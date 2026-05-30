@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { User, Phone, Trash2, Plus, Save, Calendar } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
 // ===== Tipos =====
@@ -27,7 +28,7 @@ interface OrderRow {
 interface EncomendaGroup {
   key:string
   customerLabel:string
-  contact:string|null  // walkin_phone ou — se cadastrado
+  contact:string|null
   isWalkin:boolean
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
@@ -59,7 +60,7 @@ function fmtBR(dateStr:string|null): string {
 
 // ===== Componente =====
 export default function EncomendasPage() {
-  const [user, setUser] = useState<{displayName:string}|null>(null)
+  const [user, setUser] = useState<AppUser | null>(null)
   const [tab, setTab]   = useState<'novo'|'lista'>('novo')
 
   // Dados base
@@ -81,11 +82,10 @@ export default function EncomendasPage() {
 
   // Visualização
   const [viewing, setViewing] = useState<EncomendaGroup|null>(null)
-  const [listDays, setListDays] = useState(14) // próximos 14 dias por default
+  const [listDays, setListDays] = useState(14)
 
   useEffect(() => {
-    const u = getCurrentUser()
-    if (u) setUser({ displayName: u.displayName })
+    setUser(getCurrentUser())
   }, [])
 
   const loadAll = useCallback(async () => {
@@ -107,8 +107,6 @@ export default function EncomendasPage() {
 
   // ===== Itens =====
   const filteredCatalog = useMemo(() => {
-    // Sem busca: dropdown fechado. Catálogo tem ~325 produtos + 35 pães,
-    // mostrar tudo polui a tela e cobre o botão Salvar (position:absolute).
     if (search.trim().length < 1) return []
     const used = new Set(lines.map(l => `${l.product_source}_${l.product_id}`))
     const avail = catalog.filter(c => !used.has(`${c._source}_${c.id}`))
@@ -140,7 +138,6 @@ export default function EncomendasPage() {
 
   // ===== Salvar =====
   const saveEncomenda = async () => {
-    // Cliente
     if (useWalkin) {
       if (!walkinName.trim()) { showToast('Nome do cliente obrigatório'); return }
     } else {
@@ -179,7 +176,6 @@ export default function EncomendasPage() {
     setSaving(false)
     if (error) { showToast('Erro: ' + error.message); return }
     showToast(`✅ Encomenda criada · R$ ${totalValue.toFixed(2)}`)
-    // Reset
     setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone('')
     setDelivery(nextNonSunday(addDays(todayISO(), 1))); setObs(''); setLines([]); setSearch('')
     setTab('lista')
@@ -226,261 +222,268 @@ export default function EncomendasPage() {
       .sort((a,b) => (a.delivery_date||'').localeCompare(b.delivery_date||''))
   }, [encomendasGrouped, listDays])
 
-  const groupStatus = (g:EncomendaGroup): {label:string; color:string; bg:string} => {
+  const groupStatus = (g:EncomendaGroup): { label:string; cls:string; border:string } => {
     const t = todayISO()
-    if (!g.delivery_date) return { label:'sem data', color:'#6b7280', bg:'#f3f4f6' }
-    if (g.delivery_date < t)  return { label:'atrasada', color:'#b91c1c', bg:'#fee2e2' }
-    if (g.delivery_date === t) return { label:'pra hoje', color:'#9a3412', bg:'#fed7aa' }
-    return { label:'agendada', color:'#1e40af', bg:'#dbeafe' }
+    if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
+    if (g.delivery_date < t)  return { label:'atrasada', cls:'com_divergencia', border:'var(--berry)' }
+    if (g.delivery_date === t) return { label:'pra hoje', cls:'enviado', border:'var(--honey-deep)' }
+    return { label:'agendada', cls:'conferido', border:'var(--sage)' }
   }
 
   return (
-    <div style={{maxWidth:900,margin:'0 auto'}}>
-      <div style={{padding:'14px 16px',background:'var(--primary)',color:'white',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
-        <span style={{fontWeight:700}}>🎂 Encomendas</span>
-        {user && <span style={{fontSize:'.78rem',opacity:.85}}>{user.displayName}</span>}
-      </div>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Encomendas</b>
+              <span>Clientes PF</span>
+            </div>
+          </div>
+          {user && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(user.role)}}>{user.displayName.charAt(0).toUpperCase()}</div>
+              <b>{user.displayName}</b>
+            </div>
+          )}
+        </header>
 
-      <div style={{display:'flex',borderBottom:'2px solid var(--border)'}}>
-        {(['novo','lista'] as const).map(t => (
-          <button key={t} onClick={()=>setTab(t)}
-            style={{flex:1,padding:'10px',border:'none',background:'none',cursor:'pointer',
-              fontWeight:tab===t?700:400,color:tab===t?'var(--primary)':'var(--muted)',
-              borderBottom:tab===t?'2px solid var(--primary)':'2px solid transparent',marginBottom:-2,fontSize:'.88rem'}}>
-            {t==='novo' ? '+ Nova encomenda' : '📋 Lista'}
-          </button>
-        ))}
-      </div>
+        <div className="ps-pad" style={{marginTop:14}}>
+          <div className="ps-tabs" role="tablist">
+            {(['novo','lista'] as const).map(t => (
+              <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)} className="ps-tab">
+                {t==='novo' ? '+ Nova encomenda' : '📋 Lista'}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <div style={{padding:16}}>
-        {loading ? (
-          <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Carregando...</div>
-        ) : tab === 'novo' ? (
-          <>
-            {/* Cliente */}
-            <div style={{background:'white',padding:14,borderRadius:10,border:'1px solid var(--border)',marginBottom:14}}>
-              <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-                <button onClick={()=>{ setUseWalkin(false); setWalkinName(''); setWalkinPhone('') }}
-                  style={{flex:'1 1 140px',padding:'8px 12px',borderRadius:6,border:`1.5px solid ${!useWalkin?'var(--primary)':'var(--border)'}`,background:!useWalkin?'var(--primary)':'white',color:!useWalkin?'white':'var(--text)',cursor:'pointer',fontWeight:600,fontSize:'.85rem'}}>
-                  👤 Cliente cadastrado
-                </button>
-                <button onClick={()=>{ setUseWalkin(true); setCustId('') }}
-                  style={{flex:'1 1 140px',padding:'8px 12px',borderRadius:6,border:`1.5px solid ${useWalkin?'var(--primary)':'var(--border)'}`,background:useWalkin?'var(--primary)':'white',color:useWalkin?'white':'var(--text)',cursor:'pointer',fontWeight:600,fontSize:'.85rem'}}>
-                  📞 Cliente avulso
-                </button>
+        <div className="ps-scroll ps-pad">
+          {loading ? (
+            <div className="ps-empty">Carregando...</div>
+          ) : tab === 'novo' ? (
+            <>
+              {/* Cliente */}
+              <div className="ps-card" style={{marginTop:14, gap:10}}>
+                <div className="ps-segments" style={{width:'100%'}}>
+                  <button onClick={()=>{ setUseWalkin(false); setWalkinName(''); setWalkinPhone('') }}
+                    className={`ps-seg ${!useWalkin ? 'active' : ''}`} style={{flex:1}}>
+                    <User size={14} style={{verticalAlign:-2, marginRight:4}}/> Cadastrado
+                  </button>
+                  <button onClick={()=>{ setUseWalkin(true); setCustId('') }}
+                    className={`ps-seg ${useWalkin ? 'active' : ''}`} style={{flex:1}}>
+                    <Phone size={14} style={{verticalAlign:-2, marginRight:4}}/> Avulso
+                  </button>
+                </div>
+
+                {!useWalkin ? (
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Cliente *</div>
+                    <select value={custId} onChange={e=>setCustId(e.target.value)} className="ps-select">
+                      <option value="">— selecionar —</option>
+                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="ps-fieldrow">
+                    <div className="ps-fieldgroup" style={{flex:'2 1 200px'}}>
+                      <div className="ps-fieldlabel">Nome *</div>
+                      <input value={walkinName} onChange={e=>setWalkinName(e.target.value)} placeholder="Ex: Maria Silva" className="ps-input"/>
+                    </div>
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">Telefone</div>
+                      <input value={walkinPhone} onChange={e=>setWalkinPhone(e.target.value)} placeholder="(54) 9 9999-9999" className="ps-input"/>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {!useWalkin ? (
-                <>
-                  <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Cliente *</label>
-                  <select value={custId} onChange={e=>setCustId(e.target.value)}
-                    style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem',background:'white'}}>
-                    <option value="">— selecionar —</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </>
+              {/* Datas */}
+              <div className="ps-card" style={{marginTop:12, gap:10}}>
+                <div className="ps-fieldgroup">
+                  <div className="ps-fieldlabel">Data de retirada *</div>
+                  <input type="date" value={delivery} onChange={e=>changeDelivery(e.target.value)} min={todayISO()} className="ps-input"/>
+                  {delivery && (
+                    <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:3}}>
+                      <Calendar size={11} style={{verticalAlign:-1, marginRight:3}}/>
+                      {fmtBR(delivery)} · produção {fmtBR(addDays(delivery, -1))}
+                    </div>
+                  )}
+                </div>
+                <div className="ps-fieldgroup">
+                  <div className="ps-fieldlabel">Observações</div>
+                  <textarea value={obs} onChange={e=>setObs(e.target.value)}
+                    placeholder="Decoração, mensagem, recheio especial..." className="ps-textarea"/>
+                </div>
+              </div>
+
+              {/* Buscar item */}
+              <div className="ps-fieldgroup" style={{position:'relative', marginTop:14}}>
+                <div className="ps-fieldlabel">+ Adicionar item</div>
+                <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar pão ou produto..." className="ps-input"/>
+                {filteredCatalog.length > 0 && (
+                  <div style={{position:'absolute', top:'100%', left:0, right:0, background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'0 0 var(--r-ctrl) var(--r-ctrl)', zIndex:50, maxHeight:240, overflowY:'auto', boxShadow:'var(--sh-2)'}}>
+                    {filteredCatalog.map(c => (
+                      <div key={`${c._source}_${c.id}`} onClick={()=>addLine(c)}
+                        style={{padding:'10px 12px', cursor:'pointer', fontSize:13, borderBottom:'1px solid var(--line-soft)', fontFamily:'var(--font-ui)'}}>
+                        {c.name}
+                        {c._source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖 PÃO</span>}
+                        {c.unit && <span style={{marginLeft:6, fontSize:11, color:'var(--ink-faint)'}}>{c.unit}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {lines.length === 0 ? (
+                <div className="ps-empty" style={{padding:'30px 0', borderTop:'1px dashed var(--ps-line)', marginTop:14}}>
+                  Adicione itens da encomenda acima
+                </div>
               ) : (
-                <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                  <div style={{flex:'2 1 200px'}}>
-                    <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Nome *</label>
-                    <input value={walkinName} onChange={e=>setWalkinName(e.target.value)}
-                      placeholder="Ex: Maria Silva"
-                      style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-                  </div>
-                  <div style={{flex:'1 1 140px'}}>
-                    <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Telefone</label>
-                    <input value={walkinPhone} onChange={e=>setWalkinPhone(e.target.value)}
-                      placeholder="(54) 9 9999-9999"
-                      style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-                  </div>
+                <div style={{display:'grid', gap:10, marginTop:14}}>
+                  {lines.map(l => {
+                    const totalVal = l.qty * l.unit_price
+                    return (
+                      <div key={l.key} className="ps-card" style={{padding:'12px 14px', gap:8}}>
+                        <div className="ps-card-head" style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', gap:8}}>
+                          <div className="ps-pname" style={{fontSize:14, flex:1, minWidth:0}}>
+                            {l.product_name}
+                            {l.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
+                          </div>
+                          <button onClick={()=>removeLine(l.key)} title="Remover" className="ps-iconbtn" style={{width:30, height:30, color:'var(--berry)'}}>
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
+                        <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                          <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
+                            Qtd:
+                            <input type="number" min={1} step={1} value={l.qty}
+                              onChange={e=>updateLine(l.key, { qty: Math.max(1, Number(e.target.value)||1) })}
+                              className="ps-input" style={{width:70, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
+                          </label>
+                          <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
+                            R$:
+                            <input type="number" min={0} step={0.01} value={l.unit_price}
+                              onChange={e=>updateLine(l.key, { unit_price: Math.max(0, Number(e.target.value)||0) })}
+                              className="ps-input" style={{width:90, padding:'4px 8px', textAlign:'right', fontSize:13}}/>
+                          </label>
+                          <span style={{marginLeft:'auto', fontSize:14, fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>
+                            R$ {totalVal.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
-            </div>
 
-            {/* Datas */}
-            <div style={{background:'white',padding:14,borderRadius:10,border:'1px solid var(--border)',marginBottom:14}}>
-              <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>Data de retirada *</label>
-              <input type="date" value={delivery} onChange={e=>changeDelivery(e.target.value)} min={todayISO()}
-                style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-              {delivery && <div style={{fontSize:'.72rem',color:'var(--muted)',marginTop:3}}>{fmtBR(delivery)} · produção {fmtBR(addDays(delivery, -1))}</div>}
+              {lines.length > 0 && (
+                <div className="ps-banner honey" style={{marginTop:14, justifyContent:'space-between'}}>
+                  <b>Total</b>
+                  <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {totalValue.toFixed(2)}</b>
+                </div>
+              )}
 
-              <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600,marginTop:10}}>Observações</label>
-              <textarea value={obs} onChange={e=>setObs(e.target.value)}
-                placeholder="Decoração, mensagem, recheio especial..."
-                style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem',minHeight:50,resize:'vertical'}}/>
-            </div>
-
-            {/* Itens */}
-            <div style={{position:'relative',marginBottom:14}}>
-              <label style={{display:'block',fontSize:'.78rem',color:'var(--muted)',marginBottom:4,fontWeight:600}}>+ Adicionar item</label>
-              <input value={search} onChange={e=>setSearch(e.target.value)}
-                placeholder="Buscar pão ou produto..."
-                style={{width:'100%',padding:10,border:'1.5px solid var(--border)',borderRadius:8,fontSize:'.9rem'}}/>
-              {filteredCatalog.length > 0 && (
-                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',zIndex:50,maxHeight:240,overflowY:'auto',boxShadow:'0 4px 12px rgba(0,0,0,.08)'}}>
-                  {filteredCatalog.map(c => (
-                    <div key={`${c._source}_${c.id}`} onClick={()=>addLine(c)}
-                      style={{padding:'9px 12px',cursor:'pointer',fontSize:'.88rem',borderBottom:'1px solid var(--border)'}}>
-                      {c.name}
-                      {c._source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 5px',borderRadius:3,fontSize:'.6rem',fontWeight:700}}>🥖 PÃO</span>}
-                      {c.unit && <span style={{marginLeft:6,fontSize:'.72rem',color:'var(--muted)'}}>{c.unit}</span>}
-                    </div>
+              <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:16}}>
+                <button onClick={()=>{ setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone(''); setLines([]); setObs(''); setSearch('') }} disabled={saving} className="ps-btn ghost">
+                  Limpar
+                </button>
+                <button onClick={saveEncomenda} disabled={saving || lines.length===0} className="ps-btn primary">
+                  <Save size={14}/> {saving ? 'Salvando...' : 'Salvar encomenda'}
+                </button>
+              </div>
+            </>
+          ) : (
+            // ===== LISTA =====
+            <>
+              <div style={{display:'flex', gap:8, alignItems:'center', marginTop:14, marginBottom:14, flexWrap:'wrap'}}>
+                <span style={{fontSize:13, color:'var(--ink-soft)'}}>Próximos</span>
+                <div className="ps-presets">
+                  {[7,14,30,90].map(d => (
+                    <button key={d} onClick={()=>setListDays(d)} className={`ps-preset ${listDays===d ? 'active' : ''}`}>
+                      {d}d
+                    </button>
                   ))}
                 </div>
+                <span style={{marginLeft:'auto', fontSize:13, color:'var(--ink-soft)'}}>
+                  {visibleGroups.length} encomenda(s)
+                </span>
+              </div>
+
+              {visibleGroups.length === 0 ? (
+                <div className="ps-empty">Nenhuma encomenda nos próximos {listDays} dias.</div>
+              ) : (
+                <div style={{display:'grid', gap:10}}>
+                  {visibleGroups.map(g => {
+                    const st = groupStatus(g)
+                    return (
+                      <div key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer'}}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap'}}>
+                          <div style={{flex:1, minWidth:0}}>
+                            <div className="ps-pname" style={{fontSize:15}}>
+                              {g.customerLabel}
+                              {g.isWalkin && <span className="ps-store-chip" style={{marginLeft:6, background:'var(--line-soft)', color:'var(--ink-soft)'}}>AVULSO</span>}
+                            </div>
+                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2}}>
+                              Retirada {fmtBR(g.delivery_date)}
+                              {g.contact && ` · 📞 ${g.contact}`}
+                            </div>
+                          </div>
+                          <span className={`ps-status ${st.cls}`}>{st.label}</span>
+                        </div>
+                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13, marginTop:4}}>
+                          <span style={{color:'var(--ink-faint)'}}>{g.rows.length} item(ns)</span>
+                          <span style={{fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {g.total.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
-            </div>
-
-            {lines.length === 0 ? (
-              <div style={{padding:30,textAlign:'center',color:'var(--muted)',background:'white',borderRadius:10,border:'1px dashed var(--border)'}}>
-                Adicione itens da encomenda acima
-              </div>
-            ) : (
-              <div style={{display:'grid',gap:10,marginBottom:14}}>
-                {lines.map(l => {
-                  const totalVal = l.qty * l.unit_price
-                  return (
-                    <div key={l.key} style={{background:'white',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:8}}>
-                        <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:'.92rem'}}>
-                          {l.product_name}
-                          {l.product_source === 'bread' && <span style={{marginLeft:6,background:'#fef3c7',color:'#92400e',padding:'1px 5px',borderRadius:3,fontSize:'.6rem',fontWeight:700}}>🥖</span>}
-                        </div>
-                        <button onClick={()=>removeLine(l.key)} title="Remover"
-                          style={{background:'none',border:'none',cursor:'pointer',fontSize:'1rem',color:'#dc2626',padding:0}}>🗑</button>
-                      </div>
-                      <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-                        <label style={{fontSize:'.78rem',color:'var(--muted)'}}>
-                          Qtd: <input type="number" min={1} step={1} value={l.qty}
-                            onChange={e=>updateLine(l.key, { qty: Math.max(1, Number(e.target.value)||1) })}
-                            style={{width:70,padding:'4px 6px',border:'1px solid var(--border)',borderRadius:4,fontSize:'.85rem',textAlign:'center',marginLeft:4}}/>
-                        </label>
-                        <label style={{fontSize:'.78rem',color:'var(--muted)'}}>
-                          Preço unit. R$: <input type="number" min={0} step={0.01} value={l.unit_price}
-                            onChange={e=>updateLine(l.key, { unit_price: Math.max(0, Number(e.target.value)||0) })}
-                            style={{width:90,padding:'4px 6px',border:'1px solid var(--border)',borderRadius:4,fontSize:'.85rem',textAlign:'right',marginLeft:4}}/>
-                        </label>
-                        <span style={{marginLeft:'auto',fontSize:'.92rem',fontWeight:700,color:'var(--primary)'}}>
-                          R$ {totalVal.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {lines.length > 0 && (
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',background:'#f0fdf4',borderRadius:10,border:'1px solid #86efac',marginBottom:14}}>
-                <span style={{fontWeight:700,fontSize:'.92rem'}}>Total</span>
-                <span style={{fontWeight:700,fontSize:'1.2rem',color:'#0a6e52'}}>R$ {totalValue.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>{ setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone(''); setLines([]); setObs(''); setSearch('') }} disabled={saving}
-                style={{padding:'10px 16px',background:'white',border:'1.5px solid var(--border)',borderRadius:8,cursor:'pointer',fontSize:'.88rem',fontWeight:600}}>
-                Limpar
-              </button>
-              <button onClick={saveEncomenda} disabled={saving || lines.length===0}
-                style={{padding:'10px 20px',background:'var(--primary)',color:'white',border:'none',borderRadius:8,cursor:(saving||lines.length===0)?'default':'pointer',fontSize:'.9rem',fontWeight:700,opacity:(saving||lines.length===0)?0.6:1}}>
-                {saving ? 'Salvando...' : 'Salvar encomenda'}
-              </button>
-            </div>
-          </>
-        ) : (
-          // ===== LISTA =====
-          <>
-            <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
-              <span style={{fontSize:'.85rem',color:'var(--muted)'}}>Próximos</span>
-              {[7,14,30,90].map(d => (
-                <button key={d} onClick={()=>setListDays(d)}
-                  style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${listDays===d?'var(--primary)':'var(--border)'}`,background:listDays===d?'var(--primary)':'white',color:listDays===d?'white':'var(--text)',cursor:'pointer',fontSize:'.78rem',fontWeight:600}}>
-                  {d}d
-                </button>
-              ))}
-              <span style={{marginLeft:'auto',fontSize:'.85rem',color:'var(--muted)'}}>
-                {visibleGroups.length} encomenda(s)
-              </span>
-            </div>
-            {visibleGroups.length === 0 ? (
-              <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Nenhuma encomenda nos próximos {listDays} dias.</div>
-            ) : (
-              <div style={{display:'grid',gap:10}}>
-                {visibleGroups.map(g => {
-                  const st = groupStatus(g)
-                  return (
-                    <div key={g.key} onClick={()=>setViewing(g)}
-                      style={{background:'white',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)',borderLeft:`4px solid ${st.color}`,cursor:'pointer'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8,flexWrap:'wrap'}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:'.95rem'}}>
-                            {g.customerLabel}
-                            {g.isWalkin && <span style={{marginLeft:6,fontSize:'.68rem',padding:'1px 6px',background:'#f3f4f6',color:'var(--muted)',borderRadius:3,fontWeight:600}}>AVULSO</span>}
-                          </div>
-                          <div style={{fontSize:'.75rem',color:'var(--muted)',marginTop:2}}>
-                            Retirada {fmtBR(g.delivery_date)}
-                            {g.contact && ` · 📞 ${g.contact}`}
-                          </div>
-                        </div>
-                        <span style={{padding:'3px 8px',background:st.bg,color:st.color,borderRadius:20,fontSize:'.7rem',fontWeight:700}}>
-                          {st.label}
-                        </span>
-                      </div>
-                      <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem'}}>
-                        <span style={{color:'var(--muted)'}}>{g.rows.length} item(ns)</span>
-                        <span style={{fontWeight:700,color:'var(--primary)'}}>R$ {g.total.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Modal de visualização */}
+      {/* Modal de visualização (centered) */}
       {viewing && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:16}}
-             onClick={e=>e.target===e.currentTarget&&setViewing(null)}>
-          <div style={{background:'white',borderRadius:12,padding:20,maxWidth:540,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
-            <div style={{fontWeight:700,fontSize:'1.05rem',marginBottom:6}}>
+        <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&setViewing(null)}>
+          <div className="ps-sheet confirm" style={{maxWidth:540, borderRadius:'var(--r-card)'}}>
+            <h3>
               {viewing.customerLabel}
-              {viewing.isWalkin && <span style={{marginLeft:8,fontSize:'.7rem',padding:'1px 6px',background:'#f3f4f6',color:'var(--muted)',borderRadius:3,fontWeight:600}}>AVULSO</span>}
-            </div>
-            <div style={{fontSize:'.82rem',color:'var(--muted)',marginBottom:14}}>
+              {viewing.isWalkin && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>AVULSO</span>}
+            </h3>
+            <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
               Implantada {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Retirada {fmtBR(viewing.delivery_date)}
-              {viewing.contact && <div style={{marginTop:2}}>📞 {viewing.contact}</div>}
-            </div>
+              {viewing.contact && <><br/>📞 {viewing.contact}</>}
+            </p>
 
-            <div style={{display:'grid',gap:6,marginBottom:14}}>
+            <div style={{display:'grid', gap:6, marginBottom:14}}>
               {viewing.rows.map(r => (
-                <div key={r.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 10px',background:'#f9fafb',borderRadius:6,fontSize:'.85rem'}}>
-                  <span>
+                <div key={r.id} style={{display:'flex', justifyContent:'space-between', padding:'8px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', fontSize:13}}>
+                  <span style={{fontWeight:600}}>
                     {r.product_name || r.bread_id}
-                    <span style={{marginLeft:6,fontSize:'.72rem',color:'var(--muted)'}}>×{r.quantity}</span>
+                    <span style={{marginLeft:6, fontSize:12, color:'var(--ink-faint)', fontWeight:500}}>×{r.quantity}</span>
                   </span>
-                  <strong>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
+                  <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
                 </div>
               ))}
             </div>
 
-            <div style={{display:'flex',justifyContent:'space-between',padding:'10px 14px',background:'#f0fdf4',borderRadius:8,marginBottom:14,fontWeight:700}}>
-              <span>Total</span>
-              <span style={{color:'#0a6e52'}}>R$ {viewing.total.toFixed(2)}</span>
+            <div className="ps-banner honey" style={{marginBottom:14, justifyContent:'space-between'}}>
+              <b>Total</b>
+              <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
             </div>
 
             {viewing.obs && (
-              <div style={{padding:'8px 10px',background:'#fffbeb',borderRadius:6,fontSize:'.82rem',color:'#92400e',marginBottom:14}}>
-                <strong>Obs:</strong> {viewing.obs}
+              <div className="ps-warning" style={{marginBottom:14}}>
+                <strong style={{marginRight:6}}>Obs:</strong> {viewing.obs}
               </div>
             )}
 
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>setViewing(null)}
-                style={{padding:'10px 16px',background:'white',border:'1.5px solid var(--border)',borderRadius:8,cursor:'pointer',fontSize:'.88rem',fontWeight:600}}>
-                Fechar
-              </button>
+            <div className="actions">
+              <button onClick={()=>setViewing(null)} className="ps-btn ghost">Fechar</button>
             </div>
           </div>
         </div>
