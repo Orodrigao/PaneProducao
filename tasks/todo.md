@@ -22,8 +22,8 @@
 
 ### Tier 3 — regular
 - [x] 7. Encomendas — PR #13 (merged)
-- [ ] 8. Compras (cuidado: integração Telegram, não quebrar) ← **EM ANDAMENTO**
-- [ ] 9. Fornecedores
+- [x] 8. Compras (Telegram preservado) — PR #14 (merged)
+- [ ] 9. Fornecedores ← **EM ANDAMENTO**
 
 ### Tier 4 — admin / baixa frequência
 - [ ] 10. Produtos
