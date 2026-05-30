@@ -465,6 +465,16 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-status.ajuste{ background:var(--honey-tint); color:var(--honey-deep); border-color:var(--honey-line); }
 .ps-status.descarte{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
 
+/* Chips por loja (estoque-congelado) */
+.ps-store-chip{ display:inline-flex; align-items:center; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:6px; letter-spacing:.04em; text-transform:uppercase; }
+.ps-store-chip.jc{ background:var(--honey-tint); color:var(--honey-deep); }
+.ps-store-chip.ja{ background:#E3F0E0; color:var(--sage); }
+.ps-store-chip.ex{ background:var(--crust-tint); color:var(--crust); }
+.ps-loc-chip{ display:inline-flex; align-items:center; gap:4px; font-size:12px; padding:3px 10px; border-radius:var(--r-pill); border:1px solid transparent; font-weight:600; white-space:nowrap; }
+.ps-loc-chip.jc{ background:var(--honey-tint); border-color:var(--honey-line); color:var(--honey-deep); }
+.ps-loc-chip.ja{ background:#E3F0E0; border-color:#C5D5BA; color:var(--sage); }
+.ps-loc-chip.ex{ background:var(--crust-tint); border-color:var(--honey-line); color:var(--crust); }
+
 /* Tabela (fechamento) */
 .ps-table-wrap{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); overflow:hidden; box-shadow:var(--sh-1); }
 .ps-table{ width:100%; border-collapse:collapse; font-family:var(--font-ui); font-size:13px; color:var(--ps-ink); }
