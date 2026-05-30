@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Plus, Save, X, KeyRound, Pencil, Power } from 'lucide-react'
 import {
   AppUser, Role,
   fetchUsersFromSupabase, cacheUsers, getCachedUsers,
@@ -30,7 +31,6 @@ const ROUTE_OPTIONS = [
   { href: '/relatorios/sobras-descartes', label: '└ Sobras & Descartes', icon: '♻️' },
 ]
 
-// ---- Modal de PIN ----
 function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (pin: string) => void }) {
   const [pin, setPin] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -43,26 +43,31 @@ function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => voi
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '300px' }}>
-        <h3 style={{ margin: '0 0 16px', fontSize: '1rem' }}>Trocar PIN — {user.displayName}</h3>
-        <input type="password" inputMode="numeric" maxLength={4} placeholder="Novo PIN (4 dígitos)" value={pin}
-          onChange={e => { setPin(e.target.value.replace(/\D/g,'')); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box', fontSize: '1rem' }} />
-        <input type="password" inputMode="numeric" maxLength={4} placeholder="Confirmar PIN" value={confirm}
-          onChange={e => { setConfirm(e.target.value.replace(/\D/g,'')); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box', fontSize: '1rem' }} />
-        {err && <p style={{ color: '#dc2626', fontSize: '0.8rem', margin: '0 0 10px' }}>{err}</p>}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>Cancelar</button>
-          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Salvar</button>
+    <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="ps-sheet confirm" style={{maxWidth:320, borderRadius:'var(--r-card)'}}>
+        <h3><KeyRound size={16} style={{verticalAlign:-2, marginRight:6}}/>Trocar PIN — {user.displayName}</h3>
+
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <input type="password" inputMode="numeric" maxLength={4} placeholder="Novo PIN (4 dígitos)" value={pin}
+            onChange={e => { setPin(e.target.value.replace(/\D/g,'')); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+        </div>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <input type="password" inputMode="numeric" maxLength={4} placeholder="Confirmar PIN" value={confirm}
+            onChange={e => { setConfirm(e.target.value.replace(/\D/g,'')); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+        </div>
+        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
+
+        <div className="actions">
+          <button onClick={handleSave} className="ps-btn primary">
+            <Save size={14}/> Salvar
+          </button>
+          <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ---- Modal de novo usuário ----
 function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) => void }) {
   const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true, store: null as string | null })
   const [routes, setRoutes] = useState<string[]>(DEFAULT_ROUTES_BY_ROLE.producao)
@@ -86,57 +91,67 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '16px' }}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '20px', width: '360px', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', fontSize: '1rem' }}>Novo Usuário</h3>
+    <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="ps-sheet">
+        <div className="ps-sheet-grab"/>
+        <h3>+ Novo Usuário</h3>
 
-        <input type="text" placeholder="Username (login)" value={form.username}
-          onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box' }} />
-        <input type="text" placeholder="Nome de exibição" value={form.displayName}
-          onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '10px', boxSizing: 'border-box' }} />
-        <input type="password" inputMode="numeric" maxLength={4} placeholder="PIN (4 dígitos)" value={form.pin}
-          onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px', boxSizing: 'border-box' }} />
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Username (login)</div>
+          <input type="text" value={form.username}
+            onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }} className="ps-input"/>
+        </div>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Nome de exibição</div>
+          <input type="text" value={form.displayName}
+            onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }} className="ps-input"/>
+        </div>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">PIN (4 dígitos)</div>
+          <input type="password" inputMode="numeric" maxLength={4} value={form.pin}
+            onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+        </div>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Cargo</label>
-        <select value={form.role} onChange={e => setRole(e.target.value as Role)}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
-          {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-        </select>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Cargo</div>
+          <select value={form.role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          </select>
+        </div>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Loja física</label>
-        <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
-          <option value="">(sem loja — admin/sem físico)</option>
-          <option value="jc">JC — Júlio</option>
-          <option value="ja">JA — Jardim América</option>
-          <option value="ex">EX — Exposição</option>
-        </select>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Loja física</div>
+          <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))} className="ps-select">
+            <option value="">(sem loja — admin/sem físico)</option>
+            <option value="jc">JC — Júlio</option>
+            <option value="ja">JA — Jardim América</option>
+            <option value="ex">EX — Exposição</option>
+          </select>
+        </div>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Acesso a módulos (pré-marcado pelos defaults da role)</label>
-        <div style={{ background: '#f9f9f9', borderRadius: '8px', padding: '8px 10px', marginBottom: '12px' }}>
+        <div className="ps-fieldlabel" style={{marginBottom:6}}>Acesso a módulos (pré-marcado pelos defaults da role)</div>
+        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
           {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)} />
+            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
+              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
               <span>{opt.icon} {opt.label}</span>
-              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '0.7rem' }}>{opt.href}</span>
+              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
             </label>
           ))}
         </div>
 
-        {err && <p style={{ color: '#dc2626', fontSize: '0.8rem', margin: '0 0 10px' }}>{err}</p>}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>Cancelar</button>
-          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Criar</button>
+        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
+        <div className="actions">
+          <button onClick={handleSave} className="ps-btn primary">
+            <Save size={14}/> Criar
+          </button>
+          <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ---- Modal de edição ----
 function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[]; store: string | null }) => void }) {
   const [role, setRole] = useState<Role>(user.role)
   const [displayName, setDisplayName] = useState(user.displayName)
@@ -159,60 +174,66 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '16px' }}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '20px', width: '360px', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: '1rem' }}>Editar — {user.displayName}</h3>
-        <p style={{ margin: '0 0 14px', fontSize: '0.72rem', color: 'var(--muted)' }}>id: <code>{user.id}</code> · username: @{user.username}</p>
+    <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="ps-sheet">
+        <div className="ps-sheet-grab"/>
+        <h3><Pencil size={14} style={{verticalAlign:-2, marginRight:6}}/>Editar — {user.displayName}</h3>
+        <p style={{margin:'0 0 14px', fontSize:11, color:'var(--ink-faint)'}}>id: <code>{user.id}</code> · username: @{user.username}</p>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Nome de exibição</label>
-        <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px', boxSizing: 'border-box' }} />
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Nome de exibição</div>
+          <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }} className="ps-input"/>
+        </div>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Cargo</label>
-        <select value={role} onChange={e => setRole(e.target.value as Role)}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
-          {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-        </select>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Cargo</div>
+          <select value={role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          </select>
+        </div>
 
-        <label style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Loja física</label>
-        <select value={store ?? ''} onChange={e => setStore(e.target.value || null)}
-          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '12px' }}>
-          <option value="">(sem loja — admin/sem físico)</option>
-          <option value="jc">JC — Júlio</option>
-          <option value="ja">JA — Jardim América</option>
-          <option value="ex">EX — Exposição</option>
-        </select>
+        <div className="ps-fieldgroup" style={{marginBottom:10}}>
+          <div className="ps-fieldlabel">Loja física</div>
+          <select value={store ?? ''} onChange={e => setStore(e.target.value || null)} className="ps-select">
+            <option value="">(sem loja — admin/sem físico)</option>
+            <option value="jc">JC — Júlio</option>
+            <option value="ja">JA — Jardim América</option>
+            <option value="ex">EX — Exposição</option>
+          </select>
+        </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <label style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Acesso a módulos</label>
-          <button type="button" onClick={applyRoleDefaults} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.72rem', textDecoration: 'underline' }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+          <span className="ps-fieldlabel">Acesso a módulos</span>
+          <button type="button" onClick={applyRoleDefaults} style={{background:'none', border:'none', color:'var(--crust)', cursor:'pointer', fontSize:11, textDecoration:'underline', fontFamily:'var(--font-ui)'}}>
             Usar padrão da role
           </button>
         </div>
-        <div style={{ background: '#f9f9f9', borderRadius: '8px', padding: '8px 10px', marginBottom: '12px' }}>
+        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
           {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', fontSize: '0.85rem' }}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)} />
+            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
+              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
               <span>{opt.icon} {opt.label}</span>
-              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '0.7rem' }}>{opt.href}</span>
+              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
             </label>
           ))}
         </div>
 
-        {err && <p style={{ color: '#dc2626', fontSize: '0.8rem', margin: '0 0 10px' }}>{err}</p>}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>Cancelar</button>
-          <button onClick={handleSave} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Salvar</button>
+        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
+        <div className="actions">
+          <button onClick={handleSave} className="ps-btn primary">
+            <Save size={14}/> Salvar
+          </button>
+          <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ---- Página principal ----
 export default function AdminUsuariosPage() {
   const router = useRouter()
   const [users, setUsers]           = useState<AppUser[]>([])
+  const [me, setMe]                 = useState<AppUser | null>(null)
   const [loading, setLoading]       = useState(true)
   const [pinModal, setPinModal]     = useState<AppUser | null>(null)
   const [newModal, setNewModal]     = useState(false)
@@ -220,8 +241,9 @@ export default function AdminUsuariosPage() {
   const [msg, setMsg]               = useState('')
 
   useEffect(() => {
-    const me = getCurrentUser()
-    if (!me || me.role !== 'admin') { router.replace('/'); return }
+    const u = getCurrentUser()
+    if (!u || u.role !== 'admin') { router.replace('/'); return }
+    setMe(u)
     loadUsers()
   }, [router])
 
@@ -276,58 +298,70 @@ export default function AdminUsuariosPage() {
     setEditModal(null)
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}><p>Carregando...</p></div>
+  if (loading) return (
+    <div className="ps-loading">
+      <div className="ps-spinner"/>
+      <p>Carregando...</p>
+    </div>
+  )
 
   return (
-    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>Usuários</h1>
-        <button onClick={() => setNewModal(true)}
-          style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
-          + Novo
-        </button>
-      </div>
-
-      {msg && <div style={{ background: '#d1fae5', color: '#065f46', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>{msg}</div>}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {users.map(user => (
-          <div key={user.id} style={{
-            background: 'white', borderRadius: '12px', padding: '14px 16px',
-            border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px',
-            opacity: user.active ? 1 : 0.55,
-          }}>
-            <div style={{
-              width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-              background: roleColor(user.role), display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontWeight: 700, fontSize: '1rem',
-            }}>
-              {user.displayName.charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{user.displayName}</div>
-              <div style={{ fontSize: '0.75rem', color: roleColor(user.role) }}>{roleLabel(user.role)}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>@{user.username}</div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-              <button onClick={() => setPinModal(user)}
-                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: '0.75rem' }}>
-                PIN
-              </button>
-              <button onClick={() => setEditModal(user)}
-                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: '0.75rem' }}>
-                Editar
-              </button>
-              <button onClick={() => handleToggle(user)}
-                style={{
-                  padding: '6px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
-                  background: user.active ? '#fee2e2' : '#d1fae5', color: user.active ? '#dc2626' : '#065f46',
-                }}>
-                {user.active ? 'Desativar' : 'Ativar'}
-              </button>
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <header className="ps-header">
+          <div className="ps-wordmark">
+            <div className="ps-mark">P</div>
+            <div className="ps-brand">
+              <b>Admin · Usuários</b>
+              <span>Cadastro &amp; permissões</span>
             </div>
           </div>
-        ))}
+          {me && (
+            <div className="ps-userchip">
+              <div className="ps-avatar" style={{background: roleColor(me.role)}}>{me.displayName.charAt(0).toUpperCase()}</div>
+              <b>{me.displayName}</b>
+            </div>
+          )}
+        </header>
+
+        <div className="ps-scroll ps-pad">
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:14, marginBottom:14, gap:10}}>
+            <h1 className="ps-page-title" style={{margin:0}}>👥 Usuários ({users.length})</h1>
+            <button onClick={() => setNewModal(true)} className="ps-btn primary">
+              <Plus size={14}/> Novo
+            </button>
+          </div>
+
+          {msg && (
+            <div className="ps-banner crust" style={{marginBottom:14}}>{msg}</div>
+          )}
+
+          <div style={{display:'flex', flexDirection:'column', gap:10}}>
+            {users.map(user => (
+              <div key={user.id} className="ps-card" style={{padding:'12px 14px', flexDirection:'row', alignItems:'center', gap:12, opacity: user.active ? 1 : 0.55}}>
+                <div className="ps-avatar" style={{width:42, height:42, fontSize:16, background:roleColor(user.role)}}>
+                  {user.displayName.charAt(0).toUpperCase()}
+                </div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:700, fontSize:14.5, color:'var(--ps-ink)'}}>{user.displayName}</div>
+                  <div style={{fontSize:12, color:roleColor(user.role), fontWeight:600}}>{roleLabel(user.role)}{user.store && ` · ${user.store.toUpperCase()}`}</div>
+                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>@{user.username}</div>
+                </div>
+                <div style={{display:'flex', gap:6, flexShrink:0, flexDirection:'column'}}>
+                  <button onClick={() => setPinModal(user)} className="ps-btn ghost sm">
+                    <KeyRound size={11}/> PIN
+                  </button>
+                  <button onClick={() => setEditModal(user)} className="ps-btn ghost sm">
+                    <Pencil size={11}/> Editar
+                  </button>
+                  <button onClick={() => handleToggle(user)} className={`ps-btn sm ${user.active ? 'danger' : 'success'}`}>
+                    <Power size={11}/> {user.active ? 'Off' : 'On'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {pinModal && <PinModal user={pinModal} onClose={() => setPinModal(null)} onSave={pin => handlePinSave(pinModal, pin)} />}
