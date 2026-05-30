@@ -551,6 +551,41 @@ export type Database = {
         }
         Relationships: []
       }
+      product_components: {
+        Row: {
+          component_id: string
+          component_source: string
+          created_at: string
+          id: string
+          parent_product_id: string
+          quantity: number
+        }
+        Insert: {
+          component_id: string
+          component_source: string
+          created_at?: string
+          id?: string
+          parent_product_id: string
+          quantity?: number
+        }
+        Update: {
+          component_id?: string
+          component_source?: string
+          created_at?: string
+          id?: string
+          parent_product_id?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_components_parent_product_id_fkey"
+            columns: ["parent_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_prices: {
         Row: {
           active: boolean | null

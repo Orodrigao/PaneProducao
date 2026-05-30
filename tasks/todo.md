@@ -29,7 +29,7 @@
 
 ## Fase B — BOM read-only + CMV sugerido
 
-- [ ] **B1** — Migration: criar `product_components` com colunas:
+- [x] **B1** — Migration aplicada: `product_components` com colunas:
   - `id` uuid PK
   - `parent_product_id` uuid → products.id ON DELETE CASCADE
   - `component_source` text ('bread' | 'product')
