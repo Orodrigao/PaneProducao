@@ -50,8 +50,8 @@
 
 - [ ] **C1 — Descarte cascade** — `/sobras` modo descarte: ao gravar descarte de produto com `kind='kit'`, debitar pães-componentes do estoque da loja (em `bread_movements` com `reference_type='descarte_kit'`). Multiplicação: `qty_kit × qty_componente`. Idempotência: limpar movimentos antigos de `descarte_kit` junto com `descarte`. Componentes do tipo `product` (não-pão) ficam fora desta fase — só pão cascateia (alinhado com o modelo do negócio).
 - [x] **C2 — Romaneio cascade** — `/romaneio` confirmar envio: itens com `product_source!='bread'` e cujo produto é `kind='kit'` agora cascateiam — pra cada componente-pão, gera par de bread_movements `-central/+destino` multiplicado por `qty_sent × qty_componente`. `reference_type='romaneio_kit'` separa da cascata direta. Idempotência amplia o gate pra cobrir os 2 tipos. No-op em romaneios sem kits.
-- [ ] **C3 — Vendas cascade** — `/pedidos-pj` e `/encomendas`: ao gravar pedido de kit, debita componentes-pão do estoque da loja origem.
-- [ ] **C4 — Auditoria pré-rollout** — SQL: kits ativos sem components cadastrados. Mostrar contagem pro Rodrigão antes da Fase C entrar em produção (senão o cascade silenciosamente não faz nada e o estoque vira ficção).
+- [~] **C3 — Vendas cascade** — Pulado de propósito. Pedidos PJ/encomendas hoje não movem estoque (só inserem em `orders`); a baixa real acontece quando o romaneio é gerado pra entregar pro cliente. Como C2 já cobre o romaneio, não precisa duplicar a cascata no save do pedido. Se um dia a operação mudar (entrega direta sem passar por romaneio), reabre.
+- [x] **C4 — Auditoria pré-rollout** — Snapshot do banco (30/05): Kit Baguete Brasil tem 1 componente (CMV R$ 1.72) ✅. Os outros 3 (Abobora, Caserinho, mandioquinha) ainda estão vazios — cascade vira no-op até alguém cadastrar componentes em cada um via /produtos/composicao. Cascade roda safe em produção, sem efeito até cadastro.
 
 **Saída da fase C:** estoque de pão reflete consumo real via kits. Habilita relatório "consumo de pão por kit/dia/loja".
 
