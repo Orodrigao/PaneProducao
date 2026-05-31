@@ -12,6 +12,7 @@ interface Product {
   id: string; name: string; category: string; unit: string|null
   cost_price: number|null; active: boolean; sort_order: number
   kind: Kind | null
+  is_revenda: boolean
 }
 
 const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
@@ -44,7 +45,7 @@ export default function ProdutosPage() {
   const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
   const [catFilter, setCat]     = useState('Todos')
-  const [kindFilter, setKindFilter] = useState<'all'|Kind>('all')
+  const [kindFilter, setKindFilter] = useState<'all'|Kind|'revenda'>('all')
   const [editItem, setEditItem] = useState<Partial<Product>|null>(null)
   const [isNew, setIsNew]       = useState(false)
   const [breadCostEdits, setBreadCostEdits] = useState<Record<string, string>>({})
@@ -146,7 +147,8 @@ export default function ProdutosPage() {
   const cats = ['Todos',...new Set(products.map(p=>p.category).filter(Boolean))]
   const filtered = products.filter(p=>{
     const matchCat = catFilter==='Todos' || p.category===catFilter
-    const matchKind = kindFilter==='all' || p.kind===kindFilter
+    const matchKind = kindFilter==='all'
+      || (kindFilter==='revenda' ? p.is_revenda : p.kind===kindFilter)
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
     return matchCat && matchKind && matchSearch
   })
@@ -163,11 +165,12 @@ export default function ProdutosPage() {
     else entry.total += Number(cost) * Number(c.quantity)
   }
 
-  const kindCounts = { kit: 0, insumo: 0, final: 0 }
+  const kindCounts = { kit: 0, insumo: 0, final: 0, revenda: 0 }
   for (const p of products) {
     if (p.kind === 'kit') kindCounts.kit++
     else if (p.kind === 'insumo') kindCounts.insumo++
     else if (p.kind === 'final') kindCounts.final++
+    if (p.is_revenda) kindCounts.revenda++
   }
   const grouped = filtered.reduce((acc:Record<string,Product[]>,p)=>{ (acc[p.category]??=[]).push(p); return acc },{})
 
@@ -238,6 +241,9 @@ export default function ProdutosPage() {
               <button onClick={()=>setKindFilter('final')} className={`ps-preset ${kindFilter==='final'?'active':''}`}>
                 ✨ Finais ({kindCounts.final})
               </button>
+              <button onClick={()=>setKindFilter('revenda')} className={`ps-preset ${kindFilter==='revenda'?'active':''}`}>
+                🛒 Revenda ({kindCounts.revenda})
+              </button>
             </div>
           )}
 
@@ -285,6 +291,9 @@ export default function ProdutosPage() {
                           {p.name}
                           {p.kind && p.kind !== 'final' && (
                             <span className={`ps-store-chip ${KIND_CHIP_CLS[p.kind]}`}>{KIND_LABELS[p.kind]}</span>
+                          )}
+                          {p.is_revenda && (
+                            <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>🛒 REVENDA</span>
                           )}
                         </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
@@ -383,6 +392,17 @@ export default function ProdutosPage() {
                   <option value="insumo">🥚 Insumo (matéria-prima)</option>
                 </select>
               </div>
+              <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:'8px 4px'}}>
+                <input
+                  type="checkbox"
+                  checked={!!editItem.is_revenda}
+                  onChange={e => setEditItem(prev => ({...prev, is_revenda: e.target.checked}))}
+                  style={{width:18, height:18, cursor:'pointer'}}
+                />
+                <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                  🛒 <b>Revenda</b> — comprado pronto pra revender (aparece em /compras e /estoque/entrada)
+                </span>
+              </label>
             </div>
 
             <div style={{display:'flex', gap:8}}>

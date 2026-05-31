@@ -70,7 +70,10 @@ export default function ComprasPage() {
 
   useEffect(() => { if (sector) loadList() }, [sector, loadList])
   useEffect(() => {
-    supabase.from('products').select('id,name,category,unit').eq('active',true).order('name')
+    // Só insumos + produtos marcados como revenda (Fase E). Kits e finais
+    // não-revenda não aparecem na lista pra adicionar.
+    supabase.from('products').select('id,name,category,unit').eq('active',true)
+      .or('kind.eq.insumo,is_revenda.eq.true').order('name')
       .then(({data})=>setAllProducts(data||[]))
   }, [])
 

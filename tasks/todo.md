@@ -59,6 +59,17 @@
 
 ---
 
+## Fase E — Revenda + filtro INSUMO em /compras e /estoque/entrada
+
+- [x] **E** — Coluna nova `is_revenda` boolean em products (default false, NOT NULL, com index parcial WHERE true). Dimensão ortogonal a `kind`. Bombom e similares marcam-se manualmente em /produtos.
+  - `/produtos` ganha: chip 🛒 REVENDA no card (cor crust), preset "🛒 Revenda (N)" no filtro de kinds, checkbox no modal de edit.
+  - `/compras` e `/estoque/entrada` filtram a lista de produtos disponíveis: só `kind='insumo' OR is_revenda=true`. Kits e finais não-revenda somem dessas duas telas.
+  - Sem backfill — user marca manualmente.
+
+**Saída**: catálogo de compras fica limpo (só matéria-prima + revenda), e revenda vira dimensão de primeira classe no cadastro.
+
+---
+
 ## Fora deste escopo (futuro)
 
 - Trigger no banco pra baixa em cascata (alternativa server-side).

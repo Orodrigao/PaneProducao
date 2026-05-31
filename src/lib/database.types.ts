@@ -711,6 +711,7 @@ export type Database = {
           cost_price: number | null
           created_at: string | null
           id: string
+          is_revenda: boolean
           is_special: boolean
           kind: string | null
           name: string
@@ -723,6 +724,7 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_revenda?: boolean
           is_special?: boolean
           kind?: string | null
           name: string
@@ -735,6 +737,7 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_revenda?: boolean
           is_special?: boolean
           kind?: string | null
           name?: string

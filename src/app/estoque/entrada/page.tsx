@@ -32,7 +32,10 @@ export default function EstoqueEntradaPage() {
 
   useEffect(() => {
     supabase.from('suppliers').select('id,name').eq('active', true).order('name').then(({ data }) => setSuppliers(data || []))
-    supabase.from('products').select('id,name,unit,category').eq('active', true).order('name').then(({ data }) => setProducts(data || []))
+    // Só insumos + revenda (Fase E) — kits/finais não-revenda não entram em estoque via fornecedor
+    supabase.from('products').select('id,name,unit,category').eq('active', true)
+      .or('kind.eq.insumo,is_revenda.eq.true').order('name')
+      .then(({ data }) => setProducts(data || []))
   }, [])
 
   useEffect(() => {
