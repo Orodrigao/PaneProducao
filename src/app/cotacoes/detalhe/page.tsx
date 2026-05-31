@@ -344,6 +344,12 @@ function DetalheInner() {
                 </button>
               </div>
 
+              {responses.length > 0 && (
+                <Link href={`/cotacoes/comparativo?id=${quotationId}`} className="ps-btn block" style={{marginBottom:12, background:'var(--honey-deep)', color:'white'}}>
+                  📊 Ver comparativo &amp; gerar pedidos ({responses.length} respostas)
+                </Link>
+              )}
+
               {/* Bloco de órfãos */}
               {orphanItems.length > 0 && (
                 <div className="ps-card" style={{padding:14, marginBottom:12, borderLeft:'4px solid var(--berry)'}}>
