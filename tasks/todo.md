@@ -70,7 +70,7 @@
 
 ---
 
-## Fase Cotação — Cotação semi-automática de compras (em andamento)
+## Fase Cotação — Cotação semi-automática de compras ✅ COMPLETA (F1–F6, PRs #33–38)
 
 Spec recebida do Rodrigão (Claude.ai); adaptada pro projeto:
 - Nomenclatura inglesa snake_case (não pt-BR como spec original).
@@ -85,7 +85,9 @@ Spec recebida do Rodrigão (Claude.ai); adaptada pro projeto:
 - [x] **F3 — Geração de cotação** — Vista admin de `/compras` ganha botão "📋 Gerar cotação das listas enviadas". Agrega items de TODAS as listas `submitted`/`completed` por product_id (somando quantidades quando 2 setores pediram o mesmo produto), cria `quotations` + `quotation_items` + `quotation_suppliers` populado via `supplier_products`. Toast mostra contagens incluindo "N sem fornecedor" (órfãos). Mensagem por fornecedor (`generated_message`) fica nula até F4.
 - [x] **F4 — Envio WhatsApp** — `src/lib/quotations.ts` com `buildQuotationMessage()` + `buildWhatsAppLink()` isolando o envio. `/cotacoes` lista (cards com contagens + status). `/cotacoes/detalhe?id=<uuid>` (query param, padrão estático): bloco vermelho "Sem fornecedor — mapear" no topo pros órfãos, depois 1 card por fornecedor com textarea editável da mensagem (onBlur persiste em quotation_suppliers.generated_message), botão "Abrir no WhatsApp" que abre wa.me + marca sent_at + status='sent'. Link "Ver cotações criadas" no /compras admin.
 - [x] **F5 — Edge Function + Lançamento de respostas** — `supabase/functions/parse-cotacao/index.ts` deployada (gemini-2.5-flash, prompt forçando `application/json`, sanitização do payload no servidor). Cada card de fornecedor ganha textarea + botão "Extrair preços com IA" + grid editável (dropdown de produto, preço, unit, disponível, notes, remover linha) → upsert em `quotation_responses` (UNIQUE quotation+supplier+product). Card mostra "Respostas salvas" acima do form quando já tem. quotation_suppliers.status vai pra 'responded' e quotations.status sobe pra 'responded' no save. `tsconfig` exclui `supabase/functions` (Deno globals).
-- [x] **F6 — Comparativo + Pedido** — `/cotacoes/comparativo?id=<uuid>` (query param). Card por item com radios dos fornecedores que responderam, chip 🏆 MELHOR no menor preço, "indisponível" line-through nos recusados, opção "Não comprar este item". Default auto-seleciona menor preço por item. Sumário total por fornecedor + total geral. Botão "Gerar N pedidos" com confirm → INSERT em `supplier_orders` + `supplier_order_items` agrupando por fornecedor escolhido; cotação vira `closed`. Modo read-only ao reabrir cotação fechada — mostra pedidos gerados com seus items e total. Link "📊 Ver comparativo" no detalhe quando respostas existem.
+- [x] **F6 — Comparativo + Pedido** — `/cotacoes/comparativo?id=<uuid>` (query param). Card por item com radios dos fornecedores que responderam, chip 🏆 MELHOR no menor preço, "indisponível" line-through nos recusados, opção "Não comprar este item". Default auto-seleciona menor preço por item. Sumário total por fornecedor + total geral. Botão "Gerar N pedidos" com confirm → INSERT em `supplier_orders` + `supplier_order_items` agrupando por fornecedor escolhido; cotação vira `closed` via **lock atômico** (`UPDATE ... WHERE status!='closed'`) contra duplicação, com **rollback** dos orders se o insert de items falhar. Modo read-only ao reabrir cotação fechada — mostra pedidos gerados com seus items e total. Link "📊 Ver comparativo" no detalhe quando respostas existem.
+
+**✅ Feature completa.** Fluxo end-to-end em prod: lista de compras → gerar cotação → enviar WhatsApp → colar resposta → IA extrai → comparar → gerar pedidos. Requer `GEMINI_API_KEY` nos Supabase Secrets (passo de IA). Próximos passos naturais (fora desta feature): recebimento de `supplier_orders` ligado a `/estoque/entrada`; WhatsApp Business API (hoje deeplink `wa.me`, ponto de envio já isolado em `src/lib/quotations.ts`).
 
 ---
 
