@@ -38,9 +38,10 @@ ERP interno de uma padaria artesanal com 3 lojas em Caxias do Sul (RS). O sistem
 |---|---|
 | `src/app/` | App Router — uma pasta por módulo (`compras/`, `estoque/`, `romaneio/`, etc.) |
 | `src/components/` | Componentes compartilhados — hoje só `AuthGuard.tsx` e `Nav.tsx` |
-| `src/lib/` | `auth.ts`, `supabase.ts`, `utils.ts`, `database.types.ts` (gerado) |
+| `src/lib/` | `auth.ts`, `supabase.ts`, `utils.ts`, `quotations.ts` (helpers de cotação), `database.types.ts` (gerado) |
 | `docs/` | PRD, PLAN, TASKS — fonte da verdade do produto |
-| `supabase/` | Apenas `.temp/` (metadata do `supabase link`) — sem migrations locais (ver seção Supabase) |
+| `supabase/functions/` | Edge Functions (Deno): `analisar-desconto`, `parse-cotacao`. Deploy via Supabase MCP. `tsconfig` exclui essa pasta (globals do Deno). |
+| `supabase/` | `.temp/` (metadata do `supabase link`) — sem migrations locais (ver seção Supabase) |
 | `_GUIA_INFRA.md` | Setup de CLIs, tokens, MCPs — local-only, ainda não versionado |
 
 `node_modules/`, `.next/`, `out/`, `.env*`, `tsconfig.tsbuildinfo` estão no `.gitignore`.
@@ -85,6 +86,7 @@ supabase migration list  # ver histórico de migrations da remote
 - **Cliente JS:** instância única em [src/lib/supabase.ts](src/lib/supabase.ts). Toda query nova importa daqui.
 - **Tipos gerados:** `src/lib/database.types.ts`. Regenerar quando schema mudar.
 - **Edições de schema:** SQL Editor do dashboard **ou** Supabase MCP (`mcp__a25c5e8e-...__execute_sql`, `apply_migration`).
+- **Edge Functions:** em `supabase/functions/<nome>/index.ts` (Deno). Deploy via Supabase MCP (`deploy_edge_function`). Chamadas do client via `fetch(${NEXT_PUBLIC_SUPABASE_URL}/functions/v1/<nome>)` com header `apikey` + `Authorization: Bearer <anon>`. Secrets (ex: `GEMINI_API_KEY`) ficam em Project Settings → Edge Functions → Secrets, **nunca no client**. Hoje: `analisar-desconto` (simulador), `parse-cotacao` (extração de respostas de cotação via Gemini Flash).
 
 **Regra de ouro:** **toda tabela nova precisa de RLS habilitada antes de receber dados.** O app usa a chave publishable (anon-equivalente) — sem RLS, qualquer cliente lê tudo.
 
@@ -120,6 +122,8 @@ Para entender o app, abrir nesta ordem:
 3. [src/lib/auth.ts](src/lib/auth.ts) — modelo de usuário, roles, ACL
 4. [src/app/page.tsx](src/app/page.tsx) — módulo "Pedidos de Produção" (rota `/`), o maior
 
+**Feature de Cotação de compras** (`/compras` admin → `/cotacoes`): fluxo semi-automático lista semanal → cotação → WhatsApp → IA extrai respostas → comparativo → pedido. Mapa: `/compras` (botão "Gerar cotação") → `/cotacoes` (lista) → `/cotacoes/detalhe` (envio + lançar resposta) → `/cotacoes/comparativo` (escolher fornecedor + gerar pedido). Helpers em `src/lib/quotations.ts`; parsing em `supabase/functions/parse-cotacao`. Tabelas: `supplier_products`, `quotations`, `quotation_items`, `quotation_suppliers`, `quotation_responses`, `supplier_orders`, `supplier_order_items`.
+
 ## Gotchas
 
 - **Static export, sem servidor.** Não adicione `route.ts`, `middleware.ts`, server actions, `dynamic = 'force-dynamic'`. Tudo client-side, auth incluso.
@@ -128,6 +132,9 @@ Para entender o app, abrir nesta ordem:
 - **Tailwind misto com inline styles.** Módulos novos (compras, estoque, fornecedores) usam classes; antigos (page raiz, sobras, romaneio) usam inline. Não unificar sem alinhar.
 - **Chaves externas em env vars.** Em produção + `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_CHAT_ID`. **Atenção:** `NEXT_PUBLIC_*` são **inlined no bundle JS** no build — qualquer cliente vê os valores. Só usar para chaves seguras pra serem públicas (anon/publishable, tokens com escopo restrito). `SUPABASE_SERVICE_KEY` e `SUPABASE_DB_PASSWORD` ficam só no `.pane-secrets` e **nunca** no client.
 - **Telegram notifica em `/compras`** — enviar lista dispara mensagem no bot. Preservar até decidirmos o contrário.
+- **`products.kind` (kit/insumo/final) + `is_revenda`.** Duas dimensões ortogonais a `category`. `kind` = o que o produto é; `is_revenda` = comprado pronto pra revender. Kits têm composição em `product_components` (BOM). `/compras` e `/estoque/entrada` só listam `kind='insumo' OR is_revenda=true`. Antes de filtrar produto por tipo, considerar as duas colunas.
+- **Baixa em cascata de kit é client-side.** Descartar (`/sobras`) ou enviar via romaneio (`/romaneio`) um produto `kind='kit'` debita os pães-componentes do estoque em `bread_movements` (`reference_type='descarte_kit'`/`'romaneio_kit'`). Só componente-pão cascateia. Sobra **não** baixa (modelo "prateleira"). Cascade só roda pra produto que é kit **agora** (não basta ter rows em `product_components`).
+- **Cotação fecha com lock atômico.** `/cotacoes/comparativo` gera pedidos via `UPDATE quotations SET status='closed' WHERE status!='closed'` como guarda contra duplicação (static export não tem transação). Não trocar por insert-primeiro.
 
 ## Comandos: auto-aprovar vs sempre confirmar
 
