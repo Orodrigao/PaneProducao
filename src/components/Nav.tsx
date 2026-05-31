@@ -7,6 +7,7 @@ import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, Settings, LogOut,
+  Factory, FileText,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -27,11 +28,13 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
     { href: '/estoque',           label: 'Estoque',   Icon: Boxes },
   ]},
   { group: 'Comercial', items: [
-    { href: '/compras',     label: 'Compras',    Icon: ShoppingCart },
-    { href: '/produtos',    label: 'Produtos',   Icon: Croissant },
-    { href: '/clientes',    label: 'Clientes',   Icon: Users },
-    { href: '/pedidos-pj',  label: 'Pedidos PJ', Icon: Building2 },
-    { href: '/encomendas',  label: 'Encomendas', Icon: Cake },
+    { href: '/compras',      label: 'Compras',      Icon: ShoppingCart },
+    { href: '/cotacoes',     label: 'Cotações',     Icon: FileText },
+    { href: '/fornecedores', label: 'Fornecedores', Icon: Factory },
+    { href: '/produtos',     label: 'Produtos',     Icon: Croissant },
+    { href: '/clientes',     label: 'Clientes',     Icon: Users },
+    { href: '/pedidos-pj',   label: 'Pedidos PJ',   Icon: Building2 },
+    { href: '/encomendas',   label: 'Encomendas',   Icon: Cake },
   ]},
   { group: 'Gestão', items: [
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
