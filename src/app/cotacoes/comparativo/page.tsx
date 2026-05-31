@@ -208,7 +208,18 @@ function ComparativoInner() {
         })
       })
       const { error: oiErr } = await supabase.from('supplier_order_items').insert(orderItemsToInsert)
-      if (oiErr) { showToast('Erro itens: '+oiErr.message); return }
+      if (oiErr) {
+        // Falha ao inserir items DEPOIS dos orders já gravados. Sem transação
+        // no static export, desfaz manualmente: apaga os supplier_orders
+        // criados (CASCADE limpa items parciais) e reabre a cotação pra retry.
+        // Sem isso, ficariam pedidos órfãos com a cotação travada em 'closed'.
+        const createdIds = (createdOrders as any[]).map(o => o.id)
+        await supabase.from('supplier_orders').delete().in('id', createdIds)
+        await supabase.from('quotations').update({ status: 'responded' }).eq('id', quotationId)
+        showToast('Erro itens: '+oiErr.message+' — revertido, tente de novo')
+        await load()
+        return
+      }
 
       showToast(`✅ ${createdOrders.length} ${createdOrders.length === 1 ? 'pedido criado' : 'pedidos criados'}`)
       await load()
