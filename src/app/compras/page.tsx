@@ -213,10 +213,14 @@ export default function ComprasPage() {
       if (itErr) { showToast('Erro itens: '+itErr.message); return }
 
       const productIds = Array.from(agg.keys())
+      // !inner garante que só vêm mapeamentos cujo supplier ainda está ativo.
+      // toggleActive em /fornecedores só toca suppliers.active — supplier_products
+      // ficam intactos (e devem mesmo, pra reativação preservar o mapeamento).
       const { data: maps } = await supabase.from('supplier_products')
-        .select('supplier_id,product_id')
+        .select('supplier_id,product_id,suppliers!inner(active)')
         .in('product_id', productIds)
         .eq('active', true)
+        .eq('suppliers.active', true)
       const supplierIds = Array.from(new Set((maps || []).map((m:any) => m.supplier_id)))
       if (supplierIds.length > 0) {
         const supRows = supplierIds.map(sid => ({
