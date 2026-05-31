@@ -160,6 +160,8 @@ export default function ComprasPage() {
   }
 
   // OWNER
+  const [generatingQuote, setGeneratingQuote] = useState(false)
+
   const loadOwnerOverview = async () => {
     const { data: ls } = await supabase.from('purchase_lists').select('*').order('sector')
     const withCounts = await Promise.all((ls||[]).map(async l => {
@@ -167,6 +169,68 @@ export default function ComprasPage() {
       return { ...l, total:(its||[]).length, filled:(its||[]).filter((i:any)=>i.quantity).length, checked:(its||[]).filter((i:any)=>i.checked).length }
     }))
     setOwnerLists(withCounts)
+  }
+
+  // Gera cotação agregando items das listas submitted+completed.
+  // Itens são agrupados por product_id (mesmo produto pedido por +1 setor soma quantidades).
+  // Fornecedores são populados via supplier_products (M:N). A mensagem por fornecedor
+  // é gerada na F4 — aqui só prepara as rows.
+  const gerarCotacao = async () => {
+    if (!user) return
+    setGeneratingQuote(true)
+    try {
+      const { data: lists } = await supabase.from('purchase_lists')
+        .select('id').in('status', ['submitted','completed'])
+      const listIds = (lists || []).map((l:any) => l.id)
+      if (listIds.length === 0) { showToast('Nenhuma lista submetida pra cotar'); return }
+
+      const { data: items } = await supabase.from('purchase_items')
+        .select('product_id,quantity,unit')
+        .in('list_id', listIds)
+        .not('product_id', 'is', null)
+        .gt('quantity', 0)
+      if (!items || items.length === 0) { showToast('Sem itens preenchidos nas listas'); return }
+
+      // Agrega por product_id
+      const agg = new Map<string, { quantity: number; unit: string | null }>()
+      for (const it of items as any[]) {
+        const cur = agg.get(it.product_id) || { quantity: 0, unit: it.unit }
+        cur.quantity += Number(it.quantity || 0)
+        if (!cur.unit && it.unit) cur.unit = it.unit
+        agg.set(it.product_id, cur)
+      }
+
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: q, error: qErr } = await supabase.from('quotations')
+        .insert({ week_reference: today, created_by: user.name, status: 'draft' })
+        .select().single()
+      if (qErr || !q) { showToast('Erro: '+(qErr?.message||'sem id')); return }
+
+      const itemRows = Array.from(agg.entries()).map(([product_id, info]) => ({
+        quotation_id: q.id, product_id, quantity: info.quantity, unit: info.unit
+      }))
+      const { error: itErr } = await supabase.from('quotation_items').insert(itemRows)
+      if (itErr) { showToast('Erro itens: '+itErr.message); return }
+
+      const productIds = Array.from(agg.keys())
+      const { data: maps } = await supabase.from('supplier_products')
+        .select('supplier_id,product_id')
+        .in('product_id', productIds)
+        .eq('active', true)
+      const supplierIds = Array.from(new Set((maps || []).map((m:any) => m.supplier_id)))
+      if (supplierIds.length > 0) {
+        const supRows = supplierIds.map(sid => ({
+          quotation_id: q.id, supplier_id: sid, status: 'pending', channel: 'whatsapp'
+        }))
+        const { error: supErr } = await supabase.from('quotation_suppliers').insert(supRows)
+        if (supErr) { showToast('Erro fornecedores: '+supErr.message); return }
+      }
+
+      const orphans = productIds.length - (new Set((maps || []).map((m:any) => m.product_id)).size)
+      showToast(`✅ Cotação criada: ${itemRows.length} itens, ${supplierIds.length} fornecedores${orphans > 0 ? ` (${orphans} sem fornecedor)` : ''}`)
+    } finally {
+      setGeneratingQuote(false)
+    }
   }
 
   const openOwnerDetail = async (l: PurchaseList) => {
@@ -247,6 +311,10 @@ export default function ComprasPage() {
         <div className="ps-scroll ps-pad">
           <h1 className="ps-page-title">👑 Listas por setor</h1>
           <p className="ps-page-lead">Aguardando rascunhos, enviadas pra comprar e concluídas.</p>
+
+          <button onClick={gerarCotacao} disabled={generatingQuote} className="ps-btn primary block" style={{marginBottom:14}}>
+            {generatingQuote ? '⏳ Gerando…' : '📋 Gerar cotação das listas enviadas'}
+          </button>
 
           <div style={{display:'flex', flexDirection:'column', gap:12}}>
             {ownerLists.map((l:any)=>{
