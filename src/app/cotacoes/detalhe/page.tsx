@@ -43,35 +43,67 @@ function DetalheInner() {
   async function load() {
     setLoading(true)
     try {
-      const [{ data: q }, { data: its }, { data: sups }] = await Promise.all([
+      const [{ data: q }, { data: its }] = await Promise.all([
         supabase.from('quotations').select('*').eq('id', quotationId).single(),
         supabase.from('quotation_items').select('id,product_id,quantity,unit,products(name)').eq('quotation_id', quotationId),
-        supabase.from('quotation_suppliers').select('id,supplier_id,channel,generated_message,sent_at,status,suppliers(name,whatsapp_e164)').eq('quotation_id', quotationId),
       ])
       setQuotation(q as QuotationRow)
       const itemsRows: ItemRow[] = ((its || []) as any[]).map(i => ({
         id: i.id, product_id: i.product_id, quantity: Number(i.quantity), unit: i.unit, product_name: i.products?.name || '(removido)'
       }))
       setItems(itemsRows)
-      const supRows: SupplierRow[] = ((sups || []) as any[]).map(s => ({
-        id: s.id, supplier_id: s.supplier_id, channel: s.channel, generated_message: s.generated_message,
-        sent_at: s.sent_at, status: s.status,
-        supplier_name: s.suppliers?.name || '(removido)',
-        supplier_whatsapp: s.suppliers?.whatsapp_e164 || null,
-      }))
-      setSuppliers(supRows)
 
+      // Carrega supplier_products dos produtos da cotação SEM filtrar por
+      // fornecedores já-na-cotação. Se o user mapeou um fornecedor novo
+      // depois que a cotação foi gerada (resolvendo um órfão), pegamos ele
+      // aqui e criamos a quotation_suppliers row faltante no caminho.
       const productIds = itemsRows.map(i => i.product_id)
-      const supplierIds = supRows.map(s => s.supplier_id)
-      if (productIds.length > 0 && supplierIds.length > 0) {
-        const { data: maps } = await supabase.from('supplier_products')
-          .select('supplier_id,product_id')
+      let allMaps: any[] = []
+      if (productIds.length > 0) {
+        const { data } = await supabase.from('supplier_products')
+          .select('supplier_id,product_id,suppliers!inner(active)')
           .in('product_id', productIds)
-          .in('supplier_id', supplierIds)
           .eq('active', true)
-        setMappings((maps || []) as MapRow[])
+          .eq('suppliers.active', true)
+        allMaps = data || []
+      }
+      setMappings(allMaps.map(m => ({ supplier_id: m.supplier_id, product_id: m.product_id })))
+
+      // Carrega fornecedores existentes da cotação
+      const { data: existingSups } = await supabase
+        .from('quotation_suppliers')
+        .select('id,supplier_id,channel,generated_message,sent_at,status,suppliers(name,whatsapp_e164)')
+        .eq('quotation_id', quotationId)
+      const existingSupplierIds = new Set(((existingSups || []) as any[]).map(s => s.supplier_id))
+
+      // Detecta novos fornecedores que ganharam mapeamento depois da geração
+      const newSupplierIds = Array.from(new Set(allMaps.map(m => m.supplier_id)))
+        .filter(id => !existingSupplierIds.has(id))
+      if (newSupplierIds.length > 0) {
+        const rows = newSupplierIds.map(sid => ({
+          quotation_id: quotationId, supplier_id: sid, status: 'pending', channel: 'whatsapp',
+        }))
+        await supabase.from('quotation_suppliers').insert(rows)
+        // Recarrega pra pegar os recém-inseridos com o join de suppliers
+        const { data: refreshed } = await supabase
+          .from('quotation_suppliers')
+          .select('id,supplier_id,channel,generated_message,sent_at,status,suppliers(name,whatsapp_e164)')
+          .eq('quotation_id', quotationId)
+        const supRows: SupplierRow[] = ((refreshed || []) as any[]).map(s => ({
+          id: s.id, supplier_id: s.supplier_id, channel: s.channel, generated_message: s.generated_message,
+          sent_at: s.sent_at, status: s.status,
+          supplier_name: s.suppliers?.name || '(removido)',
+          supplier_whatsapp: s.suppliers?.whatsapp_e164 || null,
+        }))
+        setSuppliers(supRows)
       } else {
-        setMappings([])
+        const supRows: SupplierRow[] = ((existingSups || []) as any[]).map(s => ({
+          id: s.id, supplier_id: s.supplier_id, channel: s.channel, generated_message: s.generated_message,
+          sent_at: s.sent_at, status: s.status,
+          supplier_name: s.suppliers?.name || '(removido)',
+          supplier_whatsapp: s.suppliers?.whatsapp_e164 || null,
+        }))
+        setSuppliers(supRows)
       }
     } catch (e: any) {
       showToast('Erro ao carregar: '+(e.message||''))
@@ -122,6 +154,13 @@ function DetalheInner() {
     const now = new Date().toISOString()
     await supabase.from('quotation_suppliers').update({ sent_at: now, status: 'sent' }).eq('id', sup.id)
     setSuppliers(prev => prev.map(s => s.id === sup.id ? { ...s, sent_at: now, status: 'sent' } : s))
+
+    // Promove a cotação pai pra 'sent' no primeiro envio.
+    // Se já saiu de 'draft' (sent/responded/closed), preserva — nunca volta atrás.
+    if (quotation?.status === 'draft') {
+      await supabase.from('quotations').update({ status: 'sent' }).eq('id', quotationId)
+      setQuotation(prev => prev ? { ...prev, status: 'sent' } : prev)
+    }
 
     // Abre o link no WhatsApp
     window.open(link, '_blank', 'noopener,noreferrer')
