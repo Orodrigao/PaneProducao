@@ -20,6 +20,8 @@ const ROUTE_OPTIONS = [
   { href: '/estoque-congelado', label: 'Congelado',         icon: '🧊' },
   { href: '/estoque-paes',      label: 'Saldo Pães',        icon: '📊' },
   { href: '/compras',           label: 'Lista de Compras',  icon: '🛒' },
+  { href: '/cotacoes',          label: 'Cotações',          icon: '📋' },
+  { href: '/fornecedores',      label: 'Fornecedores',      icon: '🏭' },
   { href: '/estoque',           label: 'Estoque',           icon: '📊' },
   { href: '/produtos',          label: 'Produtos',          icon: '📦' },
   { href: '/clientes',          label: 'Clientes PJ',       icon: '👥' },
