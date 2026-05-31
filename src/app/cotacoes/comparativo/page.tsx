@@ -158,7 +158,26 @@ function ComparativoInner() {
       }).join('\n')
       if (!confirm(`Gerar ${entries.length} ${entries.length === 1 ? 'pedido' : 'pedidos'}?\n\n${summary}\n\nA cotação será marcada como fechada.`)) return
 
-      // Cria supplier_orders
+      // Lock atômico contra geração dupla: fecha a cotação ANTES de inserir,
+      // mas só se ainda não estava fechada (WHERE status != 'closed').
+      // Se outra aba/admin já fechou (ou um retry), o filtro não casa nenhuma
+      // linha → abortamos sem inserir pedidos duplicados. Static export não tem
+      // transação no servidor, então esse UPDATE condicional é o ponto de
+      // serialização disponível.
+      const { data: locked, error: lockErr } = await supabase
+        .from('quotations')
+        .update({ status: 'closed' })
+        .eq('id', quotationId)
+        .neq('status', 'closed')
+        .select('id')
+      if (lockErr) { showToast('Erro: '+lockErr.message); return }
+      if (!locked || locked.length === 0) {
+        showToast('Esta cotação já foi fechada (pedidos já gerados).')
+        await load()
+        return
+      }
+
+      // Ganhamos o lock. Cria supplier_orders.
       const ordersToInsert = entries.map(([supplier_id]) => ({
         quotation_id: quotationId, supplier_id, status: 'open',
       }))
@@ -166,7 +185,13 @@ function ComparativoInner() {
         .from('supplier_orders')
         .insert(ordersToInsert)
         .select('id,supplier_id')
-      if (ordErr || !createdOrders) { showToast('Erro: '+(ordErr?.message || 'sem dados')); return }
+      if (ordErr || !createdOrders) {
+        // Inserção falhou após o lock — reabre a cotação pra permitir retry,
+        // senão ela fica 'closed' com zero pedidos.
+        await supabase.from('quotations').update({ status: 'responded' }).eq('id', quotationId)
+        showToast('Erro: '+(ordErr?.message || 'sem dados'))
+        return
+      }
 
       // Cria supplier_order_items
       const orderItemsToInsert = createdOrders.flatMap((ord: any) => {
@@ -184,9 +209,6 @@ function ComparativoInner() {
       })
       const { error: oiErr } = await supabase.from('supplier_order_items').insert(orderItemsToInsert)
       if (oiErr) { showToast('Erro itens: '+oiErr.message); return }
-
-      // Fecha a cotação
-      await supabase.from('quotations').update({ status: 'closed' }).eq('id', quotationId)
 
       showToast(`✅ ${createdOrders.length} ${createdOrders.length === 1 ? 'pedido criado' : 'pedidos criados'}`)
       await load()
