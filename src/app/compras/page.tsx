@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ChevronLeft, Plus, X, Send, Copy, Pencil, RotateCw, Check, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AppUser, getCurrentUser, firstAllowedRoute, roleColor } from '@/lib/auth'
@@ -316,9 +317,12 @@ export default function ComprasPage() {
           <h1 className="ps-page-title">👑 Listas por setor</h1>
           <p className="ps-page-lead">Aguardando rascunhos, enviadas pra comprar e concluídas.</p>
 
-          <button onClick={gerarCotacao} disabled={generatingQuote} className="ps-btn primary block" style={{marginBottom:14}}>
+          <button onClick={gerarCotacao} disabled={generatingQuote} className="ps-btn primary block" style={{marginBottom:8}}>
             {generatingQuote ? '⏳ Gerando…' : '📋 Gerar cotação das listas enviadas'}
           </button>
+          <Link href="/cotacoes" className="ps-btn ghost block" style={{marginBottom:14, textAlign:'center'}}>
+            📑 Ver cotações criadas
+          </Link>
 
           <div style={{display:'flex', flexDirection:'column', gap:12}}>
             {ownerLists.map((l:any)=>{
