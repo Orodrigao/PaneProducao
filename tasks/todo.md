@@ -81,7 +81,7 @@ Spec recebida do Rodrigão (Claude.ai); adaptada pro projeto:
 - Send abstraction (`sendQuotation(supplier, message)`) — hoje gera link `wa.me`, futuro plug-in API.
 
 - [x] **F1 — Schema** — Migration: `suppliers.whatsapp_e164` + `.telegram_handle`; tabelas `supplier_products`, `quotations`, `quotation_items`, `quotation_suppliers`, `quotation_responses`, `supplier_orders`, `supplier_order_items`. FKs + UNIQUEs + indexes + RLS `anon all access`. database.types.ts regenerado.
-- [ ] **F2 — Mapeamento supplier↔product** — Tela em `/fornecedores` (modal ou rota nova) pra cadastrar quais produtos cada fornecedor vende. Reutiliza filtro do Fase E (kind=insumo OR is_revenda).
+- [x] **F2 — Mapeamento supplier↔product** — `/fornecedores`: cada card ganha botão "Produtos (N)" que abre sheet com listagem do que tá cadastrado + busca pra adicionar (filtra kind=insumo OR is_revenda, exclui já-mapeados). Modal de edit ganha campos WhatsApp E.164 + Telegram handle. Sem rota nova — tudo via sheets como o resto do app.
 - [ ] **F3 — Geração de cotação** — Vista admin de `/compras`: agrupa itens de listas `submitted`/`completed` da semana, botão "Gerar cotação" cria `quotations` + `quotation_items` + `quotation_suppliers`.
 - [ ] **F4 — Envio WhatsApp** — Tela `/cotacoes/[id]`: lista por fornecedor com mensagem gerada, botão "Abrir no WhatsApp" → `wa.me` link; marca `enviada_em`. Bloco "Sem fornecedor — mapear" pros órfãos. `src/lib/quotations.ts` com `sendQuotation()` isolando o envio.
 - [ ] **F5 — Edge Function + Lançamento de respostas** — Edge `parse-cotacao` (Gemini Flash + prompt forçando JSON); textarea + "Extrair preços" + grid editável → salva em `quotation_responses`.
