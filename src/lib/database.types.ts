@@ -830,6 +830,178 @@ export type Database = {
         }
         Relationships: []
       }
+      quotation_items: {
+        Row: {
+          created_at: string
+          id: string
+          product_id: string
+          quantity: number
+          quotation_id: string
+          unit: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          product_id: string
+          quantity?: number
+          quotation_id: string
+          unit?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          product_id?: string
+          quantity?: number
+          quotation_id?: string
+          unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotation_items_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotation_responses: {
+        Row: {
+          available: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          product_id: string
+          quotation_id: string
+          supplier_id: string
+          unit: string | null
+          unit_price: number
+        }
+        Insert: {
+          available?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          product_id: string
+          quotation_id: string
+          supplier_id: string
+          unit?: string | null
+          unit_price: number
+        }
+        Update: {
+          available?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          product_id?: string
+          quotation_id?: string
+          supplier_id?: string
+          unit?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_responses_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotation_responses_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotation_responses_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotation_suppliers: {
+        Row: {
+          channel: string
+          created_at: string
+          generated_message: string | null
+          id: string
+          quotation_id: string
+          sent_at: string | null
+          status: string
+          supplier_id: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          generated_message?: string | null
+          id?: string
+          quotation_id: string
+          sent_at?: string | null
+          status?: string
+          supplier_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          generated_message?: string | null
+          id?: string
+          quotation_id?: string
+          sent_at?: string | null
+          status?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_suppliers_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotation_suppliers_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotations: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          status: string
+          week_reference: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          status?: string
+          week_reference: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          status?: string
+          week_reference?: string
+        }
+        Relationships: []
+      }
       romaneio_items: {
         Row: {
           created_at: string | null
@@ -1140,6 +1312,138 @@ export type Database = {
           },
         ]
       }
+      supplier_order_items: {
+        Row: {
+          created_at: string
+          id: string
+          product_id: string
+          quantity: number
+          supplier_order_id: string
+          unit: string | null
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          product_id: string
+          quantity: number
+          supplier_order_id: string
+          unit?: string | null
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          product_id?: string
+          quantity?: number
+          supplier_order_id?: string
+          unit?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_order_items_supplier_order_id_fkey"
+            columns: ["supplier_order_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_orders: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          quotation_id: string | null
+          status: string
+          supplier_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quotation_id?: string | null
+          status?: string
+          supplier_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          quotation_id?: string | null
+          status?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_orders_quotation_id_fkey"
+            columns: ["quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_products: {
+        Row: {
+          active: boolean
+          created_at: string
+          default_unit: string | null
+          id: string
+          product_id: string
+          supplier_code: string | null
+          supplier_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          default_unit?: string | null
+          id?: string
+          product_id: string
+          supplier_code?: string | null
+          supplier_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          default_unit?: string | null
+          id?: string
+          product_id?: string
+          supplier_code?: string | null
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           active: boolean | null
@@ -1150,6 +1454,8 @@ export type Database = {
           name: string
           notes: string | null
           phone: string | null
+          telegram_handle: string | null
+          whatsapp_e164: string | null
         }
         Insert: {
           active?: boolean | null
@@ -1160,6 +1466,8 @@ export type Database = {
           name: string
           notes?: string | null
           phone?: string | null
+          telegram_handle?: string | null
+          whatsapp_e164?: string | null
         }
         Update: {
           active?: boolean | null
@@ -1170,6 +1478,8 @@ export type Database = {
           name?: string
           notes?: string | null
           phone?: string | null
+          telegram_handle?: string | null
+          whatsapp_e164?: string | null
         }
         Relationships: []
       }
