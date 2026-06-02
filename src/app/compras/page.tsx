@@ -17,9 +17,10 @@ interface PurchaseItem { id:string; list_id:string; product_id:string|null; ad_h
 // Mapa user.id → setor. Admin vai pra visão "owner".
 function resolveRole(user: AppUser): { sector: string|null; isOwner: boolean } {
   if (user.role === 'admin') return { sector: null, isOwner: true }
+  if (user.id === 'elis')    return { sector: null, isOwner: true }  // Elis: compradora — visão geral (listas de todos os setores + cotações)
   if (user.id === 'geolar')  return { sector: 'padaria', isOwner: false }
   if (user.id === 'fran')    return { sector: 'cozinha', isOwner: false }
-  if (['liara','elis','samuel','rose','atendente_ex'].includes(user.id)) return { sector: 'loja', isOwner: false }
+  if (['liara','samuel','rose','atendente_ex'].includes(user.id)) return { sector: 'loja', isOwner: false }
   return { sector: null, isOwner: false }
 }
 
