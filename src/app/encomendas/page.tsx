@@ -84,6 +84,7 @@ export default function EncomendasPage() {
 
   // Visualização
   const [viewing, setViewing] = useState<EncomendaGroup|null>(null)
+  const [savingProd, setSavingProd] = useState(false)
   const [listDays, setListDays] = useState(14)
 
   useEffect(() => {
@@ -185,15 +186,20 @@ export default function EncomendasPage() {
     loadAll()
   }
 
-  // Alterna balcão⇄produção numa encomenda já criada (atualiza todas as linhas do grupo)
+  // Alterna balcão⇄produção numa encomenda já criada (grava na hora, sem botão "salvar").
+  // .select() confirma quantas linhas mudaram — se vier 0, avisa em vez de fingir sucesso.
   const toggleProducao = async (g:EncomendaGroup) => {
+    if (savingProd) return
     const novo = !g.needs_production
     const ids = g.rows.map(r=>r.id)
-    const { error } = await supabase.from('orders').update({ needs_production: novo }).in('id', ids)
-    if (error) { showToast('Erro: ' + error.message); return }
+    setSavingProd(true)
+    const { data, error } = await supabase.from('orders').update({ needs_production: novo }).in('id', ids).select('id')
+    setSavingProd(false)
+    if (error) { showToast('Erro ao salvar: ' + error.message); return }
+    if (!data || data.length === 0) { showToast('Nada foi alterado — recarregue a página e tente de novo'); return }
     setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, needs_production: novo } : o))
     setViewing(prev => prev ? { ...prev, needs_production: novo } : prev)
-    showToast(novo ? '👩‍🍳 Vai pra produção do Geolar' : '🛒 Separa no balcão')
+    showToast(novo ? '✅ Salvo — vai pra produção do Geolar' : '✅ Salvo — separa no balcão')
   }
 
   // ===== Lista agrupada =====
@@ -514,8 +520,8 @@ export default function EncomendasPage() {
                 : {background:'var(--line-soft)', color:'var(--ink-soft)'}}>
                 {viewing.needs_production ? '👩‍🍳 Produção' : '🛒 Balcão'}
               </span>
-              <button onClick={()=>toggleProducao(viewing)} className="ps-btn ghost" style={{padding:'4px 10px', fontSize:12, marginLeft:'auto'}}>
-                {viewing.needs_production ? 'Mudar p/ balcão' : 'Mandar p/ produção'}
+              <button onClick={()=>toggleProducao(viewing)} disabled={savingProd} className="ps-btn ghost" style={{padding:'4px 10px', fontSize:12, marginLeft:'auto'}}>
+                {savingProd ? 'Salvando…' : viewing.needs_production ? 'Mudar p/ balcão' : 'Mandar p/ produção'}
               </button>
             </div>
 
