@@ -231,6 +231,23 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
   #app.print-only-itens  .print-breads { display: none !important; }
 }
 
+/* Cupom térmico de encomenda (80mm) — /encomendas. Só existe no DOM com o modal
+   aberto; no print esconde a UI (.ps-canvas) e mostra só o cupom. Não toca no
+   print do Geolar (que usa #app, sem #cupom-enc). */
+#cupom-enc { display: none; }
+@media print {
+  body:has(#cupom-enc) .ps-canvas,
+  body:has(#cupom-enc) .ps-nav,
+  body:has(#cupom-enc) .ps-sheet-overlay { display: none !important; }
+  #cupom-enc {
+    display: block; position: absolute; left: 0; top: 0;
+    width: 76mm; padding: 2mm;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px; line-height: 1.4; color: #000;
+  }
+  #cupom-enc * { color: #000 !important; }
+}
+
 /* ============================================================
    REDESIGN "Pane & Salute" (handoff Claude Design) — namespace ps-*
    Tokens próprios (não colidem com as vars acima). Aplicados só

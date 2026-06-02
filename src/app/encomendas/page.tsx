@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { User, Phone, Trash2, Plus, Save, Calendar } from 'lucide-react'
+import { User, Phone, Trash2, Plus, Save, Calendar, Printer, ChefHat, Store } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -22,7 +22,7 @@ interface OrderRow {
   order_date:string; delivery_date:string|null; production_date:string|null
   bread_id:string; product_source:string|null; product_name:string|null
   quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null
-  obs:string|null
+  obs:string|null; needs_production:boolean
 }
 
 interface EncomendaGroup {
@@ -30,6 +30,7 @@ interface EncomendaGroup {
   customerLabel:string
   contact:string|null
   isWalkin:boolean
+  needs_production:boolean
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
   rows:OrderRow[]
@@ -76,6 +77,7 @@ export default function EncomendasPage() {
   const [walkinPhone, setWalkinPhone] = useState('')
   const [delivery, setDelivery]   = useState<string>(nextNonSunday(addDays(todayISO(), 1)))
   const [obs, setObs]             = useState('')
+  const [needsProduction, setNeedsProduction] = useState(false)
   const [lines, setLines]         = useState<OrderLine[]>([])
   const [search, setSearch]       = useState('')
   const [saving, setSaving]       = useState(false)
@@ -153,6 +155,7 @@ export default function EncomendasPage() {
     const baseFields = {
       store: 'encomenda',
       order_type: 'encomenda',
+      needs_production: needsProduction,
       order_date: todayISO(),
       delivery_date: delivery,
       production_date: production,
@@ -177,9 +180,20 @@ export default function EncomendasPage() {
     if (error) { showToast('Erro: ' + error.message); return }
     showToast(`✅ Encomenda criada · R$ ${totalValue.toFixed(2)}`)
     setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone('')
-    setDelivery(nextNonSunday(addDays(todayISO(), 1))); setObs(''); setLines([]); setSearch('')
+    setDelivery(nextNonSunday(addDays(todayISO(), 1))); setObs(''); setNeedsProduction(false); setLines([]); setSearch('')
     setTab('lista')
     loadAll()
+  }
+
+  // Alterna balcão⇄produção numa encomenda já criada (atualiza todas as linhas do grupo)
+  const toggleProducao = async (g:EncomendaGroup) => {
+    const novo = !g.needs_production
+    const ids = g.rows.map(r=>r.id)
+    const { error } = await supabase.from('orders').update({ needs_production: novo }).in('id', ids)
+    if (error) { showToast('Erro: ' + error.message); return }
+    setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, needs_production: novo } : o))
+    setViewing(prev => prev ? { ...prev, needs_production: novo } : prev)
+    showToast(novo ? '👩‍🍳 Vai pra produção do Geolar' : '🛒 Separa no balcão')
   }
 
   // ===== Lista agrupada =====
@@ -199,6 +213,7 @@ export default function EncomendasPage() {
           customerLabel,
           contact: isWalkin ? r.walkin_phone : null,
           isWalkin,
+          needs_production: !!r.needs_production,
           order_date: r.order_date,
           delivery_date: r.delivery_date,
           production_date: r.production_date,
@@ -221,6 +236,11 @@ export default function EncomendasPage() {
       .filter(g => g.delivery_date && g.delivery_date >= today && g.delivery_date <= limite)
       .sort((a,b) => (a.delivery_date||'').localeCompare(b.delivery_date||''))
   }, [encomendasGrouped, listDays])
+
+  const encomendasHoje = useMemo(
+    () => encomendasGrouped.filter(g => g.delivery_date === todayISO()),
+    [encomendasGrouped]
+  )
 
   const groupStatus = (g:EncomendaGroup): { label:string; cls:string; border:string } => {
     const t = todayISO()
@@ -260,6 +280,14 @@ export default function EncomendasPage() {
         </div>
 
         <div className="ps-scroll ps-pad">
+          {!loading && encomendasHoje.length > 0 && (
+            <div className="ps-banner honey no-print" style={{marginTop:14, display:'block'}}>
+              <b>📦 Encomendas de hoje ({encomendasHoje.length})</b>
+              <div style={{fontSize:13, marginTop:4, color:'var(--ink-soft)'}}>
+                {encomendasHoje.map(g => `${g.customerLabel} (${g.rows.length})`).join(' · ')}
+              </div>
+            </div>
+          )}
           {loading ? (
             <div className="ps-empty">Carregando...</div>
           ) : tab === 'novo' ? (
@@ -315,6 +343,26 @@ export default function EncomendasPage() {
                   <div className="ps-fieldlabel">Observações</div>
                   <textarea value={obs} onChange={e=>setObs(e.target.value)}
                     placeholder="Decoração, mensagem, recheio especial..." className="ps-textarea"/>
+                </div>
+              </div>
+
+              {/* Tipo: balcão ou produção */}
+              <div className="ps-card" style={{marginTop:12, gap:8}}>
+                <div className="ps-fieldlabel">Como vai ser preparada?</div>
+                <div className="ps-segments" style={{width:'100%'}}>
+                  <button type="button" onClick={()=>setNeedsProduction(false)}
+                    className={`ps-seg ${!needsProduction ? 'active' : ''}`} style={{flex:1}}>
+                    <Store size={14} style={{verticalAlign:-2, marginRight:4}}/> Balcão
+                  </button>
+                  <button type="button" onClick={()=>setNeedsProduction(true)}
+                    className={`ps-seg ${needsProduction ? 'active' : ''}`} style={{flex:1}}>
+                    <ChefHat size={14} style={{verticalAlign:-2, marginRight:4}}/> Produção
+                  </button>
+                </div>
+                <div style={{fontSize:11.5, color:'var(--ink-faint)'}}>
+                  {needsProduction
+                    ? '👩‍🍳 O Geolar produz essa quantidade a mais — entra na lista de produção do dia.'
+                    : '🛒 Separar do que a loja já tem em estoque.'}
                 </div>
               </div>
 
@@ -448,16 +496,28 @@ export default function EncomendasPage() {
 
       {/* Modal de visualização (centered) */}
       {viewing && (
+        <>
         <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&setViewing(null)}>
           <div className="ps-sheet confirm" style={{maxWidth:540, borderRadius:'var(--r-card)'}}>
             <h3>
               {viewing.customerLabel}
               {viewing.isWalkin && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>AVULSO</span>}
             </h3>
-            <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
+            <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 12px'}}>
               Implantada {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Retirada {fmtBR(viewing.delivery_date)}
               {viewing.contact && <><br/>📞 {viewing.contact}</>}
             </p>
+
+            <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14, flexWrap:'wrap'}}>
+              <span className="ps-store-chip" style={viewing.needs_production
+                ? {background:'var(--honey-tint)', color:'var(--crust)'}
+                : {background:'var(--line-soft)', color:'var(--ink-soft)'}}>
+                {viewing.needs_production ? '👩‍🍳 Produção' : '🛒 Balcão'}
+              </span>
+              <button onClick={()=>toggleProducao(viewing)} className="ps-btn ghost" style={{padding:'4px 10px', fontSize:12, marginLeft:'auto'}}>
+                {viewing.needs_production ? 'Mudar p/ balcão' : 'Mandar p/ produção'}
+              </button>
+            </div>
 
             <div style={{display:'grid', gap:6, marginBottom:14}}>
               {viewing.rows.map(r => (
@@ -483,10 +543,36 @@ export default function EncomendasPage() {
             )}
 
             <div className="actions">
+              <button onClick={()=>window.print()} className="ps-btn info"><Printer size={14}/> Imprimir</button>
               <button onClick={()=>setViewing(null)} className="ps-btn ghost">Fechar</button>
             </div>
           </div>
         </div>
+
+        {/* Cupom térmico 80mm — escondido na tela, visível só na impressão (ver globals.css) */}
+        <div id="cupom-enc">
+          <div style={{textAlign:'center', fontWeight:700, fontSize:14}}>PANE &amp; SALUTE</div>
+          <div style={{textAlign:'center', marginBottom:'2mm'}}>~ ENCOMENDA ~</div>
+          <div style={{borderTop:'1px dashed #000', margin:'1mm 0'}}/>
+          <div><b>Cliente:</b> {viewing.customerLabel}{viewing.isWalkin ? ' (avulso)' : ''}</div>
+          {viewing.contact && <div><b>Tel:</b> {viewing.contact}</div>}
+          <div><b>Retirada:</b> {fmtBR(viewing.delivery_date)}</div>
+          <div><b>Tipo:</b> {viewing.needs_production ? 'PRODUCAO' : 'BALCAO'}</div>
+          <div style={{borderTop:'1px dashed #000', margin:'1mm 0'}}/>
+          {viewing.rows.map(r => (
+            <div key={r.id} style={{display:'flex', justifyContent:'space-between', gap:'2mm'}}>
+              <span>{r.quantity}x {r.product_name || r.bread_id}</span>
+              <span>{((Number(r.unit_price)||0)*(Number(r.quantity)||0)).toFixed(2)}</span>
+            </div>
+          ))}
+          <div style={{borderTop:'1px dashed #000', margin:'1mm 0'}}/>
+          <div style={{display:'flex', justifyContent:'space-between', fontWeight:700}}>
+            <span>TOTAL</span><span>R$ {viewing.total.toFixed(2)}</span>
+          </div>
+          {viewing.obs && <div style={{marginTop:'2mm'}}><b>Obs:</b> {viewing.obs}</div>}
+          <div style={{textAlign:'center', marginTop:'3mm', fontSize:11}}>Pedido em {fmtBR(viewing.order_date)}</div>
+        </div>
+        </>
       )}
     </div>
   )

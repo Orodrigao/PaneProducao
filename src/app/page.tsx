@@ -149,6 +149,8 @@ export default function ProducaoPage() {
   // geolar date picker
   const [geolarDate, setGeolarDate] = useState(todayKey())
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
+  const [geolarEnc, setGeolarEnc] = useState<{client:string;name:string;qty:number}[]>([])
+  const [geolarPj, setGeolarPj]   = useState<{client:string;name:string;qty:number}[]>([])
   // Itens JC (producao de nao-paes — bolos, salgados, doces, etc)
   const [prodItems, setProdItems] = useState<ProdItem[]>([])
   const [prodQtys, setProdQtys]   = useState<Record<string,number>>({})
@@ -180,6 +182,20 @@ export default function ProducaoPage() {
       setSyncState('error')
       throw e
     }
+  }, [])
+
+  // Geolar: encomendas marcadas "produção" + pedidos PJ que produzem nesta data.
+  // Mesma lógica de data do /forno: encomenda/PJ por production_date (PJ legado cai no pj_delivery_date).
+  const loadGeolarExtras = useCallback(async (dateKey: string) => {
+    try {
+      const [encRows, pjRaw] = await Promise.all([
+        sbGet('orders', `order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`),
+        sbGet('orders', `store=eq.pj&quantity=gt.0&or=(production_date.eq.${dateKey},pj_delivery_date.eq.${dateKey})&select=product_name,bread_id,quantity,pj_client,production_date,pj_delivery_date`),
+      ])
+      setGeolarEnc((encRows as any[]).map(r => ({ client: r.pj_client || 'Encomenda', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
+      const pjFiltered = (pjRaw as any[]).filter(o => o.production_date ? o.production_date === dateKey : o.pj_delivery_date === dateKey)
+      setGeolarPj(pjFiltered.map(r => ({ client: r.pj_client || 'PJ', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
+    } catch { setGeolarEnc([]); setGeolarPj([]) }
   }, [])
 
   // Itens JC — carregar produtos elegiveis (uma vez) + producao do dia
@@ -267,6 +283,7 @@ export default function ProducaoPage() {
           const items = await loadProdItems()
           setProdDate(defDate)
           await loadProdProduction(defDate, items)
+          await loadGeolarExtras(defDate)
         } catch(e) { /* não bloqueia login */ }
         hideLoad()
         setScreen('geolar')
@@ -495,6 +512,7 @@ export default function ProducaoPage() {
       // Recarrega Itens JC pra mesma data
       const items = await loadProdItems()
       await loadProdProduction(dateKey, items)
+      await loadGeolarExtras(dateKey)
     } catch(e) { showToast('Erro ao carregar.') }
     finally { hideLoad() }
   }
@@ -586,6 +604,7 @@ export default function ProducaoPage() {
   if (screen === 'geolar') return (
     <GeolarScreen
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
+      enc={geolarEnc} pj={geolarPj}
       delivIdx={delivIdx}
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       onDateChange={loadGeolar}
@@ -1197,12 +1216,13 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
 
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
+  enc:{client:string;name:string;qty:number}[]; pj:{client:string;name:string;qty:number}[]
   prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
   onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   let grand = 0
@@ -1266,6 +1286,42 @@ function GeolarScreen({ breads, orders, geolarDate, delivIdx, prodItems, prodQty
           <button className="btn-save" disabled={!hasBreads} onClick={()=>setPrintScope('breads')}>🖨 Imprimir pães</button>
           <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp('breads')}>📋 Copiar texto</button>
         </div>
+
+        {/* Encomendas marcadas pra produção neste dia */}
+        {enc.length > 0 && (
+          <div className="print-card print-breads" style={{marginTop:16}}>
+            <h3>🎂 Encomendas a produzir</h3>
+            <div className="pmeta">Para {dLabel}</div>
+            {Array.from(new Set(enc.map(e=>e.client))).map(client => (
+              <div key={client} style={{marginTop:8}}>
+                <div style={{fontSize:12,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em'}}>{client}</div>
+                {enc.filter(e=>e.client===client).map((e,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:13}}>
+                    <span>{e.name}</span><strong>{e.qty}</strong>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pedidos PJ que produzem neste dia */}
+        {pj.length > 0 && (
+          <div className="print-card print-breads" style={{marginTop:16}}>
+            <h3>🏢 Pedidos PJ a produzir</h3>
+            <div className="pmeta">Para {dLabel}</div>
+            {Array.from(new Set(pj.map(e=>e.client))).map(client => (
+              <div key={client} style={{marginTop:8}}>
+                <div style={{fontSize:12,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em'}}>{client}</div>
+                {pj.filter(e=>e.client===client).map((e,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:13}}>
+                    <span>{e.name}</span><strong>{e.qty}</strong>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
         {(() => {
