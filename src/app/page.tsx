@@ -554,7 +554,7 @@ export default function ProducaoPage() {
     ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Itens JC',store:null},{label:'Relatório',store:null},{label:'Admin',store:null}]
     : currentUser === 'marselle'
     ? [{label:'Loja EX',store:'ex'},{label:'Histórico',store:null}]
-    : [{label:'Pedido PJ',store:'pj'},{label:'Histórico',store:null}]
+    : [{label:'Histórico',store:null}]  // Elis: pedidos PJ migraram pro módulo dedicado /pedidos-pj
 
   const changeProdDate = async (newDate: string) => {
     setProdDate(newDate)

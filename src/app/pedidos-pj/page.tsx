@@ -95,6 +95,7 @@ export default function PedidosPJPage() {
   const [obs, setObs] = useState('')
   const [lines, setLines] = useState<OrderLine[]>([])
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [viewing, setViewing] = useState<PedidoGroup|null>(null)
@@ -187,6 +188,7 @@ export default function PedidosPJPage() {
       packs: 1,
     }])
     setSearch('')
+    setSearchOpen(false)
   }
   const updateLine = (key:string, patch:Partial<OrderLine>) => {
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
@@ -373,10 +375,12 @@ export default function PedidosPJPage() {
                 <>
                   <div className="ps-fieldgroup" style={{position:'relative', marginTop:14}}>
                     <div className="ps-fieldlabel">+ Adicionar produto</div>
-                    <input value={search} onChange={e=>setSearch(e.target.value)}
+                    <input value={search}
+                      onChange={e=>{ setSearch(e.target.value); setSearchOpen(true) }}
                       placeholder="Digite ou clique pra ver produtos da tabela"
-                      onFocus={()=>setSearch(search)} className="ps-input"/>
-                    {filteredCatalog.length > 0 && (
+                      onFocus={()=>setSearchOpen(true)}
+                      onBlur={()=>setTimeout(()=>setSearchOpen(false), 120)} className="ps-input"/>
+                    {searchOpen && filteredCatalog.length > 0 && (
                       <div style={{position:'absolute', top:'100%', left:0, right:0, background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'0 0 var(--r-ctrl) var(--r-ctrl)', zIndex:50, maxHeight:280, overflowY:'auto', boxShadow:'var(--sh-2)'}}>
                         {filteredCatalog.map(c => (
                           <div key={`${c.product_source}_${c.product_id}`} onClick={()=>addLine(c)}
