@@ -139,6 +139,7 @@ export default function ProducaoPage() {
   // report
   const [reportDate, setReportDate] = useState(todayKey())
   const [reportOrders, setReportOrders] = useState<OrderMap>({})
+  const reportReqRef = useRef(0) // descarta respostas fora de ordem ao trocar de data rápido
   // admin modal
   const [modal, setModal] = useState<ModalMode>('none')
   const [editingBread, setEditingBread] = useState<Bread|null>(null)
@@ -384,15 +385,23 @@ export default function ProducaoPage() {
   }
 
   // ── report ──────────────────────────────────────────────────────
-  const changeReportDate = async (dateKey: string) => {
-    setReportDate(dateKey)
-    showLoad('Carregando...')
+  // Carrega o histórico de uma data ignorando respostas fora de ordem:
+  // trocas rápidas de data disparam fetches concorrentes e só o último vale.
+  const loadReport = useCallback(async (dateKey: string) => {
+    const reqId = ++reportReqRef.current
+    setLoadingMsg('Carregando...'); setLoading(true)
     try {
       const map = await loadOrders(dateKey)
-      setReportOrders(map)
-    } catch(e) { showToast('Erro ao carregar.') }
-    finally { hideLoad() }
-  }
+      if (reqId === reportReqRef.current) setReportOrders(map)
+    } catch(e) {
+      if (reqId === reportReqRef.current) showToast('Erro ao carregar.')
+    } finally {
+      if (reqId === reportReqRef.current) setLoading(false)
+    }
+  }, [loadOrders])
+
+  // Só troca a data; o carregamento é feito pelo efeito que observa reportDate.
+  const changeReportDate = (dateKey: string) => setReportDate(dateKey)
 
   const duplicateOrders = async (storeFilter?: string) => {
     const src = reportOrders
@@ -558,6 +567,13 @@ export default function ProducaoPage() {
   const setProdQty = (id: string, val: number) => setProdQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
   const calcProdTotal = () => prodItems.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
 
+  // ── histórico: carrega ao abrir a aba e a cada troca de data ──────
+  const reportTabLabel = tabDefs[activeTab]?.label
+  const reportTabActive = reportTabLabel === 'Relatório' || reportTabLabel === 'Histórico'
+  useEffect(() => {
+    if (reportTabActive) loadReport(reportDate)
+  }, [reportTabActive, reportDate, loadReport])
+
   // ── render helpers ───────────────────────────────────────────────
   const setQty = (key: string, val: number) => setQtys(prev=>({...prev,[key]:Math.max(0,val)}))
 
@@ -582,7 +598,7 @@ export default function ProducaoPage() {
   // main screen
   const activeStore = (tabDefs[activeTab]?.store as Store|null)
   const isOrderTab = activeStore === 'jc' || activeStore === 'ja' || activeStore === 'ex' || activeStore === 'pj'
-  const isReportTab = tabDefs[activeTab]?.label === 'Relatório' || tabDefs[activeTab]?.label === 'Histórico'
+  const isReportTab = reportTabActive
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
   const isItensTab = tabDefs[activeTab]?.label === 'Itens JC'
 
@@ -663,6 +679,7 @@ export default function ProducaoPage() {
               todayBds={todayBreads}
               onDateChange={changeReportDate}
               onDuplicate={duplicateOrders}
+              onRefresh={()=>loadReport(reportDate)}
             />
           )}
           {isAdminTab && (
@@ -866,10 +883,10 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClien
 interface ReportProps {
   currentUser:string; storeFilter?:string; breads:Bread[]; reportDate:string
   reportOrders:OrderMap; pjBreads:Bread[]; todayBds:Bread[]
-  onDateChange:(d:string)=>void; onDuplicate:(s?:string)=>void
+  onDateChange:(d:string)=>void; onDuplicate:(s?:string)=>void; onRefresh:()=>void
 }
 
-function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, todayBds, onDateChange, onDuplicate }:ReportProps) {
+function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, todayBds, onDateChange, onDuplicate, onRefresh }:ReportProps) {
   const isToday = reportDate === todayKey()
   const pjSv = reportOrders['pj'] || {}
   const pjItems = pjBreads.filter(b=>(pjSv[b.id]?.quantity||0)>0)
@@ -880,6 +897,7 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
         <span style={{fontSize:12,color:'var(--text-muted)'}}>Data:</span>
         <input type="date" value={reportDate} className="obs-area" style={{width:'auto',padding:'6px 10px',fontSize:13,minHeight:'auto'}} onChange={e=>onDateChange(e.target.value)}/>
         {isToday&&<span style={{fontSize:11,color:'var(--teal)',background:'var(--teal-bg)',border:'1px solid var(--teal-border)',padding:'2px 8px',borderRadius:10}}>hoje</span>}
+        <button type="button" onClick={onRefresh} className="obs-area" style={{width:'auto',padding:'6px 10px',fontSize:13,minHeight:'auto',cursor:'pointer'}}>↻ Atualizar</button>
       </div>
 
       {/* PJ view */}
