@@ -361,7 +361,7 @@ export default function TabelasPrecoPage() {
                   </div>
                 </div>
 
-                <div className="ps-card" style={{marginTop:12, position:'relative'}}>
+                <div className="ps-card" style={{marginTop:12, position:'relative', overflow:'visible'}}>
                   <div className="ps-flabel">+ Adicionar produto</div>
                   <input placeholder="Buscar pão ou produto..." value={search} onChange={e=>setSearch(e.target.value)} className="ps-input"/>
                   {filteredCatalog.length > 0 && (
