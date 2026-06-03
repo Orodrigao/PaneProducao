@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { User, Phone, Trash2, Plus, Save, Calendar, Printer, ChefHat, Store } from 'lucide-react'
+import { User, Phone, Trash2, Plus, Save, Calendar, Printer, ChefHat, Store, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -85,6 +85,8 @@ export default function EncomendasPage() {
   // Visualização
   const [viewing, setViewing] = useState<EncomendaGroup|null>(null)
   const [savingProd, setSavingProd] = useState(false)
+  // Edição: ids das linhas originais + data de criação a preservar (null = criando nova)
+  const [editing, setEditing] = useState<{ids:string[]; order_date:string}|null>(null)
   const [listDays, setListDays] = useState(14)
 
   useEffect(() => {
@@ -157,7 +159,7 @@ export default function EncomendasPage() {
       store: 'encomenda',
       order_type: 'encomenda',
       needs_production: needsProduction,
-      order_date: todayISO(),
+      order_date: editing ? editing.order_date : todayISO(),
       delivery_date: delivery,
       production_date: production,
       pack_size: 1,
@@ -177,13 +179,45 @@ export default function EncomendasPage() {
       unit_price: l.unit_price,
     }))
     const { error } = await supabase.from('orders').insert(rows)
+    if (error) { setSaving(false); showToast('Erro: ' + error.message); return }
+    // Edição: remove as linhas antigas só DEPOIS de inserir as novas (não perde dados se algo falhar)
+    if (editing) await supabase.from('orders').delete().in('id', editing.ids)
     setSaving(false)
-    if (error) { showToast('Erro: ' + error.message); return }
-    showToast(`✅ Encomenda criada · R$ ${totalValue.toFixed(2)}`)
+    showToast(editing ? '✅ Encomenda atualizada' : `✅ Encomenda criada · R$ ${totalValue.toFixed(2)}`)
     setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone('')
-    setDelivery(nextNonSunday(addDays(todayISO(), 1))); setObs(''); setNeedsProduction(false); setLines([]); setSearch('')
+    setDelivery(nextNonSunday(addDays(todayISO(), 1))); setObs(''); setNeedsProduction(false); setLines([]); setSearch(''); setEditing(null)
     setTab('lista')
     loadAll()
+  }
+
+  // Carrega uma encomenda existente no formulário pra edição (ao salvar, substitui a anterior)
+  const startEdit = (g:EncomendaGroup) => {
+    const first = g.rows[0]
+    if (g.isWalkin) {
+      setUseWalkin(true)
+      setWalkinName(first?.walkin_name || (g.customerLabel==='(sem nome)' ? '' : g.customerLabel))
+      setWalkinPhone(first?.walkin_phone || '')
+      setCustId('')
+    } else {
+      setUseWalkin(false)
+      setCustId(first?.customer_id || '')
+      setWalkinName(''); setWalkinPhone('')
+    }
+    setDelivery(g.delivery_date || nextNonSunday(addDays(todayISO(),1)))
+    setObs(g.obs || '')
+    setNeedsProduction(g.needs_production)
+    setLines(g.rows.map((r,i) => ({
+      key: `${r.product_source}_${r.bread_id}_${i}`,
+      product_id: r.bread_id,
+      product_source: r.product_source === 'bread' ? 'bread' : 'product',
+      product_name: r.product_name || r.bread_id,
+      qty: Number(r.quantity) || 1,
+      unit_price: Number(r.unit_price) || 0,
+    })))
+    setEditing({ ids: g.rows.map(r=>r.id), order_date: g.order_date })
+    setSearch('')
+    setViewing(null)
+    setTab('novo')
   }
 
   // Alterna balcão⇄produção numa encomenda já criada (grava na hora, sem botão "salvar").
@@ -298,6 +332,11 @@ export default function EncomendasPage() {
             <div className="ps-empty">Carregando...</div>
           ) : tab === 'novo' ? (
             <>
+              {editing && (
+                <div className="ps-banner crust no-print" style={{marginTop:14, display:'block'}}>
+                  ✏️ <b>Editando encomenda</b> — ao salvar, as alterações substituem a anterior. Use <b>Cancelar</b> pra desistir.
+                </div>
+              )}
               {/* Cliente */}
               <div className="ps-card" style={{marginTop:14, gap:10}}>
                 <div className="ps-segments" style={{width:'100%'}}>
@@ -440,11 +479,11 @@ export default function EncomendasPage() {
               )}
 
               <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:16}}>
-                <button onClick={()=>{ setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone(''); setLines([]); setObs(''); setSearch('') }} disabled={saving} className="ps-btn ghost">
-                  Limpar
+                <button onClick={()=>{ setEditing(null); setUseWalkin(false); setCustId(''); setWalkinName(''); setWalkinPhone(''); setLines([]); setObs(''); setNeedsProduction(false); setSearch(''); if(editing) setTab('lista') }} disabled={saving} className="ps-btn ghost">
+                  {editing ? 'Cancelar' : 'Limpar'}
                 </button>
                 <button onClick={saveEncomenda} disabled={saving || lines.length===0} className="ps-btn primary">
-                  <Save size={14}/> {saving ? 'Salvando...' : 'Salvar encomenda'}
+                  <Save size={14}/> {saving ? 'Salvando...' : editing ? 'Salvar alterações' : 'Salvar encomenda'}
                 </button>
               </div>
             </>
@@ -549,6 +588,7 @@ export default function EncomendasPage() {
             )}
 
             <div className="actions">
+              <button onClick={()=>startEdit(viewing)} className="ps-btn ghost"><Pencil size={14}/> Editar</button>
               <button onClick={()=>window.print()} className="ps-btn info"><Printer size={14}/> Imprimir</button>
               <button onClick={()=>setViewing(null)} className="ps-btn ghost">Fechar</button>
             </div>
