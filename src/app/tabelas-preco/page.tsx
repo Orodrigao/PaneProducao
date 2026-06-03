@@ -273,8 +273,17 @@ export default function TabelasPrecoPage() {
   // ========== UI ==========
   const filteredCatalog = useMemo(() => {
     if (search.trim().length < 2) return []
-    const q = search.toLowerCase()
-    return catalog.filter(c => !itemsKeySet.has(`${c._source}_${c.id}`) && c.name.toLowerCase().includes(q)).slice(0, 15)
+    const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    const q = norm(search)
+    return catalog
+      .filter(c => !itemsKeySet.has(`${c._source}_${c.id}`) && norm(c.name).includes(q))
+      .sort((a, b) => {
+        // nomes que começam com o termo digitado aparecem primeiro
+        const aS = norm(a.name).startsWith(q) ? 0 : 1
+        const bS = norm(b.name).startsWith(q) ? 0 : 1
+        return aS - bS || a.name.localeCompare(b.name)
+      })
+      .slice(0, 30)
   }, [catalog, search, itemsKeySet])
 
   return (
