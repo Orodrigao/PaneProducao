@@ -269,7 +269,9 @@ export default function ComprasPage() {
   useEffect(()=>{ if(isOwner) loadOwnerOverview() },[isOwner])
 
   const filtered = items.filter(i => filter==='pending'?(!i.quantity&&!i.is_adhoc):filter==='filled'?!!i.quantity:true)
-  const ownerFiltered = ownerItems.filter(i => ownerFilter==='unchecked'?(i.quantity&&!i.checked):ownerFilter==='checked'?i.checked:ownerFilter==='noqty'?!i.quantity:(!!i.quantity||i.is_adhoc))
+  // 'all' mostra TODOS os itens da lista, inclusive os sem quantidade (ex: produto incluído
+  // mas sem qtd) — pra compradora ver fielmente tudo que o setor colocou, não só o preenchido.
+  const ownerFiltered = ownerItems.filter(i => ownerFilter==='unchecked'?(i.quantity&&!i.checked):ownerFilter==='checked'?i.checked:ownerFilter==='noqty'?!i.quantity:true)
   const filledCount = items.filter(i=>!!i.quantity).length
   const readonly = list?.status !== 'draft'
   const searchResults = search.length>1 ? allProducts.filter(p=>!items.find(i=>i.product_id===p.id)&&p.name.toLowerCase().includes(search.toLowerCase())).slice(0,8) : []
@@ -387,7 +389,7 @@ export default function ComprasPage() {
               ) : ownerFiltered.map(i=>{
                 const nm = i.is_adhoc?i.ad_hoc_name:(i.products?.name||'—')
                 const qty = i.quantity?(i.quantity+' '+(i.unit||'')).trim():null
-                const canCheck = ownerList.status==='submitted'
+                const canCheck = true  // marcar comprado em qualquer status — não depende do setor "Enviar"
                 return (
                   <div key={i.id} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
                     <button onClick={()=>canCheck && toggleCheck(i.id, i.checked)} disabled={!canCheck}
@@ -405,7 +407,7 @@ export default function ComprasPage() {
               <button className="ps-btn ghost block" onClick={()=>copyAsText(ownerItems, ownerList.sector, ownerList.submitted_by)} disabled={oFilled.length===0}>
                 <Copy size={14}/> Copiar texto
               </button>
-              {ownerList.status==='submitted' && (
+              {ownerList.status!=='completed' && (
                 <button className="ps-btn success block" onClick={completeList}>
                   <Check size={16}/> Finalizar lista ({oChecked.length}/{oFilled.length})
                 </button>
@@ -416,8 +418,8 @@ export default function ComprasPage() {
                 </button>
               )}
               {ownerList.status==='draft' && (
-                <div style={{textAlign:'center', color:'var(--ink-faint)', fontSize:13}}>
-                  Aguardando envio do setor {SECTOR_LABELS[ownerList.sector]}.
+                <div style={{textAlign:'center', color:'var(--ink-faint)', fontSize:12.5}}>
+                  Setor ainda não enviou — você já pode marcar e comprar mesmo assim.
                 </div>
               )}
             </div>
