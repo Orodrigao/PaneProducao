@@ -13,6 +13,7 @@ interface Product {
   cost_price: number|null; active: boolean; sort_order: number
   kind: Kind | null
   is_revenda: boolean
+  is_shelf: boolean
 }
 
 const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
@@ -22,6 +23,7 @@ const KIND_CHIP_CLS: Record<Kind, string> = { kit: 'jc', insumo: 'ja', final: ''
 interface Bread {
   id: string; name: string; unit: string|null
   cost_price: number|null; active: boolean; is_pj: boolean
+  is_shelf: boolean
 }
 
 interface Component {
@@ -97,6 +99,14 @@ export default function ProdutosPage() {
   async function toggleActive(p: Product) {
     await supabase.from('products').update({ active: !p.active }).eq('id', p.id)
     setProducts(prev => prev.map(x => x.id===p.id ? {...x,active:!p.active} : x))
+  }
+
+  async function toggleBreadShelf(b: Bread) {
+    const next = !b.is_shelf
+    const { error } = await supabase.from('breads').update({ is_shelf: next }).eq('id', b.id)
+    if (error) { showToast('Erro: '+error.message); return }
+    setBreads(prev => prev.map(x => x.id === b.id ? { ...x, is_shelf: next } : x))
+    showToast(next ? '📦 Marcado como Prateleira' : 'Removido da Prateleira')
   }
 
   async function saveBreadCost(b: Bread) {
@@ -216,7 +226,7 @@ export default function ProdutosPage() {
                 className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
             </div>
             {tab==='produtos' ? (
-              <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0], kind:'final'})}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setEditItem({active:true,category:CATEGORIES[0], kind:'final', is_revenda:false, is_shelf:false})}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             ) : (
@@ -295,6 +305,9 @@ export default function ProdutosPage() {
                           {p.is_revenda && (
                             <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>🛒 REVENDA</span>
                           )}
+                          {p.is_shelf && (
+                            <span className="ps-store-chip ex">📦 PRATELEIRA</span>
+                          )}
                         </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
@@ -333,9 +346,10 @@ export default function ProdutosPage() {
                 return (
                   <div key={b.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)', opacity:b.active?1:0.5}}>
                     <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)'}}>
+                      <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                         {b.name}
-                        {b.is_pj && <span className="ps-store-chip jc" style={{marginLeft:6}}>PJ</span>}
+                        {b.is_pj && <span className="ps-store-chip jc">PJ</span>}
+                        {b.is_shelf && <span className="ps-store-chip ex">📦 PRATELEIRA</span>}
                       </div>
                       <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{b.unit || 'un'}</div>
                     </div>
@@ -348,6 +362,9 @@ export default function ProdutosPage() {
                         className="ps-input" style={{width:84, padding:'5px 8px', fontSize:13, textAlign:'right'}}/>
                       <button onClick={()=>saveBreadCost(b)} disabled={!dirty} className={`ps-btn sm ${dirty?'primary':''}`} style={!dirty?{opacity:.5, background:'var(--line-soft)', color:'var(--ink-faint)', boxShadow:'none'}:undefined}>
                         <Save size={12}/>
+                      </button>
+                      <button onClick={()=>toggleBreadShelf(b)} className="ps-iconbtn" style={{width:30, height:30, fontSize:14, opacity:b.is_shelf?1:.45}} title={b.is_shelf?'Remover da Prateleira':'Marcar como Prateleira'}>
+                        📦
                       </button>
                     </div>
                     <button onClick={()=>toggleBreadActive(b)} className={`ps-status ${b.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer', minWidth:28, justifyContent:'center'}}>
@@ -401,6 +418,17 @@ export default function ProdutosPage() {
                 />
                 <span style={{fontSize:13, color:'var(--ps-ink)'}}>
                   🛒 <b>Revenda</b> — comprado pronto pra revender (aparece em /compras e /estoque/entrada)
+                </span>
+              </label>
+              <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:'8px 4px'}}>
+                <input
+                  type="checkbox"
+                  checked={!!editItem.is_shelf}
+                  onChange={e => setEditItem(prev => ({...prev, is_shelf: e.target.checked}))}
+                  style={{width:18, height:18, cursor:'pointer'}}
+                />
+                <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                  📦 <b>Prateleira</b> — produto durado (≥ 2 dias). Atendente conta o saldo no fim do dia em /sobras → Prateleira, em vez de lançar como sobra todo dia.
                 </span>
               </label>
             </div>
