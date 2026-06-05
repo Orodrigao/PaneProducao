@@ -396,7 +396,7 @@ export default function SobrasPage() {
           {breads.length > 0 && (
             <>
               <div className="ps-label">🍞 Pães{mode === 'prateleira' ? ' de prateleira' : ' do dia'}</div>
-              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:8}}>
                 {breads.map(b=>{
                   const k = 'bread_'+b.id
                   return (
@@ -412,7 +412,7 @@ export default function SobrasPage() {
           {Object.entries(grouped).map(([cat, items])=>(
             <div key={cat}>
               <div className="ps-label">{cat}</div>
-              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:8}}>
                 {items.map(p=>(
                   <ItemRow key={p.id} id={p.id} name={p.name} unit={p.unit}
                     qty={qtys[p.id]||0} prev={mode==='prateleira' ? prevCounts[p.id] : undefined}
@@ -436,7 +436,7 @@ export default function SobrasPage() {
               <button
                 onClick={() => { setIncludeOpen(true); setIncludeSearch('') }}
                 className="ps-btn ghost block"
-                style={{marginTop:14, borderStyle:'dashed'}}
+                style={{marginTop:14, marginBottom:96, borderStyle:'dashed'}}
               >
                 <Plus size={14}/> Incluir produto/pão na prateleira
               </button>
