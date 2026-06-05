@@ -27,6 +27,10 @@ export default function SobrasPage() {
   const [breads, setBreads]     = useState<Bread[]>([])
   const [qtys, setQtys]         = useState<Record<string,number>>({})
   const [prevCounts, setPrevCounts] = useState<Record<string,number>>({})
+  // Chaves que tinham uma row salva HOJE quando a tela carregou. Permite zerar
+  // (atendente corrige "errei, na verdade não tem nenhum") mesmo quando ontem
+  // não tinha valor — senão o upsert nunca atualizaria a row positiva pra 0.
+  const [todayKeysWithData, setTodayKeysWithData] = useState<Set<string>>(new Set())
   const [selectedStore, setSelectedStore] = useState<string>('jc')
   const [saving, setSaving]     = useState(false)
 
@@ -81,9 +85,11 @@ export default function SobrasPage() {
           .eq('record_date', yesterdayKey()).eq('store', selectedStore),
       ])
       const vals: Record<string,number> = {}
+      const todayKeys = new Set<string>()
       ;(today || []).forEach((r: any) => {
         const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
         vals[key] = Number(r.quantity)
+        todayKeys.add(key)
       })
       const prevVals: Record<string,number> = {}
       ;(prev || []).forEach((r: any) => {
@@ -92,6 +98,7 @@ export default function SobrasPage() {
       })
       setQtys(vals)
       setPrevCounts(prevVals)
+      setTodayKeysWithData(todayKeys)
     } else {
       const table = mode === 'sobra' ? 'sobras' : 'descartes'
       const { data: saved } = await supabase.from(table).select('*')
@@ -103,6 +110,7 @@ export default function SobrasPage() {
       })
       setQtys(vals)
       setPrevCounts({})
+      setTodayKeysWithData(new Set())
     }
   }, [mode, user, selectedStore])
 
@@ -117,15 +125,16 @@ export default function SobrasPage() {
     try {
       if (mode === 'prateleira') {
         // Snapshot do balcão. Upsert por (date, store, product_id, product_source) — re-salvar atualiza.
-        // Inclui itens com qty=0 também (atendente declara "zerou na prateleira"), exceto se nunca
-        // tiveram entrada hoje E nem ontem (ruído).
+        // Inclui itens com qty=0 também (atendente declara "esgotou na prateleira"), exceto se
+        // nunca tiveram entrada hoje E nem ontem (ruído). todayKeysWithData cobre o cenário de
+        // correção no mesmo dia: salvou 5 cedo, agora corrige pra 0 — sem isso, o 5 ficaria salvo.
         const rowsToUpsert: any[] = []
         for (const [id, q] of Object.entries(qtys)) {
           const isBread = id.startsWith('bread_')
           const productId = isBread ? id.replace('bread_', '') : id
           const productSource = isBread ? 'bread' : 'product'
-          // Salva se: qty > 0, OU se ontem tinha valor (atendente declarando zerou)
-          if (q > 0 || prevCounts[id] != null) {
+          const hadValueRecently = prevCounts[id] != null || todayKeysWithData.has(id)
+          if (q > 0 || hadValueRecently) {
             rowsToUpsert.push({
               record_date: date,
               store: selectedStore,
@@ -324,19 +333,34 @@ export default function SobrasPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          {mode === 'prateleira' && (
-            <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}}>
-              <div style={{fontSize:13, color:'var(--ink-soft)', fontWeight:600}}>Loja:</div>
-              <select
-                value={selectedStore}
-                onChange={e => setSelectedStore(e.target.value)}
-                className="ps-select"
-                style={{flex:1, padding:'6px 10px', fontSize:13}}
-              >
-                {STORES.map(s => <option key={s} value={s}>{STORE_LABEL[s]}</option>)}
-              </select>
-            </div>
-          )}
+          {mode === 'prateleira' && (() => {
+            // Atendentes (user.store setado) ficam travados na própria loja —
+            // evita JC sobrescrever o snapshot de JA/EX por engano. Admin tem
+            // user.store=null e mantém a escolha livre.
+            const locked = !!user.store && (STORES as readonly string[]).includes(user.store)
+            return (
+              <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}}>
+                <div style={{fontSize:13, color:'var(--ink-soft)', fontWeight:600}}>Loja:</div>
+                {locked ? (
+                  <div style={{flex:1, padding:'6px 10px', fontSize:13, fontWeight:600, color:'var(--ps-ink)'}}>
+                    {STORE_LABEL[selectedStore] || selectedStore.toUpperCase()}
+                    <span style={{fontSize:11, color:'var(--ink-faint)', fontWeight:400, marginLeft:6}}>
+                      · sua loja
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedStore}
+                    onChange={e => setSelectedStore(e.target.value)}
+                    className="ps-select"
+                    style={{flex:1, padding:'6px 10px', fontSize:13}}
+                  >
+                    {STORES.map(s => <option key={s} value={s}>{STORE_LABEL[s]}</option>)}
+                  </select>
+                )}
+              </div>
+            )
+          })()}
 
           {breads.length > 0 && (
             <>
