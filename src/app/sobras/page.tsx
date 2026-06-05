@@ -1,66 +1,156 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Minus, Plus, Save, Package, Trash2 } from 'lucide-react'
+import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
 
-interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null }
-interface Bread   { id: string; name: string; unit: string | null }
-interface Component { parent_product_id: string; component_source: string; component_id: string; quantity: number }
+interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null; is_shelf: boolean }
+interface Bread   { id: string; name: string; unit: string | null; is_shelf: boolean }
+
+type Mode = 'sobra' | 'descarte' | 'prateleira' | null
+const STORES = ['jc', 'ja', 'ex'] as const
+const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Júlio de Antonio', ex: 'EX — Exposição' }
+
+function yesterdayKey(): string {
+  const d = new Date(todayKey() + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
 
 export default function SobrasPage() {
   const router = useRouter()
   const [user, setUser]         = useState<AppUser | null>(null)
-  const [mode, setMode]         = useState<'sobra'|'descarte'|null>(null)
+  const [mode, setMode]         = useState<Mode>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
   const [qtys, setQtys]         = useState<Record<string,number>>({})
+  const [prevCounts, setPrevCounts] = useState<Record<string,number>>({})
+  const [selectedStore, setSelectedStore] = useState<string>('jc')
   const [saving, setSaving]     = useState(false)
 
-  // Identidade vem do PIN global (não tem mais seletor interno paralelo)
   useEffect(() => {
     const u = getCurrentUser()
     if (!u) { router.replace('/login'); return }
     setUser(u)
+    if (u.store && (STORES as readonly string[]).includes(u.store)) setSelectedStore(u.store)
   }, [router])
 
   const loadData = useCallback(async () => {
     if (!user) return
-    const [{ data: prods }, { data: bds }, { data: orders }] = await Promise.all([
-      supabase.from('products').select('id,name,category,unit,kind').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
-      supabase.from('breads').select('id,name,unit').eq('active', true).eq('is_pj', false).order('name'),
-      supabase.from('orders').select('bread_id').eq('order_date', todayKey()).gt('quantity', 0),
+
+    // Catálogo: products e breads. Pra sobra/descarte mantém comportamento antigo
+    // (orders do dia filtra pães vendidos). Pra prateleira NÃO filtra por orders
+    // — todo shelf da loja precisa aparecer.
+    const [{ data: prodsRaw }, { data: bdsRaw }, { data: orders }] = await Promise.all([
+      supabase.from('products').select('id,name,category,unit,kind,is_shelf').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
+      supabase.from('breads').select('id,name,unit,is_shelf').eq('active', true).eq('is_pj', false).order('name'),
+      mode === 'prateleira'
+        ? Promise.resolve({ data: [] })
+        : supabase.from('orders').select('bread_id').eq('order_date', todayKey()).gt('quantity', 0),
     ])
-    const todayBreadIds = new Set((orders||[]).map((o:any)=>o.bread_id).filter(Boolean))
-    setProducts(prods || [])
-    setBreads((bds||[]).filter((b:any)=>todayBreadIds.has(b.id)))
+    const todayBreadIds = new Set((orders || []).map((o: any) => o.bread_id).filter(Boolean))
 
-    // Pré-carrega valores já salvos hoje pelo mesmo usuário
-    const table = mode === 'sobra' ? 'sobras' : 'descartes'
-    const { data: saved } = await supabase.from(table).select('*')
-      .eq('record_date', todayKey()).eq('responsible', user.displayName)
-    const vals: Record<string,number> = {}
-    ;(saved||[]).forEach((r:any)=>{
-      const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
-      vals[key] = r.quantity
-    })
-    setQtys(vals)
-  }, [mode, user])
+    let prods = (prodsRaw || []) as Product[]
+    let bds = (bdsRaw || []) as Bread[]
 
-  useEffect(() => { if (user && mode) loadData() }, [user, mode, loadData])
+    if (mode === 'sobra') {
+      // Sobra = pão fresco do dia. Filtra shelf out (não tem por que lançar
+      // pão de forma como sobra todo dia — ele vai pro modo Prateleira).
+      prods = prods.filter(p => !p.is_shelf)
+      bds = bds.filter(b => !b.is_shelf && todayBreadIds.has(b.id))
+    } else if (mode === 'descarte') {
+      // Descarte aceita qualquer item (fresco ou shelf — pão de forma vencido é descarte).
+      // Mantém o filtro por orders só pros frescos (não-shelf) — shelf sempre aparece.
+      bds = bds.filter(b => b.is_shelf || todayBreadIds.has(b.id))
+    } else if (mode === 'prateleira') {
+      prods = prods.filter(p => p.is_shelf)
+      bds = bds.filter(b => b.is_shelf)
+    }
+
+    setProducts(prods)
+    setBreads(bds)
+
+    // Pré-carrega valores já salvos
+    if (mode === 'prateleira') {
+      const [{ data: today }, { data: prev }] = await Promise.all([
+        supabase.from('shelf_counts').select('*')
+          .eq('record_date', todayKey()).eq('store', selectedStore),
+        supabase.from('shelf_counts').select('*')
+          .eq('record_date', yesterdayKey()).eq('store', selectedStore),
+      ])
+      const vals: Record<string,number> = {}
+      ;(today || []).forEach((r: any) => {
+        const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
+        vals[key] = Number(r.quantity)
+      })
+      const prevVals: Record<string,number> = {}
+      ;(prev || []).forEach((r: any) => {
+        const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
+        prevVals[key] = Number(r.quantity)
+      })
+      setQtys(vals)
+      setPrevCounts(prevVals)
+    } else {
+      const table = mode === 'sobra' ? 'sobras' : 'descartes'
+      const { data: saved } = await supabase.from(table).select('*')
+        .eq('record_date', todayKey()).eq('responsible', user.displayName)
+      const vals: Record<string,number> = {}
+      ;(saved||[]).forEach((r: any) => {
+        const key = r.product_source === 'bread' ? 'bread_'+r.product_id : r.product_id
+        vals[key] = r.quantity
+      })
+      setQtys(vals)
+      setPrevCounts({})
+    }
+  }, [mode, user, selectedStore])
+
+  useEffect(() => { if (user && mode) loadData() }, [user, mode, selectedStore, loadData])
 
   const setQty = (id: string, val: number) => setQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
 
   const save = async () => {
     if (!user) return
-    const items = Object.entries(qtys).filter(([,v])=>v>0)
-    if (!items.length) { showToast('Nenhuma quantidade preenchida'); return }
-    setSaving(true)
-    const table = mode === 'sobra' ? 'sobras' : 'descartes'
     const date = todayKey()
+    setSaving(true)
     try {
+      if (mode === 'prateleira') {
+        // Snapshot do balcão. Upsert por (date, store, product_id, product_source) — re-salvar atualiza.
+        // Inclui itens com qty=0 também (atendente declara "zerou na prateleira"), exceto se nunca
+        // tiveram entrada hoje E nem ontem (ruído).
+        const rowsToUpsert: any[] = []
+        for (const [id, q] of Object.entries(qtys)) {
+          const isBread = id.startsWith('bread_')
+          const productId = isBread ? id.replace('bread_', '') : id
+          const productSource = isBread ? 'bread' : 'product'
+          // Salva se: qty > 0, OU se ontem tinha valor (atendente declarando zerou)
+          if (q > 0 || prevCounts[id] != null) {
+            rowsToUpsert.push({
+              record_date: date,
+              store: selectedStore,
+              product_id: productId,
+              product_source: productSource,
+              quantity: q,
+              counted_by: user.displayName,
+            })
+          }
+        }
+        if (rowsToUpsert.length === 0) { showToast('Nenhuma contagem pra salvar'); return }
+        const { error } = await supabase
+          .from('shelf_counts')
+          .upsert(rowsToUpsert, { onConflict: 'record_date,store,product_id,product_source' })
+        if (error) throw error
+        showToast(`✅ Prateleira ${STORE_LABEL[selectedStore]?.split(' ')[0] || selectedStore} salva (${rowsToUpsert.length} ${rowsToUpsert.length === 1 ? 'item' : 'itens'})`)
+        setMode(null); setQtys({}); setPrevCounts({})
+        return
+      }
+
+      // Sobra ou Descarte — comportamento original (preservado)
+      const items = Object.entries(qtys).filter(([,v]) => v > 0)
+      if (!items.length) { showToast('Nenhuma quantidade preenchida'); return }
+      const table = mode === 'sobra' ? 'sobras' : 'descartes'
+
       // Idempotência: pra descarte, apaga bread_movements antigos (diretos + cascade de kit)
       // antes de re-inserir os descartes
       if (mode === 'descarte') {
@@ -89,7 +179,6 @@ export default function SobrasPage() {
       // Stock movements pra DESCARTE (precisa de loja atribuída ao user)
       let cascadeBreadCount = 0
       if (mode === 'descarte' && user.store && inserted) {
-        // (a) Descarte direto de pão → debita o próprio pão
         const directMovements = (inserted as any[])
           .filter(r => r.product_source === 'bread' && Number(r.quantity) > 0)
           .map(r => ({
@@ -105,11 +194,7 @@ export default function SobrasPage() {
           await supabase.from('bread_movements').insert(directMovements)
         }
 
-        // (b) Descarte de KIT → cascade: debita pães-componentes (qty_componente × qty_kit)
-        // Só produtos com kind='kit' AGORA cascateiam. Componentes de um ex-kit
-        // (reclassificado pra final/insumo) não devem mover pão, mesmo que rows
-        // antigos em product_components ainda existam — schema permite essa
-        // inconsistência por design (FK não checa kind).
+        // Cascade de kit (mesma lógica do C1)
         const kitIds = new Set(products.filter(p => p.kind === 'kit').map(p => p.id))
         const kitRows = (inserted as any[]).filter(r =>
           r.product_source === 'catalog' && Number(r.quantity) > 0 && kitIds.has(r.product_id)
@@ -154,7 +239,9 @@ export default function SobrasPage() {
   const grouped = products.reduce((acc:Record<string,Product[]>, p) => {
     ;(acc[p.category]??=[]).push(p); return acc
   }, {})
-  const filled = Object.values(qtys).filter(v=>v>0).length
+  // Pra "filled" no modo prateleira não conta zeros — só contagens > 0.
+  // Mas no save, mandamos rows zeradas se ontem tinha (pra declarar "esgotou").
+  const filled = Object.values(qtys).filter(v => v > 0).length
 
   if (!user) return (
     <div className="ps-loading">
@@ -185,13 +272,18 @@ export default function SobrasPage() {
 
         <div className="ps-scroll ps-pad">
           <h1 className="ps-page-title">♻️ O que registrar?</h1>
-          <p className="ps-page-lead">Escolha entre sobras (não move estoque) ou descarte (debita do estoque da loja).</p>
+          <p className="ps-page-lead">Sobras de pão fresco · Prateleira (contagem do balcão) · Descarte real.</p>
 
           <div style={{display:'flex', flexDirection:'column', gap:12}}>
             <button onClick={()=>setMode('sobra')} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Package size={28}/></div>
               <h3>Registrar Sobras</h3>
-              <p>O que sobrou no fechamento. Não move estoque (sobras podem voltar à venda).</p>
+              <p>Pão fresco do dia que sobrou no fechamento. Não move estoque. Itens de prateleira (pão de forma, kits) não aparecem aqui.</p>
+            </button>
+            <button onClick={()=>setMode('prateleira')} className="ps-report-card" style={{textAlign:'left'}}>
+              <div className="icon"><Layers size={28}/></div>
+              <h3>Prateleira (fim do dia)</h3>
+              <p>Contagem do que tem no balcão pra produtos durados (pão de forma, hamburguer, kits). Salva o saldo do dia por loja.</p>
             </button>
             <button onClick={()=>setMode('descarte')} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Trash2 size={26}/></div>
@@ -209,6 +301,8 @@ export default function SobrasPage() {
   )
 
   // ── FORM ──
+  const headerTitle = mode === 'sobra' ? 'Sobras' : mode === 'descarte' ? 'Descartes' : 'Prateleira'
+
   return (
     <div className="ps-canvas">
       <div className="ps-shell">
@@ -219,7 +313,7 @@ export default function SobrasPage() {
             </button>
             <div className="ps-mark">P</div>
             <div className="ps-brand">
-              <b>{mode==='sobra' ? 'Sobras' : 'Descartes'}</b>
+              <b>{headerTitle}</b>
               <span>{todayLabel()}</span>
             </div>
           </div>
@@ -230,13 +324,32 @@ export default function SobrasPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
+          {mode === 'prateleira' && (
+            <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}}>
+              <div style={{fontSize:13, color:'var(--ink-soft)', fontWeight:600}}>Loja:</div>
+              <select
+                value={selectedStore}
+                onChange={e => setSelectedStore(e.target.value)}
+                className="ps-select"
+                style={{flex:1, padding:'6px 10px', fontSize:13}}
+              >
+                {STORES.map(s => <option key={s} value={s}>{STORE_LABEL[s]}</option>)}
+              </select>
+            </div>
+          )}
+
           {breads.length > 0 && (
             <>
-              <div className="ps-label">🍞 Pães do dia</div>
+              <div className="ps-label">🍞 Pães{mode === 'prateleira' ? ' de prateleira' : ' do dia'}</div>
               <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                {breads.map(b=>(
-                  <ItemRow key={'bread_'+b.id} id={'bread_'+b.id} name={b.name} unit={b.unit} qty={qtys['bread_'+b.id]||0} onChange={setQty}/>
-                ))}
+                {breads.map(b=>{
+                  const k = 'bread_'+b.id
+                  return (
+                    <ItemRow key={k} id={k} name={b.name} unit={b.unit}
+                      qty={qtys[k]||0} prev={mode==='prateleira' ? prevCounts[k] : undefined}
+                      onChange={setQty}/>
+                  )
+                })}
               </div>
             </>
           )}
@@ -246,23 +359,29 @@ export default function SobrasPage() {
               <div className="ps-label">{cat}</div>
               <div style={{display:'flex', flexDirection:'column', gap:8}}>
                 {items.map(p=>(
-                  <ItemRow key={p.id} id={p.id} name={p.name} unit={p.unit} qty={qtys[p.id]||0} onChange={setQty}/>
+                  <ItemRow key={p.id} id={p.id} name={p.name} unit={p.unit}
+                    qty={qtys[p.id]||0} prev={mode==='prateleira' ? prevCounts[p.id] : undefined}
+                    onChange={setQty}/>
                 ))}
               </div>
             </div>
           ))}
 
           {breads.length === 0 && Object.keys(grouped).length === 0 && (
-            <div className="ps-empty">Sem itens pra registrar hoje.</div>
+            <div className="ps-empty">
+              {mode === 'prateleira'
+                ? 'Nenhum produto marcado como Prateleira. Marque em /produtos.'
+                : 'Sem itens pra registrar hoje.'}
+            </div>
           )}
         </div>
 
         <div className="ps-totalbar">
           <div className="ps-total-num">
             <b>{filled}</b>
-            <span>item{filled!==1?'s':''} preenchido{filled!==1?'s':''}</span>
+            <span>{mode === 'prateleira' ? 'contagem' : 'item'}{filled!==1?'s':''}{mode === 'prateleira' ? ' > 0' : ' preenchido'+(filled!==1?'s':'')}</span>
           </div>
-          <button className="ps-save" onClick={save} disabled={saving || filled===0}>
+          <button className="ps-save" onClick={save} disabled={saving}>
             {saving ? <span className="ps-spinner" style={{width:16,height:16,borderWidth:2}}/> : <><Save size={16}/> Salvar</>}
           </button>
         </div>
@@ -271,13 +390,16 @@ export default function SobrasPage() {
   )
 }
 
-function ItemRow({ id, name, unit, qty, onChange }: { id:string; name:string; unit:string|null; qty:number; onChange:(id:string,v:number)=>void }) {
+function ItemRow({ id, name, unit, qty, prev, onChange }: { id:string; name:string; unit:string|null; qty:number; prev?:number; onChange:(id:string,v:number)=>void }) {
   return (
     <div className={`ps-card ${qty>0?'active':''}`} style={{padding:'12px 14px', gap:8}}>
       <div className="ps-card-head" style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', gap:10}}>
         <div style={{flex:1, minWidth:0}}>
           <div className="ps-pname" style={{fontSize:14.5}}>{name}</div>
-          {unit && <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{unit}</div>}
+          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2, display:'flex', gap:8}}>
+            {unit && <span>{unit}</span>}
+            {prev != null && <span style={{color:'var(--ink-soft)'}}>ontem: <b>{prev}</b></span>}
+          </div>
         </div>
         <div className="ps-stepper" style={{flex:'none'}}>
           <button className="ps-step" style={{width:36, height:36}} onClick={()=>onChange(id, qty-1)} disabled={qty<=0} aria-label="Diminuir">

@@ -103,6 +103,7 @@ export type Database = {
           days: number[]
           id: string
           is_pj: boolean | null
+          is_shelf: boolean
           is_special: boolean
           name: string
           unit: string | null
@@ -114,6 +115,7 @@ export type Database = {
           days?: number[]
           id: string
           is_pj?: boolean | null
+          is_shelf?: boolean
           is_special?: boolean
           name: string
           unit?: string | null
@@ -125,6 +127,7 @@ export type Database = {
           days?: number[]
           id?: string
           is_pj?: boolean | null
+          is_shelf?: boolean
           is_special?: boolean
           name?: string
           unit?: string | null
@@ -712,6 +715,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_revenda: boolean
+          is_shelf: boolean
           is_special: boolean
           kind: string | null
           name: string
@@ -725,6 +729,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_revenda?: boolean
+          is_shelf?: boolean
           is_special?: boolean
           kind?: string | null
           name: string
@@ -738,6 +743,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_revenda?: boolean
+          is_shelf?: boolean
           is_special?: boolean
           kind?: string | null
           name?: string
@@ -1110,6 +1116,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      shelf_counts: {
+        Row: {
+          counted_by: string
+          created_at: string
+          id: string
+          product_id: string
+          product_source: string
+          quantity: number
+          record_date: string
+          store: string
+        }
+        Insert: {
+          counted_by: string
+          created_at?: string
+          id?: string
+          product_id: string
+          product_source: string
+          quantity?: number
+          record_date: string
+          store: string
+        }
+        Update: {
+          counted_by?: string
+          created_at?: string
+          id?: string
+          product_id?: string
+          product_source?: string
+          quantity?: number
+          record_date?: string
+          store?: string
+        }
+        Relationships: []
       }
       sobras: {
         Row: {

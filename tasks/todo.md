@@ -91,6 +91,18 @@ Spec recebida do Rodrigão (Claude.ai); adaptada pro projeto:
 
 ---
 
+## Fase Prateleira — Contagem de balcão para produtos durados (snapshot diário)
+
+Atendentes estavam lançando pão de forma/hamburguer/kits como "Sobra" todo dia (mesmo o produto ficando à venda por 5 dias). Cria conceito de **prateleira**: contagem cumulativa por loja.
+
+- [x] **Schema** — `products.is_shelf` + `breads.is_shelf` (boolean default false). Tabela `shelf_counts(record_date, store, product_id, product_source, quantity, counted_by)` com UNIQUE(date,store,product,source) pra idempotência (re-salvar atualiza). RLS anon all access. Backfill: 4 kits + 6 pães (Brioche Forma, Brioche Hamburguer, Integral de Forma, Multi de Forma, Pão de Batata Hamburguer, Pão de Hotdog).
+- [x] **UI em /produtos** — chip `📦 PRATELEIRA` (cor crust/ex) ao lado de KIT/INSUMO/REVENDA. Checkbox no modal de edit. Botão lateral 📦 em cada pão pra toggle. Default false.
+- [x] **/sobras ganha 3º modo "Prateleira"** — seletor de loja no topo (admin vê todas, atendente bloqueado na dele). Lista só `is_shelf=true`. Cada item mostra "ontem: N" como referência. Salva snapshot em `shelf_counts` (upsert). Modo "Sobra" original passa a filtrar `is_shelf` out (pão de forma some de lá). Modo "Descarte" mantém tudo (shelf vencido entra em descarte normal). Cascade BOM segue funcionando.
+
+**Saída**: ninguém lança mais pão de forma como sobra. Atendente reporta saldo do balcão por loja. Histórico fica gravado pra análise futura (Fase Y: entrada explícita pra fechar delta = vendido vs descartado).
+
+---
+
 ## Fora deste escopo (futuro)
 
 - Trigger no banco pra baixa em cascata (alternativa server-side).
