@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers } from 'lucide-react'
+import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers, X, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
@@ -31,6 +31,12 @@ export default function SobrasPage() {
   // (atendente corrige "errei, na verdade não tem nenhum") mesmo quando ontem
   // não tinha valor — senão o upsert nunca atualizaria a row positiva pra 0.
   const [todayKeysWithData, setTodayKeysWithData] = useState<Set<string>>(new Set())
+  // Candidatos pro botão "Incluir" no modo Prateleira: produtos/pães que ainda
+  // não são is_shelf. Carregados em paralelo só quando entra no modo.
+  const [candidateProducts, setCandidateProducts] = useState<Product[]>([])
+  const [candidateBreads, setCandidateBreads] = useState<Bread[]>([])
+  const [includeOpen, setIncludeOpen] = useState(false)
+  const [includeSearch, setIncludeSearch] = useState('')
   const [selectedStore, setSelectedStore] = useState<string>('jc')
   const [saving, setSaving]     = useState(false)
 
@@ -69,8 +75,18 @@ export default function SobrasPage() {
       // Mantém o filtro por orders só pros frescos (não-shelf) — shelf sempre aparece.
       bds = bds.filter(b => b.is_shelf || todayBreadIds.has(b.id))
     } else if (mode === 'prateleira') {
-      prods = prods.filter(p => p.is_shelf)
-      bds = bds.filter(b => b.is_shelf)
+      // Lista principal: já são shelf
+      const allProds = prods
+      const allBds = bds
+      prods = allProds.filter(p => p.is_shelf)
+      bds = allBds.filter(b => b.is_shelf)
+      // Candidatos pro botão "Incluir": não-shelf, pra atendente puxar pra prateleira
+      // se viu algo no balcão que ninguém marcou ainda
+      setCandidateProducts(allProds.filter(p => !p.is_shelf))
+      setCandidateBreads(allBds.filter(b => !b.is_shelf))
+    } else {
+      setCandidateProducts([])
+      setCandidateBreads([])
     }
 
     setProducts(prods)
@@ -117,6 +133,21 @@ export default function SobrasPage() {
   useEffect(() => { if (user && mode) loadData() }, [user, mode, selectedStore, loadData])
 
   const setQty = (id: string, val: number) => setQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
+
+  async function includeBread(b: Bread) {
+    const { error } = await supabase.from('breads').update({ is_shelf: true }).eq('id', b.id)
+    if (error) { showToast('Erro: '+error.message); return }
+    setBreads(prev => [...prev, { ...b, is_shelf: true }].sort((a, c) => a.name.localeCompare(c.name)))
+    setCandidateBreads(prev => prev.filter(x => x.id !== b.id))
+    showToast(`📦 ${b.name} incluído na Prateleira`)
+  }
+  async function includeProduct(p: Product) {
+    const { error } = await supabase.from('products').update({ is_shelf: true }).eq('id', p.id)
+    if (error) { showToast('Erro: '+error.message); return }
+    setProducts(prev => [...prev, { ...p, is_shelf: true }].sort((a, c) => (a.category+a.name).localeCompare(c.category+c.name)))
+    setCandidateProducts(prev => prev.filter(x => x.id !== p.id))
+    showToast(`📦 ${p.name} incluído na Prateleira`)
+  }
 
   const save = async () => {
     if (!user) return
@@ -391,12 +422,25 @@ export default function SobrasPage() {
             </div>
           ))}
 
-          {breads.length === 0 && Object.keys(grouped).length === 0 && (
-            <div className="ps-empty">
-              {mode === 'prateleira'
-                ? 'Nenhum produto marcado como Prateleira. Marque em /produtos.'
-                : 'Sem itens pra registrar hoje.'}
-            </div>
+          {breads.length === 0 && Object.keys(grouped).length === 0 && mode !== 'prateleira' && (
+            <div className="ps-empty">Sem itens pra registrar hoje.</div>
+          )}
+
+          {mode === 'prateleira' && (
+            <>
+              {breads.length === 0 && Object.keys(grouped).length === 0 && (
+                <div className="ps-empty">
+                  Nenhum produto marcado como Prateleira ainda. Usa o botão abaixo pra incluir.
+                </div>
+              )}
+              <button
+                onClick={() => { setIncludeOpen(true); setIncludeSearch('') }}
+                className="ps-btn ghost block"
+                style={{marginTop:14, borderStyle:'dashed'}}
+              >
+                <Plus size={14}/> Incluir produto/pão na prateleira
+              </button>
+            </>
           )}
         </div>
 
@@ -410,6 +454,92 @@ export default function SobrasPage() {
           </button>
         </div>
       </div>
+
+      {/* Sheet: incluir produto/pão na prateleira */}
+      {includeOpen && (() => {
+        const q = includeSearch.trim().toLowerCase()
+        const filteredBreads = q.length < 2 ? [] : candidateBreads
+          .filter(b => b.name.toLowerCase().includes(q)).slice(0, 15)
+        const filteredProducts = q.length < 2 ? [] : candidateProducts
+          .filter(p => p.name.toLowerCase().includes(q)).slice(0, 25)
+        const total = filteredBreads.length + filteredProducts.length
+        return (
+          <div className="ps-sheet-overlay" onClick={e => { if (e.target === e.currentTarget) setIncludeOpen(false) }}>
+            <div className="ps-sheet" style={{maxHeight:'85vh', overflowY:'auto'}}>
+              <div className="ps-sheet-grab"/>
+              <h3>Incluir na Prateleira</h3>
+              <p style={{fontSize:12, color:'var(--ink-soft)', marginBottom:14}}>
+                Marca o item como produto durado. Aparece em todas as contagens de Prateleira (todas as lojas).
+                Pode reverter em /produtos.
+              </p>
+
+              <div className="ps-fieldgroup" style={{marginBottom:8}}>
+                <div style={{position:'relative'}}>
+                  <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)'}}/>
+                  <input
+                    value={includeSearch}
+                    autoFocus
+                    onChange={e => setIncludeSearch(e.target.value)}
+                    placeholder="Buscar pão ou produto…"
+                    className="ps-input"
+                    style={{paddingLeft:30}}
+                  />
+                </div>
+              </div>
+
+              {q.length > 0 && q.length < 2 && (
+                <div style={{padding:10, fontSize:12, color:'var(--ink-faint)'}}>Digite ao menos 2 caracteres…</div>
+              )}
+              {q.length >= 2 && (
+                <div style={{maxHeight:380, overflowY:'auto', border:'1px solid var(--line-soft)', borderRadius:8, marginBottom:12}}>
+                  {total === 0 ? (
+                    <div style={{padding:14, textAlign:'center', color:'var(--ink-faint)', fontSize:12}}>
+                      Nada encontrado. (Itens já na prateleira são filtrados.)
+                    </div>
+                  ) : (
+                    <>
+                      {filteredBreads.map(b => (
+                        <button
+                          key={'cand-bread-'+b.id}
+                          onClick={() => { includeBread(b); setIncludeSearch('') }}
+                          style={{display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderBottom:'1px solid var(--line-soft)', width:'100%', textAlign:'left', background:'transparent', border:'none', cursor:'pointer'}}
+                        >
+                          <div style={{flex:1, minWidth:0}}>
+                            <div style={{fontSize:13, fontWeight:600, color:'var(--ps-ink)'}}>
+                              {b.name} <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖 PÃO</span>
+                            </div>
+                            <div style={{fontSize:11, color:'var(--ink-faint)'}}>{b.unit || 'un'}</div>
+                          </div>
+                          <Plus size={14} style={{color:'var(--honey-deep)'}}/>
+                        </button>
+                      ))}
+                      {filteredProducts.map(p => (
+                        <button
+                          key={'cand-prod-'+p.id}
+                          onClick={() => { includeProduct(p); setIncludeSearch('') }}
+                          style={{display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderBottom:'1px solid var(--line-soft)', width:'100%', textAlign:'left', background:'transparent', border:'none', cursor:'pointer'}}
+                        >
+                          <div style={{flex:1, minWidth:0}}>
+                            <div style={{fontSize:13, fontWeight:600, color:'var(--ps-ink)'}}>
+                              {p.name} <span className="ps-store-chip ja" style={{marginLeft:6}}>{p.category}</span>
+                            </div>
+                            <div style={{fontSize:11, color:'var(--ink-faint)'}}>{p.unit || '—'}</div>
+                          </div>
+                          <Plus size={14} style={{color:'var(--honey-deep)'}}/>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <button onClick={() => setIncludeOpen(false)} className="ps-btn primary block">
+                <X size={14}/> Fechar
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
