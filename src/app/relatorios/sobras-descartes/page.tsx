@@ -170,7 +170,9 @@ export default function SobrasDescartesReport() {
       if (v > topValor) { topValor = v; topProduct = n }
     })
 
-    return { sobrasTotal, descartesTotal, sobrasValor, descartesValor, records, semCusto, topProduct, topValor }
+    const semCustoNames = [...new Set(filteredRows.filter(r => !r._hasCost).map(r => r.product))].sort()
+
+    return { sobrasTotal, descartesTotal, sobrasValor, descartesValor, records, semCusto, semCustoNames, topProduct, topValor }
   }, [filteredRows])
 
   function handleExport() {
@@ -256,10 +258,15 @@ export default function SobrasDescartesReport() {
           {kpis.semCusto > 0 && (
             <div className="ps-warning">
               <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
-              <span>
+              <div>
                 <strong>{kpis.semCusto}</strong> {kpis.semCusto === 1 ? 'registro' : 'registros'} sem custo cadastrado — valor monetário pode estar subestimado. Atualize em{' '}
                 <a href="/produtos">/produtos</a>.
-              </span>
+                {kpis.semCustoNames.length > 0 && (
+                  <div style={{marginTop:4, fontSize:12, color:'var(--ink-soft)'}}>
+                    Sem custo: <strong>{kpis.semCustoNames.join(' · ')}</strong>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
