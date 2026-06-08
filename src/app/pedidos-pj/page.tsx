@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Trash2, Save, Zap, X, Calendar } from 'lucide-react'
+import { Trash2, Save, Zap, X, Calendar, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -99,6 +99,7 @@ export default function PedidosPJPage() {
   const [saving, setSaving] = useState(false)
 
   const [viewing, setViewing] = useState<PedidoGroup|null>(null)
+  const [editing, setEditing] = useState<{ids:string[]; order_date:string}|null>(null)
 
   useEffect(() => { setUser(getCurrentUser()) }, [])
 
@@ -217,19 +218,45 @@ export default function PedidosPJPage() {
       pricing_unit: l.pricing_unit,
       customer_id: cust.id,
       pj_client: cust.name,
-      order_date: todayISO(),
+      order_date: editing ? editing.order_date : todayISO(),
       delivery_date: delivery,
       production_date: production || defaultProduction(delivery),
       pj_delivery_date: delivery,
       obs: obs.trim() || null,
     }))
     const { error } = await supabase.from('orders').insert(rows)
+    if (error) { setSaving(false); showToast('Erro: ' + error.message); return }
+    if (editing) await supabase.from('orders').delete().in('id', editing.ids)
     setSaving(false)
-    if (error) { showToast('Erro: ' + error.message); return }
-    showToast(`✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
-    setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setSearch('')
+    showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
+    setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setSearch(''); setEditing(null)
     setTab('lista')
     loadAll()
+  }
+
+  const startEdit = (g: PedidoGroup) => {
+    setCustId(g.customer_id || '')
+    setDelivery(g.delivery_date || '')
+    setProduction(g.production_date || '')
+    setObs(g.obs || '')
+    setLines(g.rows.map((r, i) => {
+      const pack = Number(r.pack_size) || 1
+      const qty  = Number(r.quantity) || 1
+      return {
+        key: `${r.product_source}_${r.bread_id}_${i}`,
+        product_id: r.bread_id,
+        product_source: (r.product_source === 'bread' ? 'bread' : 'product') as 'bread'|'product',
+        product_name: r.product_name || r.bread_id,
+        unit_price: Number(r.unit_price) || 0,
+        pricing_unit: (r.pricing_unit === 'kg' ? 'kg' : 'un') as 'un'|'kg',
+        pack_size: pack,
+        packs: Math.round(qty / pack) || 1,
+      }
+    }))
+    setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date })
+    setSearch('')
+    setViewing(null)
+    setTab('novo')
   }
 
   const pedidosGrouped = useMemo<PedidoGroup[]>(() => {
@@ -316,6 +343,11 @@ export default function PedidosPJPage() {
             <div className="ps-empty">Carregando...</div>
           ) : tab === 'novo' ? (
             <>
+              {editing && (
+                <div className="ps-banner crust no-print" style={{marginTop:14, display:'block'}}>
+                  ✏️ <b>Editando pedido</b> — ao salvar, as alterações substituem o anterior. Use <b>Cancelar</b> pra desistir.
+                </div>
+              )}
               <div className="ps-card" style={{marginTop:14, gap:10}}>
                 <div className="ps-fieldgroup">
                   <div className="ps-fieldlabel">Cliente *</div>
@@ -453,11 +485,11 @@ export default function PedidosPJPage() {
                   )}
 
                   <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:16}}>
-                    <button onClick={()=>{ setCustId(''); setLines([]); setObs(''); setSearch('') }} disabled={saving} className="ps-btn ghost">
-                      Limpar
+                    <button onClick={()=>{ setEditing(null); setCustId(''); setLines([]); setObs(''); setSearch(''); setDelivery(''); setProduction(''); if (editing) setTab('lista') }} disabled={saving} className="ps-btn ghost">
+                      {editing ? 'Cancelar' : 'Limpar'}
                     </button>
                     <button onClick={savePedido} disabled={saving || lines.length===0} className="ps-btn primary">
-                      <Save size={14}/> {saving ? 'Salvando...' : 'Salvar pedido'}
+                      <Save size={14}/> {saving ? 'Salvando...' : editing ? 'Salvar alterações' : 'Salvar pedido'}
                     </button>
                   </div>
                 </>
@@ -539,6 +571,9 @@ export default function PedidosPJPage() {
             )}
 
             <div className="actions">
+              <button onClick={()=>startEdit(viewing)} className="ps-btn ghost">
+                <Pencil size={14}/> Editar
+              </button>
               {viewing.production_date && viewing.production_date > todayISO() && (
                 <button onClick={()=>adiantarHoje(viewing)} className="ps-btn info">
                   <Zap size={14}/> Adiantar pra hoje

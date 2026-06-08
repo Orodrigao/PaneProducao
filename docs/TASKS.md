@@ -85,9 +85,10 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - Antecipar pedido continua só em /pedidos-pj (Geolar vai lá pelo
   link no aviso)
 
-### 🔲 PR-C4 — Relatórios PJ
-- `/relatorios/pj` — vendas por cliente, ticket médio, top produtos
-- Filtro por período
+### ✅ PR-C4 (entregue) — Relatórios PJ
+- `/relatorios/pj` — KPIs (vendas totais, pedidos, ticket médio, clientes únicos)
+- Tabela por cliente (pedidos + ticket médio) + top produtos por valor
+- Filtro por período + filtro por cliente + export CSV (ambas as tabelas)
 
 ### 🔲 PR-C5 (futuro) — Encomendas
 - Cliente físico avulso pede pra dia específico (ex: 3 focaccias pra sexta)
