@@ -103,6 +103,13 @@ async function sbUpsert(table:string, data:any, onConflict?:string) {
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+async function sbInsert(table:string, data:any) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
 async function sbPatch(table:string, data:any, match:Record<string,string>) {
   const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, {
@@ -365,7 +372,7 @@ export default function ProducaoPage() {
     setSyncState('syncing')
     try {
       await sbDel('orders', { store, order_date: date })
-      await sbUpsert('orders', rows, 'store,bread_id,order_date')
+      await sbInsert('orders', rows)
       const newMap = { ...orders, [store]: {} }
       rows.forEach(r => { (newMap[store] as any)[r.bread_id] = r })
       setOrders(newMap)
