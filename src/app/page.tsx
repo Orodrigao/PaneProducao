@@ -1051,7 +1051,7 @@ function AdminView({ breads, orders, delivIdx, pjBreads, todayBds, onNewBread, o
         <div className="section-label" style={{margin:0}}>Pães das lojas ({regular.length})</div>
         <button className="btn-save" style={{padding:'6px 14px',fontSize:12}} onClick={()=>onNewBread(false)}>+ Novo pão</button>
       </div>
-      {!regular.length&&<div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>Nenhum pão. Clique em "+ Novo pão".</div>}
+      {!regular.length&&<div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>Nenhum pão. Clique em &quot;+ Novo pão&quot;.</div>}
       {regular.map(b=>(
         <div key={b.id} className={`admin-item${b.active?'':' inactive'}`}>
           <div className="admin-info">
