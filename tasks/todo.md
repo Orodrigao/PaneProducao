@@ -1,31 +1,31 @@
-# Tarefa: instalar Vitest + primeiro teste (baixa em cascata de kits)
+# Tarefa: subir ESLint pro modo strict + proibir `any`
 
-Aprovada pelo usuário em 09/06/26. Branch: `feat/vitest-baixa-kits`.
+Aprovada pelo usuário em 09/06/26 ("Faça"). Branch: `feat/eslint-strict` (baseado em
+`feat/vitest-baixa-kits` — depende do `.eslintrc.json` daquele PR #50).
+
+## Decisão
+
+Adotar **`next/typescript`** (preset oficial TS do Next) **+ `next/core-web-vitals`** já
+existente. Para regras que pegariam código pré-existente em peso, **inicialmente `warn`** —
+não barram o build, mas aparecem no `npm run lint`. Migração progressiva sem PR gigante.
+
+`@typescript-eslint/no-explicit-any` fica como **warn** (85 ocorrências pré-existentes
+em 14 arquivos). Cada nova entrega remove um pouquinho da dívida; quando chegar a
+zero, sobe pra error.
 
 ## Plano
 
-- [x] 1. `npm install -D vitest` (sem jsdom — primeiro teste é de lógica pura)
-- [x] 2. `vitest.config.ts` com alias `@/*` → `./src/*` (mesmo do tsconfig)
-- [x] 3. Scripts no `package.json`: `test` (vitest run) e `test:watch` (vitest)
-- [x] 4. Extrair cálculo da cascata de descarte de kit de `src/app/sobras/page.tsx`
-      para `src/lib/kitCascade.ts` (funções puras `filterKitDiscards` +
-      `buildKitCascadeMovements`) — revisão multi-agente confirmou equivalência 100%
-- [x] 5. Teste `src/lib/kitCascade.test.ts` — 14 testes (12 originais + 2 da revisão
-      adversarial: mutante de loja/responsável fixos e pão compartilhado entre kits)
-- [x] 6. Prova: `npm test` (14/14) + `npx tsc --noEmit` verdes. Lint roda (config nova).
-- [x] 7. Commits pequenos no branch (setup / extração+teste)
+- [x] 1. ~~`npm install -D @typescript-eslint/eslint-plugin @typescript-eslint/parser`~~
+      Já vinham via `eslint-config-next` 15.3.2 (`@typescript-eslint/*` 8.59.4)
+- [x] 2. `.eslintrc.json`: extends = `["next/core-web-vitals", "next/typescript"]`;
+      rules: `no-explicit-any: warn`, `no-unused-vars: warn` com `^_` ignorado.
+- [x] 3. `npm run lint`: **0 erros, 183 warnings** (todos pré-existentes). Build não
+      barra mas a dívida fica visível.
+- [x] 4. `npm test` 14/14 ✅, `npx tsc --noEmit` ✅, `npm run build` ✅ 29 páginas.
+- [x] 5. Commit + push + PR contra `main` empilhado em #50.
 
-## ⛔ BLOQUEADO — aguardando decisão do Rodrigão
+## Fora do escopo (anotado, NÃO mexer agora)
 
-- `.eslintrc.json` novo faz o `next build` passar a rodar lint, e 2 erros
-  PRÉ-EXISTENTES em `src/app/page.tsx:1054` (aspas sem escape no JSX) derrubam
-  o build. Main em produção NÃO é afetada (não tem o config). Opções:
-  (a) escapar as 2 aspas (1 linha, fora do escopo declarado → precisa de OK);
-  (b) `eslint.ignoreDuringBuilds` no next.config (esconde o gate — não recomendo).
-
-## Fora do escopo (anotado, não mexer)
-
-- Cascata do romaneio (`src/app/romaneio/page.tsx:310-356`) tem lógica própria
-  parecida (duas pernas: -central/+destino). Candidata a compartilhar a lib no
-  futuro — exige aprovação antes.
-- 85 usos de `any` pré-existentes (14 arquivos) — dívida anotada em 09/06/26.
+- Limpar os 85 `any` — entra como dívida visível via `npm run lint`.
+- Migrar `next lint` pro ESLint CLI (deprecação no Next 16) — tarefa própria.
+- Atualizar `eslint-config-next` 15.3.2 → 15.5.x — fora do escopo da regra.
