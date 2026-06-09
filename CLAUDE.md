@@ -155,3 +155,41 @@ Para entender o app, abrir nesta ordem:
 
 Não há staging — `main` = produção. Cada push é visto pela equipe na hora seguinte.
 
+## Regras de Engenharia (obrigatórias)
+
+### Escopo
+- Trabalhe APENAS no que foi pedido na tarefa atual. Não altere arquivos,
+  funções ou estilos que não estejam diretamente ligados ao pedido.
+- Se perceber que a tarefa exige mexer em algo fora do escopo, PARE e
+  me avise antes, explicando em linguagem simples (não sou programador).
+- Nunca refatore código existente por iniciativa própria. Sugira, eu aprovo.
+
+### Git
+- Antes de começar qualquer alteração: confirme que o trabalho anterior
+  está commitado. Se não estiver, faça o commit primeiro.
+- Cada feature ou correção em um branch próprio (ex: feat/sobras-relatorio).
+- Commits pequenos e frequentes, com mensagens claras em português.
+- Nunca faça push direto na main sem eu aprovar.
+
+### Testes
+- Antes de me entregar qualquer alteração: rode TODOS os testes.
+- Se algum teste quebrar, conserte ANTES de entregar. Nunca entregue
+  com teste falhando.
+- PROIBIDO deletar, comentar ou pular (skip) testes para fazê-los passar.
+- Toda feature nova deve vir com pelo menos 1 teste cobrindo o fluxo
+  principal dela.
+
+### Qualidade
+- Rode o lint e o type-check antes de entregar. Zero erros.
+- Proibido usar `any` no TypeScript.
+- Se encontrar código duplicado ou suspeito durante a tarefa, NÃO mexa:
+  anote e me reporte no final.
+
+### Comunicação
+- Ao final de cada tarefa, me entregue um resumo em português simples:
+  1) O que foi alterado e em quais arquivos
+  2) O que foi testado
+  3) Riscos ou pontos de atenção
+- Se tiver dúvida sobre o que eu quis dizer, pergunte antes de codar.
+  Nunca assuma.
+
