@@ -28,6 +28,13 @@ const ALL_REPORTS: ReportCard[] = [
     status: 'ready',
   },
   {
+    href: '/relatorios/prateleira',
+    title: 'Prateleira',
+    description: 'Histórico de contagens de prateleira por período, loja e produto. Exporta CSV.',
+    icon: '🗂️',
+    status: 'ready',
+  },
+  {
     href: '/relatorios/romaneios',
     title: 'Romaneios',
     description: 'Entregas por período, status (separado/enviado/conferido), divergências e fechamentos.',
