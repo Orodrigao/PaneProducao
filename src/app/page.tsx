@@ -445,7 +445,8 @@ export default function ProducaoPage() {
     if (!allRows.length) { showToast('Nenhum item para duplicar.'); return }
     setSyncState('syncing')
     try {
-      await sbUpsert('orders', allRows, 'store,bread_id,order_date')
+      await Promise.all(stores.map(s => sbDel('orders', { store: s, order_date: date })))
+      await sbInsert('orders', allRows)
       const map = await loadOrders(todayKey())
       setOrders(map)
       initOrderState(map, breads)
