@@ -5,6 +5,7 @@ import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers, X, Search } fr
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
+import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
 
 interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null; is_shelf: boolean }
 interface Bread   { id: string; name: string; unit: string | null; is_shelf: boolean }
@@ -234,11 +235,10 @@ export default function SobrasPage() {
           await supabase.from('bread_movements').insert(directMovements)
         }
 
-        // Cascade de kit (mesma lógica do C1)
+        // Cascade de kit (mesma lógica do C1) — cálculo extraído pra
+        // src/lib/kitCascade.ts (testado em kitCascade.test.ts)
         const kitIds = new Set(products.filter(p => p.kind === 'kit').map(p => p.id))
-        const kitRows = (inserted as any[]).filter(r =>
-          r.product_source === 'catalog' && Number(r.quantity) > 0 && kitIds.has(r.product_id)
-        )
+        const kitRows = filterKitDiscards(inserted as DiscardRow[], kitIds)
         if (kitRows.length > 0) {
           const kitProductIds = kitRows.map(r => r.product_id)
           const { data: comps } = await supabase
@@ -246,22 +246,9 @@ export default function SobrasPage() {
             .select('parent_product_id,component_source,component_id,quantity')
             .in('parent_product_id', kitProductIds)
             .eq('component_source', 'bread')
-          const cascadeMovements: any[] = []
-          for (const kit of kitRows) {
-            const kitQty = Number(kit.quantity)
-            const breadComps = (comps || []).filter((c: any) => c.parent_product_id === kit.product_id)
-            for (const c of breadComps as any[]) {
-              cascadeMovements.push({
-                movement_type: 'descarte_loja',
-                bread_id: c.component_id,
-                location: user.store,
-                quantity: -(Number(c.quantity) * kitQty),
-                reference_id: kit.id,
-                reference_type: 'descarte_kit',
-                recorded_by: user.displayName,
-              })
-            }
-          }
+          const cascadeMovements = buildKitCascadeMovements(
+            kitRows, (comps ?? []) as KitComponent[], user.store, user.displayName
+          )
           if (cascadeMovements.length > 0) {
             await supabase.from('bread_movements').insert(cascadeMovements)
             cascadeBreadCount = cascadeMovements.length
