@@ -94,11 +94,10 @@ export default function PrateleiraReport() {
       .gte('record_date', fromStr)
       .lte('record_date', toStr)
       .order('record_date', { ascending: false })
-      .then(({ data }) => {
-        setRows(data || [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+      .then(
+        ({ data }) => { setRows(data || []); setLoading(false) },
+        () => setLoading(false)
+      )
   }, [range])
 
   const displayRows: DisplayRow[] = useMemo(() => {
