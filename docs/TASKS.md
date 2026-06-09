@@ -1,5 +1,5 @@
 # TASKS — ERP Pane & Salute
-**Última atualização:** Maio 2026
+**Última atualização:** Junho 2026
 
 Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que uma tarefa for iniciada ou concluída.
 
@@ -96,6 +96,46 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - Pode usar Produto Especial (is_special) — sob demanda
 - order_type='encomenda' em orders
 - Tela própria ou aba em /
+
+---
+
+## 🔲 Planejado — Compras v2 (redesign das listas de compra)
+
+Redesign acordado com Rodrigão (01/06/26). Modelo completo em `PLAN.md` → "Redesign — Módulo de Compras". Troca a lista única/mutável por setor por **listas discretas com histórico**, catálogo **curado só pelo admin**, e **desfecho por item** do lado do comprador.
+
+**Defaults assumidos** (confirmar): unidade do adicional via **picker** (un/kg/cx/dz/maço/L); desfechos = `comprado / tem / nao_encontrei` (sem "cancelado"); Elis ganha papel **comprador**. Status no banco mantém `draft/submitted/completed` (rótulos PT só na UI).
+
+### ✅ COMP-1 — Schema + migração de base (aplicado 01/06/26)
+- [x] `ALTER purchase_lists`: drop `UNIQUE(sector)`; add `created_by`, `closed_by`, `closed_at`, `updated_at`
+- [x] `ALTER purchase_items`: add `outcome` (pendente|comprado|tem|nao_encontrei), `bought_quantity`, `bought_by`, `bought_at`, `updated_at`
+- [x] Backfill `checked=true` → `outcome='comprado'` (0 linhas — nada estava comprado); listas mantêm status atual (draft = "montando")
+- [x] RLS: `anon_all` cobre as colunas novas automaticamente (nada a fazer)
+- ⏭️ Gatilho `updated_at` (opcional) **não** aplicado — fica pra COMP-3, quando o rastreio de alteração precisar
+
+### 🔲 COMP-2 — Fluxo do solicitante
+- [ ] `/compras`: criar **nova lista** (montando) — permitir **várias por setor**
+- [ ] Adicionar item do **catálogo** (busca, como hoje) + **adicional** (nome + unidade via **picker**, não caixa de texto)
+- [ ] **Enviar** lista → status submitted + Telegram; **trava** edição do solicitante
+- [ ] "Esqueci item" → botão de **nova lista** (não reabre a enviada)
+
+### 🔲 COMP-3 — Painel do comprador
+- [ ] Visão com **listas abertas agrupadas por setor** ("o que comprar")
+- [ ] **Desfecho por item:** comprado (qtd comprada + auto quem/quando) / já tem / não encontrei
+- [ ] **Transformar adicional em produto** (cria em `products` com `kind=insumo` + unidade; linka `product_id` no item)
+- [ ] **Fechar lista** (completed) manualmente, mesmo com itens em aberto
+- [ ] Acesso: admin (Rodrigão, Suélen) + novo papel **comprador** (Elis)
+
+### 🔲 COMP-4 — Papel comprador + notificação
+- [ ] `app_users`/auth: papel/route **comprador** (Elis); admin já cobre Rodrigão + Suélen
+- [ ] Telegram adaptado pra **multi-lista** (uma notificação por lista enviada)
+- [ ] Badge no app: nº de listas abertas/novas pro comprador
+
+### 🔲 COMP-5 — Histórico + consumo médio
+- [ ] Tela de **histórico** de listas/compras (por setor, período)
+- [ ] Relatório de **consumo médio por produto** (usa `bought_quantity` de itens com `product_id`)
+- [ ] Pré-requisito: adicionais recorrentes promovidos a produto (senão não agregam)
+
+**Ordem sugerida:** COMP-1 → COMP-2 → COMP-3 → COMP-4 → COMP-5.
 
 ---
 
