@@ -108,8 +108,9 @@ export default function ComprasPage() {
     setSaving(true)
     await supabase.from('purchase_lists').update({ status:'submitted', submitted_at: new Date().toISOString(), submitted_by: user.name }).eq('id', list!.id)
     setList(prev => prev ? {...prev, status:'submitted'} : prev)
-    await sendTelegram(filled)
-    showToast('✅ Lista enviada!'); setSaving(false)
+    const tgOk = await sendTelegram(filled)
+    showToast(tgOk ? '✅ Lista enviada!' : '⚠️ Lista salva, mas notificação não foi')
+    setSaving(false)
   }
 
   const editList = async () => {
@@ -127,11 +128,21 @@ export default function ComprasPage() {
     showToast('🔄 Novo ciclo iniciado')
   }
 
-  const sendTelegram = async (filled: PurchaseItem[]) => {
-    if (!user || !sector) return
+  const sendTelegram = async (filled: PurchaseItem[]): Promise<boolean> => {
+    if (!user || !sector) return false
     const lines = filled.map(i=>`• ${i.is_adhoc?i.ad_hoc_name:i.products?.name||'?'}: ${i.quantity} ${i.unit||''}`)
     const msg = `🛒 *Nova lista de compras!*\n\n👤 *${user.name}* — ${SECTOR_LABELS[sector]}\n📋 ${filled.length} itens\n\n${lines.slice(0,25).join('\n')}${lines.length>25?`\n_...+${lines.length-25}_`:''}\n\n🔗 pane-producao.vercel.app/compras`
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' }) }).catch(()=>{})
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' }) })
+      if (!res.ok) {
+        console.error('[compras] Telegram retornou', res.status, await res.text().catch(()=>''))
+        return false
+      }
+      return true
+    } catch (e) {
+      console.error('[compras] Telegram erro de rede:', e)
+      return false
+    }
   }
 
   const copyAsText = (sourceItems: PurchaseItem[], sec: string, submittedBy?: string|null) => {
