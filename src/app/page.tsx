@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus } from 'lucide-react'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -30,15 +31,6 @@ type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
 interface BreadForm { name:string; days:number[]; is_pj:boolean }
 
 // ── utils ──────────────────────────────────────────────────────────
-function nowBrasilia() {
-  const now = new Date()
-  const offset = -3 * 60 - now.getTimezoneOffset()
-  return new Date(now.getTime() + offset * 60000)
-}
-function todayKey() {
-  const d = nowBrasilia()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
 function deliveryDateKey(delivIdx: number) {
   const todayIdx = nowBrasilia().getDay()
   const d = nowBrasilia()
@@ -79,13 +71,6 @@ function getHoursLeft() {
 }
 function slugify(str: string) {
   return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'') + Date.now()
-}
-function showToast(msg: string, duration = 2600) {
-  const el = document.getElementById('prod-toast')
-  if (!el) return
-  el.textContent = msg
-  el.classList.add('show')
-  setTimeout(() => el.classList.remove('show'), duration)
 }
 
 // ── Supabase ────────────────────────────────────────────────────────
@@ -792,7 +777,6 @@ export default function ProducaoPage() {
       )}
 
         {/* Toast */}
-        <div id="prod-toast" className="toast"/>
       </div>
     </div>
   )
@@ -1376,7 +1360,6 @@ function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems
       </div>
 
       {loading&&<div className="loading-overlay" style={{display:'flex'}}><div className="spinner"/><p>{loadingMsg}</p></div>}
-      <div id="prod-toast" className="toast"/>
     </div>
   )
 }
