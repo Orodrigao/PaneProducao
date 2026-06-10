@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, X, Search, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { showToast } from '@/lib/utils'
+import { showToast, todayKey } from '@/lib/utils'
 
 interface EntryItem {
   product_id: string
@@ -22,7 +22,7 @@ export default function EstoqueEntradaPage() {
   const [suppliers, setSuppliers]     = useState<Supplier[]>([])
   const [products, setProducts]       = useState<Product[]>([])
   const [supplierId, setSupplierId]   = useState('')
-  const [entryDate, setEntryDate]     = useState(new Date().toISOString().split('T')[0])
+  const [entryDate, setEntryDate]     = useState(todayKey())
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [notes, setNotes]             = useState('')
   const [items, setItems]             = useState<EntryItem[]>([])
