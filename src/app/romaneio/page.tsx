@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package } from 'lucide-react'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
-import { nowBrasilia, todayKey } from '@/lib/utils'
+import { nowBrasilia, todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -20,14 +20,9 @@ interface RomItem { id:string; romaneio_id:string; product_id:string; product_so
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
 
 // ── utils ──────────────────────────────────────────────────────────
-function fmtDate(s:string|null|undefined) { if(!s)return ''; const[y,m,d]=s.split('-'); return `${d}/${m}/${y}` }
 function fmtDateTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getDate()).padStart(2,'0')}/${String(br.getMonth()+1).padStart(2,'0')} ${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
 function statusLabel(s:string) { return ({separado:'Separado',enviado:'Enviado',conferido:'Conferido',com_divergencia:'Divergência',aprovado:'Aprovado',fechado:'Fechado'} as Record<string,string>)[s]||s }
 function slugExtra() { return 'extra_'+Date.now() }
-function showToast(msg:string, dur=2800) {
-  const el=document.getElementById('rom-toast'); if(!el)return;
-  el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),dur)
-}
 function roleInfo(r: Role | null) {
   if (r === 'gustavo')  return { name: 'Gustavo',  loja: 'JC', color: '#8E4E22' }
   if (r === 'cleo')     return { name: 'Cléo',     loja: 'JA', color: '#BE832B' }
@@ -142,7 +137,7 @@ export default function RomaneioPage() {
       await loadPainel()
       hideLoad()
       setScreen('painel')
-    } catch(e) { hideLoad(); showToast('Erro de conexão') }
+    } catch(e) { hideLoad(); showToastPS('Erro de conexão') }
   }
 
   const goHome = () => {
@@ -164,7 +159,7 @@ export default function RomaneioPage() {
           await loadAdminPainel()
           hideLoad()
           setScreen('admin')
-        } catch(e) { hideLoad(); showToast('Erro') }
+        } catch(e) { hideLoad(); showToastPS('Erro') }
       })()
       return
     }
@@ -191,7 +186,7 @@ export default function RomaneioPage() {
   // ── painel ──────────────────────────────────────────────────────
   const refreshPainel = async () => {
     showLoad('Atualizando...')
-    try { await loadPainel() } catch(e) { showToast('Erro ao atualizar') }
+    try { await loadPainel() } catch(e) { showToastPS('Erro ao atualizar') }
     finally { hideLoad(); setScreen('painel') }
   }
 
@@ -205,7 +200,7 @@ export default function RomaneioPage() {
       ])
       setDetailRom(roms[0]); setDetailItems(items)
       setScreen('detalhe')
-    } catch(e) { showToast('Erro ao carregar') }
+    } catch(e) { showToastPS('Erro ao carregar') }
     finally { hideLoad() }
   }
 
@@ -237,7 +232,7 @@ export default function RomaneioPage() {
       }
       setCriarBreads(bds)
       setCriarQtys({})
-    } catch(e) { showToast('Erro') }
+    } catch(e) { showToastPS('Erro') }
     finally { hideLoad() }
   }
 
@@ -252,7 +247,7 @@ export default function RomaneioPage() {
     setCriarExtras(prev => ({ ...prev, [eid]: name }))
     setCriarQtys(prev => ({ ...prev, [eid]: 0 }))
     setCriarExtraInput('')
-    showToast('✅ '+name+' adicionado')
+    showToastPS('✅ '+name+' adicionado')
   }
   const removeExtra = (eid: string) => {
     setCriarExtras(prev => { const n={...prev}; delete n[eid]; return n })
@@ -261,8 +256,8 @@ export default function RomaneioPage() {
 
   const saveRomaneio = async () => {
     const items = Object.entries(criarQtys).filter(([,v])=>v>0)
-    if (!items.length) { showToast('⚠️ Adicione ao menos um produto'); return }
-    if (!criarDestId) { showToast('⚠️ Selecione o destino'); return }
+    if (!items.length) { showToastPS('⚠️ Adicione ao menos um produto'); return }
+    if (!criarDestId) { showToastPS('⚠️ Selecione o destino'); return }
     showLoad('Salvando romaneio...')
     try {
       const rom = await sbPost('romaneios',[{
@@ -283,12 +278,12 @@ export default function RomaneioPage() {
         try { await sbDel('romaneios',{id:romId}) } catch(_) {}
         throw itemErr
       }
-      showToast('✅ Romaneio criado!')
+      showToastPS('✅ Romaneio criado!')
       await loadPainel()
       setScreen('painel')
     } catch(e:any) {
       const msg = e.message||'Erro desconhecido'
-      showToast('❌ Erro: '+(msg.length>100?msg.slice(0,100)+'...':msg), 5000)
+      showToastPS('❌ Erro: '+(msg.length>100?msg.slice(0,100)+'...':msg), 5000)
     } finally { hideLoad() }
   }
 
@@ -372,9 +367,9 @@ export default function RomaneioPage() {
         console.error('[romaneio] erro ao gerar bread_movements:', movErr)
       }
 
-      showToast('✅ Romaneio marcado como enviado!')
+      showToastPS('✅ Romaneio marcado como enviado!')
       await loadPainel()
-    } catch(e) { showToast('❌ Erro') }
+    } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
 
@@ -394,7 +389,7 @@ export default function RomaneioPage() {
       })
       setConfData(data)
       setScreen('conferencia')
-    } catch(e) { showToast('Erro ao carregar') }
+    } catch(e) { showToastPS('Erro ao carregar') }
     finally { hideLoad() }
   }
 
@@ -429,10 +424,10 @@ export default function RomaneioPage() {
         status:hasDiverg?'com_divergencia':'conferido',
         confirmed_by:'Marselle', confirmed_at:new Date().toISOString()
       },{id:confRomId})
-      showToast(hasDiverg?'⚠️ Conferência salva com divergência':'✅ Conferência confirmada!')
+      showToastPS(hasDiverg?'⚠️ Conferência salva com divergência':'✅ Conferência confirmada!')
       await loadPainel()
       setScreen('painel')
-    } catch(e) { showToast('❌ Erro ao salvar') }
+    } catch(e) { showToastPS('❌ Erro ao salvar') }
     finally { hideLoad() }
   }
 
@@ -456,9 +451,9 @@ export default function RomaneioPage() {
     try {
       await sbDel('romaneio_items',{romaneio_id:romId})
       await sbDel('romaneios',{id:romId})
-      showToast('🗑 Deletado')
+      showToastPS('🗑 Deletado')
       await loadAdminPainel()
-    } catch(e) { showToast('❌ Erro') }
+    } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
 
@@ -468,10 +463,10 @@ export default function RomaneioPage() {
       const items = await sbGet('romaneio_items',`romaneio_id=eq.${romId}&item_status=eq.divergencia`)
       for (const it of items) await sbPatch('romaneio_items',{item_status:'aprovado'},{id:it.id})
       await sbPatch('romaneios',{status:'aprovado'},{id:romId})
-      showToast('✅ Divergências aprovadas')
+      showToastPS('✅ Divergências aprovadas')
       await loadPainel()
       setScreen('painel')
-    } catch(e) { showToast('❌ Erro') }
+    } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
 
@@ -479,9 +474,9 @@ export default function RomaneioPage() {
     showLoad('Aprovando...')
     try {
       await sbPatch('romaneio_items',{item_status:'aprovado'},{id:itemId})
-      showToast('✅ Item aprovado')
+      showToastPS('✅ Item aprovado')
       await loadDiverg()
-    } catch(e) { showToast('❌ Erro') }
+    } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
 
@@ -489,7 +484,7 @@ export default function RomaneioPage() {
     showLoad('Calculando...')
     try {
       const exDest = dests.find(d=>d.code==='EX')
-      if (!exDest) { showToast('EX não encontrado'); return }
+      if (!exDest) { showToastPS('EX não encontrado'); return }
       const roms = await sbGet('romaneios',`record_date=gte.${fechFrom}&record_date=lte.${fechTo}&destination_id=eq.${exDest.id}&status=neq.separado&select=id,record_date,trip_number,status`)
       if (!roms.length) { setFechResult([]); setFechSummary('Nenhum romaneio no período.'); return }
       const byProduct: Record<string,any> = {}
@@ -503,8 +498,8 @@ export default function RomaneioPage() {
       }
       const rows = Object.values(byProduct).sort((a:any,b:any)=>a.name.localeCompare(b.name))
       setFechResult(rows)
-      setFechSummary(`${roms.length} romaneios · ${fmtDate(fechFrom)} a ${fmtDate(fechTo)}`)
-    } catch(e) { showToast('Erro ao calcular') }
+      setFechSummary(`${roms.length} romaneios · ${formatDateBR(fechFrom)} a ${formatDateBR(fechTo)}`)
+    } catch(e) { showToastPS('Erro ao calcular') }
     finally { hideLoad() }
   }
 
@@ -529,8 +524,8 @@ export default function RomaneioPage() {
         if (val > 0) rows.push({ product_id:b.id, product_source:'bread', product_name:b.name, destination_id:exDest.id, unit_price:val, active:true })
       })
       if (rows.length) await sbUpsert('product_prices', rows, 'product_id,product_source,destination_id')
-      showToast('✅ Preços salvos!')
-    } catch(e) { showToast('❌ Erro') }
+      showToastPS('✅ Preços salvos!')
+    } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
 
@@ -567,7 +562,6 @@ export default function RomaneioPage() {
   return (
     <>
       {/* TOAST */}
-      <div id="rom-toast" className="ps-toast"/>
 
       {/* LOADING overlay */}
       {loading && (
@@ -606,7 +600,7 @@ export default function RomaneioPage() {
       {screen==='painel' && (
         <div className="ps-canvas">
           <div className="ps-shell">
-            <Header subtitle={`Hoje · ${fmtDate(todayKey())}`}/>
+            <Header subtitle={`Hoje · ${formatDateBR(todayKey())}`}/>
             <div className="ps-scroll ps-pad">
               {role==='gustavo' && (
                 <button className="ps-btn primary block" style={{marginTop:16}} onClick={openCriar}>
@@ -615,7 +609,7 @@ export default function RomaneioPage() {
               )}
 
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'18px 0 12px'}}>
-                <div className="ps-label" style={{margin:0}}>Hoje · {fmtDate(todayKey())}</div>
+                <div className="ps-label" style={{margin:0}}>Hoje · {formatDateBR(todayKey())}</div>
                 <button className="ps-btn ghost sm" onClick={refreshPainel}>
                   <RotateCw size={14}/> Atualizar
                 </button>
@@ -680,7 +674,7 @@ export default function RomaneioPage() {
               <div className="ps-card" style={{marginTop:16}}>
                 <div className="ps-pname">{detailRom.destinations?.name} · Viagem {detailRom.trip_number}</div>
                 <div className="ps-card-meta" style={{textAlign:'left'}}>
-                  Data: {fmtDate(detailRom.record_date)} · Criado por: {detailRom.created_by}
+                  Data: {formatDateBR(detailRom.record_date)} · Criado por: {detailRom.created_by}
                   {detailRom.sent_at && <><br/>Enviado por {detailRom.sent_by} em {fmtDateTime(detailRom.sent_at)}</>}
                   {detailRom.confirmed_at && <><br/>Conferido por {detailRom.confirmed_by} em {fmtDateTime(detailRom.confirmed_at)}</>}
                 </div>
@@ -950,7 +944,7 @@ export default function RomaneioPage() {
               {/* Painel admin */}
               {adminTab==='painel-adm' && (
                 <>
-                  <div className="ps-label">Hoje · {fmtDate(todayKey())}</div>
+                  <div className="ps-label">Hoje · {formatDateBR(todayKey())}</div>
                   {adminRoms.length===0 && (
                     <div className="ps-empty">
                       <Package size={36} style={{display:'block',margin:'0 auto 8px',opacity:.4}}/>
@@ -1005,7 +999,7 @@ export default function RomaneioPage() {
                       <div key={it.id} className="ps-card">
                         <div className="ps-pname">{it.product_name}</div>
                         <div className="ps-card-meta" style={{textAlign:'left'}}>
-                          {it.romaneios?.destinations?.name} · Viagem {it.romaneios?.trip_number} · {fmtDate(it.romaneios?.record_date)}
+                          {it.romaneios?.destinations?.name} · Viagem {it.romaneios?.trip_number} · {formatDateBR(it.romaneios?.record_date)}
                         </div>
                         <div className="ps-item-meta">
                           <span>Enviado: <b>{it.qty_sent}</b></span>
