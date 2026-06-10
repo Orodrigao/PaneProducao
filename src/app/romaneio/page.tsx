@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package } from 'lucide-react'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { nowBrasilia, todayKey } from '@/lib/utils'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -19,8 +20,6 @@ interface RomItem { id:string; romaneio_id:string; product_id:string; product_so
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
 
 // ── utils ──────────────────────────────────────────────────────────
-function nowBrasilia() { const n=new Date(); const o=-3*60-n.getTimezoneOffset(); return new Date(n.getTime()+o*60000) }
-function todayKey() { const d=nowBrasilia(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 function fmtDate(s:string|null|undefined) { if(!s)return ''; const[y,m,d]=s.split('-'); return `${d}/${m}/${y}` }
 function fmtDateTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getDate()).padStart(2,'0')}/${String(br.getMonth()+1).padStart(2,'0')} ${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
 function statusLabel(s:string) { return ({separado:'Separado',enviado:'Enviado',conferido:'Conferido',com_divergencia:'Divergência',aprovado:'Aprovado',fechado:'Fechado'} as Record<string,string>)[s]||s }

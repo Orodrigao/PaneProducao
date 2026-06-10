@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Minus, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type Role } from '@/lib/auth'
-import { showToast } from '@/lib/utils'
+import { showToast, todayKey, formatDateBR } from '@/lib/utils'
 
 interface Bread {
   id: string
@@ -22,21 +22,10 @@ interface FormState {
 
 const LOSS_REASONS = ['Queimou', 'Fora do padrão', 'Outros']
 
-function todayKey(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
-
 function dateKeyOffset(daysBack: number): string {
   const d = new Date()
   d.setDate(d.getDate() - daysBack)
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
-
-function formatDateBR(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
 }
 
 function formatDayShort(iso: string): string {

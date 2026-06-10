@@ -9,6 +9,7 @@ import SegmentedFilter from '@/components/reports/SegmentedFilter'
 import KPICard from '@/components/reports/KPICard'
 import ReportTable, { ReportTableColumn } from '@/components/reports/ReportTable'
 import { csvExport } from '@/components/reports/csvExport'
+import { formatDateBR } from '@/lib/utils'
 
 interface DBRow {
   id: string
@@ -45,12 +46,6 @@ interface ProductInfo {
 
 function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
-
-function formatDateBR(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
 }
 
 function formatBRL(v: number): string {
