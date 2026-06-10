@@ -5,13 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
 
-interface Bread {
-  id: string
-  name: string
-  unit: string | null
-  is_pj: boolean
-  active: boolean
-}
+import type { BreadOption as Bread } from '@/lib/types'
 
 interface BreadMovement {
   bread_id: string

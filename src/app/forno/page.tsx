@@ -4,14 +4,7 @@ import { Minus, Plus, Save, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type Role } from '@/lib/auth'
 import { showToast, todayKey, formatDateBR } from '@/lib/utils'
-
-interface Bread {
-  id: string
-  name: string
-  unit: string | null
-  is_pj: boolean
-  active: boolean
-}
+import type { BreadOption as Bread } from '@/lib/types'
 
 interface FormState {
   baked: string
