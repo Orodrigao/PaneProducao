@@ -417,7 +417,7 @@ export default function ProdutosPage() {
                   style={{width:18, height:18, cursor:'pointer'}}
                 />
                 <span style={{fontSize:13, color:'var(--ps-ink)'}}>
-                  🛒 <b>Revenda</b> — comprado pronto pra revender (aparece em /compras e /estoque/entrada)
+                  🛒 <b>Revenda</b> — comprado pronto pra revender (aparece em /compras)
                 </span>
               </label>
               <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:'8px 4px'}}>

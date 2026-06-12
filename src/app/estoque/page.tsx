@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { Plus, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
@@ -101,6 +100,15 @@ export default function EstoquePage() {
             <KPICard label="Est. custo" value={`R$ ${totalValue.toFixed(0)}`} accent="honey"/>
           </div>
 
+          {/* Aviso: entrada de matéria-prima ainda não disponível */}
+          <div className="ps-card" style={{marginTop:14, padding:'12px 14px', background:'var(--cream)', borderColor:'var(--border-soft)'}}>
+            <div style={{fontSize:13, color:'var(--ps-ink)', fontWeight:600, marginBottom:4}}>📸 Entrada de matéria-prima — em breve</div>
+            <div style={{fontSize:12, color:'var(--ink-soft)', lineHeight:1.5}}>
+              O registro de entrada será feito tirando foto da nota fiscal — a IA lê os itens, quantidades e custos.
+              Enquanto não está pronto, os saldos abaixo ficam zerados.
+            </div>
+          </div>
+
           {/* Tabs */}
           <div className="ps-tabs" role="tablist" style={{marginTop:16}}>
             <button className="ps-tab" role="tab" aria-selected={tab==='saldo'} onClick={() => setTab('saldo')}>Saldo atual</button>
@@ -188,14 +196,6 @@ export default function EstoquePage() {
           )}
         </div>
 
-        {/* FAB Nova entrada */}
-        <Link href="/estoque/entrada"
-          style={{position:'fixed', bottom:88, right:'max(20px, calc(50% - 250px))', background:'linear-gradient(180deg, var(--crust), var(--crust-deep))', color:'#FCEFDD',
-            borderRadius:'var(--r-pill)', padding:'13px 20px', fontWeight:700, fontSize:14, textDecoration:'none',
-            boxShadow:'0 6px 18px -4px rgba(142,78,34,.5), inset 0 1px 0 rgba(255,255,255,.15)',
-            display:'flex', alignItems:'center', gap:6, zIndex:45, fontFamily:'var(--font-ui)'}}>
-          <Plus size={16}/> Entrada
-        </Link>
       </div>
     </div>
   )
