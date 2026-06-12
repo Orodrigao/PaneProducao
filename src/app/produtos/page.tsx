@@ -259,7 +259,7 @@ export default function ProdutosPage() {
 
           {/* Category filter — só Produtos */}
           {tab==='produtos' && (
-            <div className="ps-presets" style={{overflowX:'auto', paddingBottom:6, marginBottom:12, flexWrap:'nowrap'}}>
+            <div className="ps-presets" style={{marginBottom:12}}>
               {cats.map(c=>(
                 <button key={c} onClick={()=>setCat(c)} className={`ps-preset ${catFilter===c?'active':''}`}>
                   {c}
