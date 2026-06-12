@@ -72,9 +72,11 @@ export default function SobrasPage() {
       prods = prods.filter(p => !p.is_shelf)
       bds = bds.filter(b => !b.is_shelf && todayBreadIds.has(b.id))
     } else if (mode === 'descarte') {
-      // Descarte aceita qualquer item (fresco ou shelf — pão de forma vencido é descarte).
-      // Mantém o filtro por orders só pros frescos (não-shelf) — shelf sempre aparece.
-      bds = bds.filter(b => b.is_shelf || todayBreadIds.has(b.id))
+      // Aceita qualquer pão ativo não-PJ. Pão velho descartado pode ter sido
+      // produzido em qualquer dia da semana — filtrar por pedidos do dia
+      // exclui exatamente os casos reais de descarte (sobra antiga na
+      // prateleira de fim de semana, por exemplo). Não filtra: passa o baseline
+      // que a query já aplicou (active=true && is_pj=false).
     } else if (mode === 'prateleira') {
       // Lista principal: já são shelf
       const allProds = prods
