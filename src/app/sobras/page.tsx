@@ -387,9 +387,10 @@ export default function SobrasPage() {
           })()}
 
           {(breads.length > 0 || Object.keys(grouped).length > 0) && (() => {
-            // Chips de filtro: "Todas" + pães + cada categoria de produto. Scroll
-            // horizontal pra caber as 18+ categorias sem travar layout. Filtro é
-            // visual — qtys de categorias ocultas continuam contando e sendo salvas.
+            // Chips de filtro: "Todas" + pães + cada categoria de produto. Wrap em
+            // vez de scroll horizontal — em mobile a barra de scroll fica estranha
+            // e ocupa espaço. Filtro é visual: qtys de categorias ocultas
+            // continuam contando e sendo salvas.
             const chipStyle = (active: boolean): React.CSSProperties => ({
               padding: '6px 12px',
               background: active ? 'var(--ps-ink)' : 'transparent',
@@ -400,10 +401,9 @@ export default function SobrasPage() {
               fontWeight: 600,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
-              flexShrink: 0,
             })
             return (
-              <div style={{display:'flex', gap:6, overflowX:'auto', marginBottom:14, paddingBottom:4, msOverflowStyle:'none', scrollbarWidth:'thin'}}>
+              <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:14}}>
                 <button onClick={() => setSelectedCategory(null)} style={chipStyle(selectedCategory === null)}>Todas</button>
                 {breads.length > 0 && (
                   <button onClick={() => setSelectedCategory('__breads__')} style={chipStyle(selectedCategory === '__breads__')}>🍞 Pães</button>
