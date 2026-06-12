@@ -40,6 +40,9 @@ export default function SobrasPage() {
   const [includeSearch, setIncludeSearch] = useState('')
   const [selectedStore, setSelectedStore] = useState<string>('jc')
   const [saving, setSaving]     = useState(false)
+  // Filtro de categoria do form. null = "Todas". '__breads__' = só o bloco de pães.
+  // Senão, nome exato da category de products. Resetado a cada troca de modo.
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -134,6 +137,7 @@ export default function SobrasPage() {
   }, [mode, user, selectedStore])
 
   useEffect(() => { if (user && mode) loadData() }, [user, mode, selectedStore, loadData])
+  useEffect(() => { setSelectedCategory(null) }, [mode])
 
   const setQty = (id: string, val: number) => setQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
 
@@ -382,7 +386,36 @@ export default function SobrasPage() {
             )
           })()}
 
-          {breads.length > 0 && (
+          {(breads.length > 0 || Object.keys(grouped).length > 0) && (() => {
+            // Chips de filtro: "Todas" + pães + cada categoria de produto. Scroll
+            // horizontal pra caber as 18+ categorias sem travar layout. Filtro é
+            // visual — qtys de categorias ocultas continuam contando e sendo salvas.
+            const chipStyle = (active: boolean): React.CSSProperties => ({
+              padding: '6px 12px',
+              background: active ? 'var(--ps-ink)' : 'transparent',
+              color: active ? 'var(--cream)' : 'var(--ink-soft)',
+              border: `1px solid ${active ? 'var(--ps-ink)' : 'var(--line-soft)'}`,
+              borderRadius: 'var(--r-pill)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            })
+            return (
+              <div style={{display:'flex', gap:6, overflowX:'auto', marginBottom:14, paddingBottom:4, msOverflowStyle:'none', scrollbarWidth:'thin'}}>
+                <button onClick={() => setSelectedCategory(null)} style={chipStyle(selectedCategory === null)}>Todas</button>
+                {breads.length > 0 && (
+                  <button onClick={() => setSelectedCategory('__breads__')} style={chipStyle(selectedCategory === '__breads__')}>🍞 Pães</button>
+                )}
+                {Object.keys(grouped).map(cat => (
+                  <button key={cat} onClick={() => setSelectedCategory(cat)} style={chipStyle(selectedCategory === cat)}>{cat}</button>
+                ))}
+              </div>
+            )
+          })()}
+
+          {breads.length > 0 && (selectedCategory === null || selectedCategory === '__breads__') && (
             <>
               <div className="ps-label">🍞 Pães{mode === 'prateleira' ? ' de prateleira' : ' do dia'}</div>
               <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:8}}>
@@ -398,7 +431,9 @@ export default function SobrasPage() {
             </>
           )}
 
-          {Object.entries(grouped).map(([cat, items])=>(
+          {Object.entries(grouped)
+            .filter(([cat]) => selectedCategory === null || selectedCategory === cat)
+            .map(([cat, items])=>(
             <div key={cat}>
               <div className="ps-label">{cat}</div>
               <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:8}}>
