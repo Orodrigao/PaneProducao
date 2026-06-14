@@ -17,6 +17,12 @@ Dentro do Codex, peça:
 Execute docs/codex-tasks/01_SUPABASE_AUTH_PROFILES_FOUNDATION.md
 ```
 
+Ou, para a próxima tarefa versionada:
+
+```text
+Execute docs/codex-tasks/02_SUPABASE_APPLY_APP_PROFILES_MIGRATION.md
+```
+
 ## Regras gerais
 
 - O Codex deve sempre respeitar `AGENTS.md`.
@@ -32,3 +38,4 @@ Execute docs/codex-tasks/01_SUPABASE_AUTH_PROFILES_FOUNDATION.md
 | Arquivo | Objetivo |
 |---|---|
 | `01_SUPABASE_AUTH_PROFILES_FOUNDATION.md` | Criar a fundação de `app_profiles` em paralelo ao `app_users`, sem alterar o login atual. |
+| `02_SUPABASE_APPLY_APP_PROFILES_MIGRATION.md` | Revisar e aplicar, com aprovação explícita, a migration de `app_profiles` no Supabase. |
