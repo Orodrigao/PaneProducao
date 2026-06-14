@@ -1,4 +1,4 @@
-# 02 - Apply App Profiles Migration
+﻿# 02 - Apply App Profiles Migration
 
 ## Objetivo
 
@@ -234,6 +234,7 @@ Ao final, mostrar:
 ## Ponto de parada obrigatório
 
 O Codex deve parar antes de qualquer comando que escreva no Supabase remoto.
-Isso inclui supabase db push, supabase migration up, psql com SQL de escrita, pply_migration ou qualquer comando equivalente.
+Isso inclui supabase db push, supabase migration up, psql com SQL de escrita, apply_migration ou qualquer comando equivalente.
 Só pode prosseguir se Rodrigo aprovar explicitamente a aplicação da migration alvo.
 Se a aprovação não for clara, não aplicar nada e reportar o estado atual.
+
