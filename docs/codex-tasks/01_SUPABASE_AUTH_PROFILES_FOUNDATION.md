@@ -72,4 +72,59 @@ compras
 estoque
 expedicao
 vendas
+```
 
+## Stores permitidas
+
+```text
+jc
+ex
+ja
+pj
+null
+```
+
+## Regras de segurança
+
+- `service_role` nunca pode ir para o frontend.
+- Não depender de `user_metadata` editável para autorização.
+- Usuário autenticado pode ler o próprio profile.
+- Admin poderá gerenciar profiles em etapa futura.
+- Nenhum usuário anônimo deve ler profiles.
+- PIN não deve ser armazenado em claro em `app_profiles`.
+- `allowed_routes` ajuda a UI, mas RLS deve proteger o banco.
+
+## Resultado esperado
+
+Criar uma migration segura e isolada para `app_profiles`, sem afetar a operação atual.
+
+O app deve continuar funcionando como antes após essa tarefa.
+
+## Validação
+
+Ao final, rodar:
+
+```bash
+git status -sb
+git diff --stat
+```
+
+Se houver código/migration, rodar também:
+
+```bash
+npm test
+npx tsc --noEmit
+npm run build
+```
+
+## Entrega
+
+Não fazer commit sem autorização.
+
+Mostrar:
+
+- arquivos criados;
+- arquivos alterados;
+- riscos;
+- validações executadas;
+- próximos passos.
