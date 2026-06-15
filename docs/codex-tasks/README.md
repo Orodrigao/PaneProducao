@@ -41,3 +41,4 @@ Execute docs/codex-tasks/04_APP_PROFILES_SAFE_CREATION_STRATEGY.md
 | `02_SUPABASE_APPLY_APP_PROFILES_MIGRATION.md` | Revisar e aplicar, com aprovação explícita, a migration de `app_profiles` no Supabase. |
 | `03_APP_PROFILES_REAL_USERS_PLAN.md` | Planejar perfis reais em `app_profiles`, sem alterar login, código, migrations ou dados no Supabase. |
 | `04_APP_PROFILES_SAFE_CREATION_STRATEGY.md` | Planejar a estratégia segura para criação futura de profiles reais, sem criar usuários, inserir dados ou alterar login. |
+| `05_FIRST_AUTH_USERS_AND_PROFILES_PLAN.md` | Planejar a primeira leva futura de usuários Supabase Auth e profiles, usando apenas pessoas com e-mail confirmado. |
