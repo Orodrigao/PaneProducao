@@ -16,6 +16,27 @@ interface Override {
   product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
 }
 interface CatalogItem { id:string; name:string; unit:string|null; _source:'bread'|'product' }
+type CatalogRow = { id:string; name:string; unit:string|null }
+type DbError = { code?: string; message?: string }
+
+const DUPLICATE_TIER_MESSAGE = 'Já existe uma tabela de preço com esse nome. Verifique se ela está oculta, inativa ou já cadastrada.'
+
+function normalizeTierName(name: string) {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function isDuplicatePriceTierError(error: DbError | null | undefined) {
+  const msg = error?.message ?? ''
+  return error?.code === '23505' || msg.includes('price_tiers_name_key')
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message) return message
+  }
+  return fallback
+}
 
 export default function TabelasPrecoPage() {
   const [user, setUser] = useState<AppUser | null>(null)
@@ -66,11 +87,11 @@ export default function TabelasPrecoPage() {
       setItems((iRes.data || []) as TierItem[])
       setCustomers((cRes.data || []) as Customer[])
       setOverrides((oRes.data || []) as Override[])
-      const breads:   CatalogItem[] = (bRes.data || []).map((b:any) => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
-      const prods:    CatalogItem[] = (pRes.data || []).map((p:any) => ({ id:p.id, name:p.name, unit:p.unit, _source:'product' }))
+      const breads:   CatalogItem[] = ((bRes.data || []) as CatalogRow[]).map(b => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
+      const prods:    CatalogItem[] = ((pRes.data || []) as CatalogRow[]).map(p => ({ id:p.id, name:p.name, unit:p.unit, _source:'product' }))
       setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
-    } catch (e:any) {
-      setLoadError(e?.message || 'Falha ao carregar os dados.')
+    } catch (e: unknown) {
+      setLoadError(errorMessage(e, 'Falha ao carregar os dados.'))
     } finally {
       setLoading(false)
     }
@@ -79,6 +100,12 @@ export default function TabelasPrecoPage() {
 
   // ========== TABELAS ==========
   const selTier = tiers.find(t => t.id === selTierId) || null
+  const activeTiers = useMemo(() => tiers.filter(t => t.active), [tiers])
+  const inactiveTiers = useMemo(() => tiers.filter(t => !t.active), [tiers])
+  const findTierByNormalizedName = useCallback((name: string, ignoreId?: string) => {
+    const normalized = normalizeTierName(name)
+    return tiers.find(t => t.id !== ignoreId && normalizeTierName(t.name) === normalized) || null
+  }, [tiers])
 
   useEffect(() => {
     if (selTier) {
@@ -89,9 +116,15 @@ export default function TabelasPrecoPage() {
 
   const commitTierName = () => {
     if (!selTier) return
-    const v = tierNameDraft.trim()
+    const v = tierNameDraft.trim().replace(/\s+/g, ' ')
     if (!v) { setTierNameDraft(selTier.name); showToast('Nome obrigatório'); return }
     if (v === selTier.name) return
+    const existing = findTierByNormalizedName(v, selTier.id)
+    if (existing) {
+      setTierNameDraft(selTier.name)
+      showToast(DUPLICATE_TIER_MESSAGE, 4800)
+      return
+    }
     updateTier({ name: v })
   }
 
@@ -106,12 +139,31 @@ export default function TabelasPrecoPage() {
   const itemsKeySet = useMemo(() => new Set(itemsOfSel.map(i => `${i.product_source}_${i.product_id}`)), [itemsOfSel])
 
   const createTier = async () => {
-    if (!newTierName.trim()) { showToast('Nome obrigatório'); return }
+    const name = newTierName.trim().replace(/\s+/g, ' ')
+    const description = newTierDesc.trim()
+    setNewTierName(name)
+    setNewTierDesc(description)
+    if (!name) { showToast('Nome obrigatório'); return }
+    const existing = findTierByNormalizedName(name)
+    if (existing) {
+      showToast(DUPLICATE_TIER_MESSAGE, 4800)
+      if (!existing.active && confirm(`Já existe uma tabela inativa chamada "${existing.name}". Abrir essa tabela para revisar ou reativar?`)) {
+        setNewTierOpen(false)
+        setNewTierName('')
+        setNewTierDesc('')
+        setSelTierId(existing.id)
+      }
+      return
+    }
     const { data, error } = await supabase.from('price_tiers').insert({
-      name: newTierName.trim(),
-      description: newTierDesc.trim() || null,
+      name,
+      description: description || null,
     }).select().single()
-    if (error) { showToast('Erro: ' + error.message); return }
+    if (error) {
+      console.error('Erro ao criar tabela de preço:', error)
+      showToast(isDuplicatePriceTierError(error) ? DUPLICATE_TIER_MESSAGE : 'Erro ao criar tabela de preço. Tente novamente.', 4800)
+      return
+    }
     showToast('✅ Tabela criada')
     setNewTierName(''); setNewTierDesc(''); setNewTierOpen(false)
     await loadAll()
@@ -121,7 +173,11 @@ export default function TabelasPrecoPage() {
   const updateTier = async (patch: Partial<PriceTier>) => {
     if (!selTierId) return
     const { error } = await supabase.from('price_tiers').update(patch).eq('id', selTierId)
-    if (error) { showToast('Erro: ' + error.message); return }
+    if (error) {
+      console.error('Erro ao atualizar tabela de preço:', error)
+      showToast(isDuplicatePriceTierError(error) ? DUPLICATE_TIER_MESSAGE : 'Erro ao atualizar tabela de preço. Tente novamente.', 4800)
+      return
+    }
     showToast('✅ Tabela atualizada')
     loadAll()
   }
@@ -149,12 +205,25 @@ export default function TabelasPrecoPage() {
   const duplicateTier = async () => {
     if (!selTier) return
     const newName = prompt(`Copiar "${selTier.name}" como:`, `${selTier.name} (cópia)`)
-    if (!newName?.trim()) return
+    const name = newName?.trim().replace(/\s+/g, ' ')
+    if (!name) return
+    const existing = findTierByNormalizedName(name)
+    if (existing) {
+      showToast(DUPLICATE_TIER_MESSAGE, 4800)
+      if (!existing.active && confirm(`Já existe uma tabela inativa chamada "${existing.name}". Abrir essa tabela para revisar ou reativar?`)) {
+        setSelTierId(existing.id)
+      }
+      return
+    }
     const { data: newT, error: e1 } = await supabase.from('price_tiers').insert({
-      name: newName.trim(),
+      name,
       description: selTier.description,
     }).select().single()
-    if (e1 || !newT) { showToast('Erro: ' + (e1?.message||'?')); return }
+    if (e1 || !newT) {
+      console.error('Erro ao copiar tabela de preço:', e1)
+      showToast(isDuplicatePriceTierError(e1) ? DUPLICATE_TIER_MESSAGE : 'Erro ao copiar tabela de preço. Tente novamente.', 4800)
+      return
+    }
     if (itemsOfSel.length > 0) {
       const rows = itemsOfSel.map(i => ({
         tier_id: newT.id, product_id: i.product_id, product_source: i.product_source,
@@ -164,7 +233,7 @@ export default function TabelasPrecoPage() {
       const { error: e2 } = await supabase.from('price_tier_items').insert(rows)
       if (e2) { showToast('Tabela criada, mas erro nos itens: ' + e2.message); return }
     }
-    showToast(`✅ Cópia "${newName}" criada`)
+    showToast(`✅ Cópia "${name}" criada`)
     await loadAll()
     setSelTierId(newT.id)
   }
@@ -431,19 +500,20 @@ export default function TabelasPrecoPage() {
               <>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:14, marginBottom:14, gap:8, flexWrap:'wrap'}}>
                   <span style={{fontSize:13, color:'var(--ink-soft)'}}>
-                    {tiers.filter(t=>t.active).length} tabela(s) cadastrada(s)
+                    {activeTiers.length} tabela(s) ativa(s)
+                    {inactiveTiers.length > 0 && ` · ${inactiveTiers.length} inativa(s)`}
                   </span>
                   <button onClick={()=>setNewTierOpen(true)} className="ps-btn primary">
                     <Plus size={14}/> Nova tabela
                   </button>
                 </div>
-                {tiers.filter(t=>t.active).length === 0 ? (
+                {activeTiers.length === 0 ? (
                   <div className="ps-empty">
                     Nenhuma tabela cadastrada. Comece criando a primeira (ex: &quot;Atacado A&quot;, &quot;Eventos&quot;).
                   </div>
                 ) : (
                   <div style={{display:'grid', gap:10}}>
-                    {tiers.filter(t=>t.active).map(t => {
+                    {activeTiers.map(t => {
                       const count = items.filter(i => i.tier_id === t.id).length
                       return (
                         <div key={t.id} onClick={()=>setSelTierId(t.id)} className="ps-card" style={{borderLeft:`4px solid ${t.active ? 'var(--crust)' : 'var(--ps-line)'}`, cursor:'pointer', opacity:t.active?1:0.6}}>
@@ -453,6 +523,28 @@ export default function TabelasPrecoPage() {
                         </div>
                       )
                     })}
+                  </div>
+                )}
+                {inactiveTiers.length > 0 && (
+                  <div style={{marginTop:18}}>
+                    <div style={{fontSize:12, fontWeight:700, color:'var(--ink-soft)', marginBottom:8}}>
+                      Inativas / ocultas
+                    </div>
+                    <div style={{display:'grid', gap:10}}>
+                      {inactiveTiers.map(t => {
+                        const count = items.filter(i => i.tier_id === t.id).length
+                        return (
+                          <div key={t.id} onClick={()=>setSelTierId(t.id)} className="ps-card" style={{borderLeft:'4px solid var(--ps-line)', cursor:'pointer', opacity:0.72}}>
+                            <div className="ps-pname">
+                              {t.name}
+                              <span className="ps-store-chip" style={{marginLeft:8}}>inativa</span>
+                            </div>
+                            {t.description && <div style={{fontSize:13, color:'var(--ink-soft)'}}>{t.description}</div>}
+                            <div style={{fontSize:12, color:'var(--ink-faint)'}}>{count} produto(s) · clique para revisar ou reativar</div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </>
