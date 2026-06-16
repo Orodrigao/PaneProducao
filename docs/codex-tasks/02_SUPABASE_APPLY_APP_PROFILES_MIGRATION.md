@@ -12,7 +12,7 @@ Antes de executar, leia:
 
 - `AGENTS.md`
 - `docs/codex-tasks/01_SUPABASE_AUTH_PROFILES_FOUNDATION.md`
-- `supabase/migrations/20260614120000_create_app_profiles.sql`
+- `supabase/migrations/20260614182614_create_app_profiles.sql`
 - `docs/SUPABASE_RLS_REMEDIATION_PLAN.md`
 - `docs/SUPABASE_LIVE_INVENTORY.md`
 
@@ -23,7 +23,7 @@ Confirme em 5 a 10 linhas o que entendeu antes de pedir aprovacao para aplicar q
 Arquivo esperado:
 
 ```text
-supabase/migrations/20260614120000_create_app_profiles.sql
+supabase/migrations/20260614182614_create_app_profiles.sql
 ```
 
 O Codex deve confirmar que a migration:
@@ -75,7 +75,7 @@ Rodar:
 
 ```bash
 git status -sb
-sed -n '1,220p' supabase/migrations/20260614120000_create_app_profiles.sql
+sed -n '1,220p' supabase/migrations/20260614182614_create_app_profiles.sql
 ```
 
 Conferir se ha alteracoes locais nao relacionadas. Se houver, nao reverter; apenas reportar.
@@ -141,7 +141,7 @@ Antes de aplicar, mostrar ao Rodrigo:
 Pergunta obrigatoria:
 
 ```text
-Rodrigo, posso aplicar a migration supabase/migrations/20260614120000_create_app_profiles.sql no Supabase de producao agora?
+Rodrigo, posso aplicar a migration supabase/migrations/20260614182614_create_app_profiles.sql no Supabase de producao agora?
 ```
 
 So prosseguir se a resposta for claramente positiva.
@@ -237,4 +237,3 @@ O Codex deve parar antes de qualquer comando que escreva no Supabase remoto.
 Isso inclui supabase db push, supabase migration up, psql com SQL de escrita, apply_migration ou qualquer comando equivalente.
 Só pode prosseguir se Rodrigo aprovar explicitamente a aplicação da migration alvo.
 Se a aprovação não for clara, não aplicar nada e reportar o estado atual.
-

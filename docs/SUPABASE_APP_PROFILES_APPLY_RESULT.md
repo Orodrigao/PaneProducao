@@ -8,7 +8,7 @@ A migration de `app_profiles` foi aplicada com sucesso no projeto Supabase `Pane
 
 Arquivo no repositório:
 
-`supabase/migrations/20260614120000_create_app_profiles.sql`
+`supabase/migrations/20260614182614_create_app_profiles.sql`
 
 ## Registro no histórico remoto
 
@@ -37,7 +37,7 @@ Há diferença entre o timestamp do arquivo local e o registro remoto porque a a
 
 Antes de novas migrations, é preciso considerar o desalinhamento entre:
 
-- migration local: `20260614120000_create_app_profiles.sql`;
+- migration local: `20260614182614_create_app_profiles.sql`;
 - histórico remoto: `20260614182614_create_app_profiles`.
 
 Não rodar `supabase db push` ou `supabase migration up` sem revisar esse ponto.
