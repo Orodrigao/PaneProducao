@@ -8,7 +8,7 @@ Registrar que a migration para remover `pj` dos valores permitidos de `app_profi
 
 Arquivo no repositório:
 
-`supabase/migrations/20260614203000_remove_pj_from_app_profiles_store.sql`
+`supabase/migrations/20260614205610_remove_pj_from_app_profiles_store.sql`
 
 ## Registro no histórico remoto
 
