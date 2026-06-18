@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Save, X, KeyRound, Pencil, Power } from 'lucide-react'
+import { Plus, Save, X, KeyRound, Pencil, Power, Search, SlidersHorizontal } from 'lucide-react'
 import {
   AppUser, Role,
   fetchUsersFromSupabase, cacheUsers, getCachedUsers,
@@ -11,6 +11,8 @@ import {
 } from '@/lib/auth'
 
 const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
+type StatusFilter = 'todos' | 'ativos' | 'inativos'
+type StoreFilter = 'todas' | 'global' | 'jc' | 'ja' | 'ex'
 
 const ROUTE_OPTIONS = [
   { href: '/',                  label: 'Produção',          icon: '🍞' },
@@ -32,6 +34,32 @@ const ROUTE_OPTIONS = [
   { href: '/relatorios',                  label: 'Relatórios (acesso)',  icon: '📈' },
   { href: '/relatorios/sobras-descartes', label: '└ Sobras & Descartes', icon: '♻️' },
 ]
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'ativos', label: 'Ativos' },
+  { value: 'inativos', label: 'Inativos' },
+]
+
+const STORE_FILTERS: { value: StoreFilter; label: string }[] = [
+  { value: 'todas', label: 'Todas as lojas' },
+  { value: 'global', label: 'Global' },
+  { value: 'jc', label: 'JC' },
+  { value: 'ja', label: 'JA' },
+  { value: 'ex', label: 'EX' },
+]
+
+function storeLabel(store: string | null) {
+  if (store === 'jc') return 'JC'
+  if (store === 'ja') return 'JA'
+  if (store === 'ex') return 'EX'
+  return 'Global'
+}
+
+function storeChipClass(store: string | null) {
+  if (store === 'jc' || store === 'ja' || store === 'ex') return store
+  return 'separado'
+}
 
 function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (pin: string) => void }) {
   const [pin, setPin] = useState('')
@@ -241,6 +269,10 @@ export default function AdminUsuariosPage() {
   const [newModal, setNewModal]     = useState(false)
   const [editModal, setEditModal]   = useState<AppUser | null>(null)
   const [msg, setMsg]               = useState('')
+  const [search, setSearch]         = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos')
+  const [roleFilter, setRoleFilter] = useState<Role | 'todas'>('todas')
+  const [storeFilter, setStoreFilter] = useState<StoreFilter>('todas')
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -300,6 +332,42 @@ export default function AdminUsuariosPage() {
     setEditModal(null)
   }
 
+  const activeCount = useMemo(() => users.filter(user => user.active).length, [users])
+  const inactiveCount = users.length - activeCount
+
+  const filteredUsers = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+
+    return users.filter(user => {
+      const searchable = [
+        user.displayName,
+        user.username,
+        roleLabel(user.role),
+        user.role,
+        storeLabel(user.store),
+      ].join(' ').toLowerCase()
+      const matchesSearch = needle.length === 0 || searchable.includes(needle)
+      const matchesStatus =
+        statusFilter === 'todos' ||
+        (statusFilter === 'ativos' && user.active) ||
+        (statusFilter === 'inativos' && !user.active)
+      const matchesRole = roleFilter === 'todas' || user.role === roleFilter
+      const matchesStore =
+        storeFilter === 'todas' ||
+        (storeFilter === 'global' && !user.store) ||
+        user.store === storeFilter
+
+      return matchesSearch && matchesStatus && matchesRole && matchesStore
+    })
+  }, [roleFilter, search, statusFilter, storeFilter, users])
+
+  function clearFilters() {
+    setSearch('')
+    setStatusFilter('todos')
+    setRoleFilter('todas')
+    setStoreFilter('todas')
+  }
+
   if (loading) return (
     <div className="ps-loading">
       <div className="ps-spinner"/>
@@ -327,42 +395,140 @@ export default function AdminUsuariosPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:14, marginBottom:14, gap:10}}>
-            <h1 className="ps-page-title" style={{margin:0}}>👥 Usuários ({users.length})</h1>
-            <button onClick={() => setNewModal(true)} className="ps-btn primary">
-              <Plus size={14}/> Novo
+          <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginTop:14, marginBottom:12, gap:12}}>
+            <div style={{minWidth:0}}>
+              <h1 className="ps-page-title" style={{margin:0, fontSize:26}}>Usuários</h1>
+              <p style={{margin:'3px 0 0', fontSize:12.5, color:'var(--ink-soft)', lineHeight:1.35}}>
+                Login atual por PIN. Supabase Auth será preparado em etapa separada.
+              </p>
+            </div>
+            <button onClick={() => setNewModal(true)} className="ps-btn primary" style={{minHeight:42}}>
+              <Plus size={15}/> Novo
             </button>
+          </div>
+
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:8, marginBottom:12}}>
+            <div style={{background:'var(--cream)', border:'1px solid var(--ps-line)', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel">Total</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--ps-ink)', lineHeight:1.1}}>{users.length}</div>
+            </div>
+            <div style={{background:'#E3F0E0', border:'1px solid #C5D5BA', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel" style={{color:'var(--sage)'}}>Ativos</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--sage)', lineHeight:1.1}}>{activeCount}</div>
+            </div>
+            <div style={{background:'var(--berry-tint)', border:'1px solid #E6B5AC', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel" style={{color:'var(--berry)'}}>Inativos</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--berry)', lineHeight:1.1}}>{inactiveCount}</div>
+            </div>
+          </div>
+
+          <div style={{border:'1px solid var(--ps-line)', borderRadius:'var(--r-card)', background:'color-mix(in srgb, var(--cream) 80%, var(--flour))', padding:12, marginBottom:12, boxShadow:'var(--sh-1)'}}>
+            <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:10, color:'var(--ink-soft)', fontSize:12, fontWeight:700}}>
+              <SlidersHorizontal size={14}/> Encontrar usuário
+              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontWeight:700}}>{filteredUsers.length} exibidos</span>
+            </div>
+
+            <div style={{position:'relative', marginBottom:10}}>
+              <Search size={16} style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)'}}/>
+              <input
+                className="ps-input"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Buscar por nome, login, cargo ou loja"
+                style={{width:'100%', paddingLeft:36, paddingRight: search ? 36 : 12}}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label="Limpar busca"
+                  style={{position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', width:28, height:28, border:0, borderRadius:8, background:'transparent', color:'var(--ink-faint)', display:'grid', placeItems:'center', cursor:'pointer'}}
+                >
+                  <X size={16}/>
+                </button>
+              )}
+            </div>
+
+            <div style={{display:'flex', gap:6, overflowX:'auto', paddingBottom:2, marginBottom:10}}>
+              {STATUS_FILTERS.map(filter => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  aria-pressed={statusFilter === filter.value}
+                  onClick={() => setStatusFilter(filter.value)}
+                  className={statusFilter === filter.value ? 'ps-btn primary sm' : 'ps-btn ghost sm'}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+              <select value={roleFilter} onChange={event => setRoleFilter(event.target.value as Role | 'todas')} className="ps-select" aria-label="Filtrar por cargo">
+                <option value="todas">Todos os cargos</option>
+                {ALL_ROLES.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}
+              </select>
+              <select value={storeFilter} onChange={event => setStoreFilter(event.target.value as StoreFilter)} className="ps-select" aria-label="Filtrar por loja">
+                {STORE_FILTERS.map(store => <option key={store.value} value={store.value}>{store.label}</option>)}
+              </select>
+            </div>
           </div>
 
           {msg && (
             <div className="ps-banner crust" style={{marginBottom:14}}>{msg}</div>
           )}
 
-          <div style={{display:'flex', flexDirection:'column', gap:10}}>
-            {users.map(user => (
-              <div key={user.id} className="ps-card" style={{padding:'12px 14px', flexDirection:'row', alignItems:'center', gap:12, opacity: user.active ? 1 : 0.55}}>
-                <div className="ps-avatar" style={{width:42, height:42, fontSize:16, background:roleColor(user.role)}}>
-                  {user.displayName.charAt(0).toUpperCase()}
+          {filteredUsers.length === 0 ? (
+            <div className="ps-empty" style={{padding:'34px 12px'}}>
+              Nenhum usuário encontrado.
+              <button type="button" onClick={clearFilters} className="ps-btn ghost sm" style={{margin:'12px auto 0'}}>
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(244px, 1fr))', gap:10}}>
+              {filteredUsers.map(user => (
+                <div key={user.id} className="ps-card" style={{padding:'12px 13px', gap:10, opacity: user.active ? 1 : 0.62}}>
+                  <div style={{display:'flex', alignItems:'flex-start', gap:10}}>
+                    <div className="ps-avatar" style={{width:38, height:38, fontSize:15, background:roleColor(user.role)}}>
+                      {user.displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:800, fontSize:14.5, color:'var(--ps-ink)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{user.displayName}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-faint)', fontWeight:700, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>@{user.username}</div>
+                    </div>
+                    <span className={user.active ? 'ps-status ok' : 'ps-status com_divergencia'} style={{fontSize:9.5, padding:'2px 7px'}}>
+                      {user.active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+
+                  <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                    <span className="ps-status separado" style={{fontSize:10, textTransform:'none', letterSpacing:0, color:roleColor(user.role)}}>
+                      {roleLabel(user.role)}
+                    </span>
+                    <span className={user.store ? `ps-store-chip ${storeChipClass(user.store)}` : 'ps-status separado'} style={{fontSize:10}}>
+                      {storeLabel(user.store)}
+                    </span>
+                    <span className="ps-status separado" style={{fontSize:10, textTransform:'none', letterSpacing:0}}>
+                      {user.allowedRoutes.length} módulos
+                    </span>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:6}}>
+                    <button onClick={() => setPinModal(user)} className="ps-btn ghost sm" aria-label={`Trocar PIN de ${user.displayName}`}>
+                      <KeyRound size={12}/> PIN
+                    </button>
+                    <button onClick={() => setEditModal(user)} className="ps-btn ghost sm" aria-label={`Editar ${user.displayName}`}>
+                      <Pencil size={12}/> Editar
+                    </button>
+                    <button onClick={() => handleToggle(user)} className={`ps-btn sm ${user.active ? 'danger' : 'success'}`} aria-label={user.active ? `Desativar ${user.displayName}` : `Ativar ${user.displayName}`}>
+                      <Power size={12}/> {user.active ? 'Off' : 'On'}
+                    </button>
+                  </div>
                 </div>
-                <div style={{flex:1, minWidth:0}}>
-                  <div style={{fontWeight:700, fontSize:14.5, color:'var(--ps-ink)'}}>{user.displayName}</div>
-                  <div style={{fontSize:12, color:roleColor(user.role), fontWeight:600}}>{roleLabel(user.role)}{user.store && ` · ${user.store.toUpperCase()}`}</div>
-                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>@{user.username}</div>
-                </div>
-                <div style={{display:'flex', gap:6, flexShrink:0, flexDirection:'column'}}>
-                  <button onClick={() => setPinModal(user)} className="ps-btn ghost sm">
-                    <KeyRound size={11}/> PIN
-                  </button>
-                  <button onClick={() => setEditModal(user)} className="ps-btn ghost sm">
-                    <Pencil size={11}/> Editar
-                  </button>
-                  <button onClick={() => handleToggle(user)} className={`ps-btn sm ${user.active ? 'danger' : 'success'}`}>
-                    <Power size={11}/> {user.active ? 'Off' : 'On'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
