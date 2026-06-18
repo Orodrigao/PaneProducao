@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Save, X, KeyRound, Pencil, Power, Search, SlidersHorizontal } from 'lucide-react'
+import { Plus, Save, X, KeyRound, Pencil, Power, Search, SlidersHorizontal, Mail, UserRound, ShieldCheck } from 'lucide-react'
 import {
   AppUser, Role,
   fetchUsersFromSupabase, cacheUsers, getCachedUsers,
@@ -61,6 +61,22 @@ function storeChipClass(store: string | null) {
   return 'separado'
 }
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function ModalSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <section style={{border:'1px solid var(--ps-line)', borderRadius:'var(--r-card)', background:'var(--cream)', padding:12, marginBottom:12, boxShadow:'var(--sh-1)'}}>
+      <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:10, color:'var(--crust)', fontWeight:800, fontSize:13}}>
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
+
 function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (pin: string) => void }) {
   const [pin, setPin] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -100,6 +116,7 @@ function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => voi
 
 function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) => void }) {
   const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true, store: null as string | null })
+  const [authEmail, setAuthEmail] = useState('')
   const [routes, setRoutes] = useState<string[]>(DEFAULT_ROUTES_BY_ROLE.producao)
   const [err, setErr] = useState('')
 
@@ -114,68 +131,96 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
   }
 
   function handleSave() {
+    const email = authEmail.trim().toLowerCase()
     if (!form.username || !form.displayName) return setErr('Preencha nome de usuário e nome de exibição')
     if (form.pin.length < 4) return setErr('PIN deve ter 4 dígitos')
+    if (email && !isValidEmail(email)) return setErr('E-mail inválido')
     if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
     onSave({ ...form, allowedRoutes: routes })
   }
 
   return (
     <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="ps-sheet">
+      <div className="ps-sheet" style={{paddingBottom:0}}>
         <div className="ps-sheet-grab"/>
-        <h3>+ Novo Usuário</h3>
-
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Username (login)</div>
-          <input type="text" value={form.username}
-            onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }} className="ps-input"/>
-        </div>
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Nome de exibição</div>
-          <input type="text" value={form.displayName}
-            onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }} className="ps-input"/>
-        </div>
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">PIN (4 dígitos)</div>
-          <input type="password" inputMode="numeric" maxLength={4} value={form.pin}
-            onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+        <div style={{position:'sticky', top:-10, zIndex:2, background:'var(--flour)', paddingBottom:10, borderBottom:'1px solid var(--ps-line)', marginBottom:12}}>
+          <h3 style={{marginBottom:4}}>+ Novo Usuário</h3>
+          <p style={{margin:0, color:'var(--ink-soft)', fontSize:12.5, lineHeight:1.35}}>
+            Cadastro legado por PIN. O e-mail fica como preparação para Supabase Auth.
+          </p>
         </div>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Cargo</div>
-          <select value={form.role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
-            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-          </select>
-        </div>
+        <ModalSection icon={<UserRound size={15}/>} title="Identidade">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Nome da pessoa</div>
+              <input type="text" value={form.displayName}
+                onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }} className="ps-input" placeholder="Ex.: Geolar"/>
+            </div>
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Login atual</div>
+              <input type="text" value={form.username}
+                onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }} className="ps-input" placeholder="Ex.: producao1"/>
+            </div>
+          </div>
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">PIN temporário (4 dígitos)</div>
+            <input type="password" inputMode="numeric" maxLength={4} value={form.pin}
+              onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Loja física</div>
-          <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))} className="ps-select">
-            <option value="">(sem loja — admin/sem físico)</option>
-            <option value="jc">JC — Júlio</option>
-            <option value="ja">JA — Jardim América</option>
-            <option value="ex">EX — Exposição</option>
-          </select>
-        </div>
+        <ModalSection icon={<Mail size={15}/>} title="Supabase Auth">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">E-mail para Auth</div>
+            <input type="email" value={authEmail}
+              onChange={e => { setAuthEmail(e.target.value); setErr('') }} className="ps-input" placeholder="nome@paneesalute.com.br"/>
+          </div>
+          <div style={{marginTop:8, padding:'8px 10px', borderRadius:'var(--r-ctrl)', background:'var(--honey-tint)', color:'#7A5418', fontSize:12, lineHeight:1.35, fontWeight:600}}>
+            Este campo ainda não é salvo no `app_users`. A criação real por e-mail será feita na etapa Supabase Auth.
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldlabel" style={{marginBottom:6}}>Acesso a módulos (pré-marcado pelos defaults da role)</div>
-        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
-          {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
-              <span>{opt.icon} {opt.label}</span>
-              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
-            </label>
-          ))}
-        </div>
+        <ModalSection icon={<ShieldCheck size={15}/>} title="Acesso">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Cargo</div>
+              <select value={form.role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+                {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+              </select>
+            </div>
 
-        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
-        <div className="actions">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Loja / escopo</div>
+              <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))} className="ps-select">
+                <option value="">Global / sem loja</option>
+                <option value="jc">JC — Júlio de Castilhos</option>
+                <option value="ja">JA — Jardim América</option>
+                <option value="ex">EX — Exposição</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="ps-fieldlabel" style={{marginBottom:6}}>Módulos liberados ({routes.length})</div>
+          <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', maxHeight:180, overflowY:'auto'}}>
+            {ROUTE_OPTIONS.map(opt => (
+              <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', cursor:'pointer', fontSize:13}}>
+                <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
+                <span>{opt.icon} {opt.label}</span>
+                <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
+              </label>
+            ))}
+          </div>
+        </ModalSection>
+
+        <div style={{position:'sticky', bottom:0, zIndex:3, background:'color-mix(in srgb, var(--flour) 94%, transparent)', backdropFilter:'blur(10px)', borderTop:'1px solid var(--ps-line)', padding:'12px 0 calc(14px + env(safe-area-inset-bottom))'}}>
+          {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px', fontWeight:700}}>{err}</p>}
+          <div className="actions">
           <button onClick={handleSave} className="ps-btn primary">
             <Save size={14}/> Criar
           </button>
           <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
@@ -185,6 +230,7 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
 function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[]; store: string | null }) => void }) {
   const [role, setRole] = useState<Role>(user.role)
   const [displayName, setDisplayName] = useState(user.displayName)
+  const [authEmail, setAuthEmail] = useState('')
   const [routes, setRoutes] = useState<string[]>(user.allowedRoutes)
   const [store, setStore] = useState<string | null>(user.store ?? null)
   const [err, setErr] = useState('')
@@ -198,62 +244,85 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
   }
 
   function handleSave() {
+    const email = authEmail.trim().toLowerCase()
     if (!displayName.trim()) return setErr('Nome de exibição não pode estar vazio')
+    if (email && !isValidEmail(email)) return setErr('E-mail inválido')
     if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
     onSave({ role, displayName: displayName.trim(), allowedRoutes: routes, store })
   }
 
   return (
     <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="ps-sheet">
+      <div className="ps-sheet" style={{paddingBottom:0}}>
         <div className="ps-sheet-grab"/>
-        <h3><Pencil size={14} style={{verticalAlign:-2, marginRight:6}}/>Editar — {user.displayName}</h3>
-        <p style={{margin:'0 0 14px', fontSize:11, color:'var(--ink-faint)'}}>id: <code>{user.id}</code> · username: @{user.username}</p>
-
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Nome de exibição</div>
-          <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }} className="ps-input"/>
+        <div style={{position:'sticky', top:-10, zIndex:2, background:'var(--flour)', paddingBottom:10, borderBottom:'1px solid var(--ps-line)', marginBottom:12}}>
+          <h3 style={{marginBottom:4}}><Pencil size={14} style={{verticalAlign:-2, marginRight:6}}/>Editar — {user.displayName}</h3>
+          <p style={{margin:0, fontSize:11.5, color:'var(--ink-faint)'}}>id: <code>{user.id}</code> · login atual: @{user.username}</p>
         </div>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Cargo</div>
-          <select value={role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
-            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-          </select>
-        </div>
+        <ModalSection icon={<UserRound size={15}/>} title="Identidade">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">Nome da pessoa</div>
+            <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }} className="ps-input"/>
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Loja física</div>
-          <select value={store ?? ''} onChange={e => setStore(e.target.value || null)} className="ps-select">
-            <option value="">(sem loja — admin/sem físico)</option>
-            <option value="jc">JC — Júlio</option>
-            <option value="ja">JA — Jardim América</option>
-            <option value="ex">EX — Exposição</option>
-          </select>
-        </div>
+        <ModalSection icon={<Mail size={15}/>} title="Supabase Auth">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">E-mail para Auth</div>
+            <input type="email" value={authEmail}
+              onChange={e => { setAuthEmail(e.target.value); setErr('') }} className="ps-input" placeholder="nome@paneesalute.com.br"/>
+          </div>
+          <div style={{marginTop:8, padding:'8px 10px', borderRadius:'var(--r-ctrl)', background:'var(--honey-tint)', color:'#7A5418', fontSize:12, lineHeight:1.35, fontWeight:600}}>
+            O e-mail ainda não é salvo no `app_users`. Ele será vinculado ao usuário real quando Supabase Auth for criado.
+          </div>
+        </ModalSection>
 
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-          <span className="ps-fieldlabel">Acesso a módulos</span>
-          <button type="button" onClick={applyRoleDefaults} style={{background:'none', border:'none', color:'var(--crust)', cursor:'pointer', fontSize:11, textDecoration:'underline', fontFamily:'var(--font-ui)'}}>
-            Usar padrão da role
-          </button>
-        </div>
-        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
-          {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
-              <span>{opt.icon} {opt.label}</span>
-              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
-            </label>
-          ))}
-        </div>
+        <ModalSection icon={<ShieldCheck size={15}/>} title="Acesso">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Cargo</div>
+              <select value={role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+                {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+              </select>
+            </div>
 
-        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
-        <div className="actions">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Loja / escopo</div>
+              <select value={store ?? ''} onChange={e => setStore(e.target.value || null)} className="ps-select">
+                <option value="">Global / sem loja</option>
+                <option value="jc">JC — Júlio de Castilhos</option>
+                <option value="ja">JA — Jardim América</option>
+                <option value="ex">EX — Exposição</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+            <span className="ps-fieldlabel">Módulos liberados ({routes.length})</span>
+            <button type="button" onClick={applyRoleDefaults} style={{background:'none', border:'none', color:'var(--crust)', cursor:'pointer', fontSize:11, textDecoration:'underline', fontFamily:'var(--font-ui)'}}>
+              Usar padrão da role
+            </button>
+          </div>
+          <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', maxHeight:180, overflowY:'auto'}}>
+            {ROUTE_OPTIONS.map(opt => (
+              <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', cursor:'pointer', fontSize:13}}>
+                <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
+                <span>{opt.icon} {opt.label}</span>
+                <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
+              </label>
+            ))}
+          </div>
+        </ModalSection>
+
+        <div style={{position:'sticky', bottom:0, zIndex:3, background:'color-mix(in srgb, var(--flour) 94%, transparent)', backdropFilter:'blur(10px)', borderTop:'1px solid var(--ps-line)', padding:'12px 0 calc(14px + env(safe-area-inset-bottom))'}}>
+          {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px', fontWeight:700}}>{err}</p>}
+          <div className="actions">
           <button onClick={handleSave} className="ps-btn primary">
             <Save size={14}/> Salvar
           </button>
           <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
