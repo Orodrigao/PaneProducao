@@ -67,12 +67,35 @@ interface AppProfileRow {
   store: string | null
 }
 
+export interface AuthActionResult {
+  ok: boolean
+  message: string
+  user?: AppUser
+}
+
+export const PASSWORD_MIN_LENGTH = 8
+
 function isRole(value: string): value is Role {
   return ROLES.includes(value as Role)
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+export function normalizeEmailInput(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+export function validatePasswordSetup(password: string, confirmation: string): AuthActionResult {
+  if (!password) return { ok: false, message: 'Informe a senha.' }
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return { ok: false, message: `Use pelo menos ${PASSWORD_MIN_LENGTH} caracteres.` }
+  }
+  if (password !== confirmation) {
+    return { ok: false, message: 'As senhas não conferem.' }
+  }
+  return { ok: true, message: 'Senha válida.' }
 }
 
 function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null {
@@ -269,29 +292,86 @@ export async function getCurrentUserAsync(): Promise<AppUser | null> {
   return authUser ?? getCurrentUser()
 }
 
-export async function sendEmailLoginLink(email: string): Promise<{ ok: boolean; message: string }> {
-  const normalizedEmail = email.trim().toLowerCase()
+export async function signInWithEmailPassword(email: string, password: string): Promise<AuthActionResult> {
+  const normalizedEmail = normalizeEmailInput(email)
+  if (!normalizedEmail) {
+    return { ok: false, message: 'Informe seu e-mail.' }
+  }
+  if (!password) {
+    return { ok: false, message: 'Informe sua senha.' }
+  }
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    })
+
+    if (error) {
+      return { ok: false, message: 'E-mail ou senha inválidos.' }
+    }
+
+    const user = await fetchCurrentAuthUser()
+    if (!user) {
+      await supabase.auth.signOut()
+      cacheAuthUser(null)
+      return { ok: false, message: 'Seu acesso ao ERP não está ativo.' }
+    }
+
+    return { ok: true, message: 'Entrada confirmada.', user }
+  } catch {
+    return { ok: false, message: 'Falha ao entrar. Use o PIN e tente novamente depois.' }
+  }
+}
+
+export async function sendPasswordSetupLink(email: string): Promise<AuthActionResult> {
+  const normalizedEmail = normalizeEmailInput(email)
   if (!normalizedEmail) {
     return { ok: false, message: 'Informe seu e-mail.' }
   }
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { error } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/login`,
-      },
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: `${window.location.origin}/login?mode=senha`,
     })
 
     if (error) {
       return { ok: false, message: 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.' }
     }
 
-    return { ok: true, message: 'Link enviado. Abra seu e-mail neste aparelho para entrar.' }
+    return { ok: true, message: 'Link enviado. Abra seu e-mail para criar ou trocar a senha.' }
   } catch {
     return { ok: false, message: 'Falha ao enviar o link. Use o PIN e tente novamente depois.' }
+  }
+}
+
+export async function updateCurrentUserPassword(password: string, confirmation: string): Promise<AuthActionResult> {
+  const validation = validatePasswordSetup(password, confirmation)
+  if (!validation.ok) return validation
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !sessionData.session) {
+      return { ok: false, message: 'Link expirado. Peça um novo acesso.' }
+    }
+
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) {
+      return { ok: false, message: 'Não foi possível salvar a senha.' }
+    }
+
+    const user = await fetchCurrentAuthUser()
+    if (!user) {
+      return { ok: false, message: 'Senha criada, mas o perfil ERP não está ativo.' }
+    }
+
+    return { ok: true, message: 'Senha criada. Entrando...', user }
+  } catch {
+    return { ok: false, message: 'Falha ao salvar a senha. Peça um novo acesso.' }
   }
 }
 

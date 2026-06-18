@@ -8,6 +8,8 @@ Foram criados 13 usuários no Supabase Auth e 13 perfis em `public.app_profiles`
 
 O login por e-mail foi preparado em paralelo ao login atual por PIN. O login por PIN continua disponível e `app_users` não foi alterada nesta etapa.
 
+Atualização em 2026-06-18: o magic link direto deixou de ser o fluxo de entrada do dia a dia. O e-mail agora deve ser usado para primeiro acesso/recuperação de senha, e o login normal passa a ser e-mail + senha.
+
 ## Usuários criados
 
 | Usuário | E-mail | Role | Store |
@@ -29,7 +31,8 @@ O login por e-mail foi preparado em paralelo ao login atual por PIN. O login por
 ## Segurança
 
 - Nenhuma senha foi definida ou registrada.
-- O acesso por e-mail usa magic link/OTP do Supabase.
+- O acesso por e-mail usa senha criada pelo próprio usuário.
+- O link enviado por e-mail deve ser usado apenas para primeiro acesso ou recuperação de senha.
 - Nenhum segredo foi gravado no repositório.
 - `app_users`, PINs e login legado não foram alterados.
 - RLS/policies existentes não foram alteradas.
