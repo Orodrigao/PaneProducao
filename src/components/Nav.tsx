@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { getCurrentUser, canAccess, logout } from '@/lib/auth'
+import { getCurrentUser, getCurrentUserAsync, canAccess, logout, type AppUser } from '@/lib/auth'
 import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
@@ -46,8 +46,17 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
 export default function Nav() {
   const pathname = usePathname()
   const router = useRouter()
-  const user = getCurrentUser()
+  const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setUser(getCurrentUser())
+    getCurrentUserAsync().then(current => {
+      if (alive) setUser(current)
+    })
+    return () => { alive = false }
+  }, [pathname])
 
   // Na tela de login não mostra a Nav
   if (pathname === '/login' || !user) return null

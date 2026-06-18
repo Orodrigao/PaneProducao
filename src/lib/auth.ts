@@ -1,6 +1,7 @@
-// src/lib/auth.ts — autenticacao PIN-based, Supabase REST, cache localStorage
+// src/lib/auth.ts — autenticacao PIN-based + Supabase Auth em paralelo
 
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
+export type AuthProvider = 'pin' | 'email'
 
 export interface AppUser {
   id: string
@@ -11,6 +12,8 @@ export interface AppUser {
   active: boolean
   allowedRoutes: string[]
   store: string | null  // jc | ja | ex | null (admins sem loja física)
+  email?: string
+  authProvider?: AuthProvider
 }
 
 const SB_URL   = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -18,6 +21,9 @@ const SB_KEY   = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 const CACHE_KEY   = 'pane_users_cache'
 const SESSION_KEY = 'pane_user_id'
+const AUTH_PROFILE_CACHE_KEY = 'pane_auth_profile_cache'
+
+const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
   admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
@@ -52,6 +58,42 @@ interface SBUser {
   store: string | null
 }
 
+interface AppProfileRow {
+  user_id: string
+  display_name: string
+  role: string
+  active: boolean
+  allowed_routes: unknown
+  store: string | null
+}
+
+function isRole(value: string): value is Role {
+  return ROLES.includes(value as Role)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null {
+  if (!isRole(profile.role)) return null
+
+  return {
+    id: profile.user_id,
+    username: email || profile.display_name,
+    displayName: profile.display_name,
+    pin: '',
+    role: profile.role,
+    active: profile.active,
+    allowedRoutes: isStringArray(profile.allowed_routes) && profile.allowed_routes.length > 0
+      ? profile.allowed_routes
+      : (DEFAULT_ROUTES_BY_ROLE[profile.role] ?? []),
+    store: profile.store ?? null,
+    email: email || undefined,
+    authProvider: 'email',
+  }
+}
+
 export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
   try {
     const res = await fetch(SB_URL + '/rest/v1/app_users?select=*&order=display_name.asc', {
@@ -66,6 +108,7 @@ export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
         ? r.routes
         : (DEFAULT_ROUTES_BY_ROLE[r.role] ?? []),
       store: r.store ?? null,
+      authProvider: 'pin',
     }))
   } catch { return null }
 }
@@ -131,6 +174,26 @@ export function cacheUsers(users: AppUser[]) {
   localStorage.setItem(CACHE_KEY, JSON.stringify(users))
 }
 
+export function cacheAuthUser(user: AppUser | null) {
+  if (typeof window === 'undefined') return
+  if (!user) {
+    localStorage.removeItem(AUTH_PROFILE_CACHE_KEY)
+    return
+  }
+  localStorage.setItem(AUTH_PROFILE_CACHE_KEY, JSON.stringify(user))
+}
+
+export function getCachedAuthUser(): AppUser | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(AUTH_PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const user = JSON.parse(raw) as AppUser
+    if (!user.active || user.allowedRoutes.length === 0) return null
+    return user
+  } catch { return null }
+}
+
 export function getCachedUsers(): AppUser[] {
   if (typeof window === 'undefined') return USERS_FALLBACK
   try {
@@ -147,6 +210,9 @@ export function authenticate(user: AppUser) {
 
 export function getCurrentUser(): AppUser | null {
   if (typeof window === 'undefined') return null
+  const authUser = getCachedAuthUser()
+  if (authUser) return authUser
+
   const id = localStorage.getItem(SESSION_KEY)
   if (!id) return null
   const users = getCachedUsers()
@@ -161,9 +227,81 @@ export function getCurrentUser(): AppUser | null {
   return user
 }
 
+export async function fetchCurrentAuthUser(): Promise<AppUser | null> {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !sessionData.session?.user) {
+      cacheAuthUser(null)
+      return null
+    }
+
+    const authUser = sessionData.session.user
+    const { data, error } = await supabase
+      .from('app_profiles')
+      .select('user_id, display_name, role, active, allowed_routes, store')
+      .eq('user_id', authUser.id)
+      .maybeSingle()
+
+    if (error || !data) {
+      cacheAuthUser(null)
+      return null
+    }
+
+    const user = profileToAppUser(data as AppProfileRow, authUser.email ?? '')
+    if (!user || !user.active) {
+      cacheAuthUser(null)
+      return null
+    }
+
+    cacheAuthUser(user)
+    return user
+  } catch {
+    return getCachedAuthUser()
+  }
+}
+
+export async function getCurrentUserAsync(): Promise<AppUser | null> {
+  const authUser = await fetchCurrentAuthUser()
+  return authUser ?? getCurrentUser()
+}
+
+export async function sendEmailLoginLink(email: string): Promise<{ ok: boolean; message: string }> {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    return { ok: false, message: 'Informe seu e-mail.' }
+  }
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { error } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
+    })
+
+    if (error) {
+      return { ok: false, message: 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.' }
+    }
+
+    return { ok: true, message: 'Link enviado. Abra seu e-mail neste aparelho para entrar.' }
+  } catch {
+    return { ok: false, message: 'Falha ao enviar o link. Use o PIN e tente novamente depois.' }
+  }
+}
+
 export function logout() {
   if (typeof window === 'undefined') return
   localStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(AUTH_PROFILE_CACHE_KEY)
+  void import('@/lib/supabase')
+    .then(({ supabase }) => supabase.auth.signOut())
+    .catch(() => undefined)
 }
 
 export function canAccess(user: AppUser, pathname: string): boolean {
