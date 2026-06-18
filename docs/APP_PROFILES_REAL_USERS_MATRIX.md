@@ -29,10 +29,10 @@ Ação: não inserir no Supabase ainda.
 | Fran | [cozinha@paneesalute.com.br](mailto:cozinha@paneesalute.com.br) | Produção | producao | jc | Congelados, lista de compras, cozinha | Acesso congelados/lista de compras/cozinha |
 | Brian | [expedicao1@paneesalute.com.br](mailto:expedicao1@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, estoque, Pedidos PJ | PJ é canal/tipo de pedido, não loja |
 | Gustavo | [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, Pedidos PJ | PJ é canal/tipo de pedido, não loja |
-| Liara | [atendimento1@paneesalute.com.br](mailto:atendimento1@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas, fechamento de caixa | Fechamento de caixa ainda não existe |
+| Liara | [atendiment@paneesalute.com.br](mailto:atendiment@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas, fechamento de caixa | Fechamento de caixa ainda não existe |
 | Samuca | [atendimento2@paneesalute.com.br](mailto:atendimento2@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas | E-mail definido |
 | Cleo | [atendimento3@paneesalute.com.br](mailto:atendimento3@paneesalute.com.br) | Atendimento | vendas | ja | Sobras, congelados, lista de compras, encomendas, fechamento de caixa | Fechamento de caixa ainda não existe |
-| Atendente EX | [producao2@paneesalute.com.br](mailto:producao2@paneesalute.com.br) | Atendimento | vendas | ex | Congelados somente EX, romaneio EX | Pendente: substituir “Atendente EX” pelo nome da pessoa real. Não tratar como usuário genérico compartilhado |
+| Conferência EX | [producao2@paneesalute.com.br](mailto:producao2@paneesalute.com.br) | Conferência EX | vendas | ex | Congelados somente EX, romaneio EX | Definido por Rodrigo para esta etapa |
 | Marselle | [borges@paneesalute.com.br](mailto:borges@paneesalute.com.br) | Gerente EX | vendas | ex | Congelados somente EX, romaneio EX, pedidos produção | Manter como vendas por enquanto; role `gerente_loja` pode ser avaliada futuramente, mas não será criada agora |
 
 ## E-mails gerais/setoriais
@@ -48,8 +48,8 @@ Ação: não inserir no Supabase ainda.
 * Sander usará [forno@paneesalute.com.br](mailto:forno@paneesalute.com.br).
 * Brian usará [expedicao1@paneesalute.com.br](mailto:expedicao1@paneesalute.com.br).
 * Gustavo usará [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br).
-* Liara, Samuca e Cleo usarão [atendimento1@paneesalute.com.br](mailto:atendimento1@paneesalute.com.br), [atendimento2@paneesalute.com.br](mailto:atendimento2@paneesalute.com.br) e [atendimento3@paneesalute.com.br](mailto:atendimento3@paneesalute.com.br).
-* Atendente EX usará temporariamente [producao2@paneesalute.com.br](mailto:producao2@paneesalute.com.br), mas ainda precisa ser substituído pelo nome da pessoa real.
+* Liara, Samuca e Cleo usarão [atendiment@paneesalute.com.br](mailto:atendiment@paneesalute.com.br), [atendimento2@paneesalute.com.br](mailto:atendimento2@paneesalute.com.br) e [atendimento3@paneesalute.com.br](mailto:atendimento3@paneesalute.com.br).
+* Conferência EX usará [producao2@paneesalute.com.br](mailto:producao2@paneesalute.com.br).
 * [expedicao@paneesalute.com.br](mailto:expedicao@paneesalute.com.br) fica como e-mail setorial, não usuário Auth individual por enquanto.
 * Marselle permanece como vendas por enquanto.
 * Não será criada role `gerente_loja` agora.
@@ -62,7 +62,6 @@ Ação: não inserir no Supabase ainda.
 ## Pendências antes de inserir qualquer profile
 
 * Confirmar se [producao1@paneesalute.com.br](mailto:producao1@paneesalute.com.br) será de Geolar.
-* Trocar “Atendente EX” por pessoa real, com e-mail próprio; não tratar como usuário genérico compartilhado.
 * Avaliar futuramente se Marselle precisará de role `gerente_loja`, sem criar essa role agora.
 * Definir se “fechamento de caixa” será feature futura e quais roles terão acesso.
 * Manter a regra de que e-mails devem representar pessoas reais sempre que possível, para preservar auditoria.

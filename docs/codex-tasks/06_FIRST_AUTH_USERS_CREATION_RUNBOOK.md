@@ -33,8 +33,7 @@ Esta tarefa é apenas documental. Ela não cria usuários, não insere linhas em
 
 - Rodrigo informou que os usuários Geolar e Exposição estão definidos.
 - Geolar será planejado com `producao1@paneesalute.com.br`.
-- O usuário da Exposição será planejado com `producao2@paneesalute.com.br`.
-- Antes de qualquer criação real, confirmar o `display_name` final do usuário da Exposição se o rótulo atual ainda for “Atendente EX”.
+- Conferência EX será planejada com `producao2@paneesalute.com.br`.
 - `expedicao@paneesalute.com.br` permanece e-mail setorial, não usuário Auth individual nesta etapa.
 - Nenhuma senha deve ser registrada em documento, chat, commit ou repositório.
 - Nenhum profile deve ser criado antes de existir o UUID correspondente em `auth.users`.
@@ -53,10 +52,10 @@ Esta lista serve para revisão e aprovação antes de qualquer criação real.
 | Fran | `cozinha@paneesalute.com.br` | `producao` | `jc` | Produção / cozinha |
 | Brian | `expedicao1@paneesalute.com.br` | `expedicao` | `jc` | Expedição |
 | Gustavo | `expedicao2@paneesalute.com.br` | `expedicao` | `jc` | Expedição |
-| Liara | `atendimento1@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
+| Liara | `atendiment@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
 | Samuca | `atendimento2@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
 | Cleo | `atendimento3@paneesalute.com.br` | `vendas` | `ja` | Atendimento JA |
-| Usuário Exposição | `producao2@paneesalute.com.br` | `vendas` | `ex` | Confirmar `display_name` final antes da criação real |
+| Conferência EX | `producao2@paneesalute.com.br` | `vendas` | `ex` | Definido por Rodrigo para esta etapa |
 | Marselle | `borges@paneesalute.com.br` | `vendas` | `ex` | Manter como `vendas`; não criar `gerente_loja` agora |
 
 ## Fora da primeira leva
