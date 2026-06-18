@@ -53,7 +53,7 @@ Esta lista serve para revisão e aprovação antes de qualquer criação real.
 | Fran | `cozinha@paneesalute.com.br` | `producao` | `jc` | Produção / cozinha |
 | Brian | `expedicao1@paneesalute.com.br` | `expedicao` | `jc` | Expedição |
 | Gustavo | `expedicao2@paneesalute.com.br` | `expedicao` | `jc` | Expedição |
-| Liara | `atendimento1@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
+| Liara | `atendiment@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
 | Samuca | `atendimento2@paneesalute.com.br` | `vendas` | `jc` | Atendimento JC |
 | Cleo | `atendimento3@paneesalute.com.br` | `vendas` | `ja` | Atendimento JA |
 | Usuário Exposição | `producao2@paneesalute.com.br` | `vendas` | `ex` | Confirmar `display_name` final antes da criação real |
