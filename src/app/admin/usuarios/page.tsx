@@ -13,6 +13,7 @@ import {
 const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 type StatusFilter = 'todos' | 'ativos' | 'inativos'
 type StoreFilter = 'todas' | 'global' | 'jc' | 'ja' | 'ex'
+type MessageKind = 'info' | 'error'
 
 const ROUTE_OPTIONS = [
   { href: '/',                  label: 'Produção',          icon: '🍞' },
@@ -338,6 +339,7 @@ export default function AdminUsuariosPage() {
   const [newModal, setNewModal]     = useState(false)
   const [editModal, setEditModal]   = useState<AppUser | null>(null)
   const [msg, setMsg]               = useState('')
+  const [msgKind, setMsgKind]       = useState<MessageKind>('info')
   const [search, setSearch]         = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos')
   const [roleFilter, setRoleFilter] = useState<Role | 'todas'>('todas')
@@ -350,16 +352,18 @@ export default function AdminUsuariosPage() {
     loadUsers()
   }, [router])
 
-  async function loadUsers() {
+  async function loadUsers(): Promise<AppUser[]> {
     setLoading(true)
     const remote = await fetchUsersFromSupabase()
     const list = remote ?? getCachedUsers()
     if (remote) cacheUsers(remote)
     setUsers(list)
     setLoading(false)
+    return list
   }
 
-  function flash(m: string) {
+  function flash(m: string, kind: MessageKind = 'info') {
+    setMsgKind(kind)
     setMsg(m)
     setTimeout(() => setMsg(''), 2500)
   }
@@ -370,7 +374,7 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, pin: newPin } : u)
       setUsers(updated); cacheUsers(updated)
       flash('PIN atualizado!')
-    } else flash('Erro ao atualizar PIN')
+    } else flash('Erro ao atualizar PIN', 'error')
     setPinModal(null)
   }
 
@@ -381,13 +385,27 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, active: newActive } : u)
       setUsers(updated); cacheUsers(updated)
       flash(newActive ? 'Usuário ativado' : 'Usuário desativado')
-    } else flash('Erro ao atualizar')
+    } else flash('Erro ao atualizar', 'error')
   }
 
   async function handleCreate(data: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) {
     const ok = await createUserInSupabase(data)
-    if (ok) { await loadUsers(); flash('Usuário criado!') }
-    else flash('Erro ao criar usuário (username pode já existir)')
+    if (!ok) {
+      flash('Cadastro não gravado: a criação legado em app_users está bloqueada por segurança.', 'error')
+      setNewModal(false)
+      return
+    }
+
+    const freshUsers = await loadUsers()
+    const expectedUsername = data.username.trim().toLowerCase()
+    const expectedDisplayName = data.displayName.trim().toLowerCase()
+    const createdUserIsVisible = freshUsers.some(user =>
+      user.username.trim().toLowerCase() === expectedUsername ||
+      user.displayName.trim().toLowerCase() === expectedDisplayName
+    )
+
+    if (createdUserIsVisible) flash('Usuário criado!')
+    else flash('Cadastro não confirmado no banco. Use o runbook de Supabase Auth para a próxima leva.', 'error')
     setNewModal(false)
   }
 
@@ -397,7 +415,7 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, ...updates } : u)
       setUsers(updated); cacheUsers(updated)
       flash('Usuário atualizado!')
-    } else flash('Erro ao atualizar')
+    } else flash('Erro ao atualizar', 'error')
     setEditModal(null)
   }
 
@@ -544,7 +562,17 @@ export default function AdminUsuariosPage() {
           </div>
 
           {msg && (
-            <div className="ps-banner crust" style={{marginBottom:14}}>{msg}</div>
+            <div
+              className="ps-banner crust"
+              style={{
+                marginBottom:14,
+                ...(msgKind === 'error'
+                  ? {background:'var(--berry-tint)', borderColor:'#E6B5AC', color:'var(--berry)'}
+                  : {}),
+              }}
+            >
+              {msg}
+            </div>
           )}
 
           {filteredUsers.length === 0 ? (
