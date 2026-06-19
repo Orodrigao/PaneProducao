@@ -73,7 +73,42 @@ export interface AuthActionResult {
   user?: AppUser
 }
 
-export const PASSWORD_MIN_LENGTH = 8
+export const PASSWORD_MIN_LENGTH = 10
+
+export interface PasswordPolicyRule {
+  id: string
+  label: string
+  valid: boolean
+}
+
+const COMMON_WEAK_PASSWORDS = new Set([
+  '1234567890',
+  '123456789',
+  '12345678',
+  'senha123',
+  'senha1234',
+  'senha12345',
+  'senha123!',
+  'senha1234!',
+  'password1',
+  'password123',
+  'qwerty123',
+  'admin123',
+])
+
+const SEQUENTIAL_PATTERNS = [
+  '123456',
+  '234567',
+  '345678',
+  '456789',
+  '987654',
+  '876543',
+  '765432',
+  '654321',
+  'abcdef',
+  'qwerty',
+  'asdfgh',
+]
 
 function isRole(value: string): value is Role {
   return ROLES.includes(value as Role)
@@ -87,10 +122,60 @@ export function normalizeEmailInput(email: string): string {
   return email.trim().toLowerCase()
 }
 
+export function passwordPolicyChecklist(password: string): PasswordPolicyRule[] {
+  return [
+    {
+      id: 'length',
+      label: `Pelo menos ${PASSWORD_MIN_LENGTH} caracteres`,
+      valid: password.length >= PASSWORD_MIN_LENGTH,
+    },
+    {
+      id: 'case',
+      label: 'Letras maiúsculas e minúsculas',
+      valid: /[a-z]/.test(password) && /[A-Z]/.test(password),
+    },
+    {
+      id: 'number',
+      label: 'Pelo menos um número',
+      valid: /\d/.test(password),
+    },
+    {
+      id: 'symbol',
+      label: 'Pelo menos um símbolo',
+      valid: /[^A-Za-z0-9]/.test(password),
+    },
+  ]
+}
+
+function hasSequentialPattern(password: string): boolean {
+  const normalized = password.toLowerCase()
+  return SEQUENTIAL_PATTERNS.some(pattern => normalized.includes(pattern))
+}
+
+function isCommonWeakPassword(password: string): boolean {
+  const normalized = password.toLowerCase()
+  return COMMON_WEAK_PASSWORDS.has(normalized)
+    || normalized.includes('pane')
+    || normalized.includes('salute')
+    || /^senha\d*!?$/.test(normalized)
+    || /^password\d*!?$/.test(normalized)
+}
+
 export function validatePasswordSetup(password: string, confirmation: string): AuthActionResult {
   if (!password) return { ok: false, message: 'Informe a senha.' }
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    return { ok: false, message: `Use pelo menos ${PASSWORD_MIN_LENGTH} caracteres.` }
+
+  const missingRules = passwordPolicyChecklist(password).filter(rule => !rule.valid)
+  if (missingRules.length > 0) {
+    return { ok: false, message: `Senha fraca. Faltou: ${missingRules.map(rule => rule.label.toLowerCase()).join(', ')}.` }
+  }
+  if (isCommonWeakPassword(password)) {
+    return { ok: false, message: 'Senha muito fácil de adivinhar. Evite 1234, senha, password, Pane e Salute.' }
+  }
+  if (/(.)\1{3,}/.test(password)) {
+    return { ok: false, message: 'Senha muito repetitiva. Evite repetir o mesmo caractere muitas vezes.' }
+  }
+  if (hasSequentialPattern(password)) {
+    return { ok: false, message: 'Senha muito sequencial. Evite sequências como 123456 ou qwerty.' }
   }
   if (password !== confirmation) {
     return { ok: false, message: 'As senhas não conferem.' }

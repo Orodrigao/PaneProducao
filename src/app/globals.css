@@ -417,6 +417,11 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-login-email .ps-btn.block{ min-height:46px; }
 .ps-login-ok{ color:var(--sage); font-size:13px; font-weight:700; margin:0; min-height:18px; line-height:1.35; }
 .ps-login-help{ color:var(--ink-faint); font-size:12px; line-height:1.4; margin:0; text-align:center; font-weight:600; }
+.ps-password-rules{ list-style:none; margin:0; padding:10px 12px; border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream); display:flex; flex-direction:column; gap:6px; }
+.ps-password-rules li{ display:flex; align-items:center; gap:7px; color:var(--ink-faint); font-size:12px; line-height:1.3; font-weight:700; }
+.ps-password-rules li span{ width:14px; display:inline-grid; place-items:center; color:var(--ink-faint); }
+.ps-password-rules li.ok{ color:var(--sage); }
+.ps-password-rules li.ok span{ color:var(--sage); }
 .ps-login-pin{ width:100%; max-width:300px; display:flex; flex-direction:column; align-items:center; }
 .ps-login-back{ align-self:flex-start; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:13.5px; cursor:pointer; padding:4px 0; margin-bottom:14px; }
 .ps-login-back:hover{ color:var(--crust); }

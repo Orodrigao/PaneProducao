@@ -11,6 +11,7 @@ import {
   firstAllowedRoute,
   roleLabel,
   roleColor,
+  passwordPolicyChecklist,
   sendPasswordSetupLink,
   signInWithEmailPassword,
   updateCurrentUserPassword,
@@ -32,6 +33,7 @@ export default function LoginPage() {
   const [recoveryLoading, setRecoveryLoading] = useState(false)
   const [setupLoading, setSetupLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const passwordRules = passwordPolicyChecklist(password)
 
   useEffect(() => {
     let alive = true
@@ -200,6 +202,14 @@ export default function LoginPage() {
                 onChange={event => { setPasswordConfirm(event.target.value); clearEmailMessage() }}
               />
             </div>
+            <ul className="ps-password-rules" aria-label="Critérios da senha">
+              {passwordRules.map(rule => (
+                <li key={rule.id} className={rule.valid ? 'ok' : ''}>
+                  <span aria-hidden="true">{rule.valid ? '✓' : '•'}</span>
+                  {rule.label}
+                </li>
+              ))}
+            </ul>
             <button type="submit" className="ps-btn primary block" disabled={setupLoading}>
               {setupLoading ? 'Salvando...' : 'Salvar senha'}
             </button>
