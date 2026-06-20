@@ -11,7 +11,10 @@ import {
   firstAllowedRoute,
   roleLabel,
   roleColor,
-  sendEmailLoginLink,
+  passwordPolicyChecklist,
+  sendPasswordSetupLink,
+  signInWithEmailPassword,
+  updateCurrentUserPassword,
 } from '@/lib/auth'
 
 export default function LoginPage() {
@@ -20,22 +23,32 @@ export default function LoginPage() {
   const [selected, setSelected] = useState<AppUser | null>(null)
   const [pin, setPin]       = useState('')
   const [error, setError]   = useState('')
-  const [mode, setMode]     = useState<'pin' | 'email'>('pin')
+  const [mode, setMode]     = useState<'password' | 'pin' | 'setup'>('password')
   const [email, setEmail]   = useState('')
+  const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [emailMsg, setEmailMsg] = useState('')
   const [emailOk, setEmailOk] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
+  const [recoveryLoading, setRecoveryLoading] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const passwordRules = passwordPolicyChecklist(password)
 
   useEffect(() => {
     let alive = true
 
     async function boot() {
+      const params = new URLSearchParams(window.location.search)
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      const isPasswordSetup = params.get('mode') === 'senha' || hashParams.get('type') === 'recovery'
+      if (isPasswordSetup) setMode('setup')
+
       // Sempre refresca o cache antes de qualquer decisão de redirect.
       // Sem isso, allowedRoutes stale do localStorage trava o usuário em loop.
       const remote = await fetchUsersFromSupabase()
       if (remote) cacheUsers(remote)
-      const current = await getCurrentUserAsync()
+      const current = isPasswordSetup ? null : await getCurrentUserAsync()
       if (!alive) return
 
       if (current && current.allowedRoutes.length > 0) {
@@ -81,16 +94,55 @@ export default function LoginPage() {
     }
   }
 
-  async function handleEmailLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  function clearEmailMessage() {
     setEmailMsg('')
     setEmailOk(false)
+  }
+
+  function clearPasswordSetupUrl() {
+    if (typeof window === 'undefined') return
+    window.history.replaceState(null, '', '/login')
+  }
+
+  async function handlePasswordLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    clearEmailMessage()
     setEmailLoading(true)
 
-    const result = await sendEmailLoginLink(email)
+    const result = await signInWithEmailPassword(email, password)
     setEmailMsg(result.message)
     setEmailOk(result.ok)
     setEmailLoading(false)
+
+    if (result.ok && result.user) {
+      router.replace(firstAllowedRoute(result.user))
+    }
+  }
+
+  async function handlePasswordSetupRequest() {
+    clearEmailMessage()
+    setRecoveryLoading(true)
+
+    const result = await sendPasswordSetupLink(email)
+    setEmailMsg(result.message)
+    setEmailOk(result.ok)
+    setRecoveryLoading(false)
+  }
+
+  async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    clearEmailMessage()
+    setSetupLoading(true)
+
+    const result = await updateCurrentUserPassword(password, passwordConfirm)
+    setEmailMsg(result.message)
+    setEmailOk(result.ok)
+    setSetupLoading(false)
+
+    if (result.ok && result.user) {
+      clearPasswordSetupUrl()
+      router.replace(firstAllowedRoute(result.user))
+    }
   }
 
   if (loading) return (
@@ -106,28 +158,72 @@ export default function LoginPage() {
         <div className="ps-login-logo">
           <div className="ps-login-mark">P</div>
           <h1>Pane &amp; Salute</h1>
-          <p>{mode === 'email' ? 'Entrar por e-mail' : selected ? 'Digite seu PIN' : 'Selecione seu usuário'}</p>
+          <p>{mode === 'setup' ? 'Criar senha' : mode === 'password' ? 'Entrar com senha' : selected ? 'Digite seu PIN' : 'Selecione seu usuário'}</p>
         </div>
 
-        <div className="ps-login-tabs" aria-label="Escolha a forma de entrada">
-          <button
-            type="button"
-            className={mode === 'pin' ? 'active' : ''}
-            onClick={() => { setMode('pin'); setEmailMsg(''); setSelected(null); setPin('') }}
-          >
-            PIN
-          </button>
-          <button
-            type="button"
-            className={mode === 'email' ? 'active' : ''}
-            onClick={() => { setMode('email'); setError(''); setSelected(null); setPin('') }}
-          >
-            E-mail
-          </button>
-        </div>
+        {mode !== 'setup' && (
+          <div className="ps-login-tabs" aria-label="Escolha a forma de entrada">
+            <button
+              type="button"
+              className={mode === 'password' ? 'active' : ''}
+              onClick={() => { setMode('password'); clearEmailMessage(); setError(''); setSelected(null); setPin('') }}
+            >
+              Senha
+            </button>
+            <button
+              type="button"
+              className={mode === 'pin' ? 'active' : ''}
+              onClick={() => { setMode('pin'); clearEmailMessage(); setSelected(null); setPin('') }}
+            >
+              PIN
+            </button>
+          </div>
+        )}
 
-        {mode === 'email' ? (
-          <form className="ps-login-email" onSubmit={handleEmailLogin}>
+        {mode === 'setup' ? (
+          <form className="ps-login-email" onSubmit={handlePasswordUpdate}>
+            <div className="ps-fieldgroup">
+              <div className="ps-fieldlabel">Nova senha</div>
+              <input
+                className="ps-input"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={event => { setPassword(event.target.value); clearEmailMessage() }}
+              />
+            </div>
+            <div className="ps-fieldgroup">
+              <div className="ps-fieldlabel">Confirmar senha</div>
+              <input
+                className="ps-input"
+                type="password"
+                autoComplete="new-password"
+                value={passwordConfirm}
+                onChange={event => { setPasswordConfirm(event.target.value); clearEmailMessage() }}
+              />
+            </div>
+            <ul className="ps-password-rules" aria-label="Critérios da senha">
+              {passwordRules.map(rule => (
+                <li key={rule.id} className={rule.valid ? 'ok' : ''}>
+                  <span aria-hidden="true">{rule.valid ? '✓' : '•'}</span>
+                  {rule.label}
+                </li>
+              ))}
+            </ul>
+            <button type="submit" className="ps-btn primary block" disabled={setupLoading}>
+              {setupLoading ? 'Salvando...' : 'Salvar senha'}
+            </button>
+            <p className={emailOk ? 'ps-login-ok' : 'ps-login-err'}>{emailMsg}</p>
+            <button
+              type="button"
+              className="ps-btn ghost block"
+              onClick={() => { clearPasswordSetupUrl(); setMode('password'); setPassword(''); setPasswordConfirm(''); clearEmailMessage() }}
+            >
+              Voltar para login
+            </button>
+          </form>
+        ) : mode === 'password' ? (
+          <form className="ps-login-email" onSubmit={handlePasswordLogin}>
             <div className="ps-fieldgroup">
               <div className="ps-fieldlabel">E-mail</div>
               <input
@@ -136,15 +232,33 @@ export default function LoginPage() {
                 inputMode="email"
                 autoComplete="email"
                 value={email}
-                onChange={event => { setEmail(event.target.value); setEmailMsg('') }}
+                onChange={event => { setEmail(event.target.value); clearEmailMessage() }}
                 placeholder="nome@paneesalute.com.br"
               />
             </div>
+            <div className="ps-fieldgroup">
+              <div className="ps-fieldlabel">Senha</div>
+              <input
+                className="ps-input"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={event => { setPassword(event.target.value); clearEmailMessage() }}
+              />
+            </div>
             <button type="submit" className="ps-btn primary block" disabled={emailLoading}>
-              {emailLoading ? 'Enviando...' : 'Enviar link de acesso'}
+              {emailLoading ? 'Entrando...' : 'Entrar'}
+            </button>
+            <button
+              type="button"
+              className="ps-btn ghost block"
+              onClick={handlePasswordSetupRequest}
+              disabled={recoveryLoading || emailLoading}
+            >
+              {recoveryLoading ? 'Enviando...' : 'Primeiro acesso / esqueci senha'}
             </button>
             <p className={emailOk ? 'ps-login-ok' : 'ps-login-err'}>{emailMsg}</p>
-            <p className="ps-login-help">O PIN antigo continua disponível para a operação.</p>
+            <p className="ps-login-help">O PIN antigo continua disponível por enquanto.</p>
           </form>
         ) : !selected ? (
           <div className="ps-login-grid">

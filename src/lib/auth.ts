@@ -67,12 +67,120 @@ interface AppProfileRow {
   store: string | null
 }
 
+export interface AuthActionResult {
+  ok: boolean
+  message: string
+  user?: AppUser
+}
+
+export const PASSWORD_MIN_LENGTH = 10
+
+export interface PasswordPolicyRule {
+  id: string
+  label: string
+  valid: boolean
+}
+
+const COMMON_WEAK_PASSWORDS = new Set([
+  '1234567890',
+  '123456789',
+  '12345678',
+  'senha123',
+  'senha1234',
+  'senha12345',
+  'senha123!',
+  'senha1234!',
+  'password1',
+  'password123',
+  'qwerty123',
+  'admin123',
+])
+
+const SEQUENTIAL_PATTERNS = [
+  '123456',
+  '234567',
+  '345678',
+  '456789',
+  '987654',
+  '876543',
+  '765432',
+  '654321',
+  'abcdef',
+  'qwerty',
+  'asdfgh',
+]
+
 function isRole(value: string): value is Role {
   return ROLES.includes(value as Role)
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+export function normalizeEmailInput(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+export function passwordPolicyChecklist(password: string): PasswordPolicyRule[] {
+  return [
+    {
+      id: 'length',
+      label: `Pelo menos ${PASSWORD_MIN_LENGTH} caracteres`,
+      valid: password.length >= PASSWORD_MIN_LENGTH,
+    },
+    {
+      id: 'case',
+      label: 'Letras maiúsculas e minúsculas',
+      valid: /[a-z]/.test(password) && /[A-Z]/.test(password),
+    },
+    {
+      id: 'number',
+      label: 'Pelo menos um número',
+      valid: /\d/.test(password),
+    },
+    {
+      id: 'symbol',
+      label: 'Pelo menos um símbolo',
+      valid: /[^A-Za-z0-9]/.test(password),
+    },
+  ]
+}
+
+function hasSequentialPattern(password: string): boolean {
+  const normalized = password.toLowerCase()
+  return SEQUENTIAL_PATTERNS.some(pattern => normalized.includes(pattern))
+}
+
+function isCommonWeakPassword(password: string): boolean {
+  const normalized = password.toLowerCase()
+  return COMMON_WEAK_PASSWORDS.has(normalized)
+    || normalized.includes('pane')
+    || normalized.includes('salute')
+    || /^senha\d*!?$/.test(normalized)
+    || /^password\d*!?$/.test(normalized)
+}
+
+export function validatePasswordSetup(password: string, confirmation: string): AuthActionResult {
+  if (!password) return { ok: false, message: 'Informe a senha.' }
+
+  const missingRules = passwordPolicyChecklist(password).filter(rule => !rule.valid)
+  if (missingRules.length > 0) {
+    return { ok: false, message: `Senha fraca. Faltou: ${missingRules.map(rule => rule.label.toLowerCase()).join(', ')}.` }
+  }
+  if (isCommonWeakPassword(password)) {
+    return { ok: false, message: 'Senha muito fácil de adivinhar. Evite 1234, senha, password, Pane e Salute.' }
+  }
+  if (/(.)\1{3,}/.test(password)) {
+    return { ok: false, message: 'Senha muito repetitiva. Evite repetir o mesmo caractere muitas vezes.' }
+  }
+  if (hasSequentialPattern(password)) {
+    return { ok: false, message: 'Senha muito sequencial. Evite sequências como 123456 ou qwerty.' }
+  }
+  if (password !== confirmation) {
+    return { ok: false, message: 'As senhas não conferem.' }
+  }
+  return { ok: true, message: 'Senha válida.' }
 }
 
 function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null {
@@ -269,29 +377,86 @@ export async function getCurrentUserAsync(): Promise<AppUser | null> {
   return authUser ?? getCurrentUser()
 }
 
-export async function sendEmailLoginLink(email: string): Promise<{ ok: boolean; message: string }> {
-  const normalizedEmail = email.trim().toLowerCase()
+export async function signInWithEmailPassword(email: string, password: string): Promise<AuthActionResult> {
+  const normalizedEmail = normalizeEmailInput(email)
+  if (!normalizedEmail) {
+    return { ok: false, message: 'Informe seu e-mail.' }
+  }
+  if (!password) {
+    return { ok: false, message: 'Informe sua senha.' }
+  }
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    })
+
+    if (error) {
+      return { ok: false, message: 'E-mail ou senha inválidos.' }
+    }
+
+    const user = await fetchCurrentAuthUser()
+    if (!user) {
+      await supabase.auth.signOut()
+      cacheAuthUser(null)
+      return { ok: false, message: 'Seu acesso ao ERP não está ativo.' }
+    }
+
+    return { ok: true, message: 'Entrada confirmada.', user }
+  } catch {
+    return { ok: false, message: 'Falha ao entrar. Use o PIN e tente novamente depois.' }
+  }
+}
+
+export async function sendPasswordSetupLink(email: string): Promise<AuthActionResult> {
+  const normalizedEmail = normalizeEmailInput(email)
   if (!normalizedEmail) {
     return { ok: false, message: 'Informe seu e-mail.' }
   }
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { error } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/login`,
-      },
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: `${window.location.origin}/login?mode=senha`,
     })
 
     if (error) {
       return { ok: false, message: 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.' }
     }
 
-    return { ok: true, message: 'Link enviado. Abra seu e-mail neste aparelho para entrar.' }
+    return { ok: true, message: 'Link enviado. Abra seu e-mail para criar ou trocar a senha.' }
   } catch {
     return { ok: false, message: 'Falha ao enviar o link. Use o PIN e tente novamente depois.' }
+  }
+}
+
+export async function updateCurrentUserPassword(password: string, confirmation: string): Promise<AuthActionResult> {
+  const validation = validatePasswordSetup(password, confirmation)
+  if (!validation.ok) return validation
+
+  try {
+    const { supabase } = await import('@/lib/supabase')
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !sessionData.session) {
+      return { ok: false, message: 'Link expirado. Peça um novo acesso.' }
+    }
+
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) {
+      return { ok: false, message: 'Não foi possível salvar a senha.' }
+    }
+
+    const user = await fetchCurrentAuthUser()
+    if (!user) {
+      return { ok: false, message: 'Senha criada, mas o perfil ERP não está ativo.' }
+    }
+
+    return { ok: true, message: 'Senha criada. Entrando...', user }
+  } catch {
+    return { ok: false, message: 'Falha ao salvar a senha. Peça um novo acesso.' }
   }
 }
 
