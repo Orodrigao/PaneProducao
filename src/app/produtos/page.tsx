@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -325,8 +325,14 @@ export default function ProdutosPage() {
                         )}
                       </div>
                       {canUseTechnicalSheet(p) && (
-                        <Link href={`/produtos/composicao?id=${p.id}`} title="Ficha técnica / CMV teórico" className="ps-iconbtn" style={{width:30, height:30, fontSize:14}}>
-                          📋
+                        <Link
+                          href={`/produtos/composicao?id=${p.id}`}
+                          title="Ficha técnica / CMV teórico"
+                          className="ps-btn"
+                          style={{height:34, padding:'0 10px', fontSize:12, flexShrink:0}}
+                        >
+                          <ClipboardList size={14}/>
+                          Ficha
                         </Link>
                       )}
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
