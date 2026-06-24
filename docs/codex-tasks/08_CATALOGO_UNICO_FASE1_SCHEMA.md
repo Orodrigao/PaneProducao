@@ -2,7 +2,7 @@
 
 Data: 2026-06-24
 
-Status: proposta de implementação. Migration criada no repositório, ainda não aplicada em produção.
+Status: concluída. Migration criada no repositório, aplicada em produção e marcada como aplicada no histórico remoto.
 
 ## Objetivo
 
@@ -48,7 +48,7 @@ A migration inclui:
 - Não cria ficha técnica para pães ainda.
 - Não remove `breads`.
 - Não muda RLS.
-- Não executa SQL remoto.
+- Não executa novas escritas remotas a partir deste documento.
 
 ## Por que começar por schema
 
@@ -66,11 +66,11 @@ Fase 2 deve ser um backfill controlado:
 4. Criar script/migration de backfill com `legacy_bread_id`.
 5. Validar em SELECT antes de aplicar qualquer escrita remota.
 
+A auditoria inicial dessa fase está documentada em `docs/codex-tasks/09_CATALOGO_UNICO_BACKFILL_AUDITORIA.md`.
+
 ## Risco
 
-Baixo enquanto não aplicada.
-
-Depois de aplicada, o risco também é baixo porque:
+Baixo nesta fase porque a migration aplicada:
 
 - só adiciona colunas com default;
 - não remove coluna;
@@ -78,4 +78,3 @@ Depois de aplicada, o risco também é baixo porque:
 - não altera telas.
 
 O risco real começa na fase de backfill e nas telas operacionais de produção.
-
