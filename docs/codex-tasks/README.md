@@ -42,3 +42,6 @@ Execute docs/codex-tasks/04_APP_PROFILES_SAFE_CREATION_STRATEGY.md
 | `03_APP_PROFILES_REAL_USERS_PLAN.md` | Planejar perfis reais em `app_profiles`, sem alterar login, código, migrations ou dados no Supabase. |
 | `04_APP_PROFILES_SAFE_CREATION_STRATEGY.md` | Planejar a estratégia segura para criação futura de profiles reais, sem criar usuários, inserir dados ou alterar login. |
 | `05_FIRST_AUTH_USERS_AND_PROFILES_PLAN.md` | Planejar a primeira leva futura de usuários Supabase Auth e profiles, usando apenas pessoas com e-mail confirmado. |
+| `06_FIRST_AUTH_USERS_CREATION_RUNBOOK.md` | Documentar o runbook da primeira leva de usuários Supabase Auth, sem executar criação real. |
+| `08_CATALOGO_UNICO_FASE1_SCHEMA.md` | Documentar a preparação de `products` para receber itens de fabricação própria vindos de `breads`. |
+| `09_CATALOGO_UNICO_BACKFILL_AUDITORIA.md` | Auditar `breads` e `products` antes do backfill do catálogo único. |
