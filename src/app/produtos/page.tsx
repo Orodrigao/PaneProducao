@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -19,6 +19,10 @@ interface Product {
 const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
 // Mapeia pro chip ps-store-chip (jc=honey/kit, ja=sage/insumo). 'final' fica neutro.
 const KIND_CHIP_CLS: Record<Kind, string> = { kit: 'jc', insumo: 'ja', final: '' }
+
+function canUseTechnicalSheet(product: Product): boolean {
+  return !product.is_revenda && product.kind !== 'insumo'
+}
 
 interface Bread {
   id: string; name: string; unit: string|null
@@ -162,14 +166,14 @@ export default function ProdutosPage() {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
     return matchCat && matchKind && matchSearch
   })
-  // CMV computado por kit: soma (custo do componente × quantidade).
+  // CMV teorico por produto com ficha tecnica: soma (custo do componente × quantidade).
   // Se algum componente não tem custo cadastrado, marca como parcial.
-  const cmvByKit: Record<string, { total: number; partial: boolean; count: number }> = {}
+  const cmvByProduct: Record<string, { total: number; partial: boolean; count: number }> = {}
   for (const c of components) {
     const cost = c.component_source === 'bread'
       ? (breads.find(b => b.id === c.component_id)?.cost_price ?? null)
       : (products.find(p => p.id === c.component_id)?.cost_price ?? null)
-    const entry = cmvByKit[c.parent_product_id] ??= { total: 0, partial: false, count: 0 }
+    const entry = cmvByProduct[c.parent_product_id] ??= { total: 0, partial: false, count: 0 }
     entry.count++
     if (cost === null || Number(cost) === 0) entry.partial = true
     else entry.total += Number(cost) * Number(c.quantity)
@@ -312,17 +316,23 @@ export default function ProdutosPage() {
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
                         </div>
-                        {p.kind === 'kit' && cmvByKit[p.id] && (
+                        {canUseTechnicalSheet(p) && cmvByProduct[p.id] && (
                           <div style={{fontSize:11, color:'var(--sage)', marginTop:2, fontWeight:600}}>
-                            CMV computado: R$ {cmvByKit[p.id].total.toFixed(2)}
-                            {cmvByKit[p.id].partial && <span style={{color:'var(--berry)', fontWeight:500}}> (parcial)</span>}
-                            <span style={{color:'var(--ink-faint)', fontWeight:400}}> · {cmvByKit[p.id].count} comp.</span>
+                            CMV teórico: R$ {cmvByProduct[p.id].total.toFixed(2)}
+                            {cmvByProduct[p.id].partial && <span style={{color:'var(--berry)', fontWeight:500}}> (parcial)</span>}
+                            <span style={{color:'var(--ink-faint)', fontWeight:400}}> · {cmvByProduct[p.id].count} comp.</span>
                           </div>
                         )}
                       </div>
-                      {p.kind === 'kit' && (
-                        <Link href={`/produtos/composicao?id=${p.id}`} title="Cadastrar composição do kit" className="ps-iconbtn" style={{width:30, height:30, fontSize:14}}>
-                          📋
+                      {canUseTechnicalSheet(p) && (
+                        <Link
+                          href={`/produtos/composicao?id=${p.id}`}
+                          title="Ficha técnica / CMV teórico"
+                          className="ps-btn"
+                          style={{height:34, padding:'0 10px', fontSize:12, flexShrink:0}}
+                        >
+                          <ClipboardList size={14}/>
+                          Ficha
                         </Link>
                       )}
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
