@@ -714,11 +714,16 @@ export type Database = {
           cost_price: number | null
           created_at: string | null
           id: string
+          is_fabricacao_propria: boolean
+          is_pj: boolean
           is_revenda: boolean
           is_shelf: boolean
           is_special: boolean
           kind: string | null
+          legacy_bread_id: string | null
           name: string
+          production_area: string | null
+          production_days: number[]
           sort_order: number | null
           unit: string | null
         }
@@ -728,11 +733,16 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_fabricacao_propria?: boolean
+          is_pj?: boolean
           is_revenda?: boolean
           is_shelf?: boolean
           is_special?: boolean
           kind?: string | null
+          legacy_bread_id?: string | null
           name: string
+          production_area?: string | null
+          production_days?: number[]
           sort_order?: number | null
           unit?: string | null
         }
@@ -742,11 +752,16 @@ export type Database = {
           cost_price?: number | null
           created_at?: string | null
           id?: string
+          is_fabricacao_propria?: boolean
+          is_pj?: boolean
           is_revenda?: boolean
           is_shelf?: boolean
           is_special?: boolean
           kind?: string | null
+          legacy_bread_id?: string | null
           name?: string
+          production_area?: string | null
+          production_days?: number[]
           sort_order?: number | null
           unit?: string | null
         }
