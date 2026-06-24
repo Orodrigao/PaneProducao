@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Save, X, KeyRound, Pencil, Power } from 'lucide-react'
+import { Plus, Save, X, KeyRound, Pencil, Power, Search, SlidersHorizontal, Mail, UserRound, ShieldCheck } from 'lucide-react'
 import {
   AppUser, Role,
   fetchUsersFromSupabase, cacheUsers, getCachedUsers,
@@ -11,6 +11,9 @@ import {
 } from '@/lib/auth'
 
 const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
+type StatusFilter = 'todos' | 'ativos' | 'inativos'
+type StoreFilter = 'todas' | 'global' | 'jc' | 'ja' | 'ex'
+type MessageKind = 'info' | 'error'
 
 const ROUTE_OPTIONS = [
   { href: '/',                  label: 'Produção',          icon: '🍞' },
@@ -32,6 +35,48 @@ const ROUTE_OPTIONS = [
   { href: '/relatorios',                  label: 'Relatórios (acesso)',  icon: '📈' },
   { href: '/relatorios/sobras-descartes', label: '└ Sobras & Descartes', icon: '♻️' },
 ]
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'ativos', label: 'Ativos' },
+  { value: 'inativos', label: 'Inativos' },
+]
+
+const STORE_FILTERS: { value: StoreFilter; label: string }[] = [
+  { value: 'todas', label: 'Todas as lojas' },
+  { value: 'global', label: 'Global' },
+  { value: 'jc', label: 'JC' },
+  { value: 'ja', label: 'JA' },
+  { value: 'ex', label: 'EX' },
+]
+
+function storeLabel(store: string | null) {
+  if (store === 'jc') return 'JC'
+  if (store === 'ja') return 'JA'
+  if (store === 'ex') return 'EX'
+  return 'Global'
+}
+
+function storeChipClass(store: string | null) {
+  if (store === 'jc' || store === 'ja' || store === 'ex') return store
+  return 'separado'
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function ModalSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <section style={{border:'1px solid var(--ps-line)', borderRadius:'var(--r-card)', background:'var(--cream)', padding:12, marginBottom:12, boxShadow:'var(--sh-1)'}}>
+      <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:10, color:'var(--crust)', fontWeight:800, fontSize:13}}>
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
 
 function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (pin: string) => void }) {
   const [pin, setPin] = useState('')
@@ -72,6 +117,7 @@ function PinModal({ user, onClose, onSave }: { user: AppUser; onClose: () => voi
 
 function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) => void }) {
   const [form, setForm] = useState({ username: '', displayName: '', pin: '', role: 'producao' as Role, active: true, store: null as string | null })
+  const [authEmail, setAuthEmail] = useState('')
   const [routes, setRoutes] = useState<string[]>(DEFAULT_ROUTES_BY_ROLE.producao)
   const [err, setErr] = useState('')
 
@@ -86,68 +132,96 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
   }
 
   function handleSave() {
+    const email = authEmail.trim().toLowerCase()
     if (!form.username || !form.displayName) return setErr('Preencha nome de usuário e nome de exibição')
     if (form.pin.length < 4) return setErr('PIN deve ter 4 dígitos')
+    if (email && !isValidEmail(email)) return setErr('E-mail inválido')
     if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
     onSave({ ...form, allowedRoutes: routes })
   }
 
   return (
     <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="ps-sheet">
+      <div className="ps-sheet" style={{paddingBottom:0}}>
         <div className="ps-sheet-grab"/>
-        <h3>+ Novo Usuário</h3>
-
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Username (login)</div>
-          <input type="text" value={form.username}
-            onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }} className="ps-input"/>
-        </div>
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Nome de exibição</div>
-          <input type="text" value={form.displayName}
-            onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }} className="ps-input"/>
-        </div>
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">PIN (4 dígitos)</div>
-          <input type="password" inputMode="numeric" maxLength={4} value={form.pin}
-            onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+        <div style={{position:'sticky', top:-10, zIndex:2, background:'var(--flour)', paddingBottom:10, borderBottom:'1px solid var(--ps-line)', marginBottom:12}}>
+          <h3 style={{marginBottom:4}}>+ Novo Usuário</h3>
+          <p style={{margin:0, color:'var(--ink-soft)', fontSize:12.5, lineHeight:1.35}}>
+            Cadastro legado por PIN. O e-mail fica como preparação para Supabase Auth.
+          </p>
         </div>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Cargo</div>
-          <select value={form.role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
-            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-          </select>
-        </div>
+        <ModalSection icon={<UserRound size={15}/>} title="Identidade">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Nome da pessoa</div>
+              <input type="text" value={form.displayName}
+                onChange={e => { setForm(f => ({ ...f, displayName: e.target.value })); setErr('') }} className="ps-input" placeholder="Ex.: Geolar"/>
+            </div>
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Login atual</div>
+              <input type="text" value={form.username}
+                onChange={e => { setForm(f => ({ ...f, username: e.target.value })); setErr('') }} className="ps-input" placeholder="Ex.: producao1"/>
+            </div>
+          </div>
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">PIN temporário (4 dígitos)</div>
+            <input type="password" inputMode="numeric" maxLength={4} value={form.pin}
+              onChange={e => { setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') })); setErr('') }} className="ps-input" style={{textAlign:'center', fontSize:18}}/>
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Loja física</div>
-          <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))} className="ps-select">
-            <option value="">(sem loja — admin/sem físico)</option>
-            <option value="jc">JC — Júlio</option>
-            <option value="ja">JA — Jardim América</option>
-            <option value="ex">EX — Exposição</option>
-          </select>
-        </div>
+        <ModalSection icon={<Mail size={15}/>} title="Supabase Auth">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">E-mail para Auth</div>
+            <input type="email" value={authEmail}
+              onChange={e => { setAuthEmail(e.target.value); setErr('') }} className="ps-input" placeholder="nome@paneesalute.com.br"/>
+          </div>
+          <div style={{marginTop:8, padding:'8px 10px', borderRadius:'var(--r-ctrl)', background:'var(--honey-tint)', color:'#7A5418', fontSize:12, lineHeight:1.35, fontWeight:600}}>
+            Este campo ainda não é salvo no `app_users`. A criação real por e-mail será feita na etapa Supabase Auth.
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldlabel" style={{marginBottom:6}}>Acesso a módulos (pré-marcado pelos defaults da role)</div>
-        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
-          {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
-              <span>{opt.icon} {opt.label}</span>
-              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
-            </label>
-          ))}
-        </div>
+        <ModalSection icon={<ShieldCheck size={15}/>} title="Acesso">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Cargo</div>
+              <select value={form.role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+                {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+              </select>
+            </div>
 
-        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
-        <div className="actions">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Loja / escopo</div>
+              <select value={form.store ?? ''} onChange={e => setForm(f => ({ ...f, store: e.target.value || null }))} className="ps-select">
+                <option value="">Global / sem loja</option>
+                <option value="jc">JC — Júlio de Castilhos</option>
+                <option value="ja">JA — Jardim América</option>
+                <option value="ex">EX — Exposição</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="ps-fieldlabel" style={{marginBottom:6}}>Módulos liberados ({routes.length})</div>
+          <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', maxHeight:180, overflowY:'auto'}}>
+            {ROUTE_OPTIONS.map(opt => (
+              <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', cursor:'pointer', fontSize:13}}>
+                <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
+                <span>{opt.icon} {opt.label}</span>
+                <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
+              </label>
+            ))}
+          </div>
+        </ModalSection>
+
+        <div style={{position:'sticky', bottom:0, zIndex:3, background:'color-mix(in srgb, var(--flour) 94%, transparent)', backdropFilter:'blur(10px)', borderTop:'1px solid var(--ps-line)', padding:'12px 0 calc(14px + env(safe-area-inset-bottom))'}}>
+          {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px', fontWeight:700}}>{err}</p>}
+          <div className="actions">
           <button onClick={handleSave} className="ps-btn primary">
             <Save size={14}/> Criar
           </button>
           <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
@@ -157,6 +231,7 @@ function NewUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: Om
 function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () => void; onSave: (updates: { role: Role; displayName: string; allowedRoutes: string[]; store: string | null }) => void }) {
   const [role, setRole] = useState<Role>(user.role)
   const [displayName, setDisplayName] = useState(user.displayName)
+  const [authEmail, setAuthEmail] = useState('')
   const [routes, setRoutes] = useState<string[]>(user.allowedRoutes)
   const [store, setStore] = useState<string | null>(user.store ?? null)
   const [err, setErr] = useState('')
@@ -170,62 +245,85 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
   }
 
   function handleSave() {
+    const email = authEmail.trim().toLowerCase()
     if (!displayName.trim()) return setErr('Nome de exibição não pode estar vazio')
+    if (email && !isValidEmail(email)) return setErr('E-mail inválido')
     if (routes.length === 0) return setErr('Selecione pelo menos uma rota')
     onSave({ role, displayName: displayName.trim(), allowedRoutes: routes, store })
   }
 
   return (
     <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="ps-sheet">
+      <div className="ps-sheet" style={{paddingBottom:0}}>
         <div className="ps-sheet-grab"/>
-        <h3><Pencil size={14} style={{verticalAlign:-2, marginRight:6}}/>Editar — {user.displayName}</h3>
-        <p style={{margin:'0 0 14px', fontSize:11, color:'var(--ink-faint)'}}>id: <code>{user.id}</code> · username: @{user.username}</p>
-
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Nome de exibição</div>
-          <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }} className="ps-input"/>
+        <div style={{position:'sticky', top:-10, zIndex:2, background:'var(--flour)', paddingBottom:10, borderBottom:'1px solid var(--ps-line)', marginBottom:12}}>
+          <h3 style={{marginBottom:4}}><Pencil size={14} style={{verticalAlign:-2, marginRight:6}}/>Editar — {user.displayName}</h3>
+          <p style={{margin:0, fontSize:11.5, color:'var(--ink-faint)'}}>id: <code>{user.id}</code> · login atual: @{user.username}</p>
         </div>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Cargo</div>
-          <select value={role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
-            {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-          </select>
-        </div>
+        <ModalSection icon={<UserRound size={15}/>} title="Identidade">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">Nome da pessoa</div>
+            <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setErr('') }} className="ps-input"/>
+          </div>
+        </ModalSection>
 
-        <div className="ps-fieldgroup" style={{marginBottom:10}}>
-          <div className="ps-fieldlabel">Loja física</div>
-          <select value={store ?? ''} onChange={e => setStore(e.target.value || null)} className="ps-select">
-            <option value="">(sem loja — admin/sem físico)</option>
-            <option value="jc">JC — Júlio</option>
-            <option value="ja">JA — Jardim América</option>
-            <option value="ex">EX — Exposição</option>
-          </select>
-        </div>
+        <ModalSection icon={<Mail size={15}/>} title="Supabase Auth">
+          <div className="ps-fieldgroup">
+            <div className="ps-fieldlabel">E-mail para Auth</div>
+            <input type="email" value={authEmail}
+              onChange={e => { setAuthEmail(e.target.value); setErr('') }} className="ps-input" placeholder="nome@paneesalute.com.br"/>
+          </div>
+          <div style={{marginTop:8, padding:'8px 10px', borderRadius:'var(--r-ctrl)', background:'var(--honey-tint)', color:'#7A5418', fontSize:12, lineHeight:1.35, fontWeight:600}}>
+            O e-mail ainda não é salvo no `app_users`. Ele será vinculado ao usuário real quando Supabase Auth for criado.
+          </div>
+        </ModalSection>
 
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-          <span className="ps-fieldlabel">Acesso a módulos</span>
-          <button type="button" onClick={applyRoleDefaults} style={{background:'none', border:'none', color:'var(--crust)', cursor:'pointer', fontSize:11, textDecoration:'underline', fontFamily:'var(--font-ui)'}}>
-            Usar padrão da role
-          </button>
-        </div>
-        <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', marginBottom:12, maxHeight:200, overflowY:'auto'}}>
-          {ROUTE_OPTIONS.map(opt => (
-            <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0', cursor:'pointer', fontSize:13}}>
-              <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
-              <span>{opt.icon} {opt.label}</span>
-              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
-            </label>
-          ))}
-        </div>
+        <ModalSection icon={<ShieldCheck size={15}/>} title="Acesso">
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Cargo</div>
+              <select value={role} onChange={e => setRole(e.target.value as Role)} className="ps-select">
+                {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+              </select>
+            </div>
 
-        {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px'}}>{err}</p>}
-        <div className="actions">
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Loja / escopo</div>
+              <select value={store ?? ''} onChange={e => setStore(e.target.value || null)} className="ps-select">
+                <option value="">Global / sem loja</option>
+                <option value="jc">JC — Júlio de Castilhos</option>
+                <option value="ja">JA — Jardim América</option>
+                <option value="ex">EX — Exposição</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+            <span className="ps-fieldlabel">Módulos liberados ({routes.length})</span>
+            <button type="button" onClick={applyRoleDefaults} style={{background:'none', border:'none', color:'var(--crust)', cursor:'pointer', fontSize:11, textDecoration:'underline', fontFamily:'var(--font-ui)'}}>
+              Usar padrão da role
+            </button>
+          </div>
+          <div style={{background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', padding:'8px 10px', maxHeight:180, overflowY:'auto'}}>
+            {ROUTE_OPTIONS.map(opt => (
+              <label key={opt.href} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', cursor:'pointer', fontSize:13}}>
+                <input type="checkbox" checked={routes.includes(opt.href)} onChange={() => toggleRoute(opt.href)}/>
+                <span>{opt.icon} {opt.label}</span>
+                <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontSize:11}}>{opt.href}</span>
+              </label>
+            ))}
+          </div>
+        </ModalSection>
+
+        <div style={{position:'sticky', bottom:0, zIndex:3, background:'color-mix(in srgb, var(--flour) 94%, transparent)', backdropFilter:'blur(10px)', borderTop:'1px solid var(--ps-line)', padding:'12px 0 calc(14px + env(safe-area-inset-bottom))'}}>
+          {err && <p style={{color:'var(--berry)', fontSize:13, margin:'0 0 10px', fontWeight:700}}>{err}</p>}
+          <div className="actions">
           <button onClick={handleSave} className="ps-btn primary">
             <Save size={14}/> Salvar
           </button>
           <button onClick={onClose} className="ps-btn ghost">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
@@ -241,6 +339,11 @@ export default function AdminUsuariosPage() {
   const [newModal, setNewModal]     = useState(false)
   const [editModal, setEditModal]   = useState<AppUser | null>(null)
   const [msg, setMsg]               = useState('')
+  const [msgKind, setMsgKind]       = useState<MessageKind>('info')
+  const [search, setSearch]         = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos')
+  const [roleFilter, setRoleFilter] = useState<Role | 'todas'>('todas')
+  const [storeFilter, setStoreFilter] = useState<StoreFilter>('todas')
 
   useEffect(() => {
     const u = getCurrentUser()
@@ -249,16 +352,18 @@ export default function AdminUsuariosPage() {
     loadUsers()
   }, [router])
 
-  async function loadUsers() {
+  async function loadUsers(): Promise<AppUser[]> {
     setLoading(true)
     const remote = await fetchUsersFromSupabase()
     const list = remote ?? getCachedUsers()
     if (remote) cacheUsers(remote)
     setUsers(list)
     setLoading(false)
+    return list
   }
 
-  function flash(m: string) {
+  function flash(m: string, kind: MessageKind = 'info') {
+    setMsgKind(kind)
     setMsg(m)
     setTimeout(() => setMsg(''), 2500)
   }
@@ -269,7 +374,7 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, pin: newPin } : u)
       setUsers(updated); cacheUsers(updated)
       flash('PIN atualizado!')
-    } else flash('Erro ao atualizar PIN')
+    } else flash('Erro ao atualizar PIN', 'error')
     setPinModal(null)
   }
 
@@ -280,13 +385,27 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, active: newActive } : u)
       setUsers(updated); cacheUsers(updated)
       flash(newActive ? 'Usuário ativado' : 'Usuário desativado')
-    } else flash('Erro ao atualizar')
+    } else flash('Erro ao atualizar', 'error')
   }
 
   async function handleCreate(data: Omit<AppUser, 'id'> & { allowedRoutes: string[] }) {
     const ok = await createUserInSupabase(data)
-    if (ok) { await loadUsers(); flash('Usuário criado!') }
-    else flash('Erro ao criar usuário (username pode já existir)')
+    if (!ok) {
+      flash('Cadastro não gravado: a criação legado em app_users está bloqueada por segurança.', 'error')
+      setNewModal(false)
+      return
+    }
+
+    const freshUsers = await loadUsers()
+    const expectedUsername = data.username.trim().toLowerCase()
+    const expectedDisplayName = data.displayName.trim().toLowerCase()
+    const createdUserIsVisible = freshUsers.some(user =>
+      user.username.trim().toLowerCase() === expectedUsername ||
+      user.displayName.trim().toLowerCase() === expectedDisplayName
+    )
+
+    if (createdUserIsVisible) flash('Usuário criado!')
+    else flash('Cadastro não confirmado no banco. Use o runbook de Supabase Auth para a próxima leva.', 'error')
     setNewModal(false)
   }
 
@@ -296,8 +415,44 @@ export default function AdminUsuariosPage() {
       const updated = users.map(u => u.id === user.id ? { ...u, ...updates } : u)
       setUsers(updated); cacheUsers(updated)
       flash('Usuário atualizado!')
-    } else flash('Erro ao atualizar')
+    } else flash('Erro ao atualizar', 'error')
     setEditModal(null)
+  }
+
+  const activeCount = useMemo(() => users.filter(user => user.active).length, [users])
+  const inactiveCount = users.length - activeCount
+
+  const filteredUsers = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+
+    return users.filter(user => {
+      const searchable = [
+        user.displayName,
+        user.username,
+        roleLabel(user.role),
+        user.role,
+        storeLabel(user.store),
+      ].join(' ').toLowerCase()
+      const matchesSearch = needle.length === 0 || searchable.includes(needle)
+      const matchesStatus =
+        statusFilter === 'todos' ||
+        (statusFilter === 'ativos' && user.active) ||
+        (statusFilter === 'inativos' && !user.active)
+      const matchesRole = roleFilter === 'todas' || user.role === roleFilter
+      const matchesStore =
+        storeFilter === 'todas' ||
+        (storeFilter === 'global' && !user.store) ||
+        user.store === storeFilter
+
+      return matchesSearch && matchesStatus && matchesRole && matchesStore
+    })
+  }, [roleFilter, search, statusFilter, storeFilter, users])
+
+  function clearFilters() {
+    setSearch('')
+    setStatusFilter('todos')
+    setRoleFilter('todas')
+    setStoreFilter('todas')
   }
 
   if (loading) return (
@@ -327,42 +482,150 @@ export default function AdminUsuariosPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:14, marginBottom:14, gap:10}}>
-            <h1 className="ps-page-title" style={{margin:0}}>👥 Usuários ({users.length})</h1>
-            <button onClick={() => setNewModal(true)} className="ps-btn primary">
-              <Plus size={14}/> Novo
+          <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginTop:14, marginBottom:12, gap:12}}>
+            <div style={{minWidth:0}}>
+              <h1 className="ps-page-title" style={{margin:0, fontSize:26}}>Usuários</h1>
+              <p style={{margin:'3px 0 0', fontSize:12.5, color:'var(--ink-soft)', lineHeight:1.35}}>
+                Login atual por PIN. Supabase Auth será preparado em etapa separada.
+              </p>
+            </div>
+            <button onClick={() => setNewModal(true)} className="ps-btn primary" style={{minHeight:42}}>
+              <Plus size={15}/> Novo
             </button>
           </div>
 
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:8, marginBottom:12}}>
+            <div style={{background:'var(--cream)', border:'1px solid var(--ps-line)', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel">Total</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--ps-ink)', lineHeight:1.1}}>{users.length}</div>
+            </div>
+            <div style={{background:'#E3F0E0', border:'1px solid #C5D5BA', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel" style={{color:'var(--sage)'}}>Ativos</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--sage)', lineHeight:1.1}}>{activeCount}</div>
+            </div>
+            <div style={{background:'var(--berry-tint)', border:'1px solid #E6B5AC', borderRadius:'var(--r-ctrl)', padding:'10px 11px'}}>
+              <div className="ps-fieldlabel" style={{color:'var(--berry)'}}>Inativos</div>
+              <div style={{fontSize:22, fontWeight:800, color:'var(--berry)', lineHeight:1.1}}>{inactiveCount}</div>
+            </div>
+          </div>
+
+          <div style={{border:'1px solid var(--ps-line)', borderRadius:'var(--r-card)', background:'color-mix(in srgb, var(--cream) 80%, var(--flour))', padding:12, marginBottom:12, boxShadow:'var(--sh-1)'}}>
+            <div style={{display:'flex', alignItems:'center', gap:7, marginBottom:10, color:'var(--ink-soft)', fontSize:12, fontWeight:700}}>
+              <SlidersHorizontal size={14}/> Encontrar usuário
+              <span style={{marginLeft:'auto', color:'var(--ink-faint)', fontWeight:700}}>{filteredUsers.length} exibidos</span>
+            </div>
+
+            <div style={{position:'relative', marginBottom:10}}>
+              <Search size={16} style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)'}}/>
+              <input
+                className="ps-input"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Buscar por nome, login, cargo ou loja"
+                style={{width:'100%', paddingLeft:36, paddingRight: search ? 36 : 12}}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label="Limpar busca"
+                  style={{position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', width:28, height:28, border:0, borderRadius:8, background:'transparent', color:'var(--ink-faint)', display:'grid', placeItems:'center', cursor:'pointer'}}
+                >
+                  <X size={16}/>
+                </button>
+              )}
+            </div>
+
+            <div style={{display:'flex', gap:6, overflowX:'auto', paddingBottom:2, marginBottom:10}}>
+              {STATUS_FILTERS.map(filter => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  aria-pressed={statusFilter === filter.value}
+                  onClick={() => setStatusFilter(filter.value)}
+                  className={statusFilter === filter.value ? 'ps-btn primary sm' : 'ps-btn ghost sm'}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+              <select value={roleFilter} onChange={event => setRoleFilter(event.target.value as Role | 'todas')} className="ps-select" aria-label="Filtrar por cargo">
+                <option value="todas">Todos os cargos</option>
+                {ALL_ROLES.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}
+              </select>
+              <select value={storeFilter} onChange={event => setStoreFilter(event.target.value as StoreFilter)} className="ps-select" aria-label="Filtrar por loja">
+                {STORE_FILTERS.map(store => <option key={store.value} value={store.value}>{store.label}</option>)}
+              </select>
+            </div>
+          </div>
+
           {msg && (
-            <div className="ps-banner crust" style={{marginBottom:14}}>{msg}</div>
+            <div
+              className="ps-banner crust"
+              style={{
+                marginBottom:14,
+                ...(msgKind === 'error'
+                  ? {background:'var(--berry-tint)', borderColor:'#E6B5AC', color:'var(--berry)'}
+                  : {}),
+              }}
+            >
+              {msg}
+            </div>
           )}
 
-          <div style={{display:'flex', flexDirection:'column', gap:10}}>
-            {users.map(user => (
-              <div key={user.id} className="ps-card" style={{padding:'12px 14px', flexDirection:'row', alignItems:'center', gap:12, opacity: user.active ? 1 : 0.55}}>
-                <div className="ps-avatar" style={{width:42, height:42, fontSize:16, background:roleColor(user.role)}}>
-                  {user.displayName.charAt(0).toUpperCase()}
+          {filteredUsers.length === 0 ? (
+            <div className="ps-empty" style={{padding:'34px 12px'}}>
+              Nenhum usuário encontrado.
+              <button type="button" onClick={clearFilters} className="ps-btn ghost sm" style={{margin:'12px auto 0'}}>
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(244px, 1fr))', gap:10}}>
+              {filteredUsers.map(user => (
+                <div key={user.id} className="ps-card" style={{padding:'12px 13px', gap:10, opacity: user.active ? 1 : 0.62}}>
+                  <div style={{display:'flex', alignItems:'flex-start', gap:10}}>
+                    <div className="ps-avatar" style={{width:38, height:38, fontSize:15, background:roleColor(user.role)}}>
+                      {user.displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:800, fontSize:14.5, color:'var(--ps-ink)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{user.displayName}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-faint)', fontWeight:700, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>@{user.username}</div>
+                    </div>
+                    <span className={user.active ? 'ps-status ok' : 'ps-status com_divergencia'} style={{fontSize:9.5, padding:'2px 7px'}}>
+                      {user.active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+
+                  <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                    <span className="ps-status separado" style={{fontSize:10, textTransform:'none', letterSpacing:0, color:roleColor(user.role)}}>
+                      {roleLabel(user.role)}
+                    </span>
+                    <span className={user.store ? `ps-store-chip ${storeChipClass(user.store)}` : 'ps-status separado'} style={{fontSize:10}}>
+                      {storeLabel(user.store)}
+                    </span>
+                    <span className="ps-status separado" style={{fontSize:10, textTransform:'none', letterSpacing:0}}>
+                      {user.allowedRoutes.length} módulos
+                    </span>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:6}}>
+                    <button onClick={() => setPinModal(user)} className="ps-btn ghost sm" aria-label={`Trocar PIN de ${user.displayName}`}>
+                      <KeyRound size={12}/> PIN
+                    </button>
+                    <button onClick={() => setEditModal(user)} className="ps-btn ghost sm" aria-label={`Editar ${user.displayName}`}>
+                      <Pencil size={12}/> Editar
+                    </button>
+                    <button onClick={() => handleToggle(user)} className={`ps-btn sm ${user.active ? 'danger' : 'success'}`} aria-label={user.active ? `Desativar ${user.displayName}` : `Ativar ${user.displayName}`}>
+                      <Power size={12}/> {user.active ? 'Off' : 'On'}
+                    </button>
+                  </div>
                 </div>
-                <div style={{flex:1, minWidth:0}}>
-                  <div style={{fontWeight:700, fontSize:14.5, color:'var(--ps-ink)'}}>{user.displayName}</div>
-                  <div style={{fontSize:12, color:roleColor(user.role), fontWeight:600}}>{roleLabel(user.role)}{user.store && ` · ${user.store.toUpperCase()}`}</div>
-                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>@{user.username}</div>
-                </div>
-                <div style={{display:'flex', gap:6, flexShrink:0, flexDirection:'column'}}>
-                  <button onClick={() => setPinModal(user)} className="ps-btn ghost sm">
-                    <KeyRound size={11}/> PIN
-                  </button>
-                  <button onClick={() => setEditModal(user)} className="ps-btn ghost sm">
-                    <Pencil size={11}/> Editar
-                  </button>
-                  <button onClick={() => handleToggle(user)} className={`ps-btn sm ${user.active ? 'danger' : 'success'}`}>
-                    <Power size={11}/> {user.active ? 'Off' : 'On'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
