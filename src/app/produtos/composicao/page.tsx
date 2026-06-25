@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, X, Search, AlertTriangle } from 'lucide-react'
@@ -7,7 +7,16 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
-interface ParentProduct { id: string; name: string; kind: string | null; cost_price: number | null }
+interface ParentProduct {
+  id: string
+  name: string
+  kind: string | null
+  category: string | null
+  unit: string | null
+  cost_price: number | null
+  is_revenda: boolean | null
+  is_fabricacao_propria: boolean | null
+}
 interface Component {
   id: string
   parent_product_id: string
@@ -16,7 +25,39 @@ interface Component {
   quantity: number
 }
 interface BreadLite   { id: string; name: string; cost_price: number | null; unit: string | null; active: boolean | null }
-interface ProductLite { id: string; name: string; cost_price: number | null; unit: string | null; kind: string | null; active: boolean | null }
+interface ProductLite {
+  id: string
+  name: string
+  cost_price: number | null
+  unit: string | null
+  kind: string | null
+  active: boolean | null
+  is_fabricacao_propria: boolean | null
+  legacy_bread_id: string | null
+}
+
+function parsePositiveDecimal(raw: string): number | null {
+  const value = Number(raw.trim().replace(',', '.'))
+  if (!Number.isFinite(value) || value <= 0) return null
+  return value
+}
+
+function formatQty(value: number): string {
+  return Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+}
+
+function formatBRL(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message) return message
+  }
+  return fallback
+}
 
 function ComposicaoInner() {
   const sp = useSearchParams()
@@ -33,32 +74,32 @@ function ComposicaoInner() {
   const [newQty, setNewQty]       = useState('1')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
 
-  useEffect(() => { setUser(getCurrentUser()); if (parentId) load() }, [parentId])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const [pRes, cRes, bRes, prRes] = await Promise.all([
-        supabase.from('products').select('id,name,kind,cost_price').eq('id', parentId).single(),
+        supabase.from('products').select('id,name,kind,category,unit,cost_price,is_revenda,is_fabricacao_propria').eq('id', parentId).single(),
         supabase.from('product_components').select('*').eq('parent_product_id', parentId),
         supabase.from('breads').select('id,name,cost_price,unit,active').order('name'),
-        supabase.from('products').select('id,name,cost_price,unit,kind,active').order('name'),
+        supabase.from('products').select('id,name,cost_price,unit,kind,active,is_fabricacao_propria,legacy_bread_id').order('name'),
       ])
       if (pRes.error) throw pRes.error
       setParent(pRes.data as ParentProduct)
       setComponents((cRes.data || []) as Component[])
       setBreads((bRes.data || []) as BreadLite[])
       setProducts((prRes.data || []) as ProductLite[])
-    } catch (e: any) {
-      showToast(e.message || 'Erro ao carregar')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao carregar'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [parentId])
+
+  useEffect(() => { setUser(getCurrentUser()); if (parentId) load() }, [parentId, load])
 
   async function addComponent(source: 'bread' | 'product', componentId: string) {
-    const qty = parseInt(newQty, 10)
-    if (!qty || qty <= 0) { showToast('Quantidade inválida'); return }
+    const qty = parsePositiveDecimal(newQty)
+    if (qty === null) { showToast('Quantidade inválida'); return }
     try {
       const { data, error } = await supabase
         .from('product_components')
@@ -70,14 +111,14 @@ function ComposicaoInner() {
       setSearch('')
       setNewQty('1')
       showToast('Componente adicionado')
-    } catch (e: any) {
-      showToast(e.message || 'Erro ao adicionar')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao adicionar'))
     }
   }
 
   async function updateQty(componentId: string, raw: string) {
-    const qty = parseInt(raw, 10)
-    if (!qty || qty <= 0) { showToast('Quantidade inválida'); return }
+    const qty = parsePositiveDecimal(raw)
+    if (qty === null) { showToast('Quantidade inválida'); return }
     try {
       const { error } = await supabase
         .from('product_components')
@@ -87,8 +128,8 @@ function ComposicaoInner() {
       setComponents(prev => prev.map(c => c.id === componentId ? { ...c, quantity: qty } : c))
       setQtyEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
       showToast('Quantidade atualizada')
-    } catch (e: any) {
-      showToast(e.message || 'Erro ao atualizar')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar'))
     }
   }
 
@@ -99,8 +140,8 @@ function ComposicaoInner() {
       if (error) throw error
       setComponents(prev => prev.filter(c => c.id !== componentId))
       showToast('Componente removido')
-    } catch (e: any) {
-      showToast(e.message || 'Erro ao remover')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao remover'))
     }
   }
 
@@ -109,31 +150,34 @@ function ComposicaoInner() {
     const item = c.component_source === 'bread'
       ? breads.find(b => b.id === c.component_id)
       : products.find(p => p.id === c.component_id)
+    const cost = item?.cost_price ?? null
     return {
       ...c,
       name: item?.name ?? '(não encontrado)',
-      cost: item?.cost_price ?? 0,
-      hasCost: !!(item?.cost_price && Number(item.cost_price) > 0),
+      cost: cost ?? 0,
+      hasCost: cost !== null && Number(cost) > 0,
       unit: item?.unit ?? '',
     }
   }), [components, breads, products])
 
   const totalCMV = enriched.reduce((sum, e) => sum + Number(e.cost) * Number(e.quantity), 0)
   const partialCount = enriched.filter(e => !e.hasCost).length
+  const manualCost = parent?.cost_price !== null && parent?.cost_price !== undefined ? Number(parent.cost_price) : null
+  const manualDiff = manualCost !== null ? totalCMV - manualCost : null
+  const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
 
-  // Candidatos da busca: breads + products (sem kits, sem self, sem já adicionados)
+  // Candidatos novos priorizam products. Breads legados só aparecem quando ainda não há produto migrado.
   const addedKeys = new Set(components.map(c => `${c.component_source}-${c.component_id}`))
+  const migratedBreadIds = new Set(products.map(p => p.legacy_bread_id).filter(Boolean))
   const q = search.trim().toLowerCase()
   const candidates = q.length < 2 ? [] : [
-    ...breads
-      .filter(b => b.active !== false && !addedKeys.has(`bread-${b.id}`) && b.name.toLowerCase().includes(q))
-      .map(b => ({ source: 'bread' as const, id: b.id, name: b.name, cost: b.cost_price, unit: b.unit })),
     ...products
       .filter(p => p.active !== false && p.id !== parentId && p.kind !== 'kit' && !addedKeys.has(`product-${p.id}`) && p.name.toLowerCase().includes(q))
-      .map(p => ({ source: 'product' as const, id: p.id, name: p.name, cost: p.cost_price, unit: p.unit })),
+      .map(p => ({ source: 'product' as const, id: p.id, name: p.name, cost: p.cost_price, unit: p.unit, isFabricacao: !!p.is_fabricacao_propria })),
+    ...breads
+      .filter(b => b.active !== false && !migratedBreadIds.has(b.id) && !addedKeys.has(`bread-${b.id}`) && b.name.toLowerCase().includes(q))
+      .map(b => ({ source: 'bread' as const, id: b.id, name: b.name, cost: b.cost_price, unit: b.unit, isFabricacao: false })),
   ].slice(0, 20)
-
-  const isKit = parent?.kind === 'kit'
 
   if (!parentId) {
     return (
@@ -154,7 +198,7 @@ function ComposicaoInner() {
               <ArrowLeft size={16}/>
             </button>
             <div className="ps-brand">
-              <b>Composição</b>
+              <b>Ficha Técnica</b>
               <span>{parent?.name || '…'}</span>
             </div>
           </div>
@@ -171,14 +215,36 @@ function ComposicaoInner() {
             <div className="ps-card" style={{padding:24, textAlign:'center', color:'var(--ink-faint)'}}>Carregando…</div>
           ) : (
             <>
-              {!isKit && parent && (
+              {!canEditFicha && parent && (
                 <div className="ps-warning" style={{marginBottom:12}}>
                   <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
                   <span>
-                    <strong>{parent.name}</strong> tem <code>kind = {parent.kind || 'null'}</code>. Composição só faz sentido em kits — pra cadastrar componentes, primeiro mude o tipo pra <strong>Kit</strong> em <Link href="/produtos" style={{textDecoration:'underline'}}>Catálogo</Link>.
+                    <strong>{parent.name}</strong> usa custo direto. Para montar ficha técnica, ajuste o tipo para <strong>Produto final</strong> ou <strong>Kit</strong> em <Link href="/produtos" style={{textDecoration:'underline'}}>Catálogo</Link>.
                   </span>
                 </div>
               )}
+
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:8, marginBottom:12}}>
+                <div className="ps-card" style={{padding:12}}>
+                  <div className="ps-flabel">CMV teórico</div>
+                  <div style={{fontSize:20, fontWeight:800, color:'var(--ps-ink)'}}>{formatBRL(totalCMV)}</div>
+                  <div style={{fontSize:11, color:partialCount > 0 ? 'var(--berry)' : 'var(--ink-faint)'}}>
+                    {enriched.length === 0 ? 'sem ficha' : partialCount > 0 ? `${partialCount} sem custo` : 'custos completos'}
+                  </div>
+                </div>
+                <div className="ps-card" style={{padding:12}}>
+                  <div className="ps-flabel">Componentes</div>
+                  <div style={{fontSize:20, fontWeight:800, color:'var(--ps-ink)'}}>{enriched.length}</div>
+                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>produtos ou insumos</div>
+                </div>
+                <div className="ps-card" style={{padding:12}}>
+                  <div className="ps-flabel">Custo manual</div>
+                  <div style={{fontSize:20, fontWeight:800, color:'var(--ps-ink)'}}>{manualCost === null ? '—' : formatBRL(manualCost)}</div>
+                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>
+                    {manualDiff === null ? 'não cadastrado' : `${manualDiff >= 0 ? '+' : ''}${formatBRL(manualDiff)} vs ficha`}
+                  </div>
+                </div>
+              </div>
 
               {/* Lista de componentes atuais */}
               <div className="ps-card" style={{padding:14, marginBottom:12}}>
@@ -198,27 +264,29 @@ function ComposicaoInner() {
                         </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {e.hasCost
-                            ? `R$ ${Number(e.cost).toFixed(2)}${e.unit?`/${e.unit}`:''} × ${Number(e.quantity)} = R$ ${(Number(e.cost)*Number(e.quantity)).toFixed(2)}`
-                            : `× ${Number(e.quantity)}${e.unit?` ${e.unit}`:''}`}
+                            ? `${formatBRL(Number(e.cost))}${e.unit?`/${e.unit}`:''} × ${formatQty(Number(e.quantity))} = ${formatBRL(Number(e.cost)*Number(e.quantity))}`
+                            : `× ${formatQty(Number(e.quantity))}${e.unit?` ${e.unit}`:''}`}
                         </div>
                       </div>
                       <input
-                        type="number"
-                        step="1"
-                        min="1"
-                        inputMode="numeric"
-                        value={qtyEdits[e.id] ?? String(e.quantity)}
-                        onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d]/g, '')}))}
+                        type="text"
+                        inputMode="decimal"
+                        value={qtyEdits[e.id] ?? formatQty(Number(e.quantity))}
+                        onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d,.]/g, '')}))}
                         onBlur={ev => {
                           const v = ev.target.value
-                          if (v && parseInt(v, 10) !== Number(e.quantity)) updateQty(e.id, v)
+                          const parsed = parsePositiveDecimal(v)
+                          if (parsed === null) {
+                            showToast('Quantidade inválida')
+                            setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
+                          } else if (parsed !== Number(e.quantity)) updateQty(e.id, v)
                           else setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
                         }}
-                        disabled={!isKit}
+                        disabled={!canEditFicha}
                         className="ps-input"
                         style={{width:70, textAlign:'right', padding:'6px 8px'}}
                       />
-                      {isKit && (
+                      {canEditFicha && (
                         <button onClick={() => removeComponent(e.id)} className="ps-iconbtn" style={{width:30, height:30}} title="Remover componente">
                           <X size={14}/>
                         </button>
@@ -231,21 +299,21 @@ function ComposicaoInner() {
                 {enriched.length > 0 && (
                   <div style={{marginTop:12, paddingTop:10, borderTop:'1px solid var(--ps-line)', display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
                     <div style={{fontSize:12, color:'var(--ink-soft)'}}>
-                      CMV computado{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
+                      CMV teórico{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
                     </div>
-                    <div style={{fontSize:18, fontWeight:700, color:'var(--ps-ink)'}}>R$ {totalCMV.toFixed(2)}</div>
+                    <div style={{fontSize:18, fontWeight:700, color:'var(--ps-ink)'}}>{formatBRL(totalCMV)}</div>
                   </div>
                 )}
 
                 {parent && parent.cost_price !== null && (
                   <div style={{marginTop:6, fontSize:11, color:'var(--ink-faint)', textAlign:'right'}}>
-                    Custo manual cadastrado: R$ {Number(parent.cost_price).toFixed(2)}
+                    Custo manual cadastrado: {formatBRL(Number(parent.cost_price))}
                   </div>
                 )}
               </div>
 
               {/* Adicionar componente */}
-              {isKit && (
+              {canEditFicha && (
                 <div className="ps-card" style={{padding:14}}>
                   <div className="ps-flabel" style={{marginBottom:8}}>Adicionar componente</div>
                   <div style={{display:'flex', gap:8, marginBottom:8}}>
@@ -260,12 +328,10 @@ function ComposicaoInner() {
                       />
                     </div>
                     <input
-                      type="number"
-                      step="1"
-                      min="1"
-                      inputMode="numeric"
+                      type="text"
+                      inputMode="decimal"
                       value={newQty}
-                      onChange={e => setNewQty(e.target.value.replace(/[^\d]/g, ''))}
+                      onChange={e => setNewQty(e.target.value.replace(/[^\d,.]/g, ''))}
                       placeholder="Qtd"
                       className="ps-input"
                       style={{width:80, textAlign:'right'}}
@@ -288,9 +354,10 @@ function ComposicaoInner() {
                             <div style={{fontSize:13, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6}}>
                               {c.name}
                               <span className={`ps-store-chip ${c.source==='bread'?'jc':'ja'}`}>{c.source==='bread'?'PÃO':'PRODUTO'}</span>
+                              {c.isFabricacao && <span className="ps-store-chip jc">FABRICAÇÃO</span>}
                             </div>
                             <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                              {c.cost ? `R$ ${Number(c.cost).toFixed(2)}${c.unit?`/${c.unit}`:''}` : 'sem custo cadastrado'}
+                              {c.cost ? `${formatBRL(Number(c.cost))}${c.unit?`/${c.unit}`:''}` : 'sem custo cadastrado'}
                             </div>
                           </div>
                           <Plus size={14} style={{color:'var(--honey-deep)'}}/>
