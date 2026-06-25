@@ -2,13 +2,13 @@
 
 Data: 2026-06-24
 
-Status: migration criada no repositório, ainda não aplicada em produção.
+Status: migration aplicada em produção em 2026-06-25.
 
 ## Objetivo
 
-Preparar a migration que vincula ou cria produtos a partir dos registros atuais de `public.breads`, avançando a unificação do catálogo.
+Preparar e registrar a aplicação da migration que vincula ou cria produtos a partir dos registros atuais de `public.breads`, avançando a unificação do catálogo.
 
-Esta etapa deixa o SQL pronto para revisão. Ela não aplica a migration no Supabase.
+Esta etapa deixou o SQL pronto para revisão e, após confirmação explícita de Rodrigo em 2026-06-25, a migration foi aplicada no Supabase de produção.
 
 ## Migration criada
 
@@ -18,7 +18,7 @@ Arquivo:
 supabase/migrations/20260624195513_backfill_products_from_breads.sql
 ```
 
-## O que a migration faz quando for aplicada
+## O que a migration fez
 
 - Valida que os 41 registros esperados ainda existem em `public.breads`.
 - Vincula 8 pães a produtos já existentes usando `products.legacy_bread_id`.
@@ -106,7 +106,7 @@ Sarraceno
 
 ## Validações antes de aplicar
 
-Antes de executar a migration em produção, rodar consultas somente leitura para confirmar:
+Antes de executar a migration em produção, foram rodadas consultas somente leitura para confirmar:
 
 ```sql
 select count(*) as total_breads
@@ -121,19 +121,17 @@ from public.products
 where is_fabricacao_propria = true;
 ```
 
-Resultado esperado antes da aplicação:
+Resultado antes da aplicação:
 
-| Consulta | Esperado |
+| Consulta | Resultado |
 | --- | ---: |
 | `total_breads` | 41 |
 | `products_with_legacy_bread_id` | 0 |
 | `products_fabricacao_propria` | 0 |
 
-Se algum resultado divergir, parar e revisar a migration antes de aplicar.
-
 ## Validações depois de aplicar
 
-Depois da aplicação, validar:
+Depois da aplicação, foram validados:
 
 ```sql
 select count(*) as migrated_products
@@ -153,12 +151,29 @@ group by legacy_bread_id
 having count(*) > 1;
 ```
 
-Resultado esperado:
+Resultado:
 
-- `migrated_products = 41`;
-- nenhum `legacy_bread_id` duplicado;
-- 33 itens na categoria temporária `Pães - Migrado`;
-- 8 itens vinculados mantendo suas categorias atuais.
+| Validação | Resultado |
+| --- | ---: |
+| Total de `breads` | 41 |
+| Total de `products` | 460 |
+| Produtos com `legacy_bread_id` | 41 |
+| Produtos com `is_fabricacao_propria = true` | 41 |
+| Produtos na categoria `Pães - Migrado` | 33 |
+| `legacy_bread_id` duplicado | 0 |
+| Produtos migrados com `production_area = 'padaria'` | 41 |
+| Produtos migrados com `production_days` válido | 41 |
+
+Distribuição por categoria após aplicação:
+
+| Categoria | Total |
+| --- | ---: |
+| Confeitaria | 1 |
+| Focaccias | 2 |
+| Pães - Migrado | 33 |
+| Pães Branco | 2 |
+| Pães Integ. | 1 |
+| Pães Rech. | 2 |
 
 ## Rollback conceitual
 
@@ -177,20 +192,16 @@ Esse rollback não deve ser executado sem plano separado e aprovação explícit
 
 ## O que esta PR não faz
 
-- Não aplica a migration.
-- Não executa SQL remoto de escrita.
 - Não altera telas.
 - Não altera `src/`.
 - Não remove `breads`.
 - Não muda RLS.
 - Não muda pedidos, forno, sobras ou romaneio.
 
+## Registro complementar
+
+O resultado operacional da aplicação está registrado em `docs/SUPABASE_PRODUCTS_BACKFILL_APPLY_RESULT.md`.
+
 ## Próxima etapa recomendada
 
-Depois de revisar esta PR, Rodrigo deve aprovar explicitamente a aplicação remota da migration.
-
-Modelo de confirmação:
-
-```text
-Confirmo aplicar a migration 20260624195513_backfill_products_from_breads.sql no Supabase de produção.
-```
+Depois desta aplicação, o próximo passo é ajustar as telas para consumir o catálogo unificado em `products`, sem depender de `breads` para novos fluxos de ficha técnica e CMV.
