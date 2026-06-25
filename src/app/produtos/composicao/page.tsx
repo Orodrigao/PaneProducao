@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, X, Search, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { formatDecimalPtBR, parsePositiveDecimalInput, type PricingUnit } from '@/lib/saleOptions'
 
 interface ParentProduct {
   id: string
@@ -35,11 +36,36 @@ interface ProductLite {
   is_fabricacao_propria: boolean | null
   legacy_bread_id: string | null
 }
+interface RecipeYield {
+  id: string
+  product_id: string
+  basis: string
+  batch_name: string | null
+  dough_weight_kg: number | null
+  finished_weight_kg: number | null
+  yield_units: number | null
+  average_unit_weight_kg: number | null
+  bake_loss_pct: number | null
+  notes: string | null
+}
+interface SaleOption {
+  id: string
+  product_id: string
+  name: string
+  sale_unit: PricingUnit
+  reference_quantity: number
+  unit_weight_kg: number | null
+  is_default: boolean
+  active: boolean
+}
+interface YieldDraft {
+  dough_weight_kg: string
+  finished_weight_kg: string
+  yield_units: string
+}
 
 function parsePositiveDecimal(raw: string): number | null {
-  const value = Number(raw.trim().replace(',', '.'))
-  if (!Number.isFinite(value) || value <= 0) return null
-  return value
+  return parsePositiveDecimalInput(raw)
 }
 
 function formatQty(value: number): string {
@@ -59,6 +85,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const err = error as { code?: unknown; message?: unknown }
+  const code = typeof err.code === 'string' ? err.code : ''
+  const message = typeof err.message === 'string' ? err.message : ''
+  return code === '42P01' || code === 'PGRST205' || message.includes('product_sale_options') || message.includes('product_recipe_yields')
+}
+
+function draftValue(value: number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value)
+}
+
+function nullablePositiveDecimal(raw: string): number | null {
+  if (!raw.trim()) return null
+  return parsePositiveDecimalInput(raw)
+}
+
 function ComposicaoInner() {
   const sp = useSearchParams()
   const router = useRouter()
@@ -69,6 +112,10 @@ function ComposicaoInner() {
   const [components, setComponents] = useState<Component[]>([])
   const [breads, setBreads]       = useState<BreadLite[]>([])
   const [products, setProducts]   = useState<ProductLite[]>([])
+  const [recipeYield, setRecipeYield] = useState<RecipeYield | null>(null)
+  const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+  const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
+  const [recipeMetaAvailable, setRecipeMetaAvailable] = useState(true)
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [newQty, setNewQty]       = useState('1')
@@ -88,6 +135,31 @@ function ComposicaoInner() {
       setComponents((cRes.data || []) as Component[])
       setBreads((bRes.data || []) as BreadLite[])
       setProducts((prRes.data || []) as ProductLite[])
+      const [yRes, soRes] = await Promise.all([
+        supabase.from('product_recipe_yields').select('*').eq('product_id', parentId).maybeSingle(),
+        supabase.from('product_sale_options').select('id,product_id,name,sale_unit,reference_quantity,unit_weight_kg,is_default,active').eq('product_id', parentId).order('sale_unit'),
+      ])
+      if (yRes.error || soRes.error) {
+        const err = yRes.error || soRes.error
+        if (isMissingRelationError(err)) {
+          setRecipeMetaAvailable(false)
+          setRecipeYield(null)
+          setYieldDraft({ dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+          setSaleOptions([])
+        } else {
+          throw err
+        }
+      } else {
+        const yieldRow = yRes.data as RecipeYield | null
+        setRecipeMetaAvailable(true)
+        setRecipeYield(yieldRow)
+        setYieldDraft({
+          dough_weight_kg: draftValue(yieldRow?.dough_weight_kg),
+          finished_weight_kg: draftValue(yieldRow?.finished_weight_kg),
+          yield_units: draftValue(yieldRow?.yield_units),
+        })
+        setSaleOptions((soRes.data || []) as SaleOption[])
+      }
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao carregar'))
     } finally {
@@ -145,6 +217,101 @@ function ComposicaoInner() {
     }
   }
 
+  async function saveRecipeYield() {
+    if (!parentId || !recipeMetaAvailable) return
+    const dough = nullablePositiveDecimal(yieldDraft.dough_weight_kg)
+    const finished = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
+    const units = nullablePositiveDecimal(yieldDraft.yield_units)
+    if (yieldDraft.dough_weight_kg && dough === null) { showToast('Massa crua inválida'); return }
+    if (yieldDraft.finished_weight_kg && finished === null) { showToast('Peso assado inválido'); return }
+    if (yieldDraft.yield_units && units === null) { showToast('Rendimento em unidades inválido'); return }
+    if (dough === null && finished === null && units === null) { showToast('Informe ao menos um rendimento'); return }
+
+    try {
+      const { data, error } = await supabase
+        .from('product_recipe_yields')
+        .upsert({
+          product_id: parentId,
+          basis: 'baked',
+          dough_weight_kg: dough,
+          finished_weight_kg: finished,
+          yield_units: units,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'product_id' })
+        .select()
+        .single()
+      if (error) throw error
+      const nextYield = data as RecipeYield
+      setRecipeYield(nextYield)
+      setYieldDraft({
+        dough_weight_kg: draftValue(nextYield.dough_weight_kg),
+        finished_weight_kg: draftValue(nextYield.finished_weight_kg),
+        yield_units: draftValue(nextYield.yield_units),
+      })
+      showToast('Rendimento salvo')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao salvar rendimento'))
+    }
+  }
+
+  async function createSaleOption(saleUnit: PricingUnit) {
+    if (!parentId || !recipeMetaAvailable) return
+    const alreadyExists = saleOptions.some(option => option.sale_unit === saleUnit)
+    if (alreadyExists) { showToast('Essa forma de venda já existe'); return }
+    const averageWeight = recipeYield?.average_unit_weight_kg ?? null
+    try {
+      const { data, error } = await supabase
+        .from('product_sale_options')
+        .insert({
+          product_id: parentId,
+          name: saleUnit === 'kg' ? 'Quilo' : 'Unidade',
+          sale_unit: saleUnit,
+          reference_quantity: 1,
+          unit_weight_kg: saleUnit === 'un' ? averageWeight : null,
+          is_default: saleOptions.length === 0,
+          active: true,
+        })
+        .select()
+        .single()
+      if (error) throw error
+      setSaleOptions(prev => [...prev, data as SaleOption].sort((a, b) => a.sale_unit.localeCompare(b.sale_unit)))
+      showToast(saleUnit === 'kg' ? 'Venda por kg adicionada' : 'Venda por unidade adicionada')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao adicionar forma de venda'))
+    }
+  }
+
+  async function setDefaultSaleOption(option: SaleOption) {
+    try {
+      const { error: clearError } = await supabase
+        .from('product_sale_options')
+        .update({ is_default: false })
+        .eq('product_id', option.product_id)
+      if (clearError) throw clearError
+      const { error } = await supabase.from('product_sale_options').update({ is_default: true }).eq('id', option.id)
+      if (error) throw error
+      setSaleOptions(prev => prev.map(item => ({ ...item, is_default: item.id === option.id })))
+      showToast('Forma padrão atualizada')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar forma padrão'))
+    }
+  }
+
+  async function toggleSaleOption(option: SaleOption) {
+    try {
+      const nextActive = !option.active
+      const { error } = await supabase
+        .from('product_sale_options')
+        .update({ active: nextActive, is_default: nextActive ? option.is_default : false })
+        .eq('id', option.id)
+      if (error) throw error
+      setSaleOptions(prev => prev.map(item => item.id === option.id ? { ...item, active: nextActive, is_default: nextActive ? item.is_default : false } : item))
+      showToast(nextActive ? 'Forma ativada' : 'Forma desativada')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar forma de venda'))
+    }
+  }
+
   // Hidrata componentes com nome/custo/unidade do catalog
   const enriched = useMemo(() => components.map(c => {
     const item = c.component_source === 'bread'
@@ -165,6 +332,13 @@ function ComposicaoInner() {
   const manualCost = parent?.cost_price !== null && parent?.cost_price !== undefined ? Number(parent.cost_price) : null
   const manualDiff = manualCost !== null ? totalCMV - manualCost : null
   const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
+  const yieldUnits = nullablePositiveDecimal(yieldDraft.yield_units)
+  const finishedWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
+  const doughWeight = nullablePositiveDecimal(yieldDraft.dough_weight_kg)
+  const calculatedAverageWeight = finishedWeight !== null && yieldUnits !== null ? finishedWeight / yieldUnits : recipeYield?.average_unit_weight_kg ?? null
+  const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
+  const hasUnitOption = saleOptions.some(option => option.sale_unit === 'un')
+  const hasKgOption = saleOptions.some(option => option.sale_unit === 'kg')
 
   // Candidatos novos priorizam products. Breads legados só aparecem quando ainda não há produto migrado.
   const addedKeys = new Set(components.map(c => `${c.component_source}-${c.component_id}`))
@@ -245,6 +419,107 @@ function ComposicaoInner() {
                   </div>
                 </div>
               </div>
+
+              {canEditFicha && (
+                <div className="ps-card" style={{padding:14, marginBottom:12}}>
+                  <div className="ps-flabel" style={{marginBottom:8}}>Rendimento e venda</div>
+                  {!recipeMetaAvailable ? (
+                    <div className="ps-warning" style={{marginBottom:0}}>
+                      <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+                      <span>Estrutura de rendimento ainda não aplicada no banco. A ficha continua disponível.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="ps-fieldrow" style={{marginBottom:10}}>
+                        <div className="ps-fieldgroup">
+                          <div className="ps-fieldlabel">Massa crua (kg)</div>
+                          <input
+                            inputMode="decimal"
+                            value={yieldDraft.dough_weight_kg}
+                            onChange={e=>setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
+                            placeholder="ex: 8,5"
+                            className="ps-input"
+                          />
+                        </div>
+                        <div className="ps-fieldgroup">
+                          <div className="ps-fieldlabel">Pão assado (kg)</div>
+                          <input
+                            inputMode="decimal"
+                            value={yieldDraft.finished_weight_kg}
+                            onChange={e=>setYieldDraft(prev=>({...prev, finished_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
+                            placeholder="ex: 7,2"
+                            className="ps-input"
+                          />
+                        </div>
+                        <div className="ps-fieldgroup">
+                          <div className="ps-fieldlabel">Rende (un)</div>
+                          <input
+                            inputMode="decimal"
+                            value={yieldDraft.yield_units}
+                            onChange={e=>setYieldDraft(prev=>({...prev, yield_units:e.target.value.replace(/[^\d,.]/g, '')}))}
+                            placeholder="ex: 30"
+                            className="ps-input"
+                          />
+                        </div>
+                      </div>
+                      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
+                        <span className="ps-store-chip">
+                          peso médio: {calculatedAverageWeight ? `${formatDecimalPtBR(calculatedAverageWeight, 3)} kg/un` : '—'}
+                        </span>
+                        <span className="ps-store-chip">
+                          perda forno: {calculatedBakeLoss !== null && Number.isFinite(calculatedBakeLoss) ? `${formatDecimalPtBR(calculatedBakeLoss, 1)}%` : '—'}
+                        </span>
+                        <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
+                          Salvar rendimento
+                        </button>
+                      </div>
+
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:8}}>
+                        <div className="ps-flabel" style={{marginBottom:0}}>Formas de venda</div>
+                        <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                          <button onClick={()=>createSaleOption('un')} disabled={hasUnitOption} className="ps-btn sm ghost" style={hasUnitOption?{opacity:.5}:undefined}>
+                            + Unidade
+                          </button>
+                          <button onClick={()=>createSaleOption('kg')} disabled={hasKgOption} className="ps-btn sm ghost" style={hasKgOption?{opacity:.5}:undefined}>
+                            + Quilo
+                          </button>
+                        </div>
+                      </div>
+                      {saleOptions.length === 0 ? (
+                        <div style={{fontSize:13, color:'var(--ink-faint)'}}>
+                          Nenhuma forma cadastrada ainda.
+                        </div>
+                      ) : (
+                        <div style={{display:'grid', gap:8}}>
+                          {saleOptions.map(option => (
+                            <div key={option.id} style={{display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderTop:'1px solid var(--line-soft)', opacity:option.active?1:.55}}>
+                              <div style={{flex:1, minWidth:0}}>
+                                <div style={{fontSize:14, fontWeight:700, color:'var(--ps-ink)'}}>
+                                  {option.name} <span style={{color:'var(--ink-faint)', fontSize:12}}>/{option.sale_unit}</span>
+                                  {option.is_default && <span className="ps-store-chip ja" style={{marginLeft:6}}>padrão</span>}
+                                </div>
+                                <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                                  {option.sale_unit === 'un'
+                                    ? `peso médio ${option.unit_weight_kg ? `${formatDecimalPtBR(option.unit_weight_kg, 3)} kg` : 'não definido'}`
+                                    : 'preço e venda por kg do produto assado'}
+                                </div>
+                              </div>
+                              {!option.is_default && option.active && (
+                                <button onClick={()=>setDefaultSaleOption(option)} className="ps-btn sm ghost">
+                                  padrão
+                                </button>
+                              )}
+                              <button onClick={()=>toggleSaleOption(option)} className={`ps-status ${option.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
+                                {option.active ? 'ativo' : 'inativo'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Lista de componentes atuais */}
               <div className="ps-card" style={{padding:14, marginBottom:12}}>

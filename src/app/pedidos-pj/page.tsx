@@ -4,6 +4,7 @@ import { Trash2, Save, Zap, X, Calendar, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 
 // ===== Tipos =====
 interface Customer {
@@ -13,22 +14,22 @@ interface Customer {
 interface PriceTier { id:string; name:string }
 interface TierItem {
   id:string; tier_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 interface Override {
   id:string; customer_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 
 interface CatalogItem {
   product_id:string; product_source:'bread'|'product'; product_name:string;
-  unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; isOverride:boolean
+  unit_price:number; pricing_unit:PricingUnit; pack_size:number; isOverride:boolean; sale_option_id?:string|null
 }
 
 interface OrderLine {
   key:string
   product_id:string; product_source:'bread'|'product'; product_name:string
-  unit_price:number; pricing_unit:'un'|'kg'; pack_size:number
+  unit_price:number; pricing_unit:PricingUnit; pack_size:number; sale_option_id?:string|null
   packs:number
 }
 
@@ -37,7 +38,7 @@ interface OrderRow {
   customer_id:string|null; pj_client:string|null
   order_date:string; delivery_date:string|null; production_date:string|null
   bread_id:string; product_source:string|null; product_name:string|null
-  quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null
+  quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null; sale_option_id:string|null
   obs:string|null
 }
 interface PedidoGroup {
@@ -127,9 +128,9 @@ export default function PedidosPJPage() {
   const custCatalog = useMemo<CatalogItem[]>(() => {
     if (!cust) return []
     const ovMap = new Map<string, Override>()
-    overrides.filter(o => o.customer_id === cust.id).forEach(o => ovMap.set(`${o.product_source}_${o.product_id}`, o))
+    overrides.filter(o => o.customer_id === cust.id).forEach(o => ovMap.set(saleOptionKey(o.product_source, o.product_id, o.sale_option_id), o))
     const tierItemsMap = new Map<string, TierItem>()
-    if (custTier) items.filter(i => i.tier_id === custTier.id).forEach(i => tierItemsMap.set(`${i.product_source}_${i.product_id}`, i))
+    if (custTier) items.filter(i => i.tier_id === custTier.id).forEach(i => tierItemsMap.set(saleOptionKey(i.product_source, i.product_id, i.sale_option_id), i))
 
     const seen = new Set<string>()
     const result: CatalogItem[] = []
@@ -137,7 +138,7 @@ export default function PedidosPJPage() {
       seen.add(k)
       result.push({
         product_id:o.product_id, product_source:o.product_source, product_name:o.product_name,
-        unit_price:o.unit_price, pricing_unit:o.pricing_unit, pack_size:o.pack_size, isOverride:true,
+        unit_price:o.unit_price, pricing_unit:o.pricing_unit, pack_size:o.pack_size, isOverride:true, sale_option_id:o.sale_option_id,
       })
     })
     tierItemsMap.forEach((t, k) => {
@@ -145,7 +146,7 @@ export default function PedidosPJPage() {
       const finalPrice = t.unit_price * (1 - (cust.discount_pct||0)/100)
       result.push({
         product_id:t.product_id, product_source:t.product_source, product_name:t.product_name,
-        unit_price:Number(finalPrice.toFixed(2)), pricing_unit:t.pricing_unit, pack_size:t.pack_size, isOverride:false,
+        unit_price:Number(finalPrice.toFixed(2)), pricing_unit:t.pricing_unit, pack_size:t.pack_size, isOverride:false, sale_option_id:t.sale_option_id,
       })
     })
     return result.sort((a,b) => a.product_name.localeCompare(b.product_name))
@@ -174,8 +175,8 @@ export default function PedidosPJPage() {
   }
 
   const filteredCatalog = useMemo(() => {
-    const used = new Set(lines.map(l => `${l.product_source}_${l.product_id}`))
-    const avail = custCatalog.filter(c => !used.has(`${c.product_source}_${c.product_id}`))
+    const used = new Set(lines.map(l => saleOptionKey(l.product_source, l.product_id, l.sale_option_id)))
+    const avail = custCatalog.filter(c => !used.has(saleOptionKey(c.product_source, c.product_id, c.sale_option_id)))
     if (search.trim().length < 1) return avail.slice(0, 20)
     const q = search.toLowerCase()
     return avail.filter(c => c.product_name.toLowerCase().includes(q)).slice(0, 20)
@@ -186,6 +187,7 @@ export default function PedidosPJPage() {
       key: `${c.product_source}_${c.product_id}_${Date.now()}`,
       product_id:c.product_id, product_source:c.product_source, product_name:c.product_name,
       unit_price:c.unit_price, pricing_unit:c.pricing_unit, pack_size:c.pack_size,
+      sale_option_id:c.sale_option_id,
       packs: 1,
     }])
     setSearch('')
@@ -216,6 +218,7 @@ export default function PedidosPJPage() {
       unit_price: l.unit_price,
       pack_size: l.pack_size,
       pricing_unit: l.pricing_unit,
+      ...(l.sale_option_id ? { sale_option_id: l.sale_option_id } : {}),
       customer_id: cust.id,
       pj_client: cust.name,
       order_date: editing ? editing.order_date : todayISO(),
@@ -248,8 +251,9 @@ export default function PedidosPJPage() {
         product_source: (r.product_source === 'bread' ? 'bread' : 'product') as 'bread'|'product',
         product_name: r.product_name || r.bread_id,
         unit_price: Number(r.unit_price) || 0,
-        pricing_unit: (r.pricing_unit === 'kg' ? 'kg' : 'un') as 'un'|'kg',
+        pricing_unit: (r.pricing_unit === 'kg' ? 'kg' : 'un') as PricingUnit,
         pack_size: pack,
+        sale_option_id: r.sale_option_id,
         packs: Math.round(qty / pack) || 1,
       }
     }))
@@ -415,11 +419,12 @@ export default function PedidosPJPage() {
                     {searchOpen && filteredCatalog.length > 0 && (
                       <div style={{position:'absolute', top:'100%', left:0, right:0, background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'0 0 var(--r-ctrl) var(--r-ctrl)', zIndex:50, maxHeight:280, overflowY:'auto', boxShadow:'var(--sh-2)'}}>
                         {filteredCatalog.map(c => (
-                          <div key={`${c.product_source}_${c.product_id}`} onClick={()=>addLine(c)}
+                          <div key={saleOptionKey(c.product_source, c.product_id, c.sale_option_id)} onClick={()=>addLine(c)}
                             style={{padding:'10px 12px', cursor:'pointer', fontSize:13, borderBottom:'1px solid var(--line-soft)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, fontFamily:'var(--font-ui)'}}>
                             <span>
                               {c.product_name}
                               {c.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
+                              {c.sale_option_id && <span className="ps-store-chip ja" style={{marginLeft:6}}>{c.pricing_unit}</span>}
                               {c.isOverride && <span className="ps-store-chip ex" style={{marginLeft:6}}>override</span>}
                             </span>
                             <span style={{fontSize:12, color:'var(--ink-faint)', whiteSpace:'nowrap'}}>R$ {c.unit_price.toFixed(2)}/{c.pricing_unit} · pack {c.pack_size}</span>
