@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cmvForSaleOption,
   formatSaleOptionLabel,
   inferPricingUnit,
   parsePositiveDecimalInput,
@@ -25,5 +26,11 @@ describe('saleOptions', () => {
     expect(formatSaleOptionLabel({ name: 'Unidade', sale_unit: 'un' })).toBe('Unidade (un)')
     expect(parsePositiveDecimalInput('1,250')).toBe(1.25)
     expect(parsePositiveDecimalInput('0')).toBeNull()
+  })
+
+  it('converte CMV quando a forma de venda muda entre unidade e quilo', () => {
+    expect(cmvForSaleOption(40, 'kg', { sale_unit: 'un', unit_weight_kg: 0.25 })).toBe(10)
+    expect(cmvForSaleOption(10, 'un', { sale_unit: 'kg', unit_weight_kg: 0.25 })).toBe(40)
+    expect(cmvForSaleOption(10, 'un', { sale_unit: 'un' })).toBe(10)
   })
 })

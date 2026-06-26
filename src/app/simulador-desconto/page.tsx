@@ -4,26 +4,41 @@ import { Sparkles, Copy, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { cmvForSaleOption, formatSaleOptionLabel, inferPricingUnit, saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 
 interface Customer { id:string; name:string; default_tier_id:string|null; discount_pct:number; active:boolean }
 interface TierItem {
   id:string; tier_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 interface Override {
   id:string; customer_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 interface Bread   { id:string; name:string; cost_price:number|null; active:boolean }
-interface Product { id:string; name:string; cost_price:number|null; active:boolean }
+interface Product { id:string; name:string; unit:string|null; cost_price:number|null; active:boolean }
+interface SaleOption {
+  id:string; product_id:string; name:string; sale_unit:PricingUnit; unit_weight_kg:number|null; active:boolean; is_default:boolean
+}
 
-interface CatalogProduct { id:string; source:'bread'|'product'; name:string; cost_price:number }
+interface CatalogProduct {
+  id:string
+  key:string
+  source:'bread'|'product'
+  name:string
+  displayName:string
+  unit:string|null
+  cost_price:number
+  pricing_unit:PricingUnit
+  sale_option_id?:string|null
+}
 
 interface HistoryEntry {
   ts:number
   customerName:string; productName:string
   price:number; cmv:number; discount:number
   currentVolume:number; promisedVolume:number
+  pricingUnit?:PricingUnit
   verdict:'vale'|'nao_vale'|'margem_negativa'
   profitDelta:number
 }
@@ -44,6 +59,7 @@ export default function SimuladorDescontoPage() {
   const [productKey, setProductKey] = useState('')
   const [customerNameFree, setCustomerNameFree] = useState('')
   const [productNameFree, setProductNameFree]   = useState('')
+  const [manualPricingUnit, setManualPricingUnit] = useState<PricingUnit>('un')
   const [price, setPrice]       = useState<number>(0)
   const [cmv, setCmv]           = useState<number>(0)
   const [discount, setDiscount] = useState<number>(0)
@@ -66,19 +82,61 @@ export default function SimuladorDescontoPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [cRes, tiRes, ovRes, bRes, pRes] = await Promise.all([
+    const [cRes, tiRes, ovRes, bRes, pRes, soRes] = await Promise.all([
       supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
       supabase.from('price_tier_items').select('*').eq('active',true),
       supabase.from('customer_price_overrides').select('*').eq('active',true),
       supabase.from('breads').select('id,name,cost_price,active').eq('active',true).order('name'),
-      supabase.from('products').select('id,name,cost_price,active').eq('active',true).or('is_pj.eq.true,is_special.eq.true').order('name'),
+      supabase.from('products').select('id,name,unit,cost_price,active').eq('active',true).or('is_pj.eq.true,is_special.eq.true').order('name'),
+      supabase.from('product_sale_options').select('id,product_id,name,sale_unit,unit_weight_kg,active,is_default').eq('active',true),
     ])
     setCustomers((cRes.data||[]) as Customer[])
     setTierItems((tiRes.data||[]) as TierItem[])
     setOverrides((ovRes.data||[]) as Override[])
-    const breads = (bRes.data||[]).map((b:Bread) => ({ id:b.id, source:'bread' as const, name:b.name, cost_price:Number(b.cost_price||0) }))
-    const prods  = (pRes.data||[]).map((p:Product) => ({ id:p.id, source:'product' as const, name:p.name, cost_price:Number(p.cost_price||0) }))
-    setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
+    const saleOptions = (soRes.error ? [] : (soRes.data || [])) as SaleOption[]
+    const optionsByProduct = new Map<string, SaleOption[]>()
+    saleOptions.forEach(option => {
+      const current = optionsByProduct.get(option.product_id) || []
+      current.push(option)
+      optionsByProduct.set(option.product_id, current)
+    })
+    const breads = ((bRes.data||[]) as Bread[]).map((b) => ({
+      id:b.id,
+      key:saleOptionKey('bread', b.id),
+      source:'bread' as const,
+      name:b.name,
+      displayName:b.name,
+      unit:'un',
+      cost_price:Number(b.cost_price||0),
+      pricing_unit:'un' as const,
+    }))
+    const prods  = ((pRes.data||[]) as Product[]).flatMap((p) => {
+      const options = optionsByProduct.get(p.id) || []
+      if (options.length === 0) {
+        return [{
+          id:p.id,
+          key:saleOptionKey('product', p.id),
+          source:'product' as const,
+          name:p.name,
+          displayName:p.name,
+          unit:p.unit,
+          cost_price:Number(p.cost_price||0),
+          pricing_unit:inferPricingUnit(p.unit),
+        }]
+      }
+      return options.map(option => ({
+        id:p.id,
+        key:saleOptionKey('product', p.id, option.id),
+        source:'product' as const,
+        name:p.name,
+        displayName:`${p.name} · ${formatSaleOptionLabel(option)}`,
+        unit:p.unit,
+        cost_price:cmvForSaleOption(p.cost_price, p.unit, option),
+        pricing_unit:inferPricingUnit(p.unit, option),
+        sale_option_id:option.id,
+      }))
+    })
+    setCatalog([...breads, ...prods].sort((a,b) => a.displayName.localeCompare(b.displayName)))
     setLoading(false)
   }, [])
   useEffect(() => { loadAll() }, [loadAll])
@@ -86,17 +144,17 @@ export default function SimuladorDescontoPage() {
   useEffect(() => {
     if (!customerId || !productKey) return
     const cust = customers.find(c => c.id === customerId)
-    const prod = catalog.find(p => `${p.source}_${p.id}` === productKey)
+    const prod = catalog.find(p => p.key === productKey)
     if (!cust || !prod) return
 
-    const ov = overrides.find(o => o.customer_id === cust.id && o.product_source === prod.source && o.product_id === prod.id)
+    const ov = overrides.find(o => o.customer_id === cust.id && saleOptionKey(o.product_source, o.product_id, o.sale_option_id) === prod.key)
     if (ov) {
       setPrice(Number(ov.unit_price))
       setCmv(prod.cost_price)
       return
     }
     if (cust.default_tier_id) {
-      const ti = tierItems.find(t => t.tier_id === cust.default_tier_id && t.product_source === prod.source && t.product_id === prod.id)
+      const ti = tierItems.find(t => t.tier_id === cust.default_tier_id && saleOptionKey(t.product_source, t.product_id, t.sale_option_id) === prod.key)
       if (ti) {
         const basePrice = Number(ti.unit_price)
         setPrice(basePrice)
@@ -109,9 +167,15 @@ export default function SimuladorDescontoPage() {
 
   useEffect(() => {
     if (customerId || !productKey) return
-    const prod = catalog.find(p => `${p.source}_${p.id}` === productKey)
+    const prod = catalog.find(p => p.key === productKey)
     if (prod) setCmv(prod.cost_price)
   }, [productKey, customerId, catalog])
+
+  const selectedProduct = catalog.find(p => p.key === productKey)
+  const volumeUnit = selectedProduct?.pricing_unit || manualPricingUnit
+  const volumeLabel = volumeUnit === 'kg' ? 'kg/mês' : 'unid/mês'
+  const volumeShortLabel = volumeUnit === 'kg' ? 'kg' : 'unid'
+  const selectedProductName = selectedProduct?.displayName || productNameFree.trim()
 
   const calc = useMemo(() => {
     const margin = price - cmv
@@ -122,7 +186,8 @@ export default function SimuladorDescontoPage() {
     const currentProfit = currentVolume * margin
     const promisedProfit = promisedVolume * newMargin
     const profitDelta = promisedProfit - currentProfit
-    const breakEven = newMargin > 0 ? Math.ceil(currentProfit / newMargin) : null
+    const breakEvenRaw = newMargin > 0 ? currentProfit / newMargin : null
+    const breakEven = breakEvenRaw === null ? null : volumeUnit === 'kg' ? Number(breakEvenRaw.toFixed(2)) : Math.ceil(breakEvenRaw)
     const marginPctDiff = newMarginPct - marginPct
     const volumeShortage = breakEven !== null ? breakEven - promisedVolume : 0
 
@@ -135,7 +200,7 @@ export default function SimuladorDescontoPage() {
       currentProfit, promisedProfit, profitDelta, breakEven, marginPctDiff,
       volumeShortage, verdict,
     }
-  }, [price, cmv, discount, currentVolume, promisedVolume])
+  }, [price, cmv, discount, currentVolume, promisedVolume, volumeUnit])
 
   const hasMinInputs = price > 0 && cmv > 0 && discount > 0 && currentVolume > 0 && promisedVolume > 0
 
@@ -145,6 +210,7 @@ export default function SimuladorDescontoPage() {
       customerName: extra.customerName,
       productName: extra.productName,
       price, cmv, discount, currentVolume, promisedVolume,
+      pricingUnit: volumeUnit,
       verdict: calc.verdict,
       profitDelta: calc.profitDelta,
     }
@@ -155,6 +221,7 @@ export default function SimuladorDescontoPage() {
   const loadFromHistory = (h:HistoryEntry) => {
     setCustomerNameFree(h.customerName); setProductNameFree(h.productName)
     setCustomerId(''); setProductKey('')
+    setManualPricingUnit(h.pricingUnit || 'un')
     setPrice(h.price); setCmv(h.cmv); setDiscount(h.discount)
     setCurrentVolume(h.currentVolume); setPromisedVolume(h.promisedVolume)
     setAiText(''); setAiError('')
@@ -168,7 +235,7 @@ export default function SimuladorDescontoPage() {
     if (!hasMinInputs) { showToast('Preencha todos os campos antes de analisar'); return }
     setAiLoading(true); setAiText(''); setAiError('')
     const custName = customers.find(c => c.id === customerId)?.name || customerNameFree.trim() || ''
-    const prodName = catalog.find(p => `${p.source}_${p.id}` === productKey)?.name || productNameFree.trim() || ''
+    const prodName = selectedProductName || ''
     const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     try {
@@ -204,17 +271,17 @@ export default function SimuladorDescontoPage() {
     const txt = [
       `Simulação de Desconto — Pane & Salute`,
       `Cliente: ${customers.find(c => c.id === customerId)?.name || customerNameFree || '—'}`,
-      `Produto: ${catalog.find(p => `${p.source}_${p.id}` === productKey)?.name || productNameFree || '—'}`,
+      `Produto: ${selectedProductName || '—'}`,
       ``,
-      `Preço Tabela: R$ ${price.toFixed(2)}`,
-      `CMV: R$ ${cmv.toFixed(2)}`,
+      `Preço Tabela: R$ ${price.toFixed(2)}/${volumeUnit}`,
+      `CMV: R$ ${cmv.toFixed(2)}/${volumeUnit}`,
       `Margem atual: ${calc.marginPct.toFixed(1)}% (R$ ${calc.margin.toFixed(2)})`,
       `Desconto: ${discount}%`,
       `Margem com desconto: ${calc.newMarginPct.toFixed(1)}% (R$ ${calc.newMargin.toFixed(2)})`,
-      `Volume atual: ${currentVolume} un/mês`,
-      `Volume prometido: ${promisedVolume} un/mês`,
+      `Volume atual: ${currentVolume} ${volumeLabel}`,
+      `Volume prometido: ${promisedVolume} ${volumeLabel}`,
       `Diferença lucro: R$ ${calc.profitDelta.toFixed(2)}/mês`,
-      `Break-even: ${calc.breakEven ?? 'inviável'} un/mês`,
+      `Break-even: ${calc.breakEven === null ? 'inviável' : `${calc.breakEven} ${volumeLabel}`}`,
       ``,
       `Análise IA:`,
       aiText,
@@ -272,8 +339,8 @@ export default function SimuladorDescontoPage() {
                     <select value={productKey} onChange={e=>{ setProductKey(e.target.value); setProductNameFree('') }} className="ps-select">
                       <option value="">— selecionar do catálogo —</option>
                       {catalog.map(p => (
-                        <option key={`${p.source}_${p.id}`} value={`${p.source}_${p.id}`}>
-                          {p.name}{p.source === 'bread' ? ' 🥖' : ''}
+                        <option key={p.key} value={p.key}>
+                          {p.displayName}{p.source === 'bread' ? ' 🥖' : ''}
                         </option>
                       ))}
                     </select>
@@ -286,13 +353,22 @@ export default function SimuladorDescontoPage() {
 
                 <div className="ps-card" style={{gap:10}}>
                   <div className="ps-flabel">Produto / Tabela base</div>
+                  {!selectedProduct && (
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">Unidade da simulação</div>
+                      <select value={manualPricingUnit} onChange={e=>setManualPricingUnit(e.target.value as PricingUnit)} className="ps-select">
+                        <option value="un">unidade</option>
+                        <option value="kg">kg</option>
+                      </select>
+                    </div>
+                  )}
                   <div className="ps-fieldgroup">
-                    <div className="ps-fieldlabel">Preço de venda (Tabela B) — R$</div>
+                    <div className="ps-fieldlabel">Preço de venda — R$/{volumeUnit}</div>
                     <input type="number" min={0} step={0.01} value={price || ''} onChange={e=>setPrice(Number(e.target.value)||0)}
                       placeholder="0,00" className="ps-input"/>
                   </div>
                   <div className="ps-fieldgroup">
-                    <div className="ps-fieldlabel">CMV do produto (custo) — R$</div>
+                    <div className="ps-fieldlabel">CMV do produto — R$/{volumeUnit}</div>
                     <input type="number" min={0} step={0.01} value={cmv || ''} onChange={e=>setCmv(Number(e.target.value)||0)}
                       placeholder="0,00" className="ps-input"/>
                   </div>
@@ -306,13 +382,13 @@ export default function SimuladorDescontoPage() {
                       placeholder="0" className="ps-input"/>
                   </div>
                   <div className="ps-fieldgroup">
-                    <div className="ps-fieldlabel">Volume atual (unid/mês)</div>
-                    <input type="number" min={0} step={1} value={currentVolume || ''} onChange={e=>setCurrentVolume(Number(e.target.value)||0)}
+                    <div className="ps-fieldlabel">Volume atual ({volumeLabel})</div>
+                    <input type="number" min={0} step={volumeUnit === 'kg' ? 0.1 : 1} value={currentVolume || ''} onChange={e=>setCurrentVolume(Number(e.target.value)||0)}
                       placeholder="0" className="ps-input"/>
                   </div>
                   <div className="ps-fieldgroup">
-                    <div className="ps-fieldlabel">Volume prometido c/ desconto (unid/mês)</div>
-                    <input type="number" min={0} step={1} value={promisedVolume || ''} onChange={e=>setPromisedVolume(Number(e.target.value)||0)}
+                    <div className="ps-fieldlabel">Volume prometido c/ desconto ({volumeLabel})</div>
+                    <input type="number" min={0} step={volumeUnit === 'kg' ? 0.1 : 1} value={promisedVolume || ''} onChange={e=>setPromisedVolume(Number(e.target.value)||0)}
                       placeholder="0" className="ps-input"/>
                   </div>
                 </div>
@@ -355,7 +431,7 @@ export default function SimuladorDescontoPage() {
 
                   <div style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderTop:'1px solid var(--line-soft)', fontSize:13, marginTop:6}}>
                     <span style={{color:'var(--ink-soft)'}}>Volume mínimo p/ empatar</span>
-                    <strong>{calc.breakEven === null ? '—' : `${calc.breakEven} unid`}</strong>
+                    <strong>{calc.breakEven === null ? '—' : `${calc.breakEven} ${volumeShortLabel}`}</strong>
                   </div>
                   <div style={{display:'flex', justifyContent:'space-between', padding:'6px 0', borderTop:'1px solid var(--line-soft)', fontSize:13}}>
                     <span style={{color:'var(--ink-soft)'}}>Diferença de lucro</span>
@@ -389,10 +465,10 @@ export default function SimuladorDescontoPage() {
                         <>O preço com desconto (R$ {calc.newPrice.toFixed(2)}) é menor que o CMV (R$ {cmv.toFixed(2)}). Cada venda gera prejuízo direto. <strong>Não negocie esse desconto.</strong></>
                       )}
                       {calc.verdict === 'nao_vale' && (
-                        <>O volume prometido ({promisedVolume} unid) está {calc.volumeShortage} unidades abaixo do mínimo necessário ({calc.breakEven} unid). Você perderia R$ {Math.abs(calc.profitDelta).toFixed(2)}/mês. Ou negocie menos desconto, ou exija mais volume.</>
+                        <>O volume prometido ({promisedVolume} {volumeShortLabel}) está {calc.volumeShortage} {volumeShortLabel} abaixo do mínimo necessário ({calc.breakEven} {volumeShortLabel}). Você perderia R$ {Math.abs(calc.profitDelta).toFixed(2)}/mês. Ou negocie menos desconto, ou exija mais volume.</>
                       )}
                       {calc.verdict === 'vale' && (
-                        <>Volume prometido ({promisedVolume} unid) supera o mínimo de break-even ({calc.breakEven} unid). Ganho líquido de R$ {calc.profitDelta.toFixed(2)}/mês. <em>Atenção: análise não considera custos fixos.</em></>
+                        <>Volume prometido ({promisedVolume} {volumeShortLabel}) supera o mínimo de break-even ({calc.breakEven} {volumeShortLabel}). Ganho líquido de R$ {calc.profitDelta.toFixed(2)}/mês. <em>Atenção: análise não considera custos fixos.</em></>
                       )}
                     </div>
                   )}
@@ -439,7 +515,7 @@ export default function SimuladorDescontoPage() {
                           {h.customerName || '(sem cliente)'} · {h.productName || '(sem produto)'}
                         </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                          Preço R$ {h.price.toFixed(2)} · -{h.discount}% · {h.currentVolume}→{h.promisedVolume} un · {new Date(h.ts).toLocaleString('pt-BR')}
+                          Preço R$ {h.price.toFixed(2)}/{h.pricingUnit || 'un'} · -{h.discount}% · {h.currentVolume}→{h.promisedVolume} {h.pricingUnit || 'un'} · {new Date(h.ts).toLocaleString('pt-BR')}
                         </div>
                       </div>
                       <span className={`ps-status ${vBadge.cls}`}>

@@ -30,6 +30,20 @@ export function formatSaleOptionLabel(option?: SaleOptionLike | null): string {
   return `${name} (${saleUnitLabel(option.sale_unit)})`
 }
 
+export function cmvForSaleOption(baseCost: number | string | null | undefined, unit: string | null | undefined, option?: SaleOptionLike | null): number {
+  const cost = Number(baseCost || 0)
+  if (!Number.isFinite(cost) || cost <= 0) return 0
+
+  const baseUnit = unit?.trim().toLowerCase() === 'kg' ? 'kg' : 'un'
+  const saleUnit = inferPricingUnit(unit, option)
+  const weight = Number(option?.unit_weight_kg || 0)
+  const hasWeight = Number.isFinite(weight) && weight > 0
+
+  if (baseUnit === 'kg' && saleUnit === 'un' && hasWeight) return cost * weight
+  if (baseUnit === 'un' && saleUnit === 'kg' && hasWeight) return cost / weight
+  return cost
+}
+
 export function parsePositiveDecimalInput(raw: string): number | null {
   const value = Number(raw.trim().replace(',', '.'))
   if (!Number.isFinite(value) || value <= 0) return null

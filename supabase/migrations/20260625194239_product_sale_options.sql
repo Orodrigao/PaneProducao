@@ -102,6 +102,24 @@ where not exists (
   where o.product_id = p.id
 );
 
+update public.price_tier_items i
+set sale_option_id = o.id
+from public.product_sale_options o
+where i.sale_option_id is null
+  and i.product_source = 'product'
+  and i.product_id::uuid = o.product_id
+  and o.is_default
+  and o.active;
+
+update public.customer_price_overrides c
+set sale_option_id = o.id
+from public.product_sale_options o
+where c.sale_option_id is null
+  and c.product_source = 'product'
+  and c.product_id::uuid = o.product_id
+  and o.is_default
+  and o.active;
+
 alter table public.product_recipe_yields enable row level security;
 alter table public.product_sale_options enable row level security;
 
