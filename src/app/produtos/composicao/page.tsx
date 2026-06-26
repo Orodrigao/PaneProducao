@@ -36,10 +36,11 @@ interface ProductLite {
   is_fabricacao_propria: boolean | null
   legacy_bread_id: string | null
 }
+type RecipeYieldBasis = 'dough' | 'baked' | 'unit'
 interface RecipeYield {
   id: string
   product_id: string
-  basis: string
+  basis: RecipeYieldBasis
   batch_name: string | null
   dough_weight_kg: number | null
   finished_weight_kg: number | null
@@ -59,10 +60,17 @@ interface SaleOption {
   active: boolean
 }
 interface YieldDraft {
+  basis: RecipeYieldBasis
   dough_weight_kg: string
   finished_weight_kg: string
   yield_units: string
 }
+
+const RECIPE_BASIS_OPTIONS: Array<{ value: RecipeYieldBasis; label: string }> = [
+  { value: 'dough', label: 'Massa crua' },
+  { value: 'baked', label: 'Produto assado' },
+  { value: 'unit', label: 'Unidade pronta' },
+]
 
 function parsePositiveDecimal(raw: string): number | null {
   return parsePositiveDecimalInput(raw)
@@ -102,6 +110,20 @@ function nullablePositiveDecimal(raw: string): number | null {
   return parsePositiveDecimalInput(raw)
 }
 
+function isRecipeYieldBasis(value: string | null | undefined): value is RecipeYieldBasis {
+  return value === 'dough' || value === 'baked' || value === 'unit'
+}
+
+function costPerUnit(totalCost: number, basis: RecipeYieldBasis, yieldUnits: number | null): number | null {
+  if (basis === 'unit') return totalCost
+  return yieldUnits !== null ? totalCost / yieldUnits : null
+}
+
+function costPerBakedKg(totalCost: number, basis: RecipeYieldBasis, finishedWeight: number | null): number | null {
+  if (finishedWeight !== null) return totalCost / finishedWeight
+  return basis === 'baked' ? totalCost : null
+}
+
 function ComposicaoInner() {
   const sp = useSearchParams()
   const router = useRouter()
@@ -113,7 +135,7 @@ function ComposicaoInner() {
   const [breads, setBreads]       = useState<BreadLite[]>([])
   const [products, setProducts]   = useState<ProductLite[]>([])
   const [recipeYield, setRecipeYield] = useState<RecipeYield | null>(null)
-  const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+  const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [recipeMetaAvailable, setRecipeMetaAvailable] = useState(true)
   const [loading, setLoading]     = useState(true)
@@ -144,7 +166,7 @@ function ComposicaoInner() {
         if (isMissingRelationError(err)) {
           setRecipeMetaAvailable(false)
           setRecipeYield(null)
-          setYieldDraft({ dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+          setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
           setSaleOptions([])
         } else {
           throw err
@@ -154,6 +176,7 @@ function ComposicaoInner() {
         setRecipeMetaAvailable(true)
         setRecipeYield(yieldRow)
         setYieldDraft({
+          basis: isRecipeYieldBasis(yieldRow?.basis) ? yieldRow.basis : 'dough',
           dough_weight_kg: draftValue(yieldRow?.dough_weight_kg),
           finished_weight_kg: draftValue(yieldRow?.finished_weight_kg),
           yield_units: draftValue(yieldRow?.yield_units),
@@ -232,7 +255,7 @@ function ComposicaoInner() {
         .from('product_recipe_yields')
         .upsert({
           product_id: parentId,
-          basis: 'baked',
+          basis: yieldDraft.basis,
           dough_weight_kg: dough,
           finished_weight_kg: finished,
           yield_units: units,
@@ -244,10 +267,22 @@ function ComposicaoInner() {
       const nextYield = data as RecipeYield
       setRecipeYield(nextYield)
       setYieldDraft({
+        basis: isRecipeYieldBasis(nextYield.basis) ? nextYield.basis : yieldDraft.basis,
         dough_weight_kg: draftValue(nextYield.dough_weight_kg),
         finished_weight_kg: draftValue(nextYield.finished_weight_kg),
         yield_units: draftValue(nextYield.yield_units),
       })
+      if (nextYield.average_unit_weight_kg !== null) {
+        const { error: optionError } = await supabase
+          .from('product_sale_options')
+          .update({ unit_weight_kg: nextYield.average_unit_weight_kg, updated_at: new Date().toISOString() })
+          .eq('product_id', parentId)
+          .eq('sale_unit', 'un')
+        if (optionError) throw optionError
+        setSaleOptions(prev => prev.map(option =>
+          option.sale_unit === 'un' ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg } : option
+        ))
+      }
       showToast('Rendimento salvo')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao salvar rendimento'))
@@ -337,6 +372,8 @@ function ComposicaoInner() {
   const doughWeight = nullablePositiveDecimal(yieldDraft.dough_weight_kg)
   const calculatedAverageWeight = finishedWeight !== null && yieldUnits !== null ? finishedWeight / yieldUnits : recipeYield?.average_unit_weight_kg ?? null
   const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
+  const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
+  const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, finishedWeight)
   const hasUnitOption = saleOptions.some(option => option.sale_unit === 'un')
   const hasKgOption = saleOptions.some(option => option.sale_unit === 'kg')
 
@@ -430,6 +467,18 @@ function ComposicaoInner() {
                     </div>
                   ) : (
                     <>
+                      <div className="ps-fieldgroup" style={{marginBottom:10}}>
+                        <div className="ps-fieldlabel">Base da ficha</div>
+                        <select
+                          value={yieldDraft.basis}
+                          onChange={e=>setYieldDraft(prev=>({...prev, basis: e.target.value as RecipeYieldBasis}))}
+                          className="ps-select"
+                        >
+                          {RECIPE_BASIS_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="ps-fieldrow" style={{marginBottom:10}}>
                         <div className="ps-fieldgroup">
                           <div className="ps-fieldlabel">Massa crua (kg)</div>
@@ -468,6 +517,12 @@ function ComposicaoInner() {
                         </span>
                         <span className="ps-store-chip">
                           perda forno: {calculatedBakeLoss !== null && Number.isFinite(calculatedBakeLoss) ? `${formatDecimalPtBR(calculatedBakeLoss, 1)}%` : '—'}
+                        </span>
+                        <span className="ps-store-chip">
+                          CMV/un: {calculatedUnitCost !== null && Number.isFinite(calculatedUnitCost) ? formatBRL(calculatedUnitCost) : '—'}
+                        </span>
+                        <span className="ps-store-chip">
+                          CMV/kg assado: {calculatedBakedKgCost !== null && Number.isFinite(calculatedBakedKgCost) ? formatBRL(calculatedBakedKgCost) : '—'}
                         </span>
                         <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
                           Salvar rendimento

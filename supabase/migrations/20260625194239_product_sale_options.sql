@@ -2,7 +2,7 @@ create table if not exists public.product_recipe_yields (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.products(id) on delete cascade,
   batch_name text,
-  basis text not null default 'baked',
+  basis text not null default 'dough',
   dough_weight_kg numeric,
   finished_weight_kg numeric,
   yield_units numeric,
@@ -244,6 +244,9 @@ with check (
 
 comment on table public.product_recipe_yields is
   'Rendimento da ficha tecnica por produto: massa crua, peso assado e/ou unidades geradas.';
+
+comment on column public.product_recipe_yields.basis is
+  'Base usada para interpretar a ficha tecnica: dough=massa crua, baked=produto assado, unit=unidade pronta.';
 
 comment on table public.product_sale_options is
   'Formas de venda do produto unico, como unidade e quilo, sem duplicar cadastro.';
