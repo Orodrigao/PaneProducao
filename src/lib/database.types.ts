@@ -145,6 +145,7 @@ export type Database = {
           product_id: string
           product_name: string
           product_source: string
+          sale_option_id: string | null
           unit_price: number
         }
         Insert: {
@@ -157,6 +158,7 @@ export type Database = {
           product_id: string
           product_name: string
           product_source: string
+          sale_option_id?: string | null
           unit_price: number
         }
         Update: {
@@ -169,6 +171,7 @@ export type Database = {
           product_id?: string
           product_name?: string
           product_source?: string
+          sale_option_id?: string | null
           unit_price?: number
         }
         Relationships: [
@@ -423,6 +426,7 @@ export type Database = {
           product_source: string | null
           production_date: string | null
           quantity: number | null
+          sale_option_id: string | null
           store: string
           unit_price: number | null
           updated_at: string | null
@@ -445,6 +449,7 @@ export type Database = {
           product_source?: string | null
           production_date?: string | null
           quantity?: number | null
+          sale_option_id?: string | null
           store: string
           unit_price?: number | null
           updated_at?: string | null
@@ -467,6 +472,7 @@ export type Database = {
           product_source?: string | null
           production_date?: string | null
           quantity?: number | null
+          sale_option_id?: string | null
           store?: string
           unit_price?: number | null
           updated_at?: string | null
@@ -493,6 +499,7 @@ export type Database = {
           product_id: string
           product_name: string
           product_source: string
+          sale_option_id: string | null
           tier_id: string
           unit_price: number
         }
@@ -505,6 +512,7 @@ export type Database = {
           product_id: string
           product_name: string
           product_source: string
+          sale_option_id?: string | null
           tier_id: string
           unit_price: number
         }
@@ -517,6 +525,7 @@ export type Database = {
           product_id?: string
           product_name?: string
           product_source?: string
+          sale_option_id?: string | null
           tier_id?: string
           unit_price?: number
         }
@@ -583,6 +592,100 @@ export type Database = {
           {
             foreignKeyName: "product_components_parent_product_id_fkey"
             columns: ["parent_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_recipe_yields: {
+        Row: {
+          average_unit_weight_kg: number | null
+          bake_loss_pct: number | null
+          basis: string
+          batch_name: string | null
+          created_at: string
+          dough_weight_kg: number | null
+          finished_weight_kg: number | null
+          id: string
+          notes: string | null
+          product_id: string
+          updated_at: string | null
+          yield_units: number | null
+        }
+        Insert: {
+          basis?: string
+          batch_name?: string | null
+          created_at?: string
+          dough_weight_kg?: number | null
+          finished_weight_kg?: number | null
+          id?: string
+          notes?: string | null
+          product_id: string
+          updated_at?: string | null
+          yield_units?: number | null
+        }
+        Update: {
+          basis?: string
+          batch_name?: string | null
+          dough_weight_kg?: number | null
+          finished_weight_kg?: number | null
+          id?: string
+          notes?: string | null
+          product_id?: string
+          updated_at?: string | null
+          yield_units?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_recipe_yields_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_sale_options: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          product_id: string
+          reference_quantity: number
+          sale_unit: string
+          unit_weight_kg: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          product_id: string
+          reference_quantity?: number
+          sale_unit: string
+          unit_weight_kg?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean
+          id?: string
+          is_default?: boolean
+          name?: string
+          product_id?: string
+          reference_quantity?: number
+          sale_unit?: string
+          unit_weight_kg?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_sale_options_product_id_fkey"
+            columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]

@@ -4,18 +4,26 @@ import { ChevronLeft, Plus, Copy, Trash2, Save, AlertTriangle, RotateCw, X } fro
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { formatSaleOptionLabel, inferPricingUnit, saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 
 interface PriceTier { id:string; name:string; description:string|null; active:boolean }
 interface TierItem {
   id:string; tier_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 interface Customer { id:string; name:string; default_tier_id:string|null; discount_pct:number; active:boolean }
 interface Override {
   id:string; customer_id:string; product_id:string; product_source:'bread'|'product';
-  product_name:string; unit_price:number; pricing_unit:'un'|'kg'; pack_size:number; active:boolean
+  product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
-interface CatalogItem { id:string; name:string; unit:string|null; _source:'bread'|'product' }
+interface SaleOption {
+  id:string; product_id:string; name:string; sale_unit:PricingUnit; reference_quantity:number;
+  unit_weight_kg:number|null; active:boolean; is_default:boolean
+}
+interface CatalogItem {
+  id:string; name:string; unit:string|null; _source:'bread'|'product';
+  sale_option_id?:string|null; sale_option_name?:string|null; sale_unit?:PricingUnit|null
+}
 type CatalogRow = { id:string; name:string; unit:string|null }
 type DbError = { code?: string; message?: string }
 
@@ -53,6 +61,7 @@ export default function TabelasPrecoPage() {
   // Edição de item / busca
   const [search, setSearch]     = useState('')
   const [catalog, setCatalog]   = useState<CatalogItem[]>([])
+  const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
 
   // Aba preços por cliente
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -83,12 +92,36 @@ export default function TabelasPrecoPage() {
       ])
       const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
       if (firstErr) throw firstErr
+      const sRes = await supabase
+        .from('product_sale_options')
+        .select('id,product_id,name,sale_unit,reference_quantity,unit_weight_kg,active,is_default')
+        .eq('active', true)
       setTiers((tRes.data || []) as PriceTier[])
       setItems((iRes.data || []) as TierItem[])
       setCustomers((cRes.data || []) as Customer[])
       setOverrides((oRes.data || []) as Override[])
+      const optionRows = sRes.error ? [] : (sRes.data || []) as SaleOption[]
+      setSaleOptions(optionRows)
+      const optionsByProduct = new Map<string, SaleOption[]>()
+      optionRows.forEach(option => {
+        const current = optionsByProduct.get(option.product_id) || []
+        current.push(option)
+        optionsByProduct.set(option.product_id, current)
+      })
       const breads:   CatalogItem[] = ((bRes.data || []) as CatalogRow[]).map(b => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
-      const prods:    CatalogItem[] = ((pRes.data || []) as CatalogRow[]).map(p => ({ id:p.id, name:p.name, unit:p.unit, _source:'product' }))
+      const prods:    CatalogItem[] = ((pRes.data || []) as CatalogRow[]).flatMap(p => {
+        const options = optionsByProduct.get(p.id) || []
+        if (options.length === 0) return [{ id:p.id, name:p.name, unit:p.unit, _source:'product' as const }]
+        return options.map(option => ({
+          id:p.id,
+          name:p.name,
+          unit:p.unit,
+          _source:'product' as const,
+          sale_option_id: option.id,
+          sale_option_name: option.name,
+          sale_unit: inferPricingUnit(p.unit, option),
+        }))
+      })
       setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
     } catch (e: unknown) {
       setLoadError(errorMessage(e, 'Falha ao carregar os dados.'))
@@ -136,7 +169,12 @@ export default function TabelasPrecoPage() {
     updateTier({ description: v || null })
   }
   const itemsOfSel = useMemo(() => items.filter(i => i.tier_id === selTierId).sort((a,b) => a.product_name.localeCompare(b.product_name)), [items, selTierId])
-  const itemsKeySet = useMemo(() => new Set(itemsOfSel.map(i => `${i.product_source}_${i.product_id}`)), [itemsOfSel])
+  const itemsKeySet = useMemo(() => new Set(itemsOfSel.map(i => saleOptionKey(i.product_source, i.product_id, i.sale_option_id))), [itemsOfSel])
+  const saleOptionsById = useMemo(() => {
+    const map = new Map<string, SaleOption>()
+    saleOptions.forEach(option => map.set(option.id, option))
+    return map
+  }, [saleOptions])
 
   const createTier = async () => {
     const name = newTierName.trim().replace(/\s+/g, ' ')
@@ -229,6 +267,7 @@ export default function TabelasPrecoPage() {
         tier_id: newT.id, product_id: i.product_id, product_source: i.product_source,
         product_name: i.product_name, unit_price: i.unit_price,
         pricing_unit: i.pricing_unit, pack_size: i.pack_size, active: true,
+        ...(i.sale_option_id ? { sale_option_id: i.sale_option_id } : {}),
       }))
       const { error: e2 } = await supabase.from('price_tier_items').insert(rows)
       if (e2) { showToast('Tabela criada, mas erro nos itens: ' + e2.message); return }
@@ -240,16 +279,17 @@ export default function TabelasPrecoPage() {
 
   const addItem = async (p: CatalogItem) => {
     if (!selTierId) return
-    if (itemsKeySet.has(`${p._source}_${p.id}`)) { showToast('Já existe nessa tabela'); return }
+    if (itemsKeySet.has(saleOptionKey(p._source, p.id, p.sale_option_id))) { showToast('Já existe nessa tabela'); return }
     const { error } = await supabase.from('price_tier_items').insert({
       tier_id: selTierId,
       product_id: p.id,
       product_source: p._source,
       product_name: p.name,
       unit_price: 0,
-      pricing_unit: 'un',
+      pricing_unit: inferPricingUnit(p.unit, p.sale_unit ? { sale_unit: p.sale_unit } : null),
       pack_size: 1,
       active: true,
+      ...(p.sale_option_id ? { sale_option_id: p.sale_option_id } : {}),
     })
     if (error) { showToast('Erro: ' + error.message); return }
     setSearch('')
@@ -277,7 +317,7 @@ export default function TabelasPrecoPage() {
   const custOverrides = useMemo(() => selCustId ? overrides.filter(o => o.customer_id === selCustId) : [], [overrides, selCustId])
   const custOverrideMap = useMemo(() => {
     const m = new Map<string, Override>()
-    custOverrides.forEach(o => m.set(`${o.product_source}_${o.product_id}`, o))
+    custOverrides.forEach(o => m.set(saleOptionKey(o.product_source, o.product_id, o.sale_option_id), o))
     return m
   }, [custOverrides])
 
@@ -287,13 +327,13 @@ export default function TabelasPrecoPage() {
     const rows: Array<{ key:string; product_id:string; product_source:'bread'|'product'; product_name:string;
                         tier?: TierItem; override?: Override }> = []
     custTierItems.forEach(t => {
-      const key = `${t.product_source}_${t.product_id}`
+      const key = saleOptionKey(t.product_source, t.product_id, t.sale_option_id)
       seen.add(key)
       rows.push({ key, product_id:t.product_id, product_source:t.product_source, product_name:t.product_name,
                   tier:t, override: custOverrideMap.get(key) })
     })
     custOverrides.forEach(o => {
-      const key = `${o.product_source}_${o.product_id}`
+      const key = saleOptionKey(o.product_source, o.product_id, o.sale_option_id)
       if (!seen.has(key)) rows.push({ key, product_id:o.product_id, product_source:o.product_source, product_name:o.product_name, override:o })
     })
     return rows.sort((a,b) => a.product_name.localeCompare(b.product_name))
@@ -320,6 +360,7 @@ export default function TabelasPrecoPage() {
       pricing_unit: row.tier?.pricing_unit || 'un',
       pack_size: row.tier?.pack_size || 1,
       active: true,
+      ...(row.tier?.sale_option_id ? { sale_option_id: row.tier.sale_option_id } : {}),
     })
     if (error) { showToast('Erro: ' + error.message); return }
     loadAll()
@@ -345,7 +386,7 @@ export default function TabelasPrecoPage() {
     const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     const q = norm(search)
     return catalog
-      .filter(c => !itemsKeySet.has(`${c._source}_${c.id}`) && norm(c.name).includes(q))
+      .filter(c => !itemsKeySet.has(saleOptionKey(c._source, c.id, c.sale_option_id)) && norm(c.name).includes(q))
       .sort((a, b) => {
         // nomes que começam com o termo digitado aparecem primeiro
         const aS = norm(a.name).startsWith(q) ? 0 : 1
@@ -436,10 +477,15 @@ export default function TabelasPrecoPage() {
                   {filteredCatalog.length > 0 && (
                     <div style={{position:'absolute', top:'100%', left:0, right:0, background:'var(--cream-raise)', border:'1px solid var(--ps-line)', borderRadius:'0 0 var(--r-ctrl) var(--r-ctrl)', zIndex:50, maxHeight:240, overflowY:'auto', boxShadow:'var(--sh-2)'}}>
                       {filteredCatalog.map(p => (
-                        <div key={`${p._source}_${p.id}`} onClick={()=>addItem(p)}
+                        <div key={saleOptionKey(p._source, p.id, p.sale_option_id)} onClick={()=>addItem(p)}
                           style={{padding:'10px 12px', cursor:'pointer', fontSize:13, borderBottom:'1px solid var(--line-soft)', fontFamily:'var(--font-ui)'}}>
                           {p.name}
                           {p._source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖 PÃO</span>}
+                          {p.sale_option_id && (
+                            <span className="ps-store-chip ja" style={{marginLeft:6}}>
+                              {p.sale_option_name || p.sale_unit}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -461,11 +507,14 @@ export default function TabelasPrecoPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {itemsOfSel.map(it => (
+                        {itemsOfSel.map(it => {
+                          const option = it.sale_option_id ? saleOptionsById.get(it.sale_option_id) : null
+                          return (
                           <tr key={it.id}>
                             <td>
                               {it.product_name}
                               {it.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
+                              {option && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(option)}</span>}
                             </td>
                             <td className="right">
                               <input type="number" step={0.01} min={0} value={it.unit_price}
@@ -473,8 +522,8 @@ export default function TabelasPrecoPage() {
                                 className="ps-input" style={{width:90, padding:'4px 8px', fontSize:13, textAlign:'right'}}/>
                             </td>
                             <td>
-                              <select value={it.pricing_unit} onChange={e=>updateItem(it, { pricing_unit: e.target.value as 'un'|'kg' })}
-                                className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60}}>
+                              <select value={it.pricing_unit} disabled={!!option} onChange={e=>updateItem(it, { pricing_unit: e.target.value as PricingUnit })}
+                                className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60, opacity:option?0.7:1}}>
                                 <option value="un">un</option><option value="kg">kg</option>
                               </select>
                             </td>
@@ -489,7 +538,8 @@ export default function TabelasPrecoPage() {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -601,11 +651,14 @@ export default function TabelasPrecoPage() {
                           {custRows.map(r => {
                             const finalP = computeFinalPrice(r.tier, r.override, selCust.discount_pct)
                             const isOverride = !!r.override
+                            const optionId = r.override?.sale_option_id || r.tier?.sale_option_id || null
+                            const option = optionId ? saleOptionsById.get(optionId) : null
                             return (
                               <tr key={r.key} style={{background: isOverride ? 'var(--honey-tint)' : undefined}}>
                                 <td>
                                   {r.product_name}
                                   {r.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
+                                  {option && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(option)}</span>}
                                 </td>
                                 <td className="right" style={{color:'var(--ink-faint)', fontSize:12}}>
                                   {r.tier ? `R$ ${r.tier.unit_price.toFixed(2)}` : '—'}

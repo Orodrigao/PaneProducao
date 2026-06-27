@@ -5,6 +5,7 @@ import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList } fr
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
 
 type Kind = 'kit' | 'insumo' | 'final'
 
@@ -81,6 +82,14 @@ interface Component {
   component_id: string
   quantity: number
 }
+interface SaleOption {
+  id: string
+  product_id: string
+  name: string
+  sale_unit: PricingUnit
+  is_default: boolean
+  active: boolean
+}
 
 const CATEGORIES = ['Bolos','Brownie','Bruschettas','Confeitaria','Cookies','Croissant','Doce',
   'Focaccias','Folhados & Doces','Lanches','Muffins','Pastas & Pesto','Pizza Redonda',
@@ -92,6 +101,7 @@ export default function ProdutosPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [breads, setBreads]     = useState<Bread[]>([])
   const [components, setComponents] = useState<Component[]>([])
+  const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [loading, setLoading]   = useState(true)
   const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
@@ -117,6 +127,11 @@ export default function ProdutosPage() {
       setProducts(pRes.data||[])
       setBreads(bRes.data||[])
       setComponents((cRes.data||[]) as Component[])
+      const soRes = await supabase
+        .from('product_sale_options')
+        .select('id,product_id,name,sale_unit,is_default,active')
+        .eq('active', true)
+      setSaleOptions(soRes.error ? [] : (soRes.data || []) as SaleOption[])
     } catch(error: unknown) {
       setLoadError(getErrorMessage(error, 'Falha ao carregar os dados.'))
     } finally {
@@ -210,6 +225,12 @@ export default function ProdutosPage() {
   const fabricacaoWithoutCost = products.filter(p =>
     p.is_fabricacao_propria && p.active && (p.cost_price === null || Number(p.cost_price) === 0)
   ).length
+  const saleOptionsByProduct = new Map<string, SaleOption[]>()
+  saleOptions.forEach(option => {
+    const current = saleOptionsByProduct.get(option.product_id) || []
+    current.push(option)
+    saleOptionsByProduct.set(option.product_id, current)
+  })
 
   return (
     <div className="ps-canvas">
@@ -340,6 +361,15 @@ export default function ProdutosPage() {
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                           {p.unit||''}{p.cost_price?` · R$ ${Number(p.cost_price).toFixed(2)}`:''}
                         </div>
+                        {(saleOptionsByProduct.get(p.id) || []).length > 0 && (
+                          <div style={{display:'flex', gap:4, flexWrap:'wrap', marginTop:4}}>
+                            {(saleOptionsByProduct.get(p.id) || []).map(option => (
+                              <span key={option.id} className="ps-store-chip ja">
+                                {formatSaleOptionLabel(option)}{option.is_default ? ' padrão' : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {p.is_fabricacao_propria && (
                           <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                             {p.production_area || 'sem área'} · {formatProductionDays(p.production_days)}

@@ -11,6 +11,7 @@ import {
   firstAllowedRoute,
   roleLabel,
   roleColor,
+  logout,
   passwordPolicyChecklist,
   sendPasswordSetupLink,
   signInWithEmailPassword,
@@ -33,7 +34,15 @@ export default function LoginPage() {
   const [recoveryLoading, setRecoveryLoading] = useState(false)
   const [setupLoading, setSetupLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [returnTo, setReturnTo] = useState<string | null>(null)
   const passwordRules = passwordPolicyChecklist(password)
+
+  function safeReturnTo(value: string | null): string | null {
+    if (!value) return null
+    if (!value.startsWith('/') || value.startsWith('//')) return null
+    if (value.includes('://')) return null
+    return value
+  }
 
   useEffect(() => {
     let alive = true
@@ -42,13 +51,20 @@ export default function LoginPage() {
       const params = new URLSearchParams(window.location.search)
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
       const isPasswordSetup = params.get('mode') === 'senha' || hashParams.get('type') === 'recovery'
+      const forceEmailLogin = params.get('force') === 'email'
+      const nextReturnTo = safeReturnTo(params.get('returnTo'))
+      setReturnTo(nextReturnTo)
       if (isPasswordSetup) setMode('setup')
+      if (forceEmailLogin) {
+        logout()
+        setMode('password')
+      }
 
       // Sempre refresca o cache antes de qualquer decisão de redirect.
       // Sem isso, allowedRoutes stale do localStorage trava o usuário em loop.
       const remote = await fetchUsersFromSupabase()
       if (remote) cacheUsers(remote)
-      const current = isPasswordSetup ? null : await getCurrentUserAsync()
+      const current = isPasswordSetup || forceEmailLogin ? null : await getCurrentUserAsync()
       if (!alive) return
 
       if (current && current.allowedRoutes.length > 0) {
@@ -115,7 +131,7 @@ export default function LoginPage() {
     setEmailLoading(false)
 
     if (result.ok && result.user) {
-      router.replace(firstAllowedRoute(result.user))
+      router.replace(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 
@@ -141,7 +157,7 @@ export default function LoginPage() {
 
     if (result.ok && result.user) {
       clearPasswordSetupUrl()
-      router.replace(firstAllowedRoute(result.user))
+      router.replace(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 
