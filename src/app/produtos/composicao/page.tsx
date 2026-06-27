@@ -98,7 +98,23 @@ function isMissingRelationError(error: unknown): boolean {
   const err = error as { code?: unknown; message?: unknown }
   const code = typeof err.code === 'string' ? err.code : ''
   const message = typeof err.message === 'string' ? err.message : ''
-  return code === '42P01' || code === 'PGRST205' || message.includes('product_sale_options') || message.includes('product_recipe_yields')
+  const mentionsRecipeTables = message.includes('product_sale_options') || message.includes('product_recipe_yields')
+  return code === '42P01'
+    || code === 'PGRST205'
+    || (mentionsRecipeTables && (message.includes('does not exist') || message.includes('Could not find')))
+}
+
+function isRecipeMetaAccessError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const err = error as { code?: unknown; message?: unknown; status?: unknown }
+  const code = typeof err.code === 'string' ? err.code : ''
+  const message = typeof err.message === 'string' ? err.message.toLowerCase() : ''
+  const status = typeof err.status === 'number' ? err.status : null
+  return code === '42501'
+    || status === 401
+    || status === 403
+    || message.includes('permission denied')
+    || message.includes('jwt')
 }
 
 function draftValue(value: number | null | undefined): string {
@@ -138,6 +154,7 @@ function ComposicaoInner() {
   const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [recipeMetaAvailable, setRecipeMetaAvailable] = useState(true)
+  const [recipeMetaMessage, setRecipeMetaMessage] = useState('')
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [newQty, setNewQty]       = useState('1')
@@ -165,6 +182,13 @@ function ComposicaoInner() {
         const err = yRes.error || soRes.error
         if (isMissingRelationError(err)) {
           setRecipeMetaAvailable(false)
+          setRecipeMetaMessage('Estrutura de rendimento ainda não aplicada no banco. A ficha continua disponível.')
+          setRecipeYield(null)
+          setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+          setSaleOptions([])
+        } else if (isRecipeMetaAccessError(err)) {
+          setRecipeMetaAvailable(false)
+          setRecipeMetaMessage('Entre com e-mail e senha para carregar rendimento e formas de venda. O PIN antigo não libera esta etapa.')
           setRecipeYield(null)
           setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
           setSaleOptions([])
@@ -174,6 +198,7 @@ function ComposicaoInner() {
       } else {
         const yieldRow = yRes.data as RecipeYield | null
         setRecipeMetaAvailable(true)
+        setRecipeMetaMessage('')
         setRecipeYield(yieldRow)
         setYieldDraft({
           basis: isRecipeYieldBasis(yieldRow?.basis) ? yieldRow.basis : 'dough',
@@ -463,7 +488,15 @@ function ComposicaoInner() {
                   {!recipeMetaAvailable ? (
                     <div className="ps-warning" style={{marginBottom:0}}>
                       <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
-                      <span>Estrutura de rendimento ainda não aplicada no banco. A ficha continua disponível.</span>
+                      <span>
+                        {recipeMetaMessage || 'Rendimento indisponível no momento.'}
+                        {recipeMetaMessage.includes('e-mail') && (
+                          <>
+                            {' '}
+                            <Link href="/login" style={{textDecoration:'underline'}}>Ir para login</Link>
+                          </>
+                        )}
+                      </span>
                     </div>
                   ) : (
                     <>
