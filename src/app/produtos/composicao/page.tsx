@@ -84,6 +84,14 @@ function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function isFinitePositive(value: number | null): value is number {
+  return value !== null && Number.isFinite(value) && value > 0
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -159,6 +167,7 @@ function ComposicaoInner() {
   const [search, setSearch]       = useState('')
   const [newQty, setNewQty]       = useState('1')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
+  const [savingProductCost, setSavingProductCost] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -372,6 +381,40 @@ function ComposicaoInner() {
     }
   }
 
+  async function saveProductCostFromRecipe() {
+    if (!parent || !productCostCandidate) { showToast('CMV da ficha indisponível'); return }
+    if (partialCount > 0) { showToast('Há componente sem custo cadastrado'); return }
+
+    const currentText = manualCost === null ? 'sem custo cadastrado' : formatBRL(manualCost)
+    const diffText = productCostDiff === null ? '' : `\nDiferença: ${productCostDiff >= 0 ? '+' : ''}${formatBRL(productCostDiff)}`
+    const confirmed = confirm(
+      `Atualizar o custo cadastrado de ${parent.name}?\n\n` +
+      `Atual: ${currentText}\n` +
+      `CMV da ficha: ${formatBRL(productCostCandidate.value)} por ${productCostCandidate.label}` +
+      diffText
+    )
+    if (!confirmed) return
+
+    setSavingProductCost(true)
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ cost_price: productCostCandidate.value })
+        .eq('id', parent.id)
+      if (error) throw error
+
+      setParent(prev => prev ? { ...prev, cost_price: productCostCandidate.value } : prev)
+      setProducts(prev => prev.map(product =>
+        product.id === parent.id ? { ...product, cost_price: productCostCandidate.value } : product
+      ))
+      showToast('Custo do produto atualizado')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar custo do produto'))
+    } finally {
+      setSavingProductCost(false)
+    }
+  }
+
   // Hidrata componentes com nome/custo/unidade do catalog
   const enriched = useMemo(() => components.map(c => {
     const item = c.component_source === 'bread'
@@ -399,6 +442,18 @@ function ComposicaoInner() {
   const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
   const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
   const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, finishedWeight)
+  const productUnit = (parent?.unit ?? '').trim().toLowerCase()
+  const productCostCandidate = (() => {
+    if (productUnit === 'kg' && isFinitePositive(calculatedBakedKgCost)) {
+      return { value: roundCurrency(calculatedBakedKgCost), label: 'kg assado' }
+    }
+    if (isFinitePositive(calculatedUnitCost)) {
+      return { value: roundCurrency(calculatedUnitCost), label: 'unidade' }
+    }
+    return null
+  })()
+  const productCostDiff = productCostCandidate && manualCost !== null ? productCostCandidate.value - manualCost : null
+  const canSaveProductCost = canEditFicha && recipeMetaAvailable && partialCount === 0 && productCostCandidate !== null && !savingProductCost
   const hasUnitOption = saleOptions.some(option => option.sale_unit === 'un')
   const hasKgOption = saleOptions.some(option => option.sale_unit === 'kg')
 
@@ -564,6 +619,32 @@ function ComposicaoInner() {
                         </span>
                         <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
                           Salvar rendimento
+                        </button>
+                      </div>
+                      <div style={{borderTop:'1px solid var(--line-soft)', paddingTop:10, marginBottom:12, display:'flex', gap:10, alignItems:'center', justifyContent:'space-between', flexWrap:'wrap'}}>
+                        <div style={{minWidth:220, flex:1}}>
+                          <div className="ps-flabel" style={{marginBottom:2}}>Custo do produto</div>
+                          <div style={{fontSize:13, color:'var(--ink-soft)'}}>
+                            Atual: <strong style={{color:'var(--ps-ink)'}}>{manualCost === null ? '—' : formatBRL(manualCost)}</strong>
+                            {' · '}
+                            Ficha: <strong style={{color:'var(--ps-ink)'}}>{productCostCandidate ? formatBRL(productCostCandidate.value) : '—'}</strong>
+                            {productCostCandidate && `/${productCostCandidate.label}`}
+                          </div>
+                          <div style={{fontSize:11, color:partialCount > 0 ? 'var(--berry)' : 'var(--ink-faint)', marginTop:2}}>
+                            {partialCount > 0
+                              ? 'Complete os custos dos componentes antes de atualizar.'
+                              : productCostDiff === null
+                                ? 'Salva o CMV calculado no cadastro do produto.'
+                                : `${productCostDiff >= 0 ? '+' : ''}${formatBRL(productCostDiff)} vs custo atual`}
+                          </div>
+                        </div>
+                        <button
+                          onClick={saveProductCostFromRecipe}
+                          disabled={!canSaveProductCost}
+                          className="ps-btn sm ghost"
+                          style={!canSaveProductCost ? {opacity:.5} : undefined}
+                        >
+                          {savingProductCost ? 'Salvando...' : 'Salvar CMV no produto'}
                         </button>
                       </div>
 
