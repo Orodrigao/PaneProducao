@@ -4,7 +4,15 @@ import { ChevronLeft, Plus, Copy, Trash2, Save, AlertTriangle, RotateCw, X } fro
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
-import { formatSaleOptionLabel, inferPricingUnit, saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
+import {
+  classifyGrossMargin,
+  cmvForSaleOption,
+  formatSaleOptionLabel,
+  inferPricingUnit,
+  saleOptionKey,
+  type MarginStatus,
+  type PricingUnit,
+} from '@/lib/saleOptions'
 
 interface PriceTier { id:string; name:string; description:string|null; active:boolean }
 interface TierItem {
@@ -24,10 +32,26 @@ interface CatalogItem {
   id:string; name:string; unit:string|null; _source:'bread'|'product';
   sale_option_id?:string|null; sale_option_name?:string|null; sale_unit?:PricingUnit|null
 }
-type CatalogRow = { id:string; name:string; unit:string|null }
+type BreadCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null }
+type ProductCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null; legacy_bread_id:string|null }
 type DbError = { code?: string; message?: string }
+type PriceLineLike = {
+  product_source:'bread'|'product'
+  product_id:string
+  pricing_unit:PricingUnit
+  pack_size:number
+  sale_option_id?:string|null
+}
 
 const DUPLICATE_TIER_MESSAGE = 'Já existe uma tabela de preço com esse nome. Verifique se ela está oculta, inativa ou já cadastrada.'
+const MARGIN_STYLES: Record<MarginStatus, { background:string; color:string; border:string }> = {
+  boa: { background:'#dcfce7', color:'#166534', border:'#bbf7d0' },
+  media: { background:'#fef9c3', color:'#854d0e', border:'#fde68a' },
+  ruim: { background:'#ffedd5', color:'#9a3412', border:'#fed7aa' },
+  prejuizo: { background:'#fee2e2', color:'#991b1b', border:'#fecaca' },
+  sem_custo: { background:'var(--line-soft)', color:'var(--ink-soft)', border:'var(--ps-line)' },
+  preco_zerado: { background:'var(--berry-tint)', color:'var(--berry)', border:'var(--berry-tint)' },
+}
 
 function normalizeTierName(name: string) {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -46,6 +70,23 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+function formatBRL(value: number) {
+  return value.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+}
+
+function formatPct(value: number) {
+  return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+}
+
+function normalizedPricingUnit(unit: string | null | undefined): PricingUnit {
+  return unit?.trim().toLowerCase() === 'kg' ? 'kg' : 'un'
+}
+
+function hasPositiveCost(row: { cost_price:number|null } | null | undefined) {
+  const cost = Number(row?.cost_price || 0)
+  return Number.isFinite(cost) && cost > 0
+}
+
 export default function TabelasPrecoPage() {
   const [user, setUser] = useState<AppUser | null>(null)
   const [tab, setTab]   = useState<'tabelas'|'precos'>('tabelas')
@@ -62,6 +103,8 @@ export default function TabelasPrecoPage() {
   const [search, setSearch]     = useState('')
   const [catalog, setCatalog]   = useState<CatalogItem[]>([])
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
+  const [productCosts, setProductCosts] = useState<ProductCatalogRow[]>([])
+  const [breadCosts, setBreadCosts] = useState<BreadCatalogRow[]>([])
 
   // Aba preços por cliente
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -87,8 +130,8 @@ export default function TabelasPrecoPage() {
         supabase.from('price_tier_items').select('*').eq('active', true),
         supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
         supabase.from('customer_price_overrides').select('*').eq('active', true),
-        supabase.from('breads').select('id,name,unit').eq('active', true),
-        supabase.from('products').select('id,name,unit').eq('active', true).neq('category', 'INSUMOS'),
+        supabase.from('breads').select('id,name,unit,cost_price').eq('active', true),
+        supabase.from('products').select('id,name,unit,cost_price,legacy_bread_id').eq('active', true).neq('category', 'INSUMOS'),
       ])
       const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
       if (firstErr) throw firstErr
@@ -100,6 +143,10 @@ export default function TabelasPrecoPage() {
       setItems((iRes.data || []) as TierItem[])
       setCustomers((cRes.data || []) as Customer[])
       setOverrides((oRes.data || []) as Override[])
+      const breadRows = (bRes.data || []) as BreadCatalogRow[]
+      const productRows = (pRes.data || []) as ProductCatalogRow[]
+      setBreadCosts(breadRows)
+      setProductCosts(productRows)
       const optionRows = sRes.error ? [] : (sRes.data || []) as SaleOption[]
       setSaleOptions(optionRows)
       const optionsByProduct = new Map<string, SaleOption[]>()
@@ -108,8 +155,8 @@ export default function TabelasPrecoPage() {
         current.push(option)
         optionsByProduct.set(option.product_id, current)
       })
-      const breads:   CatalogItem[] = ((bRes.data || []) as CatalogRow[]).map(b => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
-      const prods:    CatalogItem[] = ((pRes.data || []) as CatalogRow[]).flatMap(p => {
+      const breads:   CatalogItem[] = breadRows.map(b => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
+      const prods:    CatalogItem[] = productRows.flatMap(p => {
         const options = optionsByProduct.get(p.id) || []
         if (options.length === 0) return [{ id:p.id, name:p.name, unit:p.unit, _source:'product' as const }]
         return options.map(option => ({
@@ -175,6 +222,107 @@ export default function TabelasPrecoPage() {
     saleOptions.forEach(option => map.set(option.id, option))
     return map
   }, [saleOptions])
+  const saleOptionsByProduct = useMemo(() => {
+    const map = new Map<string, SaleOption[]>()
+    saleOptions.forEach(option => {
+      const current = map.get(option.product_id) || []
+      current.push(option)
+      map.set(option.product_id, current)
+    })
+    return map
+  }, [saleOptions])
+  const productsById = useMemo(() => new Map(productCosts.map(product => [product.id, product])), [productCosts])
+  const breadsById = useMemo(() => new Map(breadCosts.map(bread => [bread.id, bread])), [breadCosts])
+  const productsByLegacyBreadId = useMemo(() => {
+    const map = new Map<string, ProductCatalogRow>()
+    productCosts.forEach(product => {
+      if (!product.legacy_bread_id) return
+      const current = map.get(product.legacy_bread_id)
+      if (!current || (!hasPositiveCost(current) && hasPositiveCost(product))) map.set(product.legacy_bread_id, product)
+    })
+    return map
+  }, [productCosts])
+
+  const unitCostFromProduct = (product: ProductCatalogRow, line: PriceLineLike, sourceLabel: string) => {
+    if (!hasPositiveCost(product)) return { unitCost: null, note: 'Sem custo cadastrado', sourceLabel }
+    const targetUnit = line.pricing_unit
+    const baseUnit = normalizedPricingUnit(product.unit)
+    const options = saleOptionsByProduct.get(product.id) || []
+    const explicitOption = line.sale_option_id ? saleOptionsById.get(line.sale_option_id) || null : null
+    const matchingOption = options.find(option => option.sale_unit === targetUnit) || null
+    const weightOption = [explicitOption, matchingOption, ...options].find(option => Number(option?.unit_weight_kg || 0) > 0) || null
+    const weight = Number(weightOption?.unit_weight_kg || 0)
+
+    if (baseUnit !== targetUnit && (!Number.isFinite(weight) || weight <= 0)) {
+      return { unitCost: null, note: 'Sem peso médio para converter', sourceLabel }
+    }
+
+    const unitCost = cmvForSaleOption(product.cost_price, product.unit, {
+      sale_unit: targetUnit,
+      unit_weight_kg: Number.isFinite(weight) && weight > 0 ? weight : null,
+    })
+    return { unitCost, note: sourceLabel, sourceLabel }
+  }
+
+  const unitCostFromBread = (bread: BreadCatalogRow | null | undefined, line: PriceLineLike) => {
+    if (!bread) return { unitCost: null, note: 'Produto não encontrado', sourceLabel: 'sem vínculo' }
+    if (!hasPositiveCost(bread)) return { unitCost: null, note: 'Sem custo cadastrado', sourceLabel: 'pão legado' }
+    const baseUnit = normalizedPricingUnit(bread.unit)
+    if (baseUnit !== line.pricing_unit) {
+      return { unitCost: null, note: 'Sem produto unificado para converter', sourceLabel: 'pão legado' }
+    }
+    return { unitCost: Number(bread.cost_price), note: 'custo legado', sourceLabel: 'pão legado' }
+  }
+
+  const unitCostForLine = (line: PriceLineLike) => {
+    if (line.product_source === 'product') {
+      const product = productsById.get(line.product_id)
+      return product
+        ? unitCostFromProduct(product, line, 'produto')
+        : { unitCost: null, note: 'Produto não encontrado', sourceLabel: 'sem vínculo' }
+    }
+
+    const linkedProduct = productsByLegacyBreadId.get(line.product_id)
+    const bread = breadsById.get(line.product_id)
+    if (linkedProduct) {
+      const linkedCost = unitCostFromProduct(linkedProduct, line, 'produto unificado')
+      if (linkedCost.unitCost !== null || !hasPositiveCost(bread)) return linkedCost
+    }
+    return unitCostFromBread(bread, line)
+  }
+
+  const marginForLine = (line: PriceLineLike, unitPrice: number) => {
+    const cost = unitCostForLine(line)
+    const result = classifyGrossMargin(unitPrice, cost.unitCost)
+    const packMargin = result.unitMargin !== null && line.pack_size > 1 ? result.unitMargin * line.pack_size : null
+    const detail = result.unitCost === null
+      ? cost.note
+      : [
+          `CMV ${formatBRL(result.unitCost)}/${line.pricing_unit}`,
+          result.unitMargin !== null && result.marginPct !== null ? `${formatBRL(result.unitMargin)} (${formatPct(result.marginPct)})` : null,
+          packMargin !== null ? `pack ${formatBRL(packMargin)}` : null,
+        ].filter(Boolean).join(' · ')
+    return { ...result, detail, sourceLabel: cost.sourceLabel }
+  }
+
+  const renderMargin = (line: PriceLineLike, unitPrice: number) => {
+    const margin = marginForLine(line, unitPrice)
+    const style = MARGIN_STYLES[margin.status]
+    return (
+      <div style={{minWidth:130}}>
+        <span
+          className="ps-store-chip"
+          style={{background:style.background, color:style.color, border:`1px solid ${style.border}`}}
+          title={`Fonte: ${margin.sourceLabel}`}
+        >
+          {margin.label}
+        </span>
+        <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4, lineHeight:1.3}}>
+          {margin.detail}
+        </div>
+      </div>
+    )
+  }
 
   const createTier = async () => {
     const name = newTierName.trim().replace(/\s+/g, ' ')
@@ -501,6 +649,7 @@ export default function TabelasPrecoPage() {
                         <tr>
                           <th>Produto</th>
                           <th className="right">Preço</th>
+                          <th>Margem</th>
                           <th>Un.</th>
                           <th>Pack</th>
                           <th></th>
@@ -521,6 +670,7 @@ export default function TabelasPrecoPage() {
                                 onChange={e=>updateItem(it, { unit_price: Number(e.target.value) || 0 })}
                                 className="ps-input" style={{width:90, padding:'4px 8px', fontSize:13, textAlign:'right'}}/>
                             </td>
+                            <td>{renderMargin(it, it.unit_price)}</td>
                             <td>
                               <select value={it.pricing_unit} disabled={!!option} onChange={e=>updateItem(it, { pricing_unit: e.target.value as PricingUnit })}
                                 className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60, opacity:option?0.7:1}}>
@@ -642,6 +792,7 @@ export default function TabelasPrecoPage() {
                             <th>Produto</th>
                             <th className="right">Tabela</th>
                             <th className="right">Final</th>
+                            <th>Margem</th>
                             <th className="right">Override</th>
                             <th>Un./Pack</th>
                             <th></th>
@@ -665,6 +816,15 @@ export default function TabelasPrecoPage() {
                                 </td>
                                 <td className="right" style={{fontWeight:700, color:isOverride?'var(--honey-deep)':'var(--ps-ink)', fontVariantNumeric:'tabular-nums'}}>
                                   {finalP ? `R$ ${finalP.price.toFixed(2)}` : '—'}
+                                </td>
+                                <td>
+                                  {finalP ? renderMargin({
+                                    product_source: r.product_source,
+                                    product_id: r.product_id,
+                                    pricing_unit: finalP.unit,
+                                    pack_size: finalP.pack,
+                                    sale_option_id: optionId,
+                                  }, finalP.price) : '—'}
                                 </td>
                                 <td className="right">
                                   {r.override ? (

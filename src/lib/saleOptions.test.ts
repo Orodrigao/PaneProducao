@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  classifyGrossMargin,
   cmvForSaleOption,
   formatSaleOptionLabel,
   inferPricingUnit,
@@ -32,5 +33,14 @@ describe('saleOptions', () => {
     expect(cmvForSaleOption(40, 'kg', { sale_unit: 'un', unit_weight_kg: 0.25 })).toBe(10)
     expect(cmvForSaleOption(10, 'un', { sale_unit: 'kg', unit_weight_kg: 0.25 })).toBe(40)
     expect(cmvForSaleOption(10, 'un', { sale_unit: 'un' })).toBe(10)
+  })
+
+  it('classifica margem bruta por preço e custo unitário', () => {
+    expect(classifyGrossMargin(0, 1).status).toBe('preco_zerado')
+    expect(classifyGrossMargin(10, null).status).toBe('sem_custo')
+    expect(classifyGrossMargin(10, 10).status).toBe('prejuizo')
+    expect(classifyGrossMargin(10, 6).status).toBe('ruim')
+    expect(classifyGrossMargin(10, 4).status).toBe('media')
+    expect(classifyGrossMargin(10, 3).status).toBe('boa')
   })
 })
