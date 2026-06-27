@@ -11,6 +11,7 @@ import {
   firstAllowedRoute,
   roleLabel,
   roleColor,
+  logout,
   passwordPolicyChecklist,
   sendPasswordSetupLink,
   signInWithEmailPassword,
@@ -42,13 +43,18 @@ export default function LoginPage() {
       const params = new URLSearchParams(window.location.search)
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
       const isPasswordSetup = params.get('mode') === 'senha' || hashParams.get('type') === 'recovery'
+      const forceEmailLogin = params.get('force') === 'email'
       if (isPasswordSetup) setMode('setup')
+      if (forceEmailLogin) {
+        logout()
+        setMode('password')
+      }
 
       // Sempre refresca o cache antes de qualquer decisão de redirect.
       // Sem isso, allowedRoutes stale do localStorage trava o usuário em loop.
       const remote = await fetchUsersFromSupabase()
       if (remote) cacheUsers(remote)
-      const current = isPasswordSetup ? null : await getCurrentUserAsync()
+      const current = isPasswordSetup || forceEmailLogin ? null : await getCurrentUserAsync()
       if (!alive) return
 
       if (current && current.allowedRoutes.length > 0) {
