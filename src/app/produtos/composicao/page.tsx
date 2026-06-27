@@ -493,7 +493,12 @@ function ComposicaoInner() {
                         {recipeMetaMessage.includes('e-mail') && (
                           <>
                             {' '}
-                            <Link href="/login?force=email" style={{textDecoration:'underline'}}>Ir para login</Link>
+                            <Link
+                              href={`/login?force=email&returnTo=${encodeURIComponent(`/produtos/composicao?id=${parentId}`)}`}
+                              style={{textDecoration:'underline'}}
+                            >
+                              Ir para login
+                            </Link>
                           </>
                         )}
                       </span>

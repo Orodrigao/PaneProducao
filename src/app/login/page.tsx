@@ -34,7 +34,15 @@ export default function LoginPage() {
   const [recoveryLoading, setRecoveryLoading] = useState(false)
   const [setupLoading, setSetupLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [returnTo, setReturnTo] = useState<string | null>(null)
   const passwordRules = passwordPolicyChecklist(password)
+
+  function safeReturnTo(value: string | null): string | null {
+    if (!value) return null
+    if (!value.startsWith('/') || value.startsWith('//')) return null
+    if (value.includes('://')) return null
+    return value
+  }
 
   useEffect(() => {
     let alive = true
@@ -44,6 +52,8 @@ export default function LoginPage() {
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
       const isPasswordSetup = params.get('mode') === 'senha' || hashParams.get('type') === 'recovery'
       const forceEmailLogin = params.get('force') === 'email'
+      const nextReturnTo = safeReturnTo(params.get('returnTo'))
+      setReturnTo(nextReturnTo)
       if (isPasswordSetup) setMode('setup')
       if (forceEmailLogin) {
         logout()
@@ -121,7 +131,7 @@ export default function LoginPage() {
     setEmailLoading(false)
 
     if (result.ok && result.user) {
-      router.replace(firstAllowedRoute(result.user))
+      router.replace(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 
@@ -147,7 +157,7 @@ export default function LoginPage() {
 
     if (result.ok && result.user) {
       clearPasswordSetupUrl()
-      router.replace(firstAllowedRoute(result.user))
+      router.replace(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 
