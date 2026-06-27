@@ -2,7 +2,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, X, Search, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Plus, X, Search, AlertTriangle, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -168,6 +168,9 @@ function ComposicaoInner() {
   const [newQty, setNewQty]       = useState('1')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
   const [savingProductCost, setSavingProductCost] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importSearch, setImportSearch] = useState('')
+  const [importingRecipe, setImportingRecipe] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -271,6 +274,65 @@ function ComposicaoInner() {
       showToast('Componente removido')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao remover'))
+    }
+  }
+
+  async function importRecipeFromProduct(sourceProduct: ProductLite) {
+    if (!canEditFicha || importingRecipe) return
+    if (sourceProduct.id === parentId) { showToast('Escolha outra receita'); return }
+
+    setImportingRecipe(true)
+    try {
+      const { data, error } = await supabase
+        .from('product_components')
+        .select('component_source,component_id,quantity')
+        .eq('parent_product_id', sourceProduct.id)
+      if (error) throw error
+
+      const sourceComponents = (data || []) as Array<Pick<Component, 'component_source' | 'component_id' | 'quantity'>>
+      if (sourceComponents.length === 0) {
+        showToast('Essa receita ainda não tem componentes')
+        return
+      }
+
+      const existingKeys = new Set(components.map(component => `${component.component_source}-${component.component_id}`))
+      const rowsToInsert = sourceComponents
+        .filter(component => !existingKeys.has(`${component.component_source}-${component.component_id}`))
+        .map(component => ({
+          parent_product_id: parentId,
+          component_source: component.component_source,
+          component_id: component.component_id,
+          quantity: component.quantity,
+        }))
+
+      if (rowsToInsert.length === 0) {
+        showToast('Todos os componentes dessa ficha já estão aqui')
+        return
+      }
+
+      const duplicateCount = sourceComponents.length - rowsToInsert.length
+      const confirmed = confirm(
+        `Importar ficha de ${sourceProduct.name}?\n\n` +
+        `${rowsToInsert.length} componente${rowsToInsert.length === 1 ? '' : 's'} será${rowsToInsert.length === 1 ? '' : 'o'} adicionado${rowsToInsert.length === 1 ? '' : 's'}.` +
+        (duplicateCount > 0 ? `\n${duplicateCount} já existente${duplicateCount === 1 ? '' : 's'} não será${duplicateCount === 1 ? '' : 'o'} duplicado${duplicateCount === 1 ? '' : 's'}.` : '')
+      )
+      if (!confirmed) return
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('product_components')
+        .insert(rowsToInsert)
+        .select()
+      if (insertError) throw insertError
+
+      const imported = (inserted || []) as Component[]
+      setComponents(prev => [...prev, ...imported])
+      setImportSearch('')
+      setImportOpen(false)
+      showToast(`Ficha importada: ${imported.length} componente${imported.length === 1 ? '' : 's'}`)
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao importar ficha'))
+    } finally {
+      setImportingRecipe(false)
     }
   }
 
@@ -469,6 +531,16 @@ function ComposicaoInner() {
       .filter(b => b.active !== false && !migratedBreadIds.has(b.id) && !addedKeys.has(`bread-${b.id}`) && b.name.toLowerCase().includes(q))
       .map(b => ({ source: 'bread' as const, id: b.id, name: b.name, cost: b.cost_price, unit: b.unit, isFabricacao: false })),
   ].slice(0, 20)
+  const importQ = importSearch.trim().toLowerCase()
+  const recipeImportCandidates = importQ.length < 2 ? [] : products
+    .filter(product =>
+      product.active !== false
+      && product.id !== parentId
+      && product.kind !== 'insumo'
+      && product.is_fabricacao_propria !== false
+      && product.name.toLowerCase().includes(importQ)
+    )
+    .slice(0, 20)
 
   if (!parentId) {
     return (
@@ -697,7 +769,75 @@ function ComposicaoInner() {
 
               {/* Lista de componentes atuais */}
               <div className="ps-card" style={{padding:14, marginBottom:12}}>
-                <div className="ps-flabel" style={{marginBottom:8}}>Componentes ({enriched.length})</div>
+                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:8}}>
+                  <div className="ps-flabel" style={{marginBottom:0}}>Componentes ({enriched.length})</div>
+                  {canEditFicha && (
+                    <button
+                      type="button"
+                      onClick={() => setImportOpen(prev => !prev)}
+                      className="ps-btn sm ghost"
+                      style={{display:'inline-flex', alignItems:'center', gap:6}}
+                    >
+                      <Copy size={14}/>
+                      Importar ficha
+                    </button>
+                  )}
+                </div>
+                {canEditFicha && importOpen && (
+                  <div style={{border:'1px solid var(--line-soft)', borderRadius:8, padding:10, marginBottom:12, background:'var(--paper-soft)'}}>
+                    <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div style={{flex:1, position:'relative'}}>
+                        <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)'}}/>
+                        <input
+                          value={importSearch}
+                          onChange={e => setImportSearch(e.target.value)}
+                          placeholder="Buscar receita de origem…"
+                          className="ps-input"
+                          style={{paddingLeft:30}}
+                        />
+                      </div>
+                      <button type="button" onClick={() => { setImportOpen(false); setImportSearch('') }} className="ps-iconbtn" style={{width:34, height:34}}>
+                        <X size={14}/>
+                      </button>
+                    </div>
+                    <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:6}}>
+                      Copia apenas os componentes e quantidades. Rendimento e formas de venda continuam os desta ficha.
+                    </div>
+
+                    {importQ.length > 0 && importQ.length < 2 && (
+                      <div style={{padding:'10px 0 0', fontSize:12, color:'var(--ink-faint)'}}>Digite ao menos 2 caracteres…</div>
+                    )}
+
+                    {importQ.length >= 2 && (
+                      <div style={{marginTop:8, maxHeight:260, overflowY:'auto', border:'1px solid var(--line-soft)', borderRadius:8, background:'var(--paper)'}}>
+                        {recipeImportCandidates.length === 0 ? (
+                          <div style={{padding:14, textAlign:'center', color:'var(--ink-faint)', fontSize:13}}>
+                            Nenhuma receita encontrada.
+                          </div>
+                        ) : recipeImportCandidates.map(product => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => importRecipeFromProduct(product)}
+                            disabled={importingRecipe}
+                            style={{display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderBottom:'1px solid var(--line-soft)', width:'100%', textAlign:'left', background:'transparent', border:'none', cursor:importingRecipe ? 'wait' : 'pointer', opacity:importingRecipe ? .6 : 1}}
+                          >
+                            <div style={{flex:1, minWidth:0}}>
+                              <div style={{fontSize:13, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                                {product.name}
+                                {product.is_fabricacao_propria && <span className="ps-store-chip jc">FABRICAÇÃO</span>}
+                              </div>
+                              <div style={{fontSize:11, color:'var(--ink-faint)'}}>
+                                {product.cost_price ? `${formatBRL(Number(product.cost_price))}${product.unit?`/${product.unit}`:''}` : 'sem custo cadastrado'}
+                              </div>
+                            </div>
+                            <Copy size={14} style={{color:'var(--honey-deep)'}}/>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {enriched.length === 0 ? (
                   <div style={{padding:'14px 4px', color:'var(--ink-faint)', fontSize:13, textAlign:'center'}}>
                     Nenhum componente cadastrado ainda.
