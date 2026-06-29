@@ -13,6 +13,14 @@ import {
   parsePositiveDecimalInput,
   type PricingUnit,
 } from '@/lib/saleOptions'
+import {
+  calculateRecipeTotals,
+  isFlourComponent,
+  isPackagingComponent,
+  packagingCostForPriceBase,
+  quantityFromBakersPercentage,
+  type PriceBase,
+} from '@/lib/recipeMath'
 
 interface ParentProduct {
   id: string
@@ -37,12 +45,14 @@ interface ProductLite {
   name: string
   cost_price: number | null
   unit: string | null
+  category: string | null
   kind: string | null
   active: boolean | null
   is_fabricacao_propria: boolean | null
   legacy_bread_id: string | null
 }
 type RecipeYieldBasis = 'dough' | 'baked' | 'unit'
+type QuantityInputMode = 'weight' | 'baker_pct'
 interface RecipeYield {
   id: string
   product_id: string
@@ -71,7 +81,7 @@ interface YieldDraft {
   finished_weight_kg: string
   yield_units: string
 }
-type PriceFormationBase = 'un' | 'kg'
+type PriceFormationBase = PriceBase
 interface PriceFormationDraft {
   packagingCost: string
   laborCost: string
@@ -185,6 +195,7 @@ function ComposicaoInner() {
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [newQty, setNewQty]       = useState('1')
+  const [newQtyMode, setNewQtyMode] = useState<QuantityInputMode>('weight')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
   const [savingProductCost, setSavingProductCost] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -206,7 +217,7 @@ function ComposicaoInner() {
         supabase.from('products').select('id,name,kind,category,unit,cost_price,is_revenda,is_fabricacao_propria').eq('id', parentId).single(),
         supabase.from('product_components').select('*').eq('parent_product_id', parentId),
         supabase.from('breads').select('id,name,cost_price,unit,active').order('name'),
-        supabase.from('products').select('id,name,cost_price,unit,kind,active,is_fabricacao_propria,legacy_bread_id').order('name'),
+        supabase.from('products').select('id,name,cost_price,unit,category,kind,active,is_fabricacao_propria,legacy_bread_id').order('name'),
       ])
       if (pRes.error) throw pRes.error
       setParent(pRes.data as ParentProduct)
@@ -257,8 +268,18 @@ function ComposicaoInner() {
   useEffect(() => { setUser(getCurrentUser()); if (parentId) load() }, [parentId, load])
 
   async function addComponent(source: 'bread' | 'product', componentId: string) {
-    const qty = parsePositiveDecimal(newQty)
-    if (qty === null) { showToast('Quantidade inválida'); return }
+    const parsedQty = parsePositiveDecimal(newQty)
+    if (parsedQty === null) {
+      showToast(newQtyMode === 'baker_pct' ? 'Percentual inválido' : 'Quantidade inválida')
+      return
+    }
+    const qty = newQtyMode === 'baker_pct'
+      ? quantityFromBakersPercentage(parsedQty, recipeTotals.flourBaseKg)
+      : parsedQty
+    if (qty === null) {
+      showToast('Cadastre a farinha em kg antes de lançar por percentual')
+      return
+    }
     try {
       const { data, error } = await supabase
         .from('product_components')
@@ -269,7 +290,9 @@ function ComposicaoInner() {
       setComponents(prev => [...prev, data as Component])
       setSearch('')
       setNewQty('1')
-      showToast('Componente adicionado')
+      showToast(newQtyMode === 'baker_pct'
+        ? `Componente adicionado: ${formatQty(qty)} kg`
+        : 'Componente adicionado')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao adicionar'))
     }
@@ -365,10 +388,11 @@ function ComposicaoInner() {
 
   async function saveRecipeYield() {
     if (!parentId || !recipeMetaAvailable) return
-    const dough = nullablePositiveDecimal(yieldDraft.dough_weight_kg)
+    const automaticDough = recipeTotals.doughWeightKg
+    const dough = automaticDough ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
     const finished = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
     const units = nullablePositiveDecimal(yieldDraft.yield_units)
-    if (yieldDraft.dough_weight_kg && dough === null) { showToast('Massa crua inválida'); return }
+    if (automaticDough === null && yieldDraft.dough_weight_kg && dough === null) { showToast('Massa crua inválida'); return }
     if (yieldDraft.finished_weight_kg && finished === null) { showToast('Peso assado inválido'); return }
     if (yieldDraft.yield_units && units === null) { showToast('Rendimento em unidades inválido'); return }
     if (dough === null && finished === null && units === null) { showToast('Informe ao menos um rendimento'); return }
@@ -510,23 +534,27 @@ function ComposicaoInner() {
       ? breads.find(b => b.id === c.component_id)
       : products.find(p => p.id === c.component_id)
     const cost = item?.cost_price ?? null
+    const category = item && 'category' in item && typeof item.category === 'string' ? item.category : null
     return {
       ...c,
       name: item?.name ?? '(não encontrado)',
       cost: cost ?? 0,
-      hasCost: cost !== null && Number(cost) > 0,
+      hasCost: cost !== null && Number.isFinite(Number(cost)),
       unit: item?.unit ?? '',
+      category,
     }
   }), [components, breads, products])
 
-  const totalCMV = enriched.reduce((sum, e) => sum + Number(e.cost) * Number(e.quantity), 0)
-  const partialCount = enriched.filter(e => !e.hasCost).length
+  const recipeTotals = useMemo(() => calculateRecipeTotals(enriched), [enriched])
+  const totalCMV = recipeTotals.ingredientCost
+  const packagingComponentsCost = recipeTotals.packagingCost
+  const partialCount = enriched.filter(e => !isPackagingComponent(e) && !e.hasCost).length
   const manualCost = parent?.cost_price !== null && parent?.cost_price !== undefined ? Number(parent.cost_price) : null
   const manualDiff = manualCost !== null ? totalCMV - manualCost : null
   const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
   const yieldUnits = nullablePositiveDecimal(yieldDraft.yield_units)
   const finishedWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
-  const doughWeight = nullablePositiveDecimal(yieldDraft.dough_weight_kg)
+  const doughWeight = recipeTotals.doughWeightKg ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
   const calculatedAverageWeight = finishedWeight !== null && yieldUnits !== null ? finishedWeight / yieldUnits : recipeYield?.average_unit_weight_kg ?? null
   const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
   const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
@@ -536,14 +564,27 @@ function ComposicaoInner() {
     ...(isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
   ]
   const selectedPriceBase = availablePriceBases.find(base => base.value === priceFormationBase) ?? availablePriceBases[0] ?? null
-  const priceFormation = selectedPriceBase ? calculateSuggestedPrice({
+  const packagingCostPerUnit = nonNegativeDecimal(priceFormationDraft.packagingCost)
+  const packagingCostForSelectedBase = selectedPriceBase
+    ? packagingCostForPriceBase(packagingCostPerUnit, selectedPriceBase.value, calculatedAverageWeight)
+    : null
+  const priceFormationBlockedReason = selectedPriceBase && packagingCostForSelectedBase === null
+    ? packagingCostPerUnit === null
+      ? 'Embalagem inválida'
+      : 'Embalagem por kg exige peso médio da unidade'
+    : null
+  const priceFormation = selectedPriceBase && !priceFormationBlockedReason ? calculateSuggestedPrice({
     cmv: selectedPriceBase.cmv,
-    packagingCost: nonNegativeDecimal(priceFormationDraft.packagingCost),
+    packagingCost: packagingCostForSelectedBase,
     laborCost: nonNegativeDecimal(priceFormationDraft.laborCost),
     lossPct: nonNegativeDecimal(priceFormationDraft.lossPct),
     taxPct: nonNegativeDecimal(priceFormationDraft.taxPct),
     desiredMarginPct: nonNegativeDecimal(priceFormationDraft.desiredMarginPct),
   }) : null
+  const parsedNewQty = parsePositiveDecimal(newQty)
+  const newQtyPreviewKg = newQtyMode === 'baker_pct' && parsedNewQty !== null
+    ? quantityFromBakersPercentage(parsedNewQty, recipeTotals.flourBaseKg)
+    : null
   const productUnit = (parent?.unit ?? '').trim().toLowerCase()
   const productCostCandidate = (() => {
     if (productUnit === 'kg' && isFinitePositive(calculatedBakedKgCost)) {
@@ -689,11 +730,19 @@ function ComposicaoInner() {
                           <div className="ps-fieldlabel">Massa crua (kg)</div>
                           <input
                             inputMode="decimal"
-                            value={yieldDraft.dough_weight_kg}
-                            onChange={e=>setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
-                            placeholder="ex: 8,5"
+                            value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : yieldDraft.dough_weight_kg}
+                            onChange={e=>{
+                              if (recipeTotals.doughWeightKg === null) {
+                                setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))
+                              }
+                            }}
+                            placeholder={recipeTotals.doughWeightKg !== null ? 'calculada' : 'ex: 8,5'}
                             className="ps-input"
+                            readOnly={recipeTotals.doughWeightKg !== null}
                           />
+                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
+                            {recipeTotals.doughWeightKg !== null ? 'soma automática dos componentes' : 'sem componentes para somar'}
+                          </div>
                         </div>
                         <div className="ps-fieldgroup">
                           <div className="ps-fieldlabel">Pão assado (kg)</div>
@@ -718,6 +767,12 @@ function ComposicaoInner() {
                       </div>
                       <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
                         <span className="ps-store-chip">
+                          massa crua: {recipeTotals.doughWeightKg !== null ? `${formatDecimalPtBR(recipeTotals.doughWeightKg, 3)} kg` : '—'}
+                        </span>
+                        <span className="ps-store-chip">
+                          farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : '—'}
+                        </span>
+                        <span className="ps-store-chip">
                           peso médio: {calculatedAverageWeight ? `${formatDecimalPtBR(calculatedAverageWeight, 3)} kg/un` : '—'}
                         </span>
                         <span className="ps-store-chip">
@@ -733,6 +788,14 @@ function ComposicaoInner() {
                           Salvar rendimento
                         </button>
                       </div>
+                      {packagingComponentsCost > 0 && (
+                        <div className="ps-warning" style={{marginBottom:12}}>
+                          <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+                          <span>
+                            Embalagens na lista somam {formatBRL(packagingComponentsCost)} e não entram no CMV da receita. Informe embalagem por unidade na formação de preço.
+                          </span>
+                        </div>
+                      )}
                       <div style={{borderTop:'1px solid var(--line-soft)', paddingTop:10, marginBottom:12, display:'flex', gap:10, alignItems:'center', justifyContent:'space-between', flexWrap:'wrap'}}>
                         <div style={{minWidth:220, flex:1}}>
                           <div className="ps-flabel" style={{marginBottom:2}}>Custo do produto</div>
@@ -772,7 +835,7 @@ function ComposicaoInner() {
                               {selectedPriceBase
                                 ? priceFormation?.valid
                                   ? `CMV base ${formatBRL(selectedPriceBase.cmv)}/${selectedPriceBase.suffix}`
-                                  : priceFormation?.reason || 'Preço indisponível'
+                                  : priceFormationBlockedReason || priceFormation?.reason || 'Preço indisponível'
                                 : 'Informe rendimento para calcular preço'}
                             </div>
                           </div>
@@ -795,7 +858,7 @@ function ComposicaoInner() {
 
                         <div className="ps-fieldrow" style={{marginBottom:10}}>
                           <div className="ps-fieldgroup">
-                            <div className="ps-fieldlabel">Embalagem (R$)</div>
+                            <div className="ps-fieldlabel">Embalagem por unidade (R$)</div>
                             <input
                               inputMode="decimal"
                               value={priceFormationDraft.packagingCost}
@@ -803,6 +866,11 @@ function ComposicaoInner() {
                               placeholder="0,00"
                               className="ps-input"
                             />
+                            {selectedPriceBase?.value === 'kg' && packagingCostForSelectedBase !== null && packagingCostPerUnit !== null && packagingCostPerUnit > 0 && (
+                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
+                                convertido: {formatBRL(packagingCostForSelectedBase)}/kg
+                              </div>
+                            )}
                           </div>
                           <div className="ps-fieldgroup">
                             <div className="ps-fieldlabel">Mão de obra (R$)</div>
@@ -989,52 +1057,63 @@ function ComposicaoInner() {
                     Nenhum componente cadastrado ainda.
                   </div>
                 ) : (
-                  enriched.map(e => (
-                    <div key={e.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
-                      <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                          {e.name}
-                          <span className={`ps-store-chip ${e.component_source==='bread'?'jc':'ja'}`}>{e.component_source==='bread'?'PÃO':'PRODUTO'}</span>
-                          {!e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
+                  enriched.map(e => {
+                    const isPackaging = isPackagingComponent(e)
+                    const flourPct = recipeTotals.flourBaseKg !== null && !isPackaging
+                      ? (Number(e.quantity) / recipeTotals.flourBaseKg) * 100
+                      : null
+                    return (
+                      <div key={e.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
+                        <div style={{flex:1, minWidth:0}}>
+                          <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                            {e.name}
+                            <span className={`ps-store-chip ${e.component_source==='bread'?'jc':'ja'}`}>{e.component_source==='bread'?'PÃO':'PRODUTO'}</span>
+                            {isFlourComponent(e) && <span className="ps-store-chip jc">FARINHA BASE</span>}
+                            {isPackaging && <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>EMBALAGEM</span>}
+                            {!isPackaging && !e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
+                          </div>
+                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                            {e.hasCost
+                              ? `${formatBRL(Number(e.cost))}${e.unit?`/${e.unit}`:''} × ${formatQty(Number(e.quantity))} = ${formatBRL(Number(e.cost)*Number(e.quantity))}`
+                              : `× ${formatQty(Number(e.quantity))}${e.unit?` ${e.unit}`:''}`}
+                            {flourPct !== null && ` · ${formatDecimalPtBR(flourPct, 1)}% farinha`}
+                            {isPackaging && ' · fora da massa/CMV da receita'}
+                          </div>
                         </div>
-                        <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
-                          {e.hasCost
-                            ? `${formatBRL(Number(e.cost))}${e.unit?`/${e.unit}`:''} × ${formatQty(Number(e.quantity))} = ${formatBRL(Number(e.cost)*Number(e.quantity))}`
-                            : `× ${formatQty(Number(e.quantity))}${e.unit?` ${e.unit}`:''}`}
-                        </div>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={qtyEdits[e.id] ?? formatQty(Number(e.quantity))}
+                          onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d,.]/g, '')}))}
+                          onBlur={ev => {
+                            const v = ev.target.value
+                            const parsed = parsePositiveDecimal(v)
+                            if (parsed === null) {
+                              showToast('Quantidade inválida')
+                              setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
+                            } else if (parsed !== Number(e.quantity)) updateQty(e.id, v)
+                            else setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
+                          }}
+                          disabled={!canEditFicha}
+                          className="ps-input"
+                          style={{width:70, textAlign:'right', padding:'6px 8px'}}
+                        />
+                        {canEditFicha && (
+                          <button onClick={() => removeComponent(e.id)} className="ps-iconbtn" style={{width:30, height:30}} title="Remover componente">
+                            <X size={14}/>
+                          </button>
+                        )}
                       </div>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={qtyEdits[e.id] ?? formatQty(Number(e.quantity))}
-                        onChange={ev => setQtyEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d,.]/g, '')}))}
-                        onBlur={ev => {
-                          const v = ev.target.value
-                          const parsed = parsePositiveDecimal(v)
-                          if (parsed === null) {
-                            showToast('Quantidade inválida')
-                            setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
-                          } else if (parsed !== Number(e.quantity)) updateQty(e.id, v)
-                          else setQtyEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
-                        }}
-                        disabled={!canEditFicha}
-                        className="ps-input"
-                        style={{width:70, textAlign:'right', padding:'6px 8px'}}
-                      />
-                      {canEditFicha && (
-                        <button onClick={() => removeComponent(e.id)} className="ps-iconbtn" style={{width:30, height:30}} title="Remover componente">
-                          <X size={14}/>
-                        </button>
-                      )}
-                    </div>
-                  ))
+                    )
+                  })
                 )}
 
                 {/* Sumário CMV */}
                 {enriched.length > 0 && (
                   <div style={{marginTop:12, paddingTop:10, borderTop:'1px solid var(--ps-line)', display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
                     <div style={{fontSize:12, color:'var(--ink-soft)'}}>
-                      CMV teórico{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
+                      CMV ingredientes{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
+                      {packagingComponentsCost > 0 && <span> · embalagem fora: {formatBRL(packagingComponentsCost)}</span>}
                     </div>
                     <div style={{fontSize:18, fontWeight:700, color:'var(--ps-ink)'}}>{formatBRL(totalCMV)}</div>
                   </div>
@@ -1062,15 +1141,34 @@ function ComposicaoInner() {
                         style={{paddingLeft:30}}
                       />
                     </div>
+                    <select
+                      value={newQtyMode}
+                      onChange={e => setNewQtyMode(e.target.value as QuantityInputMode)}
+                      className="ps-select"
+                      style={{width:126}}
+                    >
+                      <option value="weight">Peso kg</option>
+                      <option value="baker_pct">% farinha</option>
+                    </select>
                     <input
                       type="text"
                       inputMode="decimal"
                       value={newQty}
                       onChange={e => setNewQty(e.target.value.replace(/[^\d,.]/g, ''))}
-                      placeholder="Qtd"
+                      placeholder={newQtyMode === 'baker_pct' ? '%' : 'Qtd'}
                       className="ps-input"
                       style={{width:80, textAlign:'right'}}
                     />
+                  </div>
+                  <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
+                    <span className="ps-store-chip">
+                      farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'cadastre primeiro'}
+                    </span>
+                    {newQtyMode === 'baker_pct' && (
+                      <span className="ps-store-chip ja">
+                        peso calculado: {newQtyPreviewKg !== null ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg` : '—'}
+                      </span>
+                    )}
                   </div>
 
                   {q.length >= 2 && (
@@ -1092,7 +1190,7 @@ function ComposicaoInner() {
                               {c.isFabricacao && <span className="ps-store-chip jc">FABRICAÇÃO</span>}
                             </div>
                             <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                              {c.cost ? `${formatBRL(Number(c.cost))}${c.unit?`/${c.unit}`:''}` : 'sem custo cadastrado'}
+                              {c.cost !== null && c.cost !== undefined ? `${formatBRL(Number(c.cost))}${c.unit?`/${c.unit}`:''}` : 'sem custo cadastrado'}
                             </div>
                           </div>
                           <Plus size={14} style={{color:'var(--honey-deep)'}}/>
