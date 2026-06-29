@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculateYieldUnitsFromRecipeWeight,
   calculateRecipeTotals,
   isPackagingComponent,
   packagingCostForPriceBase,
@@ -45,5 +46,12 @@ describe('recipeMath', () => {
     expect(packagingCostForPriceBase(0.3, 'kg', 0.15)).toBe(2)
     expect(packagingCostForPriceBase(0.3, 'kg', null)).toBeNull()
     expect(packagingCostForPriceBase(0, 'kg', null)).toBe(0)
+  })
+
+  it('calcula rendimento dividindo peso da receita pelo peso da unidade assada', () => {
+    expect(calculateYieldUnitsFromRecipeWeight(1, 0.24)).toBeCloseTo(4.1667, 4)
+    expect(calculateYieldUnitsFromRecipeWeight(1.7, 0.085)).toBeCloseTo(20, 4)
+    expect(calculateYieldUnitsFromRecipeWeight(null, 0.085)).toBeNull()
+    expect(calculateYieldUnitsFromRecipeWeight(1.7, 0)).toBeNull()
   })
 })

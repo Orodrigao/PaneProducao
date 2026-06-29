@@ -14,6 +14,7 @@ import {
   type PricingUnit,
 } from '@/lib/saleOptions'
 import {
+  calculateYieldUnitsFromRecipeWeight,
   calculateRecipeTotals,
   isFlourComponent,
   isPackagingComponent,
@@ -254,7 +255,7 @@ function ComposicaoInner() {
         setYieldDraft({
           basis: isRecipeYieldBasis(yieldRow?.basis) ? yieldRow.basis : 'dough',
           dough_weight_kg: draftValue(yieldRow?.dough_weight_kg),
-          finished_weight_kg: draftValue(yieldRow?.finished_weight_kg),
+          finished_weight_kg: draftValue(yieldRow?.average_unit_weight_kg ?? yieldRow?.finished_weight_kg),
           yield_units: draftValue(yieldRow?.yield_units),
         })
         setSaleOptions((soRes.data || []) as SaleOption[])
@@ -398,12 +399,13 @@ function ComposicaoInner() {
     if (!parentId || !recipeMetaAvailable) return
     const automaticDough = recipeTotals.doughWeightKg
     const dough = automaticDough ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
-    const finished = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
-    const units = nullablePositiveDecimal(yieldDraft.yield_units)
+    const bakedUnitWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
+    const units = calculateYieldUnitsFromRecipeWeight(dough, bakedUnitWeight)
+    const finished = bakedUnitWeight !== null && units !== null ? bakedUnitWeight * units : null
     if (automaticDough === null && yieldDraft.dough_weight_kg && dough === null) { showToast('Massa crua inválida'); return }
-    if (yieldDraft.finished_weight_kg && finished === null) { showToast('Peso assado inválido'); return }
-    if (yieldDraft.yield_units && units === null) { showToast('Rendimento em unidades inválido'); return }
+    if (yieldDraft.finished_weight_kg && bakedUnitWeight === null) { showToast('Peso do pão assado inválido'); return }
     if (dough === null && finished === null && units === null) { showToast('Informe ao menos um rendimento'); return }
+    if (bakedUnitWeight !== null && units === null) { showToast('Informe a massa da receita para calcular o rendimento'); return }
 
     try {
       const { data, error } = await supabase
@@ -424,7 +426,7 @@ function ComposicaoInner() {
       setYieldDraft({
         basis: isRecipeYieldBasis(nextYield.basis) ? nextYield.basis : yieldDraft.basis,
         dough_weight_kg: draftValue(nextYield.dough_weight_kg),
-        finished_weight_kg: draftValue(nextYield.finished_weight_kg),
+        finished_weight_kg: draftValue(nextYield.average_unit_weight_kg ?? bakedUnitWeight),
         yield_units: draftValue(nextYield.yield_units),
       })
       if (nextYield.average_unit_weight_kg !== null) {
@@ -560,13 +562,17 @@ function ComposicaoInner() {
   const manualCost = parent?.cost_price !== null && parent?.cost_price !== undefined ? Number(parent.cost_price) : null
   const manualDiff = manualCost !== null ? totalCMV - manualCost : null
   const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
-  const yieldUnits = nullablePositiveDecimal(yieldDraft.yield_units)
-  const finishedWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
+  const bakedUnitWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
   const doughWeight = recipeTotals.doughWeightKg ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
-  const calculatedAverageWeight = finishedWeight !== null && yieldUnits !== null ? finishedWeight / yieldUnits : recipeYield?.average_unit_weight_kg ?? null
-  const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
+  const calculatedYieldUnits = calculateYieldUnitsFromRecipeWeight(doughWeight, bakedUnitWeight)
+  const yieldUnits = calculatedYieldUnits ?? nullablePositiveDecimal(yieldDraft.yield_units)
+  const calculatedFinishedWeight = bakedUnitWeight !== null && yieldUnits !== null
+    ? bakedUnitWeight * yieldUnits
+    : recipeYield?.finished_weight_kg ?? null
+  const calculatedAverageWeight = bakedUnitWeight ?? recipeYield?.average_unit_weight_kg ?? null
+  const calculatedBakeLoss = doughWeight !== null && calculatedFinishedWeight !== null ? ((doughWeight - calculatedFinishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
   const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
-  const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, finishedWeight)
+  const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, calculatedFinishedWeight)
   const availablePriceBases = [
     ...(isFinitePositive(calculatedUnitCost) ? [{ value: 'un' as const, label: 'Unidade', suffix: 'un', cmv: calculatedUnitCost }] : []),
     ...(isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
@@ -756,12 +762,12 @@ function ComposicaoInner() {
                           </div>
                         </div>
                         <div className="ps-fieldgroup">
-                          <div className="ps-fieldlabel">Pão assado (kg)</div>
+                          <div className="ps-fieldlabel">Peso pão assado (kg/un)</div>
                           <input
                             inputMode="decimal"
                             value={yieldDraft.finished_weight_kg}
                             onChange={e=>setYieldDraft(prev=>({...prev, finished_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
-                            placeholder="ex: 7,2"
+                            placeholder="ex: 0,085"
                             className="ps-input"
                           />
                         </div>
@@ -769,11 +775,14 @@ function ComposicaoInner() {
                           <div className="ps-fieldlabel">Rende (un)</div>
                           <input
                             inputMode="decimal"
-                            value={yieldDraft.yield_units}
-                            onChange={e=>setYieldDraft(prev=>({...prev, yield_units:e.target.value.replace(/[^\d,.]/g, '')}))}
-                            placeholder="ex: 30"
+                            value={yieldUnits !== null ? formatDecimalPtBR(yieldUnits, 2) : ''}
+                            readOnly
+                            placeholder="calculado"
                             className="ps-input"
                           />
+                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
+                            peso da receita ÷ peso assado
+                          </div>
                         </div>
                       </div>
                       <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>

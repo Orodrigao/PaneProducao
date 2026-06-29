@@ -97,3 +97,10 @@ export function packagingCostForPriceBase(
   if (averageUnitWeightKg === null || !Number.isFinite(averageUnitWeightKg) || averageUnitWeightKg <= 0) return null
   return packagingCostPerUnit / averageUnitWeightKg
 }
+
+export function calculateYieldUnitsFromRecipeWeight(recipeWeightKg: number | null, bakedUnitWeightKg: number | null): number | null {
+  if (recipeWeightKg === null || bakedUnitWeightKg === null) return null
+  if (!Number.isFinite(recipeWeightKg) || !Number.isFinite(bakedUnitWeightKg)) return null
+  if (recipeWeightKg <= 0 || bakedUnitWeightKg <= 0) return null
+  return recipeWeightKg / bakedUnitWeightKg
+}
