@@ -19,6 +19,7 @@ import {
   isPackagingComponent,
   packagingCostForPriceBase,
   quantityFromBakersPercentage,
+  quantityFromBakersPercentageForComponent,
   type PriceBase,
 } from '@/lib/recipeMath'
 
@@ -273,11 +274,18 @@ function ComposicaoInner() {
       showToast(newQtyMode === 'baker_pct' ? 'Percentual inválido' : 'Quantidade inválida')
       return
     }
+    const item = source === 'bread'
+      ? breads.find(b => b.id === componentId)
+      : products.find(p => p.id === componentId)
+    const componentForMath = {
+      name: item?.name ?? '',
+      category: item && 'category' in item && typeof item.category === 'string' ? item.category : null,
+    }
     const qty = newQtyMode === 'baker_pct'
-      ? quantityFromBakersPercentage(parsedQty, recipeTotals.flourBaseKg)
+      ? quantityFromBakersPercentageForComponent(parsedQty, recipeTotals.flourBaseKg, componentForMath)
       : parsedQty
     if (qty === null) {
-      showToast('Cadastre a farinha em kg antes de lançar por percentual')
+      showToast('Adicione primeiro uma farinha ou lance a própria farinha em %')
       return
     }
     try {
@@ -584,6 +592,9 @@ function ComposicaoInner() {
   const parsedNewQty = parsePositiveDecimal(newQty)
   const newQtyPreviewKg = newQtyMode === 'baker_pct' && parsedNewQty !== null
     ? quantityFromBakersPercentage(parsedNewQty, recipeTotals.flourBaseKg)
+    : null
+  const firstFlourPreviewKg = newQtyMode === 'baker_pct' && parsedNewQty !== null && recipeTotals.flourBaseKg === null
+    ? parsedNewQty / 100
     : null
   const productUnit = (parent?.unit ?? '').trim().toLowerCase()
   const productCostCandidate = (() => {
@@ -1162,11 +1173,15 @@ function ComposicaoInner() {
                   </div>
                   <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
                     <span className="ps-store-chip">
-                      farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'cadastre primeiro'}
+                      farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'primeira farinha: 100% = 1 kg'}
                     </span>
                     {newQtyMode === 'baker_pct' && (
                       <span className="ps-store-chip ja">
-                        peso calculado: {newQtyPreviewKg !== null ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg` : '—'}
+                        peso calculado: {newQtyPreviewKg !== null
+                          ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg`
+                          : firstFlourPreviewKg !== null
+                            ? `${formatDecimalPtBR(firstFlourPreviewKg, 3)} kg se for farinha`
+                            : '—'}
                       </span>
                     )}
                   </div>

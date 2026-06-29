@@ -76,6 +76,16 @@ export function quantityFromBakersPercentage(percentage: number, flourBaseKg: nu
   return flourBaseKg * (percentage / 100)
 }
 
+export function quantityFromBakersPercentageForComponent(
+  percentage: number,
+  flourBaseKg: number | null,
+  component: Pick<RecipeComponentLike, 'name' | 'category'>,
+): number | null {
+  if (!Number.isFinite(percentage) || percentage <= 0) return null
+  if (isFlourComponent(component)) return percentage / 100
+  return quantityFromBakersPercentage(percentage, flourBaseKg)
+}
+
 export function packagingCostForPriceBase(
   packagingCostPerUnit: number | null,
   priceBase: PriceBase,

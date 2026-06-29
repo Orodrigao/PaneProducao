@@ -4,6 +4,7 @@ import {
   isPackagingComponent,
   packagingCostForPriceBase,
   quantityFromBakersPercentage,
+  quantityFromBakersPercentageForComponent,
 } from './recipeMath'
 
 describe('recipeMath', () => {
@@ -24,6 +25,13 @@ describe('recipeMath', () => {
     expect(quantityFromBakersPercentage(70, 2)).toBe(1.4)
     expect(quantityFromBakersPercentage(70, null)).toBeNull()
     expect(quantityFromBakersPercentage(0, 2)).toBeNull()
+  })
+
+  it('permite cadastrar a primeira farinha por percentual', () => {
+    expect(quantityFromBakersPercentageForComponent(100, null, { name: 'Farinha de Trigo', category: 'INSUMOS' })).toBe(1)
+    expect(quantityFromBakersPercentageForComponent(20, null, { name: 'Farinha Integral', category: 'INSUMOS' })).toBe(0.2)
+    expect(quantityFromBakersPercentageForComponent(70, null, { name: 'Água', category: 'INSUMOS' })).toBeNull()
+    expect(quantityFromBakersPercentageForComponent(70, 1, { name: 'Água', category: 'INSUMOS' })).toBe(0.7)
   })
 
   it('identifica embalagem por categoria ou nome', () => {
