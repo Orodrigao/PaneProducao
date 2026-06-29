@@ -16,6 +16,26 @@ export interface GrossMarginResult {
   marginPct: number | null
 }
 
+export interface PriceFormationInput {
+  cmv: number | string | null | undefined
+  packagingCost?: number | string | null
+  laborCost?: number | string | null
+  lossPct?: number | string | null
+  taxPct?: number | string | null
+  desiredMarginPct?: number | string | null
+}
+
+export interface PriceFormationResult {
+  valid: boolean
+  reason: string | null
+  directCost: number
+  adjustedCost: number
+  taxAmount: number | null
+  targetMarginAmount: number | null
+  suggestedPrice: number | null
+  markupPct: number | null
+}
+
 export function saleOptionKey(productSource: string, productId: string, saleOptionId?: string | null): string {
   return `${productSource}_${productId}_${saleOptionId || 'legacy'}`
 }
@@ -73,9 +93,74 @@ export function classifyGrossMargin(unitPrice: number | string | null | undefine
   return { status: 'boa', label: 'Boa margem', unitCost: cost, unitMargin, marginPct }
 }
 
+function nonNegativeNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return 0
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) return null
+  return numeric
+}
+
+export function calculateSuggestedPrice(input: PriceFormationInput): PriceFormationResult {
+  const cmv = Number(input.cmv || 0)
+  const packagingCost = nonNegativeNumber(input.packagingCost)
+  const laborCost = nonNegativeNumber(input.laborCost)
+  const lossPct = nonNegativeNumber(input.lossPct)
+  const taxPct = nonNegativeNumber(input.taxPct)
+  const desiredMarginPct = nonNegativeNumber(input.desiredMarginPct)
+
+  const invalidResult: PriceFormationResult = {
+    valid: false,
+    reason: null,
+    directCost: 0,
+    adjustedCost: 0,
+    taxAmount: null,
+    targetMarginAmount: null,
+    suggestedPrice: null,
+    markupPct: null,
+  }
+
+  if (!Number.isFinite(cmv) || cmv <= 0) {
+    return { ...invalidResult, reason: 'CMV indisponível' }
+  }
+  if (packagingCost === null || laborCost === null || lossPct === null || taxPct === null || desiredMarginPct === null) {
+    return { ...invalidResult, reason: 'Parâmetro inválido' }
+  }
+  if (lossPct >= 100) {
+    return { ...invalidResult, reason: 'Perda precisa ser menor que 100%' }
+  }
+  if (taxPct + desiredMarginPct >= 100) {
+    return { ...invalidResult, reason: 'Impostos + margem precisam ficar abaixo de 100%' }
+  }
+
+  const directCost = cmv + packagingCost + laborCost
+  const adjustedCost = directCost / (1 - (lossPct / 100))
+  const denominator = 1 - ((taxPct + desiredMarginPct) / 100)
+  const suggestedPrice = adjustedCost / denominator
+  const taxAmount = suggestedPrice * (taxPct / 100)
+  const targetMarginAmount = suggestedPrice * (desiredMarginPct / 100)
+  const markupPct = ((suggestedPrice / directCost) - 1) * 100
+
+  return {
+    valid: true,
+    reason: null,
+    directCost,
+    adjustedCost,
+    taxAmount,
+    targetMarginAmount,
+    suggestedPrice,
+    markupPct,
+  }
+}
+
 export function parsePositiveDecimalInput(raw: string): number | null {
   const value = Number(raw.trim().replace(',', '.'))
   if (!Number.isFinite(value) || value <= 0) return null
+  return value
+}
+
+export function parseNonNegativeDecimalInput(raw: string): number | null {
+  const value = Number(raw.trim().replace(',', '.'))
+  if (!Number.isFinite(value) || value < 0) return null
   return value
 }
 

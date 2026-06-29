@@ -6,7 +6,13 @@ import { ArrowLeft, Plus, X, Search, AlertTriangle, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
-import { formatDecimalPtBR, parsePositiveDecimalInput, type PricingUnit } from '@/lib/saleOptions'
+import {
+  calculateSuggestedPrice,
+  formatDecimalPtBR,
+  parseNonNegativeDecimalInput,
+  parsePositiveDecimalInput,
+  type PricingUnit,
+} from '@/lib/saleOptions'
 
 interface ParentProduct {
   id: string
@@ -64,6 +70,14 @@ interface YieldDraft {
   dough_weight_kg: string
   finished_weight_kg: string
   yield_units: string
+}
+type PriceFormationBase = 'un' | 'kg'
+interface PriceFormationDraft {
+  packagingCost: string
+  laborCost: string
+  lossPct: string
+  taxPct: string
+  desiredMarginPct: string
 }
 
 const RECIPE_BASIS_OPTIONS: Array<{ value: RecipeYieldBasis; label: string }> = [
@@ -134,6 +148,11 @@ function nullablePositiveDecimal(raw: string): number | null {
   return parsePositiveDecimalInput(raw)
 }
 
+function nonNegativeDecimal(raw: string): number | null {
+  if (!raw.trim()) return 0
+  return parseNonNegativeDecimalInput(raw)
+}
+
 function isRecipeYieldBasis(value: string | null | undefined): value is RecipeYieldBasis {
   return value === 'dough' || value === 'baked' || value === 'unit'
 }
@@ -171,6 +190,14 @@ function ComposicaoInner() {
   const [importOpen, setImportOpen] = useState(false)
   const [importSearch, setImportSearch] = useState('')
   const [importingRecipe, setImportingRecipe] = useState(false)
+  const [priceFormationBase, setPriceFormationBase] = useState<PriceFormationBase>('un')
+  const [priceFormationDraft, setPriceFormationDraft] = useState<PriceFormationDraft>({
+    packagingCost: '',
+    laborCost: '',
+    lossPct: '',
+    taxPct: '',
+    desiredMarginPct: '65',
+  })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -504,6 +531,19 @@ function ComposicaoInner() {
   const calculatedBakeLoss = doughWeight !== null && finishedWeight !== null ? ((doughWeight - finishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
   const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
   const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, finishedWeight)
+  const availablePriceBases = [
+    ...(isFinitePositive(calculatedUnitCost) ? [{ value: 'un' as const, label: 'Unidade', suffix: 'un', cmv: calculatedUnitCost }] : []),
+    ...(isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
+  ]
+  const selectedPriceBase = availablePriceBases.find(base => base.value === priceFormationBase) ?? availablePriceBases[0] ?? null
+  const priceFormation = selectedPriceBase ? calculateSuggestedPrice({
+    cmv: selectedPriceBase.cmv,
+    packagingCost: nonNegativeDecimal(priceFormationDraft.packagingCost),
+    laborCost: nonNegativeDecimal(priceFormationDraft.laborCost),
+    lossPct: nonNegativeDecimal(priceFormationDraft.lossPct),
+    taxPct: nonNegativeDecimal(priceFormationDraft.taxPct),
+    desiredMarginPct: nonNegativeDecimal(priceFormationDraft.desiredMarginPct),
+  }) : null
   const productUnit = (parent?.unit ?? '').trim().toLowerCase()
   const productCostCandidate = (() => {
     if (productUnit === 'kg' && isFinitePositive(calculatedBakedKgCost)) {
@@ -718,6 +758,112 @@ function ComposicaoInner() {
                         >
                           {savingProductCost ? 'Salvando...' : 'Salvar CMV no produto'}
                         </button>
+                      </div>
+
+                      <div style={{borderTop:'1px solid var(--line-soft)', paddingTop:12, marginBottom:12}}>
+                        <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+                          <div>
+                            <div className="ps-flabel" style={{marginBottom:2}}>Formação de preço</div>
+                            <div style={{fontSize:24, fontWeight:800, color:'var(--ps-ink)', lineHeight:1.1}}>
+                              {priceFormation?.valid && priceFormation.suggestedPrice !== null ? formatBRL(priceFormation.suggestedPrice) : '—'}
+                              {selectedPriceBase && <span style={{fontSize:13, color:'var(--ink-faint)', marginLeft:4}}>/{selectedPriceBase.suffix}</span>}
+                            </div>
+                            <div style={{fontSize:11, color:priceFormation?.valid ? 'var(--ink-faint)' : 'var(--berry)', marginTop:3}}>
+                              {selectedPriceBase
+                                ? priceFormation?.valid
+                                  ? `CMV base ${formatBRL(selectedPriceBase.cmv)}/${selectedPriceBase.suffix}`
+                                  : priceFormation?.reason || 'Preço indisponível'
+                                : 'Informe rendimento para calcular preço'}
+                            </div>
+                          </div>
+                          {availablePriceBases.length > 0 && (
+                            <div style={{minWidth:150}}>
+                              <div className="ps-fieldlabel">Base do preço</div>
+                              <select
+                                value={selectedPriceBase?.value ?? priceFormationBase}
+                                onChange={e => setPriceFormationBase(e.target.value as PriceFormationBase)}
+                                className="ps-select"
+                                style={{minHeight:38}}
+                              >
+                                {availablePriceBases.map(base => (
+                                  <option key={base.value} value={base.value}>{base.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="ps-fieldrow" style={{marginBottom:10}}>
+                          <div className="ps-fieldgroup">
+                            <div className="ps-fieldlabel">Embalagem (R$)</div>
+                            <input
+                              inputMode="decimal"
+                              value={priceFormationDraft.packagingCost}
+                              onChange={e => setPriceFormationDraft(prev => ({...prev, packagingCost: e.target.value.replace(/[^\d,.]/g, '')}))}
+                              placeholder="0,00"
+                              className="ps-input"
+                            />
+                          </div>
+                          <div className="ps-fieldgroup">
+                            <div className="ps-fieldlabel">Mão de obra (R$)</div>
+                            <input
+                              inputMode="decimal"
+                              value={priceFormationDraft.laborCost}
+                              onChange={e => setPriceFormationDraft(prev => ({...prev, laborCost: e.target.value.replace(/[^\d,.]/g, '')}))}
+                              placeholder="0,00"
+                              className="ps-input"
+                            />
+                          </div>
+                          <div className="ps-fieldgroup">
+                            <div className="ps-fieldlabel">Perda (%)</div>
+                            <input
+                              inputMode="decimal"
+                              value={priceFormationDraft.lossPct}
+                              onChange={e => setPriceFormationDraft(prev => ({...prev, lossPct: e.target.value.replace(/[^\d,.]/g, '')}))}
+                              placeholder="0"
+                              className="ps-input"
+                            />
+                          </div>
+                        </div>
+                        <div className="ps-fieldrow" style={{marginBottom:10}}>
+                          <div className="ps-fieldgroup">
+                            <div className="ps-fieldlabel">Impostos/taxas (%)</div>
+                            <input
+                              inputMode="decimal"
+                              value={priceFormationDraft.taxPct}
+                              onChange={e => setPriceFormationDraft(prev => ({...prev, taxPct: e.target.value.replace(/[^\d,.]/g, '')}))}
+                              placeholder="0"
+                              className="ps-input"
+                            />
+                          </div>
+                          <div className="ps-fieldgroup">
+                            <div className="ps-fieldlabel">Margem desejada (%)</div>
+                            <input
+                              inputMode="decimal"
+                              value={priceFormationDraft.desiredMarginPct}
+                              onChange={e => setPriceFormationDraft(prev => ({...prev, desiredMarginPct: e.target.value.replace(/[^\d,.]/g, '')}))}
+                              placeholder="65"
+                              className="ps-input"
+                            />
+                          </div>
+                        </div>
+
+                        {priceFormation?.valid && priceFormation.suggestedPrice !== null && (
+                          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                            <span className="ps-store-chip">
+                              custo ajustado: {formatBRL(priceFormation.adjustedCost)}
+                            </span>
+                            <span className="ps-store-chip">
+                              impostos: {formatBRL(priceFormation.taxAmount || 0)}
+                            </span>
+                            <span className="ps-store-chip">
+                              lucro alvo: {formatBRL(priceFormation.targetMarginAmount || 0)}
+                            </span>
+                            <span className="ps-store-chip">
+                              markup: {priceFormation.markupPct !== null ? `${formatDecimalPtBR(priceFormation.markupPct, 1)}%` : '—'}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:8}}>
