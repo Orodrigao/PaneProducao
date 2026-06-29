@@ -603,6 +603,22 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-table tbody tr:hover{ background:var(--line-soft); }
 .ps-table .right{ text-align:right; }
 .ps-table .center{ text-align:center; }
+.ps-report-card-list{ display:none; }
+.ps-report-row-card{ background:var(--cream); border:1px solid var(--ps-line); border-radius:var(--r-card); padding:13px 14px; box-shadow:var(--sh-1); display:flex; flex-direction:column; gap:9px; }
+.ps-report-row-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.ps-report-row-title{ flex:1; min-width:0; color:var(--ps-ink); font-size:15px; font-weight:800; line-height:1.22; overflow-wrap:anywhere; }
+.ps-report-row-kicker{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; color:var(--ink-soft); font-size:12px; line-height:1.35; }
+.ps-report-row-grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.ps-report-row-metric{ background:var(--cream-raise); border:1px solid var(--line-soft); border-radius:8px; padding:8px 9px; min-width:0; }
+.ps-report-row-metric span{ display:block; color:var(--ink-faint); font-size:9.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; line-height:1.1; margin-bottom:3px; }
+.ps-report-row-metric b{ display:block; color:var(--ps-ink); font-size:13px; font-weight:800; line-height:1.2; overflow-wrap:anywhere; }
+.ps-report-row-note{ color:var(--ink-soft); font-size:12px; line-height:1.35; background:var(--line-soft); border-radius:8px; padding:8px 9px; overflow-wrap:anywhere; }
+
+@media (max-width: 640px) {
+  .ps-table-wrap.has-mobile-cards{ display:none; }
+  .ps-report-card-list{ display:flex; flex-direction:column; gap:8px; }
+  .ps-report-row-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
 
 /* Section header para sub-relatórios (Por cliente / Top produtos) */
 .ps-section-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:18px 0 10px; }

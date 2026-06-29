@@ -147,12 +147,38 @@ export default function PrateleiraReport() {
   }
 
   const columns: ReportTableColumn<DisplayRow>[] = [
+    { key: 'product',    label: 'Produto' },
     { key: 'date',       label: 'Data',     format: (v) => formatDateBR(v as string) },
     { key: 'store',      label: 'Loja',     format: (v) => storeLabel(v as string) },
-    { key: 'product',    label: 'Produto' },
     { key: 'quantity',   label: 'Qtd', align: 'right', format: (v) => (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) },
     { key: 'counted_by', label: 'Contado por' },
   ]
+
+  function renderMobileCard(row: DisplayRow, index: number) {
+    return (
+      <div key={`${row.date}-${row.store}-${row.product}-${index}`} className="ps-report-row-card">
+        <div className="ps-report-row-head">
+          <div className="ps-report-row-title">{row.product}</div>
+          <span className={`ps-store-chip ${row.store}`}>{storeLabel(row.store)}</span>
+        </div>
+        <div className="ps-report-row-kicker">
+          <span>{formatDateBR(row.date)}</span>
+          <span>·</span>
+          <strong>{row.counted_by}</strong>
+        </div>
+        <div className="ps-report-row-grid">
+          <div className="ps-report-row-metric">
+            <span>Qtd</span>
+            <b>{row.quantity.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</b>
+          </div>
+          <div className="ps-report-row-metric">
+            <span>Loja</span>
+            <b>{storeLabel(row.store)}</b>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="ps-canvas">
@@ -223,6 +249,7 @@ export default function PrateleiraReport() {
             rows={filteredRows}
             loading={loading}
             emptyMessage="Sem registros no período/filtros selecionados."
+            renderMobileCard={renderMobileCard}
           />
         </div>
       </div>

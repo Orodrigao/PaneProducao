@@ -155,6 +155,45 @@ export default function RelatorioPJ() {
     { key: 'total',   label: 'Vendas', align: 'right', format: v => formatBRL(v as number) },
   ]
 
+  function renderClienteCard(row: RowCliente, index: number) {
+    return (
+      <div key={`${row.cliente}-${index}`} className="ps-report-row-card">
+        <div className="ps-report-row-head">
+          <div className="ps-report-row-title">{row.cliente}</div>
+          <span className="ps-status conferido">{row.pedidos} ped.</span>
+        </div>
+        <div className="ps-report-row-grid">
+          <div className="ps-report-row-metric">
+            <span>Total</span>
+            <b>{formatBRL(row.total)}</b>
+          </div>
+          <div className="ps-report-row-metric">
+            <span>Ticket médio</span>
+            <b>{formatBRL(row.ticketMedio)}</b>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function renderProdutoCard(row: RowProduto, index: number) {
+    return (
+      <div key={`${row.produto}-${index}`} className="ps-report-row-card">
+        <div className="ps-report-row-title">{row.produto}</div>
+        <div className="ps-report-row-grid">
+          <div className="ps-report-row-metric">
+            <span>Quantidade</span>
+            <b>{row.qtd}</b>
+          </div>
+          <div className="ps-report-row-metric">
+            <span>Vendas</span>
+            <b>{formatBRL(row.total)}</b>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   function exportClientes() {
     csvExport(vendasPorCliente.map(r => ({
       Cliente: r.cliente,
@@ -226,6 +265,7 @@ export default function RelatorioPJ() {
           </div>
           <ReportTable columns={colsCliente} rows={vendasPorCliente} loading={loading}
             initialSortKey="total" initialSortDir="desc"
+            renderMobileCard={renderClienteCard}
             emptyMessage="Nenhum pedido PJ no período." />
 
           <div className="ps-section-row">
@@ -236,6 +276,7 @@ export default function RelatorioPJ() {
           </div>
           <ReportTable columns={colsProduto} rows={topProdutos} loading={loading}
             initialSortKey="total" initialSortDir="desc"
+            renderMobileCard={renderProdutoCard}
             emptyMessage="Nenhum produto vendido no período." />
         </div>
       </div>

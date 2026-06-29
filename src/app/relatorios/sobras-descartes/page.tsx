@@ -191,15 +191,44 @@ export default function SobrasDescartesReport() {
   }
 
   const columns: ReportTableColumn<DisplayRow>[] = [
+    { key: 'product',     label: 'Produto' },
     { key: 'date',        label: 'Data',        format: (v) => formatDateBR(v as string) },
     { key: 'responsible', label: 'Responsável' },
     { key: 'modo',        label: 'Modo' },
-    { key: 'product',     label: 'Produto' },
     { key: 'category',    label: 'Categoria' },
     { key: 'quantity',    label: 'Qtd',   align: 'right', format: (v) => (v as number).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) },
     { key: 'valor',       label: 'Valor', align: 'right', format: (v) => v === null ? <span style={{color:'var(--ink-faint)'}}>—</span> : formatBRL(v as number) },
     { key: 'obs',         label: 'Obs',   sortable: false },
   ]
+
+  function renderMobileCard(row: DisplayRow, index: number) {
+    return (
+      <div key={`${row.date}-${row.product}-${index}`} className="ps-report-row-card">
+        <div className="ps-report-row-head">
+          <div className="ps-report-row-title">{row.product}</div>
+          <span className={`ps-status ${row._modoRaw === 'descarte' ? 'descarte' : 'conferido'}`}>{row.modo}</span>
+        </div>
+        <div className="ps-report-row-kicker">
+          <span>{formatDateBR(row.date)}</span>
+          <span>·</span>
+          <strong>{row.responsible}</strong>
+          <span>·</span>
+          <span>{row.category}</span>
+        </div>
+        <div className="ps-report-row-grid">
+          <div className="ps-report-row-metric">
+            <span>Qtd</span>
+            <b>{row.quantity.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</b>
+          </div>
+          <div className="ps-report-row-metric">
+            <span>Valor</span>
+            <b>{row.valor !== null ? formatBRL(row.valor) : 'Sem custo'}</b>
+          </div>
+        </div>
+        {row.obs && <div className="ps-report-row-note">{row.obs}</div>}
+      </div>
+    )
+  }
 
   return (
     <div className="ps-canvas">
@@ -286,6 +315,7 @@ export default function SobrasDescartesReport() {
             rows={filteredRows}
             loading={loading}
             emptyMessage="Sem registros no período/filtros selecionados."
+            renderMobileCard={renderMobileCard}
           />
         </div>
       </div>

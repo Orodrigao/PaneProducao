@@ -17,10 +17,11 @@ interface Props<T> {
   emptyMessage?: string
   initialSortKey?: string
   initialSortDir?: 'asc' | 'desc'
+  renderMobileCard?: (row: T, index: number) => ReactNode
 }
 
 export default function ReportTable<T extends Record<string, any>>({
-  columns, rows, loading, emptyMessage = 'Sem dados', initialSortKey, initialSortDir = 'desc',
+  columns, rows, loading, emptyMessage = 'Sem dados', initialSortKey, initialSortDir = 'desc', renderMobileCard,
 }: Props<T>) {
   const [sortKey, setSortKey] = useState<string | undefined>(initialSortKey)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(initialSortDir)
@@ -48,43 +49,50 @@ export default function ReportTable<T extends Record<string, any>>({
   if (rows.length === 0) return <div className="ps-empty">{emptyMessage}</div>
 
   return (
-    <div className="ps-table-wrap" style={{overflowX:'auto'}}>
-      <table className="ps-table">
-        <thead>
-          <tr>
-            {columns.map(col => {
-              const sortable = col.sortable !== false
-              const alignCls = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : ''
-              return (
-                <th key={col.key}
-                  className={[sortable ? 'sortable' : '', alignCls].filter(Boolean).join(' ')}
-                  onClick={() => toggleSort(col.key, col.sortable)}>
-                  {col.label}
-                  {sortKey === col.key && sortable && (
-                    <span style={{marginLeft:4}}>{sortDir === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </th>
-              )
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((row, i) => (
-            <tr key={i}>
+    <>
+      {renderMobileCard && (
+        <div className="ps-report-card-list">
+          {sorted.map((row, i) => renderMobileCard(row, i))}
+        </div>
+      )}
+      <div className={`ps-table-wrap ${renderMobileCard ? 'has-mobile-cards' : ''}`} style={{overflowX:'auto'}}>
+        <table className="ps-table">
+          <thead>
+            <tr>
               {columns.map(col => {
-                const value = row[col.key]
-                const display = col.format ? col.format(value, row) : String(value ?? '')
+                const sortable = col.sortable !== false
                 const alignCls = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : ''
                 return (
-                  <td key={col.key} className={alignCls}>
-                    {display}
-                  </td>
+                  <th key={col.key}
+                    className={[sortable ? 'sortable' : '', alignCls].filter(Boolean).join(' ')}
+                    onClick={() => toggleSort(col.key, col.sortable)}>
+                    {col.label}
+                    {sortKey === col.key && sortable && (
+                      <span style={{marginLeft:4}}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
                 )
               })}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {sorted.map((row, i) => (
+              <tr key={i}>
+                {columns.map(col => {
+                  const value = row[col.key]
+                  const display = col.format ? col.format(value, row) : String(value ?? '')
+                  const alignCls = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : ''
+                  return (
+                    <td key={col.key} className={alignCls}>
+                      {display}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
