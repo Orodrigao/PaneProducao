@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -270,6 +270,9 @@ export default function ProdutosPage() {
               <input placeholder={tab==='produtos' ? "Buscar produto..." : "Buscar fabricação própria..."} value={search} onChange={e=>setSearch(e.target.value)}
                 className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
             </div>
+            <Link href="/produtos/cmv" className="ps-btn ghost">
+              <BarChart3 size={14}/> CMV
+            </Link>
             {tab==='produtos' ? (
               <button onClick={()=>{setIsNew(true);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
