@@ -282,7 +282,9 @@ function ComposicaoInner() {
       name: item?.name ?? '',
       category: item && 'category' in item && typeof item.category === 'string' ? item.category : null,
     }
-    const qty = newQtyMode === 'baker_pct'
+    const qty = parent?.kind === 'kit'
+      ? parsedQty
+      : newQtyMode === 'baker_pct'
       ? quantityFromBakersPercentageForComponent(parsedQty, recipeTotals.flourBaseKg, componentForMath)
       : parsedQty
     if (qty === null) {
@@ -448,6 +450,7 @@ function ComposicaoInner() {
 
   async function createSaleOption(saleUnit: PricingUnit) {
     if (!parentId || !recipeMetaAvailable) return
+    if (parent?.kind === 'kit' && saleUnit === 'kg') { showToast('Kit deve ser vendido por unidade'); return }
     const alreadyExists = saleOptions.some(option => option.sale_unit === saleUnit)
     if (alreadyExists) { showToast('Essa forma de venda já existe'); return }
     const averageWeight = recipeYield?.average_unit_weight_kg ?? null
@@ -556,12 +559,15 @@ function ComposicaoInner() {
   }), [components, breads, products])
 
   const recipeTotals = useMemo(() => calculateRecipeTotals(enriched), [enriched])
-  const totalCMV = recipeTotals.ingredientCost
-  const packagingComponentsCost = recipeTotals.packagingCost
-  const partialCount = enriched.filter(e => !isPackagingComponent(e) && !e.hasCost).length
+  const isKit = parent?.kind === 'kit'
+  const totalCMV = isKit
+    ? enriched.reduce((sum, component) => sum + (Number(component.cost) * Number(component.quantity)), 0)
+    : recipeTotals.ingredientCost
+  const packagingComponentsCost = isKit ? 0 : recipeTotals.packagingCost
   const manualCost = parent?.cost_price !== null && parent?.cost_price !== undefined ? Number(parent.cost_price) : null
   const manualDiff = manualCost !== null ? totalCMV - manualCost : null
   const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
+  const partialCount = enriched.filter(e => (isKit || !isPackagingComponent(e)) && !e.hasCost).length
   const bakedUnitWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
   const doughWeight = recipeTotals.doughWeightKg ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
   const calculatedYieldUnits = calculateYieldUnitsFromRecipeWeight(doughWeight, bakedUnitWeight)
@@ -571,11 +577,11 @@ function ComposicaoInner() {
     : recipeYield?.finished_weight_kg ?? null
   const calculatedAverageWeight = bakedUnitWeight ?? recipeYield?.average_unit_weight_kg ?? null
   const calculatedBakeLoss = doughWeight !== null && calculatedFinishedWeight !== null ? ((doughWeight - calculatedFinishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
-  const calculatedUnitCost = costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
-  const calculatedBakedKgCost = costPerBakedKg(totalCMV, yieldDraft.basis, calculatedFinishedWeight)
+  const calculatedUnitCost = isKit && totalCMV > 0 ? totalCMV : costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
+  const calculatedBakedKgCost = isKit ? null : costPerBakedKg(totalCMV, yieldDraft.basis, calculatedFinishedWeight)
   const availablePriceBases = [
     ...(isFinitePositive(calculatedUnitCost) ? [{ value: 'un' as const, label: 'Unidade', suffix: 'un', cmv: calculatedUnitCost }] : []),
-    ...(isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
+    ...(!isKit && isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
   ]
   const selectedPriceBase = availablePriceBases.find(base => base.value === priceFormationBase) ?? availablePriceBases[0] ?? null
   const packagingCostPerUnit = nonNegativeDecimal(priceFormationDraft.packagingCost)
@@ -604,6 +610,9 @@ function ComposicaoInner() {
     : null
   const productUnit = (parent?.unit ?? '').trim().toLowerCase()
   const productCostCandidate = (() => {
+    if (isKit && isFinitePositive(calculatedUnitCost)) {
+      return { value: roundCurrency(calculatedUnitCost), label: 'unidade do kit' }
+    }
     if (productUnit === 'kg' && isFinitePositive(calculatedBakedKgCost)) {
       return { value: roundCurrency(calculatedBakedKgCost), label: 'kg assado' }
     }
@@ -694,22 +703,22 @@ function ComposicaoInner() {
                   </div>
                 </div>
                 <div className="ps-card" style={{padding:12}}>
-                  <div className="ps-flabel">Componentes</div>
+                  <div className="ps-flabel">{isKit ? 'Itens do kit' : 'Componentes'}</div>
                   <div style={{fontSize:20, fontWeight:800, color:'var(--ps-ink)'}}>{enriched.length}</div>
-                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>produtos ou insumos</div>
+                  <div style={{fontSize:11, color:'var(--ink-faint)'}}>{isKit ? 'produtos vinculados' : 'produtos ou insumos'}</div>
                 </div>
                 <div className="ps-card" style={{padding:12}}>
                   <div className="ps-flabel">Custo manual</div>
                   <div style={{fontSize:20, fontWeight:800, color:'var(--ps-ink)'}}>{manualCost === null ? '—' : formatBRL(manualCost)}</div>
                   <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                    {manualDiff === null ? 'não cadastrado' : `${manualDiff >= 0 ? '+' : ''}${formatBRL(manualDiff)} vs ficha`}
+                    {manualDiff === null ? 'não cadastrado' : `${manualDiff >= 0 ? '+' : ''}${formatBRL(manualDiff)} vs ${isKit ? 'kit' : 'ficha'}`}
                   </div>
                 </div>
               </div>
 
               {canEditFicha && (
                 <div className="ps-card" style={{padding:14, marginBottom:12}}>
-                  <div className="ps-flabel" style={{marginBottom:8}}>Rendimento e venda</div>
+                  <div className="ps-flabel" style={{marginBottom:8}}>{isKit ? 'Composição e venda' : 'Rendimento e venda'}</div>
                   {!recipeMetaAvailable ? (
                     <div className="ps-warning" style={{marginBottom:0}}>
                       <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
@@ -730,91 +739,119 @@ function ComposicaoInner() {
                     </div>
                   ) : (
                     <>
-                      <div className="ps-fieldgroup" style={{marginBottom:10}}>
-                        <div className="ps-fieldlabel">Base da ficha</div>
-                        <select
-                          value={yieldDraft.basis}
-                          onChange={e=>setYieldDraft(prev=>({...prev, basis: e.target.value as RecipeYieldBasis}))}
-                          className="ps-select"
-                        >
-                          {RECIPE_BASIS_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="ps-fieldrow" style={{marginBottom:10}}>
-                        <div className="ps-fieldgroup">
-                          <div className="ps-fieldlabel">Massa crua (kg)</div>
-                          <input
-                            inputMode="decimal"
-                            value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : yieldDraft.dough_weight_kg}
-                            onChange={e=>{
-                              if (recipeTotals.doughWeightKg === null) {
-                                setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))
-                              }
-                            }}
-                            placeholder={recipeTotals.doughWeightKg !== null ? 'calculada' : 'ex: 8,5'}
-                            className="ps-input"
-                            readOnly={recipeTotals.doughWeightKg !== null}
-                          />
-                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
-                            {recipeTotals.doughWeightKg !== null ? 'soma automática dos componentes' : 'sem componentes para somar'}
+                      {isKit ? (
+                        <>
+                          <div className="ps-banner honey" style={{marginBottom:12}}>
+                            <span>
+                              Kit usa composição direta. Informe quais produtos entram no kit e a quantidade de cada um.
+                            </span>
                           </div>
-                        </div>
-                        <div className="ps-fieldgroup">
-                          <div className="ps-fieldlabel">Peso pão assado (kg/un)</div>
-                          <input
-                            inputMode="decimal"
-                            value={yieldDraft.finished_weight_kg}
-                            onChange={e=>setYieldDraft(prev=>({...prev, finished_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
-                            placeholder="ex: 0,085"
-                            className="ps-input"
-                          />
-                        </div>
-                        <div className="ps-fieldgroup">
-                          <div className="ps-fieldlabel">Rende (un)</div>
-                          <input
-                            inputMode="decimal"
-                            value={yieldUnits !== null ? formatDecimalPtBR(yieldUnits, 2) : ''}
-                            readOnly
-                            placeholder="calculado"
-                            className="ps-input"
-                          />
-                          <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
-                            peso da receita ÷ peso assado
+                          <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
+                            <span className="ps-store-chip">
+                              itens no kit: {enriched.length}
+                            </span>
+                            <span className="ps-store-chip">
+                              CMV/un kit: {calculatedUnitCost !== null && Number.isFinite(calculatedUnitCost) ? formatBRL(calculatedUnitCost) : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              custo atual: {manualCost === null ? '—' : formatBRL(manualCost)}
+                            </span>
+                            {partialCount > 0 && (
+                              <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>
+                                {partialCount} sem custo
+                              </span>
+                            )}
                           </div>
-                        </div>
-                      </div>
-                      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
-                        <span className="ps-store-chip">
-                          massa crua: {recipeTotals.doughWeightKg !== null ? `${formatDecimalPtBR(recipeTotals.doughWeightKg, 3)} kg` : '—'}
-                        </span>
-                        <span className="ps-store-chip">
-                          farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : '—'}
-                        </span>
-                        <span className="ps-store-chip">
-                          peso médio: {calculatedAverageWeight ? `${formatDecimalPtBR(calculatedAverageWeight, 3)} kg/un` : '—'}
-                        </span>
-                        <span className="ps-store-chip">
-                          perda forno: {calculatedBakeLoss !== null && Number.isFinite(calculatedBakeLoss) ? `${formatDecimalPtBR(calculatedBakeLoss, 1)}%` : '—'}
-                        </span>
-                        <span className="ps-store-chip">
-                          CMV/un: {calculatedUnitCost !== null && Number.isFinite(calculatedUnitCost) ? formatBRL(calculatedUnitCost) : '—'}
-                        </span>
-                        <span className="ps-store-chip">
-                          CMV/kg assado: {calculatedBakedKgCost !== null && Number.isFinite(calculatedBakedKgCost) ? formatBRL(calculatedBakedKgCost) : '—'}
-                        </span>
-                        <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
-                          Salvar rendimento
-                        </button>
-                      </div>
-                      {packagingComponentsCost > 0 && (
-                        <div className="ps-warning" style={{marginBottom:12}}>
-                          <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
-                          <span>
-                            Embalagens na lista somam {formatBRL(packagingComponentsCost)} e não entram no CMV da receita. Informe embalagem por unidade na formação de preço.
-                          </span>
-                        </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="ps-fieldgroup" style={{marginBottom:10}}>
+                            <div className="ps-fieldlabel">Base da ficha</div>
+                            <select
+                              value={yieldDraft.basis}
+                              onChange={e=>setYieldDraft(prev=>({...prev, basis: e.target.value as RecipeYieldBasis}))}
+                              className="ps-select"
+                            >
+                              {RECIPE_BASIS_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="ps-fieldrow" style={{marginBottom:10}}>
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Massa crua (kg)</div>
+                              <input
+                                inputMode="decimal"
+                                value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : yieldDraft.dough_weight_kg}
+                                onChange={e=>{
+                                  if (recipeTotals.doughWeightKg === null) {
+                                    setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))
+                                  }
+                                }}
+                                placeholder={recipeTotals.doughWeightKg !== null ? 'calculada' : 'ex: 8,5'}
+                                className="ps-input"
+                                readOnly={recipeTotals.doughWeightKg !== null}
+                              />
+                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
+                                {recipeTotals.doughWeightKg !== null ? 'soma automática dos componentes' : 'sem componentes para somar'}
+                              </div>
+                            </div>
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Peso pão assado (kg/un)</div>
+                              <input
+                                inputMode="decimal"
+                                value={yieldDraft.finished_weight_kg}
+                                onChange={e=>setYieldDraft(prev=>({...prev, finished_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
+                                placeholder="ex: 0,085"
+                                className="ps-input"
+                              />
+                            </div>
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Rende (un)</div>
+                              <input
+                                inputMode="decimal"
+                                value={yieldUnits !== null ? formatDecimalPtBR(yieldUnits, 2) : ''}
+                                readOnly
+                                placeholder="calculado"
+                                className="ps-input"
+                              />
+                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
+                                peso da receita ÷ peso assado
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
+                            <span className="ps-store-chip">
+                              massa crua: {recipeTotals.doughWeightKg !== null ? `${formatDecimalPtBR(recipeTotals.doughWeightKg, 3)} kg` : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              peso médio: {calculatedAverageWeight ? `${formatDecimalPtBR(calculatedAverageWeight, 3)} kg/un` : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              perda forno: {calculatedBakeLoss !== null && Number.isFinite(calculatedBakeLoss) ? `${formatDecimalPtBR(calculatedBakeLoss, 1)}%` : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              CMV/un: {calculatedUnitCost !== null && Number.isFinite(calculatedUnitCost) ? formatBRL(calculatedUnitCost) : '—'}
+                            </span>
+                            <span className="ps-store-chip">
+                              CMV/kg assado: {calculatedBakedKgCost !== null && Number.isFinite(calculatedBakedKgCost) ? formatBRL(calculatedBakedKgCost) : '—'}
+                            </span>
+                            <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
+                              Salvar rendimento
+                            </button>
+                          </div>
+                          {packagingComponentsCost > 0 && (
+                            <div className="ps-warning" style={{marginBottom:12}}>
+                              <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
+                              <span>
+                                Embalagens na lista somam {formatBRL(packagingComponentsCost)} e não entram no CMV da receita. Informe embalagem por unidade na formação de preço.
+                              </span>
+                            </div>
+                          )}
+                        </>
                       )}
                       <div style={{borderTop:'1px solid var(--line-soft)', paddingTop:10, marginBottom:12, display:'flex', gap:10, alignItems:'center', justifyContent:'space-between', flexWrap:'wrap'}}>
                         <div style={{minWidth:220, flex:1}}>
@@ -822,7 +859,7 @@ function ComposicaoInner() {
                           <div style={{fontSize:13, color:'var(--ink-soft)'}}>
                             Atual: <strong style={{color:'var(--ps-ink)'}}>{manualCost === null ? '—' : formatBRL(manualCost)}</strong>
                             {' · '}
-                            Ficha: <strong style={{color:'var(--ps-ink)'}}>{productCostCandidate ? formatBRL(productCostCandidate.value) : '—'}</strong>
+                            {isKit ? 'Composição' : 'Ficha'}: <strong style={{color:'var(--ps-ink)'}}>{productCostCandidate ? formatBRL(productCostCandidate.value) : '—'}</strong>
                             {productCostCandidate && `/${productCostCandidate.label}`}
                           </div>
                           <div style={{fontSize:11, color:partialCount > 0 ? 'var(--berry)' : 'var(--ink-faint)', marginTop:2}}>
@@ -856,7 +893,7 @@ function ComposicaoInner() {
                                 ? priceFormation?.valid
                                   ? `CMV base ${formatBRL(selectedPriceBase.cmv)}/${selectedPriceBase.suffix}`
                                   : priceFormationBlockedReason || priceFormation?.reason || 'Preço indisponível'
-                                : 'Informe rendimento para calcular preço'}
+                                : isKit ? 'Informe itens do kit para calcular preço' : 'Informe rendimento para calcular preço'}
                             </div>
                           </div>
                           {availablePriceBases.length > 0 && (
@@ -960,9 +997,11 @@ function ComposicaoInner() {
                           <button onClick={()=>createSaleOption('un')} disabled={hasUnitOption} className="ps-btn sm ghost" style={hasUnitOption?{opacity:.5}:undefined}>
                             + Unidade
                           </button>
-                          <button onClick={()=>createSaleOption('kg')} disabled={hasKgOption} className="ps-btn sm ghost" style={hasKgOption?{opacity:.5}:undefined}>
-                            + Quilo
-                          </button>
+                          {!isKit && (
+                            <button onClick={()=>createSaleOption('kg')} disabled={hasKgOption} className="ps-btn sm ghost" style={hasKgOption?{opacity:.5}:undefined}>
+                              + Quilo
+                            </button>
+                          )}
                         </div>
                       </div>
                       {saleOptions.length === 0 ? (
@@ -979,8 +1018,10 @@ function ComposicaoInner() {
                                   {option.is_default && <span className="ps-store-chip ja" style={{marginLeft:6}}>padrão</span>}
                                 </div>
                                 <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
-                                  {option.sale_unit === 'un'
-                                    ? `peso médio ${option.unit_weight_kg ? `${formatDecimalPtBR(option.unit_weight_kg, 3)} kg` : 'não definido'}`
+                                  {isKit
+                                    ? 'venda por unidade do kit'
+                                    : option.sale_unit === 'un'
+                                      ? `peso médio ${option.unit_weight_kg ? `${formatDecimalPtBR(option.unit_weight_kg, 3)} kg` : 'não definido'}`
                                     : 'preço e venda por kg do produto assado'}
                                 </div>
                               </div>
@@ -1004,8 +1045,8 @@ function ComposicaoInner() {
               {/* Lista de componentes atuais */}
               <div className="ps-card" style={{padding:14, marginBottom:12}}>
                 <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:8}}>
-                  <div className="ps-flabel" style={{marginBottom:0}}>Componentes ({enriched.length})</div>
-                  {canEditFicha && (
+                  <div className="ps-flabel" style={{marginBottom:0}}>{isKit ? 'Itens do kit' : 'Componentes'} ({enriched.length})</div>
+                  {canEditFicha && !isKit && (
                     <button
                       type="button"
                       onClick={() => setImportOpen(prev => !prev)}
@@ -1017,7 +1058,7 @@ function ComposicaoInner() {
                     </button>
                   )}
                 </div>
-                {canEditFicha && importOpen && (
+                {canEditFicha && !isKit && importOpen && (
                   <div style={{border:'1px solid var(--line-soft)', borderRadius:8, padding:10, marginBottom:12, background:'var(--paper-soft)'}}>
                     <div style={{display:'flex', alignItems:'center', gap:8}}>
                       <div style={{flex:1, position:'relative'}}>
@@ -1074,12 +1115,12 @@ function ComposicaoInner() {
                 )}
                 {enriched.length === 0 ? (
                   <div style={{padding:'14px 4px', color:'var(--ink-faint)', fontSize:13, textAlign:'center'}}>
-                    Nenhum componente cadastrado ainda.
+                    {isKit ? 'Nenhum item cadastrado neste kit ainda.' : 'Nenhum componente cadastrado ainda.'}
                   </div>
                 ) : (
                   enriched.map(e => {
                     const isPackaging = isPackagingComponent(e)
-                    const flourPct = recipeTotals.flourBaseKg !== null && !isPackaging
+                    const flourPct = !isKit && recipeTotals.flourBaseKg !== null && !isPackaging
                       ? (Number(e.quantity) / recipeTotals.flourBaseKg) * 100
                       : null
                     return (
@@ -1088,16 +1129,16 @@ function ComposicaoInner() {
                           <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                             {e.name}
                             <span className={`ps-store-chip ${e.component_source==='bread'?'jc':'ja'}`}>{e.component_source==='bread'?'PÃO':'PRODUTO'}</span>
-                            {isFlourComponent(e) && <span className="ps-store-chip jc">FARINHA BASE</span>}
-                            {isPackaging && <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>EMBALAGEM</span>}
-                            {!isPackaging && !e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
+                            {!isKit && isFlourComponent(e) && <span className="ps-store-chip jc">FARINHA BASE</span>}
+                            {!isKit && isPackaging && <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>EMBALAGEM</span>}
+                            {(isKit || !isPackaging) && !e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
                           </div>
                           <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
                             {e.hasCost
                               ? `${formatBRL(Number(e.cost))}${e.unit?`/${e.unit}`:''} × ${formatQty(Number(e.quantity))} = ${formatBRL(Number(e.cost)*Number(e.quantity))}`
                               : `× ${formatQty(Number(e.quantity))}${e.unit?` ${e.unit}`:''}`}
                             {flourPct !== null && ` · ${formatDecimalPtBR(flourPct, 1)}% farinha`}
-                            {isPackaging && ' · fora da massa/CMV da receita'}
+                            {!isKit && isPackaging && ' · fora da massa/CMV da receita'}
                           </div>
                         </div>
                         <input
@@ -1132,8 +1173,8 @@ function ComposicaoInner() {
                 {enriched.length > 0 && (
                   <div style={{marginTop:12, paddingTop:10, borderTop:'1px solid var(--ps-line)', display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
                     <div style={{fontSize:12, color:'var(--ink-soft)'}}>
-                      CMV ingredientes{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
-                      {packagingComponentsCost > 0 && <span> · embalagem fora: {formatBRL(packagingComponentsCost)}</span>}
+                      {isKit ? 'CMV do kit' : 'CMV ingredientes'}{partialCount > 0 && <span style={{color:'var(--berry)'}}> · {partialCount} sem custo</span>}
+                      {!isKit && packagingComponentsCost > 0 && <span> · embalagem fora: {formatBRL(packagingComponentsCost)}</span>}
                     </div>
                     <div style={{fontSize:18, fontWeight:700, color:'var(--ps-ink)'}}>{formatBRL(totalCMV)}</div>
                   </div>
@@ -1149,49 +1190,59 @@ function ComposicaoInner() {
               {/* Adicionar componente */}
               {canEditFicha && (
                 <div className="ps-card" style={{padding:14}}>
-                  <div className="ps-flabel" style={{marginBottom:8}}>Adicionar componente</div>
+                  <div className="ps-flabel" style={{marginBottom:8}}>{isKit ? 'Adicionar item ao kit' : 'Adicionar componente'}</div>
                   <div style={{display:'flex', gap:8, marginBottom:8}}>
                     <div style={{flex:1, position:'relative'}}>
                       <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)'}}/>
                       <input
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        placeholder="Buscar pão ou produto…"
+                        placeholder={isKit ? 'Buscar produto para o kit…' : 'Buscar pão ou produto…'}
                         className="ps-input"
                         style={{paddingLeft:30}}
                       />
                     </div>
-                    <select
-                      value={newQtyMode}
-                      onChange={e => setNewQtyMode(e.target.value as QuantityInputMode)}
-                      className="ps-select"
-                      style={{width:126}}
-                    >
-                      <option value="weight">Peso kg</option>
-                      <option value="baker_pct">% farinha</option>
-                    </select>
+                    {!isKit && (
+                      <select
+                        value={newQtyMode}
+                        onChange={e => setNewQtyMode(e.target.value as QuantityInputMode)}
+                        className="ps-select"
+                        style={{width:126}}
+                      >
+                        <option value="weight">Peso kg</option>
+                        <option value="baker_pct">% farinha</option>
+                      </select>
+                    )}
                     <input
                       type="text"
                       inputMode="decimal"
                       value={newQty}
                       onChange={e => setNewQty(e.target.value.replace(/[^\d,.]/g, ''))}
-                      placeholder={newQtyMode === 'baker_pct' ? '%' : 'Qtd'}
+                      placeholder={isKit ? 'un' : newQtyMode === 'baker_pct' ? '%' : 'Qtd'}
                       className="ps-input"
                       style={{width:80, textAlign:'right'}}
                     />
                   </div>
                   <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
-                    <span className="ps-store-chip">
-                      farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'primeira farinha: 100% = 1 kg'}
-                    </span>
-                    {newQtyMode === 'baker_pct' && (
-                      <span className="ps-store-chip ja">
-                        peso calculado: {newQtyPreviewKg !== null
-                          ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg`
-                          : firstFlourPreviewKg !== null
-                            ? `${formatDecimalPtBR(firstFlourPreviewKg, 3)} kg se for farinha`
-                            : '—'}
+                    {isKit ? (
+                      <span className="ps-store-chip">
+                        quantidade = unidades do item dentro do kit
                       </span>
+                    ) : (
+                      <>
+                        <span className="ps-store-chip">
+                          farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'primeira farinha: 100% = 1 kg'}
+                        </span>
+                        {newQtyMode === 'baker_pct' && (
+                          <span className="ps-store-chip ja">
+                            peso calculado: {newQtyPreviewKg !== null
+                              ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg`
+                              : firstFlourPreviewKg !== null
+                                ? `${formatDecimalPtBR(firstFlourPreviewKg, 3)} kg se for farinha`
+                                : '—'}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
 
