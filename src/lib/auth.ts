@@ -26,13 +26,13 @@ const AUTH_PROFILE_CACHE_KEY = 'pane_auth_profile_cache'
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
+  admin:      ['/', '/sobras', '/fechamento-caixa', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/admin/usuarios', '/relatorios', '/relatorios/sobras-descartes'],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
-  vendas:     ['/', '/sobras', '/romaneio'],
+  vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
   compras:    ['/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/estoque-paes'],
   romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios'],
+  financeiro: ['/', '/sobras', '/fechamento-caixa', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios'],
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
