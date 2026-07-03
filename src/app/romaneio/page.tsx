@@ -2,8 +2,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package } from 'lucide-react'
-import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
-import { nowBrasilia, todayKey, formatDateBR, showToastPS } from '@/lib/utils'
+import { canAccess, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
+import {
+  buildRomaneioProductOptions,
+  formatRomaneioQty,
+  normalizeRomaneioQty,
+  parseRomaneioQty,
+  type RomaneioProductOption,
+} from '@/lib/romaneioDraft'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -14,15 +21,58 @@ type Role = 'gustavo'|'cleo'|'marselle'|'rodrigo'
 type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 
 interface Destination { id:string; name:string; code:string; active:boolean }
-interface Bread { id:string; name:string; active:boolean; is_pj:boolean }
-interface Romaneio { id:string; record_date:string; destination_id:string; trip_number:number; status:string; created_by:string; obs?:string; sent_by?:string; sent_at?:string; confirmed_by?:string; confirmed_at?:string; destinations?:{name:string;code:string} }
+interface Bread { id:string; name:string; active:boolean; is_pj:boolean; unit?:string|null }
+interface Romaneio { id:string; record_date:string; destination_id:string; trip_number:number; status:string; created_by:string; created_at?:string|null; obs?:string; sent_by?:string; sent_at?:string; confirmed_by?:string; confirmed_at?:string; destinations?:{name:string;code:string} }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
+
+const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
 
 // ── utils ──────────────────────────────────────────────────────────
 function fmtDateTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getDate()).padStart(2,'0')}/${String(br.getMonth()+1).padStart(2,'0')} ${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
+function fmtTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
 function statusLabel(s:string) { return ({separado:'Separado',enviado:'Enviado',conferido:'Conferido',com_divergencia:'Divergência',aprovado:'Aprovado',fechado:'Fechado'} as Record<string,string>)[s]||s }
 function slugExtra() { return 'extra_'+Date.now() }
+function entregaLabel(trip: number) { return `${trip}ª entrega` }
+function draftHasItems(draft: CriarDraft | undefined) { return !!draft && Object.values(draft.qtys).some(qty => Number(qty) > 0) }
+function hasAnyDraftItems(drafts: Record<string, CriarDraft>) { return Object.values(drafts).some(draftHasItems) }
+function readDraftStorage(): CriarDraftStorage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(ROMANEIO_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CriarDraftStorage>
+    if (!parsed.date || !parsed.drafts || typeof parsed.drafts !== 'object') return null
+    return { date: parsed.date, activeDestId: parsed.activeDestId ?? '', drafts: parsed.drafts as Record<string, CriarDraft> }
+  } catch {
+    return null
+  }
+}
+function writeDraftStorage(date: string, activeDestId: string, drafts: Record<string, CriarDraft>) {
+  if (typeof window === 'undefined') return
+  if (Object.keys(drafts).length === 0) {
+    localStorage.removeItem(ROMANEIO_DRAFT_KEY)
+    return
+  }
+  localStorage.setItem(ROMANEIO_DRAFT_KEY, JSON.stringify({ date, activeDestId, drafts }))
+}
+function formatDraftTotal(qtys: Record<string, number>, options: RomaneioProductOption[]) {
+  const optionByKey = new Map(options.map(option => [option.key, option]))
+  let units = 0
+  let kg = 0
+  Object.entries(qtys).forEach(([key, qty]) => {
+    if (qty <= 0) return
+    const unit = optionByKey.get(key)?.unit ?? 'un'
+    if (unit === 'kg') kg += qty
+    else units += qty
+  })
+  const parts: string[] = []
+  if (units > 0) parts.push(`${formatRomaneioQty(units)} un`)
+  if (kg > 0) parts.push(`${formatRomaneioQty(kg)} kg`)
+  return parts.join(' · ') || '0 un'
+}
 function roleInfo(r: Role | null) {
   if (r === 'gustavo')  return { name: 'Gustavo',  loja: 'JC', color: '#8E4E22' }
   if (r === 'cleo')     return { name: 'Cléo',     loja: 'JA', color: '#BE832B' }
@@ -83,12 +133,7 @@ export default function RomaneioPage() {
   // criar
   const [criarDate, setCriarDate] = useState(todayKey())
   const [criarDestId, setCriarDestId] = useState('')
-  const [criarBreads, setCriarBreads] = useState<Bread[]>([])
-  const [criarQtys, setCriarQtys] = useState<Record<string,number>>({})
-  const [criarExtras, setCriarExtras] = useState<Record<string,string>>({}) // id->name
-  const [criarTrip, setCriarTrip] = useState(1)
-  const [criarObs, setCriarObs] = useState('')
-  const [criarExtraInput, setCriarExtraInput] = useState('')
+  const [criarDrafts, setCriarDrafts] = useState<Record<string,CriarDraft>>({})
   // conferencia
   const [confRomId, setConfRomId] = useState('')
   const [confRom, setConfRom] = useState<Romaneio|null>(null)
@@ -176,8 +221,12 @@ export default function RomaneioPage() {
     else if (globalUser.id === 'marselle')     internalRole = 'marselle'
     else if (globalUser.id === 'cleo')         internalRole = 'cleo'
     else if (globalUser.role === 'expedicao')  internalRole = 'gustavo' // último fallback
+    else if (globalUser.role === 'romaneio' && globalUser.store === 'ja') internalRole = 'cleo'
+    else if (globalUser.role === 'romaneio' && globalUser.store === 'ex') internalRole = 'marselle'
+    else if (globalUser.role === 'romaneio') internalRole = 'gustavo'
     else if (globalUser.role === 'producao'
           || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy
+    else if (canAccess(globalUser, '/romaneio')) internalRole = 'gustavo'
     if (internalRole) doLogin(internalRole)
     else router.replace(firstAllowedRoute(globalUser))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,71 +255,140 @@ export default function RomaneioPage() {
 
   // ── criar ──────────────────────────────────────────────────────
   const openCriar = () => {
-    setCriarDate(todayKey()); setCriarDestId(''); setCriarBreads([])
-    setCriarQtys({}); setCriarExtras({}); setCriarObs(''); setCriarExtraInput('')
+    const saved = readDraftStorage()
+    if (saved && Object.keys(saved.drafts).length > 0) {
+      const firstDest = saved.activeDestId || Object.keys(saved.drafts)[0] || ''
+      setCriarDate(saved.date)
+      setCriarDrafts(saved.drafts)
+      setCriarDestId(firstDest)
+      showToastPS('Rascunho recuperado')
+    } else {
+      setCriarDate(todayKey())
+      setCriarDestId('')
+      setCriarDrafts({})
+    }
     setScreen('criar')
+  }
+
+  const buildDraftForDest = async (destId: string, date = criarDate): Promise<CriarDraft> => {
+    const [existing, orders] = await Promise.all([
+      sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}`),
+      sbGet('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id`)
+    ])
+    let bds = breads
+    const orderRows = orders as { bread_id: string | null }[]
+    if (orderRows.length) {
+      const ids = [...new Set(orderRows.map(o => o.bread_id).filter((id): id is string => Boolean(id)))]
+      if (ids.length) {
+        const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`) as Bread[]
+        if (byOrder.length) bds = byOrder
+      }
+    }
+    return {
+      destId,
+      breads: bds,
+      qtys: {},
+      extras: {},
+      trip: (existing as Romaneio[]).length + 1,
+      obs: '',
+      extraInput: '',
+    }
   }
 
   const onDestChange = async (destId: string) => {
     setCriarDestId(destId)
-    if (!destId) { setCriarBreads([]); return }
+    if (!destId || criarDrafts[destId]) return
     showLoad('Verificando viagens...')
     try {
-      const [existing, orders] = await Promise.all([
-        sbGet('romaneios',`record_date=eq.${criarDate}&destination_id=eq.${destId}`),
-        sbGet('orders',`order_date=eq.${criarDate}&quantity=gt.0&select=bread_id`)
-      ])
-      setCriarTrip(existing.length + 1)
-      // Load breads ordered today, fallback to all
-      let bds = breads
-      if (orders.length) {
-        const ids = [...new Set(orders.map((o:any)=>o.bread_id))].filter(Boolean)
-        if (ids.length) {
-          const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`)
-          if (byOrder.length) bds = byOrder
-        }
-      }
-      setCriarBreads(bds)
-      setCriarQtys({})
+      const draft = await buildDraftForDest(destId)
+      setCriarDrafts(prev => ({ ...prev, [destId]: draft }))
     } catch(e) { showToastPS('Erro') }
     finally { hideLoad() }
   }
 
+  const onCriarDateChange = (date: string) => {
+    if (hasAnyDraftItems(criarDrafts) && !confirm('Trocar a data limpa os rascunhos abertos. Continuar?')) return
+    setCriarDate(date)
+    setCriarDestId('')
+    setCriarDrafts({})
+    writeDraftStorage(date, '', {})
+  }
+
+  const updateCriarDraft = (destId: string, updater: (draft: CriarDraft) => CriarDraft) => {
+    setCriarDrafts(prev => {
+      const current = prev[destId]
+      if (!current) return prev
+      return { ...prev, [destId]: updater(current) }
+    })
+  }
+
   const criarChangeQty = (id: string, delta: number) => {
-    setCriarQtys(prev => ({ ...prev, [id]: Math.max(0, (prev[id]||0)+delta) }))
+    if (!criarDestId) return
+    updateCriarDraft(criarDestId, draft => ({
+      ...draft,
+      qtys: { ...draft.qtys, [id]: normalizeRomaneioQty((draft.qtys[id] || 0) + delta) },
+    }))
+  }
+
+  const setCriarQty = (id: string, value: string) => {
+    if (!criarDestId) return
+    const qty = normalizeRomaneioQty(parseRomaneioQty(value))
+    updateCriarDraft(criarDestId, draft => ({ ...draft, qtys: { ...draft.qtys, [id]: qty } }))
   }
 
   const addExtra = () => {
-    const name = criarExtraInput.trim()
+    const draft = criarDrafts[criarDestId]
+    if (!draft) return
+    const name = draft.extraInput.trim()
     if (!name) return
     const eid = slugExtra()
-    setCriarExtras(prev => ({ ...prev, [eid]: name }))
-    setCriarQtys(prev => ({ ...prev, [eid]: 0 }))
-    setCriarExtraInput('')
+    updateCriarDraft(criarDestId, current => ({
+      ...current,
+      extras: { ...current.extras, [eid]: name },
+      qtys: { ...current.qtys, [eid]: 0 },
+      extraInput: '',
+    }))
     showToastPS('✅ '+name+' adicionado')
   }
   const removeExtra = (eid: string) => {
-    setCriarExtras(prev => { const n={...prev}; delete n[eid]; return n })
-    setCriarQtys(prev => { const n={...prev}; delete n[eid]; return n })
+    if (!criarDestId) return
+    updateCriarDraft(criarDestId, draft => {
+      const extras = { ...draft.extras }
+      const qtys = { ...draft.qtys }
+      delete extras[eid]
+      delete qtys[eid]
+      return { ...draft, extras, qtys }
+    })
+  }
+
+  const saveCriarDrafts = () => {
+    if (Object.keys(criarDrafts).length === 0) { showToastPS('Nenhum rascunho aberto'); return }
+    writeDraftStorage(criarDate, criarDestId, criarDrafts)
+    showToastPS('Rascunho salvo neste aparelho')
   }
 
   const saveRomaneio = async () => {
-    const items = Object.entries(criarQtys).filter(([,v])=>v>0)
+    const draft = criarDrafts[criarDestId]
+    if (!draft) { showToastPS('Selecione uma loja'); return }
+    const items = Object.entries(draft.qtys).filter(([,v])=>v>0)
     if (!items.length) { showToastPS('⚠️ Adicione ao menos um produto'); return }
     if (!criarDestId) { showToastPS('⚠️ Selecione o destino'); return }
-    showLoad('Salvando romaneio...')
+    const options = buildRomaneioProductOptions(draft.breads)
+    const optionByKey = new Map(options.map(option => [option.key, option]))
+    showLoad('Fechando romaneio...')
     try {
       const rom = await sbPost('romaneios',[{
-        record_date:criarDate, destination_id:criarDestId, trip_number:criarTrip,
-        status:'separado', created_by:'Gustavo', obs:criarObs||null
-      }])
+        record_date:criarDate, destination_id:criarDestId, trip_number:draft.trip,
+        status:'separado', created_by:getCurrentUser()?.displayName || 'Gustavo', obs:draft.obs||null
+      }]) as { id: string }[]
       const romId = rom[0].id
       const itemRows = items.map(([pid,qty]) => {
         const isExtra = pid.startsWith('extra_')
-        const b = isExtra ? null : criarBreads.find(x=>x.id===pid)
-        const name = isExtra ? criarExtras[pid] : (b?.name||pid)
-        const price = isExtra ? 0 : (prices[pid+'_'+criarDestId]||0)
-        return { romaneio_id:romId, product_id:pid, product_source:isExtra?'extra':'bread', product_name:name, qty_sent:qty, unit_price:price, item_status:'pendente' }
+        const option = optionByKey.get(pid)
+        const productId = isExtra ? pid : (option?.productId || pid)
+        const name = isExtra ? draft.extras[pid] : (option?.productName || pid)
+        const price = isExtra ? 0 : (prices[productId+'_'+criarDestId]||0)
+        return { romaneio_id:romId, product_id:productId, product_source:isExtra?'extra':'bread', product_name:name, qty_sent:qty, unit_price:price, item_status:'pendente' }
       })
       try {
         await sbPost('romaneio_items', itemRows)
@@ -278,11 +396,17 @@ export default function RomaneioPage() {
         try { await sbDel('romaneios',{id:romId}) } catch(_) {}
         throw itemErr
       }
-      showToastPS('✅ Romaneio criado!')
+      showToastPS(`✅ ${entregaLabel(draft.trip)} fechada!`)
+      const nextDrafts = { ...criarDrafts }
+      delete nextDrafts[criarDestId]
+      const nextDest = Object.keys(nextDrafts)[0] || ''
+      setCriarDrafts(nextDrafts)
+      setCriarDestId(nextDest)
+      writeDraftStorage(criarDate, nextDest, nextDrafts)
       await loadPainel()
-      setScreen('painel')
-    } catch(e:any) {
-      const msg = e.message||'Erro desconhecido'
+      if (!nextDest) setScreen('painel')
+    } catch(e) {
+      const msg = e instanceof Error ? e.message : 'Erro desconhecido'
       showToastPS('❌ Erro: '+(msg.length>100?msg.slice(0,100)+'...':msg), 5000)
     } finally { hideLoad() }
   }
@@ -530,9 +654,11 @@ export default function RomaneioPage() {
   }
 
   // ── derived ──────────────────────────────────────────────────────
-  const criarTotalItems = Object.values(criarQtys).filter(v=>v>0).length
-  const criarTotalQty = Object.values(criarQtys).reduce((a,c)=>a+c,0)
-  const ordinals = ['1ª','2ª','3ª','4ª','5ª']
+  const activeDraft = criarDestId ? criarDrafts[criarDestId] : undefined
+  const activeOptions = activeDraft ? buildRomaneioProductOptions(activeDraft.breads) : []
+  const criarTotalItems = activeDraft ? Object.values(activeDraft.qtys).filter(v=>v>0).length : 0
+  const criarTotalQtyLabel = activeDraft ? formatDraftTotal(activeDraft.qtys, activeOptions) : '0 un'
+  const criarDraftCount = Object.keys(criarDrafts).length
   const info = roleInfo(role)
   const userDisplay = getCurrentUser()?.displayName || info.name
 
@@ -628,7 +754,7 @@ export default function RomaneioPage() {
                         <div style={{flex:1,minWidth:0}}>
                           <div className="ps-pname">{r.destinations?.name} · Viagem {r.trip_number}</div>
                           <div className="ps-card-meta" style={{textAlign:'left',marginTop:4}}>
-                            Criado por {r.created_by}
+                            Criado por {r.created_by}{r.created_at ? ` às ${fmtTime(r.created_at)}` : ''}
                             {r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}
                             {r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}
                           </div>
@@ -674,7 +800,7 @@ export default function RomaneioPage() {
               <div className="ps-card" style={{marginTop:16}}>
                 <div className="ps-pname">{detailRom.destinations?.name} · Viagem {detailRom.trip_number}</div>
                 <div className="ps-card-meta" style={{textAlign:'left'}}>
-                  Data: {formatDateBR(detailRom.record_date)} · Criado por: {detailRom.created_by}
+                  Data: {formatDateBR(detailRom.record_date)} · Criado por: {detailRom.created_by}{detailRom.created_at ? ` às ${fmtTime(detailRom.created_at)}` : ''}
                   {detailRom.sent_at && <><br/>Enviado por {detailRom.sent_by} em {fmtDateTime(detailRom.sent_at)}</>}
                   {detailRom.confirmed_at && <><br/>Conferido por {detailRom.confirmed_by} em {fmtDateTime(detailRom.confirmed_at)}</>}
                 </div>
@@ -726,38 +852,57 @@ export default function RomaneioPage() {
             <div className="ps-scroll ps-pad">
               <div className="ps-label" style={{marginTop:16}}>Data</div>
               <input type="date" value={criarDate} className="ps-input" style={{width:'100%'}}
-                onChange={e=>{ setCriarDate(e.target.value); if(criarDestId) onDestChange(criarDestId) }}/>
+                onChange={e=>onCriarDateChange(e.target.value)}/>
 
-              <div className="ps-label">Destino</div>
-              <select className="ps-select" value={criarDestId} onChange={e=>onDestChange(e.target.value)}>
-                <option value="">Selecione o destino...</option>
-                {dests.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,marginTop:14}}>
+                <div className="ps-label" style={{margin:0}}>Lojas</div>
+                <button className="ps-btn ghost sm" onClick={saveCriarDrafts} disabled={criarDraftCount===0}>
+                  <Save size={14}/> Salvar rascunho
+                </button>
+              </div>
+              <div className="ps-tabs" role="tablist" style={{marginTop:8, overflowX:'auto'}}>
+                {dests.map(d=>{
+                  const draft = criarDrafts[d.id]
+                  const hasItems = draftHasItems(draft)
+                  return (
+                    <button key={d.id} className="ps-tab" role="tab" aria-selected={criarDestId===d.id} onClick={()=>onDestChange(d.id)}>
+                      {d.name}{hasItems ? ' •' : ''}
+                    </button>
+                  )
+                })}
+              </div>
 
-              {criarDestId && (
-                <div className="ps-banner honey" style={{marginTop:14}}>
-                  <span>{ordinals[criarTrip-1]||criarTrip+'ª'} viagem para este destino</span>
+              {!activeDraft && (
+                <div className="ps-empty" style={{marginTop:14}}>
+                  Selecione uma loja para abrir o romaneio.
                 </div>
               )}
 
-              {criarBreads.length > 0 && (
+              {activeDraft && (
+                <div className="ps-banner honey" style={{marginTop:14}}>
+                  <span>{entregaLabel(activeDraft.trip)} para {dests.find(d=>d.id===criarDestId)?.name || 'esta loja'}</span>
+                </div>
+              )}
+
+              {activeDraft && (
                 <>
                   <div className="ps-label">Produtos</div>
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                    {criarBreads.map(b=>{
-                      const qty = criarQtys[b.id]||0
+                    {activeOptions.map(option=>{
+                      const qty = activeDraft.qtys[option.key]||0
                       return (
-                        <div key={b.id} className={`ps-card ${qty>0?'active':''}`}>
+                        <div key={option.key} className={`ps-card ${qty>0?'active':''}`}>
                           <div className="ps-card-head">
-                            <div className="ps-pname">{b.name}</div>
+                            <div className="ps-pname">{option.displayName}</div>
+                            <span className="ps-store-chip" style={{alignSelf:'flex-start',background:'var(--line-soft)',color:'var(--ink-soft)'}}>{option.unit}</span>
                           </div>
                           <div className="ps-stepper">
-                            <button className="ps-step" onClick={()=>criarChangeQty(b.id,-1)} disabled={qty<=0} aria-label="Diminuir">
+                            <button className="ps-step" onClick={()=>criarChangeQty(option.key,-option.step)} disabled={qty<=0} aria-label="Diminuir">
                               <span style={{fontSize:20,fontWeight:700}}>−</span>
                             </button>
-                            <input className={`ps-qty ${qty===0?'zero':''}`} type="number" min={0} value={qty||''} placeholder="0"
-                              onChange={e=>setCriarQtys(prev=>({...prev,[b.id]:parseInt(e.target.value)||0}))}/>
-                            <button className="ps-step" onClick={()=>criarChangeQty(b.id,1)} aria-label="Aumentar">
+                            <input className={`ps-qty ${qty===0?'zero':''}`} type="text" inputMode={option.allowDecimal?'decimal':'numeric'} value={qty?formatRomaneioQty(qty):''} placeholder="0"
+                              onChange={e=>setCriarQty(option.key,e.target.value)}/>
+                            <button className="ps-step" onClick={()=>criarChangeQty(option.key,option.step)} aria-label="Aumentar">
                               <span style={{fontSize:20,fontWeight:700}}>+</span>
                             </button>
                           </div>
@@ -766,8 +911,8 @@ export default function RomaneioPage() {
                     })}
 
                     {/* Extras */}
-                    {Object.entries(criarExtras).map(([eid,name])=>{
-                      const qty = criarQtys[eid]||0
+                    {Object.entries(activeDraft.extras).map(([eid,name])=>{
+                      const qty = activeDraft.qtys[eid]||0
                       return (
                         <div key={eid} className={`ps-card ${qty>0?'active':''}`}>
                           <div className="ps-card-head" style={{flexDirection:'row',alignItems:'flex-start',gap:8,justifyContent:'space-between'}}>
@@ -782,8 +927,8 @@ export default function RomaneioPage() {
                             <button className="ps-step" onClick={()=>criarChangeQty(eid,-1)} disabled={qty<=0} aria-label="Diminuir">
                               <span style={{fontSize:20,fontWeight:700}}>−</span>
                             </button>
-                            <input className={`ps-qty ${qty===0?'zero':''}`} type="number" min={0} value={qty||''} placeholder="0"
-                              onChange={e=>setCriarQtys(prev=>({...prev,[eid]:parseInt(e.target.value)||0}))}/>
+                            <input className={`ps-qty ${qty===0?'zero':''}`} type="text" inputMode="numeric" value={qty?formatRomaneioQty(qty):''} placeholder="0"
+                              onChange={e=>setCriarQty(eid,e.target.value)}/>
                             <button className="ps-step" onClick={()=>criarChangeQty(eid,1)} aria-label="Aumentar">
                               <span style={{fontSize:20,fontWeight:700}}>+</span>
                             </button>
@@ -798,8 +943,8 @@ export default function RomaneioPage() {
                     <div className="ps-label" style={{marginTop:0}}>+ Pão especial / avulso</div>
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
                       <input className="ps-input" style={{flex:1}}
-                        placeholder="Nome do pão..." value={criarExtraInput}
-                        onChange={e=>setCriarExtraInput(e.target.value)}
+                        placeholder="Nome do pão..." value={activeDraft.extraInput}
+                        onChange={e=>updateCriarDraft(criarDestId, draft => ({ ...draft, extraInput: e.target.value }))}
                         onKeyDown={e=>e.key==='Enter'&&addExtra()}/>
                       <button className="ps-btn" onClick={addExtra}>
                         <Plus size={14}/> Adicionar
@@ -810,22 +955,27 @@ export default function RomaneioPage() {
                   <div style={{marginTop:16}}>
                     <div className="ps-label" style={{marginTop:0}}>Observações</div>
                     <textarea className="ps-textarea" placeholder="Observações sobre o romaneio..."
-                      value={criarObs} onChange={e=>setCriarObs(e.target.value)}/>
+                      value={activeDraft.obs} onChange={e=>updateCriarDraft(criarDestId, draft => ({ ...draft, obs: e.target.value }))}/>
                   </div>
                 </>
               )}
             </div>
 
             {/* Total bar fixa */}
-            {criarBreads.length > 0 && (
+            {activeDraft && (
               <div className="ps-totalbar">
                 <div className="ps-total-num">
                   <b>{criarTotalItems}</b>
-                  <span>produtos · {criarTotalQty} un</span>
+                  <span>produtos · {criarTotalQtyLabel}</span>
                 </div>
-                <button className="ps-save" onClick={saveRomaneio} disabled={!criarTotalItems}>
-                  <Save size={16}/> Criar Romaneio
-                </button>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <button className="ps-btn ghost" onClick={saveCriarDrafts}>
+                    <Save size={15}/> Salvar
+                  </button>
+                  <button className="ps-save" onClick={saveRomaneio} disabled={!criarTotalItems}>
+                    <Check size={16}/> Fechar
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -958,7 +1108,7 @@ export default function RomaneioPage() {
                           <div style={{flex:1,minWidth:0}}>
                             <div className="ps-pname">{r.destinations?.name} · Viagem {r.trip_number}</div>
                             <div className="ps-card-meta" style={{textAlign:'left',marginTop:4}}>
-                              {r.created_by}
+                              Criado por {r.created_by}{r.created_at ? ` às ${fmtTime(r.created_at)}` : ''}
                               {r.sent_at&&` · Saiu ${fmtDateTime(r.sent_at)}`}
                               {r.confirmed_at&&` · Conf. ${fmtDateTime(r.confirmed_at)}`}
                             </div>
