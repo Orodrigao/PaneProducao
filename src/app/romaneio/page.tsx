@@ -404,7 +404,14 @@ export default function RomaneioPage() {
       setCriarDestId(nextDest)
       writeDraftStorage(criarDate, nextDest, nextDrafts)
       await loadPainel()
-      if (!nextDest) setScreen('painel')
+      if (!nextDest) {
+        if (role === 'rodrigo') {
+          await loadAdminPainel()
+          setScreen('admin')
+        } else {
+          setScreen('painel')
+        }
+      }
     } catch(e) {
       const msg = e instanceof Error ? e.message : 'Erro desconhecido'
       showToastPS('❌ Erro: '+(msg.length>100?msg.slice(0,100)+'...':msg), 5000)
@@ -848,7 +855,7 @@ export default function RomaneioPage() {
       {screen==='criar' && (
         <div className="ps-canvas">
           <div className="ps-shell">
-            <Header onBack={()=>setScreen('painel')} subtitle="Novo romaneio"/>
+            <Header onBack={()=>setScreen(role === 'rodrigo' ? 'admin' : 'painel')} subtitle="Novo romaneio"/>
             <div className="ps-scroll ps-pad">
               <div className="ps-label" style={{marginTop:16}}>Data</div>
               <input type="date" value={criarDate} className="ps-input" style={{width:'100%'}}
@@ -1094,6 +1101,9 @@ export default function RomaneioPage() {
               {/* Painel admin */}
               {adminTab==='painel-adm' && (
                 <>
+                  <button className="ps-btn primary block" style={{marginTop:16, marginBottom:14}} onClick={openCriar}>
+                    <Plus size={18}/> Novo Romaneio
+                  </button>
                   <div className="ps-label">Hoje · {formatDateBR(todayKey())}</div>
                   {adminRoms.length===0 && (
                     <div className="ps-empty">
