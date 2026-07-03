@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Save, X, KeyRound, Pencil, Power } from 'lucide-react'
+import { Plus, Save, KeyRound, Pencil, Power } from 'lucide-react'
 import {
   AppUser, Role,
   fetchUsersFromSupabase, cacheUsers, getCachedUsers,
@@ -13,6 +13,7 @@ import {
 const ALL_ROLES: Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 const ROUTE_OPTIONS = [
+  { href: '/fechamento-caixa',  label: 'Fechamento de Caixa', icon: 'R$' },
   { href: '/',                  label: 'Produção',          icon: '🍞' },
   { href: '/forno',             label: 'Forno (confirmar)', icon: '🔥' },
   { href: '/sobras',            label: 'Sobras',            icon: '♻️' },
