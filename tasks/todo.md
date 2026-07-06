@@ -17,6 +17,7 @@ limpo com itens e dados de envio.
 
 - [x] Localizar a tela de detalhe do romaneio.
 - [x] Adicionar botao de impressao no detalhe.
+- [x] Adicionar botao de impressao nos cards do painel.
 - [x] Criar documento imprimivel com remetente, destinatario, envio e itens.
 - [x] Validar testes, typecheck e build.
 

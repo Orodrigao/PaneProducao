@@ -265,6 +265,7 @@ export default function RomaneioPage() {
   // detalhe
   const [detailRom, setDetailRom] = useState<Romaneio|null>(null)
   const [detailItems, setDetailItems] = useState<RomItem[]>([])
+  const [printAfterOpen, setPrintAfterOpen] = useState(false)
   // criar
   const [criarDate, setCriarDate] = useState(todayKey())
   const [criarDestId, setCriarDestId] = useState('')
@@ -375,7 +376,7 @@ export default function RomaneioPage() {
   }
 
   // ── detalhe ──────────────────────────────────────────────────────
-  const openDetalhe = async (romId: string) => {
+  const openDetalhe = async (romId: string, printAfterLoad = false) => {
     showLoad('Carregando...')
     try {
       const [roms, items] = await Promise.all([
@@ -383,10 +384,20 @@ export default function RomaneioPage() {
         sbGet('romaneio_items',`romaneio_id=eq.${romId}&order=product_name.asc`)
       ])
       setDetailRom(roms[0]); setDetailItems(items)
+      setPrintAfterOpen(printAfterLoad)
       setScreen('detalhe')
     } catch(e) { showToastPS('Erro ao carregar') }
     finally { hideLoad() }
   }
+
+  useEffect(() => {
+    if (!printAfterOpen || screen !== 'detalhe' || !detailRom) return
+    const timer = window.setTimeout(() => {
+      window.print()
+      setPrintAfterOpen(false)
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [detailItems.length, detailRom, printAfterOpen, screen])
 
   // ── criar ──────────────────────────────────────────────────────
   const openCriar = () => {
@@ -928,6 +939,9 @@ export default function RomaneioPage() {
                         <button className="ps-btn ghost sm" onClick={()=>openDetalhe(r.id)}>
                           <Eye size={14}/> Ver itens
                         </button>
+                        <button className="ps-btn info sm" onClick={()=>openDetalhe(r.id, true)}>
+                          <Printer size={14}/> Imprimir
+                        </button>
                         {role==='cleo'&&r.status==='separado'&&(
                           <button className="ps-btn info sm" onClick={()=>setEnvioRomId(r.id)}>
                             <Truck size={14}/> Marcar Enviado
@@ -1290,6 +1304,9 @@ export default function RomaneioPage() {
                         <div className="ps-item-actions">
                           <button className="ps-btn ghost sm" onClick={()=>openDetalhe(r.id)}>
                             <Eye size={14}/> Ver detalhes
+                          </button>
+                          <button className="ps-btn info sm" onClick={()=>openDetalhe(r.id, true)}>
+                            <Printer size={14}/> Imprimir
                           </button>
                           {r.status==='com_divergencia' && (
                             <button className="ps-btn success sm" onClick={()=>aprovarDiverg(r.id)}>
