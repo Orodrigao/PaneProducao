@@ -1,28 +1,25 @@
-# Tarefa: impressao do romaneio
+# Tarefa: corrigir fechamento de caixa
 
-Pedido aprovado pelo Rodrigo em 06/07/2026: permitir imprimir o romaneio
-com as informacoes de envio, o destinatario fiscal e o remetente fiscal da
-Pane Julio.
+Pedido aprovado pelo Rodrigo em 06/07/2026: ajustar o fechamento para refletir
+o processo real da loja e remover negativos causados por campos informativos.
 
 ## Entendimento
 
-- A impressao deve sair a partir do detalhe do romaneio.
-- O remetente e sempre Pane Julio / RGF PANE PIZZA LTDA.
-- Para Exposicao, o destinatario e Buck Comercio de Alimentos LTDA - ME.
-- Para Jardim, o destinatario e Sf & Salute Padaria e Cafeteria Ltda.
-- A impressao deve esconder a interface operacional e mostrar um documento
-limpo com itens e dados de envio.
+- Total em dinheiro e todo o dinheiro fisico contado no caixa no fechamento.
+- Venda em dinheiro = total em dinheiro + sangrias - abertura do caixa.
+- Total do dia = venda em dinheiro + Banrisul + Stone + SiTef + Pix.
+- iFood, envelope e proximo dia sao apenas informativos.
+- O usuario deve preencher os campos na ordem operacional definida pelo Rodrigo.
 
 ## Plano
 
-- [x] Localizar a tela de detalhe do romaneio.
-- [x] Adicionar botao de impressao no detalhe.
-- [x] Adicionar botao de impressao nos cards do painel.
-- [x] Criar documento imprimivel com remetente, destinatario, envio e itens.
-- [x] Validar testes, typecheck e build.
+- [x] Ler documentos obrigatorios e auditar a tela de fechamento.
+- [x] Ajustar calculo do fechamento e testes.
+- [x] Reordenar a tela na sequencia operacional.
+- [x] Validar testes, typecheck, lint e build.
 
 ## Fora desta entrega
 
 - Nao alterar schema ou dados do Supabase.
 - Nao mexer em auth, PINs, roles ou login.
-- Nao alterar regras de envio/conferencia do romaneio.
+- Nao criar integracao com CNM, iFood ou maquininhas.

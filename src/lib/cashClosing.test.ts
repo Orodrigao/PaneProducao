@@ -2,14 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { calculateCashClosingTotals, parseMoneyInput } from './cashClosing'
 
 const baseInput = {
-  salesAmount: 0,
   banriAmount: 0,
   sitefAmount: 0,
   pixAmount: 0,
-  cashAmount: 0,
   siteSalesAmount: 0,
   ifoodSalesAmount: 0,
-  totalAmount: 0,
   cashWithdrawalAmount: 0,
   openingCashAmount: 0,
   closingCashAmount: 0,
@@ -18,32 +15,39 @@ const baseInput = {
 }
 
 describe('cashClosing', () => {
-  it('calcula totais e diferencas de fechamento', () => {
+  it('calcula venda em dinheiro pelo dinheiro contado, sangrias e abertura', () => {
     const totals = calculateCashClosingTotals({
       ...baseInput,
-      salesAmount: 900,
-      siteSalesAmount: 50,
-      ifoodSalesAmount: 50,
       banriAmount: 300,
+      siteSalesAmount: 400,
       sitefAmount: 200,
       pixAmount: 250,
-      cashAmount: 250,
-      totalAmount: 1000,
-      openingCashAmount: 200,
-      cashWithdrawalAmount: 100,
-      closingCashAmount: 350,
-      envelopeAmount: 150,
-      nextDayCashAmount: 200,
+      openingCashAmount: 170,
+      cashWithdrawalAmount: 241.88,
+      closingCashAmount: 1786,
+      ifoodSalesAmount: 999,
+      envelopeAmount: 1700,
+      nextDayCashAmount: 86,
     })
 
-    expect(totals.paymentTotal).toBe(1000)
-    expect(totals.channelSalesTotal).toBe(1000)
-    expect(totals.paymentDifference).toBe(0)
-    expect(totals.channelDifference).toBe(0)
-    expect(totals.expectedClosingCash).toBe(350)
-    expect(totals.cashDifference).toBe(0)
-    expect(totals.cashSplitTotal).toBe(350)
-    expect(totals.cashSplitDifference).toBe(0)
+    expect(totals.cashSalesAmount).toBe(1857.88)
+    expect(totals.nonCashPaymentTotal).toBe(1150)
+    expect(totals.declaredTotal).toBe(3007.88)
+    expect(totals.cashSplitTotal).toBe(1786)
+  })
+
+  it('mantem ifood, envelope e proximo dia fora do total do dia', () => {
+    const totals = calculateCashClosingTotals({
+      ...baseInput,
+      closingCashAmount: 100,
+      ifoodSalesAmount: 50,
+      envelopeAmount: 70,
+      nextDayCashAmount: 30,
+    })
+
+    expect(totals.cashSalesAmount).toBe(100)
+    expect(totals.declaredTotal).toBe(100)
+    expect(totals.cashSplitTotal).toBe(100)
   })
 
   it('mantem centavos estaveis sem erro de ponto flutuante', () => {
@@ -51,11 +55,10 @@ describe('cashClosing', () => {
       ...baseInput,
       banriAmount: 0.1,
       sitefAmount: 0.2,
-      totalAmount: 0.3,
     })
 
-    expect(totals.paymentTotal).toBe(0.3)
-    expect(totals.paymentDifference).toBe(0)
+    expect(totals.nonCashPaymentTotal).toBe(0.3)
+    expect(totals.declaredTotal).toBe(0.3)
   })
 
   it('parseia valores em formato brasileiro', () => {
