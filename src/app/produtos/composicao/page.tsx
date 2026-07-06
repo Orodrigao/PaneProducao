@@ -14,6 +14,9 @@ import {
   type PricingUnit,
 } from '@/lib/saleOptions'
 import {
+  calculateFlourMixAddition,
+  calculateFlourMixRebalance,
+  calculateFlourSharePercent,
   calculateYieldUnitsFromRecipeWeight,
   calculateRecipeTotals,
   isFlourComponent,
@@ -199,6 +202,7 @@ function ComposicaoInner() {
   const [newQty, setNewQty]       = useState('1')
   const [newQtyMode, setNewQtyMode] = useState<QuantityInputMode>('weight')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
+  const [flourPctEdits, setFlourPctEdits] = useState<Record<string, string>>({})
   const [savingProductCost, setSavingProductCost] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importSearch, setImportSearch] = useState('')
@@ -269,6 +273,59 @@ function ComposicaoInner() {
 
   useEffect(() => { setUser(getCurrentUser()); if (parentId) load() }, [parentId, load])
 
+  async function addFlourComponentByShare(source: 'bread' | 'product', componentId: string, sharePct: number) {
+    const isFirstFlour = flourComponents.length === 0
+    const addition = calculateFlourMixAddition(
+      flourComponents.map(component => ({ id: component.id, quantity: component.quantity })),
+      sharePct,
+    )
+    if (addition === null) {
+      showToast('Para misturar farinhas, use percentual maior que 0 e menor que 100')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('product_components')
+        .insert({ parent_product_id: parentId, component_source: source, component_id: componentId, quantity: addition.addedQuantity })
+        .select()
+        .single()
+      if (error) throw error
+
+      const inserted = data as Component
+      if (addition.existing.length > 0) {
+        const updateResults = await Promise.all(addition.existing.map(update =>
+          supabase
+            .from('product_components')
+            .update({ quantity: update.quantity })
+            .eq('id', update.id)
+        ))
+        const updateError = updateResults.find(result => result.error)?.error
+        if (updateError) {
+          await supabase.from('product_components').delete().eq('id', inserted.id)
+          throw updateError
+        }
+      }
+
+      const quantityById = new Map(addition.existing.map(update => [update.id, update.quantity]))
+      setComponents(prev => [
+        ...prev.map(component => {
+          const quantity = quantityById.get(component.id)
+          return quantity === undefined ? component : { ...component, quantity }
+        }),
+        inserted,
+      ])
+      setSearch('')
+      setNewQty('1')
+      setFlourPctEdits({})
+      showToast(isFirstFlour
+        ? 'Primeira farinha adicionada como base 100%'
+        : `Farinha adicionada: ${formatDecimalPtBR(sharePct, 1)}% da mistura`)
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao adicionar farinha'))
+    }
+  }
+
   async function addComponent(source: 'bread' | 'product', componentId: string) {
     const parsedQty = parsePositiveDecimal(newQty)
     if (parsedQty === null) {
@@ -282,6 +339,12 @@ function ComposicaoInner() {
       name: item?.name ?? '',
       category: item && 'category' in item && typeof item.category === 'string' ? item.category : null,
     }
+    const isFlourIngredient = parent?.kind !== 'kit' && isFlourComponent(componentForMath)
+    if (newQtyMode === 'baker_pct' && isFlourIngredient) {
+      await addFlourComponentByShare(source, componentId, parsedQty)
+      return
+    }
+
     const qty = parent?.kind === 'kit'
       ? parsedQty
       : newQtyMode === 'baker_pct'
@@ -320,9 +383,53 @@ function ComposicaoInner() {
       if (error) throw error
       setComponents(prev => prev.map(c => c.id === componentId ? { ...c, quantity: qty } : c))
       setQtyEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
+      setFlourPctEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
       showToast('Quantidade atualizada')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao atualizar'))
+    }
+  }
+
+  async function updateFlourShare(componentId: string, raw: string) {
+    const sharePct = parsePositiveDecimal(raw)
+    if (sharePct === null) {
+      showToast('Percentual de farinha invalido')
+      setFlourPctEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
+      return
+    }
+
+    const updates = calculateFlourMixRebalance(
+      flourComponents.map(component => ({ id: component.id, quantity: component.quantity })),
+      componentId,
+      sharePct,
+    )
+    if (updates === null) {
+      showToast(flourComponents.length <= 1
+        ? 'Com uma farinha, ela representa 100% da mistura'
+        : 'A mistura precisa manter todas as farinhas acima de 0% e fechar 100%')
+      setFlourPctEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
+      return
+    }
+
+    try {
+      const updateResults = await Promise.all(updates.map(update =>
+        supabase
+          .from('product_components')
+          .update({ quantity: update.quantity })
+          .eq('id', update.id)
+      ))
+      const updateError = updateResults.find(result => result.error)?.error
+      if (updateError) throw updateError
+
+      const quantityById = new Map(updates.map(update => [update.id, update.quantity]))
+      setComponents(prev => prev.map(component => {
+        const quantity = quantityById.get(component.id)
+        return quantity === undefined ? component : { ...component, quantity }
+      }))
+      setFlourPctEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
+      showToast('Mistura de farinhas atualizada')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar mistura de farinhas'))
     }
   }
 
@@ -332,6 +439,7 @@ function ComposicaoInner() {
       const { error } = await supabase.from('product_components').delete().eq('id', componentId)
       if (error) throw error
       setComponents(prev => prev.filter(c => c.id !== componentId))
+      setFlourPctEdits(prev => { const next = { ...prev }; delete next[componentId]; return next })
       showToast('Componente removido')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao remover'))
@@ -560,6 +668,10 @@ function ComposicaoInner() {
 
   const recipeTotals = useMemo(() => calculateRecipeTotals(enriched), [enriched])
   const isKit = parent?.kind === 'kit'
+  const flourComponents = useMemo(
+    () => enriched.filter(component => isFlourComponent(component) && !isPackagingComponent(component)),
+    [enriched],
+  )
   const totalCMV = isKit
     ? enriched.reduce((sum, component) => sum + (Number(component.cost) * Number(component.quantity)), 0)
     : recipeTotals.ingredientCost
@@ -606,7 +718,7 @@ function ComposicaoInner() {
     ? quantityFromBakersPercentage(parsedNewQty, recipeTotals.flourBaseKg)
     : null
   const firstFlourPreviewKg = newQtyMode === 'baker_pct' && parsedNewQty !== null && recipeTotals.flourBaseKg === null
-    ? parsedNewQty / 100
+    ? 1
     : null
   const productUnit = (parent?.unit ?? '').trim().toLowerCase()
   const productCostCandidate = (() => {
@@ -843,6 +955,22 @@ function ComposicaoInner() {
                               Salvar rendimento
                             </button>
                           </div>
+                          {flourComponents.length > 0 && recipeTotals.flourBaseKg !== null && (
+                            <div style={{border:'1px solid var(--line-soft)', borderRadius:8, padding:10, marginBottom:12, background:'var(--paper-soft)'}}>
+                              <div className="ps-flabel" style={{marginBottom:6}}>Mistura de farinhas</div>
+                              <div style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
+                                {flourComponents.map(component => {
+                                  const sharePct = calculateFlourSharePercent(component.quantity, recipeTotals.flourBaseKg)
+                                  return (
+                                    <span key={component.id} className="ps-store-chip">
+                                      {component.name}: {sharePct !== null ? `${formatDecimalPtBR(sharePct, 1)}%` : '-'}
+                                    </span>
+                                  )
+                                })}
+                                <span className="ps-store-chip ja">total 100%</span>
+                              </div>
+                            </div>
+                          )}
                           {packagingComponentsCost > 0 && (
                             <div className="ps-warning" style={{marginBottom:12}}>
                               <AlertTriangle size={16} style={{flexShrink:0, marginTop:1}}/>
@@ -1120,16 +1248,17 @@ function ComposicaoInner() {
                 ) : (
                   enriched.map(e => {
                     const isPackaging = isPackagingComponent(e)
+                    const isFlour = !isKit && isFlourComponent(e)
                     const flourPct = !isKit && recipeTotals.flourBaseKg !== null && !isPackaging
-                      ? (Number(e.quantity) / recipeTotals.flourBaseKg) * 100
+                      ? calculateFlourSharePercent(e.quantity, recipeTotals.flourBaseKg)
                       : null
                     return (
-                      <div key={e.id} style={{display:'flex', alignItems:'center', gap:8, padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
+                      <div key={e.id} style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', padding:'10px 0', borderBottom:'1px solid var(--line-soft)'}}>
                         <div style={{flex:1, minWidth:0}}>
                           <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                             {e.name}
                             <span className={`ps-store-chip ${e.component_source==='bread'?'jc':'ja'}`}>{e.component_source==='bread'?'PÃO':'PRODUTO'}</span>
-                            {!isKit && isFlourComponent(e) && <span className="ps-store-chip jc">FARINHA BASE</span>}
+                            {isFlour && <span className="ps-store-chip jc">FARINHA</span>}
                             {!isKit && isPackaging && <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>EMBALAGEM</span>}
                             {(isKit || !isPackaging) && !e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
                           </div>
@@ -1141,6 +1270,30 @@ function ComposicaoInner() {
                             {!isKit && isPackaging && ' · fora da massa/CMV da receita'}
                           </div>
                         </div>
+                        {isFlour && flourPct !== null && (
+                          <div style={{display:'flex', alignItems:'center', gap:3}}>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              title="% da mistura de farinhas"
+                              value={flourPctEdits[e.id] ?? formatDecimalPtBR(flourPct, 1)}
+                              onChange={ev => setFlourPctEdits(prev => ({...prev, [e.id]: ev.target.value.replace(/[^\d,.]/g, '')}))}
+                              onBlur={ev => {
+                                const v = ev.target.value
+                                const parsed = parsePositiveDecimal(v)
+                                if (parsed === null) {
+                                  showToast('Percentual invalido')
+                                  setFlourPctEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
+                                } else if (Math.abs(parsed - flourPct) > 0.0001) updateFlourShare(e.id, v)
+                                else setFlourPctEdits(prev => { const n = {...prev}; delete n[e.id]; return n })
+                              }}
+                              disabled={!canEditFicha}
+                              className="ps-input"
+                              style={{width:58, textAlign:'right', padding:'6px 8px'}}
+                            />
+                            <span style={{fontSize:11, color:'var(--ink-faint)'}}>%</span>
+                          </div>
+                        )}
                         <input
                           type="text"
                           inputMode="decimal"
