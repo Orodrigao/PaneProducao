@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3 } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -359,6 +359,20 @@ export default function ProdutosPage() {
                           )}
                           {p.legacy_bread_id && (
                             <span className="ps-store-chip" style={{background:'var(--line-soft)', color:'var(--ink-soft)'}}>MIGRADO</span>
+                          )}
+                          {canUseTechnicalSheet(p) && (
+                            <span
+                              className="ps-store-chip"
+                              title={cmvByProduct[p.id]?.count
+                                ? `Ficha tecnica cadastrada (${cmvByProduct[p.id].count} componentes)`
+                                : 'Sem ficha tecnica cadastrada'}
+                              style={cmvByProduct[p.id]?.count
+                                ? {background:'#E3F0E0', color:'var(--sage)', gap:3}
+                                : {background:'var(--berry-tint)', color:'var(--berry)', gap:3}}
+                            >
+                              {cmvByProduct[p.id]?.count ? <CheckCircle2 size={11}/> : <CircleAlert size={11}/>}
+                              {cmvByProduct[p.id]?.count ? 'FICHA OK' : 'SEM FICHA'}
+                            </span>
                           )}
                         </div>
                         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
