@@ -1,12 +1,9 @@
 export interface CashClosingInput {
-  salesAmount: number
   banriAmount: number
   sitefAmount: number
   pixAmount: number
-  cashAmount: number
   siteSalesAmount: number
   ifoodSalesAmount: number
-  totalAmount: number
   cashWithdrawalAmount: number
   openingCashAmount: number
   closingCashAmount: number
@@ -15,15 +12,10 @@ export interface CashClosingInput {
 }
 
 export interface CashClosingTotals {
-  paymentTotal: number
-  channelSalesTotal: number
+  cashSalesAmount: number
+  nonCashPaymentTotal: number
   declaredTotal: number
-  paymentDifference: number
-  channelDifference: number
-  expectedClosingCash: number
-  cashDifference: number
   cashSplitTotal: number
-  cashSplitDifference: number
 }
 
 const MONEY_FORMATTER = new Intl.NumberFormat('pt-BR', {
@@ -62,36 +54,27 @@ export function formatCurrencyBRL(value: number): string {
 }
 
 export function calculateCashClosingTotals(input: CashClosingInput): CashClosingTotals {
-  const paymentTotalCents =
+  const cashSalesAmountCents =
+    toCents(input.closingCashAmount)
+    + toCents(input.cashWithdrawalAmount)
+    - toCents(input.openingCashAmount)
+
+  const nonCashPaymentTotalCents =
     toCents(input.banriAmount)
+    + toCents(input.siteSalesAmount)
     + toCents(input.sitefAmount)
     + toCents(input.pixAmount)
-    + toCents(input.cashAmount)
 
-  const channelSalesTotalCents =
-    toCents(input.salesAmount)
-    + toCents(input.siteSalesAmount)
-    + toCents(input.ifoodSalesAmount)
-
-  const declaredTotalCents = toCents(input.totalAmount)
-  const expectedClosingCashCents =
-    toCents(input.openingCashAmount)
-    + toCents(input.cashAmount)
-    - toCents(input.cashWithdrawalAmount)
+  const declaredTotalCents = cashSalesAmountCents + nonCashPaymentTotalCents
 
   const cashSplitTotalCents =
     toCents(input.envelopeAmount)
     + toCents(input.nextDayCashAmount)
 
   return {
-    paymentTotal: fromCents(paymentTotalCents),
-    channelSalesTotal: fromCents(channelSalesTotalCents),
+    cashSalesAmount: fromCents(cashSalesAmountCents),
+    nonCashPaymentTotal: fromCents(nonCashPaymentTotalCents),
     declaredTotal: fromCents(declaredTotalCents),
-    paymentDifference: fromCents(declaredTotalCents - paymentTotalCents),
-    channelDifference: fromCents(declaredTotalCents - channelSalesTotalCents),
-    expectedClosingCash: fromCents(expectedClosingCashCents),
-    cashDifference: fromCents(toCents(input.closingCashAmount) - expectedClosingCashCents),
     cashSplitTotal: fromCents(cashSplitTotalCents),
-    cashSplitDifference: fromCents(toCents(input.closingCashAmount) - cashSplitTotalCents),
   }
 }

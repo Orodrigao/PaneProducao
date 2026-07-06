@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Calendar, Check, DollarSign, RefreshCw, Save } from 'lucide-react'
+import { AlertTriangle, Calendar, DollarSign, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
@@ -50,14 +50,11 @@ const STORE_OPTIONS: { key: StoreKey; label: string }[] = [
 const WEEKDAYS = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado']
 
 const EMPTY_FORM: Record<MoneyField, string> = {
-  salesAmount: '',
   banriAmount: '',
   sitefAmount: '',
   pixAmount: '',
-  cashAmount: '',
   siteSalesAmount: '',
   ifoodSalesAmount: '',
-  totalAmount: '',
   cashWithdrawalAmount: '',
   openingCashAmount: '',
   closingCashAmount: '',
@@ -65,25 +62,17 @@ const EMPTY_FORM: Record<MoneyField, string> = {
   nextDayCashAmount: '',
 }
 
-const PAYMENT_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
-  { key: 'banriAmount', label: 'Banri' },
-  { key: 'sitefAmount', label: 'Sitef' },
-  { key: 'pixAmount', label: 'Pix' },
-  { key: 'cashAmount', label: 'Dinheiro' },
-]
-
-const CHANNEL_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
-  { key: 'salesAmount', label: 'Vendas do dia', helper: 'balcao / loja' },
-  { key: 'siteSalesAmount', label: 'Vendas site' },
-  { key: 'ifoodSalesAmount', label: 'Vendas iFood' },
-]
-
-const CASH_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
-  { key: 'openingCashAmount', label: 'Caixa anterior', helper: 'abertura' },
-  { key: 'cashWithdrawalAmount', label: 'Sangria' },
-  { key: 'closingCashAmount', label: 'Caixa final do dia' },
-  { key: 'envelopeAmount', label: 'Envelope', helper: 'malote para deposito' },
-  { key: 'nextDayCashAmount', label: 'Proximo dia', helper: 'abertura seguinte' },
+const CLOSING_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
+  { key: 'closingCashAmount', label: '1. Total em dinheiro', helper: 'todo dinheiro fisico contado no caixa' },
+  { key: 'cashWithdrawalAmount', label: '2. Sangrias', helper: 'retiradas feitas durante o dia' },
+  { key: 'banriAmount', label: '3. Banrisul credito/debito' },
+  { key: 'siteSalesAmount', label: '4. Stone credito/debito' },
+  { key: 'sitefAmount', label: '5. SiTef' },
+  { key: 'pixAmount', label: '6. PIX WhatsApp/app' },
+  { key: 'openingCashAmount', label: '7. Abertura do caixa', helper: 'desconta do dinheiro contado' },
+  { key: 'ifoodSalesAmount', label: '8. iFood', helper: 'informativo, nao soma ao caixa' },
+  { key: 'envelopeAmount', label: '9. Envelope', helper: 'informativo, malote/deposito' },
+  { key: 'nextDayCashAmount', label: '10. Proximo dia', helper: 'informativo, abertura seguinte' },
 ]
 
 function isStoreKey(value: string | null): value is StoreKey {
@@ -99,14 +88,11 @@ function weekdayFromDate(date: string): string {
 
 function formToInput(form: Record<MoneyField, string>): CashClosingInput {
   return {
-    salesAmount: parseMoneyInput(form.salesAmount),
     banriAmount: parseMoneyInput(form.banriAmount),
     sitefAmount: parseMoneyInput(form.sitefAmount),
     pixAmount: parseMoneyInput(form.pixAmount),
-    cashAmount: parseMoneyInput(form.cashAmount),
     siteSalesAmount: parseMoneyInput(form.siteSalesAmount),
     ifoodSalesAmount: parseMoneyInput(form.ifoodSalesAmount),
-    totalAmount: parseMoneyInput(form.totalAmount),
     cashWithdrawalAmount: parseMoneyInput(form.cashWithdrawalAmount),
     openingCashAmount: parseMoneyInput(form.openingCashAmount),
     closingCashAmount: parseMoneyInput(form.closingCashAmount),
@@ -122,14 +108,11 @@ function moneyToInput(value: number): string {
 
 function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
   return {
-    salesAmount: moneyToInput(row.sales_amount),
     banriAmount: moneyToInput(row.banri_amount),
     sitefAmount: moneyToInput(row.sitef_amount),
     pixAmount: moneyToInput(row.pix_amount),
-    cashAmount: moneyToInput(row.cash_amount),
     siteSalesAmount: moneyToInput(row.site_sales_amount),
     ifoodSalesAmount: moneyToInput(row.ifood_sales_amount),
-    totalAmount: moneyToInput(row.total_amount),
     cashWithdrawalAmount: moneyToInput(row.cash_withdrawal_amount),
     openingCashAmount: moneyToInput(row.opening_cash_amount),
     closingCashAmount: moneyToInput(row.closing_cash_amount),
@@ -180,20 +163,24 @@ function MoneyInput({
   )
 }
 
-function CheckRow({
+function SummaryRow({
   label,
   value,
+  helper,
 }: {
   label: string
   value: number
+  helper?: string
 }) {
-  const ok = Math.abs(value) < 0.01
+  const isNegative = value < -0.009
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-      <div style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.25 }}>{label}</div>
-      <span className={`ps-status ${ok ? 'ok' : 'divergencia'}`} style={{ flexShrink: 0 }}>
-        {ok ? <Check size={12} /> : <AlertTriangle size={12} />}
-        {ok ? 'OK' : formatCurrencyBRL(value)}
+      <div style={{ lineHeight: 1.25 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{label}</div>
+        {helper && <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{helper}</div>}
+      </div>
+      <span className={`ps-status ${isNegative ? 'divergencia' : 'fechado'}`} style={{ flexShrink: 0 }}>
+        {formatCurrencyBRL(value)}
       </span>
     </div>
   )
@@ -275,12 +262,13 @@ export default function FechamentoCaixaPage() {
     setForm(current => ({ ...current, [key]: value }))
   }
 
-  function usePaymentTotalAsTotal() {
-    setForm(current => ({ ...current, totalAmount: moneyToInput(totals.paymentTotal) }))
-  }
-
   async function saveClosing() {
     if (!user) return
+
+    if (totals.cashSalesAmount < -0.009) {
+      showToastPS('Revise os valores: a venda em dinheiro ficou negativa.')
+      return
+    }
 
     const { data: sessionData } = await supabase.auth.getSession()
     const authUser = sessionData.session?.user
@@ -295,14 +283,14 @@ export default function FechamentoCaixaPage() {
       closing_date: date,
       weekday_label: weekday,
       store,
-      sales_amount: input.salesAmount,
+      sales_amount: totals.declaredTotal,
       banri_amount: input.banriAmount,
       sitef_amount: input.sitefAmount,
       pix_amount: input.pixAmount,
-      cash_amount: input.cashAmount,
+      cash_amount: totals.cashSalesAmount,
       site_sales_amount: input.siteSalesAmount,
       ifood_sales_amount: input.ifoodSalesAmount,
-      total_amount: input.totalAmount,
+      total_amount: totals.declaredTotal,
       cash_withdrawal_amount: input.cashWithdrawalAmount,
       opening_cash_amount: input.openingCashAmount,
       closing_cash_amount: input.closingCashAmount,
@@ -370,7 +358,7 @@ export default function FechamentoCaixaPage() {
         <div className="ps-scroll ps-pad">
           <h1 className="ps-page-title"><DollarSign size={23} /> Caixa</h1>
           <p className="ps-page-lead">
-            Lancamento diario de vendas, formas de pagamento e dinheiro fisico deixado para deposito e abertura do proximo dia.
+            Fechamento diario com venda em dinheiro calculada pelo dinheiro contado, sangrias e abertura do caixa.
           </p>
 
           <section className="ps-filters" style={{ alignItems: 'stretch' }}>
@@ -421,34 +409,22 @@ export default function FechamentoCaixaPage() {
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '14px 0' }}>
             <div className="ps-kpi crust">
-              <div className="ps-kpi-lbl">Total declarado</div>
+              <div className="ps-kpi-lbl">Total do dia</div>
               <div className="ps-kpi-val">{formatCurrencyBRL(totals.declaredTotal)}</div>
             </div>
             <div className="ps-kpi sage">
-              <div className="ps-kpi-lbl">Meios de pagamento</div>
-              <div className="ps-kpi-val">{formatCurrencyBRL(totals.paymentTotal)}</div>
+              <div className="ps-kpi-lbl">Venda em dinheiro</div>
+              <div className="ps-kpi-val">{formatCurrencyBRL(totals.cashSalesAmount)}</div>
             </div>
             <div className="ps-kpi honey">
-              <div className="ps-kpi-lbl">Dinheiro esperado</div>
-              <div className="ps-kpi-val">{formatCurrencyBRL(totals.expectedClosingCash)}</div>
+              <div className="ps-kpi-lbl">Cartoes e PIX</div>
+              <div className="ps-kpi-val">{formatCurrencyBRL(totals.nonCashPaymentTotal)}</div>
             </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12 }}>
-            <FieldGroup title="Vendas">
-              {CHANNEL_FIELDS.map(field => (
-                <MoneyInput
-                  key={field.key}
-                  label={field.label}
-                  helper={field.helper}
-                  value={form[field.key]}
-                  onChange={value => updateField(field.key, value)}
-                />
-              ))}
-            </FieldGroup>
-
-            <FieldGroup title="Formas de pagamento">
-              {PAYMENT_FIELDS.map(field => (
+            <FieldGroup title="Preencher nesta ordem">
+              {CLOSING_FIELDS.map(field => (
                 <MoneyInput
                   key={field.key}
                   label={field.label}
@@ -460,38 +436,12 @@ export default function FechamentoCaixaPage() {
             </FieldGroup>
 
             <section className="ps-card" style={{ gap: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div className="ps-fieldlabel" style={{ color: 'var(--crust)' }}>Total</div>
-                <button type="button" onClick={usePaymentTotalAsTotal} className="ps-btn ghost sm">
-                  <RefreshCw size={12} /> Usar soma dos meios
-                </button>
-              </div>
-              <MoneyInput
-                label="Total"
-                helper="valor total anotado no papel"
-                value={form.totalAmount}
-                onChange={value => updateField('totalAmount', value)}
-              />
-            </section>
-
-            <FieldGroup title="Dinheiro fisico">
-              {CASH_FIELDS.map(field => (
-                <MoneyInput
-                  key={field.key}
-                  label={field.label}
-                  helper={field.helper}
-                  value={form[field.key]}
-                  onChange={value => updateField(field.key, value)}
-                />
-              ))}
-            </FieldGroup>
-
-            <section className="ps-card" style={{ gap: 12 }}>
-              <div className="ps-fieldlabel" style={{ color: 'var(--crust)' }}>Conferencias</div>
-              <CheckRow label="Total declarado - formas de pagamento" value={totals.paymentDifference} />
-              <CheckRow label="Total declarado - vendas por canal" value={totals.channelDifference} />
-              <CheckRow label="Caixa final - dinheiro esperado" value={totals.cashDifference} />
-              <CheckRow label="Caixa final - envelope - proximo dia" value={totals.cashSplitDifference} />
+              <div className="ps-fieldlabel" style={{ color: 'var(--crust)' }}>Resumo do calculo</div>
+              <SummaryRow label="Venda em dinheiro" helper="total em dinheiro + sangrias - abertura" value={totals.cashSalesAmount} />
+              <SummaryRow label="Banrisul + Stone + SiTef + PIX" value={totals.nonCashPaymentTotal} />
+              <SummaryRow label="Total do dia" helper="valor que entra no fechamento do dia" value={totals.declaredTotal} />
+              <SummaryRow label="iFood" helper="informativo, fora da soma do caixa" value={input.ifoodSalesAmount} />
+              <SummaryRow label="Envelope + proximo dia" helper="informativo, nao gera divergencia" value={totals.cashSplitTotal} />
             </section>
 
             <section className="ps-card" style={{ gap: 10 }}>

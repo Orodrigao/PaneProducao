@@ -1,24 +1,25 @@
-# Tarefa: indicador de ficha tecnica no catalogo
+# Tarefa: corrigir fechamento de caixa
 
-Pedido aprovado pelo Rodrigo em 06/07/2026: mostrar na tela de produtos quais
-itens ja tem ficha tecnica e quais ainda estao sem ficha.
+Pedido aprovado pelo Rodrigo em 06/07/2026: ajustar o fechamento para refletir
+o processo real da loja e remover negativos causados por campos informativos.
 
 ## Entendimento
 
-- A tela de produtos ja carrega os componentes das fichas tecnicas.
-- Produto com componentes cadastrados deve aparecer com indicador de ficha.
-- Produto elegivel sem componentes deve aparecer com indicador de sem ficha.
-- Insumos e produtos de revenda nao devem ser tratados como pendencia de ficha.
-- A mudanca deve ser visual, sem alterar banco, auth ou regras de ficha.
+- Total em dinheiro e todo o dinheiro fisico contado no caixa no fechamento.
+- Venda em dinheiro = total em dinheiro + sangrias - abertura do caixa.
+- Total do dia = venda em dinheiro + Banrisul + Stone + SiTef + Pix.
+- iFood, envelope e proximo dia sao apenas informativos.
+- O usuario deve preencher os campos na ordem operacional definida pelo Rodrigo.
 
 ## Plano
 
-- [x] Ler documentos obrigatorios e auditar a tela de produtos.
-- [x] Adicionar selo com icone para ficha existente ou ausente.
+- [x] Ler documentos obrigatorios e auditar a tela de fechamento.
+- [x] Ajustar calculo do fechamento e testes.
+- [x] Reordenar a tela na sequencia operacional.
 - [x] Validar testes, typecheck, lint e build.
 
 ## Fora desta entrega
 
 - Nao alterar schema ou dados do Supabase.
 - Nao mexer em auth, PINs, roles ou login.
-- Nao alterar fluxo de cadastro da ficha tecnica.
+- Nao criar integracao com CNM, iFood ou maquininhas.
