@@ -78,6 +78,15 @@ export function buildRomaneioProductOptions(
   })
 }
 
+export function nextRomaneioTripNumber(trips: Array<number | null | undefined>): number {
+  const maxTrip = trips.reduce<number>((max, trip) => {
+    const value = typeof trip === 'number' ? trip : Number(trip)
+    if (!Number.isFinite(value) || value < 1) return max
+    return Math.max(max, Math.trunc(value))
+  }, 0)
+  return maxTrip + 1
+}
+
 export function parseRomaneioQty(value: string): number {
   const normalized = value.trim().replace(',', '.')
   if (!normalized) return 0

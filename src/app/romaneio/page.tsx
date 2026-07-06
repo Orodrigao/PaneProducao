@@ -1,12 +1,13 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package } from 'lucide-react'
+import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package, Printer } from 'lucide-react'
 import { canAccess, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 import {
   buildRomaneioProductOptions,
   formatRomaneioQty,
+  nextRomaneioTripNumber,
   normalizeRomaneioQty,
   parseRomaneioQty,
   type RomaneioProductOption,
@@ -23,12 +24,34 @@ type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 interface Destination { id:string; name:string; code:string; active:boolean }
 interface Bread { id:string; name:string; active:boolean; is_pj:boolean; unit?:string|null }
 interface Romaneio { id:string; record_date:string; destination_id:string; trip_number:number; status:string; created_by:string; created_at?:string|null; obs?:string; sent_by?:string; sent_at?:string; confirmed_by?:string; confirmed_at?:string; destinations?:{name:string;code:string} }
+interface RomaneioTripRow { trip_number:number|null }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
 interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
+
+const ROMANEIO_SENDER = {
+  store: 'Pane Julio',
+  name: 'RGF PANE PIZZA LTDA',
+  cnpj: '55.800.425/0001-77',
+  ie: '0290735319',
+}
+
+const ROMANEIO_RECIPIENTS = {
+  EX: {
+    store: 'Exposicao',
+    name: 'Buck Comercio de Alimentos LTDA - ME',
+    location: 'Caxias do Sul, RS',
+    cnpj: '28.994.014/0001-97',
+  },
+  JA: {
+    store: 'Jardim',
+    name: 'Sf & Salute Padaria e Cafeteria Ltda',
+    cnpj: '58.286.372/0002-97',
+  },
+} as const
 
 // ── utils ──────────────────────────────────────────────────────────
 function fmtDateTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getDate()).padStart(2,'0')}/${String(br.getMonth()+1).padStart(2,'0')} ${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
@@ -38,6 +61,25 @@ function slugExtra() { return 'extra_'+Date.now() }
 function entregaLabel(trip: number) { return `${trip}ª entrega` }
 function draftHasItems(draft: CriarDraft | undefined) { return !!draft && Object.values(draft.qtys).some(qty => Number(qty) > 0) }
 function hasAnyDraftItems(drafts: Record<string, CriarDraft>) { return Object.values(drafts).some(draftHasItems) }
+function isUniqueViolation(error: unknown) { return error instanceof Error && error.message.includes('"code":"23505"') }
+function normalizeDestination(value: string | null | undefined) {
+  return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+}
+function recipientForDestination(destination: Romaneio['destinations']) {
+  const code = normalizeDestination(destination?.code)
+  if (code === 'EX') return ROMANEIO_RECIPIENTS.EX
+  if (code === 'JA') return ROMANEIO_RECIPIENTS.JA
+
+  const name = normalizeDestination(destination?.name)
+  if (name.includes('EXPOS')) return ROMANEIO_RECIPIENTS.EX
+  if (name.includes('JARDIM')) return ROMANEIO_RECIPIENTS.JA
+
+  return {
+    store: destination?.name || 'Destino nao identificado',
+    name: 'Dados fiscais do destino nao configurados',
+    cnpj: '',
+  }
+}
 function readDraftStorage(): CriarDraftStorage | null {
   if (typeof window === 'undefined') return null
   try {
@@ -81,6 +123,98 @@ function roleInfo(r: Role | null) {
 }
 
 // ── Supabase ────────────────────────────────────────────────────────
+function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
+  const recipient = recipientForDestination(rom.destinations)
+  const totalSent = items.reduce((sum, item) => sum + Number(item.qty_sent || 0), 0)
+
+  return (
+    <section id="romaneio-print" aria-hidden="true">
+      <header className="rom-print-header">
+        <div>
+          <h1>Romaneio de envio</h1>
+          <p>{rom.destinations?.name || recipient.store} - Viagem {rom.trip_number}</p>
+        </div>
+        <div className="rom-print-meta">
+          <div><span>Data</span><b>{formatDateBR(rom.record_date)}</b></div>
+          <div><span>Status</span><b>{statusLabel(rom.status)}</b></div>
+        </div>
+      </header>
+
+      <div className="rom-print-parties">
+        <section>
+          <h2>De / Remetente</h2>
+          <p className="rom-print-store">{ROMANEIO_SENDER.store}</p>
+          <p><b>{ROMANEIO_SENDER.name}</b></p>
+          <p>CNPJ: {ROMANEIO_SENDER.cnpj}</p>
+          <p>I.E.: {ROMANEIO_SENDER.ie}</p>
+        </section>
+        <section>
+          <h2>Para / Destinatario</h2>
+          <p className="rom-print-store">{recipient.store}</p>
+          <p><b>{recipient.name}</b></p>
+          {'location' in recipient && recipient.location && <p>{recipient.location}</p>}
+          {recipient.cnpj && <p>CNPJ: {recipient.cnpj}</p>}
+        </section>
+      </div>
+
+      <section className="rom-print-box">
+        <h2>Informacoes de envio</h2>
+        <div className="rom-print-grid">
+          <div><span>Criado por</span><b>{rom.created_by || '-'}</b></div>
+          <div><span>Criado em</span><b>{rom.created_at ? fmtDateTime(rom.created_at) : '-'}</b></div>
+          <div><span>Enviado por</span><b>{rom.sent_by || '-'}</b></div>
+          <div><span>Enviado em</span><b>{rom.sent_at ? fmtDateTime(rom.sent_at) : '-'}</b></div>
+          <div><span>Conferido por</span><b>{rom.confirmed_by || '-'}</b></div>
+          <div><span>Conferido em</span><b>{rom.confirmed_at ? fmtDateTime(rom.confirmed_at) : '-'}</b></div>
+        </div>
+        {rom.obs && (
+          <div className="rom-print-notes">
+            <span>Observacoes</span>
+            <p>{rom.obs}</p>
+          </div>
+        )}
+      </section>
+
+      <section className="rom-print-box">
+        <h2>Itens enviados</h2>
+        <table className="rom-print-table">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Enviado</th>
+              <th>Recebido</th>
+              <th>Aceito</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item.id}>
+                <td>{item.product_name}</td>
+                <td>{formatRomaneioQty(Number(item.qty_sent || 0))}</td>
+                <td>{item.qty_received != null ? formatRomaneioQty(Number(item.qty_received)) : '-'}</td>
+                <td>{item.qty_accepted != null ? formatRomaneioQty(Number(item.qty_accepted)) : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total enviado</td>
+              <td>{formatRomaneioQty(totalSent)}</td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </section>
+
+      <footer className="rom-print-signatures">
+        <div>Responsavel pelo envio</div>
+        <div>Responsavel pelo recebimento</div>
+      </footer>
+    </section>
+  )
+}
+
 async function sbGet(table:string, params='') {
   const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:H})
   if(!r.ok) throw new Error(await r.text())
@@ -118,6 +252,7 @@ async function sbDel(table:string, match:Record<string,string>) {
 // ── Main ──────────────────────────────────────────────────────────
 export default function RomaneioPage() {
   const router = useRouter()
+  const savingRomaneioRef = useRef(false)
   const [screen, setScreen] = useState<Screen>('init')
   const [role, setRole] = useState<Role|null>(null)
   const [dests, setDests] = useState<Destination[]>([])
@@ -272,7 +407,7 @@ export default function RomaneioPage() {
 
   const buildDraftForDest = async (destId: string, date = criarDate): Promise<CriarDraft> => {
     const [existing, orders] = await Promise.all([
-      sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}`),
+      sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=trip_number`),
       sbGet('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id`)
     ])
     let bds = breads
@@ -289,7 +424,7 @@ export default function RomaneioPage() {
       breads: bds,
       qtys: {},
       extras: {},
-      trip: (existing as Romaneio[]).length + 1,
+      trip: nextRomaneioTripNumber((existing as RomaneioTripRow[]).map(row => row.trip_number)),
       obs: '',
       extraInput: '',
     }
@@ -367,20 +502,37 @@ export default function RomaneioPage() {
     showToastPS('Rascunho salvo neste aparelho')
   }
 
+  const fetchNextTripNumber = async (date: string, destId: string) => {
+    const existing = await sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=trip_number`) as RomaneioTripRow[]
+    return nextRomaneioTripNumber(existing.map(row => row.trip_number))
+  }
+
   const saveRomaneio = async () => {
     const draft = criarDrafts[criarDestId]
     if (!draft) { showToastPS('Selecione uma loja'); return }
     const items = Object.entries(draft.qtys).filter(([,v])=>v>0)
     if (!items.length) { showToastPS('⚠️ Adicione ao menos um produto'); return }
     if (!criarDestId) { showToastPS('⚠️ Selecione o destino'); return }
+    if (savingRomaneioRef.current) return
+    savingRomaneioRef.current = true
     const options = buildRomaneioProductOptions(draft.breads)
     const optionByKey = new Map(options.map(option => [option.key, option]))
     showLoad('Fechando romaneio...')
     try {
-      const rom = await sbPost('romaneios',[{
-        record_date:criarDate, destination_id:criarDestId, trip_number:draft.trip,
+      const insertHeader = (tripNumber: number) => sbPost('romaneios',[{
+        record_date:criarDate, destination_id:criarDestId, trip_number:tripNumber,
         status:'separado', created_by:getCurrentUser()?.displayName || 'Gustavo', obs:draft.obs||null
-      }]) as { id: string }[]
+      }]) as Promise<{ id: string }[]>
+
+      let tripNumber = await fetchNextTripNumber(criarDate, criarDestId)
+      let rom: { id: string }[]
+      try {
+        rom = await insertHeader(tripNumber)
+      } catch (headerErr) {
+        if (!isUniqueViolation(headerErr)) throw headerErr
+        tripNumber = await fetchNextTripNumber(criarDate, criarDestId)
+        rom = await insertHeader(tripNumber)
+      }
       const romId = rom[0].id
       const itemRows = items.map(([pid,qty]) => {
         const isExtra = pid.startsWith('extra_')
@@ -396,7 +548,7 @@ export default function RomaneioPage() {
         try { await sbDel('romaneios',{id:romId}) } catch(_) {}
         throw itemErr
       }
-      showToastPS(`✅ ${entregaLabel(draft.trip)} fechada!`)
+      showToastPS(`✅ ${entregaLabel(tripNumber)} fechada!`)
       const nextDrafts = { ...criarDrafts }
       delete nextDrafts[criarDestId]
       const nextDest = Object.keys(nextDrafts)[0] || ''
@@ -415,7 +567,10 @@ export default function RomaneioPage() {
     } catch(e) {
       const msg = e instanceof Error ? e.message : 'Erro desconhecido'
       showToastPS('❌ Erro: '+(msg.length>100?msg.slice(0,100)+'...':msg), 5000)
-    } finally { hideLoad() }
+    } finally {
+      savingRomaneioRef.current = false
+      hideLoad()
+    }
   }
 
   // ── envio ──────────────────────────────────────────────────────
@@ -800,6 +955,7 @@ export default function RomaneioPage() {
 
       {/* DETALHE */}
       {screen==='detalhe' && detailRom && (
+        <>
         <div className="ps-canvas">
           <div className="ps-shell">
             <Header onBack={()=>setScreen('painel')} subtitle={statusLabel(detailRom.status)}/>
@@ -814,6 +970,10 @@ export default function RomaneioPage() {
                 {detailRom.obs && <div style={{fontSize:13,color:'var(--ink-soft)',marginTop:4}}>{detailRom.obs}</div>}
                 <span className={`ps-status ${detailRom.status}`} style={{alignSelf:'flex-start'}}>{statusLabel(detailRom.status)}</span>
               </div>
+
+              <button className="ps-btn info block no-print" style={{marginTop:14}} onClick={()=>window.print()}>
+                <Printer size={16}/> Imprimir romaneio
+              </button>
 
               <div className="ps-label" style={{marginTop:20}}>Itens</div>
               {detailItems.length===0 && <div className="ps-empty">Nenhum item.</div>}
@@ -849,6 +1009,8 @@ export default function RomaneioPage() {
             </div>
           </div>
         </div>
+        <RomaneioPrint rom={detailRom} items={detailItems}/>
+        </>
       )}
 
       {/* CRIAR */}
@@ -979,7 +1141,7 @@ export default function RomaneioPage() {
                   <button className="ps-btn ghost" onClick={saveCriarDrafts}>
                     <Save size={15}/> Salvar
                   </button>
-                  <button className="ps-save" onClick={saveRomaneio} disabled={!criarTotalItems}>
+                  <button className="ps-save" onClick={saveRomaneio} disabled={!criarTotalItems || loading}>
                     <Check size={16}/> Fechar
                   </button>
                 </div>
