@@ -1,27 +1,28 @@
-# Tarefa: fechamento de caixa
+# Tarefa: impressao do romaneio
 
-Pedido aprovado pelo Rodrigo em 03/07/2026: criar feature para Samuel, Lia,
-Suelen e Cleo registrarem no fim do dia as informacoes do fechamento de caixa.
+Pedido aprovado pelo Rodrigo em 06/07/2026: permitir imprimir o romaneio
+com as informacoes de envio, o destinatario fiscal e o remetente fiscal da
+Pane Julio.
 
 ## Entendimento
 
-- `Vendas` e valor em R$.
-- `Caixa anterior` e a abertura do caixa.
-- `Envelope` e o dinheiro que fica no malote para deposito.
-- `Proximo dia` e o dinheiro deixado para abrir o caixa seguinte.
+- A impressao deve sair a partir do detalhe do romaneio.
+- O remetente e sempre Pane Julio / RGF PANE PIZZA LTDA.
+- Para Exposicao, o destinatario e Buck Comercio de Alimentos LTDA - ME.
+- Para Jardim, o destinatario e Sf & Salute Padaria e Cafeteria Ltda.
+- A impressao deve esconder a interface operacional e mostrar um documento
+limpo com itens e dados de envio.
 
 ## Plano
 
-- [x] Ler docs obrigatorios e auditar auth/nav/RLS.
-- [x] Criar branch `codex/fechamento-caixa`.
-- [x] Criar migration local com tabela `cash_closings` e RLS desde o inicio.
-- [x] Criar helper testavel para calculos de fechamento.
-- [x] Criar tela `/fechamento-caixa` mobile-first usando `ps-*`.
-- [x] Adicionar rota na navegacao e defaults de acesso.
-- [x] Validar lint, typecheck, testes e build.
+- [x] Localizar a tela de detalhe do romaneio.
+- [x] Adicionar botao de impressao no detalhe.
+- [x] Adicionar botao de impressao nos cards do painel.
+- [x] Criar documento imprimivel com remetente, destinatario, envio e itens.
+- [x] Validar testes, typecheck e build.
 
 ## Fora desta entrega
 
-- Nao aplicar migration no Supabase de producao sem confirmacao separada.
-- Nao alterar `app_users`, PINs ou profiles reais diretamente.
-- Nao criar dashboard financeiro/CMV.
+- Nao alterar schema ou dados do Supabase.
+- Nao mexer em auth, PINs, roles ou login.
+- Nao alterar regras de envio/conferencia do romaneio.

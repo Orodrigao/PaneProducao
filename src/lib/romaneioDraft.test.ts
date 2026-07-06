@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRomaneioProductOptions, parseRomaneioQty } from './romaneioDraft'
+import { buildRomaneioProductOptions, nextRomaneioTripNumber, parseRomaneioQty } from './romaneioDraft'
 
 describe('romaneioDraft', () => {
   it('cria duas opcoes para ciabatta', () => {
@@ -31,5 +31,13 @@ describe('romaneioDraft', () => {
 
   it('aceita quantidade decimal com virgula', () => {
     expect(parseRomaneioQty('1,25')).toBe(1.25)
+  })
+
+  it('calcula a proxima viagem pela maior viagem existente', () => {
+    expect(nextRomaneioTripNumber([1, 3, 2])).toBe(4)
+  })
+
+  it('ignora viagens vazias ou invalidas', () => {
+    expect(nextRomaneioTripNumber([null, undefined, 0, -1])).toBe(1)
   })
 })
