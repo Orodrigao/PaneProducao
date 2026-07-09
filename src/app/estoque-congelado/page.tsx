@@ -24,6 +24,9 @@ const LOCATION_LABELS: Record<string, string> = {
 }
 
 const STORE_LABELS: Record<string, string> = { jc: 'JC', ja: 'JA', ex: 'EX' }
+const ALL_CATEGORIES = 'Todas'
+const UNCATEGORIZED_CATEGORY = 'Sem categoria'
+const BREAD_CATEGORY = 'Pães'
 
 // Extrai a loja de um id de location ('jc-freezer' → 'jc').
 function locStoreKey(loc: string): string {
@@ -63,6 +66,7 @@ export default function EstoqueCongeladoPage() {
   const [products, setProducts] = useState<FrozenProduct[]>([])
   const [stock, setStock]       = useState<StockMap>({})
   const [search, setSearch]     = useState('')
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES)
   const [tab, setTab]           = useState<'estoque'|'historico'|'admin'>('estoque')
   const [movFP, setMovFP]       = useState<FrozenProduct|null>(null)
   const [movType, setMovType]   = useState<'entrada'|'saida'|'inventario'>('entrada')
@@ -74,7 +78,9 @@ export default function EstoqueCongeladoPage() {
   const [adminAuthed, setAdminAuthed] = useState(false)
   const [adminPwd, setAdminPwd] = useState('')
   // Catálogo unificado: products + breads (com tag _source pra inserir corretamente em frozen_products)
-  type CatalogItem = { id: string; name: string; unit: string|null; _source: 'product'|'bread' }
+  type CatalogItem = { id: string; name: string; unit: string|null; category: string|null; _source: 'product'|'bread' }
+  type CatalogProductRow = { id: string; name: string; unit: string|null; category: string|null }
+  type CatalogBreadRow = { id: string; name: string; unit: string|null }
   const [allProducts, setAllProducts] = useState<CatalogItem[]>([])
   const [adminSearch, setAdminSearch] = useState('')
   const [adminResults, setAdminResults] = useState<CatalogItem[]>([])
@@ -129,11 +135,11 @@ export default function EstoqueCongeladoPage() {
   useEffect(() => { if (tab==='historico') loadHistorico() }, [tab, loadHistorico])
   useEffect(() => {
     Promise.all([
-      supabase.from('products').select('id,name,unit').eq('active', true),
+      supabase.from('products').select('id,name,unit,category').eq('active', true),
       supabase.from('breads').select('id,name,unit').eq('active', true),
     ]).then(([{data: ps}, {data: bs}]) => {
-      const fromProducts: CatalogItem[] = (ps||[]).map((p:any) => ({ id: p.id, name: p.name, unit: p.unit, _source: 'product' }))
-      const fromBreads:   CatalogItem[] = (bs||[]).map((b:any) => ({ id: b.id, name: b.name, unit: b.unit, _source: 'bread' }))
+      const fromProducts: CatalogItem[] = ((ps||[]) as CatalogProductRow[]).map(p => ({ id: p.id, name: p.name, unit: p.unit, category: p.category, _source: 'product' }))
+      const fromBreads:   CatalogItem[] = ((bs||[]) as CatalogBreadRow[]).map(b => ({ id: b.id, name: b.name, unit: b.unit, category: BREAD_CATEGORY, _source: 'bread' }))
       setAllProducts([...fromProducts, ...fromBreads].sort((a, b) => a.name.localeCompare(b.name)))
     })
   }, [])
@@ -264,6 +270,12 @@ export default function EstoqueCongeladoPage() {
 
   const isAdmin = !user?.store
   const visibleByStore = (p: FrozenProduct) => isAdmin || !p.visible_stores || p.visible_stores.includes(user?.store ?? '')
+  const categoryByCatalogKey = new Map(allProducts.map(p => [`${p._source}:${p.id}`, p.category || UNCATEGORIZED_CATEGORY]))
+  const getFrozenCategory = (p: FrozenProduct) => {
+    if (p.product_source === 'bread') return BREAD_CATEGORY
+    if (!p.product_id || !p.product_source) return UNCATEGORIZED_CATEGORY
+    return categoryByCatalogKey.get(`${p.product_source}:${p.product_id}`) || UNCATEGORIZED_CATEGORY
+  }
 
   const canDeleteProduct = (p: FrozenProduct): boolean => {
     if (isAdmin) return true
@@ -319,8 +331,11 @@ export default function EstoqueCongeladoPage() {
     showToast(`✅ ${p.product_name} removido`)
     load()
   }
-  const filtered = products
-    .filter(visibleByStore)
+  const visibleProducts = products.filter(visibleByStore)
+  const categoryOptions = Array.from(new Set(visibleProducts.map(getFrozenCategory)))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const filtered = visibleProducts
+    .filter(p => categoryFilter === ALL_CATEGORIES || getFrozenCategory(p) === categoryFilter)
     .filter(p => !search || p.product_name.toLowerCase().includes(search.toLowerCase()))
 
   function catalogItemState(p: CatalogItem, targetStores: string[]|null): 'new' | 'already-here' | 'add-to-mine' {
@@ -378,6 +393,17 @@ export default function EstoqueCongeladoPage() {
   }
 
   const userDisplay = user?.displayName || ''
+  const categoryChipStyle = (active: boolean) => ({
+    padding: '6px 12px',
+    background: active ? 'var(--ps-ink)' : 'transparent',
+    color: active ? 'var(--cream)' : 'var(--ink-soft)',
+    border: `1px solid ${active ? 'var(--ps-ink)' : 'var(--line-soft)'}`,
+    borderRadius: 'var(--r-pill)',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  })
 
   return (
     <div className="ps-canvas">
@@ -411,7 +437,7 @@ export default function EstoqueCongeladoPage() {
         <div className="ps-scroll ps-pad">
           {tab==='estoque' && (
             <>
-              <div style={{display:'flex', gap:8, marginTop:12, marginBottom:14}}>
+              <div style={{display:'flex', gap:8, marginTop:12, marginBottom:8}}>
                 <div style={{flex:1, position:'relative'}}>
                   <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
                   <input placeholder="Buscar produto..." value={search} onChange={e=>setSearch(e.target.value)}
@@ -423,6 +449,19 @@ export default function EstoqueCongeladoPage() {
                   </button>
                 )}
               </div>
+
+              {categoryOptions.length > 0 && (
+                <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:14}}>
+                  <button type="button" onClick={() => setCategoryFilter(ALL_CATEGORIES)} style={categoryChipStyle(categoryFilter === ALL_CATEGORIES)}>
+                    {ALL_CATEGORIES}
+                  </button>
+                  {categoryOptions.map(category => (
+                    <button key={category} type="button" onClick={() => setCategoryFilter(category)} style={categoryChipStyle(categoryFilter === category)}>
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {filtered.length===0 ? (
                 <div className="ps-empty">
@@ -445,7 +484,10 @@ export default function EstoqueCongeladoPage() {
                                 <span key={sk} className={`ps-store-chip ${sk}`} style={{marginLeft:6}}>{sk.toUpperCase()}</span>
                               ))}
                             </div>
-                            {fp.unit && <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>{fp.unit}</div>}
+                            <div style={{display:'flex', gap:6, flexWrap:'wrap', marginTop:2, fontSize:11, color:'var(--ink-faint)'}}>
+                              {fp.unit && <span>{fp.unit}</span>}
+                              <span>{getFrozenCategory(fp)}</span>
+                            </div>
                           </div>
                           <div style={{textAlign:'right'}}>
                             <div style={{fontSize:22, fontWeight:700, color:low?'var(--berry)':'var(--crust)', fontVariantNumeric:'tabular-nums', lineHeight:1.1}}>{total}</div>
