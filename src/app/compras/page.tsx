@@ -6,6 +6,7 @@ import { ChevronLeft, Plus, X, Send, Copy, Pencil, RotateCw, Check, Search } fro
 import { supabase } from '@/lib/supabase'
 import { AppUser, getCurrentUser, firstAllowedRoute, roleColor } from '@/lib/auth'
 import { formatDate, showToast } from '@/lib/utils'
+import { resolvePurchaseAccess } from './access'
 
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
 const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
@@ -13,16 +14,6 @@ const SECTOR_LABELS: Record<string,string> = { padaria:'🥖 Padaria', cozinha:'
 
 interface PurchaseList { id:string; sector:string; status:string; submitted_at:string|null; submitted_by:string|null; completed_at:string|null }
 interface PurchaseItem { id:string; list_id:string; product_id:string|null; ad_hoc_name:string|null; unit:string|null; quantity:number|null; checked:boolean; is_adhoc:boolean; sort_order:number; products?: { name:string } }
-
-// Mapa user.id → setor. Admin vai pra visão "owner".
-function resolveRole(user: AppUser): { sector: string|null; isOwner: boolean } {
-  if (user.role === 'admin') return { sector: null, isOwner: true }
-  if (user.id === 'elis')    return { sector: null, isOwner: true }  // Elis: compradora — visão geral (listas de todos os setores + cotações)
-  if (user.id === 'geolar')  return { sector: 'padaria', isOwner: false }
-  if (user.id === 'fran')    return { sector: 'cozinha', isOwner: false }
-  if (['liara','samuel','rose','atendente_ex'].includes(user.id)) return { sector: 'loja', isOwner: false }
-  return { sector: null, isOwner: false }
-}
 
 export default function ComprasPage() {
   const router = useRouter()
@@ -48,7 +39,7 @@ export default function ComprasPage() {
     const u = getCurrentUser()
     if (!u) { router.replace('/login'); return }
     setAuthUser(u)
-    const r = resolveRole(u)
+    const r = resolvePurchaseAccess(u)
     if (r.isOwner) {
       setIsOwner(true)
       setUser({ name: u.displayName, id: u.id })
