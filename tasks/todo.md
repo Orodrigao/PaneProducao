@@ -28,8 +28,9 @@ reduzir a produção nova mostrada no Forno.
 - [x] Subtrair apenas reaproveitamento confirmado no previsto do Forno.
 - [x] Adicionar testes e atualizar tipos/documentação.
 - [x] Rodar testes, typecheck, lint, build e revisar o diff.
-- [ ] Apresentar a migração antes de qualquer aplicação no Supabase.
-- [ ] Após aprovação, aplicar, verificar, mesclar na `main` e acompanhar Vercel.
+- [x] Apresentar a migração antes de qualquer aplicação no Supabase.
+- [x] Após aprovação, aplicar e verificar a migração no Supabase.
+- [ ] Mesclar na `main` e acompanhar a publicação na Vercel.
 
 ## Fora desta entrega
 

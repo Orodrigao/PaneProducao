@@ -12,7 +12,8 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - [x] Proposta no planejamento e confirmação física antes de reduzir o previsto do Forno.
 - [x] Histórico imutável e funções transacionais com RLS; EX excluída do fluxo.
 - [x] Testes, typecheck, lint, build e verificação visual mobile.
-- [ ] Aplicar a migração no Supabase após aprovação explícita e validar o fluxo com dados reais.
+- [x] Migração aplicada no Supabase após aprovação explícita; fluxo transacional completo validado com rollback.
+- [ ] Publicar a interface na `main` e validar o primeiro lançamento operacional.
 
 ---
 
