@@ -1,9 +1,9 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers, X, Search } from 'lucide-react'
+import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers, X, Search, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { todayKey, todayLabel, showToast } from '@/lib/utils'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
 
@@ -12,6 +12,7 @@ interface Bread   { id: string; name: string; unit: string | null; is_shelf: boo
 
 type Mode = 'sobra' | 'descarte' | 'prateleira' | null
 const STORES = ['jc', 'ja', 'ex'] as const
+const MANAGED_STORES = ['jc', 'ja'] as const
 const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Júlio de Antonio', ex: 'EX — Exposição' }
 
 function yesterdayKey(): string {
@@ -39,16 +40,21 @@ export default function SobrasPage() {
   const [includeOpen, setIncludeOpen] = useState(false)
   const [includeSearch, setIncludeSearch] = useState('')
   const [selectedStore, setSelectedStore] = useState<string>('jc')
+  const [physicalLocation, setPhysicalLocation] = useState('balcao_fechamento')
   const [saving, setSaving]     = useState(false)
   // Filtro de categoria do form. null = "Todas". '__breads__' = só o bloco de pães.
   // Senão, nome exato da category de products. Resetado a cada troca de modo.
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   useEffect(() => {
-    const u = getCurrentUser()
-    if (!u) { router.replace('/login'); return }
-    setUser(u)
-    if (u.store && (STORES as readonly string[]).includes(u.store)) setSelectedStore(u.store)
+    let active = true
+    void getCurrentUserAsync().then(u => {
+      if (!active) return
+      if (!u) { router.replace('/login'); return }
+      setUser(u)
+      if (u.store && (STORES as readonly string[]).includes(u.store)) setSelectedStore(u.store)
+    })
+    return () => { active = false }
   }, [router])
 
   const loadData = useCallback(async () => {
@@ -57,23 +63,27 @@ export default function SobrasPage() {
     // Catálogo: products e breads. Pra sobra/descarte mantém comportamento antigo
     // (orders do dia filtra pães vendidos). Pra prateleira NÃO filtra por orders
     // — todo shelf da loja precisa aparecer.
-    const [{ data: prodsRaw }, { data: bdsRaw }, { data: orders }] = await Promise.all([
+    const [{ data: prodsRaw }, { data: bdsRaw }, { data: producedRows }] = await Promise.all([
       supabase.from('products').select('id,name,category,unit,kind,is_shelf').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
       supabase.from('breads').select('id,name,unit,is_shelf').eq('active', true).eq('is_pj', false).order('name'),
-      mode === 'prateleira'
+      mode === 'prateleira' || mode === 'descarte'
         ? Promise.resolve({ data: [] })
-        : supabase.from('orders').select('bread_id').eq('order_date', todayKey()).gt('quantity', 0),
+        : supabase.from('production_actuals').select('bread_id').eq('record_date', todayKey()).gt('quantity_baked', 0),
     ])
-    const todayBreadIds = new Set((orders || []).map((o: any) => o.bread_id).filter(Boolean))
+    const todayBreadIds = new Set(
+      ((producedRows || []) as { bread_id: string | null }[])
+        .map(row => row.bread_id)
+        .filter((breadId): breadId is string => Boolean(breadId)),
+    )
 
     let prods = (prodsRaw || []) as Product[]
     let bds = (bdsRaw || []) as Bread[]
 
     if (mode === 'sobra') {
-      // Sobra = pão fresco do dia. Filtra shelf out (não tem por que lançar
-      // pão de forma como sobra todo dia — ele vai pro modo Prateleira).
-      prods = prods.filter(p => !p.is_shelf)
-      bds = bds.filter(b => !b.is_shelf && todayBreadIds.has(b.id))
+      // Toda saída confirmada do Forno pode virar sobra, inclusive B.Brasil e
+      // pães de hambúrguer marcados como shelf, que podem ir para uso interno.
+      prods = []
+      bds = bds.filter(b => todayBreadIds.has(b.id))
     } else if (mode === 'descarte') {
       // Aceita qualquer pão ativo não-PJ. Pão velho descartado pode ter sido
       // produzido em qualquer dia da semana — filtrar por pedidos do dia
@@ -121,6 +131,15 @@ export default function SobrasPage() {
       setQtys(vals)
       setPrevCounts(prevVals)
       setTodayKeysWithData(todayKeys)
+    } else if (mode === 'sobra' && (selectedStore === 'jc' || selectedStore === 'ja')) {
+      const { data: saved } = await supabase.from('sobras').select('product_id,quantity')
+        .eq('record_date', todayKey()).eq('store', selectedStore).eq('product_source', 'bread')
+      const vals: Record<string,number> = {}
+      ;((saved || []) as { product_id: string; quantity: number }[])
+        .forEach(row => { vals['bread_'+row.product_id] = Number(row.quantity) })
+      setQtys(vals)
+      setPrevCounts({})
+      setTodayKeysWithData(new Set())
     } else {
       const table = mode === 'sobra' ? 'sobras' : 'descartes'
       const { data: saved } = await supabase.from(table).select('*')
@@ -140,6 +159,16 @@ export default function SobrasPage() {
   useEffect(() => { setSelectedCategory(null) }, [mode])
 
   const setQty = (id: string, val: number) => setQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
+
+  function openLeftoverMode() {
+    if (user?.role === 'vendas' && user.store === 'ex') {
+      showToast('A produção da EX é venda por romaneio e não entra no fluxo de sobras.')
+      return
+    }
+    if (selectedStore === 'ex') setSelectedStore('jc')
+    setPhysicalLocation('balcao_fechamento')
+    setMode('sobra')
+  }
 
   async function includeBread(b: Bread) {
     const { error } = await supabase.from('breads').update({ is_shelf: true }).eq('id', b.id)
@@ -194,9 +223,42 @@ export default function SobrasPage() {
       }
 
       // Sobra ou Descarte — comportamento original (preservado)
+      if (mode === 'sobra') {
+        if (selectedStore !== 'jc' && selectedStore !== 'ja') {
+          showToast('A loja EX não participa do fluxo de sobras de produção.')
+          return
+        }
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!sessionData.session) {
+          showToast('Entre com e-mail para registrar sobras por lote e movimentar estoque com segurança.')
+          return
+        }
+        if (breads.length === 0) {
+          showToast('Confirme primeiro a saída dos pães no Forno.')
+          return
+        }
+
+        const breadItems = breads.map(bread => ({
+          bread_id: bread.id,
+          quantity: qtys['bread_'+bread.id] ?? 0,
+        }))
+        const { error } = await supabase.rpc('register_bread_leftovers', {
+          p_record_date: date,
+          p_store: selectedStore,
+          p_items: breadItems,
+          p_physical_location: physicalLocation,
+        })
+        if (error) throw error
+        showToast(`Sobras ${selectedStore.toUpperCase()} salvas por lote.`)
+        setMode(null)
+        setQtys({})
+        return
+      }
+
       const items = Object.entries(qtys).filter(([,v]) => v > 0)
       if (!items.length) { showToast('Nenhuma quantidade preenchida'); return }
-      const table = mode === 'sobra' ? 'sobras' : 'descartes'
+      const table = 'descartes'
 
       // Idempotência: pra descarte, apaga bread_movements antigos (diretos + cascade de kit)
       // antes de re-inserir os descartes
@@ -263,7 +325,7 @@ export default function SobrasPage() {
       }
 
       const cascadeNote = cascadeBreadCount > 0 ? ` (+${cascadeBreadCount} pães debitados via kit)` : ''
-      showToast(`✅ ${mode==='sobra'?'Sobras':'Descartes'} salvo${mode==='sobra'?'s':'s'}!${cascadeNote}`)
+      showToast(`✅ Descartes salvos!${cascadeNote}`)
       setMode(null); setQtys({})
     } catch(e:any) { showToast('Erro: '+e.message) }
     finally { setSaving(false) }
@@ -308,10 +370,15 @@ export default function SobrasPage() {
           <p className="ps-page-lead">Sobras de pão fresco · Prateleira (contagem do balcão) · Descarte real.</p>
 
           <div style={{display:'flex', flexDirection:'column', gap:12}}>
-            <button onClick={()=>setMode('sobra')} className="ps-report-card" style={{textAlign:'left'}}>
+            <button onClick={()=>router.push('/sobras/pendencias')} className="ps-report-card" style={{textAlign:'left'}}>
+              <div className="icon"><ClipboardCheck size={28}/></div>
+              <h3>Central de Pendências</h3>
+              <p>Veja o que ainda está sem destino e registre vitrine, consumo interno, doação, descarte ou congelamento.</p>
+            </button>
+            <button onClick={openLeftoverMode} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Package size={28}/></div>
               <h3>Registrar Sobras</h3>
-              <p>Pão fresco do dia que sobrou no fechamento. Não move estoque. Itens de prateleira (pão de forma, kits) não aparecem aqui.</p>
+              <p>Pão fresco de JC ou JA que sobrou no fechamento. Fica pendente por lote até receber um destino.</p>
             </button>
             <button onClick={()=>setMode('prateleira')} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Layers size={28}/></div>
@@ -357,11 +424,14 @@ export default function SobrasPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          {mode === 'prateleira' && (() => {
+          {(mode === 'prateleira' || mode === 'sobra') && (() => {
             // Atendentes (user.store setado) ficam travados na própria loja —
             // evita JC sobrescrever o snapshot de JA/EX por engano. Admin tem
             // user.store=null e mantém a escolha livre.
-            const locked = !!user.store && (STORES as readonly string[]).includes(user.store)
+            const locked = user.role === 'vendas'
+              && !!user.store
+              && (STORES as readonly string[]).includes(user.store)
+            const availableStores = mode === 'sobra' ? MANAGED_STORES : STORES
             return (
               <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}}>
                 <div style={{fontSize:13, color:'var(--ink-soft)', fontWeight:600}}>Loja:</div>
@@ -379,12 +449,28 @@ export default function SobrasPage() {
                     className="ps-select"
                     style={{flex:1, padding:'6px 10px', fontSize:13}}
                   >
-                    {STORES.map(s => <option key={s} value={s}>{STORE_LABEL[s]}</option>)}
+                    {availableStores.map(s => <option key={s} value={s}>{STORE_LABEL[s]}</option>)}
                   </select>
                 )}
               </div>
             )
           })()}
+
+          {mode === 'sobra' && (
+            <div className="ps-card" style={{padding:'10px 14px', marginBottom:12}}>
+              <label className="ps-label" htmlFor="leftover-physical-location" style={{marginTop:0}}>Onde as sobras ficaram?</label>
+              <select
+                id="leftover-physical-location"
+                className="ps-select"
+                value={physicalLocation}
+                onChange={event => setPhysicalLocation(event.target.value)}
+              >
+                <option value="balcao_fechamento">Balcão de fechamento</option>
+                <option value="mesa_separacao">Mesa de separação</option>
+                <option value="padaria_cozinha">Padaria / cozinha</option>
+              </select>
+            </div>
+          )}
 
           {(breads.length > 0 || Object.keys(grouped).length > 0) && (() => {
             // Chips de filtro: "Todas" + pães + cada categoria de produto. Wrap em

@@ -559,6 +559,48 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-btn.sm{ padding:6px 11px; font-size:12px; }
 .ps-btn.block{ width:100%; padding:12px 18px; font-size:14px; }
 
+/* Central de sobras e pendências */
+.ps-leftover-page{ padding-bottom:110px; }
+.ps-leftover-intro{ margin:18px 0 16px; color:var(--ink-soft); font-size:14px; line-height:1.45; }
+.ps-leftover-filters{ display:grid; grid-template-columns:1fr; gap:10px; padding:12px; border:1px solid var(--ps-line); border-radius:var(--r-card); background:var(--cream); }
+.ps-leftover-filters .ps-label{ margin-top:0; }
+.ps-leftover-filters .ps-input{ width:100%; min-height:43px; }
+@media (min-width:520px){ .ps-leftover-filters{ grid-template-columns:1fr 1fr; } }
+.ps-leftover-alert,.ps-leftover-overdue{ display:flex; align-items:flex-start; gap:10px; padding:13px 14px; margin:14px 0; border-radius:var(--r-ctrl); border:1px solid #E6B5AC; background:var(--berry-tint); color:var(--berry); }
+.ps-leftover-alert div,.ps-leftover-overdue div{ display:flex; flex-direction:column; gap:2px; flex:1; }
+.ps-leftover-alert span,.ps-leftover-overdue span{ font-size:12px; line-height:1.35; }
+.ps-leftover-overdue{ border-color:var(--honey-line); background:var(--honey-tint); color:var(--crust); }
+.ps-leftover-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.ps-leftover-card-head>div:first-child{ min-width:0; }
+.ps-leftover-card-head span{ display:block; margin-top:3px; color:var(--ink-faint); font-size:12px; font-weight:600; }
+.ps-leftover-balance,.ps-reuse-proposed{ text-align:right; flex:0 0 auto; }
+.ps-leftover-balance b,.ps-reuse-proposed b{ display:inline-block; margin-top:2px; color:var(--crust); font-family:var(--font-display); font-size:28px; line-height:1; }
+.ps-leftover-balance small{ margin-left:3px; color:var(--ink-faint); font-weight:700; }
+.ps-leftover-age{ display:flex; align-items:center; gap:5px; color:var(--berry); font-size:12px; font-weight:700; }
+.ps-leftover-card.overdue{ border-color:#E6B5AC; }
+.ps-leftover-card.overdue::before{ background:var(--berry); }
+.ps-leftover-card .ps-label{ display:flex; align-items:center; gap:5px; margin:2px 0 -6px; }
+.ps-leftover-destination-row{ display:grid; grid-template-columns:minmax(0,1fr) 104px; gap:8px; }
+.ps-leftover-destination-row .ps-input{ width:100%; min-height:43px; }
+.ps-leftover-empty{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:26px 0; }
+.ps-reuse-card.confirmed{ border-color:#C5D5BA; background:#E3F0E0; }
+.ps-reuse-card.confirmed::before{ background:var(--sage); }
+.ps-reuse-confirmed{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:2px 7px; color:#586543; }
+.ps-reuse-confirmed span{ grid-column:2; color:var(--ink-soft); font-size:12px; }
+.ps-leftover-qty{ width:100%; min-height:54px; font-size:24px; }
+.ps-order-bread-title{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ps-leftover-chip{ flex:0 0 auto; padding:3px 8px; border-radius:var(--r-pill); background:#E3F0E0; color:#586543; font-size:12px; font-weight:800; }
+.ps-order-reuse{ margin-top:2px; padding-top:11px; border-top:1px dashed var(--ps-line); }
+.ps-order-reuse-label{ display:flex; align-items:flex-end; justify-content:space-between; gap:8px; margin-bottom:7px; }
+.ps-order-reuse-label span{ font-size:12px; font-weight:800; color:var(--crust); }
+.ps-order-reuse-label small{ color:var(--ink-faint); font-size:10px; }
+.ps-stepper.compact{ grid-template-columns:42px 1fr 42px; }
+.ps-stepper.compact .ps-step{ min-height:40px; }
+.ps-stepper.compact .ps-qty{ min-height:40px; font-size:19px; }
+.ps-order-reuse-confirmed{ display:flex; align-items:flex-start; gap:7px; color:#586543; }
+.ps-order-reuse-confirmed span{ display:flex; flex-direction:column; gap:1px; }
+.ps-order-reuse-confirmed small{ color:var(--ink-soft); font-size:11px; }
+
 /* Status pills */
 .ps-status{ display:inline-flex; align-items:center; font-size:11px; font-weight:700; padding:3px 10px; border-radius:var(--r-pill); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; border:1px solid transparent; }
 .ps-status.separado{ background:var(--line-soft); color:var(--ink-soft); border-color:var(--ps-line); }
