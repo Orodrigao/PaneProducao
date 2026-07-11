@@ -62,6 +62,7 @@ export type Database = {
           created_at: string | null
           id: string
           location: string
+          lot_id: string | null
           movement_type: string
           obs: string | null
           quantity: number
@@ -74,6 +75,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           location: string
+          lot_id?: string | null
           movement_type: string
           obs?: string | null
           quantity: number
@@ -86,6 +88,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           location?: string
+          lot_id?: string | null
           movement_type?: string
           obs?: string | null
           quantity?: number
@@ -93,7 +96,15 @@ export type Database = {
           reference_id?: string | null
           reference_type?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bread_movements_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "production_actuals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       breads: {
         Row: {
@@ -776,6 +787,7 @@ export type Database = {
           bread_id: string
           created_at: string | null
           id: string
+          lot_code: string
           loss_reason: string | null
           obs: string | null
           quantity_baked: number
@@ -788,6 +800,7 @@ export type Database = {
           bread_id: string
           created_at?: string | null
           id?: string
+          lot_code: string
           loss_reason?: string | null
           obs?: string | null
           quantity_baked?: number
@@ -800,6 +813,7 @@ export type Database = {
           bread_id?: string
           created_at?: string | null
           id?: string
+          lot_code?: string
           loss_reason?: string | null
           obs?: string | null
           quantity_baked?: number
@@ -809,6 +823,62 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      production_actual_events: {
+        Row: {
+          bread_id: string
+          changed_by: string
+          changed_by_name: string
+          created_at: string
+          id: string
+          loss_reason: string | null
+          lot_code: string
+          previous_quantity_baked: number | null
+          previous_quantity_loss: number | null
+          production_actual_id: string
+          quantity_baked: number
+          quantity_loss: number
+          record_date: string
+        }
+        Insert: {
+          bread_id: string
+          changed_by: string
+          changed_by_name: string
+          created_at?: string
+          id?: string
+          loss_reason?: string | null
+          lot_code: string
+          previous_quantity_baked?: number | null
+          previous_quantity_loss?: number | null
+          production_actual_id: string
+          quantity_baked: number
+          quantity_loss: number
+          record_date: string
+        }
+        Update: {
+          bread_id?: string
+          changed_by?: string
+          changed_by_name?: string
+          created_at?: string
+          id?: string
+          loss_reason?: string | null
+          lot_code?: string
+          previous_quantity_baked?: number | null
+          previous_quantity_loss?: number | null
+          production_actual_id?: string
+          quantity_baked?: number
+          quantity_loss?: number
+          record_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_actual_events_production_actual_id_fkey"
+            columns: ["production_actual_id"]
+            isOneToOne: false
+            referencedRelation: "production_actuals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       products: {
         Row: {
@@ -1645,7 +1715,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      confirm_oven_output: {
+        Args: {
+          p_bread_id: string
+          p_loss_reason?: string
+          p_obs?: string
+          p_quantity_good: number
+          p_quantity_loss?: number
+          p_record_date: string
+        }
+        Returns: {
+          confirmed_at: string
+          production_actual_id: string
+          returned_loss_reason: string | null
+          returned_lot_code: string
+          returned_quantity_good: number
+          returned_quantity_loss: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
