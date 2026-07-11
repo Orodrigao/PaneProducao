@@ -2,8 +2,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { aggregateWholePending, clampReuseProposal } from '@/lib/breadLeftovers'
+import { supabase } from '@/lib/supabase'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
-import { LogOut, Clock, AlarmClock, Save, Minus, Plus } from 'lucide-react'
+import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check } from 'lucide-react'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -29,6 +31,7 @@ type OrderMap = Record<string, Record<string, OrderRow>>
 type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
 
 interface BreadForm { name:string; days:number[]; is_pj:boolean }
+interface ReusePlanSummary { status:string; proposedQuantity:number; confirmedQuantity:number }
 
 // ── utils ──────────────────────────────────────────────────────────
 function deliveryDateKey(delivIdx: number) {
@@ -125,6 +128,9 @@ export default function ProducaoPage() {
   const [syncState, setSyncState] = useState<''|'syncing'|'error'>('')
   // qty state per store: key = "store-breadId"
   const [qtys, setQtys] = useState<Record<string,number>>({})
+  const [pendingLeftovers, setPendingLeftovers] = useState<Record<string,number>>({})
+  const [reuseProposalQtys, setReuseProposalQtys] = useState<Record<string,number>>({})
+  const [reusePlans, setReusePlans] = useState<Record<string,ReusePlanSummary>>({})
   const [obsMap, setObsMap] = useState<Record<string,string>>({})
   const [pjClient, setPjClient] = useState('')
   const [pjDate, setPjDate] = useState('')
@@ -173,6 +179,58 @@ export default function ProducaoPage() {
     } catch(e) {
       setSyncState('error')
       throw e
+    }
+  }, [])
+
+  const loadReuseContext = useCallback(async (dateKey: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        setPendingLeftovers({})
+        setReuseProposalQtys({})
+        setReusePlans({})
+        return
+      }
+
+      const [leftoversResult, plansResult] = await Promise.all([
+        supabase
+          .from('sobras')
+          .select('store, product_id, pending_quantity')
+          .in('store', ['jc', 'ja'])
+          .eq('product_source', 'bread')
+          .lt('record_date', dateKey)
+          .gt('pending_quantity', 0),
+        supabase
+          .from('bread_reuse_plans')
+          .select('store, bread_id, proposed_quantity, confirmed_quantity, status')
+          .eq('target_production_date', dateKey),
+      ])
+      if (leftoversResult.error) throw leftoversResult.error
+      if (plansResult.error) throw plansResult.error
+
+      const pending = Object.fromEntries(
+        aggregateWholePending(leftoversResult.data ?? []).entries(),
+      )
+      const proposals: Record<string,number> = {}
+      const loadedPlans: Record<string,ReusePlanSummary> = {}
+      for (const plan of plansResult.data ?? []) {
+        if ((plan.store !== 'jc' && plan.store !== 'ja') || !plan.bread_id) continue
+        const key = `${plan.store}-${plan.bread_id}`
+        const proposedQuantity = Number(plan.proposed_quantity ?? 0)
+        proposals[key] = plan.status === 'cancelled' ? 0 : proposedQuantity
+        loadedPlans[key] = {
+          status: String(plan.status),
+          proposedQuantity,
+          confirmedQuantity: Number(plan.confirmed_quantity ?? 0),
+        }
+      }
+      setPendingLeftovers(pending)
+      setReuseProposalQtys(proposals)
+      setReusePlans(loadedPlans)
+    } catch {
+      setPendingLeftovers({})
+      setReuseProposalQtys({})
+      setReusePlans({})
     }
   }, [])
 
@@ -286,6 +344,7 @@ export default function ProducaoPage() {
       setOrders(map)
       setOrderDate(defDate)
       initOrderState(map, bds)
+      await loadReuseContext(defDate)
       setActiveTab(0)
       // Rodrigão: pré-carrega catálogo de Itens JC pra evitar lag ao clicar a aba
       if (user === 'rodrigo') {
@@ -305,6 +364,7 @@ export default function ProducaoPage() {
   const logout = () => {
     setCurrentUser(null)
     setBreads([]); setOrders({}); setQtys({}); setObsMap({})
+    setPendingLeftovers({}); setReuseProposalQtys({}); setReusePlans({})
     setActiveTab(0)
     setScreen('login')
     authLogout()
@@ -338,6 +398,7 @@ export default function ProducaoPage() {
       const map = await loadOrders(newDate)
       setOrders(map)
       initOrderState(map, breads)
+      await loadReuseContext(newDate)
     } catch(e) { showToast('Erro ao carregar pedidos.') }
     finally { hideLoad() }
   }
@@ -353,16 +414,63 @@ export default function ProducaoPage() {
       order_date: date, obs,
       ...(store==='pj' ? { pj_client: pjClient, pj_delivery_date: pjDate||null } : {})
     }))
+    const isManagedStore = store === 'jc' || store === 'ja'
+    const proposals = isManagedStore
+      ? storeBreads.map(b => ({
+          bread_id: b.id,
+          quantity: reusePlans[`${store}-${b.id}`]?.status === 'confirmed'
+            ? reusePlans[`${store}-${b.id}`].proposedQuantity
+            : clampReuseProposal(
+                reuseProposalQtys[`${store}-${b.id}`] ?? 0,
+                qtys[`${store}-${b.id}`] ?? 0,
+                pendingLeftovers[`${store}-${b.id}`] ?? 0,
+              ),
+        }))
+      : []
+    const hasReuseContext = isManagedStore && storeBreads.some(b => {
+      const key = `${store}-${b.id}`
+      return (reuseProposalQtys[key] ?? 0) > 0
+        || (Boolean(reusePlans[key]) && reusePlans[key].status !== 'cancelled')
+    })
+
+    if (isManagedStore) {
+      const invalidConfirmed = storeBreads.find(b => {
+        const key = `${store}-${b.id}`
+        const plan = reusePlans[key]
+        return plan?.status === 'confirmed'
+          && (qtys[key] ?? 0) < plan.confirmedQuantity
+      })
+      if (invalidConfirmed) {
+        showToast('O pedido não pode ficar abaixo da sobra já confirmada para a vitrine.')
+        return
+      }
+    }
+
+    if (hasReuseContext) {
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        showToast('Entre com e-mail para salvar o reaproveitamento junto com o pedido.')
+        return
+      }
+    }
     setSaving(true)
     setSyncState('syncing')
     try {
       await sbDel('orders', { store, order_date: date })
       await sbInsert('orders', rows)
+      if (hasReuseContext) {
+        const { error } = await supabase.rpc('save_bread_reuse_proposals', {
+          p_target_production_date: date,
+          p_store: store,
+          p_proposals: proposals,
+        })
+        if (error) throw error
+      }
       const newMap = { ...orders, [store]: {} }
       rows.forEach(r => { (newMap[store] as any)[r.bread_id] = r })
       setOrders(newMap)
       setSyncState('')
-      showToast('Pedido salvo!')
+      showToast(hasReuseContext ? 'Pedido e reaproveitamento salvos!' : 'Pedido salvo!')
       if (currentUser !== 'rodrigo') {
         sendTelegram(store, rows, storeBreads)
       }
@@ -586,7 +694,26 @@ export default function ProducaoPage() {
   }, [reportTabActive, reportDate, loadReport])
 
   // ── render helpers ───────────────────────────────────────────────
-  const setQty = (key: string, val: number) => setQtys(prev=>({...prev,[key]:Math.max(0,val)}))
+  const setQty = (key: string, val: number) => {
+    const quantity = Math.max(0, val)
+    setQtys(prev=>({...prev,[key]:quantity}))
+    if (key.startsWith('jc-') || key.startsWith('ja-')) {
+      setReuseProposalQtys(prev => ({
+        ...prev,
+        [key]: reusePlans[key]?.status === 'confirmed'
+          ? prev[key] ?? reusePlans[key].proposedQuantity
+          : clampReuseProposal(prev[key] ?? 0, quantity, pendingLeftovers[key] ?? 0),
+      }))
+    }
+  }
+
+  const setReuseProposal = (key: string, val: number) => {
+    if (reusePlans[key]?.status === 'confirmed') return
+    setReuseProposalQtys(prev => ({
+      ...prev,
+      [key]: clampReuseProposal(val, qtys[key] ?? 0, pendingLeftovers[key] ?? 0),
+    }))
+  }
 
   // ── Render ───────────────────────────────────────────────────────
   if (screen === 'init' || screen === 'login') return (
@@ -602,6 +729,7 @@ export default function ProducaoPage() {
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       onDateChange={loadGeolar}
       onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope)}
+      onOpenPending={()=>router.push('/sobras/pendencias')}
       onLogout={logout}
       loading={loading} loadingMsg={loadingMsg}
     />
@@ -670,11 +798,15 @@ export default function ProducaoPage() {
               delivIdx={delivIdx}
               isLocked={isLocked}
               qtys={qtys}
+              pendingLeftovers={pendingLeftovers}
+              reuseProposalQtys={reuseProposalQtys}
+              reusePlans={reusePlans}
               obs={obsMap[activeStore]||''}
               pjClient={pjClient}
               pjDate={pjDate}
               onDelivChange={changeDelivDay}
               onQtyChange={(key,val)=>setQty(key,val)}
+              onReuseChange={(key,val)=>setReuseProposal(key,val)}
               onObsChange={(obs)=>setObsMap(prev=>({...prev,[activeStore]:obs}))}
               onPjClientChange={setPjClient}
               onPjDateChange={setPjDate}
@@ -815,14 +947,18 @@ function LoginScreen({ onLogin }: { onLogin:(u:UserKey)=>void }) {
 interface OrderFormProps {
   store:Store; breads:Bread[]; isPJ:boolean; delivIdx:number; isLocked:boolean
   qtys:Record<string,number>; obs:string; pjClient:string; pjDate:string
+  pendingLeftovers:Record<string,number>
+  reuseProposalQtys:Record<string,number>
+  reusePlans:Record<string,ReusePlanSummary>
   onDelivChange:(idx:number)=>void
   onQtyChange:(key:string,val:number)=>void
+  onReuseChange:(key:string,val:number)=>void
   onObsChange:(obs:string)=>void
   onPjClientChange:(v:string)=>void
   onPjDateChange:(v:string)=>void
 }
 
-function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClient, pjDate, onDelivChange, onQtyChange, onObsChange, onPjClientChange, onPjDateChange }:OrderFormProps) {
+function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLeftovers, reuseProposalQtys, reusePlans, obs, pjClient, pjDate, onDelivChange, onQtyChange, onReuseChange, onObsChange, onPjClientChange, onPjDateChange }:OrderFormProps) {
   const storeName = {jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição',pj:'PJ'}[store]||store.toUpperCase()
 
   return (
@@ -859,10 +995,19 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClien
             const key = `${store}-${b.id}`
             const val = qtys[key]||0
             const bdays = parseDays(b.days)
+            const pending = pendingLeftovers[key] || 0
+            const proposal = reuseProposalQtys[key] || 0
+            const reusePlan = reusePlans[key]
+            const confirmed = reusePlan?.status === 'confirmed'
+            const canPlanReuse = (store === 'jc' || store === 'ja') && (pending > 0 || Boolean(reusePlan))
+            const reuseLimit = Math.min(val, pending)
             return (
               <div key={b.id} className={'ps-card'+(val>0?' active':'')}>
                 <div className="ps-card-head">
-                  <div className="ps-pname">{b.name}</div>
+                  <div className="ps-order-bread-title">
+                    <div className="ps-pname">{b.name}</div>
+                    {(store === 'jc' || store === 'ja') && pending > 0 && <span className="ps-leftover-chip">Sobra: {pending}</span>}
+                  </div>
                   {!isPJ && (
                     <div className="ps-pdays">
                       {[1,2,3,4,5,6].map(i=>(
@@ -877,6 +1022,26 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, obs, pjClien
                     onChange={e=>onQtyChange(key,parseInt(e.target.value)||0)} disabled={isLocked}/>
                   <button className="ps-step" disabled={isLocked} onClick={()=>onQtyChange(key,val+1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85}/></button>
                 </div>
+                {canPlanReuse && (
+                  <div className="ps-order-reuse">
+                    {confirmed ? (
+                      <div className="ps-order-reuse-confirmed">
+                        <Check size={16} />
+                        <span><b>{reusePlan.confirmedQuantity} da sobra confirmados</b><small>Já descontados da produção nova.</small></span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="ps-order-reuse-label"><span>Pretendo usar da sobra</span><small>Geolar ainda vai conferir</small></div>
+                        <div className="ps-stepper compact">
+                          <button className="ps-step" disabled={isLocked||proposal<=0} onClick={()=>onReuseChange(key,proposal-1)} aria-label="Diminuir uso da sobra"><Minus size={18} strokeWidth={1.85}/></button>
+                          <input className={'ps-qty'+(proposal===0?' zero':'')} type="number" inputMode="numeric" min={0} max={reuseLimit} value={proposal||''} placeholder="0"
+                            onChange={e=>onReuseChange(key,parseInt(e.target.value)||0)} disabled={isLocked}/>
+                          <button className="ps-step" disabled={isLocked||proposal>=reuseLimit} onClick={()=>onReuseChange(key,proposal+1)} aria-label="Aumentar uso da sobra"><Plus size={18} strokeWidth={1.85}/></button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1210,11 +1375,11 @@ interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
   enc:{client:string;name:string;qty:number}[]; pj:{client:string;name:string;qty:number}[]
   prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
-  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onLogout:()=>void
+  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onOpenPending:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onOpenPending, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   let grand = 0
@@ -1251,6 +1416,9 @@ function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems
           <span style={{fontSize:12,color:'var(--text-muted)'}}>Data dos pedidos:</span>
           <input type="date" value={geolarDate} className="obs-area" style={{width:'auto',padding:'6px 10px',fontSize:13,minHeight:'auto'}} onChange={e=>onDateChange(e.target.value)}/>
         </div>
+        <button className="btn-action no-print" style={{width:'100%',marginBottom:12}} onClick={onOpenPending}>
+          Conferir sobras e reaproveitamento
+        </button>
 
         <div className="print-card print-breads">
           <h3>Pane &amp; Salute — Produção</h3>

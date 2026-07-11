@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, LoaderCircle, Minus, Pencil, Plus } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type Role } from '@/lib/auth'
 import {
+  aggregateConfirmedReuse,
+  subtractConfirmedReuse,
+  type ConfirmedReuseRow,
+} from '@/lib/breadLeftovers'
+import {
   aggregateOvenPlan,
   ovenLotCode,
   OVEN_LOSS_REASONS,
@@ -103,7 +108,7 @@ export default function FornoPage() {
     setLoadError('')
 
     try {
-      const [regularResult, pjResult, customResult, actualsResult] = await Promise.all([
+      const [regularResult, pjResult, customResult, actualsResult, reuseResult] = await Promise.all([
         supabase
           .from('orders')
           .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
@@ -127,12 +132,18 @@ export default function FornoPage() {
           .from('production_actuals')
           .select('*')
           .eq('record_date', date),
+        supabase
+          .from('bread_reuse_plans')
+          .select('bread_id, confirmed_quantity, status')
+          .eq('target_production_date', date)
+          .eq('status', 'confirmed'),
       ])
 
       const firstError = regularResult.error
         ?? pjResult.error
         ?? customResult.error
         ?? actualsResult.error
+        ?? reuseResult.error
       if (firstError) throw firstError
 
       const regularRows = (regularResult.data ?? []) as OrderRow[]
@@ -140,7 +151,11 @@ export default function FornoPage() {
         .filter(row => row.product_source !== 'product')
       const customRows = (customResult.data ?? []) as OrderRow[]
       const actualRows = (actualsResult.data ?? []) as ProductionActualRow[]
-      const plan = aggregateOvenPlan([...regularRows, ...pjRows, ...customRows])
+      const originalPlan = aggregateOvenPlan([...regularRows, ...pjRows, ...customRows])
+      const confirmedReuse = aggregateConfirmedReuse(
+        (reuseResult.data ?? []) as ConfirmedReuseRow[],
+      )
+      const plan = subtractConfirmedReuse(originalPlan, confirmedReuse)
       const breadIds = Array.from(new Set([
         ...plan.keys(),
         ...actualRows.map(row => row.bread_id),
