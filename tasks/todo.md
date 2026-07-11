@@ -30,7 +30,7 @@ reduzir a produção nova mostrada no Forno.
 - [x] Rodar testes, typecheck, lint, build e revisar o diff.
 - [x] Apresentar a migração antes de qualquer aplicação no Supabase.
 - [x] Após aprovação, aplicar e verificar a migração no Supabase.
-- [ ] Mesclar na `main` e acompanhar a publicação na Vercel.
+- [x] Mesclar na `main` e acompanhar a publicação na Vercel.
 
 ## Fora desta entrega
 

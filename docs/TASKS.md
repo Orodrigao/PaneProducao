@@ -13,7 +13,8 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - [x] Histórico imutável e funções transacionais com RLS; EX excluída do fluxo.
 - [x] Testes, typecheck, lint, build e verificação visual mobile.
 - [x] Migração aplicada no Supabase após aprovação explícita; fluxo transacional completo validado com rollback.
-- [ ] Publicar a interface na `main` e validar o primeiro lançamento operacional.
+- [x] Interface publicada na `main` e rotas verificadas na Vercel.
+- [ ] Acompanhar o primeiro lançamento operacional e registrar ajustes de uso, se houver.
 
 ---
 
