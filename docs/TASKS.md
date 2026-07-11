@@ -1,7 +1,18 @@
 # TASKS — ERP Pane & Salute
-**Última atualização:** Junho 2026
+**Última atualização:** Julho 2026
 
 Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que uma tarefa for iniciada ou concluída.
+
+---
+
+## 🔄 Em andamento — Sobras por lote e reaproveitamento JC/JA
+
+- [x] Central mobile-first em `/sobras/pendencias`, com saldo, lote, idade e local físico.
+- [x] Destinos parciais: vitrine, consumo interno, doação, descarte e congelamento.
+- [x] Proposta no planejamento e confirmação física antes de reduzir o previsto do Forno.
+- [x] Histórico imutável e funções transacionais com RLS; EX excluída do fluxo.
+- [x] Testes, typecheck, lint, build e verificação visual mobile.
+- [ ] Aplicar a migração no Supabase após aprovação explícita e validar o fluxo com dados reais.
 
 ---
 

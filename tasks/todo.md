@@ -1,25 +1,40 @@
-# Tarefa: corrigir fechamento de caixa
+# Tarefa: sobras pendentes e reaproveitamento JC/JA
 
-Pedido aprovado pelo Rodrigo em 06/07/2026: ajustar o fechamento para refletir
-o processo real da loja e remover negativos causados por campos informativos.
+Pedido aprovado pelo Rodrigo em 11/07/2026: controlar o destino físico das
+sobras de pães de JC e JA e usar apenas o reaproveitamento confirmado para
+reduzir a produção nova mostrada no Forno.
 
 ## Entendimento
 
-- Total em dinheiro e todo o dinheiro fisico contado no caixa no fechamento.
-- Venda em dinheiro = total em dinheiro + sangrias - abertura do caixa.
-- Total do dia = venda em dinheiro + Banrisul + Stone + SiTef + Pix.
-- iFood, envelope e proximo dia sao apenas informativos.
-- O usuario deve preencher os campos na ordem operacional definida pelo Rodrigo.
+- EX não participa deste fluxo.
+- Registrar sobra cria uma pendência ligada à loja, pão, lote e local físico.
+- A intenção de reaproveitar não movimenta estoque.
+- Geolar confirma quanto realmente está apto; a confirmação pode ser menor que
+  o proposto e aloca primeiro os lotes mais antigos.
+- Volta à vitrine não baixa estoque; congelar transfere para o estoque
+  congelado; consumo interno, doação e descarte baixam o estoque da loja.
+- Destinos podem ser parciais e o saldo restante continua pendente.
+- Não se registra sobra nova enquanto a mesma loja tiver pendência de dia
+  anterior.
 
-## Plano
+## Plano aprovado
 
-- [x] Ler documentos obrigatorios e auditar a tela de fechamento.
-- [x] Ajustar calculo do fechamento e testes.
-- [x] Reordenar a tela na sequencia operacional.
-- [x] Validar testes, typecheck, lint e build.
+- [x] Ler documentos, skills e auditar Sobras, Produção, Forno e estoques.
+- [x] Criar migração revisável com lote, pendência, eventos, planos e alocações.
+- [x] Criar funções transacionais para registrar, propor, confirmar e destinar.
+- [x] Adaptar `/sobras` para registrar pães de JC/JA como pendências.
+- [x] Criar `/sobras/pendencias` mobile-first para Geolar e lojas.
+- [x] Mostrar sobra disponível/proposta nos cards de planejamento JC/JA.
+- [x] Subtrair apenas reaproveitamento confirmado no previsto do Forno.
+- [x] Adicionar testes e atualizar tipos/documentação.
+- [x] Rodar testes, typecheck, lint, build e revisar o diff.
+- [ ] Apresentar a migração antes de qualquer aplicação no Supabase.
+- [ ] Após aprovação, aplicar, verificar, mesclar na `main` e acompanhar Vercel.
 
 ## Fora desta entrega
 
-- Nao alterar schema ou dados do Supabase.
-- Nao mexer em auth, PINs, roles ou login.
-- Nao criar integracao com CNM, iFood ou maquininhas.
+- Importação ou automação do CNM.
+- Baixa de vendas.
+- Fluxo de sobras da EX.
+- Redesign dos relatórios financeiros.
+- Backfill dos 767 registros antigos de sobras como pendências.
