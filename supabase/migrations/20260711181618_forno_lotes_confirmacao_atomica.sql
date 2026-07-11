@@ -1,4 +1,5 @@
 -- Forno v2: lote diario, perda analitica e confirmacao transacional por produto.
+-- Versao alinhada ao registro criado pelo Supabase remoto.
 -- A saida boa entra no estoque. A perda no forno nunca entra e, portanto, nao
 -- gera movimento negativo.
 
