@@ -1,267 +1,318 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { Minus, Plus, Save, Trash2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { getCurrentUser, roleColor, type Role } from '@/lib/auth'
-import { showToast, todayKey, formatDateBR } from '@/lib/utils'
-import type { BreadOption as Bread } from '@/lib/types'
 
-interface FormState {
-  baked: string
-  loss: string
-  lossReason: string
-  obs: string
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, Check, LoaderCircle, Minus, Pencil, Plus } from 'lucide-react'
+import { getCurrentUserAsync, roleColor, type Role } from '@/lib/auth'
+import {
+  aggregateOvenPlan,
+  ovenLotCode,
+  OVEN_LOSS_REASONS,
+  parseOvenQuantity,
+  validateOvenConfirmation,
+} from '@/lib/ovenProduction'
+import { supabase } from '@/lib/supabase'
+import type { BreadOption as Bread } from '@/lib/types'
+import { formatDateBR, showToast, todayKey } from '@/lib/utils'
+
+interface OrderRow {
+  id: string
+  bread_id: string
+  quantity: number | null
+  production_date: string | null
+  pj_delivery_date: string | null
+  product_source: string | null
 }
 
-const LOSS_REASONS = ['Queimou', 'Fora do padrão', 'Outros']
+interface ProductionActualRow {
+  id: string
+  bread_id: string
+  record_date: string
+  lot_code?: string | null
+  quantity_baked: number
+  quantity_loss: number
+  loss_reason: string | null
+  obs: string | null
+}
+
+interface OvenFormState {
+  quantityGood: string
+  quantityLoss: string
+  lossReason: string
+}
+
+interface OvenRpcRow {
+  production_actual_id: string
+  returned_lot_code: string
+  returned_quantity_good: number
+  returned_quantity_loss: number
+  returned_loss_reason: string | null
+}
+
+interface CurrentUserSummary {
+  id: string
+  displayName: string
+  role: Role
+}
 
 function dateKeyOffset(daysBack: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - daysBack)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const date = new Date()
+  date.setDate(date.getDate() - daysBack)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function formatDayShort(iso: string): string {
-  const [, m, d] = iso.split('-')
-  return `${d}/${m}`
+  const [, month, day] = iso.split('-')
+  return `${day}/${month}`
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String(error.message)
+  }
+  return 'Não foi possível concluir a operação.'
 }
 
 export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
   const [breads, setBreads] = useState<Bread[]>([])
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
-  const [pjMap, setPjMap]           = useState<Map<string, number>>(new Map())  // qtd PJ por bread_id
-  const [pjOrderCount, setPjOrderCount] = useState(0)  // qtd de pedidos PJ no dia
-  const [encMap, setEncMap]         = useState<Map<string, number>>(new Map())  // qtd encomendas por bread_id
-  const [encOrderCount, setEncOrderCount] = useState(0)
-  const [forms, setForms] = useState<Record<string, FormState>>({})
-  const [expandedDescarte, setExpandedDescarte] = useState<Record<string, boolean>>({})
+  const [actuals, setActuals] = useState<Record<string, ProductionActualRow>>({})
+  const [forms, setForms] = useState<Record<string, OvenFormState>>({})
+  const [editing, setEditing] = useState<Record<string, boolean>>({})
+  const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [user, setUser] = useState<{ id: string; displayName: string; role: Role } | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [user, setUser] = useState<CurrentUserSummary | null>(null)
 
   useEffect(() => {
-    const u = getCurrentUser()
-    if (u) setUser({ id: u.id, displayName: u.displayName, role: u.role })
+    let active = true
+    void getCurrentUserAsync().then(currentUser => {
+      if (!active || !currentUser) return
+      setUser({
+        id: currentUser.id,
+        displayName: currentUser.displayName,
+        role: currentUser.role,
+      })
+    })
+    return () => { active = false }
   }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
+
     try {
-      const [resLojas, resPj, resEnc, resActuals] = await Promise.all([
-        // Pedidos das lojas: store != 'pj' e != 'encomenda' + order_date = date
-        supabase.from('orders').select('bread_id, quantity').not('store', 'in', '("pj","encomenda")').eq('order_date', date).gt('quantity', 0),
-        // TODOS pedidos PJ — filtra JS por production_date (novos) OU pj_delivery_date (legados)
-        supabase.from('orders').select('id, bread_id, quantity, production_date, pj_delivery_date').eq('store', 'pj').gt('quantity', 0),
-        // Encomendas — só product_source='bread' entra no forno (products não passam por aqui)
-        supabase.from('orders').select('id, bread_id, quantity, product_source').eq('order_type', 'encomenda').eq('production_date', date).gt('quantity', 0),
-        supabase.from('production_actuals').select('*').eq('record_date', date),
+      const [regularResult, pjResult, customResult, actualsResult] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .in('store', ['jc', 'ja', 'ex'])
+          .eq('order_date', date)
+          .gt('quantity', 0),
+        supabase
+          .from('orders')
+          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .eq('store', 'pj')
+          .or(`production_date.eq.${date},and(production_date.is.null,pj_delivery_date.eq.${date})`)
+          .gt('quantity', 0),
+        supabase
+          .from('orders')
+          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .eq('order_type', 'encomenda')
+          .eq('production_date', date)
+          .eq('product_source', 'bread')
+          .gt('quantity', 0),
+        supabase
+          .from('production_actuals')
+          .select('*')
+          .eq('record_date', date),
       ])
 
-      // PJ filtrado pela data correta:
-      //   - se tem production_date: usa ele (pedido novo do /pedidos-pj)
-      //   - senão: cai no pj_delivery_date (pedidos legados feitos em /)
-      const pjRowsFiltered = (resPj.data || []).filter((o: any) =>
-        o.production_date ? o.production_date === date : o.pj_delivery_date === date
-      )
-      const pjOrderIds = new Set(pjRowsFiltered.map((r: any) => r.id))
+      const firstError = regularResult.error
+        ?? pjResult.error
+        ?? customResult.error
+        ?? actualsResult.error
+      if (firstError) throw firstError
 
-      // Encomendas: só linhas com produto que existe em breads (product_source='bread')
-      const encRows = (resEnc.data || []).filter((o: any) => o.product_source === 'bread')
-
-      const lojasRows = resLojas.data || []
-      const ordersAll = [...lojasRows, ...pjRowsFiltered, ...encRows]
-      const breadIds = Array.from(new Set(ordersAll.map((o: any) => o.bread_id)))
+      const regularRows = (regularResult.data ?? []) as OrderRow[]
+      const pjRows = ((pjResult.data ?? []) as OrderRow[])
+        .filter(row => row.product_source !== 'product')
+      const customRows = (customResult.data ?? []) as OrderRow[]
+      const actualRows = (actualsResult.data ?? []) as ProductionActualRow[]
+      const plan = aggregateOvenPlan([...regularRows, ...pjRows, ...customRows])
+      const breadIds = Array.from(new Set([
+        ...plan.keys(),
+        ...actualRows.map(row => row.bread_id),
+      ]))
 
       if (breadIds.length === 0) {
-        setBreads([]); setPlannedMap(new Map()); setPjMap(new Map()); setPjOrderCount(0)
-        setEncMap(new Map()); setEncOrderCount(0)
-        setForms({}); setExpandedDescarte({})
-        setLoading(false)
+        setBreads([])
+        setPlannedMap(new Map())
+        setActuals({})
+        setForms({})
+        setEditing({})
         return
       }
 
-      const { data: breadsData } = await supabase
-        .from('breads').select('*').in('id', breadIds).eq('active', true)
+      const breadsResult = await supabase
+        .from('breads')
+        .select('id, name, unit, is_pj, active')
+        .in('id', breadIds)
+      if (breadsResult.error) throw breadsResult.error
 
-      const sortedBreads = (breadsData || []).sort((a: Bread, b: Bread) => {
-        if (a.is_pj !== b.is_pj) return a.is_pj ? 1 : -1 // regulares primeiro
-        return a.name.localeCompare(b.name)
-      })
-      setBreads(sortedBreads)
+      const loadedBreads = ((breadsResult.data ?? []) as Bread[])
+        .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
+      const actualsByBread: Record<string, ProductionActualRow> = {}
+      const initialForms: Record<string, OvenFormState> = {}
 
-      const planned = new Map<string, number>()
-      const pj      = new Map<string, number>()
-      const enc     = new Map<string, number>()
-      ordersAll.forEach((o: any) => {
-        planned.set(o.bread_id, (planned.get(o.bread_id) || 0) + Number(o.quantity))
-      })
-      pjRowsFiltered.forEach((o: any) => {
-        pj.set(o.bread_id, (pj.get(o.bread_id) || 0) + Number(o.quantity))
-      })
-      encRows.forEach((o: any) => {
-        enc.set(o.bread_id, (enc.get(o.bread_id) || 0) + Number(o.quantity))
-      })
-      setPlannedMap(planned)
-      setPjMap(pj)
-      setPjOrderCount(pjOrderIds.size)
-      setEncMap(enc)
-      setEncOrderCount(encRows.length)
-
-      const initial: Record<string, FormState> = {}
-      const expanded: Record<string, boolean> = {}
-      sortedBreads.forEach((b: Bread) => {
-        const existing = (resActuals.data || []).find((x: any) => x.bread_id === b.id)
-        if (existing) {
-          initial[b.id] = {
-            baked: String(existing.quantity_baked || 0),
-            loss: String(existing.quantity_loss || 0),
-            lossReason: existing.loss_reason || LOSS_REASONS[0],
-            obs: existing.obs || '',
-          }
-          if (Number(existing.quantity_loss) > 0) expanded[b.id] = true
-        } else {
-          initial[b.id] = {
-            baked: String(planned.get(b.id) || 0),
-            loss: '0',
-            lossReason: LOSS_REASONS[0],
-            obs: '',
-          }
+      for (const actual of actualRows) actualsByBread[actual.bread_id] = actual
+      for (const bread of loadedBreads) {
+        const actual = actualsByBread[bread.id]
+        initialForms[bread.id] = {
+          quantityGood: String(actual?.quantity_baked ?? plan.get(bread.id) ?? 0),
+          quantityLoss: String(actual?.quantity_loss ?? 0),
+          lossReason: actual?.loss_reason ?? OVEN_LOSS_REASONS[0],
         }
-      })
-      setForms(initial)
-      setExpandedDescarte(expanded)
-      setLoading(false)
-    } catch (e: any) {
-      showToast('Erro ao carregar: ' + e.message)
+      }
+
+      setBreads(loadedBreads)
+      setPlannedMap(plan)
+      setActuals(actualsByBread)
+      setForms(initialForms)
+      setEditing({})
+    } catch (error: unknown) {
+      const message = errorMessage(error)
+      setLoadError(message)
+      showToast(`Erro ao carregar: ${message}`)
+    } finally {
       setLoading(false)
     }
   }, [date])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
-  function updateForm(breadId: string, patch: Partial<FormState>) {
-    setForms(prev => ({ ...prev, [breadId]: { ...prev[breadId], ...patch } }))
+  function updateForm(breadId: string, patch: Partial<OvenFormState>) {
+    setForms(current => ({
+      ...current,
+      [breadId]: { ...current[breadId], ...patch },
+    }))
   }
 
-  function adjustField(breadId: string, field: 'baked' | 'loss', delta: number) {
-    const current = Number(forms[breadId]?.[field] || 0)
-    const next = Math.max(0, current + delta)
-    updateForm(breadId, { [field]: String(next) })
+  function adjustQuantity(
+    breadId: string,
+    field: 'quantityGood' | 'quantityLoss',
+    delta: number,
+  ) {
+    const current = parseOvenQuantity(forms[breadId]?.[field] ?? '0') ?? 0
+    updateForm(breadId, { [field]: String(Math.max(0, current + delta)) })
   }
 
-  function toggleDescarte(breadId: string) {
-    const wasExpanded = expandedDescarte[breadId]
-    setExpandedDescarte(prev => ({ ...prev, [breadId]: !wasExpanded }))
-    if (wasExpanded) {
-      updateForm(breadId, { loss: '0', lossReason: LOSS_REASONS[0] })
+  function startEditing(breadId: string) {
+    setEditing(current => ({ ...current, [breadId]: true }))
+  }
+
+  function cancelEditing(breadId: string) {
+    const actual = actuals[breadId]
+    const planned = plannedMap.get(breadId) ?? 0
+    setForms(current => ({
+      ...current,
+      [breadId]: {
+        quantityGood: String(actual?.quantity_baked ?? planned),
+        quantityLoss: String(actual?.quantity_loss ?? 0),
+        lossReason: actual?.loss_reason ?? OVEN_LOSS_REASONS[0],
+      },
+    }))
+    setEditing(current => ({ ...current, [breadId]: false }))
+  }
+
+  async function confirmBread(bread: Bread, quickConfirmation = false) {
+    const planned = plannedMap.get(bread.id) ?? 0
+    const form = quickConfirmation
+      ? {
+          quantityGood: String(planned),
+          quantityLoss: '0',
+          lossReason: OVEN_LOSS_REASONS[0],
+        }
+      : forms[bread.id]
+
+    if (!form) return
+    const validationError = validateOvenConfirmation(form)
+    if (validationError) {
+      showToast(validationError)
+      return
     }
-  }
 
-  async function save() {
-    if (!user) { showToast('Sem usuário'); return }
-    setSaving(true)
+    const quantityGood = parseOvenQuantity(form.quantityGood)
+    const quantityLoss = parseOvenQuantity(form.quantityLoss)
+    if (quantityGood === null || quantityLoss === null) return
+
+    setSaving(current => ({ ...current, [bread.id]: true }))
     try {
-      // 1. Idempotência — limpa registros antigos da data
-      const { data: oldActuals } = await supabase
-        .from('production_actuals').select('id').eq('record_date', date)
-      const oldIds = (oldActuals || []).map((x: any) => x.id)
-      if (oldIds.length > 0) {
-        await supabase.from('bread_movements')
-          .delete()
-          .in('reference_id', oldIds)
-          .eq('reference_type', 'production_actual')
-        await supabase.from('production_actuals').delete().eq('record_date', date)
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!sessionData.session) {
+        throw new Error('Entre com seu e-mail para confirmar o forno com segurança.')
       }
 
-      // 2. Monta inserts
-      const recordedBy = user.displayName || user.id
-      const actualsToInsert: any[] = []
-      for (const b of breads) {
-        const f = forms[b.id]
-        if (!f) continue
-        const baked = Number(f.baked) || 0
-        const loss = Number(f.loss) || 0
-        if (baked === 0 && loss === 0) continue
-
-        actualsToInsert.push({
-          record_date: date,
-          bread_id: b.id,
-          quantity_baked: baked,
-          quantity_loss: loss,
-          loss_reason: loss > 0 ? (f.lossReason || LOSS_REASONS[0]) : null,
-          recorded_by: recordedBy,
-          obs: f.obs || null,
-        })
-      }
-
-      if (actualsToInsert.length === 0) {
-        showToast('Nenhuma produção para salvar')
-        setSaving(false)
-        return
-      }
-
-      const { data: inserted, error: actualsErr } = await supabase
-        .from('production_actuals')
-        .insert(actualsToInsert)
-        .select('id, bread_id, quantity_baked, quantity_loss, loss_reason')
-
-      if (actualsErr) throw actualsErr
-
-      // 3. Cria movements correspondentes
-      const movementsToInsert: any[] = []
-      ;(inserted || []).forEach((a: any) => {
-        if (Number(a.quantity_baked) > 0) {
-          movementsToInsert.push({
-            movement_type: 'forno_entrada',
-            bread_id: a.bread_id,
-            location: 'central',
-            quantity: Number(a.quantity_baked),
-            reference_id: a.id,
-            reference_type: 'production_actual',
-            recorded_by: recordedBy,
-          })
-        }
-        if (Number(a.quantity_loss) > 0) {
-          movementsToInsert.push({
-            movement_type: 'forno_descarte',
-            bread_id: a.bread_id,
-            location: 'central',
-            quantity: -Number(a.quantity_loss),
-            reference_id: a.id,
-            reference_type: 'production_actual',
-            recorded_by: recordedBy,
-            obs: a.loss_reason,
-          })
-        }
+      const { data, error } = await supabase.rpc('confirm_oven_output', {
+        p_record_date: date,
+        p_bread_id: bread.id,
+        p_quantity_good: quantityGood,
+        p_quantity_loss: quantityLoss,
+        p_loss_reason: quantityLoss > 0 ? form.lossReason : null,
+        p_obs: null,
       })
+      if (error) throw error
 
-      if (movementsToInsert.length > 0) {
-        const { error: movErr } = await supabase.from('bread_movements').insert(movementsToInsert)
-        if (movErr) throw movErr
+      const rpcRows = (Array.isArray(data) ? data : [data]) as OvenRpcRow[]
+      const result = rpcRows[0]
+      if (!result) throw new Error('O banco não retornou a confirmação do lote.')
+
+      const confirmed: ProductionActualRow = {
+        id: result.production_actual_id,
+        bread_id: bread.id,
+        record_date: date,
+        lot_code: result.returned_lot_code,
+        quantity_baked: Number(result.returned_quantity_good),
+        quantity_loss: Number(result.returned_quantity_loss),
+        loss_reason: result.returned_loss_reason,
+        obs: null,
       }
 
-      showToast('✅ Produção salva')
-      loadData()
-    } catch (e: any) {
-      showToast('Erro: ' + e.message)
+      setActuals(current => ({ ...current, [bread.id]: confirmed }))
+      setForms(current => ({
+        ...current,
+        [bread.id]: {
+          quantityGood: String(confirmed.quantity_baked),
+          quantityLoss: String(confirmed.quantity_loss),
+          lossReason: confirmed.loss_reason ?? OVEN_LOSS_REASONS[0],
+        },
+      }))
+      setEditing(current => ({ ...current, [bread.id]: false }))
+      showToast(`✓ ${bread.name}: ${confirmed.quantity_baked} confirmados`)
+    } catch (error: unknown) {
+      showToast(`Erro: ${errorMessage(error)}`)
     } finally {
-      setSaving(false)
+      setSaving(current => ({ ...current, [bread.id]: false }))
     }
   }
 
-  const dateOptions = Array.from({ length: 8 }, (_, i) => dateKeyOffset(i))
-  const totalBaked = breads.reduce((s, b) => s + (Number(forms[b.id]?.baked) || 0), 0)
-  const totalLoss  = breads.reduce((s, b) => s + (Number(forms[b.id]?.loss) || 0), 0)
-  const userInitial = user ? user.displayName.trim().charAt(0).toUpperCase() : ''
+  const dateOptions = Array.from({ length: 8 }, (_, index) => dateKeyOffset(index))
+  const confirmedCount = breads.filter(bread => Boolean(actuals[bread.id])).length
+  const userInitial = user?.displayName.trim().charAt(0).toUpperCase() ?? ''
   const avatarColor = user ? roleColor(user.role) : 'var(--crust)'
 
-  if (loading) return (
-    <div className="ps-loading">
-      <div className="ps-spinner" />
-      <p>Carregando...</p>
-    </div>
-  )
+  if (loading) {
+    return (
+      <div className="ps-loading">
+        <div className="ps-spinner" />
+        <p>Carregando...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="ps-canvas">
@@ -281,122 +332,229 @@ export default function FornoPage() {
           )}
         </header>
 
-        <div className="ps-pad" style={{ paddingBottom: 176 }}>
+        <main className="ps-pad ps-oven-page">
           <p className="ps-forno-intro">
-            Confirme o que foi assado e registre descartes do dia. Alimenta o estoque central de pães.
+            Confira o previsto e confirme somente o que saiu bom do forno.
           </p>
 
           <div className="ps-label">Dia</div>
-          <div className="ps-days" role="group">
-            {dateOptions.map((d, i) => (
-              <button key={d} className="ps-day" aria-pressed={d === date} onClick={() => setDate(d)}>
-                {i === 0 ? 'Hoje' : i === 1 ? 'Ontem' : formatDayShort(d)}
+          <div className="ps-days" role="group" aria-label="Data da produção">
+            {dateOptions.map((option, index) => (
+              <button
+                type="button"
+                key={option}
+                className="ps-day"
+                aria-pressed={option === date}
+                onClick={() => setDate(option)}
+              >
+                {index === 0 ? 'Hoje' : index === 1 ? 'Ontem' : formatDayShort(option)}
               </button>
             ))}
           </div>
 
-          {pjOrderCount > 0 && (
-            <div className="ps-banner honey">
-              <span>🧾 {pjOrderCount} pedido(s) PJ produzindo neste dia</span>
-              <a href="/pedidos-pj">Ver detalhes →</a>
+          {loadError ? (
+            <div className="ps-oven-error" role="alert">
+              <AlertTriangle size={19} />
+              <span>Não foi possível carregar o forno.</span>
+              <button type="button" onClick={() => void loadData()}>Tentar novamente</button>
             </div>
-          )}
-          {encOrderCount > 0 && (
-            <div className="ps-banner crust">
-              <span>🎂 {encOrderCount} encomenda(s) produzindo neste dia</span>
-              <a href="/encomendas">Ver detalhes →</a>
-            </div>
-          )}
-
-          {breads.length === 0 ? (
-            <div className="ps-empty">Nenhum pão com pedido para {formatDateBR(date)}.</div>
+          ) : breads.length === 0 ? (
+            <div className="ps-empty">Nenhum pão previsto para {formatDateBR(date)}.</div>
           ) : (
             <>
               <div className="ps-section">
                 <div className="bar" />
-                <b>Confirmar produção</b>
-                <span className="meta">{breads.length} {breads.length === 1 ? 'pão' : 'pães'}</span>
+                <b>Saída do forno</b>
+                <span className="meta">{confirmedCount}/{breads.length} confirmados</span>
               </div>
 
               <div className="ps-grid">
-                {breads.map(b => {
-                  const f = forms[b.id]
-                  const planned = plannedMap.get(b.id) || 0
-                  const pjQty  = pjMap.get(b.id) || 0
-                  const encQty = encMap.get(b.id) || 0
-                  const lojaQty = planned - pjQty - encQty
-                  const isExpanded = expandedDescarte[b.id]
-                  // Só mostra breakdown quando misto (2+ fontes contribuem)
-                  const breakdownParts: string[] = []
-                  if (lojaQty > 0) breakdownParts.push(`${lojaQty} lojas`)
-                  if (pjQty > 0)   breakdownParts.push(`${pjQty} PJ`)
-                  if (encQty > 0)  breakdownParts.push(`${encQty} encomenda${encQty > 1 ? 's' : ''}`)
-                  const bakedNum = Number(f?.baked) || 0
-                  const lossNum  = Number(f?.loss) || 0
+                {breads.map(bread => {
+                  const planned = plannedMap.get(bread.id) ?? 0
+                  const actual = actuals[bread.id]
+                  const form = forms[bread.id]
+                  const isEditing = Boolean(editing[bread.id])
+                  const isSaving = Boolean(saving[bread.id])
+                  const quantityGood = parseOvenQuantity(form?.quantityGood ?? '0') ?? 0
+                  const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0') ?? 0
+                  const lotCode = actual?.lot_code ?? ovenLotCode(date)
 
                   return (
-                    <div key={b.id} className="ps-card">
-                      <div className="ps-card-head" style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                        <div className="ps-pname">
-                          {b.name}
-                          {b.is_pj && <span className="ps-pjbadge">PJ</span>}
+                    <article
+                      key={bread.id}
+                      className={`ps-card ps-oven-card${actual ? ' confirmed' : ''}`}
+                    >
+                      <div className="ps-oven-card-head">
+                        <div>
+                          <div className="ps-pname">{bread.name}</div>
+                          <div className="ps-oven-lot">Lote {lotCode}</div>
                         </div>
-                        <div className="ps-card-meta">
-                          Planejado <b>{planned}</b>
-                          {breakdownParts.length > 1 && <small>{breakdownParts.join(' + ')}</small>}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="ps-flabel">Assado</div>
-                        <div className="ps-stepper">
-                          <button className="ps-step" onClick={() => adjustField(b.id, 'baked', -1)} disabled={bakedNum <= 0} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85} /></button>
-                          <input className={'ps-qty' + (bakedNum === 0 ? ' zero' : '')} type="number" inputMode="numeric" min={0}
-                            value={f?.baked ?? '0'} onChange={e => updateForm(b.id, { baked: e.target.value })} />
-                          <button className="ps-step" onClick={() => adjustField(b.id, 'baked', 1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85} /></button>
+                        <div className="ps-oven-planned">
+                          <span>Previsto</span>
+                          <b>{planned}</b>
                         </div>
                       </div>
 
-                      {!isExpanded ? (
-                        <button className="ps-discard-btn" onClick={() => toggleDescarte(b.id)}>
-                          <Trash2 size={14} strokeWidth={2} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-                          Registrar descarte
-                        </button>
-                      ) : (
-                        <div className="ps-discard">
-                          <div className="ps-flabel">Descarte</div>
-                          <div className="ps-stepper">
-                            <button className="ps-step" onClick={() => adjustField(b.id, 'loss', -1)} disabled={lossNum <= 0} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85} /></button>
-                            <input className={'ps-qty' + (lossNum === 0 ? ' zero' : '')} type="number" inputMode="numeric" min={0}
-                              value={f?.loss ?? '0'} onChange={e => updateForm(b.id, { loss: e.target.value })} />
-                            <button className="ps-step" onClick={() => adjustField(b.id, 'loss', 1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85} /></button>
+                      {actual && !isEditing && (
+                        <div className="ps-oven-confirmed">
+                          <Check size={19} strokeWidth={2.5} />
+                          <div>
+                            <b>{actual.quantity_baked} bons</b>
+                            {actual.quantity_loss > 0 && (
+                              <span>{actual.quantity_loss} de perda · {actual.loss_reason}</span>
+                            )}
                           </div>
-                          <select className="ps-select" value={f?.lossReason || LOSS_REASONS[0]} onChange={e => updateForm(b.id, { lossReason: e.target.value })}>
-                            {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                          <button className="ps-discard-cancel" onClick={() => toggleDescarte(b.id)}>✕ Cancelar descarte</button>
                         </div>
                       )}
-                    </div>
+
+                      {!actual && !isEditing && (
+                        <div className="ps-oven-actions">
+                          <button
+                            type="button"
+                            className="ps-oven-confirm"
+                            disabled={isSaving}
+                            onClick={() => void confirmBread(bread, true)}
+                          >
+                            {isSaving
+                              ? <LoaderCircle className="ps-spin" size={21} />
+                              : <Check size={21} strokeWidth={2.5} />}
+                            Confirmar {planned}
+                          </button>
+                          <button
+                            type="button"
+                            className="ps-oven-adjust"
+                            disabled={isSaving}
+                            onClick={() => startEditing(bread.id)}
+                          >
+                            <Pencil size={15} /> Ajustar ou informar perda
+                          </button>
+                        </div>
+                      )}
+
+                      {actual && !isEditing && (
+                        <button
+                          type="button"
+                          className="ps-oven-adjust"
+                          onClick={() => startEditing(bread.id)}
+                        >
+                          <Pencil size={15} /> Corrigir confirmação
+                        </button>
+                      )}
+
+                      {isEditing && form && (
+                        <div className="ps-oven-editor">
+                          <div className="ps-oven-field">
+                            <label htmlFor={`good-${bread.id}`}>Saída boa</label>
+                            <div className="ps-stepper">
+                              <button
+                                type="button"
+                                className="ps-step"
+                                disabled={quantityGood <= 0 || isSaving}
+                                onClick={() => adjustQuantity(bread.id, 'quantityGood', -1)}
+                                aria-label={`Diminuir saída boa de ${bread.name}`}
+                              >
+                                <Minus size={21} />
+                              </button>
+                              <input
+                                id={`good-${bread.id}`}
+                                className="ps-qty"
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                step={1}
+                                disabled={isSaving}
+                                value={form.quantityGood}
+                                onChange={event => updateForm(bread.id, { quantityGood: event.target.value })}
+                              />
+                              <button
+                                type="button"
+                                className="ps-step"
+                                disabled={isSaving}
+                                onClick={() => adjustQuantity(bread.id, 'quantityGood', 1)}
+                                aria-label={`Aumentar saída boa de ${bread.name}`}
+                              >
+                                <Plus size={21} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="ps-oven-field loss">
+                            <label htmlFor={`loss-${bread.id}`}>Perda no forno</label>
+                            <div className="ps-stepper">
+                              <button
+                                type="button"
+                                className="ps-step"
+                                disabled={quantityLoss <= 0 || isSaving}
+                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', -1)}
+                                aria-label={`Diminuir perda de ${bread.name}`}
+                              >
+                                <Minus size={21} />
+                              </button>
+                              <input
+                                id={`loss-${bread.id}`}
+                                className={`ps-qty${quantityLoss === 0 ? ' zero' : ''}`}
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                step={1}
+                                disabled={isSaving}
+                                value={form.quantityLoss}
+                                onChange={event => updateForm(bread.id, { quantityLoss: event.target.value })}
+                              />
+                              <button
+                                type="button"
+                                className="ps-step"
+                                disabled={isSaving}
+                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', 1)}
+                                aria-label={`Aumentar perda de ${bread.name}`}
+                              >
+                                <Plus size={21} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {quantityLoss > 0 && (
+                            <select
+                              className="ps-select"
+                              aria-label={`Motivo da perda de ${bread.name}`}
+                              disabled={isSaving}
+                              value={form.lossReason}
+                              onChange={event => updateForm(bread.id, { lossReason: event.target.value })}
+                            >
+                              {OVEN_LOSS_REASONS.map(reason => (
+                                <option key={reason} value={reason}>{reason}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          <div className="ps-oven-editor-actions">
+                            <button
+                              type="button"
+                              className="ps-btn ghost"
+                              disabled={isSaving}
+                              onClick={() => cancelEditing(bread.id)}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              className="ps-btn success"
+                              disabled={isSaving}
+                              onClick={() => void confirmBread(bread)}
+                            >
+                              {isSaving && <LoaderCircle className="ps-spin" size={18} />}
+                              {actual ? 'Salvar correção' : 'Confirmar saída'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
                   )
                 })}
               </div>
             </>
           )}
-        </div>
-
-        {breads.length > 0 && (
-          <div className="ps-totalbar">
-            <div className="ps-total-num">
-              <b>{totalBaked}</b>
-              <span>{totalLoss > 0 ? `assados · ${totalLoss} descarte` : 'assados'}</span>
-            </div>
-            <button className="ps-save" onClick={save} disabled={saving}>
-              <Save size={18} strokeWidth={2} />
-              {saving ? 'Salvando...' : 'Salvar produção'}
-            </button>
-          </div>
-        )}
+        </main>
       </div>
     </div>
   )
