@@ -1338,38 +1338,219 @@ export type Database = {
         }
         Relationships: []
       }
+      bread_leftover_events: {
+        Row: {
+          action: string
+          actor_id: string
+          actor_name: string
+          created_at: string
+          from_location: string | null
+          id: string
+          obs: string | null
+          quantity: number
+          reuse_plan_id: string | null
+          sobra_id: string
+          to_location: string | null
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          actor_name: string
+          created_at?: string
+          from_location?: string | null
+          id?: string
+          obs?: string | null
+          quantity?: number
+          reuse_plan_id?: string | null
+          sobra_id: string
+          to_location?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          actor_name?: string
+          created_at?: string
+          from_location?: string | null
+          id?: string
+          obs?: string | null
+          quantity?: number
+          reuse_plan_id?: string | null
+          sobra_id?: string
+          to_location?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bread_leftover_events_reuse_plan_id_fkey"
+            columns: ["reuse_plan_id"]
+            isOneToOne: false
+            referencedRelation: "bread_reuse_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bread_leftover_events_sobra_id_fkey"
+            columns: ["sobra_id"]
+            isOneToOne: false
+            referencedRelation: "sobras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bread_reuse_plan_allocations: {
+        Row: {
+          created_at: string
+          plan_id: string
+          quantity: number
+          sobra_id: string
+        }
+        Insert: {
+          created_at?: string
+          plan_id: string
+          quantity: number
+          sobra_id: string
+        }
+        Update: {
+          created_at?: string
+          plan_id?: string
+          quantity?: number
+          sobra_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bread_reuse_plan_allocations_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "bread_reuse_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bread_reuse_plan_allocations_sobra_id_fkey"
+            columns: ["sobra_id"]
+            isOneToOne: false
+            referencedRelation: "sobras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bread_reuse_plans: {
+        Row: {
+          bread_id: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          confirmed_by_name: string | null
+          confirmed_quantity: number | null
+          id: string
+          proposed_at: string
+          proposed_by: string
+          proposed_by_name: string
+          proposed_quantity: number
+          status: string
+          store: string
+          target_production_date: string
+          updated_at: string
+        }
+        Insert: {
+          bread_id: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_by_name?: string | null
+          confirmed_quantity?: number | null
+          id?: string
+          proposed_at?: string
+          proposed_by: string
+          proposed_by_name: string
+          proposed_quantity?: number
+          status?: string
+          store: string
+          target_production_date: string
+          updated_at?: string
+        }
+        Update: {
+          bread_id?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_by_name?: string | null
+          confirmed_quantity?: number | null
+          id?: string
+          proposed_at?: string
+          proposed_by?: string
+          proposed_by_name?: string
+          proposed_quantity?: number
+          status?: string
+          store?: string
+          target_production_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bread_reuse_plans_bread_id_fkey"
+            columns: ["bread_id"]
+            isOneToOne: false
+            referencedRelation: "breads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sobras: {
         Row: {
           created_at: string | null
           id: string
+          lot_code: string | null
           obs: string | null
+          pending_quantity: number | null
+          physical_location: string | null
           product_id: string | null
           product_source: string | null
+          production_actual_id: string | null
           quantity: number
           record_date: string
           responsible: string
+          status: string | null
+          store: string | null
+          updated_at: string
         }
         Insert: {
           created_at?: string | null
           id?: string
+          lot_code?: string | null
           obs?: string | null
+          pending_quantity?: number | null
+          physical_location?: string | null
           product_id?: string | null
           product_source?: string | null
+          production_actual_id?: string | null
           quantity?: number
           record_date: string
           responsible: string
+          status?: string | null
+          store?: string | null
+          updated_at?: string
         }
         Update: {
           created_at?: string | null
           id?: string
+          lot_code?: string | null
           obs?: string | null
+          pending_quantity?: number | null
+          physical_location?: string | null
           product_id?: string | null
           product_source?: string | null
+          production_actual_id?: string | null
           quantity?: number
           record_date?: string
           responsible?: string
+          status?: string | null
+          store?: string | null
+          updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sobras_production_actual_id_fkey"
+            columns: ["production_actual_id"]
+            isOneToOne: false
+            referencedRelation: "production_actuals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stock_balance: {
         Row: {
@@ -1715,6 +1896,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      confirm_bread_reuse_plan: {
+        Args: { p_confirmed_quantity: number; p_plan_id: string }
+        Returns: Json
+      }
       confirm_oven_output: {
         Args: {
           p_bread_id: string
@@ -1732,6 +1917,36 @@ export type Database = {
           returned_quantity_good: number
           returned_quantity_loss: number
         }[]
+      }
+      register_bread_leftovers: {
+        Args: {
+          p_items: Json
+          p_physical_location?: string
+          p_record_date: string
+          p_store: string
+        }
+        Returns: Json
+      }
+      resolve_bread_leftover: {
+        Args: {
+          p_action: string
+          p_freezer_location?: string
+          p_quantity: number
+          p_sobra_id: string
+        }
+        Returns: Json
+      }
+      save_bread_reuse_proposals: {
+        Args: {
+          p_proposals: Json
+          p_store: string
+          p_target_production_date: string
+        }
+        Returns: Json
+      }
+      update_bread_leftover_location: {
+        Args: { p_physical_location: string; p_sobra_id: string }
+        Returns: Json
       }
     }
     Enums: {
