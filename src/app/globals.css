@@ -509,6 +509,36 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-discard-cancel{ align-self:flex-start; border:0; background:transparent; color:var(--ink-soft); font-family:var(--font-ui); font-weight:600; font-size:12px; cursor:pointer; padding:0; }
 .ps-select{ border:1px solid var(--ps-line); border-radius:var(--r-ctrl); background:var(--cream-raise); padding:10px 12px; font-family:var(--font-ui); font-size:14px; font-weight:600; color:var(--ps-ink); width:100%; }
 .ps-select:focus{ outline:2px solid var(--honey); outline-offset:1px; }
+.ps-oven-page{ padding-bottom:110px; }
+.ps-oven-card{ gap:14px; }
+.ps-oven-card.confirmed{ border-color:#A9B99A; background:linear-gradient(180deg,var(--cream),#F5F7F1); }
+.ps-oven-card.confirmed::before{ background:var(--sage); }
+.ps-oven-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+.ps-oven-lot{ margin-top:5px; color:var(--ink-faint); font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+.ps-oven-planned{ min-width:70px; text-align:right; display:flex; flex-direction:column; line-height:1; }
+.ps-oven-planned span{ color:var(--ink-faint); font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+.ps-oven-planned b{ margin-top:5px; color:var(--ps-ink); font-family:var(--font-display); font-size:30px; font-variant-numeric:tabular-nums; }
+.ps-oven-actions{ display:flex; flex-direction:column; gap:10px; }
+.ps-oven-confirm{ min-height:56px; width:100%; border:0; border-radius:14px; background:linear-gradient(180deg,var(--crust),var(--crust-deep)); color:#fff7ea; display:flex; align-items:center; justify-content:center; gap:9px; font-family:var(--font-ui); font-size:17px; font-weight:800; box-shadow:0 6px 16px -6px rgba(107,57,25,.55); }
+.ps-oven-confirm:active{ transform:translateY(1px); }
+.ps-oven-confirm:disabled{ opacity:.58; cursor:not-allowed; }
+.ps-oven-adjust{ min-height:40px; align-self:flex-start; border:0; background:transparent; color:var(--crust); display:inline-flex; align-items:center; gap:6px; font-family:var(--font-ui); font-size:13px; font-weight:700; }
+.ps-oven-adjust:disabled{ opacity:.5; cursor:not-allowed; }
+.ps-oven-confirmed{ min-height:56px; border:1px solid #BBC8AE; border-radius:14px; background:#EDF2E8; color:#4E623E; padding:11px 13px; display:flex; align-items:center; gap:10px; }
+.ps-oven-confirmed > div{ min-width:0; display:flex; flex-direction:column; line-height:1.25; }
+.ps-oven-confirmed b{ font-size:16px; }
+.ps-oven-confirmed span{ margin-top:2px; color:#667558; font-size:12px; }
+.ps-oven-editor{ border-top:1px solid var(--ps-line); padding-top:14px; display:flex; flex-direction:column; gap:14px; }
+.ps-oven-field label{ display:block; margin-bottom:7px; color:var(--ink-soft); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.ps-oven-field.loss{ border-radius:13px; background:var(--berry-tint); padding:11px; }
+.ps-oven-field.loss label{ color:var(--berry); }
+.ps-oven-editor-actions{ display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.ps-oven-editor-actions .ps-btn{ min-height:44px; }
+.ps-oven-error{ margin-top:18px; border:1px solid #E6B5AC; border-radius:14px; background:var(--berry-tint); color:var(--berry); padding:13px; display:flex; align-items:center; gap:9px; font-size:13px; font-weight:700; }
+.ps-oven-error span{ flex:1; }
+.ps-oven-error button{ border:0; background:transparent; color:inherit; font:inherit; text-decoration:underline; }
+.ps-spin{ animation:ps-spin .8s linear infinite; }
+@keyframes ps-spin{ to{ transform:rotate(360deg); } }
 
 /* ── ROMANEIO (ps helpers) ─────────────────────────────────────── */
 /* Botão genérico para ações dentro de cards */
