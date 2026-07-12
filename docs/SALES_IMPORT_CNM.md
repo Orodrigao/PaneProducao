@@ -35,6 +35,63 @@ CNM_YYYY-MM-DD_JARDIM_AMERICA.xlsx
 - Robô local abre CNM, exporta relatório e salva o arquivo.
 - Usar apenas se o CNM não oferecer API/export agendado confiável.
 
+#### Coletor local validado para JC
+
+O fluxo gravado em 11/07/2026 confirmou:
+
+- relatório `Vendas` exibido por `Produto`;
+- local `Pane Salute` corresponde a `jc`;
+- o botão XLS só habilita depois de selecionar o local e aplicar os filtros;
+- o arquivo gerado é um `.xls` real e pode ser validado pelo leitor do ERP.
+
+O coletor usa um perfil de Chrome dedicado em `storage/cnm/profile/`, ignorado
+pelo Git. Usuário, senha, cookies e estado autenticado nunca entram no código.
+
+Primeiro uso ou renovação da sessão:
+
+```bash
+npm run cnm:login
+```
+
+Na janela aberta, faça o login autorizado no CNM e pressione Enter no terminal
+quando a tela inicial estiver disponível.
+
+Download de uma data:
+
+```bash
+npm run cnm:download -- --date 2026-07-10
+```
+
+Para acompanhar visualmente ou investigar mudança de layout:
+
+```bash
+npm run cnm:download -- --date 2026-07-10 --headed
+```
+
+O resultado fica em:
+
+```text
+storage/cnm/downloads/CNM_2026-07-10_JC.xls
+```
+
+Ao repetir a mesma data, o coletor compara SHA-256. Arquivo idêntico é mantido
+sem duplicação. Um arquivo diferente é preservado como `CONFLITO` e não
+sobrescreve o anterior; `--replace` deve ser usado somente após revisão humana.
+Se o CNM informar que outra exportação ainda está em processamento, o coletor
+aguarda o intervalo exigido pelo site e tenta novamente uma vez.
+
+Variáveis opcionais, sempre locais:
+
+| Variável | Uso |
+|---|---|
+| `CNM_PROFILE_DIR` | Caminho do perfil autenticado dedicado |
+| `CNM_DOWNLOAD_DIR` | Pasta dos relatórios brutos |
+| `CNM_TIMEOUT_MS` | Limite de espera do CNM; padrão 60000 ms |
+| `CNM_CHROME_PATH` | Executável do Chrome quando fora do local padrão |
+
+Falhas salvam uma captura local em `storage/cnm/downloads/errors/`. Essa pasta
+pode conter dados operacionais e não deve ser compartilhada nem versionada.
+
 ### Fase 4 — API direta
 
 - Só implementar se CNM oferecer API/documentação/credenciais oficiais.

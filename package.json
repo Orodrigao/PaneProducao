@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cnm:login": "tsx scripts/cnm-login.ts",
+    "cnm:download": "tsx scripts/cnm-download.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
@@ -25,8 +27,10 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9",
     "eslint-config-next": "15.3.2",
+    "playwright-core": "^1.61.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }
