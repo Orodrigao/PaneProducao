@@ -27,7 +27,7 @@ Ação: não inserir no Supabase ainda.
 | Geolar | [producao1@paneesalute.com.br](mailto:producao1@paneesalute.com.br) | Padeiro chefe | producao | jc | Produção, congelados, lista de compras, forno | Confirmar se este e-mail será dele |
 | Sander | [forno@paneesalute.com.br](mailto:forno@paneesalute.com.br) | Produção | producao | jc | Forno | Acesso forno |
 | Fran | [cozinha@paneesalute.com.br](mailto:cozinha@paneesalute.com.br) | Produção | producao | jc | Congelados, lista de compras, cozinha | Acesso congelados/lista de compras/cozinha |
-| Brian | [expedicao1@paneesalute.com.br](mailto:expedicao1@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, estoque, Pedidos PJ | PJ é canal/tipo de pedido, não loja |
+| expedicao | [expedicao@paneesalute.com.br](mailto:expedicao@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, estoque, Pedidos PJ | Conta setorial; PJ é canal/tipo de pedido, não loja |
 | Gustavo | [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, Pedidos PJ | PJ é canal/tipo de pedido, não loja |
 | Liara | [atendiment@paneesalute.com.br](mailto:atendiment@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas, fechamento de caixa | Fechamento de caixa ainda não existe |
 | Samuca | [atendimento2@paneesalute.com.br](mailto:atendimento2@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas | E-mail definido |
@@ -46,7 +46,7 @@ Ação: não inserir no Supabase ainda.
 * Elis permanece com escopo global.
 * Fran usará [cozinha@paneesalute.com.br](mailto:cozinha@paneesalute.com.br).
 * Sander usará [forno@paneesalute.com.br](mailto:forno@paneesalute.com.br).
-* Brian usará [expedicao1@paneesalute.com.br](mailto:expedicao1@paneesalute.com.br).
+* A conta setorial da expedição usa [expedicao@paneesalute.com.br](mailto:expedicao@paneesalute.com.br).
 * Gustavo usará [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br).
 * Liara, Samuca e Cleo usarão [atendiment@paneesalute.com.br](mailto:atendiment@paneesalute.com.br), [atendimento2@paneesalute.com.br](mailto:atendimento2@paneesalute.com.br) e [atendimento3@paneesalute.com.br](mailto:atendimento3@paneesalute.com.br).
 * Conferência EX usará [producao2@paneesalute.com.br](mailto:producao2@paneesalute.com.br).

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, Pencil, Trash2, X, Save, Snowflake } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { RequestTimeoutError, withTimeout } from '@/lib/supabaseRest'
 import { getCurrentUser, roleColor } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
@@ -65,6 +66,8 @@ export default function EstoqueCongeladoPage() {
   const [user, setUser]         = useState<{displayName:string; store:string|null; pin:string; role:any}|null>(null)
   const [products, setProducts] = useState<FrozenProduct[]>([])
   const [stock, setStock]       = useState<StockMap>({})
+  const [loading, setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch]     = useState('')
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES)
   const [tab, setTab]           = useState<'estoque'|'historico'|'admin'>('estoque')
@@ -108,22 +111,37 @@ export default function EstoqueCongeladoPage() {
   const locsVisible = visibleLocations(user?.store ?? null)
 
   const load = useCallback(async () => {
-    const [{ data: fps }, { data: ss }] = await Promise.all([
-      supabase.from('frozen_products').select('*').eq('active', true).order('product_name'),
-      supabase.from('frozen_stock').select('*'),
-    ])
-    const normalized = (fps||[]).map((p:any) => ({
-      ...p,
-      visible_stores: normalizeStores(p.visible_stores ?? p.store)
-    }))
-    setProducts(normalized)
-    const sm: StockMap = {}
-    ;(ss||[]).forEach((s:any) => {
-      const loc = normalizeLocation(s.location)
-      if (!sm[s.frozen_product_id]) sm[s.frozen_product_id] = {}
-      sm[s.frozen_product_id][loc] = Number(s.quantity)
-    })
-    setStock(sm)
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [productsResult, stockResult] = await withTimeout(Promise.all([
+        supabase.from('frozen_products').select('*').eq('active', true).order('product_name'),
+        supabase.from('frozen_stock').select('*'),
+      ]))
+      if (productsResult.error) throw productsResult.error
+      if (stockResult.error) throw stockResult.error
+
+      const normalized = (productsResult.data||[]).map((p:any) => ({
+        ...p,
+        visible_stores: normalizeStores(p.visible_stores ?? p.store)
+      }))
+      setProducts(normalized)
+      const sm: StockMap = {}
+      ;(stockResult.data||[]).forEach((s:any) => {
+        const loc = normalizeLocation(s.location)
+        if (!sm[s.frozen_product_id]) sm[s.frozen_product_id] = {}
+        sm[s.frozen_product_id][loc] = Number(s.quantity)
+      })
+      setStock(sm)
+    } catch (error) {
+      setProducts([])
+      setStock({})
+      setLoadError(error instanceof RequestTimeoutError
+        ? 'A consulta demorou demais. Verifique a internet e tente novamente.'
+        : 'Não foi possível carregar o estoque congelado.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   const loadHistorico = useCallback(async () => {
@@ -463,7 +481,14 @@ export default function EstoqueCongeladoPage() {
                 </div>
               )}
 
-              {filtered.length===0 ? (
+              {loading ? (
+                <div className="ps-empty">Carregando...</div>
+              ) : loadError ? (
+                <div className="ps-warning danger" style={{justifyContent:'space-between'}}>
+                  <span>{loadError}</span>
+                  <button type="button" className="ps-btn ghost sm" onClick={load}>Tentar novamente</button>
+                </div>
+              ) : filtered.length===0 ? (
                 <div className="ps-empty">
                   <Snowflake size={36} style={{display:'block', margin:'0 auto 8px', opacity:.4}}/>
                   {products.length===0 ? 'Nenhum produto configurado. Use o Admin para adicionar.' : 'Nenhum resultado.'}

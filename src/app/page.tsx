@@ -4,11 +4,10 @@ import { useRouter } from 'next/navigation'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { aggregateWholePending, clampReuseProposal } from '@/lib/breadLeftovers'
 import { supabase } from '@/lib/supabase'
+import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check } from 'lucide-react'
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
 const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
@@ -77,39 +76,33 @@ function slugify(str: string) {
 }
 
 // ── Supabase ────────────────────────────────────────────────────────
-const H = { 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, 'Content-Type':'application/json' }
 async function sbGet(table:string, params='') {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: H })
-  if (!r.ok) throw new Error(await r.text())
+  const r = await supabaseRestFetch(`${table}?${params}`)
   return r.json()
 }
 async function sbUpsert(table:string, data:any, onConflict?:string) {
   const qs = onConflict ? `?on_conflict=${onConflict}` : ''
-  const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`, {
-    method:'POST', headers:{...H,'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
+  const r = await supabaseRestFetch(`${table}${qs}`, {
+    method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
   })
-  if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbInsert(table:string, data:any) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  const r = await supabaseRestFetch(table, {
+    method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(data)
   })
-  if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbPatch(table:string, data:any, match:Record<string,string>) {
   const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, {
-    method:'PATCH', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  const r = await supabaseRestFetch(`${table}?${q}`, {
+    method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(data)
   })
-  if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbDel(table:string, match:Record<string,string>) {
   const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method:'DELETE', headers:H })
-  if (!r.ok) throw new Error(await r.text())
+  await supabaseRestFetch(`${table}?${q}`, { method:'DELETE' })
 }
 
 // ── Main Component ──────────────────────────────────────────────────
@@ -124,6 +117,7 @@ export default function ProducaoPage() {
   const [isLocked, setIsLocked] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('Carregando...')
+  const [initialLoadError, setInitialLoadError] = useState('')
   const [activeTab, setActiveTab] = useState(0)
   const [syncState, setSyncState] = useState<''|'syncing'|'error'>('')
   // qty state per store: key = "store-breadId"
@@ -316,6 +310,7 @@ export default function ProducaoPage() {
 
   const login = async (user: UserKey) => {
     setCurrentUser(user)
+    setInitialLoadError('')
     showLoad('Carregando cardápio...')
     try {
       const bds = await loadBreads()
@@ -357,7 +352,13 @@ export default function ProducaoPage() {
       setScreen('main')
     } catch(e) {
       hideLoad()
-      showToast('Erro de conexão. Tente novamente.')
+      if (e instanceof SupabaseRestError && e.status === 401) {
+        showToast('Sua sessão expirou. Entre novamente.')
+        authLogout()
+        router.replace('/login?force=email&returnTo=/')
+        return
+      }
+      setInitialLoadError('Não foi possível carregar a Produção. Verifique a internet e tente novamente.')
     }
   }
 
@@ -716,6 +717,16 @@ export default function ProducaoPage() {
   }
 
   // ── Render ───────────────────────────────────────────────────────
+  if ((screen === 'init' || screen === 'login') && initialLoadError) return (
+    <div className="ps-canvas">
+      <div className="ps-shell">
+        <div className="ps-empty" style={{ margin:24 }}>
+          <p>{initialLoadError}</p>
+          <button className="ps-btn primary" onClick={() => currentUser && login(currentUser)}>Tentar novamente</button>
+        </div>
+      </div>
+    </div>
+  )
   if (screen === 'init' || screen === 'login') return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'var(--muted)' }}>
       <p>Carregando...</p>

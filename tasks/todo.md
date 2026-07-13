@@ -1,53 +1,41 @@
-# Tarefa: coletor local de vendas do CNM
+# Tarefa: corrigir telas presas em “Carregando...” após login
 
-Pedido aprovado pelo Rodrigo em 11/07/2026: continuar a automação do CNM a
-partir da gravação Replay validada e baixar o relatório diário de vendas por
-produto da loja JC sem armazenar credenciais no repositório.
+Relato do Rodrigo em 13/07/2026: vários usuários entram no ERP, mas telas ficam
+indefinidamente em “Carregando...”. O problema já ocorreu em Congelados, Caixa e
+Romaneio. A tela móvel mostra a navegação inferior, porém não abre o conteúdo.
 
-## Evidência validada
+## Evidência e causa confirmada
 
-- Gravação Replay: `18a1d95d-8a8e-4be4-af09-a3b0c2125298`.
-- Jira: `KAN-1`.
-- Rota do relatório: `#!/relatorio/venda`.
-- Agrupamento: `Produto` (`P`).
-- Local: `Pane Salute` (`61286`) corresponde a `jc`.
-- O XLS só habilita depois de selecionar o local e aplicar os filtros.
-- Seletores estáveis confirmados no fluxo real:
-  - `input[ng-model="vm.dataInicio"]`;
-  - `input[ng-model="vm.dataFim"]`;
-  - `#cbTipoAgrupamento`;
-  - `#cbLocaisFiltroRelatorioFluxoVendas`;
-  - `button[title="Aplicar filtros"]`;
-  - `#btnExport`.
+- Os logs do Supabase registram respostas `401` para `destinations` e
+  `product_prices` em acessos móveis ao Romaneio.
+- Essas tabelas aceitam leitura somente com a função `authenticated` e perfil
+  ativo autorizado para `/romaneio`.
+- `src/app/romaneio/page.tsx` faz as chamadas usando sempre a chave pública como
+  `Authorization`, descartando o token da sessão do usuário que acabou de entrar.
+- Quando uma chamada falha, o overlay é fechado, mas `screen` continua em `init`;
+  por isso um segundo carregamento sem saída permanece visível.
 
 ## Plano aprovado
 
-- [x] Validar o fluxo real com Chrome + Replay e conferir o XLS baixado.
-- [x] Criar perfil de Chrome dedicado e ignorado pelo Git.
-- [x] Criar comando de login manual sem usuário/senha no código.
-- [x] Criar comando de download por data usando os seletores validados.
-- [x] Salvar como `CNM_AAAA-MM-DD_JC.xls` em pasta local ignorada.
-- [x] Validar o arquivo com o leitor XLS já implementado.
-- [x] Adicionar testes dos argumentos, nomes e condições de erro.
-- [x] Documentar setup, renovação de sessão e execução diária.
-- [x] Rodar testes, typecheck, lint, build e revisar o diff.
-- [x] Autenticar o perfil dedicado e validar um download completo pelo coletor.
+- [x] Mapear todas as consultas REST diretas que ainda substituem o token do
+      usuário pela chave pública, não apenas as três telas relatadas.
+- [x] Criar um helper compartilhado que envie o token da sessão Supabase quando
+      houver login por e-mail e preserve temporariamente o fallback PIN.
+- [x] Migrar Congelados, Caixa, Romaneio e qualquer outra rota protegida que use
+      o padrão incorreto, sem alterar regras de negócio.
+- [x] Tratar sessão expirada/ausente e erros de carga com mensagem clara e saída
+      do estado de carregamento; quando necessário, retornar ao login.
+- [x] Adicionar testes para token autenticado, fallback PIN, erro de sessão e
+      garantia de que nenhuma rota protegida mantém o cabeçalho incorreto.
+- [x] Registrar a lição do bug e atualizar a documentação de autenticação tocada
+      pela correção.
+- [x] Rodar testes, typecheck, lint e build; revisar o diff.
+- [ ] Validar visualmente em navegador móvel autenticado; a conexão do navegador
+      do Codex não ficou disponível nesta sessão.
 
-## Resultado do teste real
+## Escopo
 
-- Data: `2026-07-10`.
-- Arquivo: `CNM_2026-07-10_JC.xls`.
-- Itens: `81`.
-- Quantidade total: `404`.
-- Total líquido calculado e informado: `R$ 6.132,40`.
-- SHA-256: `a80f6699c7cb19ee3fc1c3c54bba73102554409473c3a38f100ee45459a39b56`.
-- Segunda execução: `unchanged`, sem duplicação ou sobrescrita.
-
-## Fora desta entrega
-
-- Tabelas, migrations, RLS ou qualquer escrita no Supabase.
-- Importação confirmada e baixa de estoque.
-- Tela de upload, prévia ou mapeamento de produtos.
-- Armazenamento de senha, cookie ou perfil de navegador no Git.
-- Agendamento automático no Windows.
-- JA, EX ou outros relatórios do CNM.
+- O número final de arquivos depende do inventário das chamadas diretas. A
+  mudança continuará mecânica e limitada à autenticação/transição de loading.
+- Fora do escopo: alterar RLS, reabrir acesso anônimo às tabelas, remover o login
+  por PIN de todo o ERP, renomear outros usuários ou publicar na `main`.

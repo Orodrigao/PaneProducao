@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package, Printer } from 'lucide-react'
 import { canAccess, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
+import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
   buildRomaneioProductOptions,
   formatRomaneioQty,
@@ -12,10 +13,6 @@ import {
   parseRomaneioQty,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
-
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const H = { 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' }
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
 type Role = 'gustavo'|'cleo'|'marselle'|'rodrigo'
@@ -216,37 +213,32 @@ function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
 }
 
 async function sbGet(table:string, params='') {
-  const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:H})
-  if(!r.ok) throw new Error(await r.text())
+  const r=await supabaseRestFetch(`${table}?${params}`)
   return r.json()
 }
 async function sbPost(table:string, data:any) {
-  const r=await fetch(`${SB_URL}/rest/v1/${table}`,{
-    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  const r=await supabaseRestFetch(table,{
+    method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(data)
   })
-  if(!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbUpsert(table:string, data:any, onConflict?:string) {
   const qs=onConflict?`?on_conflict=${onConflict}`:''
-  const r=await fetch(`${SB_URL}/rest/v1/${table}${qs}`,{
-    method:'POST', headers:{...H,'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
+  const r=await supabaseRestFetch(`${table}${qs}`,{
+    method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
   })
-  if(!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbPatch(table:string, data:any, match:Record<string,string>) {
   const q=Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
-  const r=await fetch(`${SB_URL}/rest/v1/${table}?${q}`,{
-    method:'PATCH', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  const r=await supabaseRestFetch(`${table}?${q}`,{
+    method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(data)
   })
-  if(!r.ok) throw new Error(await r.text())
   return r.json()
 }
 async function sbDel(table:string, match:Record<string,string>) {
   const q=Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
-  const r=await fetch(`${SB_URL}/rest/v1/${table}?${q}`,{method:'DELETE',headers:H})
-  if(!r.ok) throw new Error(await r.text())
+  await supabaseRestFetch(`${table}?${q}`,{method:'DELETE'})
 }
 
 // ── Main ──────────────────────────────────────────────────────────
@@ -260,6 +252,7 @@ export default function RomaneioPage() {
   const [prices, setPrices] = useState<Record<string,number>>({})
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('Carregando...')
+  const [initialLoadError, setInitialLoadError] = useState('')
   // painel
   const [romaneios, setRomaneios] = useState<Romaneio[]>([])
   // detalhe
@@ -290,6 +283,17 @@ export default function RomaneioPage() {
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
   const hideLoad = () => setLoading(false)
 
+  const handleInitialLoadError = (error: unknown) => {
+    hideLoad()
+    if (error instanceof SupabaseRestError && error.status === 401) {
+      showToastPS('Sua sessão expirou. Entre novamente.')
+      authLogout()
+      router.replace('/login?force=email&returnTo=/romaneio')
+      return
+    }
+    setInitialLoadError('Não foi possível carregar o Romaneio. Verifique a internet e tente novamente.')
+  }
+
   const loadBase = useCallback(async () => {
     const [ds, bds, priceRows] = await Promise.all([
       sbGet('destinations','active=eq.true&order=name.asc'),
@@ -312,13 +316,14 @@ export default function RomaneioPage() {
   // ── login ──────────────────────────────────────────────────────
   const doLogin = async (r: Role) => {
     setRole(r)
+    setInitialLoadError('')
     showLoad('Carregando...')
     try {
       await loadBase()
       await loadPainel()
       hideLoad()
       setScreen('painel')
-    } catch(e) { hideLoad(); showToastPS('Erro de conexão') }
+    } catch(e) { handleInitialLoadError(e) }
   }
 
   const goHome = () => {
@@ -333,6 +338,7 @@ export default function RomaneioPage() {
     if (!globalUser) { router.replace('/login'); return }
     if (globalUser.role === 'admin') {
       setRole('rodrigo')
+      setInitialLoadError('')
       showLoad('Carregando...')
       ;(async () => {
         try {
@@ -340,7 +346,7 @@ export default function RomaneioPage() {
           await loadAdminPainel()
           hideLoad()
           setScreen('admin')
-        } catch(e) { hideLoad(); showToastPS('Erro') }
+        } catch(e) { handleInitialLoadError(e) }
       })()
       return
     }
@@ -649,9 +655,9 @@ export default function RomaneioPage() {
             })
 
             if (movements.length > 0) {
-              await fetch(`${SB_URL}/rest/v1/bread_movements`, {
+              await supabaseRestFetch('bread_movements', {
                 method: 'POST',
-                headers: { ...H, Prefer: 'return=minimal' },
+                headers: { Prefer: 'return=minimal' },
                 body: JSON.stringify(movements),
               })
             }
@@ -888,7 +894,18 @@ export default function RomaneioPage() {
       )}
 
       {/* INIT / LOGIN (auto-resolvido via PIN global; seletor interno removido) */}
-      {(screen==='init' || screen==='login') && (
+      {(screen==='init' || screen==='login') && initialLoadError && (
+        <div className="ps-canvas">
+          <div className="ps-shell">
+            <div className="ps-empty" style={{margin:24}}>
+              <AlertTriangle size={30} style={{display:'block',margin:'0 auto 8px'}}/>
+              <p>{initialLoadError}</p>
+              <button className="ps-btn primary" onClick={() => window.location.reload()}>Tentar novamente</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {(screen==='init' || screen==='login') && !initialLoadError && (
         <div className="ps-loading">
           <div className="ps-spinner"/>
           <p>Carregando...</p>
