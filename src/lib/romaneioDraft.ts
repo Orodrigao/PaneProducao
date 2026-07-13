@@ -16,6 +16,10 @@ export interface RomaneioProductOption {
   allowDecimal: boolean
 }
 
+export interface BuildRomaneioProductOptionsOptions {
+  ciabattaOnlyKg?: boolean
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -61,9 +65,18 @@ function makeOption(
 
 export function buildRomaneioProductOptions(
   breads: RomaneioBreadLite[],
+  options: BuildRomaneioProductOptionsOptions = {},
 ): RomaneioProductOption[] {
   return breads.flatMap(bread => {
     if (isCiabattaName(bread.name)) {
+      if (options.ciabattaOnlyKg) {
+        return [
+          {
+            ...makeOption(bread, 'kg', true),
+            key: `${bread.id}__kg`,
+          },
+        ]
+      }
       return [
         makeOption(bread, 'un', true),
         {

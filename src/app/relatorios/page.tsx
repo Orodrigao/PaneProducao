@@ -37,9 +37,9 @@ const ALL_REPORTS: ReportCard[] = [
   {
     href: '/relatorios/romaneios',
     title: 'Romaneios',
-    description: 'Entregas por período, status (separado/enviado/conferido), divergências e fechamentos.',
+    description: 'Fechamento e impressão de cobrança dos pães enviados para a EX pela Tabela Buck – Exposição.',
     icon: '🚚',
-    status: 'soon',
+    status: 'ready',
   },
   {
     href: '/relatorios/producao',

@@ -532,8 +532,15 @@ export default function RomaneioPage() {
     if (!criarDestId) { showToastPS('⚠️ Selecione o destino'); return }
     if (savingRomaneioRef.current) return
     savingRomaneioRef.current = true
-    const options = buildRomaneioProductOptions(draft.breads)
+    const isExDestination = normalizeDestination(dests.find(destination => destination.id === criarDestId)?.code) === 'EX'
+    const options = buildRomaneioProductOptions(draft.breads, { ciabattaOnlyKg: isExDestination })
     const optionByKey = new Map(options.map(option => [option.key, option]))
+    const incompatibleDraftItem = items.find(([key]) => !key.startsWith('extra_') && !optionByKey.has(key))
+    if (incompatibleDraftItem) {
+      savingRomaneioRef.current = false
+      showToastPS('⚠️ Para a EX, informe Ciabatta em kg antes de fechar o romaneio')
+      return
+    }
     showLoad('Fechando romaneio...')
     try {
       const insertHeader = (tripNumber: number) => sbPost('romaneios',[{
@@ -834,7 +841,8 @@ export default function RomaneioPage() {
 
   // ── derived ──────────────────────────────────────────────────────
   const activeDraft = criarDestId ? criarDrafts[criarDestId] : undefined
-  const activeOptions = activeDraft ? buildRomaneioProductOptions(activeDraft.breads) : []
+  const activeDestinationIsEx = normalizeDestination(dests.find(destination => destination.id === criarDestId)?.code) === 'EX'
+  const activeOptions = activeDraft ? buildRomaneioProductOptions(activeDraft.breads, { ciabattaOnlyKg: activeDestinationIsEx }) : []
   const criarTotalItems = activeDraft ? Object.values(activeDraft.qtys).filter(v=>v>0).length : 0
   const criarTotalQtyLabel = activeDraft ? formatDraftTotal(activeDraft.qtys, activeOptions) : '0 un'
   const criarDraftCount = Object.keys(criarDrafts).length

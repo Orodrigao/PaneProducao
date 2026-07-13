@@ -29,6 +29,16 @@ describe('romaneioDraft', () => {
     })
   })
 
+  it('mantém ciabatta somente em kg para a EX', () => {
+    const options = buildRomaneioProductOptions([
+      { id: 'ciabatta', name: 'Ciabatta', unit: 'un' },
+    ], { ciabattaOnlyKg: true })
+
+    expect(options).toMatchObject([
+      { key: 'ciabatta__kg', productId: 'ciabatta', unit: 'kg', allowDecimal: true },
+    ])
+  })
+
   it('aceita quantidade decimal com virgula', () => {
     expect(parseRomaneioQty('1,25')).toBe(1.25)
   })
