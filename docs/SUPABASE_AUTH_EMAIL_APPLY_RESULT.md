@@ -20,7 +20,7 @@ Atualização em 2026-06-18: o magic link direto deixou de ser o fluxo de entrad
 | Geolar | `producao1@paneesalute.com.br` | `producao` | `jc` |
 | Sander | `forno@paneesalute.com.br` | `producao` | `jc` |
 | Fran | `cozinha@paneesalute.com.br` | `producao` | `jc` |
-| Brian | `expedicao1@paneesalute.com.br` | `expedicao` | `jc` |
+| expedicao | `expedicao@paneesalute.com.br` | `expedicao` | `jc` |
 | Gustavo | `expedicao2@paneesalute.com.br` | `expedicao` | `jc` |
 | Liara | `atendiment@paneesalute.com.br` | `vendas` | `jc` |
 | Samuca | `atendimento2@paneesalute.com.br` | `vendas` | `jc` |
@@ -36,6 +36,15 @@ Atualização em 2026-06-18: o magic link direto deixou de ser o fluxo de entrad
 - Nenhum segredo foi gravado no repositório.
 - `app_users`, PINs e login legado não foram alterados.
 - RLS/policies existentes não foram alteradas.
+
+## Atualização de 13/07/2026
+
+- O cadastro anteriormente identificado como Brian / `expedicao1@paneesalute.com.br`
+  passou a usar o nome setorial `expedicao` e o e-mail
+  `expedicao@paneesalute.com.br`, preservando UUID, role, loja e histórico.
+- Consultas protegidas no frontend devem enviar o access token da sessão do
+  usuário. A chave pública permanece no cabeçalho `apikey`, mas não substitui a
+  identidade do usuário no cabeçalho `Authorization`.
 
 ## Validação
 

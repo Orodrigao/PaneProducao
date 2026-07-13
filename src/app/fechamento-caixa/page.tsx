@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Calendar, DollarSign, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { RequestTimeoutError, withTimeout } from '@/lib/supabaseRest'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
@@ -218,40 +219,48 @@ export default function FechamentoCaixaPage() {
     setLoading(true)
     setLoadError('')
 
-    const [selectedRes, historyRes] = await Promise.all([
-      supabase
-        .from('cash_closings')
-        .select('*')
-        .eq('store', store)
-        .eq('closing_date', date)
-        .maybeSingle(),
-      supabase
-        .from('cash_closings')
-        .select('*')
-        .eq('store', store)
-        .order('closing_date', { ascending: false })
-        .limit(8),
-    ])
+    try {
+      const [selectedRes, historyRes] = await withTimeout(Promise.all([
+        supabase
+          .from('cash_closings')
+          .select('*')
+          .eq('store', store)
+          .eq('closing_date', date)
+          .maybeSingle(),
+        supabase
+          .from('cash_closings')
+          .select('*')
+          .eq('store', store)
+          .order('closing_date', { ascending: false })
+          .limit(8),
+      ]))
 
-    if (selectedRes.error) {
+      if (selectedRes.error) {
+        setExisting(null)
+        setLoadError(selectedRes.error.message)
+      } else if (selectedRes.data) {
+        const row = selectedRes.data as CashClosingRow
+        setExisting(row)
+        setForm(rowToForm(row))
+        setNotes(row.notes ?? '')
+      } else {
+        setExisting(null)
+        setForm(EMPTY_FORM)
+        setNotes('')
+      }
+
+      if (!historyRes.error) {
+        setHistory((historyRes.data ?? []) as CashClosingRow[])
+      }
+    } catch (error) {
       setExisting(null)
-      setLoadError(selectedRes.error.message)
-    } else if (selectedRes.data) {
-      const row = selectedRes.data as CashClosingRow
-      setExisting(row)
-      setForm(rowToForm(row))
-      setNotes(row.notes ?? '')
-    } else {
-      setExisting(null)
-      setForm(EMPTY_FORM)
-      setNotes('')
+      setHistory([])
+      setLoadError(error instanceof RequestTimeoutError
+        ? 'A consulta demorou demais. Verifique a internet e tente novamente.'
+        : 'Não foi possível carregar o fechamento. Tente novamente.')
+    } finally {
+      setLoading(false)
     }
-
-    if (!historyRes.error) {
-      setHistory((historyRes.data ?? []) as CashClosingRow[])
-    }
-
-    setLoading(false)
   }, [date, store])
 
   useEffect(() => {
@@ -397,6 +406,7 @@ export default function FechamentoCaixaPage() {
             <div className="ps-warning danger">
               <AlertTriangle size={16} />
               <span>{loadError.includes('cash_closings') ? 'A migration cash_closings ainda nao foi aplicada no Supabase.' : loadError}</span>
+              <button type="button" className="ps-btn ghost sm" onClick={loadClosing}>Tentar novamente</button>
             </div>
           )}
 

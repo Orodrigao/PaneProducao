@@ -1,5 +1,7 @@
 // src/lib/auth.ts — autenticacao PIN-based + Supabase Auth em paralelo
 
+import { withTimeout } from '@/lib/supabaseRest'
+
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
 export type AuthProvider = 'pin' | 'email'
 
@@ -204,9 +206,9 @@ function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null
 
 export async function fetchUsersFromSupabase(): Promise<AppUser[] | null> {
   try {
-    const res = await fetch(SB_URL + '/rest/v1/app_users?select=*&order=display_name.asc', {
+    const res = await withTimeout(fetch(SB_URL + '/rest/v1/app_users?select=*&order=display_name.asc', {
       headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
-    })
+    }))
     if (!res.ok) return null
     const rows: SBUser[] = await res.json()
     return rows.map(r => ({
@@ -340,7 +342,7 @@ export async function fetchCurrentAuthUser(): Promise<AppUser | null> {
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    const { data: sessionData, error: sessionError } = await withTimeout(supabase.auth.getSession())
 
     if (sessionError || !sessionData.session?.user) {
       cacheAuthUser(null)
@@ -348,11 +350,11 @@ export async function fetchCurrentAuthUser(): Promise<AppUser | null> {
     }
 
     const authUser = sessionData.session.user
-    const { data, error } = await supabase
+    const { data, error } = await withTimeout(supabase
       .from('app_profiles')
       .select('user_id, display_name, role, active, allowed_routes, store')
       .eq('user_id', authUser.id)
-      .maybeSingle()
+      .maybeSingle())
 
     if (error || !data) {
       cacheAuthUser(null)
@@ -388,10 +390,10 @@ export async function signInWithEmailPassword(email: string, password: string): 
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error } = await withTimeout(supabase.auth.signInWithPassword({
       email: normalizedEmail,
       password,
-    })
+    }))
 
     if (error) {
       return { ok: false, message: 'E-mail ou senha inválidos.' }
@@ -418,9 +420,9 @@ export async function sendPasswordSetupLink(email: string): Promise<AuthActionRe
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+    const { error } = await withTimeout(supabase.auth.resetPasswordForEmail(normalizedEmail, {
       redirectTo: `${window.location.origin}/login?mode=senha`,
-    })
+    }))
 
     if (error) {
       return { ok: false, message: 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.' }
@@ -438,13 +440,13 @@ export async function updateCurrentUserPassword(password: string, confirmation: 
 
   try {
     const { supabase } = await import('@/lib/supabase')
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    const { data: sessionData, error: sessionError } = await withTimeout(supabase.auth.getSession())
 
     if (sessionError || !sessionData.session) {
       return { ok: false, message: 'Link expirado. Peça um novo acesso.' }
     }
 
-    const { error } = await supabase.auth.updateUser({ password })
+    const { error } = await withTimeout(supabase.auth.updateUser({ password }))
     if (error) {
       return { ok: false, message: 'Não foi possível salvar a senha.' }
     }
