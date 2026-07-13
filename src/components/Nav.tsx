@@ -22,7 +22,7 @@ const PRIMARY: NavLink[] = [
 
 const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   { group: 'Operação', items: [
-    { href: '/sobras/pendencias', label: 'Sobras',    Icon: Recycle },
+    { href: '/sobras',            label: 'Sobras',    Icon: Recycle },
     { href: '/fechamento-caixa',  label: 'Caixa',     Icon: DollarSign },
     { href: '/estoque-congelado', label: 'Congelado', Icon: Snowflake },
     { href: '/estoque-paes',      label: 'Saldo Pães',Icon: Scale },
