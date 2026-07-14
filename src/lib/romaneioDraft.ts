@@ -20,6 +20,11 @@ export interface BuildRomaneioProductOptionsOptions {
   ciabattaOnlyKg?: boolean
 }
 
+export interface RomaneioOrderRow {
+  bread_id: string | null
+  quantity: number | string | null
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -98,6 +103,17 @@ export function nextRomaneioTripNumber(trips: Array<number | null | undefined>):
     return Math.max(max, Math.trunc(value))
   }, 0)
   return maxTrip + 1
+}
+
+export function orderQuantitiesByBreadId(rows: RomaneioOrderRow[]): Record<string, number> {
+  return rows.reduce<Record<string, number>>((quantities, row) => {
+    if (!row.bread_id) return quantities
+    const quantity = Number(row.quantity)
+    if (!Number.isFinite(quantity) || quantity <= 0) return quantities
+
+    quantities[row.bread_id] = (quantities[row.bread_id] ?? 0) + quantity
+    return quantities
+  }, {})
 }
 
 export function parseRomaneioQty(value: string): number {

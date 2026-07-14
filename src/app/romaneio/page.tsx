@@ -10,7 +10,9 @@ import {
   formatRomaneioQty,
   nextRomaneioTripNumber,
   normalizeRomaneioQty,
+  orderQuantitiesByBreadId,
   parseRomaneioQty,
+  type RomaneioOrderRow,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
 
@@ -423,12 +425,17 @@ export default function RomaneioPage() {
   }
 
   const buildDraftForDest = async (destId: string, date = criarDate): Promise<CriarDraft> => {
+    const destinationCode = normalizeDestination(dests.find(destination => destination.id === destId)?.code)
+    const orderStore = destinationCode.toLowerCase()
+    const orderRequest = orderStore
+      ? sbGet('orders',`order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
+      : Promise.resolve([])
     const [existing, orders] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=trip_number`),
-      sbGet('orders',`order_date=eq.${date}&quantity=gt.0&select=bread_id`)
+      orderRequest,
     ])
     let bds = breads
-    const orderRows = orders as { bread_id: string | null }[]
+    const orderRows = orders as RomaneioOrderRow[]
     if (orderRows.length) {
       const ids = [...new Set(orderRows.map(o => o.bread_id).filter((id): id is string => Boolean(id)))]
       if (ids.length) {
@@ -436,10 +443,20 @@ export default function RomaneioPage() {
         if (byOrder.length) bds = byOrder
       }
     }
+    const quantitiesByBreadId = orderQuantitiesByBreadId(orderRows)
+    const orderedOptions = buildRomaneioProductOptions(bds, { ciabattaOnlyKg: destinationCode === 'EX' })
+    const qtys: Record<string, number> = {}
+    const includedBreadIds = new Set<string>()
+    orderedOptions.forEach(option => {
+      if (includedBreadIds.has(option.productId)) return
+      includedBreadIds.add(option.productId)
+      const quantity = quantitiesByBreadId[option.productId]
+      if (quantity) qtys[option.key] = quantity
+    })
     return {
       destId,
       breads: bds,
-      qtys: {},
+      qtys,
       extras: {},
       trip: nextRomaneioTripNumber((existing as RomaneioTripRow[]).map(row => row.trip_number)),
       obs: '',
