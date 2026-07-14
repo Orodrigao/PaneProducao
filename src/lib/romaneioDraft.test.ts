@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRomaneioProductOptions, nextRomaneioTripNumber, parseRomaneioQty } from './romaneioDraft'
+import { buildRomaneioProductOptions, nextRomaneioTripNumber, orderQuantitiesByBreadId, parseRomaneioQty } from './romaneioDraft'
 
 describe('romaneioDraft', () => {
   it('cria duas opcoes para ciabatta', () => {
@@ -49,5 +49,15 @@ describe('romaneioDraft', () => {
 
   it('ignora viagens vazias ou invalidas', () => {
     expect(nextRomaneioTripNumber([null, undefined, 0, -1])).toBe(1)
+  })
+
+  it('soma os pedidos por produto e ignora linhas invalidas', () => {
+    expect(orderQuantitiesByBreadId([
+      { bread_id: 'baguete', quantity: 12 },
+      { bread_id: 'baguete', quantity: '3' },
+      { bread_id: 'croissant', quantity: 40 },
+      { bread_id: null, quantity: 10 },
+      { bread_id: 'invalido', quantity: 0 },
+    ])).toEqual({ baguete: 15, croissant: 40 })
   })
 })
