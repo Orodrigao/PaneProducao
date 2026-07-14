@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { ChevronLeft, Plus, Copy, Trash2, Save, AlertTriangle, RotateCw, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
@@ -13,6 +13,7 @@ import {
   type MarginStatus,
   type PricingUnit,
 } from '@/lib/saleOptions'
+import { isCatalogItemAlreadyPriced, isLegacyBreadUnified } from './catalog'
 
 interface PriceTier { id:string; name:string; description:string|null; active:boolean }
 interface TierItem {
@@ -30,7 +31,7 @@ interface SaleOption {
 }
 interface CatalogItem {
   id:string; name:string; unit:string|null; _source:'bread'|'product';
-  sale_option_id?:string|null; sale_option_name?:string|null; sale_unit?:PricingUnit|null
+  sale_option_id?:string|null; sale_option_name?:string|null; sale_unit?:PricingUnit|null; legacy_bread_id?:string|null
 }
 type BreadCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null }
 type ProductCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null; legacy_bread_id:string|null }
@@ -105,6 +106,7 @@ export default function TabelasPrecoPage() {
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [productCosts, setProductCosts] = useState<ProductCatalogRow[]>([])
   const [breadCosts, setBreadCosts] = useState<BreadCatalogRow[]>([])
+  const addingItemRef = useRef(false)
 
   // Aba preços por cliente
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -155,10 +157,19 @@ export default function TabelasPrecoPage() {
         current.push(option)
         optionsByProduct.set(option.product_id, current)
       })
-      const breads:   CatalogItem[] = breadRows.map(b => ({ id:b.id, name:b.name, unit:b.unit, _source:'bread' }))
+      const unifiedBreadIds = new Set(productRows.flatMap(product => product.legacy_bread_id ? [product.legacy_bread_id] : []))
+      const breads:   CatalogItem[] = breadRows
+        .filter(bread => !isLegacyBreadUnified(bread.id, unifiedBreadIds))
+        .map(bread => ({ id:bread.id, name:bread.name, unit:bread.unit, _source:'bread' }))
       const prods:    CatalogItem[] = productRows.flatMap(p => {
         const options = optionsByProduct.get(p.id) || []
-        if (options.length === 0) return [{ id:p.id, name:p.name, unit:p.unit, _source:'product' as const }]
+        if (options.length === 0) return [{
+          id:p.id,
+          name:p.name,
+          unit:p.unit,
+          _source:'product' as const,
+          legacy_bread_id:p.legacy_bread_id,
+        }]
         return options.map(option => ({
           id:p.id,
           name:p.name,
@@ -167,6 +178,7 @@ export default function TabelasPrecoPage() {
           sale_option_id: option.id,
           sale_option_name: option.name,
           sale_unit: inferPricingUnit(p.unit, option),
+          legacy_bread_id: p.legacy_bread_id,
         }))
       })
       setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
@@ -216,7 +228,12 @@ export default function TabelasPrecoPage() {
     updateTier({ description: v || null })
   }
   const itemsOfSel = useMemo(() => items.filter(i => i.tier_id === selTierId).sort((a,b) => a.product_name.localeCompare(b.product_name)), [items, selTierId])
-  const itemsKeySet = useMemo(() => new Set(itemsOfSel.map(i => saleOptionKey(i.product_source, i.product_id, i.sale_option_id))), [itemsOfSel])
+  const catalogItemAlreadyPriced = useCallback((item: CatalogItem) => isCatalogItemAlreadyPriced({
+    id: item.id,
+    _source: item._source,
+    pricing_unit: inferPricingUnit(item.unit, item.sale_unit ? { sale_unit: item.sale_unit } : null),
+    legacy_bread_id: item.legacy_bread_id,
+  }, itemsOfSel), [itemsOfSel])
   const saleOptionsById = useMemo(() => {
     const map = new Map<string, SaleOption>()
     saleOptions.forEach(option => map.set(option.id, option))
@@ -425,23 +442,71 @@ export default function TabelasPrecoPage() {
     setSelTierId(newT.id)
   }
 
+  const reactivateInactiveItem = async (
+    productId: string,
+    productSource: 'bread'|'product',
+    pricingUnit: PricingUnit,
+  ) => {
+    const { data, error } = await supabase
+      .from('price_tier_items')
+      .update({ active: true })
+      .eq('tier_id', selTierId!)
+      .eq('product_id', productId)
+      .eq('product_source', productSource)
+      .eq('pricing_unit', pricingUnit)
+      .eq('active', false)
+      .select('id')
+      .maybeSingle()
+    if (error) throw error
+    return data
+  }
+
   const addItem = async (p: CatalogItem) => {
     if (!selTierId) return
-    if (itemsKeySet.has(saleOptionKey(p._source, p.id, p.sale_option_id))) { showToast('Já existe nessa tabela'); return }
-    const { error } = await supabase.from('price_tier_items').insert({
-      tier_id: selTierId,
-      product_id: p.id,
-      product_source: p._source,
-      product_name: p.name,
-      unit_price: 0,
-      pricing_unit: inferPricingUnit(p.unit, p.sale_unit ? { sale_unit: p.sale_unit } : null),
-      pack_size: 1,
-      active: true,
-      ...(p.sale_option_id ? { sale_option_id: p.sale_option_id } : {}),
-    })
-    if (error) { showToast('Erro: ' + error.message); return }
-    setSearch('')
-    loadAll()
+    if (catalogItemAlreadyPriced(p)) { showToast('Já existe nessa tabela'); return }
+    if (addingItemRef.current) return
+
+    addingItemRef.current = true
+    const pricingUnit = inferPricingUnit(p.unit, p.sale_unit ? { sale_unit: p.sale_unit } : null)
+    try {
+      const sameItem = await reactivateInactiveItem(p.id, p._source, pricingUnit)
+      const legacyItem = !sameItem && p._source === 'product' && p.legacy_bread_id
+        ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit)
+        : null
+      if (sameItem || legacyItem) {
+        showToast('Produto reativado nesta tabela')
+        setSearch('')
+        await loadAll()
+        return
+      }
+
+      const { error } = await supabase.from('price_tier_items').insert({
+        tier_id: selTierId,
+        product_id: p.id,
+        product_source: p._source,
+        product_name: p.name,
+        unit_price: 0,
+        pricing_unit: pricingUnit,
+        pack_size: 1,
+        active: true,
+        ...(p.sale_option_id ? { sale_option_id: p.sale_option_id } : {}),
+      })
+      if (error) {
+        if (error.code === '23505') {
+          showToast('Já existe nessa tabela')
+          await loadAll()
+          return
+        }
+        showToast('Erro: ' + error.message)
+        return
+      }
+      setSearch('')
+      await loadAll()
+    } catch (error) {
+      showToast('Erro: ' + errorMessage(error, 'Não foi possível incluir o produto.'))
+    } finally {
+      addingItemRef.current = false
+    }
   }
 
   const updateItem = async (it: TierItem, patch: Partial<TierItem>) => {
@@ -534,7 +599,7 @@ export default function TabelasPrecoPage() {
     const norm = (s:string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     const q = norm(search)
     return catalog
-      .filter(c => !itemsKeySet.has(saleOptionKey(c._source, c.id, c.sale_option_id)) && norm(c.name).includes(q))
+      .filter(c => !catalogItemAlreadyPriced(c) && norm(c.name).includes(q))
       .sort((a, b) => {
         // nomes que começam com o termo digitado aparecem primeiro
         const aS = norm(a.name).startsWith(q) ? 0 : 1
@@ -542,7 +607,7 @@ export default function TabelasPrecoPage() {
         return aS - bS || a.name.localeCompare(b.name)
       })
       .slice(0, 30)
-  }, [catalog, search, itemsKeySet])
+  }, [catalog, search, catalogItemAlreadyPriced])
 
   return (
     <div className="ps-canvas">
