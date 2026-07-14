@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 import {
   AppUser,
   fetchUsersFromSupabase,
@@ -53,6 +54,18 @@ export default function LoginPage() {
       const isPasswordSetup = params.get('mode') === 'senha' || hashParams.get('type') === 'recovery'
       const forceEmailLogin = params.get('force') === 'email'
       const nextReturnTo = safeReturnTo(params.get('returnTo'))
+      let recoverySessionError = ''
+
+      // Inicializa a sessão do link de recuperação assim que a tela abre.
+      // Sem isso, alguns navegadores móveis podem perder os tokens do link
+      // antes do envio do formulário de nova senha.
+      if (isPasswordSetup) {
+        const { data, error } = await supabase.auth.getSession()
+        if (error || !data.session) {
+          recoverySessionError = 'Link inválido ou expirado. Peça um novo acesso.'
+        }
+      }
+
       setReturnTo(nextReturnTo)
       if (isPasswordSetup) setMode('setup')
       if (forceEmailLogin) {
@@ -70,6 +83,10 @@ export default function LoginPage() {
       if (current && current.allowedRoutes.length > 0) {
         router.replace(firstAllowedRoute(current))
         return
+      }
+      if (recoverySessionError) {
+        setEmailMsg(recoverySessionError)
+        setEmailOk(false)
       }
       setUsers((remote ?? getCachedUsers()).filter(u => u.active))
       setLoading(false)
