@@ -3,6 +3,7 @@ import {
   billingUnitForRomaneioProduct,
   calculateRomaneioBilling,
   explicitUnitInRomaneioProduct,
+  isBuckPriceTierName,
 } from './romaneioBilling'
 
 describe('romaneioBilling', () => {
@@ -11,6 +12,13 @@ describe('romaneioBilling', () => {
     expect(billingUnitForRomaneioProduct('Mini Croissant')).toBe('kg')
     expect(billingUnitForRomaneioProduct('Baguete')).toBe('un')
     expect(billingUnitForRomaneioProduct('Pão Italiano')).toBe('un')
+  })
+
+  it('identifica somente a tabela BUCK para a cobrança da EX', () => {
+    expect(isBuckPriceTierName('BUCK')).toBe(true)
+    expect(isBuckPriceTierName(' buck ')).toBe(true)
+    expect(isBuckPriceTierName('Buck - Exposição')).toBe(false)
+    expect(isBuckPriceTierName('Atacado BUCK')).toBe(false)
   })
 
   it('calcula cobrança pela quantidade aceita, ou enviada sem conferência', () => {
