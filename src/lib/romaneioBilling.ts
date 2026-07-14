@@ -48,6 +48,10 @@ function normalizedText(value: string) {
     .toLowerCase()
 }
 
+export function isBuckPriceTierName(name: string) {
+  return normalizedText(name).trim() === 'buck'
+}
+
 function asNonNegativeNumber(value: number | string | null | undefined) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? Math.max(0, numeric) : 0

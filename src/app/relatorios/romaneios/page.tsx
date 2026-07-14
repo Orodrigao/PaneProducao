@@ -8,6 +8,7 @@ import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR } from '@/lib/utils'
 import {
   calculateRomaneioBilling,
+  isBuckPriceTierName,
   type RomaneioBillingItem,
   type RomaneioBillingPrice,
   type RomaneioBillingRow,
@@ -75,14 +76,6 @@ function formatQuantity(value: number, unit: 'un' | 'kg') {
   return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${unit}`
 }
 
-function isBuckTier(name: string) {
-  const normalized = name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-  return normalized.includes('buck') && normalized.includes('exposicao')
-}
-
 function errorMessage(error: unknown) {
   if (error && typeof error === 'object' && 'message' in error) {
     const value = (error as { message?: unknown }).message
@@ -139,7 +132,7 @@ function BillingPrint({
         </section>
       </div>
 
-      <p className="rom-ex-print-note">Preços da Tabela Buck – Exposição. Quantidade cobrada: aceita na conferência ou, sem conferência, enviada.</p>
+      <p className="rom-ex-print-note">Preços da Tabela BUCK. Quantidade cobrada: aceita na conferência ou, sem conferência, enviada.</p>
 
       <table className="rom-ex-print-table">
         <thead>
@@ -207,7 +200,7 @@ export default function RelatorioRomaneiosEX() {
       if (tiersRes.error) throw tiersRes.error
 
       const exDestination = destinationRes.data as Destination | null
-      const tier = ((tiersRes.data || []) as PriceTier[]).find(item => isBuckTier(item.name)) || null
+      const tier = ((tiersRes.data || []) as PriceTier[]).find(item => isBuckPriceTierName(item.name)) || null
       setDestination(exDestination)
       setBuckTier(tier)
 
@@ -325,7 +318,7 @@ export default function RelatorioRomaneiosEX() {
 
           <div className="ps-scroll ps-pad">
             <h1 className="ps-page-title">🚚 Fechamento EX</h1>
-            <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela Buck – Exposição.</p>
+            <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela BUCK.</p>
 
             <div className="ps-filters" style={{ alignItems: 'center' }}>
               <PeriodFilter defaultPreset="30d" onChange={setRange} />
@@ -347,7 +340,7 @@ export default function RelatorioRomaneiosEX() {
               <div className="ps-warning danger" role="alert">O destino EX não está ativo no cadastro de destinos.</div>
             )}
             {!loadError && destination && !buckTier && !loading && (
-              <div className="ps-warning danger" role="alert">A tabela de preço “Buck – Exposição” não foi encontrada.</div>
+              <div className="ps-warning danger" role="alert">A tabela de preço ativa “BUCK” não foi encontrada.</div>
             )}
             {!loadError && buckTier && prices.length === 0 && !loading && (
               <div className="ps-warning" role="alert">
