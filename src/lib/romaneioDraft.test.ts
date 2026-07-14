@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRomaneioProductOptions, nextRomaneioTripNumber, orderQuantitiesByBreadId, parseRomaneioQty } from './romaneioDraft'
+import { buildRomaneioProductOptions, nextRomaneioTripNumber, orderQuantitiesByBreadId, parseRomaneioQty, sentQuantitiesByProductId } from './romaneioDraft'
 
 describe('romaneioDraft', () => {
   it('cria duas opcoes para ciabatta', () => {
@@ -59,5 +59,14 @@ describe('romaneioDraft', () => {
       { bread_id: null, quantity: 10 },
       { bread_id: 'invalido', quantity: 0 },
     ])).toEqual({ baguete: 15, croissant: 40 })
+  })
+
+  it('soma o que ja foi enviado nas viagens anteriores', () => {
+    expect(sentQuantitiesByProductId([
+      { product_id: 'b-brasil', qty_sent: 6 },
+      { product_id: 'baguete', qty_sent: 12 },
+      { product_id: 'b-brasil', qty_sent: '2' },
+      { product_id: null, qty_sent: 10 },
+    ])).toEqual({ 'b-brasil': 8, baguete: 12 })
   })
 })
