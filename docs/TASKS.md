@@ -14,7 +14,10 @@ Arquivo de acompanhamento de tarefas ativas e pendentes. Atualizar sempre que um
 - [x] Testes, typecheck, lint, build e verificação visual mobile.
 - [x] Migração aplicada no Supabase após aprovação explícita; fluxo transacional completo validado com rollback.
 - [x] Interface publicada na `main` e rotas verificadas na Vercel.
-- [ ] Acompanhar o primeiro lançamento operacional e registrar ajustes de uso, se houver.
+- [x] Primeiro lançamento operacional acompanhado em 13/07/2026; identificado bloqueio quando o Forno ainda não foi confirmado.
+- [x] Conciliação `aguardando_forno` aplicada em produção após aprovação; fluxo completo validado com rollback.
+- [x] Interface revisada publicada e integrada à `main` pela PR #112.
+- [ ] Acompanhar o primeiro fechamento real de JC/JA com a nova interface.
 
 ---
 
