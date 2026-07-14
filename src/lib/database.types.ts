@@ -1502,6 +1502,7 @@ export type Database = {
           product_source: string | null
           production_actual_id: string | null
           quantity: number
+          reconciliation_status: string | null
           record_date: string
           responsible: string
           status: string | null
@@ -1519,6 +1520,7 @@ export type Database = {
           product_source?: string | null
           production_actual_id?: string | null
           quantity?: number
+          reconciliation_status?: string | null
           record_date: string
           responsible: string
           status?: string | null
@@ -1536,6 +1538,7 @@ export type Database = {
           product_source?: string | null
           production_actual_id?: string | null
           quantity?: number
+          reconciliation_status?: string | null
           record_date?: string
           responsible?: string
           status?: string | null

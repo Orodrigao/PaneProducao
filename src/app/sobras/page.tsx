@@ -1,19 +1,28 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Minus, Plus, Save, Package, Trash2, Layers, X, Search, ClipboardCheck } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Clock3, Minus, Plus, Save, Package, Trash2, Layers, X, Search, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
-import { todayKey, todayLabel, showToast } from '@/lib/utils'
+import { formatDateBR, todayKey, todayLabel, showToast } from '@/lib/utils'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
+import {
+  closingBreadIds,
+  isValidClosingDate,
+  leftoverPendingPath,
+} from '@/lib/breadLeftoverClosing'
 
 interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null; is_shelf: boolean }
 interface Bread   { id: string; name: string; unit: string | null; is_shelf: boolean }
+interface BreadIdRow { bread_id: string | null }
+interface ProductionBreadRow extends BreadIdRow { quantity_baked: number | null }
+interface SavedLeftoverRow { product_id: string | null; quantity: number }
+interface RegisterLeftoversResult { saved_items: number; awaiting_oven_items: number }
 
 type Mode = 'sobra' | 'descarte' | 'prateleira' | null
 const STORES = ['jc', 'ja', 'ex'] as const
 const MANAGED_STORES = ['jc', 'ja'] as const
-const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Júlio de Antonio', ex: 'EX — Exposição' }
+const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Jardim América', ex: 'EX — Exposição' }
 
 function yesterdayKey(): string {
   const d = new Date(todayKey() + 'T00:00:00')
@@ -37,9 +46,11 @@ export default function SobrasPage() {
   // não são is_shelf. Carregados em paralelo só quando entra no modo.
   const [candidateProducts, setCandidateProducts] = useState<Product[]>([])
   const [candidateBreads, setCandidateBreads] = useState<Bread[]>([])
+  const [ovenBreadIds, setOvenBreadIds] = useState<Set<string>>(new Set())
   const [includeOpen, setIncludeOpen] = useState(false)
   const [includeSearch, setIncludeSearch] = useState('')
   const [selectedStore, setSelectedStore] = useState<string>('jc')
+  const [closingDate, setClosingDate] = useState(todayKey())
   const [physicalLocation, setPhysicalLocation] = useState('balcao_fechamento')
   const [saving, setSaving]     = useState(false)
   // Filtro de categoria do form. null = "Todas". '__breads__' = só o bloco de pães.
@@ -60,30 +71,52 @@ export default function SobrasPage() {
   const loadData = useCallback(async () => {
     if (!user) return
 
-    // Catálogo: products e breads. Pra sobra/descarte mantém comportamento antigo
-    // (orders do dia filtra pães vendidos). Pra prateleira NÃO filtra por orders
-    // — todo shelf da loja precisa aparecer.
-    const [{ data: prodsRaw }, { data: bdsRaw }, { data: producedRows }] = await Promise.all([
+    const [{ data: prodsRaw }, { data: bdsRaw }] = await Promise.all([
       supabase.from('products').select('id,name,category,unit,kind,is_shelf').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
       supabase.from('breads').select('id,name,unit,is_shelf').eq('active', true).eq('is_pj', false).order('name'),
-      mode === 'prateleira' || mode === 'descarte'
-        ? Promise.resolve({ data: [] })
-        : supabase.from('production_actuals').select('bread_id').eq('record_date', todayKey()).gt('quantity_baked', 0),
     ])
-    const todayBreadIds = new Set(
-      ((producedRows || []) as { bread_id: string | null }[])
-        .map(row => row.bread_id)
-        .filter((breadId): breadId is string => Boolean(breadId)),
-    )
 
     let prods = (prodsRaw || []) as Product[]
-    let bds = (bdsRaw || []) as Bread[]
+    const allBreads = (bdsRaw || []) as Bread[]
+    let bds = allBreads
 
     if (mode === 'sobra') {
-      // Toda saída confirmada do Forno pode virar sobra, inclusive B.Brasil e
-      // pães de hambúrguer marcados como shelf, que podem ir para uso interno.
+      const [ordersResult, actualsResult, savedResult] = await Promise.all([
+        supabase.from('orders').select('bread_id')
+          .eq('order_date', closingDate).eq('store', selectedStore).gt('quantity', 0),
+        supabase.from('production_actuals').select('bread_id,quantity_baked')
+          .eq('record_date', closingDate),
+        supabase.from('sobras').select('product_id,quantity')
+          .eq('record_date', closingDate).eq('store', selectedStore).eq('product_source', 'bread'),
+      ])
+      const firstError = ordersResult.error ?? actualsResult.error ?? savedResult.error
+      if (firstError) {
+        showToast(`Erro ao carregar o fechamento: ${firstError.message}`)
+        return
+      }
+
+      const orderedRows = (ordersResult.data ?? []) as BreadIdRow[]
+      const actualRows = (actualsResult.data ?? []) as ProductionBreadRow[]
+      const producedRows = actualRows.filter(row => Number(row.quantity_baked ?? 0) > 0)
+      const savedRows = (savedResult.data ?? []) as SavedLeftoverRow[]
+      const visibleIds = closingBreadIds(orderedRows, producedRows, savedRows, [])
+      const producedIds = new Set(
+        actualRows.map(row => row.bread_id).filter((id): id is string => Boolean(id)),
+      )
+
       prods = []
-      bds = bds.filter(b => todayBreadIds.has(b.id))
+      bds = allBreads.filter(bread => visibleIds.has(bread.id))
+      setCandidateBreads(allBreads.filter(bread => !visibleIds.has(bread.id)))
+      setCandidateProducts([])
+      setOvenBreadIds(producedIds)
+
+      const vals: Record<string,number> = {}
+      for (const row of savedRows) {
+        if (row.product_id) vals['bread_'+row.product_id] = Number(row.quantity)
+      }
+      setQtys(vals)
+      setPrevCounts({})
+      setTodayKeysWithData(new Set())
     } else if (mode === 'descarte') {
       // Aceita qualquer pão ativo não-PJ. Pão velho descartado pode ter sido
       // produzido em qualquer dia da semana — filtrar por pedidos do dia
@@ -100,9 +133,11 @@ export default function SobrasPage() {
       // se viu algo no balcão que ninguém marcou ainda
       setCandidateProducts(allProds.filter(p => !p.is_shelf))
       setCandidateBreads(allBds.filter(b => !b.is_shelf))
+      setOvenBreadIds(new Set())
     } else {
       setCandidateProducts([])
       setCandidateBreads([])
+      setOvenBreadIds(new Set())
     }
 
     setProducts(prods)
@@ -131,17 +166,10 @@ export default function SobrasPage() {
       setQtys(vals)
       setPrevCounts(prevVals)
       setTodayKeysWithData(todayKeys)
-    } else if (mode === 'sobra' && (selectedStore === 'jc' || selectedStore === 'ja')) {
-      const { data: saved } = await supabase.from('sobras').select('product_id,quantity')
-        .eq('record_date', todayKey()).eq('store', selectedStore).eq('product_source', 'bread')
-      const vals: Record<string,number> = {}
-      ;((saved || []) as { product_id: string; quantity: number }[])
-        .forEach(row => { vals['bread_'+row.product_id] = Number(row.quantity) })
-      setQtys(vals)
-      setPrevCounts({})
-      setTodayKeysWithData(new Set())
+    } else if (mode === 'sobra') {
+      // O fechamento físico já foi carregado com pedido, Forno e valores salvos.
     } else {
-      const table = mode === 'sobra' ? 'sobras' : 'descartes'
+      const table = 'descartes'
       const { data: saved } = await supabase.from(table).select('*')
         .eq('record_date', todayKey()).eq('responsible', user.displayName)
       const vals: Record<string,number> = {}
@@ -153,7 +181,7 @@ export default function SobrasPage() {
       setPrevCounts({})
       setTodayKeysWithData(new Set())
     }
-  }, [mode, user, selectedStore])
+  }, [closingDate, mode, selectedStore, user])
 
   useEffect(() => { if (user && mode) loadData() }, [user, mode, selectedStore, loadData])
   useEffect(() => { setSelectedCategory(null) }, [mode])
@@ -166,8 +194,17 @@ export default function SobrasPage() {
       return
     }
     if (selectedStore === 'ex') setSelectedStore('jc')
+    setClosingDate(todayKey())
+    setOvenBreadIds(new Set())
     setPhysicalLocation('balcao_fechamento')
     setMode('sobra')
+  }
+
+  function includeClosingBread(bread: Bread) {
+    setBreads(current => [...current, bread].sort((left, right) => left.name.localeCompare(right.name, 'pt-BR')))
+    setCandidateBreads(current => current.filter(candidate => candidate.id !== bread.id))
+    setIncludeOpen(false)
+    setIncludeSearch('')
   }
 
   async function includeBread(b: Bread) {
@@ -187,7 +224,7 @@ export default function SobrasPage() {
 
   const save = async () => {
     if (!user) return
-    const date = todayKey()
+    const date = mode === 'sobra' ? closingDate : todayKey()
     setSaving(true)
     try {
       if (mode === 'prateleira') {
@@ -234,8 +271,12 @@ export default function SobrasPage() {
           showToast('Entre com e-mail para registrar sobras por lote e movimentar estoque com segurança.')
           return
         }
-        if (breads.length === 0) {
-          showToast('Confirme primeiro a saída dos pães no Forno.')
+        if (!isValidClosingDate(date, todayKey())) {
+          showToast('Escolha hoje ou uma data anterior para o fechamento.')
+          return
+        }
+        if (filled === 0) {
+          showToast('Informe ao menos uma sobra para salvar.')
           return
         }
 
@@ -243,16 +284,19 @@ export default function SobrasPage() {
           bread_id: bread.id,
           quantity: qtys['bread_'+bread.id] ?? 0,
         }))
-        const { error } = await supabase.rpc('register_bread_leftovers', {
+        const { data, error } = await supabase.rpc('register_bread_leftovers', {
           p_record_date: date,
           p_store: selectedStore,
           p_items: breadItems,
           p_physical_location: physicalLocation,
         })
         if (error) throw error
-        showToast(`Sobras ${selectedStore.toUpperCase()} salvas por lote.`)
-        setMode(null)
-        setQtys({})
+        const result = data as unknown as RegisterLeftoversResult | null
+        const awaiting = Number(result?.awaiting_oven_items ?? 0)
+        showToast(awaiting > 0
+          ? `Sobras salvas. ${awaiting} ${awaiting === 1 ? 'pão aguarda' : 'pães aguardam'} o Forno.`
+          : `Sobras ${selectedStore.toUpperCase()} salvas e conciliadas.`)
+        router.push(leftoverPendingPath(selectedStore as 'jc' | 'ja', date))
         return
       }
 
@@ -263,6 +307,25 @@ export default function SobrasPage() {
       // Idempotência: pra descarte, apaga bread_movements antigos (diretos + cascade de kit)
       // antes de re-inserir os descartes
       if (mode === 'descarte') {
+        const breadIds = items
+          .map(([id]) => id.startsWith('bread_') ? id.replace('bread_', '') : null)
+          .filter((id): id is string => Boolean(id))
+        if ((user.store === 'jc' || user.store === 'ja') && breadIds.length > 0) {
+          const { data: pendingBread, error: pendingError } = await supabase
+            .from('sobras')
+            .select('product_id')
+            .eq('store', user.store)
+            .eq('product_source', 'bread')
+            .gt('pending_quantity', 0)
+            .in('product_id', breadIds)
+            .limit(1)
+          if (pendingError) throw pendingError
+          if ((pendingBread ?? []).length > 0) {
+            showToast('Este pão já está nas sobras. Registre o descarte pela Central de Pendências.')
+            return
+          }
+        }
+
         const { data: oldRecords } = await supabase.from('descartes').select('id')
           .eq('record_date', date).eq('responsible', user.displayName)
         const oldIds = (oldRecords||[]).map((r:any)=>r.id)
@@ -387,9 +450,9 @@ export default function SobrasPage() {
             </button>
             <button onClick={()=>setMode('descarte')} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Trash2 size={26}/></div>
-              <h3>Registrar Descarte</h3>
+              <h3>Registrar Descarte Avulso</h3>
               <p>
-                O que foi descartado. {user.store
+                Perda que não foi registrada antes como sobra. {user.store
                   ? `Pães debitam do estoque da loja ${user.store.toUpperCase()}.`
                   : 'Sem loja atribuída — não move estoque (admin/teste).'}
               </p>
@@ -414,7 +477,7 @@ export default function SobrasPage() {
             <div className="ps-mark">P</div>
             <div className="ps-brand">
               <b>{headerTitle}</b>
-              <span>{todayLabel()}</span>
+              <span>{mode === 'sobra' ? formatDateBR(closingDate) : todayLabel()}</span>
             </div>
           </div>
           <div className="ps-userchip">
@@ -445,7 +508,10 @@ export default function SobrasPage() {
                 ) : (
                   <select
                     value={selectedStore}
-                    onChange={e => setSelectedStore(e.target.value)}
+                    onChange={e => {
+                      setSelectedStore(e.target.value)
+                      setIncludeOpen(false)
+                    }}
                     className="ps-select"
                     style={{flex:1, padding:'6px 10px', fontSize:13}}
                   >
@@ -457,18 +523,56 @@ export default function SobrasPage() {
           })()}
 
           {mode === 'sobra' && (
-            <div className="ps-card" style={{padding:'10px 14px', marginBottom:12}}>
-              <label className="ps-label" htmlFor="leftover-physical-location" style={{marginTop:0}}>Onde as sobras ficaram?</label>
-              <select
-                id="leftover-physical-location"
-                className="ps-select"
-                value={physicalLocation}
-                onChange={event => setPhysicalLocation(event.target.value)}
-              >
-                <option value="balcao_fechamento">Balcão de fechamento</option>
-                <option value="mesa_separacao">Mesa de separação</option>
-                <option value="padaria_cozinha">Padaria / cozinha</option>
-              </select>
+            <>
+              <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:10}}>
+                <div>
+                  <label className="ps-label" htmlFor="leftover-closing-date" style={{marginTop:0}}>Data do fechamento</label>
+                  <input
+                    id="leftover-closing-date"
+                    type="date"
+                    className="ps-input"
+                    max={todayKey()}
+                    value={closingDate}
+                    onChange={event => {
+                      setClosingDate(event.target.value)
+                      setIncludeOpen(false)
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="ps-label" htmlFor="leftover-physical-location" style={{marginTop:0}}>Onde ficaram?</label>
+                  <select
+                    id="leftover-physical-location"
+                    className="ps-select"
+                    value={physicalLocation}
+                    onChange={event => setPhysicalLocation(event.target.value)}
+                  >
+                    <option value="balcao_fechamento">Balcão de fechamento</option>
+                    <option value="mesa_separacao">Mesa de separação</option>
+                    <option value="padaria_cozinha">Padaria / cozinha</option>
+                  </select>
+                </div>
+              </div>
+
+              {breads.some(bread => !ovenBreadIds.has(bread.id)) && (
+                <div className="ps-leftover-alert" style={{marginBottom:12}}>
+                  <Clock3 size={20}/>
+                  <div>
+                    <b>Você pode registrar antes do Forno</b>
+                    <span>Os pães ainda não confirmados ficarão sinalizados e serão conciliados automaticamente depois.</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {mode === 'descarte' && (
+            <div className="ps-leftover-alert" style={{marginBottom:12}}>
+              <AlertTriangle size={20}/>
+              <div>
+                <b>Descarte avulso</b>
+                <span>Se o pão já foi contado como sobra, dê o destino “Descarte” pela Central para evitar baixa duplicada.</span>
+              </div>
             </div>
           )}
 
@@ -510,6 +614,10 @@ export default function SobrasPage() {
                   return (
                     <ItemRow key={k} id={k} name={b.name} unit={b.unit}
                       qty={qtys[k]||0} prev={mode==='prateleira' ? prevCounts[k] : undefined}
+                      note={mode === 'sobra'
+                        ? ovenBreadIds.has(b.id) ? 'Forno confirmado' : 'Aguardando Forno'
+                        : undefined}
+                      noteWarning={mode === 'sobra' && !ovenBreadIds.has(b.id)}
                       onChange={setQty}/>
                   )
                 })}
@@ -533,7 +641,21 @@ export default function SobrasPage() {
           ))}
 
           {breads.length === 0 && Object.keys(grouped).length === 0 && mode !== 'prateleira' && (
-            <div className="ps-empty">Sem itens pra registrar hoje.</div>
+            <div className="ps-empty">
+              {mode === 'sobra'
+                ? 'Nenhum pão veio do pedido ou do Forno. Se algo sobrou, inclua pelo botão abaixo.'
+                : 'Sem itens pra registrar hoje.'}
+            </div>
+          )}
+
+          {mode === 'sobra' && (
+            <button
+              onClick={() => { setIncludeOpen(true); setIncludeSearch('') }}
+              className="ps-btn ghost block"
+              style={{marginTop:14, marginBottom:96, borderStyle:'dashed'}}
+            >
+              <Plus size={14}/> Adicionar pão que não está na lista
+            </button>
           )}
 
           {mode === 'prateleira' && (
@@ -565,22 +687,23 @@ export default function SobrasPage() {
         </div>
       </div>
 
-      {/* Sheet: incluir produto/pão na prateleira */}
+      {/* Sheet: incluir pão no fechamento ou item na prateleira */}
       {includeOpen && (() => {
         const q = includeSearch.trim().toLowerCase()
         const filteredBreads = q.length < 2 ? [] : candidateBreads
           .filter(b => b.name.toLowerCase().includes(q)).slice(0, 15)
-        const filteredProducts = q.length < 2 ? [] : candidateProducts
+        const filteredProducts = mode !== 'prateleira' || q.length < 2 ? [] : candidateProducts
           .filter(p => p.name.toLowerCase().includes(q)).slice(0, 25)
         const total = filteredBreads.length + filteredProducts.length
         return (
           <div className="ps-sheet-overlay" onClick={e => { if (e.target === e.currentTarget) setIncludeOpen(false) }}>
             <div className="ps-sheet" style={{maxHeight:'85vh', overflowY:'auto'}}>
               <div className="ps-sheet-grab"/>
-              <h3>Incluir na Prateleira</h3>
+              <h3>{mode === 'sobra' ? 'Adicionar pão ao fechamento' : 'Incluir na Prateleira'}</h3>
               <p style={{fontSize:12, color:'var(--ink-soft)', marginBottom:14}}>
-                Marca o item como produto durado. Aparece em todas as contagens de Prateleira (todas as lojas).
-                Pode reverter em /produtos.
+                {mode === 'sobra'
+                  ? 'Use quando houve produção extra, pedido de última hora ou o pão não apareceu na lista automática.'
+                  : 'Marca o item como produto durado. Aparece em todas as contagens de Prateleira (todas as lojas). Pode reverter em /produtos.'}
               </p>
 
               <div className="ps-fieldgroup" style={{marginBottom:8}}>
@@ -590,7 +713,7 @@ export default function SobrasPage() {
                     value={includeSearch}
                     autoFocus
                     onChange={e => setIncludeSearch(e.target.value)}
-                    placeholder="Buscar pão ou produto…"
+                    placeholder={mode === 'sobra' ? 'Buscar pão…' : 'Buscar pão ou produto…'}
                     className="ps-input"
                     style={{paddingLeft:30}}
                   />
@@ -604,14 +727,16 @@ export default function SobrasPage() {
                 <div style={{maxHeight:380, overflowY:'auto', border:'1px solid var(--line-soft)', borderRadius:8, marginBottom:12}}>
                   {total === 0 ? (
                     <div style={{padding:14, textAlign:'center', color:'var(--ink-faint)', fontSize:12}}>
-                      Nada encontrado. (Itens já na prateleira são filtrados.)
+                      {mode === 'sobra'
+                        ? 'Nenhum outro pão ativo encontrado.'
+                        : 'Nada encontrado. (Itens já na prateleira são filtrados.)'}
                     </div>
                   ) : (
                     <>
                       {filteredBreads.map(b => (
                         <button
                           key={'cand-bread-'+b.id}
-                          onClick={() => { includeBread(b); setIncludeSearch('') }}
+                          onClick={() => mode === 'sobra' ? includeClosingBread(b) : includeBread(b)}
                           style={{display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderBottom:'1px solid var(--line-soft)', width:'100%', textAlign:'left', background:'transparent', border:'none', cursor:'pointer'}}
                         >
                           <div style={{flex:1, minWidth:0}}>
@@ -654,7 +779,16 @@ export default function SobrasPage() {
   )
 }
 
-function ItemRow({ id, name, unit, qty, prev, onChange }: { id:string; name:string; unit:string|null; qty:number; prev?:number; onChange:(id:string,v:number)=>void }) {
+function ItemRow({ id, name, unit, qty, prev, note, noteWarning, onChange }: {
+  id:string
+  name:string
+  unit:string|null
+  qty:number
+  prev?:number
+  note?:string
+  noteWarning?:boolean
+  onChange:(id:string,v:number)=>void
+}) {
   return (
     <div className={`ps-card ${qty>0?'active':''}`} style={{padding:'12px 14px', gap:8}}>
       <div className="ps-card-head" style={{flexDirection:'row', alignItems:'center', justifyContent:'space-between', gap:10}}>
@@ -663,6 +797,7 @@ function ItemRow({ id, name, unit, qty, prev, onChange }: { id:string; name:stri
           <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2, display:'flex', gap:8}}>
             {unit && <span>{unit}</span>}
             {prev != null && <span style={{color:'var(--ink-soft)'}}>ontem: <b>{prev}</b></span>}
+            {note && <span style={{color:noteWarning ? 'var(--honey-deep)' : 'var(--sage)'}}>{note}</span>}
           </div>
         </div>
         <div className="ps-stepper" style={{flex:'none'}}>

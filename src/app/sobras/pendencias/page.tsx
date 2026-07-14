@@ -19,6 +19,7 @@ import {
   type LeftoverDestination,
   type ManagedStore,
 } from '@/lib/breadLeftovers'
+import { isValidClosingDate } from '@/lib/breadLeftoverClosing'
 import { supabase } from '@/lib/supabase'
 import { formatDateBR, showToast, todayKey } from '@/lib/utils'
 
@@ -37,6 +38,7 @@ interface LeftoverRow {
   record_date: string
   lot_code: string
   physical_location: PhysicalLocation
+  reconciliation_status: 'awaiting_oven' | 'confirmed' | 'not_required'
 }
 
 interface ReusePlanRow {
@@ -114,7 +116,18 @@ export default function BreadLeftoverPendingPage() {
     void getCurrentUserAsync().then(current => {
       if (!active) return
       setUser(current)
-      if (current?.store === 'ja' || current?.store === 'jc') setStore(current.store)
+      const params = new URLSearchParams(window.location.search)
+      const requestedStore = params.get('store')
+      const requestedDate = params.get('date')
+
+      if (current?.store === 'ja' || current?.store === 'jc') {
+        setStore(current.store)
+      } else if (requestedStore === 'ja' || requestedStore === 'jc') {
+        setStore(requestedStore)
+      }
+      if (requestedDate && isValidClosingDate(requestedDate, todayKey())) {
+        setTargetDate(requestedDate)
+      }
     })
     return () => { active = false }
   }, [])
@@ -136,10 +149,10 @@ export default function BreadLeftoverPendingPage() {
       const [leftoversResult, plansResult, ordersResult] = await Promise.all([
         supabase
           .from('sobras')
-          .select('id, store, product_id, quantity, pending_quantity, record_date, lot_code, physical_location')
+          .select('id, store, product_id, quantity, pending_quantity, record_date, lot_code, physical_location, reconciliation_status')
           .eq('store', store)
           .eq('product_source', 'bread')
-          .gt('pending_quantity', 0)
+          .or('pending_quantity.gt.0,reconciliation_status.eq.awaiting_oven')
           .order('record_date', { ascending: true })
           .order('created_at', { ascending: true }),
         supabase
@@ -210,7 +223,15 @@ export default function BreadLeftoverPendingPage() {
   }, [loadData])
 
   const overdueCount = useMemo(
-    () => leftovers.filter(leftover => leftoverAgeDays(leftover.record_date, todayKey()) >= 1).length,
+    () => leftovers.filter(leftover => leftover.pending_quantity > 0 && leftoverAgeDays(leftover.record_date, todayKey()) >= 1).length,
+    [leftovers],
+  )
+  const pendingLeftovers = useMemo(
+    () => leftovers.filter(leftover => leftover.pending_quantity > 0),
+    [leftovers],
+  )
+  const awaitingOven = useMemo(
+    () => leftovers.filter(leftover => leftover.reconciliation_status === 'awaiting_oven'),
     [leftovers],
   )
 
@@ -371,6 +392,19 @@ export default function BreadLeftoverPendingPage() {
                 </div>
               )}
 
+              {awaitingOven.length > 0 && (
+                <div className="ps-leftover-alert">
+                  <Clock3 size={19} />
+                  <div>
+                    <b>{awaitingOven.length} {awaitingOven.length === 1 ? 'pão aguarda' : 'pães aguardam'} o Forno</b>
+                    <span>
+                      {awaitingOven.map(leftover => breads[leftover.product_id]?.name ?? leftover.product_id).join(', ')}.
+                      {' '}A contagem e os destinos estão preservados; o lote será ligado automaticamente.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <section>
                 <div className="ps-section">
                   <div className="bar" />
@@ -425,14 +459,14 @@ export default function BreadLeftoverPendingPage() {
                 <div className="ps-section">
                   <div className="bar" />
                   <b>Sem destino</b>
-                  <span className="meta">{leftovers.length} {leftovers.length === 1 ? 'lote' : 'lotes'}</span>
+                  <span className="meta">{pendingLeftovers.length} {pendingLeftovers.length === 1 ? 'lote' : 'lotes'}</span>
                 </div>
 
-                {leftovers.length === 0 ? (
+                {pendingLeftovers.length === 0 ? (
                   <div className="ps-empty ps-leftover-empty"><PackageOpen size={30} /><span>Nenhuma sobra pendente nesta loja.</span></div>
                 ) : (
                   <div className="ps-grid">
-                    {leftovers.map(leftover => {
+                    {pendingLeftovers.map(leftover => {
                       const bread = breads[leftover.product_id]
                       const age = leftoverAgeDays(leftover.record_date, todayKey())
                       const destination = destinations[leftover.id] ?? 'display'
@@ -449,6 +483,9 @@ export default function BreadLeftoverPendingPage() {
                           </div>
 
                           {age >= 1 && <div className="ps-leftover-age"><Clock3 size={15} /> Pendente desde ontem</div>}
+                          {leftover.reconciliation_status === 'awaiting_oven' && (
+                            <div className="ps-leftover-age"><Clock3 size={15} /> Lote provisório · aguardando Forno</div>
+                          )}
 
                           <label className="ps-label" htmlFor={`location-${leftover.id}`}><MapPin size={14} /> Onde está?</label>
                           <select
