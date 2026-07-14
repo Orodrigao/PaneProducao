@@ -185,6 +185,19 @@ export function validatePasswordSetup(password: string, confirmation: string): A
   return { ok: true, message: 'Senha válida.' }
 }
 
+export function passwordRecoveryErrorMessage(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'status' in error
+    && (error as { status?: unknown }).status === 429
+  ) {
+    return 'Limite de e-mails atingido. Aguarde até uma hora antes de pedir outro link. Enquanto isso, use o PIN.'
+  }
+
+  return 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.'
+}
+
 function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null {
   if (!isRole(profile.role)) return null
 
@@ -425,7 +438,7 @@ export async function sendPasswordSetupLink(email: string): Promise<AuthActionRe
     }))
 
     if (error) {
-      return { ok: false, message: 'Não foi possível enviar o link. Confira o e-mail ou use o PIN.' }
+      return { ok: false, message: passwordRecoveryErrorMessage(error) }
     }
 
     return { ok: true, message: 'Link enviado. Abra seu e-mail para criar ou trocar a senha.' }

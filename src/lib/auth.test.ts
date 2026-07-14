@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { passwordPolicyChecklist, normalizeEmailInput, validatePasswordSetup } from './auth'
+import { passwordPolicyChecklist, normalizeEmailInput, passwordRecoveryErrorMessage, validatePasswordSetup } from './auth'
 
 describe('normalizeEmailInput', () => {
   it('remove espaços e padroniza e-mail em minúsculas', () => {
@@ -43,5 +43,15 @@ describe('passwordPolicyChecklist', () => {
     const pending = passwordPolicyChecklist('senha').filter(rule => !rule.valid).map(rule => rule.id)
 
     expect(pending).toEqual(['length', 'case', 'number', 'symbol'])
+  })
+})
+
+describe('passwordRecoveryErrorMessage', () => {
+  it('explica o limite de envio de e-mails', () => {
+    expect(passwordRecoveryErrorMessage({ status: 429 })).toContain('Aguarde até uma hora')
+  })
+
+  it('mantém a mensagem genérica para outros erros', () => {
+    expect(passwordRecoveryErrorMessage({ status: 500 })).toBe('Não foi possível enviar o link. Confira o e-mail ou use o PIN.')
   })
 })
