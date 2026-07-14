@@ -382,6 +382,7 @@ export default function ProducaoPage() {
     let userKey: UserKey | null = null
     if (globalUser.role === 'admin')           userKey = 'rodrigo'
     else if (globalUser.role === 'expedicao')  userKey = 'marselle'
+    else if (globalUser.role === 'vendas')     userKey = 'marselle'
     else if (globalUser.role === 'financeiro') userKey = 'elis'
     else if (globalUser.role === 'producao')   userKey = 'geolar'
     if (userKey) login(userKey)
