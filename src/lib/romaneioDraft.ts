@@ -25,6 +25,11 @@ export interface RomaneioOrderRow {
   quantity: number | string | null
 }
 
+export interface RomaneioSentItemRow {
+  product_id: string | null
+  qty_sent: number | string | null
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -112,6 +117,17 @@ export function orderQuantitiesByBreadId(rows: RomaneioOrderRow[]): Record<strin
     if (!Number.isFinite(quantity) || quantity <= 0) return quantities
 
     quantities[row.bread_id] = (quantities[row.bread_id] ?? 0) + quantity
+    return quantities
+  }, {})
+}
+
+export function sentQuantitiesByProductId(rows: RomaneioSentItemRow[]): Record<string, number> {
+  return rows.reduce<Record<string, number>>((quantities, row) => {
+    if (!row.product_id) return quantities
+    const quantity = Number(row.qty_sent)
+    if (!Number.isFinite(quantity) || quantity <= 0) return quantities
+
+    quantities[row.product_id] = (quantities[row.product_id] ?? 0) + quantity
     return quantities
   }, {})
 }

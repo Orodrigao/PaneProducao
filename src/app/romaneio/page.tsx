@@ -12,7 +12,9 @@ import {
   normalizeRomaneioQty,
   orderQuantitiesByBreadId,
   parseRomaneioQty,
+  sentQuantitiesByProductId,
   type RomaneioOrderRow,
+  type RomaneioSentItemRow,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
 
@@ -24,9 +26,10 @@ interface Destination { id:string; name:string; code:string; active:boolean }
 interface Bread { id:string; name:string; active:boolean; is_pj:boolean; unit?:string|null }
 interface Romaneio { id:string; record_date:string; destination_id:string; trip_number:number; status:string; created_by:string; created_at?:string|null; obs?:string; sent_by?:string; sent_at?:string; confirmed_by?:string; confirmed_at?:string; destinations?:{name:string;code:string} }
 interface RomaneioTripRow { trip_number:number|null }
+interface RomaneioDraftExistingRow extends RomaneioTripRow { id:string }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
-interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
@@ -431,9 +434,13 @@ export default function RomaneioPage() {
       ? sbGet('orders',`order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
       : Promise.resolve([])
     const [existing, orders] = await Promise.all([
-      sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=trip_number`),
+      sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
       orderRequest,
     ])
+    const existingRows = existing as RomaneioDraftExistingRow[]
+    const previousItemRows = existingRows.length
+      ? await sbGet('romaneio_items',`romaneio_id=in.(${existingRows.map(row => row.id).join(',')})&product_source=eq.bread&select=product_id,qty_sent`)
+      : []
     let bds = breads
     const orderRows = orders as RomaneioOrderRow[]
     if (orderRows.length) {
@@ -443,22 +450,14 @@ export default function RomaneioPage() {
         if (byOrder.length) bds = byOrder
       }
     }
-    const quantitiesByBreadId = orderQuantitiesByBreadId(orderRows)
-    const orderedOptions = buildRomaneioProductOptions(bds, { ciabattaOnlyKg: destinationCode === 'EX' })
-    const qtys: Record<string, number> = {}
-    const includedBreadIds = new Set<string>()
-    orderedOptions.forEach(option => {
-      if (includedBreadIds.has(option.productId)) return
-      includedBreadIds.add(option.productId)
-      const quantity = quantitiesByBreadId[option.productId]
-      if (quantity) qtys[option.key] = quantity
-    })
     return {
       destId,
       breads: bds,
-      qtys,
+      qtys: {},
+      orderQtys: orderQuantitiesByBreadId(orderRows),
+      previouslySentQtys: sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[]),
       extras: {},
-      trip: nextRomaneioTripNumber((existing as RomaneioTripRow[]).map(row => row.trip_number)),
+      trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
       obs: '',
       extraInput: '',
     }
@@ -1115,10 +1114,16 @@ export default function RomaneioPage() {
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {activeOptions.map(option=>{
                       const qty = activeDraft.qtys[option.key]||0
+                      const orderQty = activeDraft.orderQtys?.[option.productId] || 0
+                      const previouslySentQty = activeDraft.previouslySentQtys?.[option.productId] || 0
+                      const progressQty = previouslySentQty + qty
                       return (
                         <div key={option.key} className={`ps-card ${qty>0?'active':''}`}>
                           <div className="ps-card-head">
-                            <div className="ps-pname">{option.displayName}</div>
+                            <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                              <div className="ps-pname">{option.displayName}</div>
+                              {orderQty > 0 && <span style={{fontSize:13,fontWeight:700,color:'var(--ink-soft)'}}>{formatRomaneioQty(progressQty)} de {formatRomaneioQty(orderQty)}</span>}
+                            </div>
                             <span className="ps-store-chip" style={{alignSelf:'flex-start',background:'var(--line-soft)',color:'var(--ink-soft)'}}>{option.unit}</span>
                           </div>
                           <div className="ps-stepper">
