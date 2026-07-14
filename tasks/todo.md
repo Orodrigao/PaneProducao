@@ -43,7 +43,8 @@ registro do fato físico observado no fechamento.
 - [x] Apresentar a migração, obter aprovação e aplicar no Supabase de produção.
 - [x] Validar no banco o percurso provisório -> destino -> Forno -> conciliação
   em transação com rollback, sem deixar dados de teste.
-- [ ] Atualizar documentação, publicar e integrar à `main` após a validação.
+- [x] Atualizar documentação, publicar e integrar à `main` após a validação.
+- [ ] Acompanhar o primeiro fechamento real de JC/JA com a nova interface.
 
 ### Entrega 2 — lote real no estoque
 
