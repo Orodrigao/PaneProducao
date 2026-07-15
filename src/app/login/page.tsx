@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { getPasswordRecoverySession } from '@/lib/supabase'
 import {
   AppUser,
   fetchUsersFromSupabase,
@@ -30,6 +30,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [emailMsg, setEmailMsg] = useState('')
+  const [recoveryEmail, setRecoveryEmail] = useState('')
   const [emailOk, setEmailOk] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
   const [recoveryLoading, setRecoveryLoading] = useState(false)
@@ -56,13 +57,14 @@ export default function LoginPage() {
       const nextReturnTo = safeReturnTo(params.get('returnTo'))
       let recoverySessionError = ''
 
-      // Inicializa a sessão do link de recuperação assim que a tela abre.
-      // Sem isso, alguns navegadores móveis podem perder os tokens do link
-      // antes do envio do formulário de nova senha.
+      // A tela de troca de senha só pode usar a sessão emitida pelo link de recuperação.
+      // Uma sessão normal, mesmo de outro usuário, nunca serve para esta operação.
       if (isPasswordSetup) {
-        const { data, error } = await supabase.auth.getSession()
-        if (error || !data.session) {
+        const recoverySession = await getPasswordRecoverySession()
+        if (!recoverySession) {
           recoverySessionError = 'Link inválido ou expirado. Peça um novo acesso.'
+        } else {
+          setRecoveryEmail(recoverySession.email)
         }
       }
 
@@ -215,6 +217,9 @@ export default function LoginPage() {
 
         {mode === 'setup' ? (
           <form className="ps-login-email" onSubmit={handlePasswordUpdate}>
+            {recoveryEmail && (
+              <p className="ps-login-help">Criando senha para {recoveryEmail}</p>
+            )}
             <div className="ps-fieldgroup">
               <div className="ps-fieldlabel">Nova senha</div>
               <input

@@ -414,7 +414,7 @@ export async function signInWithEmailPassword(email: string, password: string): 
 
     const user = await fetchCurrentAuthUser()
     if (!user) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       cacheAuthUser(null)
       return { ok: false, message: 'Seu acesso ao ERP não está ativo.' }
     }
@@ -452,17 +452,22 @@ export async function updateCurrentUserPassword(password: string, confirmation: 
   if (!validation.ok) return validation
 
   try {
-    const { supabase } = await import('@/lib/supabase')
-    const { data: sessionData, error: sessionError } = await withTimeout(supabase.auth.getSession())
+    const {
+      clearPasswordRecoverySession,
+      getPasswordRecoverySession,
+      supabase,
+    } = await import('@/lib/supabase')
+    const recoverySession = await withTimeout(getPasswordRecoverySession())
 
-    if (sessionError || !sessionData.session) {
-      return { ok: false, message: 'Link expirado. Peça um novo acesso.' }
+    if (!recoverySession) {
+      return { ok: false, message: 'Link inválido ou expirado. Peça um novo acesso.' }
     }
 
     const { error } = await withTimeout(supabase.auth.updateUser({ password }))
     if (error) {
       return { ok: false, message: 'Não foi possível salvar a senha.' }
     }
+    clearPasswordRecoverySession()
 
     const user = await fetchCurrentAuthUser()
     if (!user) {
@@ -480,7 +485,10 @@ export function logout() {
   localStorage.removeItem(SESSION_KEY)
   localStorage.removeItem(AUTH_PROFILE_CACHE_KEY)
   void import('@/lib/supabase')
-    .then(({ supabase }) => supabase.auth.signOut())
+    .then(({ clearPasswordRecoverySession, supabase }) => {
+      clearPasswordRecoverySession()
+      return supabase.auth.signOut({ scope: 'local' })
+    })
     .catch(() => undefined)
 }
 
