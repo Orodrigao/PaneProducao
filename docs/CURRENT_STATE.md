@@ -2,20 +2,36 @@
 
 **Data de referência:** 2026-07-16
 
-**Base observada:** `origin/main` no commit `6fd4cfa`
+**Base observada:** `origin/main` no commit `cdf26f7`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
 ## Fase estratégica
 
-O projeto está em estabilização e conclusão da Sprint 0 de segurança.
+O projeto está em estabilização e conclusão da Sprint 0 de segurança. A memória
+central foi saneada, branches e worktrees antigos foram inventariados sem perder
+patches exclusivos, e o baseline técnico foi executado.
 
 Funcionalidades novas que adicionem dados financeiros devem esperar:
 
-1. saneamento da memória e do fluxo de branches;
-2. baseline de testes e navegador no `main`;
+1. smoke visual autenticado dos fluxos críticos;
+2. priorização das regressões reproduzíveis;
 3. conclusão da auditoria e do hardening Auth/RLS.
+
+## Baseline técnico
+
+Em 2026-07-16, a partir do commit `cdf26f7`:
+
+- instalação limpa, tipos, 109 testes e build passaram;
+- as 31 páginas HTML exportadas responderam no smoke HTTP;
+- o lint passou com 145 avisos;
+- `npm audit` registrou 3 alertas moderados, sem alertas altos ou críticos;
+- o teste visual autenticado ficou pendente porque o controle do navegador não
+  estava disponível na sessão.
+
+O relatório e suas limitações estão em
+[BASELINE_2026-07-16.md](BASELINE_2026-07-16.md).
 
 ## Autenticação
 
@@ -93,20 +109,17 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 
 ## Bloqueios atuais
 
-1. Documentação central divergente do código.
-2. Muitos branches e worktrees antigos aumentam o risco de partir de base
-   desatualizada.
-3. Ausência de baseline recente e único no navegador.
-4. Login legado e acesso anônimo ainda coexistem com Auth.
-5. RLS não pode ser declarado concluído sem nova auditoria live.
+1. Ausência de baseline visual recente e autenticado no navegador.
+2. Login legado e acesso anônimo ainda coexistem com Auth.
+3. RLS não pode ser declarado concluído sem nova auditoria live.
+4. O lint acumula 145 avisos e as dependências têm 3 alertas moderados.
 
 ## Próximas fases aprovadas
 
-1. Sanear memória e documentação.
-2. Organizar branches/worktrees sem perder trabalho.
-3. Executar baseline técnico e smoke tests no navegador.
-4. Priorizar regressões reproduzíveis.
-5. Retomar o hardening Auth/RLS em lotes pequenos.
+1. Concluir o baseline visual autenticado no navegador.
+2. Priorizar regressões reproduzíveis.
+3. Retomar o hardening Auth/RLS em lotes pequenos.
+4. Tratar dívida de lint e dependências em tarefas separadas.
 
 Depois disso, seguir [PLAN.md](PLAN.md).
 

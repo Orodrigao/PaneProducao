@@ -25,6 +25,11 @@ Arquivos com `AUDIT`, `RESULT`, data no nome e a pasta `codex-tasks/` preservam
 evidência de decisões e aplicações anteriores. Eles podem descrever
 corretamente aquele momento sem representar o estado atual.
 
+Baselines datados:
+
+- [BASELINE_2026-07-16.md](BASELINE_2026-07-16.md) — instalação limpa, tipos,
+  testes, build, lint, dependências e smoke HTTP.
+
 Não copie “próximo passo”, status ou SQL de um registro histórico sem nova
 auditoria.
 
