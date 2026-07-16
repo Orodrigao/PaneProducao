@@ -1,125 +1,107 @@
-# AGENTS.md — PaneProducao / Pane&Salute ERP
+# AGENTS.md — Pane&Salute ERP
 
-## Identidade do projeto
+## Missão
 
-Este repositório é o ERP interno da Pane&Salute, padaria artesanal premium de Caxias do Sul com três lojas confirmadas:
+Este repositório contém o ERP interno da Pane&Salute.
 
-- Júlio de Castilhos — produção centralizada e loja.
-- Exposição — loja atendida por produção da Júlio.
-- Jardim América — loja atendida por produção da Júlio.
-
-Dono do produto: Rodrigo Gomes.
-
-Pergunta central do ERP:
+Pergunta central:
 
 > Para onde vai o dinheiro da Pane&Salute?
 
-Prioridade estratégica atual:
+Prioridades duráveis:
 
-1. Chegar ao CMV teórico confiável.
-2. Evoluir para CMV real por família de insumo/produto.
-3. Reduzir sobras e erros de produção.
-4. Organizar compras e histórico de preços.
-5. Reduzir dependência operacional do Rodrigo.
+1. CMV teórico confiável.
+2. CMV real por família de insumo e produto.
+3. Menos sobras, rupturas e erros de produção.
+4. Compras rastreáveis e histórico de preços.
+5. Menor dependência operacional do Rodrigo.
 
-## Stack atual
+As unidades reais são:
+
+- `jc` — Júlio de Castilhos, produção central e loja;
+- `ja` — Jardim América;
+- `ex` — Exposição.
+
+`PJ` é tipo/canal de pedido, não loja.
+
+## Hierarquia da documentação
+
+Use esta ordem para decidir o que vale:
+
+1. `AGENTS.md` — regras duráveis de trabalho e segurança.
+2. `docs/CURRENT_STATE.md` — fase real, riscos e bloqueios atuais.
+3. `docs/PLAN.md` — roadmap canônico para chegar ao CMV.
+4. `docs/PRD.md` — problema de negócio e requisitos do produto.
+5. Documento específico da funcionalidade, somente quando a tarefa exigir.
+6. Código, migrations e testes — prova do que foi implementado.
+
+Arquivos com `AUDIT`, `RESULT`, datas no nome ou dentro de
+`docs/codex-tasks/` são registros históricos. Eles não definem o estado atual
+sozinhos.
+
+Antes de propor uma mudança:
+
+1. rode `git status -sb`;
+2. leia este arquivo e `docs/CURRENT_STATE.md`;
+3. leia apenas o plano e os documentos relacionados à tarefa;
+4. audite o código, migrations e testes relevantes;
+5. resuma em 5 a 10 linhas o entendimento.
+
+Não carregue todo o diretório `docs/` por padrão.
+
+## Stack e limites arquiteturais
 
 - Next.js 15 App Router.
 - React 19.
 - TypeScript strict.
 - Supabase/Postgres.
 - Vercel.
-- `output: 'export'`: app estático, sem API routes, sem middleware e sem SSR.
-- Supabase Auth ainda não é usado; existe auth custom por PIN/localStorage.
+- `output: 'export'`: app estático, sem API routes, middleware, SSR ou Server
+  Actions.
+- O frontend acessa Supabase diretamente com chave pública.
+- Supabase Auth por e-mail e senha funciona em paralelo ao login legado por
+  PIN.
+- `app_profiles` é a base do acesso autenticado.
+- `app_users`, PIN e fallback em código ainda existem temporariamente e são
+  dívida de segurança.
 
-## Arquivos que devem ser lidos antes de qualquer tarefa
+Nunca trate login, menu ou `allowed_routes` como autorização suficiente.
+Autorização de dados precisa estar nas policies RLS.
 
-Antes de editar qualquer arquivo, leia:
+## Fluxo para nova funcionalidade
 
-1. `README.md`
-2. `CLAUDE.md` — legado útil; não é mais o comando principal, mas contém decisões históricas.
-3. `docs/PRD.md`
-4. `docs/PLAN.md`
-5. `docs/TASKS.md`
-6. `docs/CODEX_PROJECT_COMMAND.md`, se existir.
-7. `docs/CMV_EXECUTION_PLAN.md`, se existir.
-8. `docs/SALES_IMPORT_CNM.md`, se existir.
-9. `docs/DESIGN_AUDIT.md`, se existir.
+Nenhuma funcionalidade nova começa pela implementação.
 
-Depois disso, resuma em 5 a 10 linhas o que entendeu antes de propor mudança.
+### 1. Descoberta
 
-## Regras de segurança — obrigatórias
+- Entrevistar Rodrigo e fazer perguntas sobre problema, usuários, exceções,
+  frequência, dados e definição de sucesso.
+- Auditar o fluxo atual no código e no banco.
+- Quando trouxer valor real, pesquisar concorrentes e ferramentas consolidadas.
+- Comparar alternativas técnicas, custos, riscos e impacto operacional.
+- Registrar o que ficará fora do escopo.
 
-Nunca faça sem aprovação explícita do Rodrigo:
+### 2. Plano
 
-- `git push` direto na `main`.
-- `git reset --hard`.
-- `git push --force`.
-- `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `ALTER`, `INSERT` ou `apply_migration` em Supabase de produção.
-- Mudança em `app_users`, PINs, roles ou rotas de login.
-- Deploy manual de Edge Function.
-- Alteração de `.env`, segredos, tokens ou chaves.
-- Introdução de dependência nova de produção.
+- Criar plano detalhado dividido em fases pequenas.
+- Cada fase deve ter objetivo, escopo, arquivos prováveis, riscos, critérios de
+  aceite, testes e rollback mental.
+- Esperar aprovação explícita de Rodrigo antes da primeira implementação.
+- Mudança relevante de direção exige nova aprovação.
 
-Nunca coloque no repositório:
+### 3. Execução por fase
 
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_DB_PASSWORD`
-- tokens do GitHub, Vercel, Supabase, Telegram, WhatsApp ou OpenAI
-- certificado digital
-- exports reais do CNM com dados sensíveis
-- XML real sem anonimização
+- Começar de branch `codex/<descricao-curta>` criada a partir do
+  `origin/main` atualizado.
+- Um worktree, uma tarefa e um escopo.
+- Se houver alteração local não relacionada, parar e isolar o trabalho.
+- Implementar somente a fase aprovada.
+- Não refatorar módulos vizinhos por iniciativa própria.
+- Não criar abstração sem consumidor real.
 
-Se precisar de dados de exemplo, crie fixtures anonimizadas em `test/fixtures/` ou `docs/examples/`.
+### 4. Verificação
 
-## Supabase
-
-O projeto usa Supabase diretamente no frontend com chave pública. Isso exige cuidado máximo com RLS.
-
-Regra atual:
-
-- Pode executar SELECTs de auditoria quando autorizado.
-- Não aplique SQL de escrita diretamente em produção sem plano, diff e aprovação.
-- Toda tabela nova em schema exposto deve ter RLS antes de receber dados.
-- Toda função transacional crítica deve ter validação de entrada e log de erro.
-- Funções `security definer` não devem ficar expostas sem revisão.
-
-Problema conhecido:
-
-- Existem tabelas públicas com RLS desligado e policies permissivas. Tratar segurança como Sprint 0 antes de colocar dados financeiros sensíveis.
-
-## Roadmap técnico obrigatório
-
-Ordem correta para chegar ao CMV:
-
-1. Segurança Supabase/Auth.
-2. Auditoria RLS/policies.
-3. Importação XML de compras.
-4. Unidade de medida e conversões.
-5. Entrada de estoque transacional.
-6. Ficha técnica versionada.
-7. Importação de vendas CNM.
-8. Sobras/descartes com loja, motivo e custo estimado.
-9. Registro de ruptura.
-10. CMV teórico.
-11. CMV real por família.
-12. Dashboard do Rodrigo.
-13. IA explicando variações e sugerindo ações.
-
-Não criar dashboard de CMV antes de ficha técnica e vendas CNM.
-
-## Git workflow
-
-- Branch por tarefa: `codex/<descricao-curta>`.
-- PR sempre em modo draft, salvo pedido explícito do Rodrigo.
-- Commits pequenos e em português.
-- Nunca misturar documentação, schema e UI no mesmo PR se puder separar.
-- Antes de começar: `git status -sb`.
-- Ao final: mostrar arquivos alterados, validações executadas e riscos.
-
-## Validação
-
-Antes de entregar alteração de código, rode conforme aplicável:
+Conforme o risco e o escopo:
 
 ```bash
 npm run lint
@@ -128,56 +110,93 @@ npm test
 npm run build
 ```
 
-Se a tarefa for apenas documentação, no mínimo rode:
+Além disso:
+
+- testar no navegador o fluxo completo alterado;
+- testar pelo menos os perfis e lojas afetados;
+- revisar o diff como revisão de código;
+- confirmar estados de carregamento, vazio, erro, sucesso e repetição de ação;
+- não considerar concluído com teste quebrado.
+
+Documentação pura exige no mínimo:
 
 ```bash
 git diff --check
 ```
 
-Não entregue com teste quebrado sem explicar claramente o motivo e sem autorização.
+### 5. Entrega
 
-## Padrão de código
+- Commits pequenos e em português.
+- Push somente da branch da tarefa.
+- Pull request sempre draft, salvo pedido explícito em contrário.
+- Nunca fazer push direto na `main`.
+- Informar arquivos alterados, verificações, resultado do navegador e riscos.
+
+## Memória útil
+
+Após uma tarefa bem-sucedida:
+
+- atualize `docs/CURRENT_STATE.md` somente se fase, capacidade ou risco real
+  mudou;
+- registre em `lessons.md` somente aprendizado não óbvio, generalizável e capaz
+  de evitar erro futuro;
+- altere `AGENTS.md` somente quando surgir uma regra global e durável;
+- atualize `docs/PLAN.md` somente quando roadmap, ordem ou critério de pronto
+  mudar.
+
+Não guardar:
+
+- narração da tarefa;
+- informação óbvia ao ler o código;
+- lista de arquivos alterados;
+- estado temporário de branch;
+- detalhe já preservado no PR ou commit;
+- snapshot chamado de “estado atual” sem data e fonte.
+
+## Segurança obrigatória
+
+Nunca faça sem aprovação explícita de Rodrigo:
+
+- push direto na `main`, force push ou `git reset --hard`;
+- escrita em Supabase de produção, incluindo migration, DDL ou DML;
+- mudança em `app_users`, usuários Auth, PINs, roles ou rotas de login;
+- deploy manual de Edge Function;
+- alteração de `.env`, segredos, tokens ou chaves;
+- dependência nova de produção;
+- exclusão de branch ou worktree.
+
+Nunca versionar:
+
+- service role, senha do banco, tokens ou chaves privadas;
+- certificado digital;
+- sessão/cookie do CNM;
+- export real do CNM, XML ou documento fiscal sem anonimização;
+- dados pessoais que não sejam indispensáveis ao funcionamento.
+
+Fixtures devem ser anonimizadas em `test/fixtures/` ou `docs/examples/`.
+
+## Supabase
+
+- Toda tabela em schema exposto deve ter RLS antes de receber dados.
+- Grants da Data API e policies RLS são controles diferentes; migrations devem
+  tratar ambos explicitamente.
+- Não usar policy genérica permissiva para `anon` ou `authenticated`.
+- Policies de escrita devem validar o perfil e o escopo da operação.
+- `UPDATE` precisa de policy de leitura e de `WITH CHECK`.
+- Função crítica precisa de validação de entrada, tratamento de erro e
+  privilégio mínimo.
+- `SECURITY DEFINER` exige revisão específica, `search_path` seguro e grants
+  explícitos.
+- Antes de nova informação financeira, concluir o hardening indicado em
+  `docs/CURRENT_STATE.md`.
+
+## Código e UX
 
 - TypeScript sem `any` novo.
-- Não refatorar fora do escopo.
-- Não criar abstrações prematuras.
-- Não mover módulos antigos para o redesign sem necessidade direta da tarefa.
-- Preferir funções pequenas, validações explícitas e nomes em português para conceitos visíveis ao usuário.
-
-## Design e UX
-
-A equipe operacional usa celular durante trabalho. Interface deve ser:
-
-- mobile-first;
-- visual;
-- com botões grandes;
-- com poucos campos livres;
-- com confirmação para ações críticas;
-- clara para uso rápido em loja/produção.
-
-Módulos novos devem usar o padrão `ps-*` do redesign. Módulos antigos só devem ser migrados quando forem tocados por necessidade real.
-
-## Importação de vendas CNM
-
-Como não há integração direta com o PDV, o caminho inicial é:
-
-1. Upload manual de CSV/Excel exportado do Controle Na Mão.
-2. Prévia e validação no ERP.
-3. Mapeamento `nome no CNM -> produto interno`.
-4. Confirmação humana.
-5. Bloqueio de duplicidade por loja/data/importação.
-6. Evolução futura para pasta/e-mail/RPA/API.
-
-## Forma de trabalhar
-
-Para tarefas complexas:
-
-1. Ler docs.
-2. Auditar código relevante.
-3. Escrever plano curto.
-4. Esperar aprovação do Rodrigo.
-5. Fazer mudança mínima.
-6. Validar.
-7. Entregar resumo claro.
+- Funções pequenas, validações explícitas e nomes de domínio claros.
+- Interface mobile-first, visual, rápida e com poucos campos livres.
+- Ações críticas ou irreversíveis exigem confirmação.
+- Módulos novos usam o padrão `ps-*`.
+- Módulos antigos só migram quando a tarefa realmente os tocar.
 
 Se encontrar risco fora do escopo, pare e reporte. Não resolva junto.
