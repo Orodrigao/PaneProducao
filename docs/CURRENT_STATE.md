@@ -11,12 +11,13 @@ incorporada à `main`.
 
 O projeto está em estabilização e conclusão da Sprint 0 de segurança. A memória
 central foi saneada, branches e worktrees antigos foram inventariados sem perder
-patches exclusivos, e o baseline técnico foi executado.
+patches exclusivos, e os baselines técnico e visual autenticado foram
+executados.
 
 Funcionalidades novas que adicionem dados financeiros devem esperar:
 
-1. smoke visual autenticado dos fluxos críticos;
-2. priorização das regressões reproduzíveis;
+1. correção das regressões de autorização e contexto de loja priorizadas;
+2. revalidação visual dos fluxos afetados;
 3. conclusão da auditoria e do hardening Auth/RLS.
 
 ## Baseline técnico
@@ -27,11 +28,28 @@ Em 2026-07-16, a partir do commit `cdf26f7`:
 - as 31 páginas HTML exportadas responderam no smoke HTTP;
 - o lint passou com 145 avisos;
 - `npm audit` registrou 3 alertas moderados, sem alertas altos ou críticos;
-- o teste visual autenticado ficou pendente porque o controle do navegador não
-  estava disponível na sessão.
+- a preview da PR #120 foi validada com oito contas em desktop e viewport móvel;
+- o teste foi somente leitura, sem recuperação de senha nem escrita;
+- o smoke em produção continua pendente de aprovação explícita.
 
-O relatório e suas limitações estão em
+O relatório, os achados e suas limitações estão em
 [BASELINE_2026-07-16.md](BASELINE_2026-07-16.md).
+
+## Baseline visual autenticado
+
+O teste da preview confirmou login e restrição correta do perfil de forno, mas
+abriu regressões que impedem considerar a matriz Auth validada:
+
+- a conta de expedição de JC abre a home no contexto da loja EX;
+- as rotas efetivas de financeiro e vendas divergem da matriz documentada;
+- a administração de usuários ainda representa o cadastro legado por PIN;
+- uma falha de leitura de `app_profiles` deixa a tela em branco;
+- o Romaneio exibe escopo EX para perfis global e JC;
+- a navegação Admin fica cortada no viewport móvel validado.
+
+Fran e Conferência EX foram retiradas dessa rodada por decisão de escopo. Liara
+permaneceu fora porque o e-mail ativo não está confirmado. Nenhum dos achados
+foi corrigido junto com o baseline.
 
 ## Autenticação
 
@@ -109,17 +127,20 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 
 ## Bloqueios atuais
 
-1. Ausência de baseline visual recente e autenticado no navegador.
-2. Login legado e acesso anônimo ainda coexistem com Auth.
-3. RLS não pode ser declarado concluído sem nova auditoria live.
-4. O lint acumula 145 avisos e as dependências têm 3 alertas moderados.
+1. A expedição de JC pode operar a home no contexto incorreto da loja EX.
+2. `allowed_routes` diverge entre contas e do perfil operacional documentado.
+3. Login legado e acesso anônimo ainda coexistem com Auth.
+4. RLS não pode ser declarado concluído sem nova auditoria live.
+5. O lint acumula 145 avisos e as dependências têm 3 alertas moderados.
 
 ## Próximas fases aprovadas
 
-1. Concluir o baseline visual autenticado no navegador.
-2. Priorizar regressões reproduzíveis.
-3. Retomar o hardening Auth/RLS em lotes pequenos.
-4. Tratar dívida de lint e dependências em tarefas separadas.
+1. Corrigir o contexto de loja da expedição em uma tarefa isolada.
+2. Confirmar e corrigir a matriz de rotas por perfil, uma regressão por vez.
+3. Revalidar visualmente a preview após cada correção.
+4. Fazer smoke somente leitura em produção apenas após aprovação explícita.
+5. Retomar o hardening Auth/RLS em lotes pequenos.
+6. Tratar dívida de lint e dependências em tarefas separadas.
 
 Depois disso, seguir [PLAN.md](PLAN.md).
 
