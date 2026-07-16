@@ -1,7 +1,11 @@
 # Matriz preliminar de usuários reais — app_profiles
 
-Status: rascunho para validação.
-Ação: não inserir no Supabase ainda.
+Status histórico: a primeira leva de usuários Auth já foi criada. Esta matriz
+não é fonte do estado atual e não deve ser reaplicada.
+
+Use [CURRENT_STATE.md](CURRENT_STATE.md) e
+[SUPABASE_AUTH_EMAIL_APPLY_RESULT.md](SUPABASE_AUTH_EMAIL_APPLY_RESULT.md).
+Confirme dados pessoais diretamente com Rodrigo antes de qualquer alteração.
 
 ## Conceito corrigido
 

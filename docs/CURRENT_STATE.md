@@ -1,0 +1,124 @@
+# Estado atual — Pane&Salute ERP
+
+**Data de referência:** 2026-07-16
+
+**Base observada:** `origin/main` no commit `6fd4cfa`
+
+**Natureza:** mapa operacional. Atualizar somente após mudança material
+incorporada à `main`.
+
+## Fase estratégica
+
+O projeto está em estabilização e conclusão da Sprint 0 de segurança.
+
+Funcionalidades novas que adicionem dados financeiros devem esperar:
+
+1. saneamento da memória e do fluxo de branches;
+2. baseline de testes e navegador no `main`;
+3. conclusão da auditoria e do hardening Auth/RLS.
+
+## Autenticação
+
+Estado conhecido:
+
+- Supabase Auth por e-mail e senha está implementado;
+- `app_profiles` fornece role, loja, rotas e status do usuário autenticado;
+- recuperação e definição de senha existem;
+- login legado por PIN/localStorage continua em paralelo;
+- `app_users` e fallback hardcoded ainda são usados pelo fluxo legado.
+
+Consequência:
+
+- Auth por e-mail não significa que a migração de segurança terminou;
+- telas e tabelas precisam funcionar para `authenticated`;
+- policies antigas de `anon` não podem ser mantidas indefinidamente;
+- retirada do PIN exige validação operacional por perfil e loja.
+
+## RLS e Supabase
+
+Hardening documentado como aplicado:
+
+- `app_profiles`;
+- tabelas iniciais de estoque;
+- clientes e tabelas de preço;
+- acesso autenticado a pedidos;
+- policies autenticadas de componentes de ficha;
+- fechamento de caixa.
+
+Riscos ainda abertos:
+
+- o último inventário live completo registrou tabelas sem RLS e policies
+  anônimas permissivas;
+- `app_users` permanece exposta para sustentar o PIN;
+- parte da operação ainda depende do acesso legado;
+- o token do bot Telegram ainda é usado no frontend com prefixo
+  `NEXT_PUBLIC_`;
+- o estado live precisa ser reauditado antes de declarar Sprint 0 concluída.
+
+Não deduza o estado de produção apenas pelas migrations locais. Para tarefa de
+segurança, compare migration, resultado documentado, código cliente e auditoria
+live somente leitura.
+
+## Capacidades já presentes
+
+- produção, forno e confirmação por lotes;
+- sobras, reaproveitamento e pendências;
+- romaneio e estoques;
+- compras, cotações e fornecedores;
+- clientes, pedidos PJ e encomendas;
+- tabelas e opções de preço;
+- fechamento de caixa;
+- catálogo unificado com `products.kind`;
+- componentes de ficha técnica, rendimentos e cálculo de CMV;
+- auditoria de cobertura/qualidade do CMV;
+- relatórios operacionais.
+
+## Capacidades parciais
+
+### Ficha técnica e CMV
+
+Existem componentes, rendimentos, opções de venda e cálculo teórico. Ainda não
+há ficha versionada completa nem cobertura suficiente para declarar CMV
+confiável.
+
+### CNM
+
+Há trabalhos de leitura XLS e coleta autorizada por navegador. Isso não
+equivale a uma importação consolidada, validada e integrada ao ERP.
+
+### Sobras
+
+O fluxo por lotes e reaproveitamento avançou. Custos, motivos padronizados,
+rupturas e indicadores comparáveis ainda precisam ser consolidados.
+
+## Bloqueios atuais
+
+1. Documentação central divergente do código.
+2. Muitos branches e worktrees antigos aumentam o risco de partir de base
+   desatualizada.
+3. Ausência de baseline recente e único no navegador.
+4. Login legado e acesso anônimo ainda coexistem com Auth.
+5. RLS não pode ser declarado concluído sem nova auditoria live.
+
+## Próximas fases aprovadas
+
+1. Sanear memória e documentação.
+2. Organizar branches/worktrees sem perder trabalho.
+3. Executar baseline técnico e smoke tests no navegador.
+4. Priorizar regressões reproduzíveis.
+5. Retomar o hardening Auth/RLS em lotes pequenos.
+
+Depois disso, seguir [PLAN.md](PLAN.md).
+
+## Como atualizar este arquivo
+
+Atualize somente quando um PR incorporado à `main`:
+
+- concluiu ou iniciou uma fase;
+- adicionou ou retirou capacidade relevante;
+- abriu ou fechou risco operacional;
+- mudou autenticação, RLS ou arquitetura;
+- alterou o próximo bloqueio real.
+
+Não adicionar lista de commits, arquivos tocados ou detalhes fáceis de descobrir
+no código.

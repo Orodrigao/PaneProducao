@@ -1,57 +1,94 @@
-# Pane & Salute — ERP
+# Pane&Salute ERP
 
-ERP interno de uma padaria artesanal com 3 lojas em Caxias do Sul (RS). Responde "para onde vai o dinheiro?" — complementa o PDV fiscal, não substitui.
+ERP interno da Pane&Salute, padaria artesanal com três lojas em Caxias do Sul.
+O sistema complementa o PDV fiscal e busca responder:
 
-> Documentação canônica: [CLAUDE.md](CLAUDE.md) (organização do código), [docs/PRD.md](docs/PRD.md) (produto), [docs/PLAN.md](docs/PLAN.md) (técnico/roadmap), [docs/TASKS.md](docs/TASKS.md) (backlog).
+> Para onde vai o dinheiro da Pane&Salute?
+
+## Documentação
+
+- [AGENTS.md](AGENTS.md) — regras para qualquer agente que trabalhe no projeto.
+- [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — fase real, riscos e próximos
+  bloqueios.
+- [docs/PLAN.md](docs/PLAN.md) — roadmap canônico.
+- [docs/PRD.md](docs/PRD.md) — visão e requisitos do produto.
+- [docs/README.md](docs/README.md) — classificação dos demais documentos.
+
+Documentos de auditoria, resultados de migrations e tarefas antigas são
+históricos. Não use esses arquivos isoladamente para decidir a próxima tarefa.
 
 ## Stack
 
-- **Next.js 15.5** (App Router, `output: 'export'` — estático, sem servidor) + **React 19** + **TypeScript strict**
-- **Tailwind 3.4** (módulos novos) + inline styles (módulos antigos) — coexistem
-- **Supabase** (Postgres + Edge Functions) — auth **custom**, não o nativo
-- **Vercel** — auto-deploy do push em `main` → `pane-producao.vercel.app`
+- Next.js 15.5, App Router e React 19.
+- TypeScript strict.
+- Tailwind 3.4 com módulos legados ainda em estilos próprios.
+- Supabase/Postgres.
+- Vercel.
+- Build estático com `output: 'export'`.
 
-## Rodar localmente
+Não existem API routes, middleware, SSR ou Server Actions. O navegador acessa
+o Supabase diretamente, portanto RLS e grants são parte obrigatória da
+segurança.
+
+## Autenticação
+
+O sistema está em transição:
+
+- login por e-mail e senha via Supabase Auth;
+- perfil e escopo em `app_profiles`;
+- PIN/localStorage e `app_users` ainda disponíveis como legado temporário.
+
+O estado e os riscos dessa transição estão em
+[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
+
+## Desenvolvimento local
 
 ```bash
 npm install
-npm run dev          # :3000
-npm run build        # build estático em ./out
-npx tsc --noEmit     # typecheck
+npm run dev
 npm run lint
+npx tsc --noEmit
+npm test
+npm run build
 ```
 
-Precisa de `.env.local` com `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_CHAT_ID`.
+O build estático é gerado em `out/`.
+
+As variáveis públicas necessárias ficam em `.env.local`, que não pode ser
+versionado:
+
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+NEXT_PUBLIC_TELEGRAM_CHAT_ID
+```
+
+Valores `NEXT_PUBLIC_*` entram no bundle do navegador. Nunca use esse prefixo
+para service role, senha, token administrativo ou qualquer segredo.
+
+O código legado ainda usa `NEXT_PUBLIC_TELEGRAM_BOT_TOKEN`. Como token de bot
+não é público, isso permanece como risco a ser removido em tarefa própria; não
+replique esse padrão.
+
+## Módulos principais
+
+- produção e forno;
+- sobras, descartes e reaproveitamento;
+- romaneio e estoques;
+- compras, cotações e fornecedores;
+- catálogo, ficha técnica e auditoria de CMV;
+- clientes, pedidos PJ, encomendas e tabelas de preço;
+- fechamento de caixa e relatórios;
+- administração de usuários.
+
+O status de cada frente não é mantido nesta lista. Consulte
+[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 
 ## Deploy
 
-Push em `main` → Vercel builda e publica. Não há staging — `main` = produção.
+O push na `main` publica pela Vercel. Por isso:
 
-## Módulos
-
-- **Produção** (`/`) — pedidos de produção diários
-- **Compras** (`/compras`) — lista de compras semanal por setor + geração de cotação
-- **Cotação** (`/cotacoes`) — cotação semi-automática: lista → WhatsApp → IA extrai respostas → comparativo → pedido
-- **Estoque** (`/estoque`, `/estoque-paes`, `/estoque-congelado`) — entradas, saldos
-- **Romaneio** (`/romaneio`) — transferências entre lojas (baixa em cascata de kits)
-- **Catálogo** (`/produtos`, `/fornecedores`, `/clientes`) — cadastros, composição de kits (BOM), mapa fornecedor↔produto
-- **Tabelas de preço** (`/tabelas-preco`) — preços por cliente/tier
-- **Relatórios** (`/relatorios`) — sobras, descartes, PJ
-- **Admin** (`/admin/usuarios`) — gestão de usuários
-
-### Produtos: kind, revenda e kits (BOM)
-
-`products` tem duas dimensões além de `category`:
-- **`kind`** = `kit` | `insumo` | `final` (o que o produto é)
-- **`is_revenda`** = comprado pronto pra revender
-
-Kits têm composição em `product_components` (ex: 1 Kit Pão de Abóbora = 6 pãezinhos). Descartar ou expedir um kit **baixa os pães-componentes do estoque em cascata** (`/sobras`, `/romaneio`). `/compras` e `/estoque/entrada` listam só insumos + revenda.
-
-### Cotação semi-automática
-
-1. `/compras` (admin) → **Gerar cotação** agrega as listas enviadas
-2. `/cotacoes/detalhe` → mensagem pronta por fornecedor → **Abrir no WhatsApp**
-3. Cola a resposta → **Extrair preços com IA** (Edge Function `parse-cotacao`, Gemini Flash) → revisa o grid → salva
-4. `/cotacoes/comparativo` → escolhe fornecedor por item (menor preço pré-marcado) → **Gerar pedidos**
-
-Requer `GEMINI_API_KEY` nos Supabase Edge Functions Secrets.
+- cada tarefa usa branch própria `codex/<descricao>`;
+- o PR é draft por padrão;
+- não existe push direto na `main`;
+- alterações de banco e autenticação exigem aprovação explícita.

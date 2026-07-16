@@ -3,7 +3,12 @@
 **Data:** 2026-06-14
 **Sprint:** 0C - migracao segura de Auth/RLS
 **Projeto:** PaneProducao / Pane&Salute ERP
-**Status:** documento tecnico; nenhuma correcao aplicada
+**Status histórico:** este plano foi escrito antes das correções parciais de
+Auth/RLS aplicadas a partir de 2026-06-14. Não representa o estado atual.
+
+Consulte primeiro [CURRENT_STATE.md](CURRENT_STATE.md) e os registros
+`SUPABASE_*_RESULT.md`. Reaudite o estado live antes de reutilizar qualquer SQL
+ou sequência deste documento.
 
 ## 1. Objetivo do plano
 

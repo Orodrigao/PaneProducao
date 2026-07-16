@@ -1,5 +1,8 @@
 # SALES_IMPORT_CNM.md — Importação de vendas Controle Na Mão
 
+**Natureza:** especificação da funcionalidade. Para saber o que já existe e o
+que ainda falta, consulte [CURRENT_STATE.md](CURRENT_STATE.md).
+
 ## Problema
 
 O ERP ainda não tem integração com o PDV Controle Na Mão. Para calcular CMV, precisamos trazer vendas diárias para dentro do ERP com o máximo de automação possível sem depender, no primeiro momento, de API do PDV.

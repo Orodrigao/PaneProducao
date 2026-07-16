@@ -1,178 +1,151 @@
-# PRD — ERP Pane & Salute
-**Versão:** 1.0  
-**Data:** Maio 2026  
-**Dono do produto:** Rodrigo (Rodrigão) — fundador e CEO da Pane & Salute
+# PRD — ERP Pane&Salute
 
----
+**Dono do produto:** Rodrigo Gomes
+**Natureza:** visão estável do produto, não acompanhamento de implementação.
 
-## 1. O Negócio
+Para fase e capacidades atuais, consulte
+[CURRENT_STATE.md](CURRENT_STATE.md). Para a ordem de execução, consulte
+[PLAN.md](PLAN.md).
 
-**Pane & Salute** é uma padaria artesanal com 3 lojas em Caxias do Sul (RS), 12 anos de mercado e referência na cidade. O negócio tem faturamento razoável e produtos com margens de lucro altas — mas a operação não está lucrativa. O dinheiro está curto todo mês.
+## 1. Problema
 
-O principal problema identificado: **não existe visibilidade sobre para onde vai o dinheiro**. Não se sabe com precisão o CMV, o custo real de cada canal de venda, nem se o desperdício está sendo controlado. Dívidas do passado pesam no caixa, mas a dúvida é: mesmo sem essas dívidas, a operação seria lucrativa? Essa pergunta precisa ser respondida.
+A Pane&Salute tem operação relevante, produtos de boa margem e três lojas, mas
+não possui visibilidade suficiente para explicar por que o dinheiro fica curto.
 
-### Canais de venda
-- **Balcão (lojas)** — margem mais alta, venda direta ao cliente final
-- **Expedição (EX)** — fornecimento para um cliente externo com margem menor no produto + custos extras: veículo, motorista, funcionário da expedição, embalagens específicas. A lucratividade real deste canal é desconhecida.
+O ERP deve responder:
 
-### Sistema atual
-- **Controle Na Mão (CNM)** — PDV, emissão de cupom fiscal e NF, integração SEFAZ. Continuará sendo usado por muito tempo para tudo que é fiscal. O ERP não vai substituí-lo nessa função.
-- **Planilhas e papel** — controle financeiro precário de contas a pagar e receber.
-- Praticamente nenhum controle de estoque, produção ou custo.
+> Para onde vai o dinheiro da Pane&Salute?
 
----
+Isso exige separar fatos que hoje se misturam:
 
-## 2. O Objetivo do ERP
+- quanto foi comprado;
+- quanto foi produzido;
+- quanto foi vendido;
+- quanto sobrou, foi reaproveitado ou descartado;
+- quanto deixou de ser vendido por ruptura;
+- qual custo pertence a produto, loja, canal ou período;
+- qual variação vem de preço, rendimento, erro ou desperdício.
 
-Construir uma plataforma interna que responda a pergunta central do negócio:
+## 2. Papel do ERP
 
-> **"Para onde vai o dinheiro da Pane & Salute?"**
+O ERP complementa o Controle Na Mão (CNM). Ele não substitui:
 
-De forma específica:
-- Qual é o CMV real por produto e por categoria?
-- Quanto custa produzir o que foi produzido?
-- Quanto foi desperdiçado e qual o custo disso?
-- O canal Expedição é lucrativo depois de descontados todos os seus custos?
-- Quais são as contas a pagar e como elas se comparam com a receita?
+- PDV;
+- cupom ou nota fiscal;
+- integração fiscal com SEFAZ.
 
-O ERP **não vai substituir o CNM**. Vai receber os dados de venda via importação de relatório e cruzar com os dados de custo que ele mesmo controla.
+O ERP recebe dados operacionais e comerciais, mantém custos e rastreabilidade e
+cruza essas fontes para apoiar decisão.
 
----
+## 3. Unidades e conceitos
 
-## 3. Usuários do Sistema
+Lojas:
 
-| Perfil | Quem | O que faz no sistema |
-|--------|------|----------------------|
-| **Dono** | Rodrigão | Vê todos os módulos, dashboards financeiros, aprova listas de compra |
-| **Financeiro** | Suélen | Contas a pagar/receber, importação de NF, relatórios |
-| **Produção** | Equipe padaria/cozinha | Registra pedidos de produção diários |
-| **Expedição** | Gustavo | Controla estoque congelado, romaneio |
-| **Compras** | Geolar (Padaria), Fran (Cozinha), Liara/Elis (Loja) | Preenchem e enviam listas de compra |
+- Júlio de Castilhos (`jc`);
+- Jardim América (`ja`);
+- Exposição (`ex`).
 
----
+Conceitos que não devem ser confundidos:
 
-## 4. Módulos do Sistema
+- loja é local físico;
+- setor é área operacional;
+- role é permissão de uma pessoa;
+- PJ é tipo/canal de pedido, não loja;
+- expedição é operação/perfil, não sinônimo da loja Exposição.
 
-### 4.1 Módulos Existentes (em produção)
+## 4. Usuários
 
-| Módulo | URL | Status | Descrição |
-|--------|-----|--------|-----------|
-| Pedidos de Produção | `/` | ✅ Produção | Equipe registra o que vai produzir no dia |
-| Sobras e Descartes | `/sobras` | ✅ Produção | Registro de sobras e descartes por usuário/turno |
-| Romaneio de Expedição | `/romaneio` | ✅ Produção | Controle de entrega entre lojas e para EX |
-| Catálogo de Produtos | `/produtos` | ✅ Produção | Gestão de produtos com categoria, custo, ativo/inativo |
-| Estoque Congelado | `/estoque-congelado` | ✅ Produção | Entrada/saída/inventário em 3 locais (Freezer H., Câmara, Freezer Loja) |
-| Lista de Compras | `/compras` | ✅ Produção | Listas por setor com notificação Telegram ao enviar |
+- dono e administração;
+- financeiro;
+- produção, forno e cozinha;
+- atendimento/vendas;
+- estoque e compras;
+- expedição/romaneio.
 
-### 4.2 Módulos a Construir (por prioridade)
+Cada acesso deve pertencer a uma pessoa identificável. Login compartilhado por
+setor deve ser evitado.
 
-#### PRIORIDADE 1 — Fechar o CMV
+## 5. Capacidades do produto
 
-**Estoque de Insumos**
-- Controle de entrada de insumos (via leitura de NF com IA ou importação manual)
-- Baixa automática de estoque conforme produção registrada
-- Inventário periódico para ajuste
-- Alertas de estoque mínimo
-- Meta: saber o custo real do que foi consumido na produção
+### Operação
 
-**Leitura de Nota Fiscal com IA**
-- Usuário fotografa a NF de compra de insumos
-- IA (modelo de visão) extrai: fornecedor, itens, quantidades, valores, data
-- Sistema alimenta estoque de insumos + contas a pagar automaticamente
-- Reduz trabalho manual e elimina erros de digitação
+- pedidos e planejamento de produção;
+- forno e confirmação de lotes;
+- sobras, reaproveitamento e descartes;
+- romaneio e transferências;
+- estoques e inventários;
+- compras, cotações e fornecedores.
 
-**Importação de Vendas do CNM**
-- Importação de relatório exportado pelo CNM (CSV ou Excel)
-- Sistema reconhece produtos, quantidades vendidas, valores por canal
-- Necessário para fechar o CMV: custo de produção ÷ receita de venda
+### Comercial
 
-**CMV Dashboard**
-- Custo de Mercadoria Vendida por período (dia, semana, mês)
-- CMV por produto e por categoria
-- CMV por canal (balcão vs expedição)
-- Comparativo meta vs realizado
-- % CMV sobre faturamento (meta: abaixo de X%)
+- catálogo único de produtos;
+- clientes, pedidos PJ e encomendas;
+- opções e tabelas de preço;
+- fechamento de caixa;
+- importação de vendas CNM.
 
-#### PRIORIDADE 2 — Visibilidade Financeira
+### Custos
 
-**Contas a Pagar**
-- Lançamento manual e via leitura de NF
-- Categorização (insumos, folha, aluguel, empréstimos, fornecedores)
-- Separação clara entre dívidas do passado e custo operacional corrente
-- Calendário de vencimentos
-- Fluxo de caixa projetado
+- XML e histórico de compras;
+- unidades e conversões;
+- ficha técnica versionada;
+- custo por produto e forma de venda;
+- CMV teórico;
+- CMV real por família;
+- margem por produto, loja e canal.
 
-**Análise da Expedição**
-- Custo total do canal EX: produto + veículo + motorista + funcionário + embalagem
-- Receita gerada pelo canal EX
-- Margem líquida da EX vs balcão
-- Resposta definitiva: vale a pena continuar fornecendo para a EX?
+### Gestão
 
-**DRE Simplificado**
-- Receita (importada do CNM)
-- CMV (calculado pelo ERP)
-- Margem bruta
-- Despesas operacionais (do contas a pagar)
-- Resultado líquido
-- Separado por loja quando possível
+- perdas e rupturas em reais;
+- comparação entre lojas e períodos;
+- variação de preço por fornecedor;
+- indicadores com origem rastreável;
+- alertas e explicações para Rodrigo.
 
-#### PRIORIDADE 3 — Inteligência Operacional
+## 6. Requisitos de experiência
 
-**Dashboard do Dono**
-- Visão consolidada: faturamento, CMV, margem, sobras do dia
-- Alertas: produto com CMV acima do esperado, desperdício elevado, item zerado no estoque
-- Comparativo entre lojas
+- mobile-first;
+- uso rápido durante a operação;
+- botões e escolhas visuais;
+- poucos campos livres;
+- confirmação em ações críticas;
+- mensagens que indiquem como corrigir o problema;
+- funcionamento com toque repetido ou conexão instável sem duplicar dados.
 
-**Custo por Produto (Ficha Técnica)**
-- Composição de insumos de cada produto
-- Custo calculado automaticamente baseado no preço dos insumos no estoque
-- Permite saber o preço mínimo de venda e a margem real
+## 7. Requisitos de dados
 
-**Relatórios Exportáveis**
-- CMV mensal para apresentar à contabilidade
-- Relatório de sobras e descartes
-- Relatório de compras realizadas vs orçamento
+- origem e data de cada informação;
+- loja, usuário e operação identificáveis;
+- importações idempotentes;
+- histórico em vez de sobrescrita silenciosa;
+- unidades compatíveis;
+- revisão humana em importações e mapeamentos;
+- indicadores que mostrem cobertura e dados faltantes.
 
----
+## 8. Segurança
 
-## 5. Integrações
+- identidade real via Supabase Auth;
+- autorização no banco por RLS;
+- privilégio mínimo;
+- nenhuma chave privada no frontend;
+- dados financeiros somente após proteção adequada;
+- operações críticas transacionais e auditáveis.
 
-| Sistema | Como | Quando |
-|---------|------|--------|
-| CNM (PDV) | Importação de relatório (CSV/Excel) | Curto prazo |
-| Nota Fiscal (fornecedores) | Foto + IA (OCR + extração de dados) | Médio prazo |
-| Telegram | Notificação de lista de compras | ✅ Já feito |
-| WhatsApp | Notificações operacionais | Futuro |
+## 9. Métricas de sucesso
 
----
+- percentual dos produtos vendidos com ficha técnica válida;
+- percentual das vendas CNM corretamente mapeadas;
+- tempo para fechar CMV mensal e semanal;
+- divergência entre CMV teórico e real;
+- perdas em quantidade e reais;
+- rupturas por loja e produto;
+- variação de preços por fornecedor;
+- redução de intervenções manuais do Rodrigo.
 
-## 6. O que este ERP NÃO faz
+## 10. Fora de escopo
 
-- Emissão de cupom fiscal ou nota fiscal (CNM faz isso)
-- Integração direta com SEFAZ
-- Gestão de funcionários / folha de pagamento
-- Delivery ou gestão de pedidos externos
-- Controle de mesas ou comanda (não é restaurante)
-
----
-
-## 7. Princípios do Produto
-
-- **Simples de usar** — funcionários não são técnicos. A interface precisa ser óbvia.
-- **Mobile-first** — a maioria dos usuários acessa pelo celular durante o trabalho.
-- **Dados reais, não estimativas** — cada número mostrado tem origem rastreável.
-- **Uma fonte de verdade** — o que o ERP diz é o que vale. Sem planilhas paralelas.
-- **Evolução gradual** — cada módulo entrega valor sozinho. Não esperamos tudo estar pronto para usar.
-
----
-
-## 8. Métricas de Sucesso
-
-| Métrica | Hoje | Meta |
-|---------|------|------|
-| CMV calculado automaticamente | Não existe | Mensal, depois semanal |
-| % desperdício sobre produção | Desconhecido | Medido e abaixo de X% |
-| Lucratividade da Expedição | Desconhecida | Calculada e decidida |
-| Tempo para fechar o custo mensal | Não é feito | Menos de 1 hora |
-| Dívida vs custo operacional | Misturados | Separados e visíveis |
-
+- emissão fiscal própria;
+- folha de pagamento;
+- substituição completa do CNM;
+- automação irreversível de compra ou preço;
+- funcionalidades sem relação comprovada com operação, custo ou decisão.

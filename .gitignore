@@ -7,7 +7,6 @@ tsconfig.tsbuildinfo
 .vercel
 supabase/.temp/
 _GUIA_INFRA.md
-lessons.md
 
 # Sessão autenticada, downloads e evidências locais do coletor CNM
 storage/cnm/
