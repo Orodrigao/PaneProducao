@@ -30,7 +30,8 @@ Em 2026-07-16, a partir do commit `cdf26f7`:
 - `npm audit` registrou 3 alertas moderados, sem alertas altos ou críticos;
 - a preview da PR #120 foi validada com oito contas em desktop e viewport móvel;
 - o teste foi somente leitura, sem recuperação de senha nem escrita;
-- o smoke em produção continua pendente de aprovação explícita.
+- em produção, somente acesso público e a sessão administrativa foram
+  verificados; a cobertura por perfil foi interrompida por decisão de escopo.
 
 O relatório, os achados e suas limitações estão em
 [BASELINE_2026-07-16.md](BASELINE_2026-07-16.md).
@@ -138,7 +139,7 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 1. Corrigir o contexto de loja da expedição em uma tarefa isolada.
 2. Confirmar e corrigir a matriz de rotas por perfil, uma regressão por vez.
 3. Revalidar visualmente a preview após cada correção.
-4. Fazer smoke somente leitura em produção apenas após aprovação explícita.
+4. Não retomar smoke em produção sem nova aprovação explícita do Rodrigo.
 5. Retomar o hardening Auth/RLS em lotes pequenos.
 6. Tratar dívida de lint e dependências em tarefas separadas.
 
