@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-16
+**Data de referência:** 2026-07-17
 
-**Base observada:** `origin/main` no commit `6fd4cfa`
+**Base observada:** `origin/main` no commit `ba78335`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -24,8 +24,11 @@ Estado conhecido:
 - Supabase Auth por e-mail e senha está implementado;
 - `app_profiles` fornece role, loja, rotas e status do usuário autenticado;
 - recuperação e definição de senha existem;
-- login legado por PIN/localStorage continua em paralelo;
-- `app_users` e fallback hardcoded ainda são usados pelo fluxo legado.
+- o acesso legado por PIN/localStorage foi removido da aplicação e a tela de
+  login informa a transição para e-mail e senha;
+- a administração legada de usuários foi retirada da interface; criação,
+  alteração e desativação de acessos devem ocorrer no Supabase Auth pelo
+  administrador responsável.
 
 Consequência:
 
@@ -49,8 +52,9 @@ Riscos ainda abertos:
 
 - o último inventário live completo registrou tabelas sem RLS e policies
   anônimas permissivas;
-- `app_users` permanece exposta para sustentar o PIN;
-- parte da operação ainda depende do acesso legado;
+- `app_users` e a coluna histórica de PIN permanecem no banco até aplicação
+  explícita da migration de retirada; a superfície de acesso anônimo precisa
+  ser bloqueada em produção;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
 - o estado live precisa ser reauditado antes de declarar Sprint 0 concluída.
@@ -97,7 +101,8 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Muitos branches e worktrees antigos aumentam o risco de partir de base
    desatualizada.
 3. Ausência de baseline recente e único no navegador.
-4. Login legado e acesso anônimo ainda coexistem com Auth.
+4. O código usa somente Auth, mas o bloqueio da tabela legada em produção
+   ainda depende de aprovação e aplicação controlada da migration.
 5. RLS não pode ser declarado concluído sem nova auditoria live.
 
 ## Próximas fases aprovadas
@@ -106,7 +111,9 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Organizar branches/worktrees sem perder trabalho.
 3. Executar baseline técnico e smoke tests no navegador.
 4. Priorizar regressões reproduzíveis.
-5. Retomar o hardening Auth/RLS em lotes pequenos.
+5. Aplicar o hardening Auth/RLS em lotes pequenos, começando pelo bloqueio do
+   acesso legado a `app_users` após confirmação operacional e autorização
+   explícita para produção.
 
 Depois disso, seguir [PLAN.md](PLAN.md).
 
