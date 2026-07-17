@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-17
 
-**Base observada:** `origin/main` no commit `ba78335`
+**Base observada:** `origin/main` no commit `66318d4`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -29,6 +29,8 @@ Estado conhecido:
 - a administração legada de usuários foi retirada da interface; criação,
   alteração e desativação de acessos devem ocorrer no Supabase Auth pelo
   administrador responsável.
+- a migration de retirada do PIN foi aplicada em produção: `app_users` não
+  tem mais policy nem privilégios para `PUBLIC`, `anon` ou `authenticated`.
 
 Consequência:
 
@@ -52,9 +54,8 @@ Riscos ainda abertos:
 
 - o último inventário live completo registrou tabelas sem RLS e policies
   anônimas permissivas;
-- `app_users` e a coluna histórica de PIN permanecem no banco até aplicação
-  explícita da migration de retirada; a superfície de acesso anônimo precisa
-  ser bloqueada em produção;
+- `app_users` e a coluna histórica de PIN permanecem no banco para rollback
+  administrativo controlado, mas não estão mais expostas pela Data API;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
 - o estado live precisa ser reauditado antes de declarar Sprint 0 concluída.
@@ -101,8 +102,8 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Muitos branches e worktrees antigos aumentam o risco de partir de base
    desatualizada.
 3. Ausência de baseline recente e único no navegador.
-4. O código usa somente Auth, mas o bloqueio da tabela legada em produção
-   ainda depende de aprovação e aplicação controlada da migration.
+4. O código usa somente Auth e a tabela legada foi bloqueada; ainda existem
+   policies anônimas permissivas em outras áreas operacionais.
 5. RLS não pode ser declarado concluído sem nova auditoria live.
 
 ## Próximas fases aprovadas
@@ -111,9 +112,9 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Organizar branches/worktrees sem perder trabalho.
 3. Executar baseline técnico e smoke tests no navegador.
 4. Priorizar regressões reproduzíveis.
-5. Aplicar o hardening Auth/RLS em lotes pequenos, começando pelo bloqueio do
-   acesso legado a `app_users` após confirmação operacional e autorização
-   explícita para produção.
+5. Aplicar o hardening Auth/RLS em lotes pequenos nas próximas tabelas
+   operacionais, com validação por perfil e loja antes de cada aplicação em
+   produção.
 
 Depois disso, seguir [PLAN.md](PLAN.md).
 
