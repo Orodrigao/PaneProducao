@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, Pencil, Trash2, X, Save, Snowflake } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { RequestTimeoutError, withTimeout } from '@/lib/supabaseRest'
-import { getCurrentUser, roleColor } from '@/lib/auth'
+import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 
 // Novo modelo: locais nomeados por loja. Cada loja tem suas próprias subdivisões.
@@ -63,7 +63,7 @@ function normalizeStores(s: unknown): string[] | null {
 interface StockMap { [fpId: string]: Record<string, number> }
 
 export default function EstoqueCongeladoPage() {
-  const [user, setUser]         = useState<{displayName:string; store:string|null; pin:string; role:any}|null>(null)
+  const [user, setUser]         = useState<Pick<AppUser, 'displayName' | 'store' | 'role'>|null>(null)
   const [products, setProducts] = useState<FrozenProduct[]>([])
   const [stock, setStock]       = useState<StockMap>({})
   const [loading, setLoading]   = useState(true)
@@ -78,8 +78,6 @@ export default function EstoqueCongeladoPage() {
   const [movObs, setMovObs]     = useState('')
   const [saving, setSaving]     = useState(false)
   const [historico, setHistorico] = useState<any[]>([])
-  const [adminAuthed, setAdminAuthed] = useState(false)
-  const [adminPwd, setAdminPwd] = useState('')
   // Catálogo unificado: products + breads (com tag _source pra inserir corretamente em frozen_products)
   type CatalogItem = { id: string; name: string; unit: string|null; category: string|null; _source: 'product'|'bread' }
   type CatalogProductRow = { id: string; name: string; unit: string|null; category: string|null }
@@ -104,8 +102,9 @@ export default function EstoqueCongeladoPage() {
   const [editStores, setEditStores] = useState<string[]|null>(null)
 
   useEffect(() => {
-    const u = getCurrentUser()
-    if (u) setUser({ displayName: u.displayName, store: u.store ?? null, pin: u.pin, role: u.role })
+    void getCurrentUserAsync().then(u => {
+      if (u) setUser({ displayName: u.displayName, store: u.store ?? null, role: u.role })
+    })
   }, [])
 
   const locsVisible = visibleLocations(user?.store ?? null)
@@ -575,22 +574,7 @@ export default function EstoqueCongeladoPage() {
             </div>
           )}
 
-          {tab==='admin' && !adminAuthed && (
-            <div style={{maxWidth:320, margin:'40px auto', textAlign:'center'}}>
-              <div style={{fontSize:13, color:'var(--ink-soft)', marginBottom:14}}>
-                Confirme seu PIN ({user?.displayName}) para acessar a gestão{user?.store ? ` da loja ${user.store.toUpperCase()}` : ''}.
-              </div>
-              <input type="password" inputMode="numeric" maxLength={4} placeholder="PIN (4 dígitos)" value={adminPwd}
-                onChange={e=>setAdminPwd(e.target.value.replace(/\D/g,''))}
-                onKeyDown={e=>e.key==='Enter'&&(adminPwd===user?.pin?setAdminAuthed(true):showToast('PIN incorreto'))}
-                className="ps-input" style={{width:'100%', marginBottom:10, textAlign:'center', fontSize:16, padding:'10px 12px'}}/>
-              <button className="ps-btn primary block" onClick={()=>adminPwd===user?.pin?setAdminAuthed(true):showToast('PIN incorreto')}>
-                Entrar
-              </button>
-            </div>
-          )}
-
-          {tab==='admin' && adminAuthed && (
+          {tab==='admin' && (
             <div style={{display:'flex', flexDirection:'column', gap:12, marginTop:12}}>
               <div className="ps-card">
                 <div className="ps-flabel">Buscar produto do catálogo</div>

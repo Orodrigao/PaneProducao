@@ -244,7 +244,7 @@ function ComposicaoInner() {
           setSaleOptions([])
         } else if (isRecipeMetaAccessError(err)) {
           setRecipeMetaAvailable(false)
-          setRecipeMetaMessage('Entre com e-mail e senha para carregar rendimento e formas de venda. O PIN antigo não libera esta etapa.')
+          setRecipeMetaMessage('Entre com e-mail e senha para carregar rendimento e formas de venda.')
           setRecipeYield(null)
           setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
           setSaleOptions([])

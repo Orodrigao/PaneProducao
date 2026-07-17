@@ -372,7 +372,7 @@ export default function ProducaoPage() {
     router.push('/login')
   }
 
-  // Auto-resolve: usa o user globalmente autenticado (do PIN) ao invés do seletor interno
+  // Auto-resolve: usa o usuário autenticado globalmente em vez do seletor interno.
   useEffect(() => {
     const globalUser = getCurrentUser()
     if (!globalUser) {

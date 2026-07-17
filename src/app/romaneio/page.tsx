@@ -336,7 +336,7 @@ export default function RomaneioPage() {
     authLogout(); router.push('/login')
   }
 
-  // Auto-resolve: usa o user globalmente autenticado (PIN) ao invés do seletor interno.
+  // Auto-resolve: usa o usuário autenticado globalmente em vez do seletor interno.
   // Admins vão direto pro screen='admin'. Demais entram via doLogin no screen='painel'.
   useEffect(() => {
     const globalUser = getCurrentUser()
@@ -917,7 +917,7 @@ export default function RomaneioPage() {
         </div>
       )}
 
-      {/* INIT / LOGIN (auto-resolvido via PIN global; seletor interno removido) */}
+      {/* INIT / LOGIN (auto-resolvido pela sessão global; seletor interno removido) */}
       {(screen==='init' || screen==='login') && initialLoadError && (
         <div className="ps-canvas">
           <div className="ps-shell">

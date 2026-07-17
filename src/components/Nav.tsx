@@ -6,12 +6,12 @@ import { getCurrentUser, getCurrentUserAsync, canAccess, logout, type AppUser } 
 import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
-  Users, Building2, Cake, Table2, SlidersHorizontal, Settings, LogOut,
+  Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
   Factory, FileText, DollarSign,
   type LucideIcon,
 } from 'lucide-react'
 
-interface NavLink { href: string; label: string; Icon: LucideIcon; adminOnly?: boolean }
+interface NavLink { href: string; label: string; Icon: LucideIcon }
 
 const PRIMARY: NavLink[] = [
   { href: '/',          label: 'Produção',   Icon: ClipboardList },
@@ -40,7 +40,6 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   { group: 'Gestão', items: [
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
     { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
-    { href: '/admin/usuarios',     label: 'Admin',     Icon: Settings, adminOnly: true },
   ]},
 ]
 
@@ -63,7 +62,6 @@ export default function Nav() {
   if (pathname === '/login' || !user) return null
 
   const allowed = (l: NavLink) => {
-    if (l.adminOnly && user.role !== 'admin') return false
     return canAccess(user, l.href)
   }
   const isActive = (href: string) =>
