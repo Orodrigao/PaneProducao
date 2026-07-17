@@ -48,10 +48,16 @@ describe('passwordPolicyChecklist', () => {
 
 describe('passwordRecoveryErrorMessage', () => {
   it('explica o limite de envio de e-mails', () => {
-    expect(passwordRecoveryErrorMessage({ status: 429 })).toContain('Aguarde até uma hora')
+    const message = passwordRecoveryErrorMessage({ status: 429 })
+
+    expect(message).toContain('Aguarde até uma hora')
+    expect(message).not.toContain('PIN')
   })
 
   it('mantém a mensagem genérica para outros erros', () => {
-    expect(passwordRecoveryErrorMessage({ status: 500 })).toBe('Não foi possível enviar o link. Confira o e-mail ou use o PIN.')
+    const message = passwordRecoveryErrorMessage({ status: 500 })
+
+    expect(message).toBe('Não foi possível enviar o link. Confira o e-mail e tente novamente.')
+    expect(message).not.toContain('PIN')
   })
 })

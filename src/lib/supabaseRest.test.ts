@@ -15,7 +15,7 @@ describe('buildSupabaseRestHeaders', () => {
     expect(headers.get('apikey')).not.toBeNull()
   })
 
-  it('preserva o fallback público para o login por PIN durante a transição', () => {
+  it('usa a chave pública somente quando não há sessão', () => {
     const headers = buildSupabaseRestHeaders(null)
 
     expect(headers.get('Authorization')).toBe(`Bearer ${headers.get('apikey')}`)

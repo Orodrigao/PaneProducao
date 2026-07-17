@@ -7,12 +7,10 @@ function user(overrides: Partial<AppUser>): AppUser {
     id: 'uuid-auth-user',
     username: 'user@paneesalute.com.br',
     displayName: 'Usuario',
-    pin: '',
     role: 'vendas',
     active: true,
     allowedRoutes: ['/compras'],
     store: 'jc',
-    authProvider: 'email',
     ...overrides,
   }
 }
