@@ -42,7 +42,8 @@ O teste da preview confirmou login e restrição correta do perfil de forno, mas
 abriu regressões que impedem considerar a matriz Auth validada:
 
 - a conta de expedição de JC abre a home no contexto da loja EX;
-- as rotas efetivas de financeiro e vendas divergem da matriz documentada;
+- as rotas por conta de financeiro e vendas são exceções operacionais usadas no
+  dia a dia; a matriz formal ainda precisa ser consolidada antes do hardening;
 - a administração de usuários ainda representa o cadastro legado por PIN;
 - uma falha de leitura de `app_profiles` deixa a tela em branco;
 - o Romaneio exibe escopo EX para perfis global e JC;
@@ -129,19 +130,17 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 ## Bloqueios atuais
 
 1. A expedição de JC pode operar a home no contexto incorreto da loja EX.
-2. `allowed_routes` diverge entre contas e do perfil operacional documentado.
-3. Login legado e acesso anônimo ainda coexistem com Auth.
-4. RLS não pode ser declarado concluído sem nova auditoria live.
-5. O lint acumula 145 avisos e as dependências têm 3 alertas moderados.
+2. Login legado e acesso anônimo ainda coexistem com Auth.
+3. RLS não pode ser declarado concluído sem nova auditoria live.
+4. O lint acumula 145 avisos e as dependências têm 3 alertas moderados.
 
 ## Próximas fases aprovadas
 
 1. Corrigir o contexto de loja da expedição em uma tarefa isolada.
-2. Confirmar e corrigir a matriz de rotas por perfil, uma regressão por vez.
-3. Revalidar visualmente a preview após cada correção.
-4. Não retomar smoke em produção sem nova aprovação explícita do Rodrigo.
-5. Retomar o hardening Auth/RLS em lotes pequenos.
-6. Tratar dívida de lint e dependências em tarefas separadas.
+2. Revalidar visualmente a preview após cada correção.
+3. Não retomar smoke em produção sem nova aprovação explícita do Rodrigo.
+4. Retomar o hardening Auth/RLS em lotes pequenos.
+5. Tratar dívida de lint e dependências em tarefas separadas.
 
 Depois disso, seguir [PLAN.md](PLAN.md).
 
