@@ -8,6 +8,7 @@ import { formatDateBR, todayKey, todayLabel, showToast } from '@/lib/utils'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
 import {
   closingBreadIds,
+  isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
 } from '@/lib/breadLeftoverClosing'
@@ -390,7 +391,19 @@ export default function SobrasPage() {
       const cascadeNote = cascadeBreadCount > 0 ? ` (+${cascadeBreadCount} pães debitados via kit)` : ''
       showToast(`✅ Descartes salvos!${cascadeNote}`)
       setMode(null); setQtys({})
-    } catch(e:any) { showToast('Erro: '+e.message) }
+    } catch(e:any) {
+      const message = String(e?.message ?? 'Não foi possível salvar.')
+      if (
+        mode === 'sobra'
+        && (selectedStore === 'jc' || selectedStore === 'ja')
+        && isPendingLeftoversError(message)
+      ) {
+        showToast('Resolva primeiro as sobras pendentes. Abrindo a Central de Pendências.')
+        router.push(leftoverPendingPath(selectedStore, date))
+        return
+      }
+      showToast('Erro: '+message)
+    }
     finally { setSaving(false) }
   }
 

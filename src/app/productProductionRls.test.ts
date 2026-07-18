@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 const migrationSource = readFileSync(
   new URL('../../supabase/migrations/20260718093517_corrigir_rls_producao_autenticada.sql', import.meta.url),
   'utf8',
-).toLowerCase()
+).replace(/\r\n/g, '\n').toLowerCase()
 
 describe('RLS da lista de produção de itens', () => {
   it('remove o acesso anônimo e concede o acesso de tabela ao usuário autenticado', () => {

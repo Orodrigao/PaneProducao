@@ -7,7 +7,7 @@ import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
-  Factory, FileText, DollarSign,
+  Factory, FileText, DollarSign, ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -40,6 +40,9 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   { group: 'Gestão', items: [
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
     { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
+  ]},
+  { group: 'Administração', items: [
+    { href: '/admin/usuarios', label: 'Usuários', Icon: ShieldCheck },
   ]},
 ]
 

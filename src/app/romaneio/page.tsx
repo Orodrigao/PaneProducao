@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package, Printer } from 'lucide-react'
-import { canAccess, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
@@ -17,9 +17,10 @@ import {
   type RomaneioSentItemRow,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
+import { canSeeRomaneio, resolveRomaneioRole, type RomaneioRole } from '@/lib/romaneioAccess'
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
-type Role = 'gustavo'|'cleo'|'marselle'|'rodrigo'
+type Role = RomaneioRole
 type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 
 interface Destination { id:string; name:string; code:string; active:boolean }
@@ -312,11 +313,11 @@ export default function RomaneioPage() {
     return { ds, bds }
   }, [])
 
-  const loadPainel = useCallback(async () => {
+  const loadPainel = useCallback(async (activeRole: Role | null = role) => {
     const date = todayKey()
     const roms = await sbGet('romaneios',`record_date=eq.${date}&order=created_at.desc&select=*,destinations(name,code)`)
-    setRomaneios(roms)
-  }, [])
+    setRomaneios((roms as Romaneio[]).filter(rom => canSeeRomaneio(activeRole, rom.destinations)))
+  }, [role])
 
   // ── login ──────────────────────────────────────────────────────
   const doLogin = async (r: Role) => {
@@ -325,7 +326,7 @@ export default function RomaneioPage() {
     showLoad('Carregando...')
     try {
       await loadBase()
-      await loadPainel()
+      await loadPainel(r)
       hideLoad()
       setScreen('painel')
     } catch(e) { handleInitialLoadError(e) }
@@ -355,25 +356,7 @@ export default function RomaneioPage() {
       })()
       return
     }
-    let internalRole: Role | null = null
-    // Mapeamento por loja primeiro (mais robusto pra novos usuários):
-    //   JC → gustavo (separa/cria romaneios)
-    //   JA → cleo (motorista, marca enviado)
-    //   EX → marselle (recebe, marca conferido)
-    if (globalUser.role === 'expedicao' && globalUser.store === 'jc')      internalRole = 'gustavo'
-    else if (globalUser.role === 'expedicao' && globalUser.store === 'ja') internalRole = 'cleo'
-    else if (globalUser.role === 'expedicao' && globalUser.store === 'ex') internalRole = 'marselle'
-    // Fallback por id pra usuários sem store ainda (defesa)
-    else if (globalUser.id === 'gustavo')      internalRole = 'gustavo'
-    else if (globalUser.id === 'marselle')     internalRole = 'marselle'
-    else if (globalUser.id === 'cleo')         internalRole = 'cleo'
-    else if (globalUser.role === 'expedicao')  internalRole = 'gustavo' // último fallback
-    else if (globalUser.role === 'romaneio' && globalUser.store === 'ja') internalRole = 'cleo'
-    else if (globalUser.role === 'romaneio' && globalUser.store === 'ex') internalRole = 'marselle'
-    else if (globalUser.role === 'romaneio') internalRole = 'gustavo'
-    else if (globalUser.role === 'producao'
-          || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy
-    else if (canAccess(globalUser, '/romaneio')) internalRole = 'gustavo'
+    const internalRole = resolveRomaneioRole(globalUser)
     if (internalRole) doLogin(internalRole)
     else router.replace(firstAllowedRoute(globalUser))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,7 +365,7 @@ export default function RomaneioPage() {
   // ── painel ──────────────────────────────────────────────────────
   const refreshPainel = async () => {
     showLoad('Atualizando...')
-    try { await loadPainel() } catch(e) { showToastPS('Erro ao atualizar') }
+    try { await loadPainel(role) } catch(e) { showToastPS('Erro ao atualizar') }
     finally { hideLoad(); setScreen('painel') }
   }
 
@@ -1043,7 +1026,6 @@ export default function RomaneioPage() {
                       <span>Enviado: <b>{it.qty_sent}</b></span>
                       {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
                       {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
-                      {it.unit_price!=null && it.unit_price>0 && <span>R$ {Number(it.unit_price).toFixed(2)}/un</span>}
                     </div>
                     {it.divergence_reason && (
                       <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>

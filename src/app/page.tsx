@@ -2,6 +2,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import {
+  resolveProductionHomeUserKey,
+  type ProductionHomeUserKey,
+} from '@/lib/productionHomeAccess'
 import { aggregateWholePending, clampReuseProposal } from '@/lib/breadLeftovers'
 import { supabase } from '@/lib/supabase'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
@@ -18,7 +22,7 @@ const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 // INSUMOS = ingredientes; Paes* = ja tem fluxo em /forno via tabela breads.
 const NON_PRODUCT_CATS = ['INSUMOS','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados']
 
-type UserKey = 'rodrigo'|'marselle'|'elis'|'geolar'
+type UserKey = ProductionHomeUserKey
 type Store = 'jc'|'ja'|'ex'|'pj'
 type Screen = 'init'|'login'|'main'|'geolar'
 
@@ -379,12 +383,7 @@ export default function ProducaoPage() {
       router.replace('/login')
       return
     }
-    let userKey: UserKey | null = null
-    if (globalUser.role === 'admin')           userKey = 'rodrigo'
-    else if (globalUser.role === 'expedicao')  userKey = 'marselle'
-    else if (globalUser.role === 'vendas')     userKey = 'marselle'
-    else if (globalUser.role === 'financeiro') userKey = 'elis'
-    else if (globalUser.role === 'producao')   userKey = 'geolar'
+    const userKey = resolveProductionHomeUserKey(globalUser)
     if (userKey) login(userKey)
     else router.replace(firstAllowedRoute(globalUser))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -484,7 +483,7 @@ export default function ProducaoPage() {
 
   const sendTelegram = async (store: Store, rows: any[], storeBreads: Bread[]) => {
     const storeLabel: Record<string,string> = { jc:'JC', ja:'JA', ex:'EX', pj:'PJ' }
-    const userLabel: Record<string,string> = { marselle:'Marselle', elis:'Elis', rodrigo:'Rodrigo' }
+    const userLabel: Record<string,string> = { gustavo:'Gustavo', marselle:'Marselle', elis:'Elis', rodrigo:'Rodrigo' }
     const items = rows.filter((r:any) => r.quantity > 0)
     if (!items.length) return
     let msg = `🍞 *Pane & Salute — Novo pedido*\n`
@@ -675,6 +674,8 @@ export default function ProducaoPage() {
     ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Itens JC',store:null},{label:'Relatório',store:null},{label:'Admin',store:null}]
     : currentUser === 'marselle'
     ? [{label:'Loja EX',store:'ex'},{label:'Histórico',store:null}]
+    : currentUser === 'gustavo'
+    ? [{label:'Loja JC',store:'jc'},{label:'Histórico',store:null}]
     : [{label:'Histórico',store:null}]  // Elis: pedidos PJ migraram pro módulo dedicado /pedidos-pj
 
   const changeProdDate = async (newDate: string) => {
@@ -756,8 +757,8 @@ export default function ProducaoPage() {
 
   const globalUser = getCurrentUser()
   const displayName = globalUser?.displayName ?? ''
-  const userName = displayName || (currentUser === 'rodrigo' ? 'Rodrigo' : currentUser === 'marselle' ? 'Marselle' : 'Elis')
-  const avatarColor = currentUser === 'rodrigo' ? '#8E4E22' : currentUser === 'marselle' ? '#2C7A8C' : '#A8392B'
+  const userName = displayName || (currentUser === 'rodrigo' ? 'Rodrigo' : currentUser === 'gustavo' ? 'Gustavo' : currentUser === 'marselle' ? 'Marselle' : 'Elis')
+  const avatarColor = currentUser === 'rodrigo' ? '#8E4E22' : currentUser === 'gustavo' ? '#8E4E22' : currentUser === 'marselle' ? '#2C7A8C' : '#A8392B'
   const userInitial = userName.trim().charAt(0).toUpperCase()
 
   const hoursLeft = getHoursLeft()
@@ -827,7 +828,7 @@ export default function ProducaoPage() {
           {isReportTab && (
             <ReportView
               currentUser={currentUser!}
-              storeFilter={currentUser==='marselle'?'ex':currentUser==='elis'?'pj':undefined}
+              storeFilter={currentUser==='marselle'?'ex':currentUser==='gustavo'?'jc':currentUser==='elis'?'pj':undefined}
               breads={breads}
               reportDate={reportDate}
               reportOrders={reportOrders}
@@ -1114,7 +1115,7 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
         </>
       )}
 
-      {/* Single store view (marselle = EX) */}
+      {/* Single store view */}
       {storeFilter&&storeFilter!=='pj' && (() => {
         const sv = reportOrders[storeFilter] || {}
         const storeLabel = {ex:'Exposição',jc:'Julio de Castilhos',ja:'Jardim América'}[storeFilter]||storeFilter.toUpperCase()
