@@ -75,7 +75,8 @@ replique esse padrão.
 - produção e forno;
 - sobras, descartes e reaproveitamento;
 - romaneio e estoques;
-- compras, cotações e fornecedores;
+- fornecedores;
+- compras por lista e cotações legadas pausadas para revisão;
 - catálogo, ficha técnica e auditoria de CMV;
 - clientes, pedidos PJ, encomendas e tabelas de preço;
 - fechamento de caixa e relatórios;

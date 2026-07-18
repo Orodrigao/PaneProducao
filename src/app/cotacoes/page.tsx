@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, FileText, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import { ModulePaused } from '@/components/ModulePaused'
+import { COMPRAS_COTACOES_PAUSADAS } from '@/lib/features'
 
 interface QuotationRow {
   id: string
@@ -20,6 +22,12 @@ const STATUS_LABEL: Record<string, string> = { draft:'Rascunho', sent:'Enviada',
 const STATUS_CLS: Record<string, string> = { draft:'separado', sent:'enviado', responded:'conferido', closed:'aprovado' }
 
 export default function CotacoesPage() {
+  return COMPRAS_COTACOES_PAUSADAS
+    ? <ModulePaused/>
+    : <CotacoesAtivasPage/>
+}
+
+function CotacoesAtivasPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
   const [rows, setRows] = useState<QuotationRow[]>([])

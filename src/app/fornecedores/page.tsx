@@ -5,6 +5,7 @@ import { ChevronLeft, Plus, Search, Pencil, Save, X, Package, Trash2 } from 'luc
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { COMPRAS_COTACOES_PAUSADAS } from '@/lib/features'
 
 interface Supplier {
   id: string; name: string; cnpj: string | null; phone: string | null
@@ -33,12 +34,19 @@ export default function FornecedoresPage() {
   useEffect(() => { setUser(getCurrentUser()) }, [])
 
   const load = async () => {
-    const [{ data: sup }, { data: prods }, { data: maps }] = await Promise.all([
-      supabase.from('suppliers').select('*').order('name'),
+    const { data: sup } = await supabase.from('suppliers').select('*').order('name')
+    setSuppliers((sup as Supplier[]) || [])
+
+    if (COMPRAS_COTACOES_PAUSADAS) {
+      setCatalog([])
+      setMappings([])
+      return
+    }
+
+    const [{ data: prods }, { data: maps }] = await Promise.all([
       supabase.from('products').select('id,name,category,unit,kind,is_revenda').eq('active', true).or('kind.eq.insumo,is_revenda.eq.true').order('name'),
       supabase.from('supplier_products').select('*').eq('active', true),
     ])
-    setSuppliers((sup as Supplier[]) || [])
     setCatalog((prods as CatalogProduct[]) || [])
     setMappings((maps as SupplierProduct[]) || [])
   }
@@ -132,9 +140,11 @@ export default function FornecedoresPage() {
           <button onClick={() => openEdit(s)} className="ps-btn ghost sm">
             <Pencil size={12}/> Editar
           </button>
-          <button onClick={() => { setProductsModalFor(s); setProductSearch('') }} className="ps-btn ghost sm">
-            <Package size={12}/> Produtos ({mappedCountBySupplier[s.id] || 0})
-          </button>
+          {!COMPRAS_COTACOES_PAUSADAS && (
+            <button onClick={() => { setProductsModalFor(s); setProductSearch('') }} className="ps-btn ghost sm">
+              <Package size={12}/> Produtos ({mappedCountBySupplier[s.id] || 0})
+            </button>
+          )}
           <button onClick={() => toggleActive(s)} className={`ps-btn sm ${s.active ? 'danger' : 'success'}`}>
             {s.active ? 'Inativar' : 'Ativar'}
           </button>
@@ -176,6 +186,12 @@ export default function FornecedoresPage() {
             <Plus size={16}/> Novo fornecedor
           </button>
 
+          {COMPRAS_COTACOES_PAUSADAS && (
+            <div className="ps-card" style={{padding:'10px 12px', marginBottom:16, fontSize:12, color:'var(--ink-soft)'}}>
+              O vínculo de produtos por fornecedor está pausado junto com Compras e Cotações.
+            </div>
+          )}
+
           {filtered.length === 0 ? (
             <div className="ps-empty">
               {suppliers.length === 0 ? 'Nenhum fornecedor cadastrado.' : 'Nenhum resultado.'}
@@ -198,7 +214,7 @@ export default function FornecedoresPage() {
         </div>
       </div>
 
-      {productsModalFor && (() => {
+      {!COMPRAS_COTACOES_PAUSADAS && productsModalFor && (() => {
         const myMappings = mappings.filter(m => m.supplier_id === productsModalFor.id)
         const mappedProductIds = new Set(myMappings.map(m => m.product_id))
         const q = productSearch.trim().toLowerCase()

@@ -69,7 +69,7 @@ live somente leitura.
 - produção, forno e confirmação por lotes;
 - sobras, reaproveitamento e pendências;
 - romaneio e estoques;
-- compras, cotações e fornecedores;
+- fornecedores;
 - clientes, pedidos PJ e encomendas;
 - tabelas e opções de preço;
 - fechamento de caixa;
@@ -79,6 +79,15 @@ live somente leitura.
 - relatórios operacionais.
 
 ## Capacidades parciais
+
+### Compras e cotações legadas
+
+As rotas `/compras` e `/cotacoes` estão temporariamente pausadas enquanto o
+fluxo e a necessidade operacional são reavaliados. Os dados históricos foram
+preservados e as tabelas legadas ficaram sem acesso pela Data API.
+
+Essa pausa não cancela a frente estratégica de compras por XML prevista no
+plano de CMV.
 
 ### Ficha técnica e CMV
 
