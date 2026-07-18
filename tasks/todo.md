@@ -51,4 +51,4 @@ sem reabrir os riscos críticos já corrigidos na migração para Supabase Auth.
 - [x] Criar catálogo, atribuições, RLS e função transacional de salvamento.
 - [x] Substituir a tela legada por gestão mobile de permissões.
 - [x] Validar segurança, testes, TypeScript e build.
-- [ ] Publicar PR draft sem aplicar migration no Supabase de produção.
+- [x] Publicar PR draft sem aplicar migration no Supabase de produção.
