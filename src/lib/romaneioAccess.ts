@@ -42,7 +42,7 @@ export function canSeeRomaneio(
 ): boolean {
   const code = destinationCode(destination)
   if (role === 'rodrigo' || role === 'gustavo') return true
-  if (role === 'cleo') return code === 'JA' || code === 'EX'
+  if (role === 'cleo') return code === 'JA'
   if (role === 'marselle') return code === 'EX'
   return false
 }

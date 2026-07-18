@@ -31,7 +31,8 @@ sem reabrir os riscos críticos já corrigidos na migração para Supabase Auth.
 
 - [x] Manter Expedição JC no contexto de Produção da própria loja.
 - [x] Resolver o papel do Romaneio pela loja autenticada.
-- [x] Permitir que Cléo/JA veja e confirme a saída destinada à EX.
+- [ ] Permitir que a pessoa responsável pela entrega veja e confirme a saída
+      destinada à EX por permissão explícita, em PR separada.
 - [x] Remover preço unitário do card operacional do Romaneio.
 - [x] Encaminhar o bloqueio de sobras antigas à Central de Pendências.
 

@@ -22,7 +22,7 @@ describe('canSeeRomaneio', () => {
   it('restringe cada loja aos destinos operacionais esperados', () => {
     expect(canSeeRomaneio('marselle', { code: 'EX' })).toBe(true)
     expect(canSeeRomaneio('marselle', { code: 'JA' })).toBe(false)
-    expect(canSeeRomaneio('cleo', { code: 'EX' })).toBe(true)
+    expect(canSeeRomaneio('cleo', { code: 'EX' })).toBe(false)
     expect(canSeeRomaneio('cleo', { code: 'JA' })).toBe(true)
     expect(canSeeRomaneio('cleo', { code: 'JC' })).toBe(false)
     expect(canSeeRomaneio('gustavo', { code: 'JA' })).toBe(true)

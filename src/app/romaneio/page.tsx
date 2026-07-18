@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, RotateCw, Truck, CheckCheck, Check, X, Trash2, AlertTriangle, Save, Eye, Package, Printer } from 'lucide-react'
-import { canAccess, getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
+import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
@@ -356,26 +356,7 @@ export default function RomaneioPage() {
       })()
       return
     }
-    let internalRole: Role | null = null
-    // Mapeamento por loja primeiro (mais robusto pra novos usuários):
-    //   JC → gustavo (separa/cria romaneios)
-    //   JA → cleo (motorista, marca enviado)
-    //   EX → marselle (recebe, marca conferido)
-    if (globalUser.role === 'expedicao' && globalUser.store === 'jc')      internalRole = 'gustavo'
-    else if (globalUser.role === 'expedicao' && globalUser.store === 'ja') internalRole = 'cleo'
-    else if (globalUser.role === 'expedicao' && globalUser.store === 'ex') internalRole = 'marselle'
-    // Fallback por id pra usuários sem store ainda (defesa)
-    else if (globalUser.id === 'gustavo')      internalRole = 'gustavo'
-    else if (globalUser.id === 'marselle')     internalRole = 'marselle'
-    else if (globalUser.id === 'cleo')         internalRole = 'cleo'
-    else if (globalUser.role === 'expedicao')  internalRole = 'gustavo' // último fallback
-    else if (globalUser.role === 'romaneio' && globalUser.store === 'ja') internalRole = 'cleo'
-    else if (globalUser.role === 'romaneio' && globalUser.store === 'ex') internalRole = 'marselle'
-    else if (globalUser.role === 'romaneio') internalRole = 'gustavo'
-    else if (globalUser.role === 'producao'
-          || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy
-    else if (canAccess(globalUser, '/romaneio')) internalRole = 'gustavo'
-    internalRole = resolveRomaneioRole(globalUser)
+    const internalRole = resolveRomaneioRole(globalUser)
     if (internalRole) doLogin(internalRole)
     else router.replace(firstAllowedRoute(globalUser))
     // eslint-disable-next-line react-hooks/exhaustive-deps
