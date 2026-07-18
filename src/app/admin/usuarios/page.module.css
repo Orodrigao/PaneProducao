@@ -1,0 +1,141 @@
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.search {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--ps-line);
+  border-radius: 14px;
+  padding: 0 14px;
+  background: var(--cream);
+  color: var(--ps-ink);
+  font-size: 16px;
+}
+
+.userList {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 24px;
+}
+
+.userButton {
+  width: 100%;
+  border: 1px solid var(--ps-line);
+  border-radius: var(--r-card);
+  padding: 15px;
+  background: var(--cream);
+  color: var(--ps-ink);
+  text-align: left;
+  box-shadow: var(--sh-1);
+  cursor: pointer;
+}
+
+.userButtonSelected {
+  border-color: var(--crust);
+  box-shadow: 0 0 0 2px var(--crust-tint);
+}
+
+.userLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.userMeta {
+  margin-top: 5px;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: var(--crust-tint);
+  color: var(--crust-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.editor {
+  margin: 14px 0 24px;
+}
+
+.editorHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.closeButton {
+  border: 0;
+  background: transparent;
+  color: var(--crust);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.permissionGroup {
+  border-top: 1px solid var(--ps-line);
+  padding-top: 12px;
+}
+
+.permissionGroup h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.permission {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.permission input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--crust);
+}
+
+.permissionText {
+  display: flex;
+  flex-direction: column;
+}
+
+.permissionText small {
+  margin-top: 2px;
+  color: var(--ink-faint);
+}
+
+.saveButton {
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--crust);
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saveButton:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.error {
+  color: var(--berry);
+  font-weight: 700;
+}

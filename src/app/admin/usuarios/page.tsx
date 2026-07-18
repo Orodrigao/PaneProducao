@@ -1,30 +1,103 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
+import {
+  formatRole,
+  formatStore,
+  groupPermissions,
+  loadAccessManagementData,
+  replaceUserPermissions,
+  type AccessManagementData,
+  type AccessProfile,
+} from '@/lib/adminPermissions'
+import { SupabaseRestError } from '@/lib/supabaseRest'
+import styles from './page.module.css'
 
 export default function AdminUsuariosPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
+  const [data, setData] = useState<AccessManagementData | null>(null)
+  const [selected, setSelected] = useState<AccessProfile | null>(null)
+  const [draft, setDraft] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [schemaPending, setSchemaPending] = useState(false)
 
   useEffect(() => {
     let alive = true
 
-    void getCurrentUserAsync().then(current => {
+    void (async () => {
+      const current = await getCurrentUserAsync()
       if (!alive) return
       if (!current || current.role !== 'admin') {
         router.replace('/')
         return
       }
+
       setUser(current)
-      setLoading(false)
-    })
+      try {
+        const loaded = await loadAccessManagementData()
+        if (alive) setData(loaded)
+      } catch (error) {
+        if (!alive) return
+        setSchemaPending(error instanceof SupabaseRestError && (error.status === 404 || error.status === 400))
+        setMessage('Não foi possível carregar a estrutura de permissões.')
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
 
     return () => { alive = false }
   }, [router])
+
+  const profiles = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase('pt-BR')
+    if (!data || !normalized) return data?.profiles ?? []
+    return data.profiles.filter(profile =>
+      profile.display_name.toLocaleLowerCase('pt-BR').includes(normalized)
+      || formatRole(profile.role).toLocaleLowerCase('pt-BR').includes(normalized)
+      || formatStore(profile.store).toLocaleLowerCase('pt-BR').includes(normalized),
+    )
+  }, [data, query])
+
+  function openEditor(profile: AccessProfile) {
+    setSelected(profile)
+    setDraft(new Set(data?.assignments[profile.user_id] ?? []))
+    setMessage('')
+  }
+
+  function togglePermission(key: string) {
+    setDraft(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  async function savePermissions() {
+    if (!selected || !data) return
+    setSaving(true)
+    setMessage('')
+    try {
+      const keys = Array.from(draft)
+      await replaceUserPermissions(selected.user_id, keys)
+      setData(current => current ? {
+        ...current,
+        assignments: { ...current.assignments, [selected.user_id]: keys },
+      } : current)
+      setMessage(`Permissões de ${selected.display_name} preparadas com sucesso.`)
+    } catch {
+      setMessage('Não foi possível salvar. Nenhuma permissão operacional foi alterada.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) {
     return <div className="ps-loading"><div className="ps-spinner"/><p>Carregando...</p></div>
@@ -36,18 +109,97 @@ export default function AdminUsuariosPage() {
         <header className="ps-header">
           <div className="ps-wordmark">
             <div className="ps-mark">P</div>
-            <div className="ps-brand"><b>Admin · Usuários</b><span>Transição de acesso</span></div>
+            <div className="ps-brand"><b>Admin · Usuários</b><span>Permissões por pessoa</span></div>
           </div>
           {user && <div className="ps-userchip"><div className="ps-avatar" style={{ background: roleColor(user.role) }}>{user.displayName.charAt(0).toUpperCase()}</div><b>{user.displayName}</b></div>}
         </header>
 
         <main className="ps-scroll ps-pad">
-          <section className="ps-card" style={{ marginTop: 16, padding: 20 }}>
-            <ShieldCheck size={28} color="var(--crust)" aria-hidden="true" />
-            <h1 className="ps-page-title">Cadastro legado desabilitado</h1>
-            <p>O acesso por PIN foi aposentado. Entradas no ERP agora usam e-mail e senha.</p>
-            <p className="ps-banner crust">Para criar, alterar ou desativar acessos, fale com o Administrador responsável pelo Supabase Auth.</p>
-          </section>
+          <div className="ps-banner honey">
+            <ShieldCheck size={20} aria-hidden="true" />
+            <span><b>Modo de preparação.</b> Estas caixas ainda não mudam o acesso aos módulos da operação.</span>
+          </div>
+
+          {schemaPending && (
+            <section className="ps-card" style={{ marginTop: 16 }}>
+              <h1 className="ps-page-title">Estrutura ainda não aplicada</h1>
+              <p>A tela está pronta, mas a migration de permissões precisa ser aprovada e aplicada antes do teste com usuários reais.</p>
+            </section>
+          )}
+
+          {!schemaPending && data && (
+            <>
+              <div className={styles.toolbar}>
+                <input
+                  className={styles.search}
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder={`Buscar entre ${data.profiles.length} usuários`}
+                  aria-label="Buscar usuários"
+                />
+              </div>
+
+              {selected && (
+                <section className={`ps-card ${styles.editor}`}>
+                  <div className={styles.editorHead}>
+                    <div>
+                      <h1 className="ps-page-title" style={{ marginTop: 0 }}>{selected.display_name}</h1>
+                      <div className={styles.userMeta}>{formatRole(selected.role)} · {formatStore(selected.store)}</div>
+                    </div>
+                    <button className={styles.closeButton} onClick={() => setSelected(null)}>Fechar</button>
+                  </div>
+
+                  {groupPermissions(data.permissions).map(group => (
+                    <div className={styles.permissionGroup} key={group.module}>
+                      <h3>{group.module}</h3>
+                      {group.permissions.map(permission => (
+                        <label className={styles.permission} key={permission.key}>
+                          <input
+                            type="checkbox"
+                            checked={draft.has(permission.key)}
+                            onChange={() => togglePermission(permission.key)}
+                          />
+                          <span className={styles.permissionText}>
+                            <b>{permission.label}</b>
+                            {permission.description && <small>{permission.description}</small>}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+
+                  <button className={styles.saveButton} disabled={saving} onClick={() => void savePermissions()}>
+                    {saving ? 'Salvando...' : 'Salvar preparação'}
+                  </button>
+                </section>
+              )}
+
+              {message && <p className={message.startsWith('Permissões') ? 'ps-banner honey' : styles.error}>{message}</p>}
+
+              <section className={styles.userList} aria-label="Usuários cadastrados">
+                {profiles.map(profile => {
+                  const count = data.assignments[profile.user_id]?.length ?? 0
+                  return (
+                    <button
+                      key={profile.user_id}
+                      className={`${styles.userButton} ${selected?.user_id === profile.user_id ? styles.userButtonSelected : ''}`}
+                      onClick={() => openEditor(profile)}
+                    >
+                      <span className={styles.userLine}>
+                        <b>{profile.display_name}</b>
+                        <span className={styles.badge}>{count} permissões</span>
+                      </span>
+                      <span className={styles.userMeta}>
+                        {formatRole(profile.role)} · {formatStore(profile.store)} · {profile.active ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </section>
+            </>
+          )}
+
+          {!schemaPending && message && !data && <p className={styles.error}>{message}</p>}
         </main>
       </div>
     </div>

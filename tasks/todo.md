@@ -43,3 +43,12 @@ sem reabrir os riscos críticos já corrigidos na migração para Supabase Auth.
 - Mudança em usuários, roles, Auth ou Supabase de produção sem aprovação
   explícita do Rodrigo.
 - Deploy ou push direto na `main` sem aprovação explícita do Rodrigo.
+
+## PR de permissões por usuário
+
+- [x] Auditar perfis, rotas atuais e matriz desejada.
+- [x] Definir fundação aditiva sem alterar o acesso operacional vigente.
+- [x] Criar catálogo, atribuições, RLS e função transacional de salvamento.
+- [x] Substituir a tela legada por gestão mobile de permissões.
+- [x] Validar segurança, testes, TypeScript e build.
+- [x] Publicar PR draft sem aplicar migration no Supabase de produção.
