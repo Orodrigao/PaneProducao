@@ -413,7 +413,7 @@ export default function ProducaoPage() {
     const rows: any[] = storeBreads.map(b => ({
       store, bread_id: b.id,
       quantity: qtys[`${store}-${b.id}`] || 0,
-      order_date: date, obs,
+      order_date: date, order_type: 'producao', obs,
       ...(store==='pj' ? { pj_client: pjClient, pj_delivery_date: pjDate||null } : {})
     }))
     const isManagedStore = store === 'jc' || store === 'ja'

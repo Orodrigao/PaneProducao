@@ -251,6 +251,15 @@ export async function getCurrentUserAsync(): Promise<AppUser | null> {
   return fetchCurrentAuthUser()
 }
 
+export function navigateAfterAuthentication(
+  destination: string,
+  replace: (path: string) => void = path => window.location.replace(path),
+) {
+  // Uma navegação completa inicia a rota protegida somente depois que o
+  // Supabase terminou de persistir a sessão criada pelo login.
+  replace(destination)
+}
+
 export async function signInWithEmailPassword(email: string, password: string): Promise<AuthActionResult> {
   const normalizedEmail = normalizeEmailInput(email)
   if (!normalizedEmail) {
