@@ -19,42 +19,68 @@ export interface PermissionDefinition {
 interface PermissionAssignment {
   user_id: string
   permission_key: string
+  scope: PermissionScope
+}
+
+export type PermissionScope = '*' | 'jc' | 'ja' | 'ex'
+
+export interface ScopedPermission {
+  permissionKey: string
+  scope: PermissionScope
 }
 
 export interface AccessManagementData {
   profiles: AccessProfile[]
   permissions: PermissionDefinition[]
-  assignments: Record<string, string[]>
+  assignments: Record<string, ScopedPermission[]>
 }
 
 export async function loadAccessManagementData(): Promise<AccessManagementData> {
   const [profilesResponse, permissionsResponse, assignmentsResponse] = await Promise.all([
     supabaseRestFetch('app_profiles?select=user_id,display_name,role,store,active&order=display_name.asc'),
     supabaseRestFetch('app_permissions?select=key,module,label,description,sort_order&order=sort_order.asc'),
-    supabaseRestFetch('app_user_permissions?select=user_id,permission_key'),
+    supabaseRestFetch('app_user_permissions?select=user_id,permission_key,scope'),
   ])
 
   const profiles = await profilesResponse.json() as AccessProfile[]
-  const permissions = await permissionsResponse.json() as PermissionDefinition[]
+  const permissions = (await permissionsResponse.json() as PermissionDefinition[]).map(permission =>
+    permission.key === 'romaneio.acessar'
+      ? {
+          ...permission,
+          label: 'Acessar módulo',
+          description: 'Exibe o módulo Romaneio. Configure as ações e lojas abaixo.',
+        }
+      : permission,
+  )
   const rows = await assignmentsResponse.json() as PermissionAssignment[]
-  const assignments: Record<string, string[]> = {}
+  const assignments: Record<string, ScopedPermission[]> = {}
 
   for (const row of rows) {
     assignments[row.user_id] ??= []
-    assignments[row.user_id].push(row.permission_key)
+    assignments[row.user_id].push({ permissionKey: row.permission_key, scope: row.scope })
   }
 
   return { profiles, permissions, assignments }
 }
 
-export async function replaceUserPermissions(userId: string, permissionKeys: string[]): Promise<void> {
+export async function replaceUserPermissions(userId: string, assignments: ScopedPermission[]): Promise<void> {
   await supabaseRestFetch('rpc/replace_user_permissions', {
     method: 'POST',
     body: JSON.stringify({
       p_user_id: userId,
-      p_permission_keys: permissionKeys,
+      p_assignments: assignments,
     }),
   })
+}
+
+export function assignmentId(assignment: ScopedPermission): string {
+  return `${assignment.permissionKey}|${assignment.scope}`
+}
+
+export function parseAssignmentId(value: string): ScopedPermission {
+  const [permissionKey, rawScope] = value.split('|')
+  const scope: PermissionScope = rawScope === 'jc' || rawScope === 'ja' || rawScope === 'ex' ? rawScope : '*'
+  return { permissionKey, scope }
 }
 
 export function groupPermissions(permissions: PermissionDefinition[]): Array<{

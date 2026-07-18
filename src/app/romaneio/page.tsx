@@ -17,10 +17,15 @@ import {
   type RomaneioSentItemRow,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
-import { canSeeRomaneio, resolveRomaneioRole, type RomaneioRole } from '@/lib/romaneioAccess'
+import { canSeeRomaneio } from '@/lib/romaneioAccess'
+import {
+  canPerformRomaneioAction,
+  loadCurrentRomaneioPermissions,
+  type RomaneioAction,
+  type RomaneioPermissions,
+} from '@/lib/romaneioPermissions'
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
-type Role = RomaneioRole
 type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 
 interface Destination { id:string; name:string; code:string; active:boolean }
@@ -118,13 +123,6 @@ function formatDraftTotal(qtys: Record<string, number>, options: RomaneioProduct
   if (kg > 0) parts.push(`${formatRomaneioQty(kg)} kg`)
   return parts.join(' · ') || '0 un'
 }
-function roleInfo(r: Role | null) {
-  if (r === 'gustavo')  return { name: 'Gustavo',  loja: 'JC', color: '#8E4E22' }
-  if (r === 'cleo')     return { name: 'Cléo',     loja: 'JA', color: '#BE832B' }
-  if (r === 'marselle') return { name: 'Marselle', loja: 'EX', color: '#6B7A52' }
-  return { name: 'Rodrigo', loja: 'Admin', color: '#2A2018' }
-}
-
 // ── Supabase ────────────────────────────────────────────────────────
 function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
   const recipient = recipientForDestination(rom.destinations)
@@ -252,7 +250,7 @@ export default function RomaneioPage() {
   const router = useRouter()
   const savingRomaneioRef = useRef(false)
   const [screen, setScreen] = useState<Screen>('init')
-  const [role, setRole] = useState<Role|null>(null)
+  const [permissions, setPermissions] = useState<RomaneioPermissions>([])
   const [dests, setDests] = useState<Destination[]>([])
   const [breads, setBreads] = useState<Bread[]>([])
   const [prices, setPrices] = useState<Record<string,number>>({})
@@ -313,27 +311,29 @@ export default function RomaneioPage() {
     return { ds, bds }
   }, [])
 
-  const loadPainel = useCallback(async (activeRole: Role | null = role) => {
+  const loadPainel = useCallback(async (activePermissions: RomaneioPermissions = permissions) => {
     const date = todayKey()
     const roms = await sbGet('romaneios',`record_date=eq.${date}&order=created_at.desc&select=*,destinations(name,code)`)
-    setRomaneios((roms as Romaneio[]).filter(rom => canSeeRomaneio(activeRole, rom.destinations)))
-  }, [role])
+    setRomaneios((roms as Romaneio[]).filter(rom => canSeeRomaneio(activePermissions, rom.destinations)))
+  }, [permissions])
 
   // ── login ──────────────────────────────────────────────────────
-  const doLogin = async (r: Role) => {
-    setRole(r)
+  const enterRomaneio = async (activePermissions: RomaneioPermissions) => {
+    setPermissions(activePermissions)
     setInitialLoadError('')
     showLoad('Carregando...')
     try {
       await loadBase()
-      await loadPainel(r)
+      const managesRomaneio = canPerformRomaneioAction(activePermissions, 'manage')
+      if (managesRomaneio) await loadAdminPainel()
+      else await loadPainel(activePermissions)
       hideLoad()
-      setScreen('painel')
+      setScreen(managesRomaneio ? 'admin' : 'painel')
     } catch(e) { handleInitialLoadError(e) }
   }
 
   const goHome = () => {
-    setRole(null); setScreen('login')
+    setPermissions([]); setScreen('login')
     authLogout(); router.push('/login')
   }
 
@@ -342,30 +342,20 @@ export default function RomaneioPage() {
   useEffect(() => {
     const globalUser = getCurrentUser()
     if (!globalUser) { router.replace('/login'); return }
-    if (globalUser.role === 'admin') {
-      setRole('rodrigo')
-      setInitialLoadError('')
-      showLoad('Carregando...')
-      ;(async () => {
-        try {
-          await loadBase()
-          await loadAdminPainel()
-          hideLoad()
-          setScreen('admin')
-        } catch(e) { handleInitialLoadError(e) }
-      })()
-      return
-    }
-    const internalRole = resolveRomaneioRole(globalUser)
-    if (internalRole) doLogin(internalRole)
-    else router.replace(firstAllowedRoute(globalUser))
+    ;(async () => {
+      try {
+        const activePermissions = await loadCurrentRomaneioPermissions()
+        if (activePermissions.length > 0) await enterRomaneio(activePermissions)
+        else router.replace(firstAllowedRoute(globalUser))
+      } catch(e) { handleInitialLoadError(e) }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   // ── painel ──────────────────────────────────────────────────────
   const refreshPainel = async () => {
     showLoad('Atualizando...')
-    try { await loadPainel(role) } catch(e) { showToastPS('Erro ao atualizar') }
+    try { await loadPainel(permissions) } catch(e) { showToastPS('Erro ao atualizar') }
     finally { hideLoad(); setScreen('painel') }
   }
 
@@ -544,7 +534,7 @@ export default function RomaneioPage() {
     try {
       const insertHeader = (tripNumber: number) => sbPost('romaneios',[{
         record_date:criarDate, destination_id:criarDestId, trip_number:tripNumber,
-        status:'separado', created_by:getCurrentUser()?.displayName || 'Gustavo', obs:draft.obs||null
+        status:'separado', created_by:getCurrentUser()?.displayName || 'Usuário', obs:draft.obs||null
       }]) as Promise<{ id: string }[]>
 
       let tripNumber = await fetchNextTripNumber(criarDate, criarDestId)
@@ -580,7 +570,7 @@ export default function RomaneioPage() {
       writeDraftStorage(criarDate, nextDest, nextDrafts)
       await loadPainel()
       if (!nextDest) {
-        if (role === 'rodrigo') {
+        if (canPerformRomaneioAction(permissions, 'manage')) {
           await loadAdminPainel()
           setScreen('admin')
         } else {
@@ -603,79 +593,10 @@ export default function RomaneioPage() {
     setEnvioRomId(null)
     showLoad('Confirmando envio...')
     try {
-      const sentBy = role === 'cleo' ? 'Cléo' : 'Gustavo'
-      await sbPatch('romaneios', { status: 'enviado', sent_by: sentBy, sent_at: new Date().toISOString() }, { id: romId })
-
-      // Gera movimentações de estoque: -N em 'central', +N no destino.
-      // Cobre 2 fontes:
-      //   (a) Itens-pão diretos (product_source='bread') — comportamento original.
-      //   (b) Cascade de KIT (product_source!='bread' + products.kind='kit') — debita
-      //       pães-componentes da composição. reference_type='romaneio_kit' separa
-      //       das movimentações diretas pra reportagem/auditoria.
-      // Idempotente: se já existirem movements pra esse romaneio (qualquer reference_type),
-      // pula tudo. Evita duplicata em re-envio.
-      try {
-        const existing = await sbGet('bread_movements', `reference_id=eq.${romId}&reference_type=in.(romaneio,romaneio_kit)&select=id&limit=1`)
-        if (!existing || existing.length === 0) {
-          const [items, romData, kits] = await Promise.all([
-            sbGet('romaneio_items', `romaneio_id=eq.${romId}&qty_sent=gt.0&select=product_id,product_source,qty_sent`),
-            sbGet('romaneios', `id=eq.${romId}&select=destination_id,destinations(code)`),
-            sbGet('products', `kind=eq.kit&select=id`),
-          ])
-          const destCode: string | undefined = romData?.[0]?.destinations?.code
-          if (destCode && items && items.length > 0) {
-            const destLoc = destCode.toLowerCase()
-            const kitIdSet = new Set((kits || []).map((k: any) => k.id))
-            const breadItems = (items as any[]).filter(it => it.product_source === 'bread')
-            const kitItems   = (items as any[]).filter(it => it.product_source !== 'bread' && kitIdSet.has(it.product_id))
-
-            // Carrega components-pão dos kits envolvidos
-            let components: any[] = []
-            if (kitItems.length > 0) {
-              const idsCsv = kitItems.map(k => `"${k.product_id}"`).join(',')
-              components = (await sbGet('product_components', `parent_product_id=in.(${idsCsv})&component_source=eq.bread&select=parent_product_id,component_id,quantity`)) || []
-            }
-
-            const movements: any[] = []
-            // (a) diretos
-            breadItems.forEach((it: any) => {
-              const q = Number(it.qty_sent) || 0
-              if (q <= 0) return
-              movements.push(
-                { movement_type: 'romaneio_envio', bread_id: it.product_id, location: 'central', quantity: -q, reference_id: romId, reference_type: 'romaneio', recorded_by: sentBy },
-                { movement_type: 'romaneio_envio', bread_id: it.product_id, location: destLoc,   quantity:  q, reference_id: romId, reference_type: 'romaneio', recorded_by: sentBy },
-              )
-            })
-            // (b) cascade de kit
-            kitItems.forEach((it: any) => {
-              const kitQty = Number(it.qty_sent) || 0
-              if (kitQty <= 0) return
-              const myComps = components.filter((c: any) => c.parent_product_id === it.product_id)
-              myComps.forEach((c: any) => {
-                const total = Number(c.quantity) * kitQty
-                movements.push(
-                  { movement_type: 'romaneio_envio', bread_id: c.component_id, location: 'central', quantity: -total, reference_id: romId, reference_type: 'romaneio_kit', recorded_by: sentBy },
-                  { movement_type: 'romaneio_envio', bread_id: c.component_id, location: destLoc,   quantity:  total, reference_id: romId, reference_type: 'romaneio_kit', recorded_by: sentBy },
-                )
-              })
-            })
-
-            if (movements.length > 0) {
-              await supabaseRestFetch('bread_movements', {
-                method: 'POST',
-                headers: { Prefer: 'return=minimal' },
-                body: JSON.stringify(movements),
-              })
-            }
-          }
-        }
-      } catch (movErr) {
-        // Movimentações falharam mas o status já foi atualizado. Loga e segue —
-        // melhor o romaneio ficar marcado como enviado do que travar a UI.
-        // Retry manual via SQL se precisar.
-        console.error('[romaneio] erro ao gerar bread_movements:', movErr)
-      }
-
+      await supabaseRestFetch('rpc/confirm_romaneio_departure', {
+        method: 'POST',
+        body: JSON.stringify({ p_romaneio_id: romId }),
+      })
       showToastPS('✅ Romaneio marcado como enviado!')
       await loadPainel()
     } catch(e) { showToastPS('❌ Erro') }
@@ -716,23 +637,23 @@ export default function RomaneioPage() {
   const saveConferencia = async () => {
     showLoad('Salvando conferência...')
     try {
-      let hasDiverg = false
-      for (const it of confItems) {
+      const items = confItems.map(it => {
         const cd = confData[it.id]
-        if (!cd) continue
-        const isDiverg = cd.rec!==it.qty_sent || cd.acc!==cd.rec
-        if (isDiverg) hasDiverg = true
         const motivo = cd.refused ? ('Recusado: '+cd.refuseReason) : cd.motivo
-        await sbPatch('romaneio_items',{
-          qty_received:cd.rec, qty_accepted:cd.acc,
-          divergence_reason:motivo||null, obs:cd.itemObs||null,
-          item_status:isDiverg?'divergencia':'ok'
-        },{id:it.id})
-      }
-      await sbPatch('romaneios',{
-        status:hasDiverg?'com_divergencia':'conferido',
-        confirmed_by:'Marselle', confirmed_at:new Date().toISOString()
-      },{id:confRomId})
+        return {
+          id: it.id,
+          qty_received: cd.rec,
+          qty_accepted: cd.acc,
+          divergence_reason: motivo || null,
+          obs: cd.itemObs || null,
+        }
+      })
+      const response = await supabaseRestFetch('rpc/confirm_romaneio_receipt', {
+        method: 'POST',
+        body: JSON.stringify({ p_romaneio_id: confRomId, p_items: items }),
+      })
+      const result = await response.json() as string
+      const hasDiverg = result === 'com_divergencia'
       showToastPS(hasDiverg?'⚠️ Conferência salva com divergência':'✅ Conferência confirmada!')
       await loadPainel()
       setScreen('painel')
@@ -769,9 +690,10 @@ export default function RomaneioPage() {
   const aprovarDiverg = async (romId: string) => {
     showLoad('Aprovando...')
     try {
-      const items = await sbGet('romaneio_items',`romaneio_id=eq.${romId}&item_status=eq.divergencia`)
-      for (const it of items) await sbPatch('romaneio_items',{item_status:'aprovado'},{id:it.id})
-      await sbPatch('romaneios',{status:'aprovado'},{id:romId})
+      await supabaseRestFetch('rpc/approve_romaneio_divergence', {
+        method: 'POST',
+        body: JSON.stringify({ p_romaneio_id: romId, p_item_id: null }),
+      })
       showToastPS('✅ Divergências aprovadas')
       await loadPainel()
       setScreen('painel')
@@ -782,7 +704,10 @@ export default function RomaneioPage() {
   const aprovarItem = async (itemId: string) => {
     showLoad('Aprovando...')
     try {
-      await sbPatch('romaneio_items',{item_status:'aprovado'},{id:itemId})
+      await supabaseRestFetch('rpc/approve_romaneio_divergence', {
+        method: 'POST',
+        body: JSON.stringify({ p_romaneio_id: null, p_item_id: itemId }),
+      })
       showToastPS('✅ Item aprovado')
       await loadDiverg()
     } catch(e) { showToastPS('❌ Erro') }
@@ -845,8 +770,11 @@ export default function RomaneioPage() {
   const criarTotalItems = activeDraft ? Object.values(activeDraft.qtys).filter(v=>v>0).length : 0
   const criarTotalQtyLabel = activeDraft ? formatDraftTotal(activeDraft.qtys, activeOptions) : '0 un'
   const criarDraftCount = Object.keys(criarDrafts).length
-  const info = roleInfo(role)
-  const userDisplay = getCurrentUser()?.displayName || info.name
+  const userDisplay = getCurrentUser()?.displayName || 'Usuário'
+  const userColor = canPerformRomaneioAction(permissions, 'manage') ? '#2A2018' : '#8E4E22'
+  const canAny = (action: RomaneioAction) =>
+    canPerformRomaneioAction(permissions, action)
+    || ['JC', 'JA', 'EX'].some(code => canPerformRomaneioAction(permissions, action, code))
 
   // ── Render: shell helpers ──────────────────────────────────────
   const Header = ({ subtitle, onBack }: { subtitle?: string; onBack?: () => void }) => (
@@ -864,8 +792,8 @@ export default function RomaneioPage() {
         </div>
       </div>
       <div className="ps-userchip">
-        <div className="ps-avatar" style={{background: info.color}}>{userDisplay.charAt(0).toUpperCase()}</div>
-        <b>{userDisplay}{role==='marselle' ? ' / EX' : ''}</b>
+        <div className="ps-avatar" style={{background: userColor}}>{userDisplay.charAt(0).toUpperCase()}</div>
+        <b>{userDisplay}</b>
       </div>
     </header>
   )
@@ -925,7 +853,7 @@ export default function RomaneioPage() {
           <div className="ps-shell">
             <Header subtitle={`Hoje · ${formatDateBR(todayKey())}`}/>
             <div className="ps-scroll ps-pad">
-              {role==='gustavo' && (
+              {canAny('create') && (
                 <button className="ps-btn primary block" style={{marginTop:16}} onClick={openCriar}>
                   <Plus size={18}/> Novo Romaneio
                 </button>
@@ -966,17 +894,17 @@ export default function RomaneioPage() {
                         <button className="ps-btn info sm" onClick={()=>openDetalhe(r.id, true)}>
                           <Printer size={14}/> Imprimir
                         </button>
-                        {role==='cleo'&&r.status==='separado'&&(
+                        {canPerformRomaneioAction(permissions, 'send', r.destinations?.code)&&r.status==='separado'&&(
                           <button className="ps-btn info sm" onClick={()=>setEnvioRomId(r.id)}>
                             <Truck size={14}/> Marcar Enviado
                           </button>
                         )}
-                        {role==='marselle'&&r.status==='enviado'&&r.destinations?.code==='EX'&&(
+                        {canPerformRomaneioAction(permissions, 'receive', r.destinations?.code)&&r.status==='enviado'&&(
                           <button className="ps-btn success sm" onClick={()=>openConferencia(r.id)}>
                             <CheckCheck size={14}/> Conferir chegada
                           </button>
                         )}
-                        {role==='rodrigo'&&r.status==='com_divergencia'&&(
+                        {canPerformRomaneioAction(permissions, 'approve', r.destinations?.code)&&r.status==='com_divergencia'&&(
                           <button className="ps-btn success sm" onClick={()=>aprovarDiverg(r.id)}>
                             <Check size={14}/> Aprovar diverg.
                           </button>
@@ -1038,7 +966,7 @@ export default function RomaneioPage() {
                 ))}
               </div>
 
-              {role==='rodrigo' && detailRom.status==='com_divergencia' && (
+              {canPerformRomaneioAction(permissions, 'approve', detailRom.destinations?.code) && detailRom.status==='com_divergencia' && (
                 <button className="ps-btn primary block" style={{marginTop:18}} onClick={()=>aprovarDiverg(detailRom.id)}>
                   <Check size={16}/> Aprovar divergências
                 </button>
@@ -1054,7 +982,7 @@ export default function RomaneioPage() {
       {screen==='criar' && (
         <div className="ps-canvas">
           <div className="ps-shell">
-            <Header onBack={()=>setScreen(role === 'rodrigo' ? 'admin' : 'painel')} subtitle="Novo romaneio"/>
+            <Header onBack={()=>setScreen(canPerformRomaneioAction(permissions, 'manage') ? 'admin' : 'painel')} subtitle="Novo romaneio"/>
             <div className="ps-scroll ps-pad">
               <div className="ps-label" style={{marginTop:16}}>Data</div>
               <input type="date" value={criarDate} className="ps-input" style={{width:'100%'}}
@@ -1067,7 +995,7 @@ export default function RomaneioPage() {
                 </button>
               </div>
               <div className="ps-tabs" role="tablist" style={{marginTop:8, overflowX:'auto'}}>
-                {dests.map(d=>{
+                {dests.filter(d => canPerformRomaneioAction(permissions, 'create', d.code)).map(d=>{
                   const draft = criarDrafts[d.id]
                   const hasItems = draftHasItems(draft)
                   return (
