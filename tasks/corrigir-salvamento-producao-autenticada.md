@@ -1,46 +1,51 @@
-# Tarefa técnica — corrigir salvamento da produção autenticada
+# Tarefa técnica — corrigir salvamento da produção da Loja EX
 
 ## Problema
 
-Após a migração do login legado por PIN para Supabase Auth, a tela **Produção >
-Itens JC** carrega para o usuário autenticado, mas exibe erro ao salvar a lista.
-A sessão permanece ativa, porém o `POST` para `product_production` retorna HTTP
-403.
+Após o login de Marselle (`borges@paneesalute.com.br`), a tela **Produção >
+Loja EX** carrega normalmente, mas exibe “Erro ao salvar. Tente novamente.” ao
+salvar o pedido. A sessão permanece válida, porém as linhas não são gravadas.
 
 ## Causa confirmada
 
-A tabela `public.product_production` tinha privilégios de tabela para
-`authenticated`, mas somente policies RLS destinadas ao papel `anon`. O token
-do login por e-mail identifica corretamente o usuário como `authenticated`, que
-não encontrava policy de `INSERT`, `UPDATE` ou `DELETE`.
+Marselle possui perfil ativo com role `vendas` e loja `ex`. O formulário da
+Loja EX salva suas linhas em `public.orders` com `order_type = 'producao'`, mas
+as policies RLS autenticadas da tabela permitiam ao perfil `vendas` escrever
+somente linhas com `order_type = 'encomenda'`.
+
+Assim, o token de login era enviado corretamente, mas o `DELETE` não alcançava
+as linhas existentes e o `INSERT` era rejeitado pelo banco com HTTP 403.
 
 ## Escopo
 
-- remover as policies e os privilégios anônimos de `product_production`;
-- permitir leitura a qualquer perfil ERP ativo;
-- permitir escrita somente a perfis ativos com role `admin`, único perfil ao
-  qual a interface atual oferece o salvamento de Itens JC;
-- preservar a sessão Auth durante consultas e gravações;
-- cobrir a migration com teste de regressão.
+- identificar explicitamente os pedidos do formulário de produção com
+  `order_type = 'producao'`;
+- permitir que um perfil ativo de `vendas` insira, altere e exclua produção
+  somente quando a linha pertence à loja cadastrada em seu próprio perfil;
+- manter o acesso já existente de `admin`, `financeiro` e do fluxo de
+  `encomenda`;
+- impedir que Marselle altere produção de JC, JA, PJ ou qualquer outra loja;
+- preservar a sessão Supabase Auth durante a gravação;
+- cobrir payload e policies com teste de regressão.
 
 ## Critérios de aceite
 
-- [ ] Um administrador autenticado abre Produção > Itens JC e enxerga a lista
-  já salva para a data selecionada.
-- [ ] Um administrador autenticado salva uma lista com ao menos um item e recebe
-  a confirmação “Lista de itens salva!”.
-- [ ] Ao recarregar a mesma data, quantidades e observação permanecem salvas.
-- [ ] O usuário continua autenticado após salvar e consegue navegar no ERP sem
+- [ ] Marselle entra com `borges@paneesalute.com.br` e acessa **Produção > Loja
+  EX**.
+- [ ] Ao salvar ao menos uma quantidade, a interface confirma “Pedido salvo!”.
+- [ ] Ao recarregar a mesma data, as quantidades e a observação permanecem
+  salvas.
+- [ ] Marselle continua autenticada após salvar e consegue navegar no ERP sem
   novo login.
-- [ ] Um perfil ativo não administrador consegue consultar a lista, mas não
-  consegue inserir, alterar ou excluir linhas diretamente.
-- [ ] Uma requisição sem sessão não consegue consultar nem modificar
-  `product_production`.
+- [ ] O perfil `vendas` da loja EX consegue inserir, alterar e excluir somente
+  pedidos `producao` da loja EX.
+- [ ] O mesmo perfil não consegue modificar pedidos `producao` de JC, JA ou PJ.
+- [ ] Os fluxos de encomendas, administrador e financeiro continuam
+  funcionando.
 - [ ] Lint, TypeScript, testes e build passam.
 
 ## Validação e rollback
 
-Validar primeiro as policies no catálogo do Postgres, depois executar o fluxo
-completo em uma data sem impacto operacional. Em caso de regressão, reverter a
-migration restaurando as policies anteriores somente como medida emergencial;
-não manter escrita anônima como solução definitiva.
+Validar as policies no catálogo do Postgres e executar a gravação em uma data de
+teste sem impacto operacional. Em caso de regressão, restaurar as policies da
+migration anterior, que restringiam `vendas` a `order_type = 'encomenda'`.
