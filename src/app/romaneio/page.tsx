@@ -17,9 +17,10 @@ import {
   type RomaneioSentItemRow,
   type RomaneioProductOption,
 } from '@/lib/romaneioDraft'
+import { canSeeRomaneio, resolveRomaneioRole, type RomaneioRole } from '@/lib/romaneioAccess'
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
-type Role = 'gustavo'|'cleo'|'marselle'|'rodrigo'
+type Role = RomaneioRole
 type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
 
 interface Destination { id:string; name:string; code:string; active:boolean }
@@ -312,11 +313,11 @@ export default function RomaneioPage() {
     return { ds, bds }
   }, [])
 
-  const loadPainel = useCallback(async () => {
+  const loadPainel = useCallback(async (activeRole: Role | null = role) => {
     const date = todayKey()
     const roms = await sbGet('romaneios',`record_date=eq.${date}&order=created_at.desc&select=*,destinations(name,code)`)
-    setRomaneios(roms)
-  }, [])
+    setRomaneios((roms as Romaneio[]).filter(rom => canSeeRomaneio(activeRole, rom.destinations)))
+  }, [role])
 
   // ── login ──────────────────────────────────────────────────────
   const doLogin = async (r: Role) => {
@@ -325,7 +326,7 @@ export default function RomaneioPage() {
     showLoad('Carregando...')
     try {
       await loadBase()
-      await loadPainel()
+      await loadPainel(r)
       hideLoad()
       setScreen('painel')
     } catch(e) { handleInitialLoadError(e) }
@@ -374,6 +375,7 @@ export default function RomaneioPage() {
     else if (globalUser.role === 'producao'
           || globalUser.role === 'financeiro') internalRole = 'marselle' // view-only proxy
     else if (canAccess(globalUser, '/romaneio')) internalRole = 'gustavo'
+    internalRole = resolveRomaneioRole(globalUser)
     if (internalRole) doLogin(internalRole)
     else router.replace(firstAllowedRoute(globalUser))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,7 +384,7 @@ export default function RomaneioPage() {
   // ── painel ──────────────────────────────────────────────────────
   const refreshPainel = async () => {
     showLoad('Atualizando...')
-    try { await loadPainel() } catch(e) { showToastPS('Erro ao atualizar') }
+    try { await loadPainel(role) } catch(e) { showToastPS('Erro ao atualizar') }
     finally { hideLoad(); setScreen('painel') }
   }
 
