@@ -132,6 +132,55 @@ git diff --check
 - Nunca fazer push direto na `main`.
 - Informar arquivos alterados, verificações, resultado do navegador e riscos.
 
+## Gate obrigatório de pull request
+
+Antes de retirar uma PR de draft ou fazer merge, revise todos os itens abaixo.
+Um item pode ser marcado como não aplicável somente com justificativa na PR.
+
+### Base e escopo
+
+- A branch partiu da `origin/main` atualizada.
+- A PR contém uma tarefa e não inclui alterações locais ou módulos sem relação
+  com o objetivo aprovado.
+- O diff foi revisado como código, não apenas pelos testes.
+
+### Documentação e memória
+
+- Mudou fase, capacidade, risco ou próximo bloqueio: atualizar
+  `docs/CURRENT_STATE.md`.
+- Mudou ordem, critério de saída ou roadmap: atualizar `docs/PLAN.md`.
+- Mudou requisito estável do produto: atualizar `docs/PRD.md`.
+- Mudou regra global e durável de trabalho: atualizar somente `AGENTS.md`.
+- Surgiu aprendizado não óbvio e reutilizável: registrar em `lessons.md`.
+- Documento novo foi classificado como canônico, específico ou histórico e não
+  criou outra fonte concorrente de “estado atual”.
+
+### Banco, autenticação e autorização
+
+- Migration local tem nome e conteúdo coerentes com o histórico remoto.
+- Migration aplicada em produção foi confirmada por consulta posterior e seu
+  arquivo local usa a mesma versão registrada remotamente.
+- Mudança de autorização foi testada na interface e no banco com os perfis e
+  lojas afetados.
+- RLS, grants, funções privilegiadas e acesso de `anon` foram revisados quando
+  o banco foi tocado.
+- Nenhuma escrita em produção, mudança de Auth ou deploy de Edge Function
+  ocorreu sem aprovação explícita de Rodrigo.
+
+### Verificação e fechamento
+
+- Lint, TypeScript, testes e build aplicáveis foram executados.
+- Fluxo alterado foi testado no navegador, incluindo erro, vazio, sucesso e
+  repetição quando relevantes.
+- Nenhum teste quebrado, risco novo ou aviso relevante ficou oculto.
+- Checklist temporário, tarefa ou documento de estado tocado pela PR foi
+  encerrado ou atualizado.
+- Ao fim de um ciclo de estabilização, criar uma PR de fechamento documental e
+  reauditoria antes de iniciar a próxima fase.
+
+Uma PR não deve ser declarada pronta nem integrada à `main` enquanto houver
+item aplicável sem confirmação.
+
 ## Memória útil
 
 Após uma tarefa bem-sucedida:
