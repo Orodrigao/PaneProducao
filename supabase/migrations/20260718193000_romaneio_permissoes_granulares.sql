@@ -266,13 +266,13 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_romaneio public.romaneios%rowtype;
+  v_status text;
   v_destination_code text;
   v_user_name text;
   v_movements_exist boolean;
 begin
-  select romaneio, destination.code
-  into v_romaneio, v_destination_code
+  select romaneio.status, destination.code
+  into v_status, v_destination_code
   from public.romaneios romaneio
   join public.destinations destination on destination.id = romaneio.destination_id
   where romaneio.id = p_romaneio_id
@@ -282,7 +282,7 @@ begin
   if not (select private.current_user_has_permission('romaneio.confirmar_saida', v_destination_code)) then
     raise exception using errcode = '42501', message = 'Sem permissao para confirmar esta saida.';
   end if;
-  if v_romaneio.status <> 'separado' then
+  if v_status <> 'separado' then
     raise exception using errcode = '22023', message = 'O romaneio nao esta separado.';
   end if;
 
