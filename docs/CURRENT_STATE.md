@@ -64,6 +64,12 @@ Não deduza o estado de produção apenas pelas migrations locais. Para tarefa d
 segurança, compare migration, resultado documentado, código cliente e auditoria
 live somente leitura.
 
+O projeto Supabase também atende o repositório `ControlePizza`. Por isso, o
+histórico remoto contém migrations próprias desse sistema, como
+`harden_pizza_is_allowed`, que não devem ser copiadas para o PaneERP. A
+reconciliação deve classificar cada migration remota por repositório proprietário
+e exigir neste repositório apenas as migrations que alteram o ERP.
+
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes;
