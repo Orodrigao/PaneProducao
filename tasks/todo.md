@@ -27,6 +27,14 @@ sem reabrir os riscos críticos já corrigidos na migração para Supabase Auth.
 - P1: causa dado incorreto ou exige contorno operacional relevante.
 - P2: problema visual, textual ou fluxo contornável.
 
+## Bugs documentados em 18/07
+
+- [x] Manter Expedição JC no contexto de Produção da própria loja.
+- [x] Resolver o papel do Romaneio pela loja autenticada.
+- [x] Permitir que Cléo/JA veja e confirme a saída destinada à EX.
+- [x] Remover preço unitário do card operacional do Romaneio.
+- [x] Encaminhar o bloqueio de sobras antigas à Central de Pendências.
+
 ## Fora desta entrega
 
 - CMV, dashboard ou novas funcionalidades.

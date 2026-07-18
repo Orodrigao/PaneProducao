@@ -26,6 +26,10 @@ export function leftoverPendingPath(store: 'jc' | 'ja', recordDate: string): str
   return `/sobras/pendencias?store=${store}&date=${encodeURIComponent(recordDate)}`
 }
 
+export function isPendingLeftoversError(message: string): boolean {
+  return message.toLocaleLowerCase('pt-BR').includes('sobras pendentes do dia anterior')
+}
+
 export function isValidClosingDate(recordDate: string, today: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(recordDate) && recordDate <= today
 }

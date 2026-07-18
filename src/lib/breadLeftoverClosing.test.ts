@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   closingBreadIds,
+  isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
 } from './breadLeftoverClosing'
@@ -26,6 +27,13 @@ describe('fechamento físico de sobras', () => {
   it('leva a loja e a data do fechamento para a Central', () => {
     expect(leftoverPendingPath('ja', '2026-07-13'))
       .toBe('/sobras/pendencias?store=ja&date=2026-07-13')
+  })
+
+  it('reconhece o bloqueio de pendências retornado pelo banco', () => {
+    expect(isPendingLeftoversError(
+      'Resolva as sobras pendentes do dia anterior antes de fechar hoje.',
+    )).toBe(true)
+    expect(isPendingLeftoversError('Falha de conexão')).toBe(false)
   })
 
   it('aceita hoje e datas anteriores, mas rejeita futuro ou formato inválido', () => {

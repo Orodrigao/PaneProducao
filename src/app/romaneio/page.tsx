@@ -1045,7 +1045,6 @@ export default function RomaneioPage() {
                       <span>Enviado: <b>{it.qty_sent}</b></span>
                       {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
                       {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
-                      {it.unit_price!=null && it.unit_price>0 && <span>R$ {Number(it.unit_price).toFixed(2)}/un</span>}
                     </div>
                     {it.divergence_reason && (
                       <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>
