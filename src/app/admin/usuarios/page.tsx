@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import {
+  assignmentId,
   formatRole,
   formatStore,
   groupPermissions,
   loadAccessManagementData,
+  parseAssignmentId,
   replaceUserPermissions,
   type AccessManagementData,
   type AccessProfile,
@@ -67,15 +69,16 @@ export default function AdminUsuariosPage() {
 
   function openEditor(profile: AccessProfile) {
     setSelected(profile)
-    setDraft(new Set(data?.assignments[profile.user_id] ?? []))
+    setDraft(new Set((data?.assignments[profile.user_id] ?? []).map(assignmentId)))
     setMessage('')
   }
 
-  function togglePermission(key: string) {
+  function togglePermission(key: string, scope = '*') {
+    const id = `${key}|${scope}`
     setDraft(current => {
       const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -85,13 +88,13 @@ export default function AdminUsuariosPage() {
     setSaving(true)
     setMessage('')
     try {
-      const keys = Array.from(draft)
-      await replaceUserPermissions(selected.user_id, keys)
+      const assignments = Array.from(draft, parseAssignmentId)
+      await replaceUserPermissions(selected.user_id, assignments)
       setData(current => current ? {
         ...current,
-        assignments: { ...current.assignments, [selected.user_id]: keys },
+        assignments: { ...current.assignments, [selected.user_id]: assignments },
       } : current)
-      setMessage(`Permissões de ${selected.display_name} preparadas com sucesso.`)
+      setMessage(`Permissões de ${selected.display_name} salvas com sucesso.`)
     } catch {
       setMessage('Não foi possível salvar. Nenhuma permissão operacional foi alterada.')
     } finally {
@@ -117,7 +120,7 @@ export default function AdminUsuariosPage() {
         <main className="ps-scroll ps-pad">
           <div className="ps-banner honey">
             <ShieldCheck size={20} aria-hidden="true" />
-            <span><b>Modo de preparação.</b> Estas caixas ainda não mudam o acesso aos módulos da operação.</span>
+            <span><b>Acesso individual.</b> No Romaneio, cada ação pode valer para uma loja ou para todas.</span>
           </div>
 
           {schemaPending && (
@@ -153,23 +156,39 @@ export default function AdminUsuariosPage() {
                     <div className={styles.permissionGroup} key={group.module}>
                       <h3>{group.module}</h3>
                       {group.permissions.map(permission => (
-                        <label className={styles.permission} key={permission.key}>
-                          <input
-                            type="checkbox"
-                            checked={draft.has(permission.key)}
-                            onChange={() => togglePermission(permission.key)}
-                          />
-                          <span className={styles.permissionText}>
-                            <b>{permission.label}</b>
-                            {permission.description && <small>{permission.description}</small>}
-                          </span>
-                        </label>
+                        <div className={styles.permissionBlock} key={permission.key}>
+                          <label className={styles.permission}>
+                            <input
+                              type="checkbox"
+                              checked={draft.has(`${permission.key}|*`)}
+                              onChange={() => togglePermission(permission.key)}
+                            />
+                            <span className={styles.permissionText}>
+                              <b>{permission.label}</b>
+                              {permission.description && <small>{permission.description}</small>}
+                            </span>
+                          </label>
+                          {permission.key.startsWith('romaneio.') && permission.key !== 'romaneio.acessar' && (
+                            <div className={styles.scopeOptions} aria-label={`Lojas para ${permission.label}`}>
+                              {(['jc', 'ja', 'ex'] as const).map(scope => (
+                                <label key={scope}>
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.has(`${permission.key}|${scope}`)}
+                                    onChange={() => togglePermission(permission.key, scope)}
+                                  />
+                                  {scope.toUpperCase()}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   ))}
 
                   <button className={styles.saveButton} disabled={saving} onClick={() => void savePermissions()}>
-                    {saving ? 'Salvando...' : 'Salvar preparação'}
+                    {saving ? 'Salvando...' : 'Salvar permissões'}
                   </button>
                 </section>
               )}

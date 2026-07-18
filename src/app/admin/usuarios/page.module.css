@@ -102,6 +102,37 @@
   cursor: pointer;
 }
 
+.permissionBlock {
+  padding: 4px 0 10px;
+}
+
+.scopeOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 33px;
+}
+
+.scopeOptions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 1px solid var(--ps-line);
+  border-radius: 12px;
+  padding: 6px 11px;
+  background: var(--cream);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scopeOptions input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--crust);
+}
+
 .permission input {
   width: 22px;
   height: 22px;
