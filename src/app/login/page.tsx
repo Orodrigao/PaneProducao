@@ -6,6 +6,7 @@ import {
   getCurrentUserAsync,
   firstAllowedRoute,
   logout,
+  navigateAfterAuthentication,
   passwordPolicyChecklist,
   sendPasswordSetupLink,
   signInWithEmailPassword,
@@ -103,7 +104,7 @@ export default function LoginPage() {
     setEmailLoading(false)
 
     if (result.ok && result.user) {
-      router.replace(returnTo ?? firstAllowedRoute(result.user))
+      navigateAfterAuthentication(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 
@@ -129,7 +130,7 @@ export default function LoginPage() {
 
     if (result.ok && result.user) {
       clearPasswordSetupUrl()
-      router.replace(returnTo ?? firstAllowedRoute(result.user))
+      navigateAfterAuthentication(returnTo ?? firstAllowedRoute(result.user))
     }
   }
 

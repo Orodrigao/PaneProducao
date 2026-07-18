@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { passwordPolicyChecklist, normalizeEmailInput, passwordRecoveryErrorMessage, validatePasswordSetup } from './auth'
+import {
+  navigateAfterAuthentication,
+  normalizeEmailInput,
+  passwordPolicyChecklist,
+  passwordRecoveryErrorMessage,
+  validatePasswordSetup,
+} from './auth'
 
 describe('normalizeEmailInput', () => {
   it('remove espaços e padroniza e-mail em minúsculas', () => {
     expect(normalizeEmailInput('  Rodrigao@GMAIL.COM  ')).toBe('rodrigao@gmail.com')
+  })
+})
+
+describe('navigateAfterAuthentication', () => {
+  it('faz uma navegação completa para iniciar a rota com a sessão persistida', () => {
+    const destinations: string[] = []
+
+    navigateAfterAuthentication('/romaneio', destination => destinations.push(destination))
+
+    expect(destinations).toEqual(['/romaneio'])
   })
 })
 
