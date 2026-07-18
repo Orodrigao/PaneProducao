@@ -43,7 +43,15 @@ export async function loadAccessManagementData(): Promise<AccessManagementData> 
   ])
 
   const profiles = await profilesResponse.json() as AccessProfile[]
-  const permissions = await permissionsResponse.json() as PermissionDefinition[]
+  const permissions = (await permissionsResponse.json() as PermissionDefinition[]).map(permission =>
+    permission.key === 'romaneio.acessar'
+      ? {
+          ...permission,
+          label: 'Acessar módulo',
+          description: 'Exibe o módulo Romaneio. Configure as ações e lojas abaixo.',
+        }
+      : permission,
+  )
   const rows = await assignmentsResponse.json() as PermissionAssignment[]
   const assignments: Record<string, ScopedPermission[]> = {}
 
