@@ -106,7 +106,7 @@ with route_permissions(route, permission_key) as (
     ('/simulador-desconto', 'simulador.acessar')
 )
 insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
-select distinct profile.user_id, mapping.permission_key, '*', null
+select distinct profile.user_id, mapping.permission_key, '*', null::uuid
 from public.app_profiles profile
 cross join lateral jsonb_array_elements_text(profile.allowed_routes) allowed_route(route)
 join route_permissions mapping on mapping.route = allowed_route.route
@@ -114,7 +114,7 @@ where profile.active
 on conflict do nothing;
 
 insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
-select profile.user_id, permission.key, '*', null
+select profile.user_id, permission.key, '*', null::uuid
 from public.app_profiles profile cross join public.app_permissions permission
 where profile.active and profile.role = 'admin'
 on conflict do nothing;

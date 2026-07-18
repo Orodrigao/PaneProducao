@@ -28,6 +28,7 @@ describe('fundação de permissões por usuário', () => {
     expect(migrationSource).toContain('jsonb_array_elements_text(profile.allowed_routes)')
     expect(migrationSource).toContain('join route_permissions mapping on mapping.route = allowed_route.route')
     expect(migrationSource).toContain('where profile.active')
+    expect(migrationSource.match(/null::uuid/g)).toHaveLength(2)
   })
 
   it('protege catálogo e atribuições com RLS e grants explícitos', () => {
