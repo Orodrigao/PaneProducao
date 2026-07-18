@@ -4,7 +4,7 @@ Descreva o problema, o resultado esperado e o que ficou fora do escopo.
 
 ## O que mudou
 
-- 
+- Descreva as alterações principais.
 
 ## Gate da PR
 
