@@ -3,6 +3,10 @@
 Status histórico: a primeira leva de usuários Auth já foi criada. Esta matriz
 não é fonte do estado atual e não deve ser reaplicada.
 
+Atualização de 2026-07-18: Fran e o acesso
+`cozinha@paneesalute.com.br` foram excluídos do Supabase Auth, de
+`app_profiles` e da matriz operacional. Não recriar nem reaplicar esse acesso.
+
 Use [CURRENT_STATE.md](CURRENT_STATE.md) e
 [SUPABASE_AUTH_EMAIL_APPLY_RESULT.md](SUPABASE_AUTH_EMAIL_APPLY_RESULT.md).
 Confirme dados pessoais diretamente com Rodrigo antes de qualquer alteração.
@@ -30,7 +34,6 @@ Confirme dados pessoais diretamente com Rodrigo antes de qualquer alteração.
 | Elis | [financeiro@paneesalute.com.br](mailto:financeiro@paneesalute.com.br) | Financeiro | financeiro | global | Financeiro, compras, pedidos, cadastro de produtos, tabelas de preços | Escopo global aprovado por envolver financeiro, compras, pedidos, cadastro de produtos e tabelas de preços. |
 | Geolar | [producao1@paneesalute.com.br](mailto:producao1@paneesalute.com.br) | Padeiro chefe | producao | jc | Produção, congelados, lista de compras, forno | Confirmar se este e-mail será dele |
 | Sander | [forno@paneesalute.com.br](mailto:forno@paneesalute.com.br) | Produção | producao | jc | Forno | Acesso forno |
-| Fran | [cozinha@paneesalute.com.br](mailto:cozinha@paneesalute.com.br) | Produção | producao | jc | Congelados, lista de compras, cozinha | Acesso congelados/lista de compras/cozinha |
 | expedicao | [expedicao@paneesalute.com.br](mailto:expedicao@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, estoque, Pedidos PJ | Conta setorial; PJ é canal/tipo de pedido, não loja |
 | Gustavo | [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br) | Expedição | expedicao | jc | Romaneio, congelados, Pedidos PJ | PJ é canal/tipo de pedido, não loja |
 | Liara | [atendiment@paneesalute.com.br](mailto:atendiment@paneesalute.com.br) | Atendimento | vendas | jc | Sobras, congelados, lista de compras, encomendas, fechamento de caixa | Fechamento de caixa ainda não existe |
@@ -48,7 +51,6 @@ Confirme dados pessoais diretamente com Rodrigo antes de qualquer alteração.
 ## Decisões aprovadas nesta etapa
 
 * Elis permanece com escopo global.
-* Fran usará [cozinha@paneesalute.com.br](mailto:cozinha@paneesalute.com.br).
 * Sander usará [forno@paneesalute.com.br](mailto:forno@paneesalute.com.br).
 * A conta setorial da expedição usa [expedicao@paneesalute.com.br](mailto:expedicao@paneesalute.com.br).
 * Gustavo usará [expedicao2@paneesalute.com.br](mailto:expedicao2@paneesalute.com.br).
