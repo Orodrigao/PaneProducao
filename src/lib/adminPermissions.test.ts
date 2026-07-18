@@ -18,6 +18,18 @@ describe('fundação de permissões por usuário', () => {
     expect(migrationSource).not.toMatch(/update\s+public\.app_profiles/)
   })
 
+  it('não identifica pessoas por nome, e-mail ou UUID no backfill', () => {
+    expect(migrationSource).not.toContain('profile.display_name')
+    expect(migrationSource).not.toContain('auth.users.email')
+    expect(migrationSource).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/)
+  })
+
+  it('deriva a matriz inicial somente das rotas atuais do perfil', () => {
+    expect(migrationSource).toContain('jsonb_array_elements_text(profile.allowed_routes)')
+    expect(migrationSource).toContain('join route_permissions mapping on mapping.route = allowed_route.route')
+    expect(migrationSource).toContain('where profile.active')
+  })
+
   it('protege catálogo e atribuições com RLS e grants explícitos', () => {
     expect(migrationSource).toContain('alter table public.app_permissions force row level security')
     expect(migrationSource).toContain('alter table public.app_user_permissions force row level security')

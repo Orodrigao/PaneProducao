@@ -119,20 +119,9 @@ from public.app_profiles profile cross join public.app_permissions permission
 where profile.active and profile.role = 'admin'
 on conflict do nothing;
 
-delete from public.app_user_permissions assignment
-using public.app_profiles profile
-where assignment.user_id = profile.user_id
-  and (
-    (lower(profile.display_name) in ('cleo', 'cléo') and assignment.permission_key = 'compras.acessar')
-    or (lower(profile.display_name) = 'liara' and assignment.permission_key = 'saldo_paes.acessar')
-    or lower(profile.display_name) = 'fran'
-  );
-
-insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
-select profile.user_id, permission.key, '*', null
-from public.app_profiles profile cross join public.app_permissions permission
-where lower(profile.display_name) = 'elis'
-on conflict do nothing;
+-- Ajustes individuais nao pertencem ao backfill: nomes podem mudar e nao sao
+-- identificadores unicos. A tela administrativa salva essas escolhas usando o
+-- user_id da sessao autenticada, depois que a matriz preservada for conferida.
 
 create or replace function public.replace_user_permissions(
   p_user_id uuid,
