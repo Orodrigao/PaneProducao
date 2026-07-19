@@ -64,12 +64,18 @@ Não deduza o estado de produção apenas pelas migrations locais. Para tarefa d
 segurança, compare migration, resultado documentado, código cliente e auditoria
 live somente leitura.
 
+O projeto Supabase também atende o repositório `ControlePizza`. Por isso, o
+histórico remoto contém migrations próprias desse sistema, como
+`harden_pizza_is_allowed`, que não devem ser copiadas para o PaneERP. A
+reconciliação deve classificar cada migration remota por repositório proprietário
+e exigir neste repositório apenas as migrations que alteram o ERP.
+
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes;
 - sobras, reaproveitamento e pendências;
 - romaneio e estoques;
-- compras, cotações e fornecedores;
+- fornecedores;
 - clientes, pedidos PJ e encomendas;
 - tabelas e opções de preço;
 - fechamento de caixa;
@@ -79,6 +85,15 @@ live somente leitura.
 - relatórios operacionais.
 
 ## Capacidades parciais
+
+### Compras e cotações legadas
+
+As rotas `/compras` e `/cotacoes` estão temporariamente pausadas enquanto o
+fluxo e a necessidade operacional são reavaliados. Os dados históricos foram
+preservados e as tabelas legadas ficaram sem acesso pela Data API.
+
+Essa pausa não cancela a frente estratégica de compras por XML prevista no
+plano de CMV.
 
 ### Ficha técnica e CMV
 

@@ -42,9 +42,6 @@ export function resolvePurchaseAccess(user: PurchaseUser): PurchaseAccess {
   if (hasAny(identity, ['geolar', 'producao1', 'padaria'])) {
     return { sector: 'padaria', isOwner: false }
   }
-  if (hasAny(identity, ['fran', 'cozinha'])) {
-    return { sector: 'cozinha', isOwner: false }
-  }
   if (hasAny(identity, ['liara', 'atendimento', 'samuca', 'samuel', 'rose', 'cleo', 'atendente_ex'])) {
     return { sector: 'loja', isOwner: false }
   }

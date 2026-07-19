@@ -26,18 +26,6 @@ describe('resolvePurchaseAccess', () => {
     expect(access).toEqual({ sector: 'loja', isOwner: false })
   })
 
-  it('reconhece Fran/cozinha pelo e-mail do perfil', () => {
-    const access = resolvePurchaseAccess(user({
-      username: 'cozinha@paneesalute.com.br',
-      email: 'cozinha@paneesalute.com.br',
-      displayName: 'Fran',
-      role: 'producao',
-      allowedRoutes: DEFAULT_ROUTES_BY_ROLE.producao,
-    }))
-
-    expect(access).toEqual({ sector: 'cozinha', isOwner: false })
-  })
-
   it('trata financeiro e compras como visao geral do comprador', () => {
     expect(resolvePurchaseAccess(user({
       role: 'financeiro',

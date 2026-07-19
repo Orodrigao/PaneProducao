@@ -10,6 +10,11 @@ O login por e-mail foi preparado em paralelo ao login atual por PIN. O login por
 
 Atualização em 2026-06-18: o magic link direto deixou de ser o fluxo de entrada do dia a dia. O e-mail agora deve ser usado para primeiro acesso/recuperação de senha, e o login normal passa a ser e-mail + senha.
 
+Atualização em 2026-07-18: Fran e o usuário
+`cozinha@paneesalute.com.br` foram excluídos do Supabase Auth. O cascade removeu
+o profile, a identidade Auth e as permissões vinculadas. A lista abaixo registra
+a criação histórica e não representa os acessos atuais.
+
 ## Usuários criados
 
 | Usuário | E-mail | Role | Store |
@@ -19,7 +24,7 @@ Atualização em 2026-06-18: o magic link direto deixou de ser o fluxo de entrad
 | Elis | `financeiro@paneesalute.com.br` | `financeiro` | `null` |
 | Geolar | `producao1@paneesalute.com.br` | `producao` | `jc` |
 | Sander | `forno@paneesalute.com.br` | `producao` | `jc` |
-| Fran | `cozinha@paneesalute.com.br` | `producao` | `jc` |
+| Fran (excluída em 2026-07-18) | `cozinha@paneesalute.com.br` | `producao` | `jc` |
 | expedicao | `expedicao@paneesalute.com.br` | `expedicao` | `jc` |
 | Gustavo | `expedicao2@paneesalute.com.br` | `expedicao` | `jc` |
 | Liara | `atendiment@paneesalute.com.br` | `vendas` | `jc` |

@@ -6,6 +6,8 @@ import { ChevronLeft, Plus, X, Send, Copy, Pencil, RotateCw, Check, Search } fro
 import { supabase } from '@/lib/supabase'
 import { AppUser, getCurrentUser, firstAllowedRoute, roleColor } from '@/lib/auth'
 import { formatDate, showToast } from '@/lib/utils'
+import { ModulePaused } from '@/components/ModulePaused'
+import { COMPRAS_COTACOES_PAUSADAS } from '@/lib/features'
 import { resolvePurchaseAccess } from './access'
 
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
@@ -16,6 +18,12 @@ interface PurchaseList { id:string; sector:string; status:string; submitted_at:s
 interface PurchaseItem { id:string; list_id:string; product_id:string|null; ad_hoc_name:string|null; unit:string|null; quantity:number|null; checked:boolean; is_adhoc:boolean; sort_order:number; products?: { name:string } }
 
 export default function ComprasPage() {
+  return COMPRAS_COTACOES_PAUSADAS
+    ? <ModulePaused/>
+    : <ComprasAtivasPage/>
+}
+
+function ComprasAtivasPage() {
   const router = useRouter()
   const [authUser, setAuthUser] = useState<AppUser | null>(null)
   const [user, setUser]     = useState<{ name: string; id: string }|null>(null)

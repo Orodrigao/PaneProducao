@@ -6,6 +6,8 @@ import { ChevronLeft, AlertTriangle, Trophy, ShoppingBag, Lock } from 'lucide-re
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { ModulePaused } from '@/components/ModulePaused'
+import { COMPRAS_COTACOES_PAUSADAS } from '@/lib/features'
 
 interface QuotationRow { id: string; week_reference: string; status: string; created_by: string }
 interface ItemRow { id: string; product_id: string; quantity: number; unit: string | null; product_name: string }
@@ -429,6 +431,8 @@ function ComparativoInner() {
 }
 
 export default function ComparativoPage() {
+  if (COMPRAS_COTACOES_PAUSADAS) return <ModulePaused/>
+
   return (
     <Suspense fallback={
       <div className="ps-canvas"><div className="ps-shell"><div style={{padding:24, color:'var(--ink-faint)'}}>Carregando…</div></div></div>

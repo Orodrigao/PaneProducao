@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { getCurrentUser, getCurrentUserAsync, canAccess, logout, type AppUser } from '@/lib/auth'
+import { COMPRAS_COTACOES_PAUSADAS, isComprasCotacoesPath } from '@/lib/features'
 import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
@@ -65,6 +66,9 @@ export default function Nav() {
   if (pathname === '/login' || !user) return null
 
   const allowed = (l: NavLink) => {
+    if (COMPRAS_COTACOES_PAUSADAS && isComprasCotacoesPath(l.href)) {
+      return false
+    }
     return canAccess(user, l.href)
   }
   const isActive = (href: string) =>
