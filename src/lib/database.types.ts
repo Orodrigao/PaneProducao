@@ -1921,6 +1921,10 @@ export type Database = {
           returned_quantity_loss: number
         }[]
       }
+      mark_bread_as_shelf: {
+        Args: { p_bread_id: string }
+        Returns: undefined
+      }
       register_bread_leftovers: {
         Args: {
           p_items: Json

@@ -209,7 +209,7 @@ export default function SobrasPage() {
   }
 
   async function includeBread(b: Bread) {
-    const { error } = await supabase.from('breads').update({ is_shelf: true }).eq('id', b.id)
+    const { error } = await supabase.rpc('mark_bread_as_shelf', { p_bread_id: b.id })
     if (error) { showToast('Erro: '+error.message); return }
     setBreads(prev => [...prev, { ...b, is_shelf: true }].sort((a, c) => a.name.localeCompare(c.name)))
     setCandidateBreads(prev => prev.filter(x => x.id !== b.id))
