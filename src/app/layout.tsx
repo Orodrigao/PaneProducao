@@ -19,9 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body style={{ background: 'var(--bg)', paddingBottom: '76px', minHeight: '100vh' }}>
+      <body className="app-body">
         <AuthGuard>
-          {children}
+          <div className="app-viewport">{children}</div>
           <Nav />
         </AuthGuard>
       </body>
