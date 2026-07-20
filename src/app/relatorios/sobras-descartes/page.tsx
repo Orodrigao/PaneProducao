@@ -252,30 +252,46 @@ export default function SobrasDescartesReport() {
           )}
         </header>
 
-        <div className="ps-scroll ps-pad">
-          <h1 className="ps-page-title">♻️ Sobras & Descartes</h1>
-          <p className="ps-page-lead">
-            Histórico unificado com filtros por período, modo e responsável.
-            Valor monetário = <code>quantidade × custo cadastrado</code>.
-          </p>
+        <div className="ps-scroll ps-pad ps-waste-report">
+          <div className="ps-report-heading">
+            <div>
+              <h1 className="ps-page-title">♻️ Sobras & Descartes</h1>
+              <p className="ps-page-lead">
+                Histórico unificado com filtros por período, modo e responsável.
+                Valor monetário = <code>quantidade × custo cadastrado</code>.
+              </p>
+            </div>
+            <button onClick={handleExport} disabled={filteredRows.length === 0} className="ps-btn ghost ps-report-export">
+              <Download size={15}/> Exportar CSV
+            </button>
+          </div>
 
           {/* Filtros */}
-          <div className="ps-filters">
-            <PeriodFilter onChange={setRange} />
-            <SegmentedFilter
-              options={[
-                { value: 'ambos',    label: 'Ambos' },
-                { value: 'sobra',    label: 'Sobras' },
-                { value: 'descarte', label: 'Descartes' },
-              ]}
-              value={modo}
-              onChange={(v) => setModo(v as 'sobra' | 'descarte' | 'ambos')}
-            />
-            <select value={responsible} onChange={e => setResponsible(e.target.value)}
-              className="ps-select" style={{padding:'6px 10px', fontSize:13, flex:'0 1 220px'}}>
-              <option value="all">Todos os responsáveis</option>
-              {allResponsibles.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
+          <div className="ps-filters ps-report-filter-grid" aria-label="Filtros do relatório">
+            <div className="ps-report-filter-field ps-report-filter-period">
+              <span className="ps-filter-lbl">Período</span>
+              <PeriodFilter onChange={setRange} />
+            </div>
+            <div className="ps-report-filter-field">
+              <span className="ps-filter-lbl">Tipo</span>
+              <SegmentedFilter
+                options={[
+                  { value: 'ambos',    label: 'Ambos' },
+                  { value: 'sobra',    label: 'Sobras' },
+                  { value: 'descarte', label: 'Descartes' },
+                ]}
+                value={modo}
+                onChange={(v) => setModo(v as 'sobra' | 'descarte' | 'ambos')}
+              />
+            </div>
+            <label className="ps-report-filter-field">
+              <span className="ps-filter-lbl">Responsável</span>
+              <select value={responsible} onChange={e => setResponsible(e.target.value)}
+                className="ps-select ps-report-responsible">
+                <option value="all">Todos os responsáveis</option>
+                {allResponsibles.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
           </div>
 
           {/* Alerta de cobertura — quando há registros sem custo */}
@@ -295,28 +311,30 @@ export default function SobrasDescartesReport() {
           )}
 
           {/* KPIs */}
-          <div style={{display:'flex', flexWrap:'wrap', gap:12, marginBottom:14}}>
+          <div className="ps-report-kpi-grid">
             <KPICard label="Valor Sobras"    value={formatBRL(kpis.sobrasValor)}    accent="sage"  helper={`${kpis.sobrasTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
             <KPICard label="Valor Descartes" value={formatBRL(kpis.descartesValor)} accent="berry" helper={`${kpis.descartesTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} un`} />
             <KPICard label="Registros"       value={kpis.records} />
             <KPICard label="Top produto"     value={kpis.topProduct} helper={kpis.topValor > 0 ? `${formatBRL(kpis.topValor)} no período` : '—'} />
           </div>
 
-          {/* Export */}
-          <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
-            <button onClick={handleExport} disabled={filteredRows.length === 0} className="ps-btn ghost sm">
-              <Download size={14}/> Exportar CSV
-            </button>
+          <div className="ps-report-table-heading">
+            <div>
+              <h2>Registros</h2>
+              <span>{filteredRows.length.toLocaleString('pt-BR')} no período selecionado</span>
+            </div>
           </div>
 
           {/* Tabela */}
-          <ReportTable
-            columns={columns}
-            rows={filteredRows}
-            loading={loading}
-            emptyMessage="Sem registros no período/filtros selecionados."
-            renderMobileCard={renderMobileCard}
-          />
+          <div className="ps-report-table-region">
+            <ReportTable
+              columns={columns}
+              rows={filteredRows}
+              loading={loading}
+              emptyMessage="Sem registros no período/filtros selecionados."
+              renderMobileCard={renderMobileCard}
+            />
+          </div>
         </div>
       </div>
     </div>

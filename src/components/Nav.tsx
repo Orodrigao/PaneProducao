@@ -2,13 +2,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { getCurrentUser, getCurrentUserAsync, canAccess, logout, type AppUser } from '@/lib/auth'
+import { getCurrentUser, getCurrentUserAsync, canAccess, logout, roleColor, type AppUser } from '@/lib/auth'
 import { COMPRAS_COTACOES_PAUSADAS, isComprasCotacoesPath } from '@/lib/features'
 import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
-  Factory, FileText, DollarSign, ShieldCheck,
+  Factory, FileText, DollarSign, ShieldCheck, PanelLeft,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -86,15 +86,79 @@ export default function Nav() {
     router.replace('/login')
   }
 
+  const navLink = (l: NavLink, variant: 'primary' | 'sidebar') => (
+    <Link
+      key={`${variant}-${l.href}`}
+      href={l.href}
+      className={variant === 'primary'
+        ? 'ps-navitem' + (isActive(l.href) ? ' active' : '')
+        : 'ps-sidebar-item' + (isActive(l.href) ? ' active' : '')}
+      aria-current={isActive(l.href) ? 'page' : undefined}
+      title={l.label}
+    >
+      <span className={variant === 'primary' ? 'nic' : 'ps-sidebar-icon'}>
+        <l.Icon size={variant === 'primary' ? 22 : 20} strokeWidth={1.85} />
+      </span>
+      <span>{l.label}</span>
+    </Link>
+  )
+
   return (
     <>
+      <aside className="ps-sidebar" aria-label="Navegação principal">
+        <Link className="ps-sidebar-brand" href="/" aria-label="Pane & Salute — início">
+          <span className="ps-sidebar-mark">P</span>
+          <span className="ps-sidebar-brand-text">
+            <b>Pane &amp; Salute</b>
+            <small>ERP</small>
+          </span>
+        </Link>
+
+        <div className="ps-sidebar-scroll">
+          <div className="ps-sidebar-group">
+            <div className="ps-sidebar-label">Principal</div>
+            {primary.map(l => navLink(l, 'sidebar'))}
+          </div>
+
+          <button
+            className={'ps-sidebar-item ps-sidebar-more' + (moreActive ? ' active' : '')}
+            onClick={() => setSheetOpen(true)}
+            aria-label="Abrir todas as seções"
+            title="Mais seções"
+          >
+            <span className="ps-sidebar-icon"><PanelLeft size={20} strokeWidth={1.85} /></span>
+            <span>Mais seções</span>
+          </button>
+
+          <div className="ps-sidebar-groups-full">
+            {moreGroups.map(g => (
+              <div className="ps-sidebar-group" key={g.group}>
+                <div className="ps-sidebar-label">{g.group}</div>
+                {g.items.map(l => navLink(l, 'sidebar'))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="ps-sidebar-account">
+          <div className="ps-sidebar-user" title={user.displayName}>
+            <span className="ps-avatar" style={{background: roleColor(user.role)}}>
+              {user.displayName.charAt(0).toUpperCase()}
+            </span>
+            <span>
+              <b>{user.displayName}</b>
+              <small>{user.role}</small>
+            </span>
+          </div>
+          <button className="ps-sidebar-logout" onClick={handleLogout} aria-label="Sair" title="Sair">
+            <LogOut size={19} strokeWidth={1.85} />
+            <span>Sair</span>
+          </button>
+        </div>
+      </aside>
+
       <nav className="ps-nav">
-        {primary.map(l => (
-          <Link key={l.href} href={l.href} className={'ps-navitem' + (isActive(l.href) ? ' active' : '')}>
-            <span className="nic"><l.Icon size={22} strokeWidth={1.85} /></span>
-            <span>{l.label}</span>
-          </Link>
-        ))}
+        {primary.map(l => navLink(l, 'primary'))}
         <button className={'ps-navitem' + (moreActive ? ' active' : '')} onClick={() => setSheetOpen(true)} aria-label="Mais seções">
           <span className="nic"><LayoutGrid size={22} strokeWidth={1.85} /></span>
           <span>Mais</span>
