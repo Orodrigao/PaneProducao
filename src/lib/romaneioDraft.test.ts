@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRomaneioProductOptions,
   exceedsRomaneioWeightLimit,
+  filterCatalogBreadsForSearch,
   formatRomaneioWeightInGrams,
   nextRomaneioTripNumber,
   orderQuantitiesByBreadId,
@@ -62,6 +63,25 @@ describe('romaneioDraft', () => {
     expect(exceedsRomaneioWeightLimit('Ciabatta (un)', 11)).toBe(false)
     expect(exceedsRomaneioWeightLimit('Mini Croissant (kg)', 1450)).toBe(true)
     expect(exceedsRomaneioWeightLimit('Baguete', 1450)).toBe(false)
+  })
+
+  it('busca no catalogo ignorando acento, caixa e itens ja adicionados', () => {
+    const catalog = [
+      { id: 'ciabatta', name: 'Ciabatta' },
+      { id: 'baguete', name: 'Baguete' },
+      { id: 'mini-croissant', name: 'Mini Croissant' },
+      { id: 'pao-de-mel', name: 'Pão de Mel' },
+    ]
+    expect(filterCatalogBreadsForSearch(catalog, [], 'CIA').map(b => b.id)).toEqual(['ciabatta'])
+    expect(filterCatalogBreadsForSearch(catalog, [], 'pao').map(b => b.id)).toEqual(['pao-de-mel'])
+    expect(filterCatalogBreadsForSearch(catalog, [], 'mini croi').map(b => b.id)).toEqual(['mini-croissant'])
+    expect(filterCatalogBreadsForSearch(catalog, ['ciabatta'], 'cia')).toEqual([])
+    expect(filterCatalogBreadsForSearch(catalog, [], '   ')).toEqual([])
+  })
+
+  it('limita a quantidade de sugestoes do catalogo', () => {
+    const catalog = Array.from({ length: 20 }, (_, i) => ({ id: `pao-${i}`, name: `Pao ${i}` }))
+    expect(filterCatalogBreadsForSearch(catalog, [], 'pao', 3)).toHaveLength(3)
   })
 
   it('calcula a proxima viagem pela maior viagem existente', () => {

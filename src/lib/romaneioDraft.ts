@@ -113,6 +113,25 @@ export function buildRomaneioProductOptions(
   })
 }
 
+export function filterCatalogBreadsForSearch<T extends { id: string; name: string }>(
+  catalog: T[],
+  alreadyPresentIds: Set<string> | string[],
+  query: string,
+  limit = 8,
+): T[] {
+  const present = alreadyPresentIds instanceof Set ? alreadyPresentIds : new Set(alreadyPresentIds)
+  const tokens = normalizeText(query).split(/\s+/).filter(Boolean)
+  if (!tokens.length) return []
+  const matches: T[] = []
+  for (const bread of catalog) {
+    if (present.has(bread.id)) continue
+    const normalizedName = normalizeText(bread.name)
+    if (tokens.every(token => normalizedName.includes(token))) matches.push(bread)
+    if (matches.length >= limit) break
+  }
+  return matches
+}
+
 export function nextRomaneioTripNumber(trips: Array<number | null | undefined>): number {
   const maxTrip = trips.reduce<number>((max, trip) => {
     const value = typeof trip === 'number' ? trip : Number(trip)

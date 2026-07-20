@@ -8,6 +8,7 @@ import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
   buildRomaneioProductOptions,
   exceedsRomaneioWeightLimit,
+  filterCatalogBreadsForSearch,
   formatRomaneioQty,
   formatRomaneioWeightInGrams,
   isWeightControlledRomaneioProduct,
@@ -317,6 +318,7 @@ export default function RomaneioPage() {
   const [criarDate, setCriarDate] = useState(todayKey())
   const [criarDestId, setCriarDestId] = useState('')
   const [criarDrafts, setCriarDrafts] = useState<Record<string,CriarDraft>>({})
+  const [catalogSearch, setCatalogSearch] = useState('')
   // conferencia
   const [confRomId, setConfRomId] = useState('')
   const [confRom, setConfRom] = useState<Romaneio|null>(null)
@@ -488,6 +490,7 @@ export default function RomaneioPage() {
 
   const onDestChange = async (destId: string) => {
     setCriarDestId(destId)
+    setCatalogSearch('')
     if (!destId || criarDrafts[destId]) return
     showLoad('Verificando viagens...')
     try {
@@ -525,6 +528,17 @@ export default function RomaneioPage() {
     if (!criarDestId) return
     const qty = normalizeRomaneioQty(parseRomaneioQty(value))
     updateCriarDraft(criarDestId, draft => ({ ...draft, qtys: { ...draft.qtys, [id]: qty } }))
+  }
+
+  const addCatalogBread = (bread: Bread) => {
+    if (!criarDestId) return
+    updateCriarDraft(criarDestId, draft => (
+      draft.breads.some(b => b.id === bread.id)
+        ? draft
+        : { ...draft, breads: [...draft.breads, bread] }
+    ))
+    setCatalogSearch('')
+    showToastPS('✅ '+bread.name+' adicionado')
   }
 
   const addExtra = () => {
@@ -837,6 +851,7 @@ export default function RomaneioPage() {
   const activeDraft = criarDestId ? criarDrafts[criarDestId] : undefined
   const activeDestinationIsEx = normalizeDestination(dests.find(destination => destination.id === criarDestId)?.code) === 'EX'
   const activeOptions = activeDraft ? buildRomaneioProductOptions(activeDraft.breads, { ciabattaOnlyKg: activeDestinationIsEx }) : []
+  const catalogCandidates = activeDraft ? filterCatalogBreadsForSearch(breads, activeDraft.breads.map(b => b.id), catalogSearch) : []
   const criarTotalItems = activeDraft ? Object.values(activeDraft.qtys).filter(v=>v>0).length : 0
   const criarTotalQtyLabel = activeDraft ? formatDraftTotal(activeDraft.qtys, activeOptions) : '0 un'
   const criarDraftCount = Object.keys(criarDrafts).length
@@ -1156,6 +1171,29 @@ export default function RomaneioPage() {
                         </div>
                       )
                     })}
+                  </div>
+
+                  {/* Buscar produto no catálogo */}
+                  <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed var(--ps-line)'}}>
+                    <div className="ps-label" style={{marginTop:0}}>+ Adicionar produto do catálogo</div>
+                    <input className="ps-input" style={{width:'100%'}}
+                      placeholder="Buscar pão cadastrado (ex.: ciabatta)..." value={catalogSearch}
+                      onChange={e=>setCatalogSearch(e.target.value)}/>
+                    {catalogSearch.trim() && (
+                      <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:8}}>
+                        {catalogCandidates.length===0 ? (
+                          <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.4}}>
+                            Nada novo com esse nome — pode já estar na lista acima. Se for um pão que ainda não existe, use “Pão especial / avulso” abaixo.
+                          </div>
+                        ) : catalogCandidates.map(bread=>(
+                          <button key={bread.id} className="ps-btn ghost" style={{justifyContent:'space-between',width:'100%'}}
+                            onClick={()=>addCatalogBread(bread)}>
+                            <span>{bread.name}</span>
+                            <Plus size={14}/>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Add extra */}
