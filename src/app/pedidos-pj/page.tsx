@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
+import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
 
 // ===== Tipos =====
 interface Customer {
@@ -35,6 +36,7 @@ interface OrderLine {
 
 interface OrderRow {
   id:string
+  order_group_id:string|null
   customer_id:string|null; pj_client:string|null
   order_date:string; delivery_date:string|null; production_date:string|null
   bread_id:string; product_source:string|null; product_name:string|null
@@ -43,6 +45,7 @@ interface OrderRow {
 }
 interface PedidoGroup {
   key:string
+  order_group_id:string|null
   customer_id:string|null; customer_name:string
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
@@ -100,7 +103,7 @@ export default function PedidosPJPage() {
   const [saving, setSaving] = useState(false)
 
   const [viewing, setViewing] = useState<PedidoGroup|null>(null)
-  const [editing, setEditing] = useState<{ids:string[]; order_date:string}|null>(null)
+  const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
 
   useEffect(() => { setUser(getCurrentUser()) }, [])
 
@@ -208,9 +211,11 @@ export default function PedidosPJPage() {
     if (lines.some(l => l.packs <= 0)) { showToast('Quantidade inválida'); return }
 
     setSaving(true)
+    const orderGroupId = ensureOrderGroupId(editing?.order_group_id)
     const rows = lines.map(l => ({
       store: 'pj',
       order_type: 'pj',
+      order_group_id: orderGroupId,
       bread_id: l.product_id,
       product_source: l.product_source,
       product_name: l.product_name,
@@ -257,7 +262,7 @@ export default function PedidosPJPage() {
         packs: Math.round(qty / pack) || 1,
       }
     }))
-    setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date })
+    setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date, order_group_id: g.order_group_id })
     setSearch('')
     setViewing(null)
     setTab('novo')
@@ -266,10 +271,11 @@ export default function PedidosPJPage() {
   const pedidosGrouped = useMemo<PedidoGroup[]>(() => {
     const groups = new Map<string, PedidoGroup>()
     orders.forEach(r => {
-      const key = `${r.customer_id || r.pj_client || '?'}__${r.order_date}__${r.delivery_date || ''}`
+      const key = pjOrderGroupKey(r)
       if (!groups.has(key)) {
         groups.set(key, {
           key,
+          order_group_id: r.order_group_id,
           customer_id: r.customer_id,
           customer_name: r.customer_id ? (customers.find(c => c.id === r.customer_id)?.name || r.pj_client || '?') : (r.pj_client || '?'),
           order_date: r.order_date,
