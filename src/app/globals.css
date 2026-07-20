@@ -551,7 +551,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 }
 
 /* Sheet "Mais" */
-.ps-sheet-overlay{ position:fixed; inset:0; z-index:60; background:rgba(42,32,24,.42); backdrop-filter:blur(2px); display:flex; align-items:flex-end; justify-content:center; animation:psfade .2s ease; }
+.ps-sheet-overlay{ position:fixed; inset:0; z-index:80; background:rgba(42,32,24,.42); backdrop-filter:blur(2px); display:flex; align-items:flex-end; justify-content:center; animation:psfade .2s ease; }
 @keyframes psfade{ from{opacity:0;} to{opacity:1;} }
 .ps-sheet{ width:100%; max-width:var(--shell-w); background:var(--flour); color:var(--ps-ink); font-family:var(--font-ui); border-radius:22px 22px 0 0; padding:10px 16px calc(20px + env(safe-area-inset-bottom)); box-shadow:var(--sh-pop); animation:psslideup .26s cubic-bezier(.2,.8,.2,1); max-height:80vh; overflow-y:auto; }
 @keyframes psslideup{ from{ transform:translateY(100%);} to{ transform:translateY(0);} }

@@ -48,4 +48,14 @@ describe('navegação responsiva', () => {
     expect(cssSource).toContain('.ps-shell{ width:100%; min-height:100vh;')
     expect(cssSource).not.toContain('--app-content-max')
   })
+
+  it('mantém formulários abertos à frente do menu lateral', () => {
+    const cssSource = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
+    const sidebarZIndex = cssSource.match(/\.ps-sidebar\{\s*position:fixed;[^}]*z-index:(\d+);/)?.[1]
+    const overlayZIndex = cssSource.match(/\.ps-sheet-overlay\{[^}]*z-index:(\d+);/)?.[1]
+
+    expect(sidebarZIndex).toBeDefined()
+    expect(overlayZIndex).toBeDefined()
+    expect(Number(overlayZIndex)).toBeGreaterThan(Number(sidebarZIndex))
+  })
 })
