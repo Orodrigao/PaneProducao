@@ -21,7 +21,8 @@
 ## Matriz de verificação
 
 <!-- Obrigatória quando a mudança toca Auth, permissão, rota ou dado
-compartilhado. Apague se realmente não se aplicar (ex.: só documentação). -->
+compartilhado. Se não se aplicar (ex.: só documentação), preencha as células
+com N/A e a justificativa — não apague a seção. -->
 
 | Dimensão                                           | Evidência |
 | -------------------------------------------------- | --------- |

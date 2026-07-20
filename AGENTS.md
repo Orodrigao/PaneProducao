@@ -37,14 +37,18 @@ Regras de parceria:
    ("quem faz o quê na padaria"), nunca por jargão. Termo técnico
    inevitável → uma frase de explicação na primeira vez.
 2. **Classifique o risco de cada pedido, em voz alta, antes de codar:**
-    - **Baixo** — texto, visual, relatório novo, tela isolada. Pode executar
-      direto após confirmar o entendimento.
-    - **Médio** — mexe em fluxo existente que a operação usa todo dia.
-      Apresente o plano em 3-5 linhas e o que pode quebrar. Espere o OK.
+    - **Baixo** — texto, estilo ou correção visual, sem mudança de
+      comportamento ou de dados. Pode executar direto após confirmar o
+      entendimento.
+    - **Médio** — mexe em comportamento de fluxo existente que a operação usa
+      todo dia. Apresente o plano em 3-5 linhas e o que pode quebrar. Espere
+      o OK.
     - **Alto** — login, permissões, banco de produção, migrations, dados
       financeiros, qualquer coisa transversal. Plano formal por fases,
       riscos explícitos, aprovação por fase. Nunca comece pelo código.
       Na dúvida entre dois níveis, use o mais alto.
+      Funcionalidade nova, de qualquer tamanho, nunca é risco baixo — segue o
+      fluxo de Descoberta e Plano abaixo.
 3. **Pedido é sintoma, não especificação.** Antes de implementar, entenda o
    problema operacional por trás: quem sofre, quando, com que frequência, o
    que acontece hoje. Faça perguntas até o cenário fechar. Rodrigo prefere
@@ -65,19 +69,22 @@ Regras de parceria:
 
 ## Hierarquia da documentação
 
-Use esta ordem para decidir o que vale:
+Autoridades diferentes valem para perguntas diferentes:
 
-1. `AGENTS.md` — regras duráveis de trabalho e segurança.
-2. `docs/CURRENT_STATE.md` — fase real, riscos e bloqueios atuais.
-3. `docs/PLAN.md` — roadmap canônico para chegar ao CMV.
-4. `docs/PRD.md` — problema de negócio e requisitos do produto.
-5. Documento específico da funcionalidade, somente quando a tarefa exigir.
-6. Código, migrations e testes — prova do que foi implementado.
+- **Regras de trabalho e segurança** — este arquivo, e somente ele.
+- **Fato de implementação** (o que existe e como funciona) — código,
+  migrations e testes. Vencem qualquer documento; divergência → reporte e
+  corrija o documento na mesma tarefa.
+- **Fase, riscos e bloqueios** — `docs/CURRENT_STATE.md`.
+- **Roadmap** — `docs/PLAN.md`. **Produto** — `docs/PRD.md`.
+- **Documento específico de funcionalidade** — somente quando a tarefa
+  exigir.
+- **Estado de produção** — nunca deduzido de documento ou migration local;
+  exige auditoria live somente leitura.
 
 `docs/history/` guarda registros históricos (auditorias, resultados de
 aplicação, planos de tarefas antigas). Eles descrevem o passado e nunca
-definem o estado atual. Conflito entre documento e código → o código vence;
-reporte a divergência e corrija o documento na mesma tarefa.
+definem o estado atual.
 
 Antes de propor uma mudança:
 
@@ -149,7 +156,7 @@ Nenhuma funcionalidade nova começa pela implementação.
 
 ### 4. Verificação
 
-Sempre, antes de declarar pronto:
+Toda mudança de código, antes de declarar pronto:
 
 ```bash
 npm run lint
@@ -173,7 +180,8 @@ Além disso:
   navegador;
 - listar para o Rodrigo o que foi verificado e o que ficou sem teste.
 
-Documentação pura exige no mínimo `git diff --check`.
+Mudança somente de documentação dispensa os comandos acima; exige no mínimo
+`git diff --check`.
 
 ### 5. Entrega
 
@@ -181,7 +189,8 @@ Documentação pura exige no mínimo `git diff --check`.
 - Push somente da branch da tarefa.
 - Pull request sempre draft, salvo pedido explícito em contrário.
 - Nunca fazer push direto na `main`.
-- Preencher o template de PR por inteiro, incluindo a matriz de verificação.
+- Preencher todas as seções aplicáveis do template de PR; seção não
+  aplicável recebe `N/A` com justificativa curta, nunca é apagada.
 - Informar em linguagem leiga: o que mudou para a operação, arquivos
   alterados, verificações executadas e riscos restantes.
 - Fechar com o roteiro de teste para o Rodrigo (regra 6 da parceria).
@@ -229,6 +238,8 @@ resumo carrega a responsabilidade.
 Nunca versionar:
 
 - service role, senha do banco, tokens ou chaves privadas;
+- segredo em variável `NEXT_PUBLIC_*` — tudo com esse prefixo entra no bundle
+  do navegador;
 - certificado digital;
 - sessão/cookie do CNM;
 - export real do CNM, XML ou documento fiscal sem anonimização;
