@@ -236,20 +236,15 @@ export default function SimuladorDescontoPage() {
     setAiLoading(true); setAiText(''); setAiError('')
     const custName = customers.find(c => c.id === customerId)?.name || customerNameFree.trim() || ''
     const prodName = selectedProductName || ''
-    const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     try {
-      const resp = await fetch(`${SB_URL}/functions/v1/analisar-desconto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke<{ analysis?: string; error?: string }>('analisar-desconto', {
+        body: {
           price, cmv, discount, currentVolume, promisedVolume,
           customerName: custName || undefined,
           productName: prodName || undefined,
-        }),
+        },
       })
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`)
+      if (error) throw error
       if (data?.error) throw new Error(data.error)
       setAiText(data?.analysis || '(resposta vazia)')
       saveToHistory({ customerName: custName, productName: prodName })

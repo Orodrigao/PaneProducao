@@ -209,7 +209,7 @@ export default function SobrasPage() {
   }
 
   async function includeBread(b: Bread) {
-    const { error } = await supabase.from('breads').update({ is_shelf: true }).eq('id', b.id)
+    const { error } = await supabase.rpc('mark_bread_for_shelf', { p_bread_id: b.id })
     if (error) { showToast('Erro: '+error.message); return }
     setBreads(prev => [...prev, { ...b, is_shelf: true }].sort((a, c) => a.name.localeCompare(c.name)))
     setCandidateBreads(prev => prev.filter(x => x.id !== b.id))
@@ -331,8 +331,9 @@ export default function SobrasPage() {
           .eq('record_date', date).eq('responsible', user.displayName)
         const oldIds = (oldRecords||[]).map((r:any)=>r.id)
         if (oldIds.length > 0) {
-          await supabase.from('bread_movements').delete()
+          const { error: movementDeleteError } = await supabase.from('bread_movements').delete()
             .in('reference_id', oldIds).in('reference_type', ['descarte','descarte_kit'])
+          if (movementDeleteError) throw movementDeleteError
         }
       }
       await supabase.from(table).delete().eq('record_date', date).eq('responsible', user.displayName)
@@ -362,9 +363,10 @@ export default function SobrasPage() {
             reference_id: r.id,
             reference_type: 'descarte',
             recorded_by: user.displayName,
-          }))
+        }))
         if (directMovements.length > 0) {
-          await supabase.from('bread_movements').insert(directMovements)
+          const { error: directMovementError } = await supabase.from('bread_movements').insert(directMovements)
+          if (directMovementError) throw directMovementError
         }
 
         // Cascade de kit (mesma lógica do C1) — cálculo extraído pra
@@ -373,16 +375,18 @@ export default function SobrasPage() {
         const kitRows = filterKitDiscards(inserted as DiscardRow[], kitIds)
         if (kitRows.length > 0) {
           const kitProductIds = kitRows.map(r => r.product_id)
-          const { data: comps } = await supabase
+          const { data: comps, error: componentsError } = await supabase
             .from('product_components')
             .select('parent_product_id,component_source,component_id,quantity')
             .in('parent_product_id', kitProductIds)
             .eq('component_source', 'bread')
+          if (componentsError) throw componentsError
           const cascadeMovements = buildKitCascadeMovements(
             kitRows, (comps ?? []) as KitComponent[], user.store, user.displayName
           )
           if (cascadeMovements.length > 0) {
-            await supabase.from('bread_movements').insert(cascadeMovements)
+            const { error: cascadeMovementError } = await supabase.from('bread_movements').insert(cascadeMovements)
+            if (cascadeMovementError) throw cascadeMovementError
             cascadeBreadCount = cascadeMovements.length
           }
         }

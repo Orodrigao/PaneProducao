@@ -205,18 +205,13 @@ function DetalheInner() {
     if (!text) { showToast('Cole a resposta primeiro'); return }
     setParsing(prev => ({...prev, [sup.id]: true}))
     try {
-      const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-      const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const myItems = itemsForSupplier(sup.supplier_id)
       const catalog = myItems.map(it => ({ id: it.product_id, name: it.product_name, unit: it.unit }))
-      const resp = await fetch(`${SB_URL}/functions/v1/parse-cotacao`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` },
-        body: JSON.stringify({ text, products: catalog }),
+      const { data, error } = await supabase.functions.invoke<{ items?: ParsedItem[] }>('parse-cotacao', {
+        body: { text, products: catalog },
       })
-      const data = await resp.json()
-      if (!resp.ok) {
-        showToast('Erro IA: '+(data?.error || resp.status))
+      if (error) {
+        showToast('Erro IA: '+error.message)
         return
       }
       const items: ParsedItem[] = Array.isArray(data?.items) ? data.items : []
