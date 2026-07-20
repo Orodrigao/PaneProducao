@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-17
+**Data de referência:** 2026-07-20
 
-**Base observada:** `origin/main` no commit `66318d4`
+**Base observada:** `origin/main` no commit `774b5cd`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -13,52 +13,80 @@ O projeto está em estabilização e conclusão da Sprint 0 de segurança.
 
 Funcionalidades novas que adicionem dados financeiros devem esperar:
 
-1. saneamento da memória e do fluxo de branches;
-2. baseline de testes e navegador no `main`;
-3. conclusão da auditoria e do hardening Auth/RLS.
+1. baseline de testes e navegador no `main`;
+2. conclusão da auditoria e do hardening Auth/RLS.
 
 ## Autenticação
 
 Estado conhecido:
 
-- Supabase Auth por e-mail e senha está implementado;
+- Supabase Auth por e-mail e senha é o único acesso; o login por PIN foi
+  removido do aplicativo e a migration aplicada em produção — `app_users` não
+  tem mais policy nem privilégios para `PUBLIC`, `anon` ou `authenticated`;
 - `app_profiles` fornece role, loja, rotas e status do usuário autenticado;
 - recuperação e definição de senha existem;
-- o acesso legado por PIN/localStorage foi removido da aplicação e a tela de
-  login informa a transição para e-mail e senha;
-- a administração legada de usuários foi retirada da interface; criação,
-  alteração e desativação de acessos devem ocorrer no Supabase Auth pelo
-  administrador responsável.
-- a migration de retirada do PIN foi aplicada em produção: `app_users` não
-  tem mais policy nem privilégios para `PUBLIC`, `anon` ou `authenticated`.
+- criação e desativação de contas ocorrem no Supabase Auth pelo administrador;
+  a gestão de permissões granulares tem tela administrativa própria no app;
+- `app_users` e a coluna histórica de PIN permanecem no banco apenas para
+  rollback administrativo controlado, sem exposição pela Data API.
 
-Consequência:
+## Permissões — três níveis que precisam concordar
 
-- Auth por e-mail não significa que a migração de segurança terminou;
-- telas e tabelas precisam funcionar para `authenticated`;
-- policies antigas de `anon` não podem ser mantidas indefinidamente;
-- retirada do PIN exige validação operacional por perfil e loja.
+1. **`allowed_routes` em `app_profiles`** — decide menu e guarda de rota no
+   cliente (`src/lib/auth.ts`). Perfil sem `allowed_routes` recebe defaults
+   por role definidos no código.
+2. **`app_permissions` + `app_user_permissions`** — catálogo e concessões
+   granulares por usuário, com escopo por loja (`*`, `jc`, `ja`, `ex`).
+   Hoje governam as ações do Romaneio via RPCs (`replace_user_permissions`,
+   `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
+   `approve_romaneio_divergence`). Administradas pela tela de gestão de
+   acessos.
+3. **Policies RLS** — a autorização efetiva do acesso direto às tabelas. As
+   ações do Romaneio passam por RPCs `SECURITY DEFINER` com validação interna
+   e grants `EXECUTE` próprios — proteção adicional que também precisa de
+   revisão em mudança de acesso.
+
+**Risco central:** os níveis 1 e 2 não são sincronizados. O backfill da
+migration `20260718181203` derivou permissões de `allowed_routes` uma única
+vez; desde então a tela administrativa escreve somente `app_user_permissions`,
+enquanto menu e guarda continuam lendo `allowed_routes`. Alterar acesso em um
+nível não altera o outro — causa provável de "usuário perdeu a tela". Mudança
+de acesso deve verificar os três níveis até essa unificação virar tarefa
+própria.
 
 ## RLS e Supabase
 
-Hardening documentado como aplicado:
+Hardening versionado na `main` (aplicação em produção só é considerada
+confirmada onde existe registro correspondente em `docs/history/` ou
+auditoria live):
 
-- `app_profiles`;
+- `app_profiles`, `app_permissions`, `app_user_permissions`;
 - tabelas iniciais de estoque;
 - clientes e tabelas de preço;
-- acesso autenticado a pedidos;
+- acesso autenticado a pedidos, incluindo produção por loja para `vendas`;
 - policies autenticadas de componentes de ficha;
-- fechamento de caixa.
+- fechamento de caixa;
+- funções do Romaneio com permissões granulares.
 
 Riscos ainda abertos:
 
 - o último inventário live completo registrou tabelas sem RLS e policies
-  anônimas permissivas;
-- `app_users` e a coluna histórica de PIN permanecem no banco para rollback
-  administrativo controlado, mas não estão mais expostas pela Data API;
+  anônimas permissivas; o estado live precisa ser reauditado antes de
+  declarar Sprint 0 concluída;
+- as migrations de permissões de 2026-07-18 não têm registro de aplicação em
+  produção; confirmar antes de assumir vigência;
+- `confirm_romaneio_receipt` aceita payload vazio ou parcial e ainda assim
+  pode fechar o romaneio como `conferido` (migration `20260718203439`);
+- a tela administrativa permite conceder `romaneio.administrar` por loja,
+  mas a entrada do painel administrativo do Romaneio exige escopo `*` —
+  concessão por loja não abre o painel;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
-- o estado live precisa ser reauditado antes de declarar Sprint 0 concluída.
+- `src/lib/database.types.ts` está obsoleto (ainda descreve `app_users`, não
+  contém `app_profiles`, `app_permissions`, `app_user_permissions` nem
+  `cash_closings`) e o cliente Supabase nem o utiliza;
+- o TypeScript aceita o role `romaneio`, mas a constraint de `app_profiles`
+  no schema versionado não o inclui.
 
 Não deduza o estado de produção apenas pelas migrations locais. Para tarefa de
 segurança, compare migration, resultado documentado, código cliente e auditoria
@@ -67,22 +95,26 @@ live somente leitura.
 O projeto Supabase também atende o repositório `ControlePizza`. Por isso, o
 histórico remoto contém migrations próprias desse sistema, como
 `harden_pizza_is_allowed`, que não devem ser copiadas para o PaneERP. A
-reconciliação deve classificar cada migration remota por repositório proprietário
-e exigir neste repositório apenas as migrations que alteram o ERP.
+reconciliação deve classificar cada migration remota por repositório
+proprietário e exigir neste repositório apenas as migrations que alteram o ERP.
 
 ## Capacidades já presentes
 
-- produção, forno e confirmação por lotes;
-- sobras, reaproveitamento e pendências;
-- romaneio e estoques;
-- fornecedores;
+- produção, forno e confirmação por lotes, com contexto por loja;
+- sobras, reaproveitamento e pendências com encaminhamento à Central de
+  Pendências;
+- romaneio com permissões granulares por ação e loja (ressalvas registradas
+  em Riscos ainda abertos);
+- estoques e fornecedores;
 - clientes, pedidos PJ e encomendas;
 - tabelas e opções de preço;
 - fechamento de caixa;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
-- relatórios operacionais.
+- relatórios operacionais;
+- gestão administrativa de permissões por usuário;
+- layout responsivo para desktop além do mobile.
 
 ## Capacidades parciais
 
@@ -113,21 +145,20 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 
 ## Bloqueios atuais
 
-1. Documentação central divergente do código.
-2. Muitos branches e worktrees antigos aumentam o risco de partir de base
+1. Muitos branches e worktrees antigos aumentam o risco de partir de base
    desatualizada.
-3. Ausência de baseline recente e único no navegador.
-4. O código usa somente Auth e a tabela legada foi bloqueada; ainda existem
-   policies anônimas permissivas em outras áreas operacionais.
-5. RLS não pode ser declarado concluído sem nova auditoria live.
+2. Ausência de baseline recente e único no navegador.
+3. Policies anônimas permissivas remanescentes em áreas operacionais.
+4. RLS não pode ser declarado concluído sem nova auditoria live.
+5. Os planos de permissão (`allowed_routes` × `app_user_permissions`) não são
+   sincronizados; unificação pendente como tarefa própria.
 
 ## Próximas fases aprovadas
 
-1. Sanear memória e documentação.
-2. Organizar branches/worktrees sem perder trabalho.
-3. Executar baseline técnico e smoke tests no navegador.
-4. Priorizar regressões reproduzíveis.
-5. Aplicar o hardening Auth/RLS em lotes pequenos nas próximas tabelas
+1. Organizar branches/worktrees sem perder trabalho.
+2. Executar baseline técnico e smoke tests no navegador.
+3. Priorizar regressões reproduzíveis.
+4. Aplicar o hardening Auth/RLS em lotes pequenos nas próximas tabelas
    operacionais, com validação por perfil e loja antes de cada aplicação em
    produção.
 

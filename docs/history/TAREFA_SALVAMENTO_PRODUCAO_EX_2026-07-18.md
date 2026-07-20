@@ -1,3 +1,9 @@
+> **Registro histórico (2026-07-20). Tarefa CONCLUÍDA.** Correção aplicada
+> pela migration `20260718095446_permitir_vendas_salvar_producao_da_loja.sql`
+> e coberta por `src/app/ordersProductionRls.test.ts`. Os critérios abaixo
+> foram preservados como escritos; checkboxes desmarcados não indicam
+> pendência.
+
 # Tarefa técnica — corrigir salvamento da produção da Loja EX
 
 ## Problema
