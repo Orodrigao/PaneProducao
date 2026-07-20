@@ -463,7 +463,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 /* Navegação lateral responsiva. No celular, apenas a .ps-nav inferior aparece. */
 .ps-sidebar{ display:none; }
 
-@media (min-width:768px){
+@media (min-width:600px){
   :root{ --app-sidebar-w:88px; --shell-w:calc(100vw - var(--app-sidebar-w)); }
   .app-body{ padding:0; }
   .app-body:has(.ps-sidebar){ padding-left:var(--app-sidebar-w); }
