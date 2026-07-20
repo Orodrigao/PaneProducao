@@ -4,6 +4,8 @@ import {
   exceedsRomaneioWeightLimit,
   filterCatalogBreadsForSearch,
   formatRomaneioWeightInGrams,
+  isWeightControlledRomaneioProduct,
+  labelRomaneioExtraName,
   nextRomaneioTripNumber,
   orderQuantitiesByBreadId,
   parseRomaneioQty,
@@ -63,6 +65,21 @@ describe('romaneioDraft', () => {
     expect(exceedsRomaneioWeightLimit('Ciabatta (un)', 11)).toBe(false)
     expect(exceedsRomaneioWeightLimit('Mini Croissant (kg)', 1450)).toBe(true)
     expect(exceedsRomaneioWeightLimit('Baguete', 1450)).toBe(false)
+  })
+
+  it('trata qualquer nome com (kg) como controlado por peso', () => {
+    expect(isWeightControlledRomaneioProduct('Pão de mortadela (kg)')).toBe(true)
+    expect(isWeightControlledRomaneioProduct('Pão de mortadela (un)')).toBe(false)
+    expect(isWeightControlledRomaneioProduct('Pão de mortadela')).toBe(false)
+    expect(exceedsRomaneioWeightLimit('Pão de mortadela (kg)', 1450)).toBe(true)
+  })
+
+  it('rotula o avulso com a unidade escolhida', () => {
+    expect(labelRomaneioExtraName('Pão de mortadela', 'kg')).toBe('Pão de mortadela (kg)')
+    expect(labelRomaneioExtraName('Pão de mortadela', 'un')).toBe('Pão de mortadela')
+    expect(labelRomaneioExtraName('Ciabatta', 'un')).toBe('Ciabatta (un)')
+    expect(labelRomaneioExtraName('Ciabatta', 'kg')).toBe('Ciabatta (kg)')
+    expect(labelRomaneioExtraName('Pão de mortadela (kg)', 'kg')).toBe('Pão de mortadela (kg)')
   })
 
   it('busca no catalogo ignorando acento, caixa e itens ja adicionados', () => {

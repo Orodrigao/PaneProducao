@@ -12,6 +12,7 @@ import {
   formatRomaneioQty,
   formatRomaneioWeightInGrams,
   isWeightControlledRomaneioProduct,
+  labelRomaneioExtraName,
   nextRomaneioTripNumber,
   normalizeRomaneioQty,
   orderQuantitiesByBreadId,
@@ -21,6 +22,7 @@ import {
   type RomaneioOrderRow,
   type RomaneioSentItemRow,
   type RomaneioProductOption,
+  type RomaneioUnit,
 } from '@/lib/romaneioDraft'
 import { canSeeRomaneio } from '@/lib/romaneioAccess'
 import {
@@ -319,6 +321,7 @@ export default function RomaneioPage() {
   const [criarDestId, setCriarDestId] = useState('')
   const [criarDrafts, setCriarDrafts] = useState<Record<string,CriarDraft>>({})
   const [catalogSearch, setCatalogSearch] = useState('')
+  const [extraUnit, setExtraUnit] = useState<RomaneioUnit>('un')
   // conferencia
   const [confRomId, setConfRomId] = useState('')
   const [confRom, setConfRom] = useState<Romaneio|null>(null)
@@ -491,6 +494,7 @@ export default function RomaneioPage() {
   const onDestChange = async (destId: string) => {
     setCriarDestId(destId)
     setCatalogSearch('')
+    setExtraUnit('un')
     if (!destId || criarDrafts[destId]) return
     showLoad('Verificando viagens...')
     try {
@@ -544,8 +548,9 @@ export default function RomaneioPage() {
   const addExtra = () => {
     const draft = criarDrafts[criarDestId]
     if (!draft) return
-    const name = draft.extraInput.trim()
-    if (!name) return
+    const rawName = draft.extraInput.trim()
+    if (!rawName) return
+    const name = labelRomaneioExtraName(rawName, extraUnit)
     const eid = slugExtra()
     updateCriarDraft(criarDestId, current => ({
       ...current,
@@ -553,6 +558,7 @@ export default function RomaneioPage() {
       qtys: { ...current.qtys, [eid]: 0 },
       extraInput: '',
     }))
+    setExtraUnit('un')
     showToastPS('✅ '+name+' adicionado')
   }
   const removeExtra = (eid: string) => {
@@ -595,13 +601,15 @@ export default function RomaneioPage() {
       return
     }
     const overweightItem = items.find(([key, quantity]) => {
+      if (key.startsWith('extra_')) return exceedsRomaneioWeightLimit(draft.extras[key] || '', quantity)
       const option = optionByKey.get(key)
       return option && exceedsRomaneioWeightLimit(option.productName, quantity)
     })
     if (overweightItem) {
       savingRomaneioRef.current = false
-      const option = optionByKey.get(overweightItem[0])
-      showToastPS(`Quantidade de ${option?.displayName || 'produto'} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`)
+      const key = overweightItem[0]
+      const label = key.startsWith('extra_') ? draft.extras[key] : (optionByKey.get(key)?.displayName || 'produto')
+      showToastPS(`Quantidade de ${label} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`)
       return
     }
     showLoad('Fechando romaneio...')
@@ -1148,6 +1156,8 @@ export default function RomaneioPage() {
                     {/* Extras */}
                     {Object.entries(activeDraft.extras).map(([eid,name])=>{
                       const qty = activeDraft.qtys[eid]||0
+                      const isWeightExtra = isWeightControlledRomaneioProduct(name)
+                      const step = isWeightExtra ? 0.1 : 1
                       return (
                         <div key={eid} className={`ps-card ${qty>0?'active':''}`}>
                           <div className="ps-card-head" style={{flexDirection:'row',alignItems:'flex-start',gap:8,justifyContent:'space-between'}}>
@@ -1159,15 +1169,25 @@ export default function RomaneioPage() {
                             </button>
                           </div>
                           <div className="ps-stepper">
-                            <button className="ps-step" onClick={()=>criarChangeQty(eid,-1)} disabled={qty<=0} aria-label="Diminuir">
+                            <button className="ps-step" onClick={()=>criarChangeQty(eid,-step)} disabled={qty<=0} aria-label="Diminuir">
                               <span style={{fontSize:20,fontWeight:700}}>−</span>
                             </button>
-                            <input className={`ps-qty ${qty===0?'zero':''}`} type="text" inputMode="numeric" value={qty?formatRomaneioQty(qty):''} placeholder="0"
-                              onChange={e=>setCriarQty(eid,e.target.value)}/>
-                            <button className="ps-step" onClick={()=>criarChangeQty(eid,1)} aria-label="Aumentar">
+                            <RomaneioQuantityInput
+                              className={`ps-qty ${qty===0?'zero':''}`}
+                              value={qty}
+                              allowDecimal={isWeightExtra}
+                              onValueChange={value=>setCriarQty(eid, String(value))}
+                            />
+                            <button className="ps-step" onClick={()=>criarChangeQty(eid,step)} aria-label="Aumentar">
                               <span style={{fontSize:20,fontWeight:700}}>+</span>
                             </button>
                           </div>
+                          {isWeightExtra && (
+                            <div style={{fontSize:12,color:'var(--ink-soft)',marginTop:8,lineHeight:1.4}}>
+                              Peso enviado em kg. Ex.: <b>1,450</b> = 1.450 g. Máximo: 10 kg.
+                              {qty > 0 && <div style={{fontWeight:700,color:'var(--ps-ink)'}}>{formatRomaneioQty(qty)} kg = {formatRomaneioWeightInGrams(qty)} g</div>}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1199,9 +1219,13 @@ export default function RomaneioPage() {
                   {/* Add extra */}
                   <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed var(--ps-line)'}}>
                     <div className="ps-label" style={{marginTop:0}}>+ Pão especial / avulso</div>
+                    <div style={{display:'flex',gap:6,marginBottom:8}}>
+                      <button className={`ps-btn ${extraUnit==='un'?'':'ghost'}`} style={{flex:1}} onClick={()=>setExtraUnit('un')}>Por unidade</button>
+                      <button className={`ps-btn ${extraUnit==='kg'?'':'ghost'}`} style={{flex:1}} onClick={()=>setExtraUnit('kg')}>Por peso (kg)</button>
+                    </div>
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
                       <input className="ps-input" style={{flex:1}}
-                        placeholder="Nome do pão..." value={activeDraft.extraInput}
+                        placeholder={extraUnit==='kg'?'Nome do pão (em kg)...':'Nome do pão...'} value={activeDraft.extraInput}
                         onChange={e=>updateCriarDraft(criarDestId, draft => ({ ...draft, extraInput: e.target.value }))}
                         onKeyDown={e=>e.key==='Enter'&&addExtra()}/>
                       <button className="ps-btn" onClick={addExtra}>
