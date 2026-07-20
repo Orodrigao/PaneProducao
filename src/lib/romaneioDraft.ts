@@ -1,5 +1,7 @@
 export type RomaneioUnit = 'un' | 'kg'
 
+export const ROMANEIO_WEIGHT_LIMIT_KG = 10
+
 export interface RomaneioBreadLite {
   id: string
   name: string
@@ -44,6 +46,16 @@ export function isCiabattaName(name: string): boolean {
 export function isMiniCroissantName(name: string): boolean {
   const normalized = normalizeText(name)
   return normalized.includes('mini') && normalized.includes('croissant')
+}
+
+export function isWeightControlledRomaneioProduct(name: string): boolean {
+  const normalized = normalizeText(name)
+  if (normalized.includes('(un)')) return false
+  return isCiabattaName(name) || isMiniCroissantName(name)
+}
+
+export function exceedsRomaneioWeightLimit(name: string, quantity: number): boolean {
+  return isWeightControlledRomaneioProduct(name) && quantity > ROMANEIO_WEIGHT_LIMIT_KG
 }
 
 function unitFromCatalog(unit?: string | null): RomaneioUnit {
@@ -147,4 +159,8 @@ export function formatRomaneioQty(value: number): string {
   return Number.isInteger(value)
     ? String(value)
     : value.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+}
+
+export function formatRomaneioWeightInGrams(valueKg: number): string {
+  return Math.round(valueKg * 1000).toLocaleString('pt-BR')
 }

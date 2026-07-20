@@ -7,11 +7,15 @@ import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
   buildRomaneioProductOptions,
+  exceedsRomaneioWeightLimit,
   formatRomaneioQty,
+  formatRomaneioWeightInGrams,
+  isWeightControlledRomaneioProduct,
   nextRomaneioTripNumber,
   normalizeRomaneioQty,
   orderQuantitiesByBreadId,
   parseRomaneioQty,
+  ROMANEIO_WEIGHT_LIMIT_KG,
   sentQuantitiesByProductId,
   type RomaneioOrderRow,
   type RomaneioSentItemRow,
@@ -122,6 +126,52 @@ function formatDraftTotal(qtys: Record<string, number>, options: RomaneioProduct
   if (units > 0) parts.push(`${formatRomaneioQty(units)} un`)
   if (kg > 0) parts.push(`${formatRomaneioQty(kg)} kg`)
   return parts.join(' · ') || '0 un'
+}
+
+function RomaneioQuantityInput({
+  value,
+  allowDecimal,
+  className = 'ps-qty',
+  onValueChange,
+}: {
+  value: number
+  allowDecimal: boolean
+  className?: string
+  onValueChange: (value: number) => void
+}) {
+  const [draftValue, setDraftValue] = useState(value ? formatRomaneioQty(value) : '')
+
+  useEffect(() => {
+    setDraftValue(value ? formatRomaneioQty(value) : '')
+  }, [value])
+
+  const changeValue = (rawValue: string) => {
+    const sanitized = allowDecimal
+      ? rawValue.replace(/[^\d,.]/g, '').replace(/([,.].*)[,.]/g, '$1')
+      : rawValue.replace(/\D/g, '')
+    setDraftValue(sanitized)
+    if (!sanitized.endsWith(',') && !sanitized.endsWith('.')) {
+      onValueChange(normalizeRomaneioQty(parseRomaneioQty(sanitized)))
+    }
+  }
+
+  const commitValue = () => {
+    const quantity = normalizeRomaneioQty(parseRomaneioQty(draftValue))
+    setDraftValue(quantity ? formatRomaneioQty(quantity) : '')
+    onValueChange(quantity)
+  }
+
+  return (
+    <input
+      className={className}
+      type="text"
+      inputMode={allowDecimal ? 'decimal' : 'numeric'}
+      value={draftValue}
+      placeholder="0"
+      onChange={event => changeValue(event.target.value)}
+      onBlur={commitValue}
+    />
+  )
 }
 // ── Supabase ────────────────────────────────────────────────────────
 function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
@@ -530,6 +580,16 @@ export default function RomaneioPage() {
       showToastPS('⚠️ Para a EX, informe Ciabatta em kg antes de fechar o romaneio')
       return
     }
+    const overweightItem = items.find(([key, quantity]) => {
+      const option = optionByKey.get(key)
+      return option && exceedsRomaneioWeightLimit(option.productName, quantity)
+    })
+    if (overweightItem) {
+      savingRomaneioRef.current = false
+      const option = optionByKey.get(overweightItem[0])
+      showToastPS(`Quantidade de ${option?.displayName || 'produto'} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`)
+      return
+    }
     showLoad('Fechando romaneio...')
     try {
       const insertHeader = (tripNumber: number) => sbPost('romaneios',[{
@@ -635,6 +695,16 @@ export default function RomaneioPage() {
   }
 
   const saveConferencia = async () => {
+    const overweightItem = confItems.find(item => {
+      const conference = confData[item.id]
+      return conference
+        && isWeightControlledRomaneioProduct(item.product_name)
+        && (conference.rec > ROMANEIO_WEIGHT_LIMIT_KG || conference.acc > ROMANEIO_WEIGHT_LIMIT_KG)
+    })
+    if (overweightItem) {
+      showToastPS(`Quantidade de ${overweightItem.product_name} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`)
+      return
+    }
     showLoad('Salvando conferência...')
     try {
       const items = confItems.map(it => {
@@ -1040,12 +1110,22 @@ export default function RomaneioPage() {
                             <button className="ps-step" onClick={()=>criarChangeQty(option.key,-option.step)} disabled={qty<=0} aria-label="Diminuir">
                               <span style={{fontSize:20,fontWeight:700}}>−</span>
                             </button>
-                            <input className={`ps-qty ${qty===0?'zero':''}`} type="text" inputMode={option.allowDecimal?'decimal':'numeric'} value={qty?formatRomaneioQty(qty):''} placeholder="0"
-                              onChange={e=>setCriarQty(option.key,e.target.value)}/>
+                            <RomaneioQuantityInput
+                              className={`ps-qty ${qty===0?'zero':''}`}
+                              value={qty}
+                              allowDecimal={option.allowDecimal}
+                              onValueChange={value=>setCriarQty(option.key, String(value))}
+                            />
                             <button className="ps-step" onClick={()=>criarChangeQty(option.key,option.step)} aria-label="Aumentar">
                               <span style={{fontSize:20,fontWeight:700}}>+</span>
                             </button>
                           </div>
+                          {isWeightControlledRomaneioProduct(option.productName) && (
+                            <div style={{fontSize:12,color:'var(--ink-soft)',marginTop:8,lineHeight:1.4}}>
+                              Peso enviado em kg. Ex.: <b>1,450</b> = 1.450 g. Máximo: 10 kg.
+                              {qty > 0 && <div style={{fontWeight:700,color:'var(--ps-ink)'}}>{formatRomaneioQty(qty)} kg = {formatRomaneioWeightInGrams(qty)} g</div>}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -1140,12 +1220,13 @@ export default function RomaneioPage() {
                 {confItems.map(it=>{
                   const cd = confData[it.id]
                   if (!cd) return null
+                  const isWeightItem = isWeightControlledRomaneioProduct(it.product_name)
                   const hasDiverg = cd.rec!==it.qty_sent || cd.acc!==cd.rec
                   return (
                     <div key={it.id} className="ps-card">
                       <div className="ps-card-head" style={{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
                         <div className="ps-pname" style={{flex:1,minWidth:0}}>{it.product_name}</div>
-                        <span style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>Enviado: <b style={{color:'var(--ps-ink)'}}>{it.qty_sent}</b></span>
+                        <span style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>Enviado: <b style={{color:'var(--ps-ink)'}}>{formatRomaneioQty(Number(it.qty_sent))}{isWeightItem ? ' kg' : ''}</b></span>
                       </div>
 
                       {cd.refused ? (
@@ -1166,13 +1247,15 @@ export default function RomaneioPage() {
                           <div className="ps-fieldrow">
                             <div className="ps-fieldgroup">
                               <div className="ps-fieldlabel">Recebido</div>
-                              <input className="ps-qty" type="number" min={0}
-                                value={cd.rec} onChange={e=>updateConf(it.id,'rec',parseInt(e.target.value)||0)}/>
+                              <RomaneioQuantityInput value={cd.rec} allowDecimal={isWeightItem}
+                                onValueChange={value=>updateConf(it.id,'rec',value)}/>
+                              {isWeightItem && <div style={{fontSize:11,color:'var(--ink-soft)',marginTop:4}}>kg</div>}
                             </div>
                             <div className="ps-fieldgroup">
                               <div className="ps-fieldlabel">Aceito/Cobrável</div>
-                              <input className="ps-qty" type="number" min={0}
-                                value={cd.acc} onChange={e=>updateConf(it.id,'acc',parseInt(e.target.value)||0)}/>
+                              <RomaneioQuantityInput value={cd.acc} allowDecimal={isWeightItem}
+                                onValueChange={value=>updateConf(it.id,'acc',value)}/>
+                              {isWeightItem && <div style={{fontSize:11,color:'var(--ink-soft)',marginTop:4}}>kg</div>}
                             </div>
                           </div>
                           {hasDiverg && (
