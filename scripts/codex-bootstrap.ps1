@@ -11,6 +11,14 @@ function Require-Command($Name) {
   }
 }
 
+# Comandos nativos (git, npm, npx) nao lancam excecao ao falhar;
+# $ErrorActionPreference nao os cobre. Validar $LASTEXITCODE e obrigatorio.
+function Assert-LastExitCode($Step) {
+  if ($LASTEXITCODE -ne 0) {
+    throw "Falha em '$Step' (exit $LASTEXITCODE). Corrija antes de abrir o Codex."
+  }
+}
+
 Require-Command git
 Require-Command node
 Require-Command npm
@@ -23,19 +31,25 @@ if (-not (Test-Path $Parent)) {
 
 if (-not (Test-Path (Join-Path $RepoDir ".git"))) {
   git clone $RepoUrl $RepoDir
+  Assert-LastExitCode "git clone"
 }
 
 Set-Location $RepoDir
 
 git status -sb
+Assert-LastExitCode "git status"
 
 Write-Host "Instalando dependências..."
 npm install
+Assert-LastExitCode "npm install"
 
 Write-Host "Rodando validações base..."
 npx tsc --noEmit
+Assert-LastExitCode "npx tsc --noEmit"
 npm test
+Assert-LastExitCode "npm test"
 npm run build
+Assert-LastExitCode "npm run build"
 
 Write-Host "Abrindo Codex no repositório..."
 Write-Host "Primeiro prompt recomendado:"
