@@ -1,6 +1,7 @@
 > **Registro histórico (2026-07-20).** Plano da entrega de estabilização de
-> 18/07, encerrada. Itens desmarcados não representam pendência atual —
-> consulte `docs/CURRENT_STATE.md`.
+> 18/07, encerrada. Os checkboxes preservam o estado em que a entrega foi
+> registrada; não são fonte de pendência atual — pendências vigentes vivem em
+> `docs/CURRENT_STATE.md`.
 
 # Tarefa: estabilizar operação e concluir hardening para segunda-feira
 

@@ -41,7 +41,10 @@ Estado conhecido:
    `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
    `approve_romaneio_divergence`). Administradas pela tela de gestão de
    acessos.
-3. **Policies RLS** — a autorização efetiva dos dados.
+3. **Policies RLS** — a autorização efetiva do acesso direto às tabelas. As
+   ações do Romaneio passam por RPCs `SECURITY DEFINER` com validação interna
+   e grants `EXECUTE` próprios — proteção adicional que também precisa de
+   revisão em mudança de acesso.
 
 **Risco central:** os níveis 1 e 2 não são sincronizados. O backfill da
 migration `20260718181203` derivou permissões de `allowed_routes` uma única
@@ -53,7 +56,9 @@ própria.
 
 ## RLS e Supabase
 
-Hardening documentado como aplicado:
+Hardening versionado na `main` (aplicação em produção só é considerada
+confirmada onde existe registro correspondente em `docs/history/` ou
+auditoria live):
 
 - `app_profiles`, `app_permissions`, `app_user_permissions`;
 - tabelas iniciais de estoque;
@@ -68,6 +73,13 @@ Riscos ainda abertos:
 - o último inventário live completo registrou tabelas sem RLS e policies
   anônimas permissivas; o estado live precisa ser reauditado antes de
   declarar Sprint 0 concluída;
+- as migrations de permissões de 2026-07-18 não têm registro de aplicação em
+  produção; confirmar antes de assumir vigência;
+- `confirm_romaneio_receipt` aceita payload vazio ou parcial e ainda assim
+  pode fechar o romaneio como `conferido` (migration `20260718203439`);
+- a tela administrativa permite conceder `romaneio.administrar` por loja,
+  mas a entrada do painel administrativo do Romaneio exige escopo `*` —
+  concessão por loja não abre o painel;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
 - `src/lib/database.types.ts` está obsoleto (ainda descreve `app_users`, não
@@ -91,7 +103,8 @@ proprietário e exigir neste repositório apenas as migrations que alteram o ERP
 - produção, forno e confirmação por lotes, com contexto por loja;
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
-- romaneio com permissões granulares por ação e loja;
+- romaneio com permissões granulares por ação e loja (ressalvas registradas
+  em Riscos ainda abertos);
 - estoques e fornecedores;
 - clientes, pedidos PJ e encomendas;
 - tabelas e opções de preço;
