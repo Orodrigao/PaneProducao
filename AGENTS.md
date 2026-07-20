@@ -174,7 +174,9 @@ Além disso:
 - revisar o diff como revisão de código;
 - confirmar estados de carregamento, vazio, erro, sucesso e repetição de
   ação;
-- não considerar concluído com teste quebrado;
+- não considerar concluído com teste quebrado — exceção única: falha
+  comprovadamente pré-existente, reproduzida na `main`, reportada e sem
+  relação com o diff; não a corrija junto (risco fora do escopo);
 - mudança de Auth, permissão ou RLS só conta como verificada com ao menos um
   perfil que deve conseguir E um que deve ser bloqueado, ambos testados no
   navegador;
