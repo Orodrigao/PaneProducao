@@ -34,7 +34,7 @@ describe('navegação responsiva', () => {
     const cssSource = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
 
     expect(cssSource).toContain('.ps-sidebar{ display:none; }')
-    expect(cssSource).toContain('@media (min-width:768px)')
+    expect(cssSource).toContain('@media (min-width:600px)')
     expect(cssSource).toContain('@media (min-width:1200px)')
     expect(cssSource).toContain('.ps-nav{ display:none; }')
     expect(cssSource).toContain('--app-sidebar-w:248px')
