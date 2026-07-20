@@ -6,24 +6,27 @@
 - [PLAN.md](PLAN.md) — ordem para chegar ao CMV.
 - [PRD.md](PRD.md) — problema de negócio e requisitos estáveis.
 - [../AGENTS.md](../AGENTS.md) — regras de trabalho e segurança.
+- [../lessons.md](../lessons.md) — lições aprendidas; leitura obrigatória no
+  início de toda tarefa.
 
 ## Documentos específicos
 
 Leia somente quando a tarefa tocar o assunto:
 
 - [SALES_IMPORT_CNM.md](SALES_IMPORT_CNM.md);
-- documentos de segurança Supabase;
-- auditoria de design;
-- runbooks operacionais.
+- [CMV_EXECUTION_PLAN.md](CMV_EXECUTION_PLAN.md);
+- [SUPABASE_RLS_REMEDIATION_PLAN.md](SUPABASE_RLS_REMEDIATION_PLAN.md);
+- [CODEX_ENVIRONMENT.md](CODEX_ENVIRONMENT.md) e
+  [CODEX_PROJECT_COMMAND.md](CODEX_PROJECT_COMMAND.md).
 
 Antes de reutilizar um documento específico, compare sua data e seu status com
 `CURRENT_STATE.md`.
 
 ## Registros históricos
 
-Arquivos com `AUDIT`, `RESULT`, data no nome e a pasta `codex-tasks/` preservam
-evidência de decisões e aplicações anteriores. Eles podem descrever
-corretamente aquele momento sem representar o estado atual.
+Vivem em [history/](history/) — auditorias, resultados de aplicação, matrizes
+e planos de tarefas encerradas. Descrevem o passado e nunca definem o estado
+atual. Ver [history/README.md](history/README.md).
 
 Não copie “próximo passo”, status ou SQL de um registro histórico sem nova
 auditoria.
@@ -35,4 +38,5 @@ auditoria.
 - Requisito de negócio muda: atualizar `PRD.md`.
 - Regra global muda: atualizar `AGENTS.md`.
 - Aprendizado generalizável: atualizar `../lessons.md`.
+- Documento perdeu vigência: mover para `history/`.
 - Detalhe de execução: manter no PR e no commit.

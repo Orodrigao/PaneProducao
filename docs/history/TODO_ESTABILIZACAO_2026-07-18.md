@@ -1,3 +1,7 @@
+> **Registro histórico (2026-07-20).** Plano da entrega de estabilização de
+> 18/07, encerrada. Itens desmarcados não representam pendência atual —
+> consulte `docs/CURRENT_STATE.md`.
+
 # Tarefa: estabilizar operação e concluir hardening para segunda-feira
 
 ## Objetivo
