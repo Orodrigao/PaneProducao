@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-// Guarda do harness: impede que a memoria canonica volte a divergir do codigo.
+// Guarda do harness: invariantes especificas da memoria canonica.
+// Nao substitui auditoria; impede regressoes documentais ja cometidas.
 
 const root = path.resolve(__dirname, '..', '..')
 
@@ -12,7 +13,7 @@ function read(relativePath: string): string {
 
 describe('harness canonico', () => {
   it('CLAUDE.md importa AGENTS.md como fonte unica de regras', () => {
-    expect(read('CLAUDE.md')).toContain('@AGENTS.md')
+    expect(read('CLAUDE.md')).toMatch(/^@AGENTS\.md$/m)
   })
 
   it('fontes canonicas nao afirmam que o login por PIN esta disponivel', () => {
@@ -23,15 +24,16 @@ describe('harness canonico', () => {
     }
   })
 
-  it('bootstraps apontam para o estado atual e nao para docs legados', () => {
+  it('bootstraps apontam para o AGENTS.md e nao para docs legados', () => {
     for (const file of ['scripts/codex-bootstrap.sh', 'scripts/codex-bootstrap.ps1']) {
       const content = read(file)
-      expect(content, file).toContain('docs/CURRENT_STATE.md')
+      expect(content, file).toContain('AGENTS.md')
       expect(content, file).not.toContain('docs/TASKS.md')
     }
   })
 
-  it('nao existe todo global em tasks/', () => {
+  it('nao renasce indice paralelo de onboarding', () => {
     expect(existsSync(path.join(root, 'tasks', 'todo.md'))).toBe(false)
+    expect(existsSync(path.join(root, 'docs', 'README.md'))).toBe(false)
   })
 })

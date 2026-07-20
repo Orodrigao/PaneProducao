@@ -45,6 +45,6 @@ npm run build
 
 echo "Abrindo Codex no repositório..."
 echo "Primeiro prompt recomendado:"
-echo "Leia AGENTS.md, docs/CURRENT_STATE.md e lessons.md. Nao edite nada. Resuma o projeto, o estado atual e os riscos, e aguarde a tarefa."
+echo "Leia AGENTS.md e execute o ritual de inicio de tarefa descrito nele. Nao edite nada. Resuma o projeto, o estado atual e os riscos, e aguarde a tarefa."
 
 codex
