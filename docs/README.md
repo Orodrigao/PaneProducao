@@ -13,11 +13,7 @@
 
 Leia somente quando a tarefa tocar o assunto:
 
-- [SALES_IMPORT_CNM.md](SALES_IMPORT_CNM.md);
-- [CMV_EXECUTION_PLAN.md](CMV_EXECUTION_PLAN.md);
-- [SUPABASE_RLS_REMEDIATION_PLAN.md](SUPABASE_RLS_REMEDIATION_PLAN.md);
-- [CODEX_ENVIRONMENT.md](CODEX_ENVIRONMENT.md) e
-  [CODEX_PROJECT_COMMAND.md](CODEX_PROJECT_COMMAND.md).
+- [SALES_IMPORT_CNM.md](SALES_IMPORT_CNM.md).
 
 Antes de reutilizar um documento específico, compare sua data e seu status com
 `CURRENT_STATE.md`.
