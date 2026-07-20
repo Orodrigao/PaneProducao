@@ -40,4 +40,12 @@ describe('navegação responsiva', () => {
     expect(cssSource).toContain('--app-sidebar-w:248px')
     expect(cssSource).toContain('.app-body:has(.ps-sidebar){ padding-left:var(--app-sidebar-w); }')
   })
+
+  it('mantém o conteúdo principal fluido em toda a largura disponível', () => {
+    const cssSource = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
+
+    expect(cssSource).toContain('#app { width: 100%; padding-bottom: 80px; }')
+    expect(cssSource).toContain('.ps-shell{ width:100%; min-height:100vh;')
+    expect(cssSource).not.toContain('--app-content-max')
+  })
 })
