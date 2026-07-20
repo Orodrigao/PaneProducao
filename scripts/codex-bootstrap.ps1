@@ -39,6 +39,6 @@ npm run build
 
 Write-Host "Abrindo Codex no repositório..."
 Write-Host "Primeiro prompt recomendado:"
-Write-Host "Leia AGENTS.md, README.md, CLAUDE.md, docs/PRD.md, docs/PLAN.md e docs/TASKS.md. Não edite nada. Resuma o projeto, riscos e próximos 3 PRs."
+Write-Host "Leia AGENTS.md, docs/CURRENT_STATE.md e lessons.md. Nao edite nada. Resuma o projeto, o estado atual e os riscos, e aguarde a tarefa."
 
 codex
