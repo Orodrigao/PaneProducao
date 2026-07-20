@@ -51,7 +51,18 @@ export function isMiniCroissantName(name: string): boolean {
 export function isWeightControlledRomaneioProduct(name: string): boolean {
   const normalized = normalizeText(name)
   if (normalized.includes('(un)')) return false
+  if (normalized.includes('(kg)')) return true
   return isCiabattaName(name) || isMiniCroissantName(name)
+}
+
+export function labelRomaneioExtraName(name: string, unit: RomaneioUnit): string {
+  const trimmed = name.trim()
+  const normalized = normalizeText(trimmed)
+  if (unit === 'kg') {
+    return normalized.includes('(kg)') ? trimmed : `${trimmed} (kg)`
+  }
+  if (normalized.includes('(un)')) return trimmed
+  return isWeightControlledRomaneioProduct(trimmed) ? `${trimmed} (un)` : trimmed
 }
 
 export function exceedsRomaneioWeightLimit(name: string, quantity: number): boolean {
