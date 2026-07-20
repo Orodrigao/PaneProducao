@@ -32,13 +32,14 @@ segurança.
 
 ## Autenticação
 
-O sistema está em transição:
+- login somente por e-mail e senha via Supabase Auth; o acesso legado por PIN
+  foi removido do aplicativo e bloqueado no banco;
+- perfil, role, loja e rotas em `app_profiles`;
+- permissões granulares por usuário em `app_permissions` e
+  `app_user_permissions`;
+- a autorização efetiva dos dados está nas policies RLS.
 
-- login por e-mail e senha via Supabase Auth;
-- perfil e escopo em `app_profiles`;
-- PIN/localStorage e `app_users` ainda disponíveis como legado temporário.
-
-O estado e os riscos dessa transição estão em
+O estado e os riscos remanescentes estão em
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 
 ## Desenvolvimento local
