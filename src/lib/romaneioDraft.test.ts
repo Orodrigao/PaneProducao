@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildRomaneioProductOptions, nextRomaneioTripNumber, orderQuantitiesByBreadId, parseRomaneioQty, sentQuantitiesByProductId } from './romaneioDraft'
+import {
+  buildRomaneioProductOptions,
+  exceedsRomaneioWeightLimit,
+  formatRomaneioWeightInGrams,
+  nextRomaneioTripNumber,
+  orderQuantitiesByBreadId,
+  parseRomaneioQty,
+  sentQuantitiesByProductId,
+} from './romaneioDraft'
 
 describe('romaneioDraft', () => {
   it('cria duas opcoes para ciabatta', () => {
@@ -41,6 +49,19 @@ describe('romaneioDraft', () => {
 
   it('aceita quantidade decimal com virgula', () => {
     expect(parseRomaneioQty('1,25')).toBe(1.25)
+  })
+
+  it('converte o peso digitado em kg para a orientacao em gramas', () => {
+    expect(parseRomaneioQty('1,450')).toBe(1.45)
+    expect(formatRomaneioWeightInGrams(1.45)).toBe('1.450')
+  })
+
+  it('bloqueia ciabatta e mini croissant acima de 10 kg', () => {
+    expect(exceedsRomaneioWeightLimit('Ciabatta (kg)', 10)).toBe(false)
+    expect(exceedsRomaneioWeightLimit('Ciabatta (kg)', 10.001)).toBe(true)
+    expect(exceedsRomaneioWeightLimit('Ciabatta (un)', 11)).toBe(false)
+    expect(exceedsRomaneioWeightLimit('Mini Croissant (kg)', 1450)).toBe(true)
+    expect(exceedsRomaneioWeightLimit('Baguete', 1450)).toBe(false)
   })
 
   it('calcula a proxima viagem pela maior viagem existente', () => {
