@@ -1,7 +1,9 @@
 # Plano — Redesenho da lista de Pedidos PJ
 
-**Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21 e
-implementada em branch; a migration ainda não foi aplicada em produção.
+**Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21,
+implementada em branch e com a migration aplicada em produção. A matriz do
+banco e o bloqueio no navegador passaram; falta a checagem visual da Expedição
+no preview antes da liberação do frontend.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -63,8 +65,10 @@ há migration nem transformação de dados.
 
 ## Fase 2 — Envio controlado pela Expedição da JC
 
-**Status:** implementação preparada; ativação em produção pendente de aprovação
-explícita para aplicar a migration e executar a matriz de acesso no navegador.
+**Status:** migration aplicada em produção em 2026-07-21. A matriz do banco
+passou para Expedição JC e Administrador, e o bloqueio de um perfil de Vendas
+passou no navegador. A checagem visual da Expedição no preview continua
+pendente antes da liberação do frontend.
 
 **Objetivo:** registrar o despacho e mover o pedido para o histórico.
 
@@ -93,7 +97,6 @@ separado.
 - repetir a confirmação devolve o mesmo envio, sem duplicar ou corromper dados;
 - perfis fora da Expedição da JC são bloqueados pela ação protegida do banco.
 
-**Gate:** o OK para implementar foi dado em 2026-07-21. Aplicar a migration em
-produção continua exigindo um novo OK explícito de Rodrigo; depois da aplicação,
-a liberação só é considerada concluída após testar um perfil permitido e um
-bloqueado no navegador.
+**Gate:** o OK para implementar e o OK separado para aplicar a migration em
+produção foram dados em 2026-07-21. A liberação do frontend só é considerada
+concluída após testar também o perfil permitido no navegador.
