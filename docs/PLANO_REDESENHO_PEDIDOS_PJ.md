@@ -2,8 +2,8 @@
 
 **Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21,
 implementada em branch e com a migration aplicada em produção. A matriz do
-banco e o bloqueio no navegador passaram; falta a checagem visual da Expedição
-no preview antes da liberação do frontend.
+banco e a matriz no navegador passaram; o frontend está pronto para liberação
+após a incorporação do PR.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -67,8 +67,8 @@ há migration nem transformação de dados.
 
 **Status:** migration aplicada em produção em 2026-07-21. A matriz do banco
 passou para Expedição JC e Administrador, e o bloqueio de um perfil de Vendas
-passou no navegador. A checagem visual da Expedição no preview continua
-pendente antes da liberação do frontend.
+passou no navegador. Rodrigo confirmou um envio real no preview e a Expedição
+viu o pedido no Histórico, sem valores, com data e responsável corretos.
 
 **Objetivo:** registrar o despacho e mover o pedido para o histórico.
 
@@ -98,5 +98,5 @@ separado.
 - perfis fora da Expedição da JC são bloqueados pela ação protegida do banco.
 
 **Gate:** o OK para implementar e o OK separado para aplicar a migration em
-produção foram dados em 2026-07-21. A liberação do frontend só é considerada
-concluída após testar também o perfil permitido no navegador.
+produção foram dados em 2026-07-21. A matriz permitida e bloqueada foi concluída
+no banco e no navegador; o frontend está pronto para incorporação.

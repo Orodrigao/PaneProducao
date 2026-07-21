@@ -2,7 +2,7 @@
 
 Data: 2026-07-21
 
-Status: migration aplicada em produção; liberação do frontend ainda pendente.
+Status: migration aplicada e matriz concluída; frontend pronto para incorporação.
 
 ## Autorização
 
@@ -55,15 +55,20 @@ aplicação.
   retornou `P0002 — Pedido PJ não encontrado`;
 - como Administrador, consultar a fila operacional ou confirmar o mesmo grupo
   fictício retornou `42501 — Sem permissão`;
-- nenhum pedido real foi criado, editado, cancelado ou marcado como enviado.
+- a simulação técnica com grupo fictício não alterou nenhum pedido real.
 
 ## Resultado no navegador
 
 - perfil de Vendas (Marselle): ao abrir `/pedidos-pj`, foi redirecionado para a
   tela inicial, como esperado;
-- perfil permitido da Expedição: pendente no preview do PR; o endereço novo
-  abriu corretamente no login, mas não herdou a sessão de produção e a senha
-  não estava disponível para concluir a entrada;
+- perfil permitido da Expedição: abriu a fila sem valores e sem ações
+  comerciais, com 11 pedidos em aberto e 39 no Histórico;
+- Rodrigo confirmou no preview o envio real do pedido de LUCKY COFFE CAFETERIA
+  LTDA, que saiu de Em aberto e apareceu no Histórico como ENVIADO;
+- o detalhe mostrou Croissant, 64 unidades e `Por expedicao em 21/07/2026,
+  13:54`, sem preço ou total;
+- a leitura posterior no banco confirmou uma linha enviada, um único horário
+  (`21/07/2026 13:54:04`) e um único responsável (`expedicao`), sem duplicação;
 - a interface nova ainda não está em produção; ela permanece no PR draft 149.
 
 ## Alertas fora do escopo

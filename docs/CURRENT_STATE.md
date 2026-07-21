@@ -69,8 +69,8 @@ auditoria live):
 - fechamento de caixa;
 - funções do Romaneio com permissões granulares.
 - fila segura e confirmação de envio de Pedidos PJ pela Expedição JC; a
-  migration está aplicada em produção, mas o frontend permanece em PR até a
-  checagem visual final do perfil permitido.
+  migration está aplicada em produção e a matriz permitida/bloqueada passou no
+  banco e no preview; o frontend permanece no PR até ser incorporado.
 
 Riscos ainda abertos:
 
