@@ -33,7 +33,7 @@ import {
 } from '@/lib/romaneioPermissions'
 
 type Screen = 'init'|'login'|'painel'|'detalhe'|'criar'|'conferencia'|'admin'
-type AdminTab = 'painel-adm'|'divergencias'|'fechamento'|'precos'
+type AdminTab = 'painel-adm'|'divergencias'|'fechamento'
 
 interface Destination { id:string; name:string; code:string; active:boolean }
 interface Bread { id:string; name:string; active:boolean; is_pj:boolean; unit?:string|null }
@@ -279,13 +279,6 @@ async function sbPost(table:string, data:any) {
   })
   return r.json()
 }
-async function sbUpsert(table:string, data:any, onConflict?:string) {
-  const qs=onConflict?`?on_conflict=${onConflict}`:''
-  const r=await supabaseRestFetch(`${table}${qs}`,{
-    method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
-  })
-  return r.json()
-}
 async function sbPatch(table:string, data:any, match:Record<string,string>) {
   const q=Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
   const r=await supabaseRestFetch(`${table}?${q}`,{
@@ -331,11 +324,6 @@ export default function RomaneioPage() {
   const [adminTab, setAdminTab] = useState<AdminTab>('painel-adm')
   const [adminRoms, setAdminRoms] = useState<Romaneio[]>([])
   const [divergItems, setDivergItems] = useState<any[]>([])
-  const [fechFrom, setFechFrom] = useState(todayKey())
-  const [fechTo, setFechTo] = useState(todayKey())
-  const [fechResult, setFechResult] = useState<any[]|null>(null)
-  const [fechSummary, setFechSummary] = useState('')
-  const [prodPrices, setProdPrices] = useState<Record<string,string>>({})
   // envio modal
   const [envioRomId, setEnvioRomId] = useState<string|null>(null)
 
@@ -802,55 +790,6 @@ export default function RomaneioPage() {
       })
       showToastPS('✅ Item aprovado')
       await loadDiverg()
-    } catch(e) { showToastPS('❌ Erro') }
-    finally { hideLoad() }
-  }
-
-  const calcFechamento = async () => {
-    showLoad('Calculando...')
-    try {
-      const exDest = dests.find(d=>d.code==='EX')
-      if (!exDest) { showToastPS('EX não encontrado'); return }
-      const roms = await sbGet('romaneios',`record_date=gte.${fechFrom}&record_date=lte.${fechTo}&destination_id=eq.${exDest.id}&status=neq.separado&select=id,record_date,trip_number,status`)
-      if (!roms.length) { setFechResult([]); setFechSummary('Nenhum romaneio no período.'); return }
-      const byProduct: Record<string,any> = {}
-      for (const rom of roms) {
-        const items = await sbGet('romaneio_items',`romaneio_id=eq.${rom.id}`)
-        items.forEach((it:RomItem) => {
-          if (!byProduct[it.product_name]) byProduct[it.product_name] = { name:it.product_name, sent:0, accepted:0, price:it.unit_price||0 }
-          byProduct[it.product_name].sent += Number(it.qty_sent)||0
-          byProduct[it.product_name].accepted += Number(it.qty_accepted ?? it.qty_sent)||0
-        })
-      }
-      const rows = Object.values(byProduct).sort((a:any,b:any)=>a.name.localeCompare(b.name))
-      setFechResult(rows)
-      setFechSummary(`${roms.length} romaneios · ${formatDateBR(fechFrom)} a ${formatDateBR(fechTo)}`)
-    } catch(e) { showToastPS('Erro ao calcular') }
-    finally { hideLoad() }
-  }
-
-  const loadPrecos = async () => {
-    const exDest = dests.find(d=>d.code==='EX')
-    if (!exDest) return
-    const rows = await sbGet('product_prices',`destination_id=eq.${exDest.id}&active=eq.true`)
-    const pm: Record<string,string> = {}
-    rows.forEach((r:any) => { pm[r.product_id] = r.unit_price })
-    setProdPrices(pm)
-    setAdminTab('precos')
-  }
-
-  const savePrecos = async () => {
-    const exDest = dests.find(d=>d.code==='EX')
-    if (!exDest) return
-    showLoad('Salvando preços...')
-    try {
-      const rows: any[] = []
-      breads.forEach(b => {
-        const val = parseFloat(prodPrices[b.id]||'0')
-        if (val > 0) rows.push({ product_id:b.id, product_source:'bread', product_name:b.name, destination_id:exDest.id, unit_price:val, active:true })
-      })
-      if (rows.length) await sbUpsert('product_prices', rows, 'product_id,product_source,destination_id')
-      showToastPS('✅ Preços salvos!')
     } catch(e) { showToastPS('❌ Erro') }
     finally { hideLoad() }
   }
@@ -1365,11 +1304,10 @@ export default function RomaneioPage() {
             <Header subtitle="Painel Admin"/>
             <div className="ps-pad" style={{marginTop:14}}>
               <div className="ps-tabs" role="tablist">
-                {([['painel-adm','Painel'],['divergencias','Divergências'],['fechamento','Fechamento'],['precos','Preços']] as const).map(([tab,label])=>(
+                {([['painel-adm','Painel'],['divergencias','Divergências'],['fechamento','Fechamento']] as const).map(([tab,label])=>(
                   <button key={tab} className="ps-tab" role="tab" aria-selected={adminTab===tab} onClick={async()=>{
                     if(tab==='painel-adm'){showLoad('...');try{await loadAdminPainel()}catch(e){}finally{hideLoad();setAdminTab('painel-adm')}}
                     else if(tab==='divergencias'){showLoad('...');try{await loadDiverg()}catch(e){}finally{hideLoad()}}
-                    else if(tab==='precos'){showLoad('...');try{await loadPrecos()}catch(e){}finally{hideLoad()}}
                     else setAdminTab(tab)
                   }}>{label}</button>
                 ))}
@@ -1464,97 +1402,23 @@ export default function RomaneioPage() {
                 </>
               )}
 
-              {/* Fechamento */}
+              {/* Fechamento — aponta para o relatório oficial (Tabela Buck).
+                  O cálculo antigo desta aba usava preços congelados no envio e
+                  divergia do relatório; foi aposentado para haver um total só. */}
               {adminTab==='fechamento' && (
                 <>
                   <div className="ps-label">Fechamento EX</div>
-                  <div className="ps-fieldrow">
-                    <div className="ps-fieldgroup">
-                      <div className="ps-fieldlabel">De</div>
-                      <input type="date" value={fechFrom} className="ps-input" onChange={e=>setFechFrom(e.target.value)}/>
+                  <div className="ps-card" style={{marginTop:12}}>
+                    <div className="ps-pname">O fechamento oficial fica em Relatórios</div>
+                    <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.5}}>
+                      A cobrança da EX é calculada em <b>Relatórios → Romaneios EX</b>, com os
+                      preços da Tabela Buck. Esta aba deixou de calcular valores para não
+                      existirem dois totais diferentes para o mesmo período.
                     </div>
-                    <div className="ps-fieldgroup">
-                      <div className="ps-fieldlabel">Até</div>
-                      <input type="date" value={fechTo} className="ps-input" onChange={e=>setFechTo(e.target.value)}/>
-                    </div>
+                    <button className="ps-btn primary block" style={{marginTop:14}} onClick={()=>router.push('/relatorios/romaneios')}>
+                      Abrir fechamento oficial
+                    </button>
                   </div>
-                  <button className="ps-btn primary block" style={{marginTop:14}} onClick={calcFechamento}>
-                    Calcular
-                  </button>
-
-                  {fechResult===null && (
-                    <div style={{color:'var(--ink-soft)',fontSize:13,marginTop:16}}>
-                      Selecione o período e clique em Calcular.
-                    </div>
-                  )}
-                  {fechResult!==null && fechResult.length===0 && (
-                    <div style={{color:'var(--ink-soft)',fontSize:13,marginTop:16}}>
-                      {fechSummary||'Nenhum romaneio no período.'}
-                    </div>
-                  )}
-                  {fechResult!==null && fechResult.length>0 && (
-                    <>
-                      <div style={{fontSize:13,color:'var(--ink-soft)',margin:'16px 0 10px'}}>{fechSummary}</div>
-                      <div className="ps-table-wrap">
-                        <table className="ps-table">
-                          <thead>
-                            <tr>
-                              <th>Produto</th>
-                              <th className="num">Enviado</th>
-                              <th className="num">Aceito</th>
-                              <th className="num">Preço</th>
-                              <th className="num">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {fechResult.map((r:any,i:number)=>(
-                              <tr key={i}>
-                                <td>{r.name}</td>
-                                <td className="num">{r.sent}</td>
-                                <td className="num">{r.accepted}</td>
-                                <td className="num">{r.price?`R$ ${Number(r.price).toFixed(2)}`:'—'}</td>
-                                <td className="num">{r.price?`R$ ${(r.accepted*r.price).toFixed(2)}`:'—'}</td>
-                              </tr>
-                            ))}
-                            <tr className="total">
-                              <td>TOTAL</td>
-                              <td className="num">{fechResult.reduce((a:number,r:any)=>a+r.sent,0)}</td>
-                              <td className="num">{fechResult.reduce((a:number,r:any)=>a+r.accepted,0)}</td>
-                              <td/>
-                              <td className="num">R$ {fechResult.reduce((a:number,r:any)=>a+(r.accepted*(r.price||0)),0).toFixed(2)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Preços */}
-              {adminTab==='precos' && (
-                <>
-                  <div className="ps-label">Preços EX por produto</div>
-                  <div style={{fontSize:12,color:'var(--ink-soft)',marginBottom:12}}>
-                    Valores que a EX paga por unidade. Usados no fechamento semanal.
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    {breads.map(b=>(
-                      <div key={b.id} className="ps-item" style={{flexDirection:'row',alignItems:'center',padding:'12px 14px'}}>
-                        <div className="ps-item-name" style={{fontSize:14}}>{b.name}</div>
-                        <div style={{display:'flex',alignItems:'center',gap:8,flex:'none'}}>
-                          <span style={{fontSize:12,color:'var(--ink-soft)'}}>R$</span>
-                          <input className="ps-input" style={{width:90,textAlign:'right',padding:'8px 10px'}}
-                            type="number" min={0} step={0.01} placeholder="0,00"
-                            value={prodPrices[b.id]||''}
-                            onChange={e=>setProdPrices(prev=>({...prev,[b.id]:e.target.value}))}/>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <button className="ps-btn primary block" style={{marginTop:18}} onClick={savePrecos}>
-                    <Save size={16}/> Salvar preços
-                  </button>
                 </>
               )}
             </div>
