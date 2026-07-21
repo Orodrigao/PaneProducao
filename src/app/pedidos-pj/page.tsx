@@ -1,11 +1,19 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Trash2, Save, Zap, X, Calendar, Pencil } from 'lucide-react'
+import OrderCancellationPanel from '@/components/OrderCancellationPanel'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
+import {
+  canCancelOrder,
+  cancellationAvailability,
+  formatCancellationTimestamp,
+  normalizeCancellationReason,
+} from '@/lib/orderCancellation'
+import { cancelOrderRows } from '@/lib/orderCancellationClient'
 
 // ===== Tipos =====
 interface Customer {
@@ -42,6 +50,7 @@ interface OrderRow {
   bread_id:string; product_source:string|null; product_name:string|null
   quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null; sale_option_id:string|null
   obs:string|null
+  cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
 }
 interface PedidoGroup {
   key:string
@@ -49,6 +58,7 @@ interface PedidoGroup {
   customer_id:string|null; customer_name:string
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
+  cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
   rows:OrderRow[]
   total:number
 }
@@ -104,6 +114,8 @@ export default function PedidosPJPage() {
 
   const [viewing, setViewing] = useState<PedidoGroup|null>(null)
   const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const cancellingRef = useRef(false)
 
   useEffect(() => { setUser(getCurrentUser()) }, [])
 
@@ -243,6 +255,7 @@ export default function PedidosPJPage() {
   }
 
   const startEdit = (g: PedidoGroup) => {
+    if (g.cancelled_at || cancellingRef.current) return
     setCustId(g.customer_id || '')
     setDelivery(g.delivery_date || '')
     setProduction(g.production_date || '')
@@ -282,6 +295,9 @@ export default function PedidosPJPage() {
           delivery_date: r.delivery_date,
           production_date: r.production_date,
           obs: r.obs,
+          cancelled_at: r.cancelled_at,
+          cancelled_by: r.cancelled_by,
+          cancel_reason: r.cancel_reason,
           rows: [],
           total: 0,
         })
@@ -297,6 +313,7 @@ export default function PedidosPJPage() {
   }, [orders, customers])
 
   const groupStatus = (g:PedidoGroup): { label:string; cls:string; border:string } => {
+    if (g.cancelled_at) return { label:'cancelado', cls:'separado', border:'var(--ink-faint)' }
     const t = todayISO()
     if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
     if (g.delivery_date < t) return { label:'entregue', cls:'separado', border:'var(--ink-faint)' }
@@ -305,6 +322,7 @@ export default function PedidosPJPage() {
   }
 
   const adiantarHoje = async (g:PedidoGroup) => {
+    if (g.cancelled_at || cancellingRef.current) return
     if (!confirm(`Adiantar pedido de "${g.customer_name}" pra hoje?\n\nProdução e entrega serão movidas pra ${fmtBR(todayISO())}.`)) return
     const today = todayISO()
     if (isSunday(today)) { showToast('⚠️ Hoje é domingo, entrega não permitida'); return }
@@ -318,6 +336,60 @@ export default function PedidosPJPage() {
     setViewing(null)
     loadAll()
   }
+
+  const cancelPedido = async (g: PedidoGroup, rawReason: string): Promise<boolean> => {
+    if (cancellingRef.current) return false
+    if (!user || !canCancelOrder(user.role, 'pj')) {
+      showToast('Você não tem permissão para cancelar pedidos PJ')
+      return false
+    }
+
+    const availability = cancellationAvailability('pj', {
+      productionDate: g.production_date,
+      deliveryDate: g.delivery_date,
+    })
+    if (!availability.allowed) {
+      showToast(availability.message || 'Cancelamento indisponível')
+      return false
+    }
+
+    const reason = normalizeCancellationReason(rawReason)
+    if (!reason) {
+      showToast('Informe o motivo do cancelamento')
+      return false
+    }
+
+    const ids = g.rows.map(row => row.id)
+    cancellingRef.current = true
+    setCancelling(true)
+
+    try {
+      const result = await cancelOrderRows(ids, user.displayName, reason)
+      if (!result.ok) {
+        showToast(result.message)
+        return false
+      }
+
+      const cancellation = result.cancellation
+      setOrders(previous => previous.map(row => ids.includes(row.id) ? { ...row, ...cancellation } : row))
+      setViewing(previous => previous?.key === g.key ? { ...previous, ...cancellation } : previous)
+      showToast('✅ Pedido cancelado e retirado da operação')
+      return true
+    } catch {
+      showToast('Erro inesperado ao cancelar. Recarregue a página e tente novamente.')
+      return false
+    } finally {
+      cancellingRef.current = false
+      setCancelling(false)
+    }
+  }
+
+  const viewingCancellationAvailability = viewing
+    ? cancellationAvailability('pj', {
+        productionDate: viewing.production_date,
+        deliveryDate: viewing.delivery_date,
+      })
+    : null
 
   return (
     <div className="ps-canvas">
@@ -517,22 +589,23 @@ export default function PedidosPJPage() {
                 <div style={{display:'grid', gap:10}}>
                   {pedidosGrouped.map(g => {
                     const st = groupStatus(g)
+                    const cancelled = Boolean(g.cancelled_at)
                     return (
-                      <div key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer'}}>
+                      <button type="button" key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer', background:cancelled?'var(--line-soft)':undefined, opacity:cancelled ? .72 : 1, textAlign:'left', width:'100%', font:'inherit', color:'inherit'}}>
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap'}}>
                           <div style={{flex:1, minWidth:0}}>
-                            <div className="ps-pname">{g.customer_name}</div>
-                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2}}>
+                            <div className="ps-pname" style={{textDecoration:cancelled?'line-through':undefined}}>{g.customer_name}</div>
+                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2, textDecoration:cancelled?'line-through':undefined}}>
                               Impl. {fmtBR(g.order_date)} · Prod. {fmtBR(g.production_date)} · Entr. {fmtBR(g.delivery_date)}
                             </div>
                           </div>
                           <span className={`ps-status ${st.cls}`}>{st.label}</span>
                         </div>
-                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13}}>
+                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13, textDecoration:cancelled?'line-through':undefined}}>
                           <span style={{color:'var(--ink-faint)'}}>{g.rows.length} item(ns)</span>
                           <span style={{fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {g.total.toFixed(2)}</span>
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -546,7 +619,10 @@ export default function PedidosPJPage() {
       {viewing && (
         <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&setViewing(null)}>
           <div className="ps-sheet confirm" style={{maxWidth:540, borderRadius:'var(--r-card)'}}>
-            <h3>{viewing.customer_name}</h3>
+            <h3>
+              {viewing.customer_name}
+              {viewing.cancelled_at && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>CANCELADO</span>}
+            </h3>
             <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
               Implantado {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Entrega {fmtBR(viewing.delivery_date)}
             </p>
@@ -581,12 +657,33 @@ export default function PedidosPJPage() {
               </div>
             )}
 
+            {viewing.cancelled_at && (
+              <div className="ps-warning" style={{marginBottom:14, display:'grid', gap:4}}>
+                <strong>Pedido cancelado</strong>
+                <span style={{fontSize:12.5}}>
+                  Por {viewing.cancelled_by || 'usuário não identificado'} em {formatCancellationTimestamp(viewing.cancelled_at)}
+                </span>
+                <span style={{fontSize:12.5}}><strong>Motivo:</strong> {viewing.cancel_reason || 'não informado'}</span>
+              </div>
+            )}
+
+            {!viewing.cancelled_at && viewingCancellationAvailability && (
+              <OrderCancellationPanel
+                canCancel={canCancelOrder(user?.role, 'pj')}
+                availability={viewingCancellationAvailability}
+                busy={cancelling}
+                onConfirm={reason => cancelPedido(viewing, reason)}
+              />
+            )}
+
             <div className="actions">
-              <button onClick={()=>startEdit(viewing)} className="ps-btn ghost">
-                <Pencil size={14}/> Editar
-              </button>
-              {viewing.production_date && viewing.production_date > todayISO() && (
-                <button onClick={()=>adiantarHoje(viewing)} className="ps-btn info">
+              {!viewing.cancelled_at && (
+                <button onClick={()=>startEdit(viewing)} disabled={cancelling} className="ps-btn ghost">
+                  <Pencil size={14}/> Editar
+                </button>
+              )}
+              {!viewing.cancelled_at && viewing.production_date && viewing.production_date > todayISO() && (
+                <button onClick={()=>adiantarHoje(viewing)} disabled={cancelling} className="ps-btn info">
                   <Zap size={14}/> Adiantar pra hoje
                 </button>
               )}

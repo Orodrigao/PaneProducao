@@ -84,7 +84,7 @@ export default function SobrasPage() {
     if (mode === 'sobra') {
       const [ordersResult, actualsResult, savedResult] = await Promise.all([
         supabase.from('orders').select('bread_id')
-          .eq('order_date', closingDate).eq('store', selectedStore).gt('quantity', 0),
+          .is('cancelled_at', null).eq('order_date', closingDate).eq('store', selectedStore).gt('quantity', 0),
         supabase.from('production_actuals').select('bread_id,quantity_baked')
           .eq('record_date', closingDate),
         supabase.from('sobras').select('product_id,quantity')

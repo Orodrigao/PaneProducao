@@ -165,6 +165,7 @@ export default function BreadLeftoverPendingPage() {
         supabase
           .from('orders')
           .select('bread_id, quantity')
+          .is('cancelled_at', null)
           .eq('order_date', targetDate)
           .eq('store', store),
       ])

@@ -1,10 +1,18 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { User, Phone, Trash2, Plus, Save, Calendar, Printer, ChefHat, Store, Pencil } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { User, Phone, Trash2, Save, Calendar, Printer, ChefHat, Store, Pencil } from 'lucide-react'
+import OrderCancellationPanel from '@/components/OrderCancellationPanel'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { encomendaOrderGroupKey, ensureOrderGroupId } from '@/lib/orderGrouping'
+import {
+  canCancelOrder,
+  cancellationAvailability,
+  formatCancellationTimestamp,
+  normalizeCancellationReason,
+} from '@/lib/orderCancellation'
+import { cancelOrderRows } from '@/lib/orderCancellationClient'
 
 // ===== Tipos =====
 interface Customer { id:string; name:string; active:boolean }
@@ -25,6 +33,7 @@ interface OrderRow {
   bread_id:string; product_source:string|null; product_name:string|null
   quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null
   obs:string|null; needs_production:boolean
+  cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
 }
 
 interface EncomendaGroup {
@@ -36,6 +45,7 @@ interface EncomendaGroup {
   needs_production:boolean
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
+  cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
   rows:OrderRow[]
   total:number
 }
@@ -88,6 +98,8 @@ export default function EncomendasPage() {
   // Visualização
   const [viewing, setViewing] = useState<EncomendaGroup|null>(null)
   const [savingProd, setSavingProd] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const cancellingRef = useRef(false)
   // Edição: ids das linhas originais + data de criação a preservar (null = criando nova)
   const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
   const [listDays, setListDays] = useState(14)
@@ -197,6 +209,7 @@ export default function EncomendasPage() {
 
   // Carrega uma encomenda existente no formulário pra edição (ao salvar, substitui a anterior)
   const startEdit = (g:EncomendaGroup) => {
+    if (g.cancelled_at || cancellingRef.current) return
     const first = g.rows[0]
     if (g.isWalkin) {
       setUseWalkin(true)
@@ -228,7 +241,7 @@ export default function EncomendasPage() {
   // Alterna balcão⇄produção numa encomenda já criada (grava na hora, sem botão "salvar").
   // .select() confirma quantas linhas mudaram — se vier 0, avisa em vez de fingir sucesso.
   const toggleProducao = async (g:EncomendaGroup) => {
-    if (savingProd) return
+    if (g.cancelled_at || savingProd || cancellingRef.current) return
     const novo = !g.needs_production
     const ids = g.rows.map(r=>r.id)
     setSavingProd(true)
@@ -264,6 +277,9 @@ export default function EncomendasPage() {
           delivery_date: r.delivery_date,
           production_date: r.production_date,
           obs: r.obs,
+          cancelled_at: r.cancelled_at,
+          cancelled_by: r.cancelled_by,
+          cancel_reason: r.cancel_reason,
           rows: [],
           total: 0,
         })
@@ -284,17 +300,74 @@ export default function EncomendasPage() {
   }, [encomendasGrouped, listDays])
 
   const encomendasHoje = useMemo(
-    () => encomendasGrouped.filter(g => g.delivery_date === todayISO()),
+    () => encomendasGrouped.filter(g => !g.cancelled_at && g.delivery_date === todayISO()),
     [encomendasGrouped]
   )
 
   const groupStatus = (g:EncomendaGroup): { label:string; cls:string; border:string } => {
+    if (g.cancelled_at) return { label:'cancelado', cls:'separado', border:'var(--ink-faint)' }
     const t = todayISO()
     if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
     if (g.delivery_date < t)  return { label:'atrasada', cls:'com_divergencia', border:'var(--berry)' }
     if (g.delivery_date === t) return { label:'pra hoje', cls:'enviado', border:'var(--honey-deep)' }
     return { label:'agendada', cls:'conferido', border:'var(--sage)' }
   }
+
+  const cancelEncomenda = async (g: EncomendaGroup, rawReason: string): Promise<boolean> => {
+    if (cancellingRef.current) return false
+    if (!user || !canCancelOrder(user.role, 'encomenda')) {
+      showToast('Você não tem permissão para cancelar encomendas')
+      return false
+    }
+
+    const availability = cancellationAvailability('encomenda', {
+      productionDate: g.production_date,
+      deliveryDate: g.delivery_date,
+      needsProduction: g.needs_production,
+    })
+    if (!availability.allowed) {
+      showToast(availability.message || 'Cancelamento indisponível')
+      return false
+    }
+
+    const reason = normalizeCancellationReason(rawReason)
+    if (!reason) {
+      showToast('Informe o motivo do cancelamento')
+      return false
+    }
+
+    const ids = g.rows.map(row => row.id)
+    cancellingRef.current = true
+    setCancelling(true)
+
+    try {
+      const result = await cancelOrderRows(ids, user.displayName, reason)
+      if (!result.ok) {
+        showToast(result.message)
+        return false
+      }
+
+      const cancellation = result.cancellation
+      setOrders(previous => previous.map(row => ids.includes(row.id) ? { ...row, ...cancellation } : row))
+      setViewing(previous => previous?.key === g.key ? { ...previous, ...cancellation } : previous)
+      showToast('✅ Encomenda cancelada e retirada da operação')
+      return true
+    } catch {
+      showToast('Erro inesperado ao cancelar. Recarregue a página e tente novamente.')
+      return false
+    } finally {
+      cancellingRef.current = false
+      setCancelling(false)
+    }
+  }
+
+  const viewingCancellationAvailability = viewing
+    ? cancellationAvailability('encomenda', {
+        productionDate: viewing.production_date,
+        deliveryDate: viewing.delivery_date,
+        needsProduction: viewing.needs_production,
+      })
+    : null
 
   return (
     <div className="ps-canvas">
@@ -516,26 +589,27 @@ export default function EncomendasPage() {
                 <div style={{display:'grid', gap:10}}>
                   {visibleGroups.map(g => {
                     const st = groupStatus(g)
+                    const cancelled = Boolean(g.cancelled_at)
                     return (
-                      <div key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer'}}>
+                      <button type="button" key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer', background:cancelled?'var(--line-soft)':undefined, opacity:cancelled ? .72 : 1, textAlign:'left', width:'100%', font:'inherit', color:'inherit'}}>
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap'}}>
                           <div style={{flex:1, minWidth:0}}>
-                            <div className="ps-pname" style={{fontSize:15}}>
+                            <div className="ps-pname" style={{fontSize:15, textDecoration:cancelled?'line-through':undefined}}>
                               {g.customerLabel}
                               {g.isWalkin && <span className="ps-store-chip" style={{marginLeft:6, background:'var(--line-soft)', color:'var(--ink-soft)'}}>AVULSO</span>}
                             </div>
-                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2}}>
+                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2, textDecoration:cancelled?'line-through':undefined}}>
                               Retirada {fmtBR(g.delivery_date)}
                               {g.contact && ` · 📞 ${g.contact}`}
                             </div>
                           </div>
                           <span className={`ps-status ${st.cls}`}>{st.label}</span>
                         </div>
-                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13, marginTop:4}}>
+                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13, marginTop:4, textDecoration:cancelled?'line-through':undefined}}>
                           <span style={{color:'var(--ink-faint)'}}>{g.rows.length} item(ns)</span>
                           <span style={{fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {g.total.toFixed(2)}</span>
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -553,6 +627,7 @@ export default function EncomendasPage() {
             <h3>
               {viewing.customerLabel}
               {viewing.isWalkin && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>AVULSO</span>}
+              {viewing.cancelled_at && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>CANCELADO</span>}
             </h3>
             <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 12px'}}>
               Implantada {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Retirada {fmtBR(viewing.delivery_date)}
@@ -565,9 +640,11 @@ export default function EncomendasPage() {
                 : {background:'var(--line-soft)', color:'var(--ink-soft)'}}>
                 {viewing.needs_production ? '👩‍🍳 Produção' : '🛒 Balcão'}
               </span>
-              <button onClick={()=>toggleProducao(viewing)} disabled={savingProd} className="ps-btn ghost" style={{padding:'4px 10px', fontSize:12, marginLeft:'auto'}}>
-                {savingProd ? 'Salvando…' : viewing.needs_production ? 'Mudar p/ balcão' : 'Mandar p/ produção'}
-              </button>
+              {!viewing.cancelled_at && (
+                <button onClick={()=>toggleProducao(viewing)} disabled={savingProd || cancelling} className="ps-btn ghost" style={{padding:'4px 10px', fontSize:12, marginLeft:'auto'}}>
+                  {savingProd ? 'Salvando…' : viewing.needs_production ? 'Mudar p/ balcão' : 'Mandar p/ produção'}
+                </button>
+              )}
             </div>
 
             <div style={{display:'grid', gap:6, marginBottom:14}}>
@@ -593,8 +670,27 @@ export default function EncomendasPage() {
               </div>
             )}
 
+            {viewing.cancelled_at && (
+              <div className="ps-warning" style={{marginBottom:14, display:'grid', gap:4}}>
+                <strong>Encomenda cancelada</strong>
+                <span style={{fontSize:12.5}}>
+                  Por {viewing.cancelled_by || 'usuário não identificado'} em {formatCancellationTimestamp(viewing.cancelled_at)}
+                </span>
+                <span style={{fontSize:12.5}}><strong>Motivo:</strong> {viewing.cancel_reason || 'não informado'}</span>
+              </div>
+            )}
+
+            {!viewing.cancelled_at && viewingCancellationAvailability && (
+              <OrderCancellationPanel
+                canCancel={canCancelOrder(user?.role, 'encomenda')}
+                availability={viewingCancellationAvailability}
+                busy={cancelling}
+                onConfirm={reason => cancelEncomenda(viewing, reason)}
+              />
+            )}
+
             <div className="actions">
-              <button onClick={()=>startEdit(viewing)} className="ps-btn ghost"><Pencil size={14}/> Editar</button>
+              {!viewing.cancelled_at && <button onClick={()=>startEdit(viewing)} disabled={cancelling} className="ps-btn ghost"><Pencil size={14}/> Editar</button>}
               <button onClick={()=>window.print()} className="ps-btn info"><Printer size={14}/> Imprimir</button>
               <button onClick={()=>setViewing(null)} className="ps-btn ghost">Fechar</button>
             </div>
@@ -604,7 +700,7 @@ export default function EncomendasPage() {
         {/* Cupom térmico 80mm — escondido na tela, visível só na impressão (ver globals.css) */}
         <div id="cupom-enc">
           <div style={{textAlign:'center', fontWeight:700, fontSize:14}}>PANE &amp; SALUTE</div>
-          <div style={{textAlign:'center', marginBottom:'2mm'}}>~ ENCOMENDA ~</div>
+          <div style={{textAlign:'center', marginBottom:'2mm'}}>~ {viewing.cancelled_at ? 'ENCOMENDA CANCELADA' : 'ENCOMENDA'} ~</div>
           <div style={{borderTop:'1px dashed #000', margin:'1mm 0'}}/>
           <div><b>Cliente:</b> {viewing.customerLabel}{viewing.isWalkin ? ' (avulso)' : ''}</div>
           {viewing.contact && <div><b>Tel:</b> {viewing.contact}</div>}
@@ -622,6 +718,7 @@ export default function EncomendasPage() {
             <span>TOTAL</span><span>R$ {viewing.total.toFixed(2)}</span>
           </div>
           {viewing.obs && <div style={{marginTop:'2mm'}}><b>Obs:</b> {viewing.obs}</div>}
+          {viewing.cancelled_at && <div style={{marginTop:'2mm'}}><b>Cancelada:</b> {viewing.cancel_reason || 'motivo não informado'}</div>}
           <div style={{textAlign:'center', marginTop:'3mm', fontSize:11}}>Pedido em {fmtBR(viewing.order_date)}</div>
         </div>
         </>
