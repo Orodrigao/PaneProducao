@@ -1,6 +1,6 @@
 # Roadmap canônico — Pane&Salute ERP
 
-**Atualizado em:** 2026-07-16
+**Atualizado em:** 2026-07-21
 **Objetivo:** chegar ao CMV confiável com segurança e rastreabilidade.
 
 Este arquivo define ordem e critérios. O estado real está em
@@ -50,6 +50,37 @@ Critério de saída:
 - usuários operacionais conseguem executar seus fluxos;
 - dados sensíveis não dependem de autorização de frontend;
 - fallback legado tem plano e data de retirada.
+
+## Projeto transversal — Unificação da identidade de produto
+
+Aprovado para o roadmap em 2026-07-21, sem data marcada; entra quando não
+houver frente financeira mais urgente.
+
+Objetivo: acabar com a identidade dupla do mesmo produto (cadastro legado de
+pães, source `bread`, versus catálogo unificado, source `product`, ligados
+por `products.legacy_bread_id`).
+
+Contexto: a dupla identidade já causou 3+ bugs — o último travou a cobrança
+da EX porque preço salvo numa identidade não era encontrado pela outra. A
+ponte central em `src/lib/productIdentity.ts` é mitigação, não solução: cada
+tela nova ainda precisa lembrar de usá-la, e preço/custo pode existir
+duplicado nas duas identidades com valores divergentes, errando cobrança sem
+aviso.
+
+Escopo previsto, em fases pequenas com aprovação por fase (risco alto: dados
+de produção e telas do dia a dia):
+
+- telas operacionais (romaneio, encomendas, estoque congelado, forno,
+  sobras) passam a gravar a identidade unificada;
+- conversão auditável do histórico gravado com source `bread`;
+- cadastro legado de pães vira somente leitura (arquivo histórico);
+- bloqueio de preço/custo duplicado entre identidades.
+
+Critério de saída:
+
+- nenhuma escrita nova com source `bread`;
+- a ponte `productIdentity` permanece apenas para ler histórico antigo;
+- nenhum preço ou custo ativo duplicado entre identidades.
 
 ## Fase 1 — Compras por XML
 
