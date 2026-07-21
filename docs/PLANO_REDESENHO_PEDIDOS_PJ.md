@@ -104,9 +104,10 @@ no banco e no navegador; o frontend está pronto para incorporação.
 
 ## Fase 2B — Acesso pela Tela de Usuários
 
-**Status:** aprovada e implementada em 2026-07-21. Testes automatizados e
-auditoria somente leitura de produção passaram; a validação final no preview
-depende da publicação desta branch.
+**Status:** aprovada, implementada e validada em 2026-07-21. Testes
+automatizados, auditoria somente leitura de produção e matriz no preview
+passaram para Expedição JC, Marselle/Vendas EX, Elis/Financeiro e Administrador.
+Pronta para incorporação do PR.
 
 **Problema:** a Tela de Usuários já exibe `Acessar Pedidos PJ` e `Confirmar
 envio de Pedido PJ`, mas hoje grava somente a permissão granular. Menu e guarda
