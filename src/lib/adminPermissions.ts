@@ -82,6 +82,11 @@ export function isSingleCheckboxPermissionChecked(assignments: ReadonlySet<strin
   return Array.from(assignments).some(assignment => assignment.startsWith(prefix))
 }
 
+export function isPjOrderSingleCheckboxPermission(permissionKey: string): boolean {
+  return permissionKey === 'pedidos_pj.acessar'
+    || permissionKey === 'pedidos_pj.confirmar_envio'
+}
+
 export function toggleSingleCheckboxPermission(assignments: ReadonlySet<string>, permissionKey: string): Set<string> {
   const next = new Set(assignments)
   const prefix = `${permissionKey}|`

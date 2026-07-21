@@ -4,6 +4,7 @@ import {
   formatRole,
   formatStore,
   groupPermissions,
+  isPjOrderSingleCheckboxPermission,
   isSingleCheckboxPermissionChecked,
   toggleSingleCheckboxPermission,
   type PermissionDefinition,
@@ -84,5 +85,11 @@ describe('apresentação da gestão de acesso', () => {
     expect(formatRole('expedicao')).toBe('Expedição')
     expect(formatStore('ja')).toBe('JA')
     expect(formatStore(null)).toBe('Todas as lojas')
+  })
+
+  it('trata acesso e confirmação de Pedidos PJ como permissões de checkbox único', () => {
+    expect(isPjOrderSingleCheckboxPermission('pedidos_pj.acessar')).toBe(true)
+    expect(isPjOrderSingleCheckboxPermission('pedidos_pj.confirmar_envio')).toBe(true)
+    expect(isPjOrderSingleCheckboxPermission('romaneio.confirmar_saida')).toBe(false)
   })
 })

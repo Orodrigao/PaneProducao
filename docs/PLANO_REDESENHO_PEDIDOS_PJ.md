@@ -120,6 +120,6 @@ bloqueado. Não exige nova migration nem escrita adicional em produção.
 
 **Resultado:** a sessão autenticada passa a ler a concessão atual do próprio
 usuário e reconcilia somente `/pedidos-pj`. Administradores preservam acesso
-total. A Tela de Usuários reconhece corretamente a concessão de acesso da
-Expedição limitada à JC e permite retirá-la sem apagar a permissão separada
-de confirmar envio.
+total. A Tela de Usuários reconhece corretamente as concessões de acesso e de
+confirmação de envio da Expedição limitadas à JC; cada checkbox pode ser
+retirado sem apagar a outra permissão.
