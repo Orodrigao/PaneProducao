@@ -459,7 +459,7 @@ export default function RomaneioPage() {
     const destinationCode = normalizeDestination(dests.find(destination => destination.id === destId)?.code)
     const orderStore = destinationCode.toLowerCase()
     const orderRequest = orderStore
-      ? sbGet('orders',`order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
+      ? sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
       : Promise.resolve([])
     const [existing, orders] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),

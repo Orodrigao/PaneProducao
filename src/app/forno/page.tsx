@@ -112,18 +112,21 @@ export default function FornoPage() {
         supabase
           .from('orders')
           .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .is('cancelled_at', null)
           .in('store', ['jc', 'ja', 'ex'])
           .eq('order_date', date)
           .gt('quantity', 0),
         supabase
           .from('orders')
           .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .is('cancelled_at', null)
           .eq('store', 'pj')
           .or(`production_date.eq.${date},and(production_date.is.null,pj_delivery_date.eq.${date})`)
           .gt('quantity', 0),
         supabase
           .from('orders')
           .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .is('cancelled_at', null)
           .eq('order_type', 'encomenda')
           .eq('production_date', date)
           .eq('product_source', 'bread')

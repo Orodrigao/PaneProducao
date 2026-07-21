@@ -71,6 +71,7 @@ export default function RelatorioPJ() {
     supabase.from('orders')
       .select('id,customer_id,product_name,product_source,quantity,unit_price,pack_size,pricing_unit,order_date,delivery_date')
       .eq('order_type', 'pj')
+      .is('cancelled_at', null)
       .or(orFilter)
       .then(({ data, error }) => {
         if (error) { console.error(error); setOrders([]) }

@@ -166,7 +166,7 @@ export default function ProducaoPage() {
   const loadOrders = useCallback(async (dateKey: string): Promise<OrderMap> => {
     setSyncState('syncing')
     try {
-      const rows: OrderRow[] = await sbGet('orders',`order_date=eq.${dateKey}&select=store,bread_id,quantity,obs,pj_client,pj_delivery_date`)
+      const rows: OrderRow[] = await sbGet('orders',`cancelled_at=is.null&order_date=eq.${dateKey}&select=store,bread_id,quantity,obs,pj_client,pj_delivery_date`)
       const map: OrderMap = {}
       rows.forEach(r => {
         if (!map[r.store]) map[r.store] = {}
@@ -237,8 +237,8 @@ export default function ProducaoPage() {
   const loadGeolarExtras = useCallback(async (dateKey: string) => {
     try {
       const [encRows, pjRaw] = await Promise.all([
-        sbGet('orders', `order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`),
-        sbGet('orders', `store=eq.pj&quantity=gt.0&or=(production_date.eq.${dateKey},pj_delivery_date.eq.${dateKey})&select=product_name,bread_id,quantity,pj_client,production_date,pj_delivery_date`),
+        sbGet('orders', `cancelled_at=is.null&order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`),
+        sbGet('orders', `cancelled_at=is.null&store=eq.pj&quantity=gt.0&or=(production_date.eq.${dateKey},pj_delivery_date.eq.${dateKey})&select=product_name,bread_id,quantity,pj_client,production_date,pj_delivery_date`),
       ])
       setGeolarEnc((encRows as any[]).map(r => ({ client: r.pj_client || 'Encomenda', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
       const pjFiltered = (pjRaw as any[]).filter(o => o.production_date ? o.production_date === dateKey : o.pj_delivery_date === dateKey)
