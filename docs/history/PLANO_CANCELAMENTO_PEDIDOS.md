@@ -1,6 +1,7 @@
 # Plano — Cancelamento de pedidos (PJ e Encomendas)
 
-**Status:** aprovado por Rodrigo em 2026-07-20. Aguardando execução.
+**Status:** fases 1 e 2 concluídas e incorporadas à `main` em 2026-07-20.
+Documento arquivado como registro histórico.
 **Executor:** Codex (uma fase por conversa/PR). Revisão técnica de cada PR
 antes do teste do Rodrigo.
 **Origem:** Elis sentiu falta de um botão para cancelar pedido — hoje há

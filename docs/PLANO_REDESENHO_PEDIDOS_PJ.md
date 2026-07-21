@@ -1,6 +1,7 @@
 # Plano — Redesenho da lista de Pedidos PJ
 
-**Status:** aprovado por Rodrigo em 2026-07-20. Fase 1 em execução.
+**Status:** aprovado por Rodrigo em 2026-07-20. Fase 1 implementada e
+verificada; aguardando merge. Fase 2 ainda não aprovada para execução.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
