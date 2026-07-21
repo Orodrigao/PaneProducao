@@ -1,7 +1,8 @@
 import { createProductIdentityResolver, productIdentityKey, type ProductLegacyLink } from './productIdentity'
+import { ROMANEIO_WEIGHT_LIMIT_KG } from './romaneioDraft'
 
 export type RomaneioBillingUnit = 'un' | 'kg'
-export type RomaneioBillingIssue = 'missing_price' | 'unit_mismatch'
+export type RomaneioBillingIssue = 'missing_price' | 'unit_mismatch' | 'suspicious_quantity'
 
 export interface RomaneioBillingItem {
   id: string
@@ -127,6 +128,12 @@ export function calculateRomaneioBilling(
     if (explicitUnit && explicitUnit !== billingUnit) issues = addIssue(issues, 'unit_mismatch')
     if (!matchingPrice || !isBillingUnit(matchingPrice.pricingUnit) || numericPrice <= 0) {
       issues = addIssue(issues, hasPriceForAnotherUnit ? 'unit_mismatch' : 'missing_price')
+    }
+    // Rede de segurança: produto cobrado por peso com mais de 10 kg num único
+    // romaneio é quase sempre gramas digitadas no campo de kg (ex.: 1450 em vez
+    // de 1,45). Bloqueia a cobrança até alguém conferir o lançamento.
+    if (billingUnit === 'kg' && (sentQuantity > ROMANEIO_WEIGHT_LIMIT_KG || billedQuantity > ROMANEIO_WEIGHT_LIMIT_KG)) {
+      issues = addIssue(issues, 'suspicious_quantity')
     }
 
     const previous = rowsByKey.get(rowKey)

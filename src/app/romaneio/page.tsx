@@ -663,6 +663,15 @@ export default function RomaneioPage() {
     setEnvioRomId(null)
     showLoad('Confirmando envio...')
     try {
+      // Revalida o peso antes de enviar: um rascunho antigo pode ter sido
+      // criado antes do bloqueio de 10 kg (gramas digitadas no campo de kg).
+      const items = await sbGet('romaneio_items',`romaneio_id=eq.${romId}&select=product_name,qty_sent`) as Pick<RomItem,'product_name'|'qty_sent'>[]
+      const overweight = items.find(it =>
+        isWeightControlledRomaneioProduct(it.product_name) && (Number(it.qty_sent)||0) > ROMANEIO_WEIGHT_LIMIT_KG)
+      if (overweight) {
+        showToastPS(`Quantidade de ${overweight.product_name} acima do limite de 10 kg. Exclua e refaça o romaneio com o peso em kg (para 1.450 g, digite 1,450).`, 6000)
+        return
+      }
       await supabaseRestFetch('rpc/confirm_romaneio_departure', {
         method: 'POST',
         body: JSON.stringify({ p_romaneio_id: romId }),
