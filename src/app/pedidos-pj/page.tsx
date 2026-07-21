@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Trash2, Save, Zap, X, Calendar, Pencil } from 'lucide-react'
+import { Trash2, Save, Zap, X, Calendar, Pencil, Truck } from 'lucide-react'
 import OrderCancellationPanel from '@/components/OrderCancellationPanel'
 import { PjOrderListPanel, type PjOrderListDisplayItem } from '@/components/PjOrderListPanel'
 import { supabase } from '@/lib/supabase'
@@ -15,6 +15,12 @@ import {
   normalizeCancellationReason,
 } from '@/lib/orderCancellation'
 import { cancelOrderRows } from '@/lib/orderCancellationClient'
+import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
+import {
+  confirmPjOrderDispatch,
+  loadPjOrdersForDispatch,
+  type PjDispatchOrderRow,
+} from '@/lib/pjOrderDispatchClient'
 
 // ===== Tipos =====
 interface Customer {
@@ -52,6 +58,7 @@ interface OrderRow {
   quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null; sale_option_id:string|null
   obs:string|null
   cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
+  dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
 }
 interface PedidoGroup {
   key:string
@@ -60,6 +67,7 @@ interface PedidoGroup {
   order_date:string; delivery_date:string|null; production_date:string|null
   obs:string|null
   cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
+  dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
   rows:OrderRow[]
   total:number
 }
@@ -93,6 +101,33 @@ function fmtBR(dateStr:string|null): string {
   return `${d}/${m}/${y}`
 }
 
+function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
+  return {
+    id: row.id,
+    order_group_id: row.order_group_id,
+    customer_id: row.customer_id,
+    pj_client: row.customer_name,
+    order_date: row.order_date,
+    delivery_date: row.delivery_date,
+    production_date: row.production_date,
+    bread_id: row.bread_id,
+    product_source: row.product_source,
+    product_name: row.product_name,
+    quantity: row.quantity,
+    unit_price: null,
+    pack_size: row.pack_size,
+    pricing_unit: row.pricing_unit,
+    sale_option_id: row.sale_option_id,
+    obs: row.obs,
+    cancelled_at: row.cancelled_at,
+    cancelled_by: null,
+    cancel_reason: null,
+    dispatched_at: row.dispatched_at,
+    dispatched_by: row.dispatched_by,
+    dispatched_by_name: row.dispatched_by_name,
+  }
+}
+
 export default function PedidosPJPage() {
   const [user, setUser] = useState<AppUser | null>(null)
   const [tab, setTab] = useState<'novo'|'lista'>('lista')
@@ -105,6 +140,7 @@ export default function PedidosPJPage() {
   const [overrides, setOverrides] = useState<Override[]>([])
   const [orders, setOrders]       = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   const [custId, setCustId]    = useState<string>('')
   const [delivery, setDelivery] = useState<string>('')
@@ -119,26 +155,67 @@ export default function PedidosPJPage() {
   const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
   const [cancelling, setCancelling] = useState(false)
   const cancellingRef = useRef(false)
+  const [dispatching, setDispatching] = useState(false)
+  const dispatchingRef = useRef(false)
 
-  useEffect(() => { setUser(getCurrentUser()) }, [])
+  const access = resolvePjOrderAccess(user)
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (activeUser?: AppUser | null) => {
     setLoading(true)
-    const [cRes, tRes, iRes, oRes, ordRes] = await Promise.all([
-      supabase.from('customers').select('*').eq('active',true).order('name'),
-      supabase.from('price_tiers').select('id,name').eq('active',true),
-      supabase.from('price_tier_items').select('*').eq('active',true),
-      supabase.from('customer_price_overrides').select('*').eq('active',true),
-      supabase.from('orders').select('*').eq('order_type','pj').order('order_date',{ascending:false}).limit(500),
-    ])
-    setCustomers((cRes.data||[]) as Customer[])
-    setTiers((tRes.data||[]) as PriceTier[])
-    setItems((iRes.data||[]) as TierItem[])
-    setOverrides((oRes.data||[]) as Override[])
-    setOrders((ordRes.data||[]) as OrderRow[])
-    setLoading(false)
+    setLoadError('')
+    const currentUser = activeUser ?? getCurrentUser()
+    const currentAccess = resolvePjOrderAccess(currentUser)
+
+    try {
+      if (currentAccess.mode === 'dispatch') {
+        const result = await loadPjOrdersForDispatch()
+        if (!result.ok) {
+          setLoadError(result.message)
+          setOrders([])
+          return
+        }
+        setCustomers([])
+        setTiers([])
+        setItems([])
+        setOverrides([])
+        setOrders(result.orders.map(operationalRowToOrderRow))
+        return
+      }
+
+      if (currentAccess.mode !== 'commercial') {
+        setLoadError('Seu perfil não tem acesso aos Pedidos PJ.')
+        setOrders([])
+        return
+      }
+
+      const [cRes, tRes, iRes, oRes, ordRes] = await Promise.all([
+        supabase.from('customers').select('*').eq('active',true).order('name'),
+        supabase.from('price_tiers').select('id,name').eq('active',true),
+        supabase.from('price_tier_items').select('*').eq('active',true),
+        supabase.from('customer_price_overrides').select('*').eq('active',true),
+        supabase.from('orders').select('*').eq('order_type','pj').order('order_date',{ascending:false}).limit(500),
+      ])
+      const firstError = [cRes.error, tRes.error, iRes.error, oRes.error, ordRes.error].find(Boolean)
+      if (firstError) {
+        setLoadError(`Não foi possível carregar os Pedidos PJ: ${firstError.message}`)
+        return
+      }
+      setCustomers((cRes.data||[]) as Customer[])
+      setTiers((tRes.data||[]) as PriceTier[])
+      setItems((iRes.data||[]) as TierItem[])
+      setOverrides((oRes.data||[]) as Override[])
+      setOrders((ordRes.data||[]) as OrderRow[])
+    } catch {
+      setLoadError('Não foi possível carregar os Pedidos PJ. Verifique a internet e tente novamente.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
-  useEffect(() => { loadAll() }, [loadAll])
+  useEffect(() => {
+    const currentUser = getCurrentUser()
+    setUser(currentUser)
+    void loadAll(currentUser)
+  }, [loadAll])
 
   const cust = customers.find(c => c.id === custId) || null
   const custTier = cust && tiers.find(t => t.id === cust.default_tier_id) || null
@@ -219,6 +296,7 @@ export default function PedidosPJPage() {
   const totalValue = useMemo(() => lines.reduce((sum,l) => sum + (l.unit_price * l.pack_size * l.packs), 0), [lines])
 
   const savePedido = async () => {
+    if (!access.canManage) { showToast('Seu perfil não pode criar ou editar Pedidos PJ'); return }
     if (!cust) { showToast('Selecione cliente'); return }
     if (!delivery) { showToast('Data de entrega obrigatória'); return }
     if (isSunday(delivery)) { showToast('Entrega não pode ser em domingo'); return }
@@ -259,7 +337,7 @@ export default function PedidosPJPage() {
   }
 
   const startEdit = (g: PedidoGroup) => {
-    if (g.cancelled_at || cancellingRef.current) return
+    if (!access.canManage || g.cancelled_at || g.dispatched_at || cancellingRef.current) return
     setCustId(g.customer_id || '')
     setDelivery(g.delivery_date || '')
     setProduction(g.production_date || '')
@@ -302,6 +380,9 @@ export default function PedidosPJPage() {
           cancelled_at: r.cancelled_at,
           cancelled_by: r.cancelled_by,
           cancel_reason: r.cancel_reason,
+          dispatched_at: r.dispatched_at,
+          dispatched_by: r.dispatched_by,
+          dispatched_by_name: r.dispatched_by_name,
           rows: [],
           total: 0,
         })
@@ -318,6 +399,7 @@ export default function PedidosPJPage() {
 
   const groupStatus = (g:PedidoGroup): { label:string; cls:string; border:string } => {
     if (g.cancelled_at) return { label:'cancelado', cls:'separado', border:'var(--ink-faint)' }
+    if (g.dispatched_at) return { label:'enviado', cls:'conferido', border:'var(--sage)' }
     const t = todayISO()
     if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
     if (g.delivery_date < t) return { label:'entregue', cls:'separado', border:'var(--ink-faint)' }
@@ -326,7 +408,7 @@ export default function PedidosPJPage() {
   }
 
   const adiantarHoje = async (g:PedidoGroup) => {
-    if (g.cancelled_at || cancellingRef.current) return
+    if (!access.canManage || g.cancelled_at || g.dispatched_at || cancellingRef.current) return
     if (!confirm(`Adiantar pedido de "${g.customer_name}" pra hoje?\n\nProdução e entrega serão movidas pra ${fmtBR(todayISO())}.`)) return
     const today = todayISO()
     if (isSunday(today)) { showToast('⚠️ Hoje é domingo, entrega não permitida'); return }
@@ -343,6 +425,10 @@ export default function PedidosPJPage() {
 
   const cancelPedido = async (g: PedidoGroup, rawReason: string): Promise<boolean> => {
     if (cancellingRef.current) return false
+    if (g.dispatched_at) {
+      showToast('Pedido já enviado não pode ser cancelado')
+      return false
+    }
     if (!user || !canCancelOrder(user.role, 'pj')) {
       showToast('Você não tem permissão para cancelar pedidos PJ')
       return false
@@ -388,6 +474,52 @@ export default function PedidosPJPage() {
     }
   }
 
+  const dispatchPedido = async (g: PedidoGroup) => {
+    if (dispatchingRef.current) return
+    if (!access.canDispatch) {
+      showToast('Seu perfil não pode confirmar o envio de Pedidos PJ')
+      return
+    }
+    if (!g.order_group_id) {
+      showToast('Pedido antigo sem identificação. Fale com o Rodrigo.')
+      return
+    }
+    if (g.cancelled_at || g.dispatched_at) return
+    if (!window.confirm(`Confirmar que o pedido de "${g.customer_name}" foi enviado?\n\nDepois disso ele irá para o Histórico e não poderá mais ser alterado.`)) return
+
+    dispatchingRef.current = true
+    setDispatching(true)
+    try {
+      const result = await confirmPjOrderDispatch(g.order_group_id)
+      if (!result.ok) {
+        showToast(result.message)
+        return
+      }
+
+      const dispatch = result.dispatch
+      setOrders(previous => previous.map(row => (
+        row.order_group_id === g.order_group_id
+          ? {
+              ...row,
+              dispatched_at: dispatch.dispatched_at,
+              dispatched_by: dispatch.dispatched_by,
+              dispatched_by_name: dispatch.dispatched_by_name,
+            }
+          : row
+      )))
+      setViewing(null)
+      setListStage('history')
+      showToast(dispatch.already_dispatched
+        ? 'Pedido já estava no Histórico como enviado'
+        : '✅ Pedido marcado como enviado e movido para o Histórico')
+    } catch {
+      showToast('Erro inesperado ao confirmar o envio. Recarregue a página e tente novamente.')
+    } finally {
+      dispatchingRef.current = false
+      setDispatching(false)
+    }
+  }
+
   const viewingCancellationAvailability = viewing
     ? cancellationAvailability('pj', {
         productionDate: viewing.production_date,
@@ -404,6 +536,7 @@ export default function PedidosPJPage() {
       productionDate: group.production_date,
       deliveryDate: group.delivery_date,
       cancelledAt: group.cancelled_at,
+      dispatchedAt: group.dispatched_at,
       itemCount: group.rows.length,
       total: group.total,
       statusLabel: status.label,
@@ -420,7 +553,7 @@ export default function PedidosPJPage() {
             <div className="ps-mark">P</div>
             <div className="ps-brand">
               <b>Pedidos PJ</b>
-              <span>Clientes B2B</span>
+              <span>{access.mode === 'dispatch' ? 'Fila da Expedição · sem valores' : 'Clientes B2B'}</span>
             </div>
           </div>
           {user && (
@@ -431,19 +564,26 @@ export default function PedidosPJPage() {
           )}
         </header>
 
-        <div className="ps-pad" style={{marginTop:14}}>
-          <div className="ps-tabs" role="tablist">
-            {(['lista','novo'] as const).map(t => (
-              <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)} className="ps-tab">
-                {t==='novo' ? '+ Novo pedido' : 'Pedidos'}
-              </button>
-            ))}
+        {access.canManage && (
+          <div className="ps-pad" style={{marginTop:14}}>
+            <div className="ps-tabs" role="tablist">
+              {(['lista','novo'] as const).map(t => (
+                <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)} className="ps-tab">
+                  {t==='novo' ? '+ Novo pedido' : 'Pedidos'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="ps-scroll ps-pad">
           {loading ? (
             <div className="ps-empty">Carregando...</div>
+          ) : loadError ? (
+            <div className="ps-empty">
+              <p>{loadError}</p>
+              <button type="button" className="ps-btn ghost" onClick={() => loadAll(user)}>Tentar novamente</button>
+            </div>
           ) : tab === 'novo' ? (
             <>
               {editing && (
@@ -612,6 +752,7 @@ export default function PedidosPJPage() {
                 if (group) setViewing(group)
               }}
               formatDate={fmtBR}
+              showCommercialValues={access.showCommercialValues}
             />
           )}
         </div>
@@ -624,6 +765,7 @@ export default function PedidosPJPage() {
             <h3>
               {viewing.customer_name}
               {viewing.cancelled_at && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>CANCELADO</span>}
+              {viewing.dispatched_at && <span className="ps-store-chip" style={{marginLeft:8, background:'#E3F0E0', color:'var(--sage)'}}>ENVIADO</span>}
             </h3>
             <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
               Implantado {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Entrega {fmtBR(viewing.delivery_date)}
@@ -642,16 +784,20 @@ export default function PedidosPJPage() {
                   </span>
                   <span style={{textAlign:'right'}}>
                     <span style={{color:'var(--ink-faint)', fontSize:12, marginRight:6}}>{r.quantity} {r.pricing_unit || 'un'}</span>
-                    <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
+                    {access.showCommercialValues && (
+                      <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
+                    )}
                   </span>
                 </div>
               ))}
             </div>
 
-            <div className="ps-banner honey" style={{marginBottom:14, justifyContent:'space-between'}}>
-              <b>Total</b>
-              <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
-            </div>
+            {access.showCommercialValues && (
+              <div className="ps-banner honey" style={{marginBottom:14, justifyContent:'space-between'}}>
+                <b>Total</b>
+                <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
+              </div>
+            )}
 
             {viewing.obs && (
               <div className="ps-warning" style={{marginBottom:14}}>
@@ -669,7 +815,16 @@ export default function PedidosPJPage() {
               </div>
             )}
 
-            {!viewing.cancelled_at && viewingCancellationAvailability && (
+            {viewing.dispatched_at && (
+              <div className="ps-banner" style={{marginBottom:14, display:'grid', gap:4, background:'#E3F0E0', color:'var(--sage)', border:'1px solid #C5D5BA'}}>
+                <strong>Pedido enviado</strong>
+                <span style={{fontSize:12.5}}>
+                  Por {viewing.dispatched_by_name || 'expedição'} em {formatCancellationTimestamp(viewing.dispatched_at)}
+                </span>
+              </div>
+            )}
+
+            {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && viewingCancellationAvailability && (
               <OrderCancellationPanel
                 canCancel={canCancelOrder(user?.role, 'pj')}
                 availability={viewingCancellationAvailability}
@@ -678,13 +833,25 @@ export default function PedidosPJPage() {
               />
             )}
 
+            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && (
+              <button
+                type="button"
+                className="ps-btn primary"
+                style={{width:'100%', justifyContent:'center', marginBottom:14}}
+                disabled={dispatching}
+                onClick={() => dispatchPedido(viewing)}
+              >
+                <Truck size={15}/> {dispatching ? 'Confirmando envio…' : 'Marcar como enviado'}
+              </button>
+            )}
+
             <div className="actions">
-              {!viewing.cancelled_at && (
+              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && (
                 <button onClick={()=>startEdit(viewing)} disabled={cancelling} className="ps-btn ghost">
                   <Pencil size={14}/> Editar
                 </button>
               )}
-              {!viewing.cancelled_at && viewing.production_date && viewing.production_date > todayISO() && (
+              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && viewing.production_date && viewing.production_date > todayISO() && (
                 <button onClick={()=>adiantarHoje(viewing)} disabled={cancelling} className="ps-btn info">
                   <Zap size={14}/> Adiantar pra hoje
                 </button>

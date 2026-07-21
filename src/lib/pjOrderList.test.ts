@@ -13,6 +13,7 @@ function order(
     productionDate,
     deliveryDate,
     cancelledAt: null,
+    dispatchedAt: null,
   }
 }
 
@@ -85,5 +86,20 @@ describe('organização da lista de Pedidos PJ', () => {
 
     expect(result.open.map(item => item.key)).toEqual(['cliente-a', 'cliente-b'])
     expect(result.history.map(item => item.key).sort()).toEqual(['cancelado', 'passado'])
+  })
+
+  it('move um pedido enviado para o histórico imediatamente', () => {
+    const dispatched = {
+      ...order('enviado', '2026-07-21', '2026-07-22'),
+      dispatchedAt: '2026-07-20T15:30:00-03:00',
+    }
+
+    const result = organizePjOrders([dispatched], {
+      today: '2026-07-20',
+      query: '',
+    })
+
+    expect(result.open).toEqual([])
+    expect(result.history.map(item => item.key)).toEqual(['enviado'])
   })
 })

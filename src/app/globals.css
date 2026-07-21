@@ -1005,6 +1005,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .pj-order-row:focus-visible{ outline:3px solid rgba(190,131,43,.3); outline-offset:2px; }
 .pj-order-row.is-cancelled{ background:var(--line-soft); opacity:.72; }
 .pj-order-row.is-cancelled .pj-order-customer{ text-decoration:line-through; }
+.pj-order-row.is-dispatched{ background:#F1F7EF; }
 .pj-order-row-main{ min-width:0; }
 .pj-order-customer{
   overflow:hidden; color:var(--ps-ink); font-size:15.5px; font-weight:750;
