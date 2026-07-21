@@ -13,6 +13,7 @@ import {
   type RomaneioBillingPrice,
   type RomaneioBillingRow,
 } from '@/lib/romaneioBilling'
+import type { ProductLegacyLink } from '@/lib/productIdentity'
 import PeriodFilter from '@/components/reports/PeriodFilter'
 import KPICard from '@/components/reports/KPICard'
 
@@ -50,6 +51,11 @@ interface RomaneioItem {
   product_name: string
   qty_sent: number | string | null
   qty_accepted: number | string | null
+}
+
+interface ProductLegacyRow {
+  id: string
+  legacy_bread_id: string | null
 }
 
 const PANE_SENDER = {
@@ -179,6 +185,7 @@ export default function RelatorioRomaneiosEX() {
   const [buckTier, setBuckTier] = useState<PriceTier | null>(null)
   const [items, setItems] = useState<RomaneioItem[]>([])
   const [prices, setPrices] = useState<PriceTierItem[]>([])
+  const [legacyLinks, setLegacyLinks] = useState<ProductLegacyLink[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -207,12 +214,13 @@ export default function RelatorioRomaneiosEX() {
       if (!exDestination) {
         setItems([])
         setPrices([])
+        setLegacyLinks([])
         return
       }
 
       const from = toISODate(range.from)
       const to = toISODate(range.to)
-      const [romaneiosRes, pricesRes] = await Promise.all([
+      const [romaneiosRes, pricesRes, linksRes] = await Promise.all([
         supabase
           .from('romaneios')
           .select('id,record_date,trip_number,status')
@@ -229,12 +237,23 @@ export default function RelatorioRomaneiosEX() {
             .eq('tier_id', tier.id)
             .eq('active', true)
           : Promise.resolve({ data: [], error: null }),
+        // Vínculo pão legado ↔ produto unificado: o romaneio grava o pão,
+        // mas a Tabela Buck pode guardar o preço no produto unificado.
+        supabase
+          .from('products')
+          .select('id,legacy_bread_id')
+          .not('legacy_bread_id', 'is', null),
       ])
       if (romaneiosRes.error) throw romaneiosRes.error
       if (pricesRes.error) throw pricesRes.error
+      if (linksRes.error) throw linksRes.error
 
       const romaneioRows = (romaneiosRes.data || []) as Romaneio[]
       setPrices((pricesRes.data || []) as PriceTierItem[])
+      setLegacyLinks(((linksRes.data || []) as ProductLegacyRow[]).map(row => ({
+        productId: row.id,
+        legacyBreadId: row.legacy_bread_id,
+      })))
 
       if (romaneioRows.length === 0) {
         setItems([])
@@ -252,6 +271,7 @@ export default function RelatorioRomaneiosEX() {
       setLoadError(errorMessage(error))
       setItems([])
       setPrices([])
+      setLegacyLinks([])
     } finally {
       setLoading(false)
     }
@@ -278,7 +298,8 @@ export default function RelatorioRomaneiosEX() {
       pricingUnit: price.pricing_unit,
       active: price.active,
     } satisfies RomaneioBillingPrice)),
-  ), [items, prices])
+    legacyLinks,
+  ), [items, prices, legacyLinks])
 
   const missingPriceRows = billing.rows.filter(row => row.issues.includes('missing_price'))
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))

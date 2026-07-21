@@ -1,3 +1,5 @@
+import { createProductIdentityResolver, productIdentityKey } from '@/lib/productIdentity'
+
 export type PriceCatalogSource = 'bread' | 'product'
 export type PriceCatalogUnit = 'un' | 'kg'
 
@@ -22,19 +24,15 @@ export function isCatalogItemAlreadyPriced(
   catalogItem: PriceCatalogItemIdentity,
   tierItems: ReadonlyArray<PriceTierItemIdentity>,
 ) {
-  const hasDirectPrice = tierItems.some(item =>
-    item.product_source === catalogItem._source
-    && item.product_id === catalogItem.id
-    && item.pricing_unit === catalogItem.pricing_unit,
+  const resolver = createProductIdentityResolver(
+    catalogItem._source === 'product' && catalogItem.legacy_bread_id
+      ? [{ productId: catalogItem.id, legacyBreadId: catalogItem.legacy_bread_id }]
+      : [],
   )
-
-  if (hasDirectPrice || catalogItem._source !== 'product' || !catalogItem.legacy_bread_id) {
-    return hasDirectPrice
-  }
+  const equivalentKeys = new Set(resolver.keysFor(catalogItem._source, catalogItem.id))
 
   return tierItems.some(item =>
-    item.product_source === 'bread'
-    && item.product_id === catalogItem.legacy_bread_id
-    && item.pricing_unit === catalogItem.pricing_unit,
+    item.pricing_unit === catalogItem.pricing_unit
+    && equivalentKeys.has(productIdentityKey(item.product_source, item.product_id)),
   )
 }

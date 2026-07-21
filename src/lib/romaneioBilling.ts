@@ -1,3 +1,5 @@
+import { createProductIdentityResolver, productIdentityKey, type ProductLegacyLink } from './productIdentity'
+
 export type RomaneioBillingUnit = 'un' | 'kg'
 export type RomaneioBillingIssue = 'missing_price' | 'unit_mismatch'
 
@@ -75,12 +77,8 @@ export function explicitUnitInRomaneioProduct(productName: string): RomaneioBill
   return null
 }
 
-function priceKey(productSource: string, productId: string) {
-  return `${productSource}:${productId}`
-}
-
 function itemKey(item: RomaneioBillingItem, unit: RomaneioBillingUnit) {
-  return `${priceKey(item.productSource, item.productId)}:${item.productName}:${unit}`
+  return `${productIdentityKey(item.productSource, item.productId)}:${item.productName}:${unit}`
 }
 
 function addIssue(current: RomaneioBillingIssue[], issue: RomaneioBillingIssue) {
@@ -90,10 +88,12 @@ function addIssue(current: RomaneioBillingIssue[], issue: RomaneioBillingIssue) 
 export function calculateRomaneioBilling(
   items: RomaneioBillingItem[],
   prices: RomaneioBillingPrice[],
+  legacyLinks: ReadonlyArray<ProductLegacyLink> = [],
 ): RomaneioBillingResult {
+  const identityResolver = createProductIdentityResolver(legacyLinks)
   const pricesByProduct = new Map<string, RomaneioBillingPrice[]>()
   prices.filter(price => price.active !== false).forEach(price => {
-    const key = priceKey(price.productSource, price.productId)
+    const key = productIdentityKey(price.productSource, price.productId)
     pricesByProduct.set(key, [...(pricesByProduct.get(key) || []), price])
   })
 
@@ -108,8 +108,14 @@ export function calculateRomaneioBilling(
     const billedQuantity = item.qtyAccepted === null || item.qtyAccepted === undefined
       ? sentQuantity
       : asNonNegativeNumber(item.qtyAccepted)
-    const priceLines = pricesByProduct.get(priceKey(item.productSource, item.productId)) || []
-    const matchingPrice = priceLines.find(price => price.pricingUnit === billingUnit)
+    // Busca o preço pela identidade direta e, na falta dela, pelas identidades
+    // equivalentes (pão legado ↔ produto unificado). keysFor devolve a direta
+    // primeiro, então preço direto sempre vence o preço da ponte.
+    const priceLines = identityResolver
+      .keysFor(item.productSource, item.productId)
+      .flatMap(key => pricesByProduct.get(key) || [])
+    const unitPriceLines = priceLines.filter(price => price.pricingUnit === billingUnit)
+    const matchingPrice = unitPriceLines.find(price => asNonNegativeNumber(price.unitPrice) > 0) || unitPriceLines[0]
     const numericPrice = asNonNegativeNumber(matchingPrice?.unitPrice)
     const hasPriceForAnotherUnit = priceLines.some(price =>
       isBillingUnit(price.pricingUnit)
