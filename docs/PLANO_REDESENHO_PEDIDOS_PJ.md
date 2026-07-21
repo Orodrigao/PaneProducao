@@ -1,7 +1,7 @@
 # Plano — Redesenho da lista de Pedidos PJ
 
-**Status:** aprovado por Rodrigo em 2026-07-20. Fase 1 implementada e
-verificada; aguardando merge. Fase 2 ainda não aprovada para execução.
+**Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21 e
+implementada em branch; a migration ainda não foi aplicada em produção.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -63,7 +63,8 @@ há migration nem transformação de dados.
 
 ## Fase 2 — Envio controlado pela Expedição da JC
 
-**Status:** descoberta concluída, não aprovada para execução.
+**Status:** implementação preparada; ativação em produção pendente de aprovação
+explícita para aplicar a migration e executar a matriz de acesso no navegador.
 
 **Objetivo:** registrar o despacho e mover o pedido para o histórico.
 
@@ -75,6 +76,24 @@ de cliente, itens, quantidades, preços ou cancelamento.
 **Tratamento dos pedidos antigos:** manter pedidos antigos no histórico sem
 inventar horário ou responsável por um envio que nunca foi registrado.
 
-**Gate:** migration, função segura e mudança de acesso exigem plano técnico e
-novo OK explícito de Rodrigo antes da implementação e antes da aplicação em
-produção.
+**Fora do escopo:** histórico operacional na tela de Romaneios. A tela atual
+continua mostrando os romaneios do dia; o relatório de faturamento permanece
+separado.
+
+**Critérios de aceite:**
+
+- somente a Expedição da JC vê e executa **Marcar como enviado**;
+- a Expedição recebe cliente, itens, quantidades, datas e observações, sem
+  preços, e não consegue contornar essa restrição consultando o Pedido PJ
+  diretamente;
+- Administração e Financeiro preservam criação, edição, adiantamento,
+  cancelamento e valores, mas não confirmam o envio;
+- pedido enviado vai imediatamente para o histórico, guarda data e responsável
+  e não pode mais ser alterado ou cancelado;
+- repetir a confirmação devolve o mesmo envio, sem duplicar ou corromper dados;
+- perfis fora da Expedição da JC são bloqueados pela ação protegida do banco.
+
+**Gate:** o OK para implementar foi dado em 2026-07-21. Aplicar a migration em
+produção continua exigindo um novo OK explícito de Rodrigo; depois da aplicação,
+a liberação só é considerada concluída após testar um perfil permitido e um
+bloqueado no navegador.
