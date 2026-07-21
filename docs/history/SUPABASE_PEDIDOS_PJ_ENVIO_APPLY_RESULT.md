@@ -61,9 +61,9 @@ aplicação.
 
 - perfil de Vendas (Marselle): ao abrir `/pedidos-pj`, foi redirecionado para a
   tela inicial, como esperado;
-- perfil permitido da Expedição: pendente no preview do PR, pois a aba que
-  continha essa sessão ficou bloqueada por uma janela de outra extensão do
-  Chrome durante a verificação;
+- perfil permitido da Expedição: pendente no preview do PR; o endereço novo
+  abriu corretamente no login, mas não herdou a sessão de produção e a senha
+  não estava disponível para concluir a entrada;
 - a interface nova ainda não está em produção; ela permanece no PR draft 149.
 
 ## Alertas fora do escopo
