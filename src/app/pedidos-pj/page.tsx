@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Trash2, Save, Zap, X, Calendar, Pencil } from 'lucide-react'
 import OrderCancellationPanel from '@/components/OrderCancellationPanel'
+import { PjOrderListPanel, type PjOrderListDisplayItem } from '@/components/PjOrderListPanel'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -94,7 +95,9 @@ function fmtBR(dateStr:string|null): string {
 
 export default function PedidosPJPage() {
   const [user, setUser] = useState<AppUser | null>(null)
-  const [tab, setTab] = useState<'novo'|'lista'>('novo')
+  const [tab, setTab] = useState<'novo'|'lista'>('lista')
+  const [listStage, setListStage] = useState<'open'|'history'>('open')
+  const [listSearch, setListSearch] = useState('')
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [tiers, setTiers]         = useState<PriceTier[]>([])
@@ -250,6 +253,7 @@ export default function PedidosPJPage() {
     setSaving(false)
     showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
     setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setSearch(''); setEditing(null)
+    setListStage('open'); setListSearch('')
     setTab('lista')
     loadAll()
   }
@@ -391,6 +395,23 @@ export default function PedidosPJPage() {
       })
     : null
 
+  const listOrders: PjOrderListDisplayItem[] = pedidosGrouped.map(group => {
+    const status = groupStatus(group)
+    return {
+      key: group.key,
+      customerName: group.customer_name,
+      orderDate: group.order_date,
+      productionDate: group.production_date,
+      deliveryDate: group.delivery_date,
+      cancelledAt: group.cancelled_at,
+      itemCount: group.rows.length,
+      total: group.total,
+      statusLabel: status.label,
+      statusClass: status.cls,
+      statusBorder: status.border,
+    }
+  })
+
   return (
     <div className="ps-canvas">
       <div className="ps-shell">
@@ -412,9 +433,9 @@ export default function PedidosPJPage() {
 
         <div className="ps-pad" style={{marginTop:14}}>
           <div className="ps-tabs" role="tablist">
-            {(['novo','lista'] as const).map(t => (
+            {(['lista','novo'] as const).map(t => (
               <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)} className="ps-tab">
-                {t==='novo' ? '+ Novo pedido' : '📋 Lista'}
+                {t==='novo' ? '+ Novo pedido' : 'Pedidos'}
               </button>
             ))}
           </div>
@@ -579,38 +600,19 @@ export default function PedidosPJPage() {
               )}
             </>
           ) : (
-            <>
-              <div style={{fontSize:13, color:'var(--ink-soft)', marginTop:14, marginBottom:12}}>
-                {pedidosGrouped.length} pedido(s) PJ no histórico
-              </div>
-              {pedidosGrouped.length === 0 ? (
-                <div className="ps-empty">Nenhum pedido PJ ainda.</div>
-              ) : (
-                <div style={{display:'grid', gap:10}}>
-                  {pedidosGrouped.map(g => {
-                    const st = groupStatus(g)
-                    const cancelled = Boolean(g.cancelled_at)
-                    return (
-                      <button type="button" key={g.key} onClick={()=>setViewing(g)} className="ps-card" style={{borderLeft:`4px solid ${st.border}`, cursor:'pointer', background:cancelled?'var(--line-soft)':undefined, opacity:cancelled ? .72 : 1, textAlign:'left', width:'100%', font:'inherit', color:'inherit'}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap'}}>
-                          <div style={{flex:1, minWidth:0}}>
-                            <div className="ps-pname" style={{textDecoration:cancelled?'line-through':undefined}}>{g.customer_name}</div>
-                            <div style={{fontSize:12, color:'var(--ink-faint)', marginTop:2, textDecoration:cancelled?'line-through':undefined}}>
-                              Impl. {fmtBR(g.order_date)} · Prod. {fmtBR(g.production_date)} · Entr. {fmtBR(g.delivery_date)}
-                            </div>
-                          </div>
-                          <span className={`ps-status ${st.cls}`}>{st.label}</span>
-                        </div>
-                        <div style={{display:'flex', justifyContent:'space-between', fontSize:13, textDecoration:cancelled?'line-through':undefined}}>
-                          <span style={{color:'var(--ink-faint)'}}>{g.rows.length} item(ns)</span>
-                          <span style={{fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {g.total.toFixed(2)}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </>
+            <PjOrderListPanel
+              orders={listOrders}
+              today={todayISO()}
+              search={listSearch}
+              onSearchChange={setListSearch}
+              activeStage={listStage}
+              onStageChange={setListStage}
+              onOpen={orderKey => {
+                const group = pedidosGrouped.find(item => item.key === orderKey)
+                if (group) setViewing(group)
+              }}
+              formatDate={fmtBR}
+            />
           )}
         </div>
       </div>
