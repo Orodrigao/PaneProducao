@@ -77,6 +77,25 @@ export function assignmentId(assignment: ScopedPermission): string {
   return `${assignment.permissionKey}|${assignment.scope}`
 }
 
+export function isSingleCheckboxPermissionChecked(assignments: ReadonlySet<string>, permissionKey: string): boolean {
+  const prefix = `${permissionKey}|`
+  return Array.from(assignments).some(assignment => assignment.startsWith(prefix))
+}
+
+export function toggleSingleCheckboxPermission(assignments: ReadonlySet<string>, permissionKey: string): Set<string> {
+  const next = new Set(assignments)
+  const prefix = `${permissionKey}|`
+  const assignedScopes = Array.from(next).filter(assignment => assignment.startsWith(prefix))
+
+  if (assignedScopes.length > 0) {
+    assignedScopes.forEach(assignment => next.delete(assignment))
+  } else {
+    next.add(`${permissionKey}|*`)
+  }
+
+  return next
+}
+
 export function parseAssignmentId(value: string): ScopedPermission {
   const [permissionKey, rawScope] = value.split('|')
   const scope: PermissionScope = rawScope === 'jc' || rawScope === 'ja' || rawScope === 'ex' ? rawScope : '*'

@@ -4,6 +4,8 @@ import {
   formatRole,
   formatStore,
   groupPermissions,
+  isSingleCheckboxPermissionChecked,
+  toggleSingleCheckboxPermission,
   type PermissionDefinition,
 } from './adminPermissions'
 
@@ -43,6 +45,24 @@ describe('fundação de permissões por usuário', () => {
     expect(migrationSource).toContain('create or replace function public.replace_user_permissions')
     expect(migrationSource).toContain('security invoker')
     expect(migrationSource).toContain('grant execute on function public.replace_user_permissions')
+  })
+  it('mostra Pedidos PJ marcado quando a concessao existente esta limitada a JC', () => {
+    const assignments = new Set(['pedidos_pj.acessar|jc'])
+
+    expect(isSingleCheckboxPermissionChecked(assignments, 'pedidos_pj.acessar')).toBe(true)
+  })
+
+  it('desmarcar Pedidos PJ retira a concessao mesmo quando ela esta limitada a JC', () => {
+    const assignments = new Set([
+      'pedidos_pj.acessar|jc',
+      'pedidos_pj.confirmar_envio|jc',
+      'romaneio.acessar|*',
+    ])
+
+    expect(toggleSingleCheckboxPermission(assignments, 'pedidos_pj.acessar')).toEqual(new Set([
+      'pedidos_pj.confirmar_envio|jc',
+      'romaneio.acessar|*',
+    ]))
   })
 })
 

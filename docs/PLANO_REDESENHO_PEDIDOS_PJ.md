@@ -3,8 +3,8 @@
 **Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21,
 implementada em branch e com a migration aplicada em produção. A matriz do
 banco e a matriz no navegador passaram; o frontend está pronto para liberação
-após a incorporação do PR. O ajuste para o checkbox da Tela de Usuários também
-controlar menu e rota permanece como Fase 2B, aguardando aprovação.
+após a incorporação do PR. A Fase 2B foi aprovada e implementada na mesma
+branch: o checkbox da Tela de Usuários agora controla menu e rota de Pedidos PJ.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -102,9 +102,11 @@ separado.
 produção foram dados em 2026-07-21. A matriz permitida e bloqueada foi concluída
 no banco e no navegador; o frontend está pronto para incorporação.
 
-## Fase 2B proposta — Acesso pela Tela de Usuários
+## Fase 2B — Acesso pela Tela de Usuários
 
-**Status:** aguardando aprovação de Rodrigo.
+**Status:** aprovada e implementada em 2026-07-21. Testes automatizados e
+auditoria somente leitura de produção passaram; a validação final no preview
+depende da publicação desta branch.
 
 **Problema:** a Tela de Usuários já exibe `Acessar Pedidos PJ` e `Confirmar
 envio de Pedido PJ`, mas hoje grava somente a permissão granular. Menu e guarda
@@ -115,3 +117,9 @@ deixar o usuário com o checkbox marcado e sem conseguir abrir a tela.
 `pedidos_pj.acessar`, preservando no banco a restrição de confirmação à
 Expedição JC. Testar concessão e retirada com Admin, Expedição JC e um perfil
 bloqueado. Não exige nova migration nem escrita adicional em produção.
+
+**Resultado:** a sessão autenticada passa a ler a concessão atual do próprio
+usuário e reconcilia somente `/pedidos-pj`. Administradores preservam acesso
+total. A Tela de Usuários reconhece corretamente a concessão de acesso da
+Expedição limitada à JC e permite retirá-la sem apagar a permissão separada
+de confirmar envio.
