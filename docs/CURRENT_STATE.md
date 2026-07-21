@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-20
+**Data de referência:** 2026-07-21
 
-**Base observada:** `origin/main` no commit `774b5cd`
+**Base observada:** `origin/main` no commit `47a8b9d`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -32,12 +32,13 @@ Estado conhecido:
 
 ## Permissões — três níveis que precisam concordar
 
-1. **`allowed_routes` em `app_profiles`** — decide menu e guarda de rota no
-   cliente (`src/lib/auth.ts`). Perfil sem `allowed_routes` recebe defaults
-   por role definidos no código.
+1. **`allowed_routes` em `app_profiles`** — ainda decide menu e guarda das
+   rotas antigas no cliente (`src/lib/auth.ts`). Perfil sem `allowed_routes`
+   recebe defaults por role definidos no código. Exceção já unificada:
+   `/pedidos-pj` deriva da permissão granular `pedidos_pj.acessar`.
 2. **`app_permissions` + `app_user_permissions`** — catálogo e concessões
    granulares por usuário, com escopo por loja (`*`, `jc`, `ja`, `ex`).
-   Hoje governam as ações do Romaneio e a confirmação de envio de Pedidos PJ
+   Hoje governam as ações do Romaneio, o acesso e a confirmação de envio de Pedidos PJ
    via RPCs (`replace_user_permissions`, `confirm_pj_order_dispatch`,
    `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
    `approve_romaneio_divergence`). Administradas pela tela de gestão de
@@ -47,13 +48,13 @@ Estado conhecido:
    e grants `EXECUTE` próprios — proteção adicional que também precisa de
    revisão em mudança de acesso.
 
-**Risco central:** os níveis 1 e 2 não são sincronizados. O backfill da
+**Risco central:** fora de Pedidos PJ, os níveis 1 e 2 não são sincronizados. O backfill da
 migration `20260718181203` derivou permissões de `allowed_routes` uma única
 vez; desde então a tela administrativa escreve somente `app_user_permissions`,
-enquanto menu e guarda continuam lendo `allowed_routes`. Alterar acesso em um
-nível não altera o outro — causa provável de "usuário perdeu a tela". Mudança
-de acesso deve verificar os três níveis até essa unificação virar tarefa
-própria.
+enquanto menu e guarda das demais rotas continuam lendo `allowed_routes`.
+Alterar acesso em um nível não altera o outro — causa provável de "usuário
+perdeu a tela". Mudança de acesso deve verificar os três níveis até essa
+unificação ser concluída para os módulos restantes.
 
 ## RLS e Supabase
 
@@ -70,7 +71,7 @@ auditoria live):
 - funções do Romaneio com permissões granulares.
 - fila segura e confirmação de envio de Pedidos PJ pela Expedição JC; a
   migration está aplicada em produção e a matriz permitida/bloqueada passou no
-  banco e no preview; o frontend permanece no PR até ser incorporado.
+  banco e no preview; o frontend foi incorporado à `main` pelo PR 149.
 
 Riscos ainda abertos:
 
@@ -154,8 +155,9 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Ausência de baseline recente e único no navegador.
 3. Policies anônimas permissivas remanescentes em áreas operacionais.
 4. RLS não pode ser declarado concluído sem nova auditoria live.
-5. Os planos de permissão (`allowed_routes` × `app_user_permissions`) não são
-   sincronizados; unificação pendente como tarefa própria.
+5. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
+   são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
+   granular para menu e rota.
 
 ## Próximas fases aprovadas
 
