@@ -4,6 +4,7 @@ import { User, Phone, Trash2, Plus, Save, Calendar, Printer, ChefHat, Store, Pen
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { encomendaOrderGroupKey, ensureOrderGroupId } from '@/lib/orderGrouping'
 
 // ===== Tipos =====
 interface Customer { id:string; name:string; active:boolean }
@@ -17,6 +18,7 @@ interface OrderLine {
 
 interface OrderRow {
   id:string
+  order_group_id:string|null
   customer_id:string|null
   walkin_name:string|null; walkin_phone:string|null
   order_date:string; delivery_date:string|null; production_date:string|null
@@ -27,6 +29,7 @@ interface OrderRow {
 
 interface EncomendaGroup {
   key:string
+  order_group_id:string|null
   customerLabel:string
   contact:string|null
   isWalkin:boolean
@@ -86,7 +89,7 @@ export default function EncomendasPage() {
   const [viewing, setViewing] = useState<EncomendaGroup|null>(null)
   const [savingProd, setSavingProd] = useState(false)
   // Edição: ids das linhas originais + data de criação a preservar (null = criando nova)
-  const [editing, setEditing] = useState<{ids:string[]; order_date:string}|null>(null)
+  const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
   const [listDays, setListDays] = useState(14)
 
   useEffect(() => {
@@ -155,9 +158,11 @@ export default function EncomendasPage() {
 
     setSaving(true)
     const production = addDays(delivery, -1)
+    const orderGroupId = ensureOrderGroupId(editing?.order_group_id)
     const baseFields = {
       store: 'encomenda',
       order_type: 'encomenda',
+      order_group_id: orderGroupId,
       needs_production: needsProduction,
       order_date: editing ? editing.order_date : todayISO(),
       delivery_date: delivery,
@@ -214,7 +219,7 @@ export default function EncomendasPage() {
       qty: Number(r.quantity) || 1,
       unit_price: Number(r.unit_price) || 0,
     })))
-    setEditing({ ids: g.rows.map(r=>r.id), order_date: g.order_date })
+    setEditing({ ids: g.rows.map(r=>r.id), order_date: g.order_date, order_group_id: g.order_group_id })
     setSearch('')
     setViewing(null)
     setTab('novo')
@@ -246,10 +251,11 @@ export default function EncomendasPage() {
       const customerLabel = isWalkin
         ? (r.walkin_name || '(sem nome)')
         : (customersMap.get(r.customer_id!) || '(cliente removido)')
-      const key = `${isWalkin ? 'w:'+(r.walkin_name||'') : 'c:'+r.customer_id}__${r.order_date}__${r.delivery_date||''}`
+      const key = encomendaOrderGroupKey(r)
       if (!groups.has(key)) {
         groups.set(key, {
           key,
+          order_group_id: r.order_group_id,
           customerLabel,
           contact: isWalkin ? r.walkin_phone : null,
           isWalkin,
