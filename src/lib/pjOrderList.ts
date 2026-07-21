@@ -5,6 +5,7 @@ export interface PjOrderListItem {
   productionDate: string | null
   deliveryDate: string | null
   cancelledAt: string | null
+  dispatchedAt: string | null
 }
 
 export interface PjOrderListSection<T extends PjOrderListItem> {
@@ -59,14 +60,14 @@ export function organizePjOrders<T extends PjOrderListItem>(
 ) {
   const tomorrow = addDays(options.today, 1)
   const open = orders
-    .filter(order => !order.cancelledAt && (!order.deliveryDate || order.deliveryDate >= options.today))
+    .filter(order => !order.cancelledAt && !order.dispatchedAt && (!order.deliveryDate || order.deliveryDate >= options.today))
     .sort((a, b) => {
       const byDate = priorityDate(a).localeCompare(priorityDate(b))
       if (byDate !== 0) return byDate
       return a.customerName.localeCompare(b.customerName, 'pt-BR', { sensitivity: 'base' })
     })
   const history = orders
-    .filter(order => Boolean(order.cancelledAt) || Boolean(order.deliveryDate && order.deliveryDate < options.today))
+    .filter(order => Boolean(order.cancelledAt) || Boolean(order.dispatchedAt) || Boolean(order.deliveryDate && order.deliveryDate < options.today))
     .sort((a, b) => (b.deliveryDate || b.orderDate).localeCompare(a.deliveryDate || a.orderDate))
 
   const sections = new Map<PjOrderListSection<T>['id'], PjOrderListSection<T>>()

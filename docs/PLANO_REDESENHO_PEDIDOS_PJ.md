@@ -1,7 +1,10 @@
 # Plano — Redesenho da lista de Pedidos PJ
 
-**Status:** aprovado por Rodrigo em 2026-07-20. Fase 1 implementada e
-verificada; aguardando merge. Fase 2 ainda não aprovada para execução.
+**Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21,
+implementada em branch e com a migration aplicada em produção. A matriz do
+banco e a matriz no navegador passaram; o frontend está pronto para liberação
+após a incorporação do PR. A Fase 2B foi aprovada e implementada na mesma
+branch: o checkbox da Tela de Usuários agora controla menu e rota de Pedidos PJ.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -63,7 +66,10 @@ há migration nem transformação de dados.
 
 ## Fase 2 — Envio controlado pela Expedição da JC
 
-**Status:** descoberta concluída, não aprovada para execução.
+**Status:** migration aplicada em produção em 2026-07-21. A matriz do banco
+passou para Expedição JC e Administrador, e o bloqueio de um perfil de Vendas
+passou no navegador. Rodrigo confirmou um envio real no preview e a Expedição
+viu o pedido no Histórico, sem valores, com data e responsável corretos.
 
 **Objetivo:** registrar o despacho e mover o pedido para o histórico.
 
@@ -75,6 +81,46 @@ de cliente, itens, quantidades, preços ou cancelamento.
 **Tratamento dos pedidos antigos:** manter pedidos antigos no histórico sem
 inventar horário ou responsável por um envio que nunca foi registrado.
 
-**Gate:** migration, função segura e mudança de acesso exigem plano técnico e
-novo OK explícito de Rodrigo antes da implementação e antes da aplicação em
-produção.
+**Fora do escopo:** histórico operacional na tela de Romaneios. A tela atual
+continua mostrando os romaneios do dia; o relatório de faturamento permanece
+separado.
+
+**Critérios de aceite:**
+
+- somente a Expedição da JC vê e executa **Marcar como enviado**;
+- a Expedição recebe cliente, itens, quantidades, datas e observações, sem
+  preços, e não consegue contornar essa restrição consultando o Pedido PJ
+  diretamente;
+- Administração e Financeiro preservam criação, edição, adiantamento,
+  cancelamento e valores, mas não confirmam o envio;
+- pedido enviado vai imediatamente para o histórico, guarda data e responsável
+  e não pode mais ser alterado ou cancelado;
+- repetir a confirmação devolve o mesmo envio, sem duplicar ou corromper dados;
+- perfis fora da Expedição da JC são bloqueados pela ação protegida do banco.
+
+**Gate:** o OK para implementar e o OK separado para aplicar a migration em
+produção foram dados em 2026-07-21. A matriz permitida e bloqueada foi concluída
+no banco e no navegador; o frontend está pronto para incorporação.
+
+## Fase 2B — Acesso pela Tela de Usuários
+
+**Status:** aprovada, implementada e validada em 2026-07-21. Testes
+automatizados, auditoria somente leitura de produção e matriz no preview
+passaram para Expedição JC, Marselle/Vendas EX, Elis/Financeiro e Administrador.
+Pronta para incorporação do PR.
+
+**Problema:** a Tela de Usuários já exibe `Acessar Pedidos PJ` e `Confirmar
+envio de Pedido PJ`, mas hoje grava somente a permissão granular. Menu e guarda
+de rota continuam lendo `allowed_routes`, portanto uma concessão futura pode
+deixar o usuário com o checkbox marcado e sem conseguir abrir a tela.
+
+**Escopo proposto:** fazer somente `/pedidos-pj` derivar o acesso da permissão
+`pedidos_pj.acessar`, preservando no banco a restrição de confirmação à
+Expedição JC. Testar concessão e retirada com Admin, Expedição JC e um perfil
+bloqueado. Não exige nova migration nem escrita adicional em produção.
+
+**Resultado:** a sessão autenticada passa a ler a concessão atual do próprio
+usuário e reconcilia somente `/pedidos-pj`. Administradores preservam acesso
+total. A Tela de Usuários reconhece corretamente as concessões de acesso e de
+confirmação de envio da Expedição limitadas à JC; cada checkbox pode ser
+retirado sem apagar a outra permissão.

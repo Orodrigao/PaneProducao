@@ -21,6 +21,7 @@ interface PjOrderListPanelProps {
   onStageChange: (stage: 'open' | 'history') => void
   onOpen: (orderKey: string) => void
   formatDate: (date: string | null) => string
+  showCommercialValues: boolean
 }
 
 function futureSectionLabel(date: string): string {
@@ -55,21 +56,24 @@ function OrderRow({
   showStage,
   onOpen,
   formatDate,
+  showCommercialValues,
 }: {
   order: PjOrderListDisplayItem
   stage: 'open' | 'history'
   showStage: boolean
   onOpen: (orderKey: string) => void
   formatDate: (date: string | null) => string
+  showCommercialValues: boolean
 }) {
   const cancelled = Boolean(order.cancelledAt)
+  const dispatched = Boolean(order.dispatchedAt)
   const style = { '--pj-order-accent': order.statusBorder } as CSSProperties
 
   return (
     <button
       type="button"
       onClick={() => onOpen(order.key)}
-      className={`pj-order-row${cancelled ? ' is-cancelled' : ''}`}
+      className={`pj-order-row${cancelled ? ' is-cancelled' : ''}${dispatched ? ' is-dispatched' : ''}`}
       style={style}
     >
       <div className="pj-order-row-main">
@@ -90,7 +94,7 @@ function OrderRow({
         </div>
         <div className="pj-order-numbers">
           <span>{order.itemCount} {order.itemCount === 1 ? 'item' : 'itens'}</span>
-          <strong>R$ {order.total.toFixed(2)}</strong>
+          {showCommercialValues && <strong>R$ {order.total.toFixed(2)}</strong>}
         </div>
       </div>
       <ChevronRight className="pj-order-chevron" size={18} aria-hidden="true" />
@@ -107,6 +111,7 @@ export function PjOrderListPanel({
   onStageChange,
   onOpen,
   formatDate,
+  showCommercialValues,
 }: PjOrderListPanelProps) {
   const organized = organizePjOrders(orders, { today, query: search })
   const trimmedSearch = search.trim()
@@ -172,6 +177,7 @@ export function PjOrderListPanel({
                   showStage
                   onOpen={onOpen}
                   formatDate={formatDate}
+                  showCommercialValues={showCommercialValues}
                 />
               ))}
             </div>
@@ -203,6 +209,7 @@ export function PjOrderListPanel({
                         showStage={false}
                         onOpen={onOpen}
                         formatDate={formatDate}
+                        showCommercialValues={showCommercialValues}
                       />
                     ))}
                   </div>
@@ -227,6 +234,7 @@ export function PjOrderListPanel({
                 showStage={false}
                 onOpen={onOpen}
                 formatDate={formatDate}
+                showCommercialValues={showCommercialValues}
               />
             ))}
           </div>

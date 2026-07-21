@@ -30,13 +30,36 @@ export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
-interface AppProfileRow {
+export interface AppProfileRow {
   user_id: string
   display_name: string
   role: string
   active: boolean
   allowed_routes: unknown
   store: string | null
+}
+
+export interface AppPermissionRow {
+  permission_key: string
+  scope: string
+}
+
+export function resolveAllowedRoutes(
+  role: Role,
+  store: string | null,
+  baseRoutes: string[],
+  permissions: readonly AppPermissionRow[],
+): string[] {
+  if (role === 'admin') return baseRoutes
+
+  const canAccessPjOrders = permissions.some(permission =>
+    permission.permission_key === 'pedidos_pj.acessar'
+    && (permission.scope === '*' || permission.scope === store),
+  )
+
+  if (!canAccessPjOrders) return baseRoutes.filter(route => route !== '/pedidos-pj')
+  if (baseRoutes.includes('/pedidos-pj')) return baseRoutes
+  return [...baseRoutes, '/pedidos-pj']
 }
 
 export interface AuthActionResult {
@@ -168,8 +191,16 @@ export function passwordRecoveryErrorMessage(error: unknown): string {
   return 'Não foi possível enviar o link. Confira o e-mail e tente novamente.'
 }
 
-function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null {
+export function buildAppUser(
+  profile: AppProfileRow,
+  email: string,
+  permissions: readonly AppPermissionRow[] = [],
+): AppUser | null {
   if (!isRole(profile.role)) return null
+
+  const baseRoutes = isStringArray(profile.allowed_routes) && profile.allowed_routes.length > 0
+    ? profile.allowed_routes
+    : (DEFAULT_ROUTES_BY_ROLE[profile.role] ?? [])
 
   return {
     id: profile.user_id,
@@ -177,9 +208,7 @@ function profileToAppUser(profile: AppProfileRow, email: string): AppUser | null
     displayName: profile.display_name,
     role: profile.role,
     active: profile.active,
-    allowedRoutes: isStringArray(profile.allowed_routes) && profile.allowed_routes.length > 0
-      ? profile.allowed_routes
-      : (DEFAULT_ROUTES_BY_ROLE[profile.role] ?? []),
+    allowedRoutes: resolveAllowedRoutes(profile.role, profile.store, baseRoutes, permissions),
     store: profile.store ?? null,
     email: email || undefined,
   }
@@ -222,18 +251,31 @@ export async function fetchCurrentAuthUser(): Promise<AppUser | null> {
     }
 
     const authUser = sessionData.session.user
-    const { data, error } = await withTimeout(supabase
-      .from('app_profiles')
-      .select('user_id, display_name, role, active, allowed_routes, store')
-      .eq('user_id', authUser.id)
-      .maybeSingle())
+    const [profileResult, permissionsResult] = await Promise.all([
+      withTimeout(supabase
+        .from('app_profiles')
+        .select('user_id, display_name, role, active, allowed_routes, store')
+        .eq('user_id', authUser.id)
+        .maybeSingle()),
+      withTimeout(supabase
+        .from('app_user_permissions')
+        .select('permission_key, scope')
+        .eq('user_id', authUser.id)),
+    ])
 
-    if (error || !data) {
+    if (profileResult.error || !profileResult.data) {
       cacheAuthUser(null)
       return null
     }
 
-    const user = profileToAppUser(data as AppProfileRow, authUser.email ?? '')
+    const permissions = permissionsResult.error
+      ? []
+      : (permissionsResult.data ?? []) as AppPermissionRow[]
+    const user = buildAppUser(
+      profileResult.data as AppProfileRow,
+      authUser.email ?? '',
+      permissions,
+    )
     if (!user || !user.active) {
       cacheAuthUser(null)
       return null

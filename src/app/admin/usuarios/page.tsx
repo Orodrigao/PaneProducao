@@ -9,9 +9,12 @@ import {
   formatRole,
   formatStore,
   groupPermissions,
+  isPjOrderSingleCheckboxPermission,
+  isSingleCheckboxPermissionChecked,
   loadAccessManagementData,
   parseAssignmentId,
   replaceUserPermissions,
+  toggleSingleCheckboxPermission,
   type AccessManagementData,
   type AccessProfile,
 } from '@/lib/adminPermissions'
@@ -81,6 +84,10 @@ export default function AdminUsuariosPage() {
       else next.add(id)
       return next
     })
+  }
+
+  function togglePjOrderPermission(key: string) {
+    setDraft(current => toggleSingleCheckboxPermission(current, key))
   }
 
   async function savePermissions() {
@@ -160,8 +167,12 @@ export default function AdminUsuariosPage() {
                           <label className={styles.permission}>
                             <input
                               type="checkbox"
-                              checked={draft.has(`${permission.key}|*`)}
-                              onChange={() => togglePermission(permission.key)}
+                              checked={isPjOrderSingleCheckboxPermission(permission.key)
+                                ? isSingleCheckboxPermissionChecked(draft, permission.key)
+                                : draft.has(`${permission.key}|*`)}
+                              onChange={() => isPjOrderSingleCheckboxPermission(permission.key)
+                                ? togglePjOrderPermission(permission.key)
+                                : togglePermission(permission.key)}
                             />
                             <span className={styles.permissionText}>
                               <b>{permission.label}</b>

@@ -37,7 +37,8 @@ Estado conhecido:
    por role definidos no código.
 2. **`app_permissions` + `app_user_permissions`** — catálogo e concessões
    granulares por usuário, com escopo por loja (`*`, `jc`, `ja`, `ex`).
-   Hoje governam as ações do Romaneio via RPCs (`replace_user_permissions`,
+   Hoje governam as ações do Romaneio e a confirmação de envio de Pedidos PJ
+   via RPCs (`replace_user_permissions`, `confirm_pj_order_dispatch`,
    `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
    `approve_romaneio_divergence`). Administradas pela tela de gestão de
    acessos.
@@ -67,6 +68,9 @@ auditoria live):
 - policies autenticadas de componentes de ficha;
 - fechamento de caixa;
 - funções do Romaneio com permissões granulares.
+- fila segura e confirmação de envio de Pedidos PJ pela Expedição JC; a
+  migration está aplicada em produção e a matriz permitida/bloqueada passou no
+  banco e no preview; o frontend permanece no PR até ser incorporado.
 
 Riscos ainda abertos:
 
