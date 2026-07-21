@@ -3,7 +3,8 @@
 **Status:** Fase 1 concluída. Fase 2 aprovada por Rodrigo em 2026-07-21,
 implementada em branch e com a migration aplicada em produção. A matriz do
 banco e a matriz no navegador passaram; o frontend está pronto para liberação
-após a incorporação do PR.
+após a incorporação do PR. O ajuste para o checkbox da Tela de Usuários também
+controlar menu e rota permanece como Fase 2B, aguardando aprovação.
 **Executor:** Codex, uma fase por conversa e por PR.
 **Origem:** a lista atual não permite buscar cliente, mistura pedidos abertos
 e antigos e coloca as entregas mais distantes antes das mais urgentes.
@@ -100,3 +101,17 @@ separado.
 **Gate:** o OK para implementar e o OK separado para aplicar a migration em
 produção foram dados em 2026-07-21. A matriz permitida e bloqueada foi concluída
 no banco e no navegador; o frontend está pronto para incorporação.
+
+## Fase 2B proposta — Acesso pela Tela de Usuários
+
+**Status:** aguardando aprovação de Rodrigo.
+
+**Problema:** a Tela de Usuários já exibe `Acessar Pedidos PJ` e `Confirmar
+envio de Pedido PJ`, mas hoje grava somente a permissão granular. Menu e guarda
+de rota continuam lendo `allowed_routes`, portanto uma concessão futura pode
+deixar o usuário com o checkbox marcado e sem conseguir abrir a tela.
+
+**Escopo proposto:** fazer somente `/pedidos-pj` derivar o acesso da permissão
+`pedidos_pj.acessar`, preservando no banco a restrição de confirmação à
+Expedição JC. Testar concessão e retirada com Admin, Expedição JC e um perfil
+bloqueado. Não exige nova migration nem escrita adicional em produção.
