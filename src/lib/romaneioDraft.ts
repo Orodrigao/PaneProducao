@@ -174,6 +174,23 @@ export function sentQuantitiesByProductId(rows: RomaneioSentItemRow[]): Record<s
   }, {})
 }
 
+export function filterPendingRomaneioBreads<T extends { id: string }>(
+  breads: T[],
+  orderQuantities: Record<string, number>,
+  previouslySentQuantities: Record<string, number>,
+): T[] {
+  return breads.filter(bread => {
+    const ordered = orderQuantities[bread.id] ?? 0
+    const previouslySent = previouslySentQuantities[bread.id] ?? 0
+    return ordered <= 0 || previouslySent < ordered
+  })
+}
+
+export function romaneioOrderProgressLabel(ordered: number, separated: number): string {
+  const remaining = normalizeRomaneioQty(Math.max(0, ordered - separated))
+  return `${formatRomaneioQty(separated)} de ${formatRomaneioQty(ordered)} (faltam ${formatRomaneioQty(remaining)})`
+}
+
 export function parseRomaneioQty(value: string): number {
   const normalized = value.trim().replace(',', '.')
   if (!normalized) return 0
