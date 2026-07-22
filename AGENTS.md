@@ -211,8 +211,10 @@ Nenhuma funcionalidade nova começa pela implementação.
 
 ### 3. Execução por fase
 
-- Começar de branch `codex/<descricao-curta>` criada a partir do
-  `origin/main` atualizado.
+- Começar de branch `tipo/<descricao-curta>` criada a partir do
+  `origin/main` atualizado — tipos: `feat`, `fix`, `docs`, `chore`,
+  `refactor`, `test`; descrição em kebab-case. O prefixo descreve a
+  mudança, nunca o agente (nada de `codex/` ou `claude/`).
 - Um worktree, uma tarefa e um escopo. O worktree nasce com a tarefa e
   morre com ela: mergeou ou fechou o PR → deletar branch (local e remota) e
   worktree no mesmo dia. Worktree sem tarefa ativa é entulho.
@@ -294,6 +296,28 @@ Após uma tarefa bem-sucedida:
 - atualize `docs/PLAN.md` somente quando roadmap, ordem ou critério de
   pronto mudar;
 - mova para `docs/history/` documentos de tarefa que perderam vigência.
+
+## Contrato de arquivos
+
+Agentes diferentes escrevem neste repositório; sem contrato, ele vira um
+depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
+
+- **Raiz:** somente `AGENTS.md`, `CLAUDE.md`, `lessons.md` e `README.md`.
+  Nunca crie arquivo novo na raiz.
+- **`docs/`:** o cânone fixo (`CURRENT_STATE.md`, `PLAN.md`, `PRD.md`) mais
+  um documento por funcionalidade, em `MAIUSCULAS_COM_UNDERSCORE.md`.
+  Antes de criar, procure: se já existe documento da funcionalidade,
+  atualize-o — nunca crie um segundo com nome parecido.
+- **`docs/history/`:** documento que perdeu vigência é movido para cá
+  (movido, nunca copiado). Aqui nada é editado.
+- **`docs/examples/` e `test/fixtures/`:** dados de exemplo, sempre
+  anonimizados.
+- **`supabase/`:** migrations e testes pgTAP, nos formatos já definidos.
+- **Proibido em qualquer lugar:** markdown dentro de `src/`, arquivos de
+  rascunho ou anotação (`NOTES.md`, `TODO.md`, `RESUMO.md`, `PLANO_V2.md`),
+  relatório de tarefa como arquivo novo (o PR é o relatório) e qualquer
+  cópia de documento existente. Na dúvida sobre onde escrever: não crie —
+  pergunte.
 
 Não guardar:
 
