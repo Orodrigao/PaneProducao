@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRomaneioProductOptions,
   exceedsRomaneioWeightLimit,
+  filterPendingRomaneioBreads,
   filterCatalogBreadsForSearch,
   formatRomaneioWeightInGrams,
   isWeightControlledRomaneioProduct,
@@ -9,6 +10,7 @@ import {
   nextRomaneioTripNumber,
   orderQuantitiesByBreadId,
   parseRomaneioQty,
+  romaneioOrderProgressLabel,
   sentQuantitiesByProductId,
 } from './romaneioDraft'
 
@@ -126,5 +128,34 @@ describe('romaneioDraft', () => {
       { product_id: 'b-brasil', qty_sent: '2' },
       { product_id: null, qty_sent: 10 },
     ])).toEqual({ 'b-brasil': 8, baguete: 12 })
+  })
+
+  it('retira da proxima viagem o pao cujo pedido ja foi totalmente enviado', () => {
+    const breads = [
+      { id: 'baguete', name: 'Baguete' },
+      { id: 'croissant', name: 'Croissant' },
+      { id: 'especial', name: 'Pao especial' },
+    ]
+
+    expect(filterPendingRomaneioBreads(
+      breads,
+      { baguete: 20, croissant: 30 },
+      { baguete: 20, croissant: 12 },
+    )).toEqual([
+      { id: 'croissant', name: 'Croissant' },
+      { id: 'especial', name: 'Pao especial' },
+    ])
+  })
+
+  it('mantem o pao completo disponivel para ser adicionado pela busca', () => {
+    const catalog = [{ id: 'baguete', name: 'Baguete' }]
+    const pending = filterPendingRomaneioBreads(catalog, { baguete: 20 }, { baguete: 20 })
+
+    expect(filterCatalogBreadsForSearch(catalog, pending.map(bread => bread.id), 'baguete'))
+      .toEqual([{ id: 'baguete', name: 'Baguete' }])
+  })
+
+  it('explica quanto ja saiu e quanto ainda falta separar', () => {
+    expect(romaneioOrderProgressLabel(20, 12)).toBe('12 de 20 (faltam 8)')
   })
 })

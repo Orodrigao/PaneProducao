@@ -9,6 +9,7 @@ import {
   buildRomaneioProductOptions,
   exceedsRomaneioWeightLimit,
   filterCatalogBreadsForSearch,
+  filterPendingRomaneioBreads,
   formatRomaneioQty,
   formatRomaneioWeightInGrams,
   isWeightControlledRomaneioProduct,
@@ -17,6 +18,7 @@ import {
   normalizeRomaneioQty,
   orderQuantitiesByBreadId,
   parseRomaneioQty,
+  romaneioOrderProgressLabel,
   ROMANEIO_WEIGHT_LIMIT_KG,
   sentQuantitiesByProductId,
   type RomaneioOrderRow,
@@ -24,6 +26,10 @@ import {
   type RomaneioProductOption,
   type RomaneioUnit,
 } from '@/lib/romaneioDraft'
+import {
+  formatRomaneioDateTime as fmtDateTime,
+  formatRomaneioTime as fmtTime,
+} from '@/lib/romaneioDateTime'
 import { canSeeRomaneio } from '@/lib/romaneioAccess'
 import {
   canPerformRomaneioAction,
@@ -69,8 +75,6 @@ const ROMANEIO_RECIPIENTS = {
 } as const
 
 // ── utils ──────────────────────────────────────────────────────────
-function fmtDateTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getDate()).padStart(2,'0')}/${String(br.getMonth()+1).padStart(2,'0')} ${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
-function fmtTime(s:string|null|undefined) { if(!s)return ''; const d=new Date(s); const br=new Date(d.getTime()-3*60*60000); return `${String(br.getHours()).padStart(2,'0')}:${String(br.getMinutes()).padStart(2,'0')}` }
 function statusLabel(s:string) { return ({separado:'Separado',enviado:'Enviado',conferido:'Conferido',com_divergencia:'Divergência',aprovado:'Aprovado',fechado:'Fechado'} as Record<string,string>)[s]||s }
 function slugExtra() { return 'extra_'+Date.now() }
 function entregaLabel(trip: number) { return `${trip}ª entrega` }
@@ -457,6 +461,8 @@ export default function RomaneioPage() {
     const previousItemRows = existingRows.length
       ? await sbGet('romaneio_items',`romaneio_id=in.(${existingRows.map(row => row.id).join(',')})&product_source=eq.bread&select=product_id,qty_sent`)
       : []
+    const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
+    const previouslySentQtys = sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[])
     let bds = breads
     const orderRows = orders as RomaneioOrderRow[]
     if (orderRows.length) {
@@ -466,12 +472,13 @@ export default function RomaneioPage() {
         if (byOrder.length) bds = byOrder
       }
     }
+    bds = filterPendingRomaneioBreads(bds, orderQtys, previouslySentQtys)
     return {
       destId,
       breads: bds,
       qtys: {},
-      orderQtys: orderQuantitiesByBreadId(orderRows),
-      previouslySentQtys: sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[]),
+      orderQtys,
+      previouslySentQtys,
       extras: {},
       trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
       obs: '',
@@ -1073,7 +1080,7 @@ export default function RomaneioPage() {
                           <div className="ps-card-head">
                             <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
                               <div className="ps-pname">{option.displayName}</div>
-                              {orderQty > 0 && <span style={{fontSize:13,fontWeight:700,color:'var(--ink-soft)'}}>{formatRomaneioQty(progressQty)} de {formatRomaneioQty(orderQty)}</span>}
+                              {orderQty > 0 && <span style={{fontSize:13,fontWeight:700,color:'var(--ink-soft)'}}>{romaneioOrderProgressLabel(orderQty, progressQty)}</span>}
                             </div>
                             <span className="ps-store-chip" style={{alignSelf:'flex-start',background:'var(--line-soft)',color:'var(--ink-soft)'}}>{option.unit}</span>
                           </div>
