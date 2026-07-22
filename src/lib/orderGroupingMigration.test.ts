@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const migrationSource = readFileSync(
   new URL(
-    '../../supabase/migrations/20260720230027_adicionar_identidade_cancelamento_pedidos.sql',
+    '../../docs/history/migrations-pre-baseline/20260720230027_adicionar_identidade_cancelamento_pedidos.sql',
     import.meta.url,
   ),
   'utf8',

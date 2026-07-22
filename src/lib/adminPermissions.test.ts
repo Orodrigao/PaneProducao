@@ -11,7 +11,7 @@ import {
 } from './adminPermissions'
 
 const migrationSource = readFileSync(
-  new URL('../../supabase/migrations/20260718181203_preparar_permissoes_usuarios.sql', import.meta.url),
+  new URL('../../docs/history/migrations-pre-baseline/20260718181203_preparar_permissoes_usuarios.sql', import.meta.url),
   'utf8',
 ).toLowerCase()
 

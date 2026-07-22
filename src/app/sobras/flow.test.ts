@@ -5,7 +5,7 @@ describe('trajetória do fechamento de sobras', () => {
   const registerSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
   const pendingSource = readFileSync(new URL('./pendencias/page.tsx', import.meta.url), 'utf8')
   const migrationSource = readFileSync(
-    new URL('../../../supabase/migrations/20260714001549_permitir_sobras_antes_do_forno.sql', import.meta.url),
+    new URL('../../../docs/history/migrations-pre-baseline/20260714001549_permitir_sobras_antes_do_forno.sql', import.meta.url),
     'utf8',
   )
 

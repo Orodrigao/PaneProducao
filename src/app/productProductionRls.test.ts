@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migrationSource = readFileSync(
-  new URL('../../supabase/migrations/20260718093517_corrigir_rls_producao_autenticada.sql', import.meta.url),
+  new URL('../../docs/history/migrations-pre-baseline/20260718093517_corrigir_rls_producao_autenticada.sql', import.meta.url),
   'utf8',
 ).replace(/\r\n/g, '\n').toLowerCase()
 
