@@ -91,7 +91,7 @@ jobs:
 
       - name: Confirmar que o projeto de teste esta acordado
         run: |
-          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '.[] | select(.id == $ref) | .status')"
+          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '(.projects // .)[] | select(.id == $ref) | .status')"
           if [[ "$PROJECT_STATUS" != "ACTIVE_HEALTHY" ]]; then
             echo "Banco de teste indisponivel (estado: ${PROJECT_STATUS:-nao encontrado})."
             echo "Reative PaneERP Preview no Supabase antes de investigar a funcionalidade."
@@ -106,7 +106,7 @@ jobs:
 
       - name: Obter credencial temporaria do Auth de teste
         run: |
-          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '.[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
+          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '(.keys // .)[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
           if [[ -z "$SERVICE_ROLE_KEY" || "$SERVICE_ROLE_KEY" == "null" ]]; then
             echo "Nao foi possivel obter a chave administrativa do Banco Preview."
             exit 1
@@ -165,7 +165,7 @@ jobs:
 
       - name: Confirmar que o projeto de teste esta acordado
         run: |
-          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '.[] | select(.id == $ref) | .status')"
+          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '(.projects // .)[] | select(.id == $ref) | .status')"
           if [[ "$PROJECT_STATUS" != "ACTIVE_HEALTHY" ]]; then
             echo "Banco de teste indisponivel (estado: ${PROJECT_STATUS:-nao encontrado})."
             echo "Reative PaneERP Preview no Supabase antes de investigar a funcionalidade."
@@ -180,7 +180,7 @@ jobs:
 
       - name: Obter credencial temporaria do Auth de teste
         run: |
-          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '.[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
+          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '(.keys // .)[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
           if [[ -z "$SERVICE_ROLE_KEY" || "$SERVICE_ROLE_KEY" == "null" ]]; then
             echo "Nao foi possivel obter a chave administrativa do Banco Preview."
             exit 1
