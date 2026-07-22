@@ -1,0 +1,32 @@
+name: CI Banco (ensaio de migrations)
+
+# Toda migration é executada num Supabase local descartável antes de chegar
+# perto de produção: o PR só fica verde se a história inteira do schema
+# (baseline + migrations novas) aplicar limpa num banco nascido do zero.
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - "supabase/config.toml"
+
+jobs:
+  ensaio:
+    name: Aplicar história completa num banco limpo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Subir Postgres local
+        run: supabase db start
+
+      - name: Aplicar todas as migrations do zero
+        run: supabase db reset --local
+
+      - name: Verificar invariantes estruturais (pgTAP)
+        run: supabase test db

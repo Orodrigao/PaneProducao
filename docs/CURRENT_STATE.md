@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-21
+**Data de referência:** 2026-07-22
 
-**Base observada:** `origin/main` no commit `47a8b9d`
+**Base observada:** `origin/main` no commit `7fcd9aa`, mais o pacote do processo confiável (baseline do banco, CI e Actions)
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -97,11 +97,12 @@ Não deduza o estado de produção apenas pelas migrations locais. Para tarefa d
 segurança, compare migration, resultado documentado, código cliente e auditoria
 live somente leitura.
 
-O projeto Supabase também atende o repositório `ControlePizza`. Por isso, o
-histórico remoto contém migrations próprias desse sistema, como
-`harden_pizza_is_allowed`, que não devem ser copiadas para o PaneERP. A
-reconciliação deve classificar cada migration remota por repositório
-proprietário e exigir neste repositório apenas as migrations que alteram o ERP.
+O projeto Supabase também atende o sistema `ControlePizza`. Desde o baseline
+de 2026-07-22, este repositório é o único dono da história de migrations do
+projeto compartilhado: o baseline inclui os objetos do ControlePizza, e
+qualquer mudança de schema — do ERP ou do ControlePizza — entra por PR aqui
+e é aplicada pela Action. O repositório ControlePizza não aplica schema
+(regra em AGENTS.md, seção Deploy e produção).
 
 ## Capacidades já presentes
 

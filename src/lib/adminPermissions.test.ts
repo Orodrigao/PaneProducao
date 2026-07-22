@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   formatRole,
@@ -10,43 +9,10 @@ import {
   type PermissionDefinition,
 } from './adminPermissions'
 
-const migrationSource = readFileSync(
-  new URL('../../supabase/migrations/20260718181203_preparar_permissoes_usuarios.sql', import.meta.url),
-  'utf8',
-).toLowerCase()
+// As invariantes de banco (RLS, grants, catálogo) são guardadas contra o
+// schema versionado em supabase/tests/ (pgTAP, executado pelo CI Banco).
 
 describe('fundação de permissões por usuário', () => {
-  it('mantém a matriz separada das rotas operacionais atuais', () => {
-    expect(migrationSource).toContain('nao altera allowed_routes, role, store ou active')
-    expect(migrationSource).not.toMatch(/update\s+public\.app_profiles/)
-  })
-
-  it('não identifica pessoas por nome, e-mail ou UUID no backfill', () => {
-    expect(migrationSource).not.toContain('profile.display_name')
-    expect(migrationSource).not.toContain('auth.users.email')
-    expect(migrationSource).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/)
-  })
-
-  it('deriva a matriz inicial somente das rotas atuais do perfil', () => {
-    expect(migrationSource).toContain('jsonb_array_elements_text(profile.allowed_routes)')
-    expect(migrationSource).toContain('join route_permissions mapping on mapping.route = allowed_route.route')
-    expect(migrationSource).toContain('where profile.active')
-    expect(migrationSource.match(/null::uuid/g)).toHaveLength(2)
-  })
-
-  it('protege catálogo e atribuições com RLS e grants explícitos', () => {
-    expect(migrationSource).toContain('alter table public.app_permissions force row level security')
-    expect(migrationSource).toContain('alter table public.app_user_permissions force row level security')
-    expect(migrationSource).toContain('revoke all on table public.app_user_permissions from anon, authenticated')
-    expect(migrationSource).toContain('create policy app_user_permissions_insert_admin')
-    expect(migrationSource).toContain('create policy app_user_permissions_delete_admin')
-  })
-
-  it('salva a substituição da matriz em uma única transação SQL', () => {
-    expect(migrationSource).toContain('create or replace function public.replace_user_permissions')
-    expect(migrationSource).toContain('security invoker')
-    expect(migrationSource).toContain('grant execute on function public.replace_user_permissions')
-  })
   it('mostra Pedidos PJ marcado quando a concessao existente esta limitada a JC', () => {
     const assignments = new Set(['pedidos_pj.acessar|jc'])
 
