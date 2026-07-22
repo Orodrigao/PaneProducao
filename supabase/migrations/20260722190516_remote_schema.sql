@@ -5290,5 +5290,3 @@ revoke references on table "public"."suppliers" from "authenticated";
 revoke trigger on table "public"."suppliers" from "authenticated";
 
 revoke truncate on table "public"."suppliers" from "authenticated";
-
-

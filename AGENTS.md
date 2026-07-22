@@ -159,8 +159,20 @@ máquina — nem site, nem banco.
   baseline `20260722190516_remote_schema.sql` — foto fiel de produção em
   2026-07-22. O que veio antes está em
   `docs/history/migrations-pre-baseline/` e nunca é reaplicado.
-- Migration viaja dentro do PR, junto do código que depende dela. Quando o
-  PR entra na `main`, a Action aplica em produção com `supabase db push`.
+- Migration viaja dentro do PR, junto do código que depende dela. O CI
+  ensaia a história completa do schema num banco local descartável (workflow
+  `CI Banco`); só depois do merge a Action aplica em produção com
+  `supabase db push`.
+- Site e banco atualizam de forma independente no mesmo merge. Toda
+  migration precisa conviver tanto com a versão do site que está no ar
+  quanto com a que está entrando. Mudança destrutiva (remover ou renomear
+  coluna/tabela em uso) é sempre em duas fases, em PRs separados: primeiro
+  o site para de usar, depois o banco remove.
+- O projeto Supabase (`PanePedidosLojas`) é compartilhado com o sistema
+  ControlePizza. Este repositório é o único dono da história de migrations
+  do projeto — o baseline inclui os objetos do ControlePizza por isso.
+  Nenhum outro repositório ou agente aplica schema neste banco; mudança
+  para o ControlePizza entra por PR aqui, identificada como tal.
 - Aplicar migration manualmente em produção — CLI local, MCP ou SQL Editor —
   é proibido, mesmo "só dessa vez". Foi exatamente isso que fez repo e banco
   contarem histórias diferentes até 2026-07-22.
@@ -304,7 +316,9 @@ Nunca faça sem aprovação explícita de Rodrigo:
 - deploy manual de Edge Function;
 - alteração de `.env`, segredos, tokens ou chaves;
 - dependência nova de produção;
-- exclusão de branch ou worktree.
+- exclusão de branch ou worktree — exceto o fecho de ciclo pós-merge
+  (deletar branch e worktree da tarefa concluída é obrigação, não exige
+  aprovação).
 
 Ao pedir uma aprovação dessas, explique o risco em linguagem leiga e o que
 acontece se der errado — Rodrigo aprova com base no seu resumo, então o
