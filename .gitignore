@@ -8,6 +8,9 @@ tsconfig.tsbuildinfo
 supabase/.temp/
 _GUIA_INFRA.md
 
+# Configuração local do Claude Code (por máquina, não versionar)
+.claude/
+
 # Sessão autenticada, downloads e evidências locais do coletor CNM
 storage/cnm/
 playwright/.auth/

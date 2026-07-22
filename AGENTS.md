@@ -88,13 +88,24 @@ definem o estado atual.
 
 Antes de propor uma mudança:
 
-1. rode `git status -sb`;
-2. leia este arquivo e `docs/CURRENT_STATE.md`;
-3. leia `lessons.md` — as lições registradas existem para a próxima sessão
+1. rode `git status -sb` e identifique arquivos modificados, staged e não
+   rastreados; não presuma que alterações locais pertencem à tarefa nova;
+2. rode `git fetch origin` e compare a branch atual com `origin/main`; confira
+   os commits recentes para não partir de uma base desatualizada;
+3. revise o diff local e o diff da branch contra `origin/main`, incluindo a
+   lista de arquivos alterados;
+4. confira PRs abertas, branches e worktrees ativos e procure sobreposição de
+   escopo ou de arquivos com a tarefa nova;
+5. se houver trabalho local não relacionado, branch desatualizada ou outra PR
+   tocando a mesma área, pare e proponha como isolar ou reconciliar o trabalho
+   antes de editar;
+6. leia este arquivo e `docs/CURRENT_STATE.md`;
+7. leia `lessons.md` — as lições registradas existem para a próxima sessão
    não repetir o erro; gravar sem ler não protege ninguém;
-4. leia apenas o plano e os documentos relacionados à tarefa;
-5. audite o código, migrations e testes relevantes;
-6. resuma em 5 a 10 linhas o entendimento e o nível de risco.
+8. leia apenas o plano e os documentos relacionados à tarefa;
+9. audite o código, migrations e testes relevantes;
+10. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
+    conflito encontrado no preflight.
 
 Não carregue todo o diretório `docs/` por padrão.
 
