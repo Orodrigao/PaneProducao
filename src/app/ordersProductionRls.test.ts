@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 // As invariantes de RLS desta tela são guardadas contra o schema versionado
-// em src/lib/schemaInvariants.test.ts.
+// em supabase/tests/ (pgTAP, executado pelo CI Banco).
 
 const pageSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8').toLowerCase()
 

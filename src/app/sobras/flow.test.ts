@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 describe('trajetória do fechamento de sobras', () => {
   // As invariantes de banco deste fluxo são guardadas contra o schema
-  // versionado em src/lib/schemaInvariants.test.ts.
+  // versionado em supabase/tests/ (pgTAP, executado pelo CI Banco).
   const registerSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
   const pendingSource = readFileSync(new URL('./pendencias/page.tsx', import.meta.url), 'utf8')
 

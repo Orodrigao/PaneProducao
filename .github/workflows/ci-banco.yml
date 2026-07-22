@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "supabase/migrations/**"
+      - "supabase/tests/**"
       - "supabase/config.toml"
 
 jobs:
@@ -26,3 +27,6 @@ jobs:
 
       - name: Aplicar todas as migrations do zero
         run: supabase db reset --local
+
+      - name: Verificar invariantes estruturais (pgTAP)
+        run: supabase test db

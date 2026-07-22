@@ -1,7 +1,9 @@
 -- Catalogo de permissoes do sistema (dados, nao schema).
 -- O baseline reproduz a estrutura do banco; este arquivo reproduz o
 -- catalogo estavel de app_permissions, para que qualquer ambiente novo
--- nasca completo. Upsert idempotente: em producao e um no-op.
+-- nasca completo. Upsert idempotente: so escreve quando os valores
+-- divergem do catalogo versionado; com dados identicos (producao hoje),
+-- nenhuma linha e alterada.
 -- Fonte: dump de producao em 2026-07-22. Permissao nova = nova migration.
 
 INSERT INTO "public"."app_permissions" ("key", "module", "label", "description", "sort_order") VALUES
@@ -36,4 +38,9 @@ ON CONFLICT (key) DO UPDATE SET
   module = excluded.module,
   label = excluded.label,
   description = excluded.description,
-  sort_order = excluded.sort_order;
+  sort_order = excluded.sort_order
+WHERE (app_permissions.module, app_permissions.label,
+       app_permissions.description, app_permissions.sort_order)
+  IS DISTINCT FROM
+      (excluded.module, excluded.label,
+       excluded.description, excluded.sort_order);

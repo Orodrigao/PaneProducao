@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-21
+**Data de referência:** 2026-07-22
 
-**Base observada:** `origin/main` no commit `47a8b9d`
+**Base observada:** `origin/main` no commit `7fcd9aa`, mais o pacote do processo confiável (baseline do banco, CI e Actions)
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.

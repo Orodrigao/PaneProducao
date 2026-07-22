@@ -10,7 +10,7 @@ import {
 } from './adminPermissions'
 
 // As invariantes de banco (RLS, grants, catálogo) são guardadas contra o
-// schema versionado em src/lib/schemaInvariants.test.ts.
+// schema versionado em supabase/tests/ (pgTAP, executado pelo CI Banco).
 
 describe('fundação de permissões por usuário', () => {
   it('mostra Pedidos PJ marcado quando a concessao existente esta limitada a JC', () => {
