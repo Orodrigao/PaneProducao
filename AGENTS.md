@@ -59,13 +59,20 @@ Regras de parceria:
 5. **"Pronto" exige evidência.** Nunca declare concluído sem mostrar o que
    verificou (seção Verificação). Se algo não foi testado, diga
    explicitamente "não testei X".
-6. **Entregue com roteiro de teste.** Toda entrega termina com um checklist
-   que o Rodrigo executa no celular: passos concretos, por perfil e loja
-   afetados ("entre como vendas na JA e confira se..."). Ele é o QA final —
-   dê a ele o roteiro, nunca suponha que ele saberá o que conferir.
+6. **Entregue com roteiro de teste e link.** Toda entrega termina com o
+   link do preview do PR e um checklist que o Rodrigo executa no celular:
+   passos concretos, por perfil e loja afetados ("entre como vendas na JA e
+   confira se..."). Ele é o QA final — dê a ele o link e o roteiro, nunca
+   suponha que ele saberá onde ir nem o que conferir.
 7. **Discorde quando precisar.** Se o pedido cria risco ou dívida
    desnecessária, proponha a alternativa melhor e explique por quê. Ceder
    sem avisar é desserviço.
+8. **Cuide da casa que ele não alcança.** Git, PRs, branches, worktrees,
+   deploys e migrations são responsabilidade sua, do início ao fim. Rodrigo
+   nunca executa comando git nem aplica nada em produção — ele pede, decide,
+   testa no preview e aprova. Anuncie cada passo do ciclo em linguagem
+   leiga ("abri o rascunho", "link de teste aqui", "foi pro ar, ambiente
+   limpo") para ele sempre saber onde a tarefa está.
 
 ## Hierarquia da documentação
 
@@ -131,6 +138,41 @@ A autorização hoje vive em três lugares que precisam concordar:
 policies RLS. Toda mudança de acesso deve verificar os três — mudar um só é a
 causa clássica de "fulano perdeu a tela".
 
+## Deploy e produção
+
+Quem publica é o GitHub. Nenhum agente ou humano faz deploy da própria
+máquina — nem site, nem banco.
+
+**Site (Vercel, automático):**
+
+- Merge na `main` → produção no ar em ~1 minuto. Não existe outro caminho.
+- Push em branch de PR → link de preview, estável durante a vida do PR. O
+  bot da Vercel comenta o link no próprio PR ("Visit Preview").
+- Build da `main` quebrado → o deploy é recusado e produção continua na
+  versão anterior. Corrija com novo PR; nunca com deploy manual.
+- `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo
+  para ler logs e configuração.
+
+**Banco (Supabase, via Action `Banco (migrations)`):**
+
+- `supabase/migrations/` é a única história do schema. O marco zero é o
+  baseline `20260722190516_remote_schema.sql` — foto fiel de produção em
+  2026-07-22. O que veio antes está em
+  `docs/history/migrations-pre-baseline/` e nunca é reaplicado.
+- Migration viaja dentro do PR, junto do código que depende dela. Quando o
+  PR entra na `main`, a Action aplica em produção com `supabase db push`.
+- Aplicar migration manualmente em produção — CLI local, MCP ou SQL Editor —
+  é proibido, mesmo "só dessa vez". Foi exatamente isso que fez repo e banco
+  contarem histórias diferentes até 2026-07-22.
+- MCP do Supabase no desktop é ferramenta de leitura (consultar dados,
+  conferir policies). Escrita de schema por MCP: nunca.
+- Estado real do banco: `supabase migration list` (com o projeto linkado) ou
+  auditoria live somente leitura — nunca deduzido de arquivo local.
+
+**Semáforo (CI):** todo PR roda lint, tipos, testes e build no GitHub.
+Merge exige CI verde + teste do Rodrigo no preview. CI vermelho = não
+mergeia, sem exceção.
+
 ## Fluxo para nova funcionalidade
 
 Nenhuma funcionalidade nova começa pela implementação.
@@ -159,11 +201,20 @@ Nenhuma funcionalidade nova começa pela implementação.
 
 - Começar de branch `codex/<descricao-curta>` criada a partir do
   `origin/main` atualizado.
-- Um worktree, uma tarefa e um escopo.
+- Um worktree, uma tarefa e um escopo. O worktree nasce com a tarefa e
+  morre com ela: mergeou ou fechou o PR → deletar branch (local e remota) e
+  worktree no mesmo dia. Worktree sem tarefa ativa é entulho.
 - Se houver alteração local não relacionada, parar e isolar o trabalho.
 - Implementar somente a fase aprovada.
 - Não refatorar módulos vizinhos por iniciativa própria.
 - Não criar abstração sem consumidor real.
+
+**Dois agentes em paralelo (Codex + Claude):** permitido, com regras.
+Tarefas diferentes em áreas diferentes do código — nunca os dois no mesmo
+arquivo ou fluxo. Cada agente no seu worktree e branch; ambos nascem de
+`origin/main` fresco. Depois que um mergeia, o outro atualiza sua base
+antes do próprio merge. Para o git, vocês são dois devs — se comportem como
+bons colegas.
 
 ### 4. Verificação
 
@@ -176,9 +227,14 @@ npm test
 npm run build
 ```
 
+O CI roda exatamente esses passos em todo PR — rodá-los antes do push é o
+que evita ciclo de tentativa e erro público. `tsc` e `build` sempre em
+sequência, nunca em paralelo (ver `lessons.md`).
+
 Além disso:
 
-- testar no navegador o fluxo completo alterado;
+- testar no navegador (no preview do PR quando existir) o fluxo completo
+  alterado;
 - testar a matriz afetada: cada perfil × cada loja que a mudança toca — não
   apenas admin. Mudança em permissão, rota ou dado compartilhado testa no
   mínimo um perfil restrito (vendas, expedição ou romaneio);
@@ -206,7 +262,12 @@ Mudança somente de documentação dispensa os comandos acima; exige no mínimo
   aplicável recebe `N/A` com justificativa curta, nunca é apagada.
 - Informar em linguagem leiga: o que mudou para a operação, arquivos
   alterados, verificações executadas e riscos restantes.
-- Fechar com o roteiro de teste para o Rodrigo (regra 6 da parceria).
+- Fechar com o link do preview e o roteiro de teste para o Rodrigo (regra 6
+  da parceria).
+- Depois do merge: confirmar que o deploy ficou "Ready" (e, se houve
+  migration, que a Action `Banco (migrations)` passou), deletar branch e
+  worktree, e avisar o Rodrigo: "no ar, ambiente limpo". A entrega só
+  termina com a casa limpa.
 
 ## Memória útil
 
@@ -237,7 +298,8 @@ Não guardar:
 Nunca faça sem aprovação explícita de Rodrigo:
 
 - push direto na `main`, force push ou `git reset --hard`;
-- escrita em Supabase de produção, incluindo migration, DDL ou DML;
+- escrita em Supabase de produção fora da Action `Banco (migrations)` —
+  migration manual, DDL ou DML por CLI, MCP ou SQL Editor;
 - mudança em usuários Auth, roles, permissões ou rotas de login;
 - deploy manual de Edge Function;
 - alteração de `.env`, segredos, tokens ou chaves;
@@ -261,6 +323,17 @@ Nunca versionar:
 Fixtures devem ser anonimizadas em `test/fixtures/` ou `docs/examples/`.
 
 ## Supabase
+
+**Migrations:**
+
+- Criar com `supabase migration new <descricao>` (gera o timestamp correto).
+  Nunca criar arquivo com timestamp anterior ao último já aplicado.
+- A migration entra no mesmo PR do código que depende dela e é aplicada em
+  produção pela Action após o merge (ver Deploy e produção).
+- Migration é só ida: correção de migration já mergeada é uma migration
+  nova, nunca edição da antiga.
+
+**Regras de schema e RLS:**
 
 - Toda tabela em schema exposto deve ter RLS antes de receber dados.
 - Grants da Data API e policies RLS são controles diferentes; migrations
