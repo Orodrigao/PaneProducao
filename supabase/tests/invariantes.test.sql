@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(37);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 26,
@@ -29,6 +29,10 @@ select is((select count(*)::int from pg_policies where tablename = 'product_prod
 select ok(exists(select 1 from pg_policies where tablename = 'product_production'
     and policyname = 'product_production_insert_admins'),
   'escrita de product_production restrita a admins');
+select ok((select with_check from pg_policies
+    where policyname = 'product_production_insert_admins')
+    ilike all(array['%p.active%', '%''admin''%']),
+  'a regra de escrita exige perfil ativo e papel admin, não só o nome da policy');
 
 -- Pedidos: escopo de loja para vendas
 select is((select count(*)::int from pg_policies where tablename = 'orders'
@@ -49,6 +53,18 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_departure')
     ilike '%current_user_has_permission%',
   'saída do romaneio exige permissão granular');
+select ok(has_function_privilege('authenticated',
+    'public.confirm_romaneio_departure(uuid)', 'execute'),
+  'saída do romaneio executável por authenticated');
+select ok(not has_function_privilege('anon',
+    'public.confirm_romaneio_departure(uuid)', 'execute'),
+  'saída do romaneio negada a anon');
+select ok(has_function_privilege('authenticated',
+    'public.confirm_romaneio_receipt(uuid, jsonb)', 'execute'),
+  'recebimento do romaneio executável por authenticated');
+select ok(not has_function_privilege('anon',
+    'public.confirm_romaneio_receipt(uuid, jsonb)', 'execute'),
+  'recebimento do romaneio negado a anon');
 
 -- Sobras: conciliação interna pelo forno
 select ok(exists(select 1 from pg_trigger where tgname = 'reconcile_bread_leftovers_after_oven'),
@@ -65,6 +81,14 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
     where n.nspname = 'public' and p.proname = 'list_pj_orders_for_dispatch')
     not ilike '%unit_price%',
   'leitura operacional de envio não expõe preços');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'list_pj_orders_for_dispatch')
+    ilike all(array['%expedicao%', '%''jc''%', '%pedidos_pj.acessar%']),
+  'listagem de envio limitada à Expedição da JC com permissão');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'confirm_pj_order_dispatch')
+    ilike all(array['%pedidos_pj.confirmar_envio%', '%for update%', '%set_config%']),
+  'confirmação de envio exige permissão, trava a linha e marca o RPC');
 select ok(has_function_privilege('authenticated',
     'public.confirm_pj_order_dispatch(uuid)', 'execute'),
   'confirmação de envio executável por authenticated');
@@ -84,9 +108,24 @@ select ok(exists(select 1 from information_schema.columns where table_schema = '
 -- Gestão de acesso
 select ok(not has_table_privilege('anon', 'public.app_user_permissions', 'select'),
   'anon não lê atribuições de permissão');
-select ok((select relforcerowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relname = 'app_permissions'),
-  'RLS forçada no catálogo de permissões');
+  'RLS habilitada e forçada no catálogo de permissões');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'app_user_permissions'),
+  'RLS habilitada e forçada nas atribuições');
+select ok(not has_table_privilege('anon', 'public.app_permissions', 'select'),
+  'anon não lê o catálogo');
+select ok(has_table_privilege('authenticated', 'public.app_permissions', 'select'),
+  'authenticated lê o catálogo');
+select ok(not has_table_privilege('authenticated', 'public.app_permissions', 'insert'),
+  'authenticated não escreve no catálogo');
+select ok(not has_table_privilege('anon', 'public.app_user_permissions', 'insert'),
+  'anon não escreve atribuições');
+select ok(has_table_privilege('authenticated', 'public.app_user_permissions', 'insert'),
+  'authenticated escreve atribuições (policies restringem a admins)');
 
 select * from finish();
 rollback;
