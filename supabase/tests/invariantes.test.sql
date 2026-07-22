@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(45);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 26,
@@ -126,6 +126,30 @@ select ok(not has_table_privilege('anon', 'public.app_user_permissions', 'insert
   'anon não escreve atribuições');
 select ok(has_table_privilege('authenticated', 'public.app_user_permissions', 'insert'),
   'authenticated escreve atribuições (policies restringem a admins)');
+select ok(has_table_privilege('authenticated', 'public.app_user_permissions', 'select'),
+  'authenticated lê atribuições (a tela de gestão depende disso)');
+select ok(has_table_privilege('authenticated', 'public.app_user_permissions', 'delete'),
+  'authenticated apaga atribuições (a RPC de substituição depende disso)');
+select ok(not has_table_privilege('anon', 'public.app_permissions', 'insert'),
+  'anon não escreve no catálogo');
+select ok((select with_check from pg_policies
+    where policyname = 'app_user_permissions_insert_admin')
+    ilike all(array['%current_user_is_access_admin%', '%granted_by%']),
+  'inserção de atribuição exige admin de acesso e autor real');
+select ok((select qual from pg_policies
+    where policyname = 'app_user_permissions_delete_admin')
+    ilike '%current_user_is_access_admin%',
+  'exclusão de atribuição exige admin de acesso');
+select ok(exists(select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'replace_user_permissions'
+    and not p.prosecdef),
+  'replace_user_permissions permanece SECURITY INVOKER');
+select ok(has_function_privilege('authenticated',
+    'public.replace_user_permissions(uuid, jsonb)', 'execute'),
+  'substituição da matriz executável por authenticated');
+select ok(not has_function_privilege('anon',
+    'public.replace_user_permissions(uuid, jsonb)', 'execute'),
+  'substituição da matriz negada a anon');
 
 select * from finish();
 rollback;
