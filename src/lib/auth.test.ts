@@ -42,6 +42,28 @@ describe('resolveAllowedRoutes', () => {
 
     expect(routes).toEqual(['/', '/pedidos-pj'])
   })
+
+  it('abre a Produção da Cozinha com a permissão concedida só para uma loja', () => {
+    const routes = resolveAllowedRoutes('producao', 'jc', ['/'], [
+      { permission_key: 'producao_cozinha.lancar', scope: 'jc' },
+    ])
+
+    expect(routes).toEqual(['/', '/producao-cozinha'])
+  })
+
+  it('retira a Produção da Cozinha quando a permissão é revogada', () => {
+    const routes = resolveAllowedRoutes('producao', 'jc', ['/', '/producao-cozinha'], [])
+
+    expect(routes).toEqual(['/'])
+  })
+
+  it('não duplica a rota da cozinha quando ela já está nas rotas salvas', () => {
+    const routes = resolveAllowedRoutes('expedicao', 'ja', ['/', '/producao-cozinha'], [
+      { permission_key: 'producao_cozinha.lancar', scope: 'ja' },
+    ])
+
+    expect(routes).toEqual(['/', '/producao-cozinha'])
+  })
 })
 
 describe('buildAppUser', () => {

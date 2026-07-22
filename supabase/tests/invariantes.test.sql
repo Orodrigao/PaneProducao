@@ -7,11 +7,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(59);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 26,
-  'catálogo completo com 26 permissões');
+select is((select count(*)::int from public.app_permissions), 27,
+  'catálogo completo com 27 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
@@ -150,6 +150,50 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'public.replace_user_permissions(uuid, jsonb)', 'execute'),
   'substituição da matriz negada a anon');
+
+-- Produção da Cozinha: registro diário lançado por permissão granular
+select ok(exists(select 1 from public.app_permissions where key = 'producao_cozinha.lancar'),
+  'permissão de lançar produção da cozinha presente no catálogo');
+select ok((select relrowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'kitchen_production'),
+  'RLS habilitada em kitchen_production');
+select ok(not has_table_privilege('anon', 'public.kitchen_production', 'select'),
+  'anon não lê a produção da cozinha');
+select ok(not has_table_privilege('anon', 'public.kitchen_production', 'insert'),
+  'anon não escreve produção da cozinha');
+select ok(has_table_privilege('authenticated', 'public.kitchen_production', 'insert'),
+  'authenticated tem grant de tabela (RLS decide o resto)');
+select is((select count(*)::int from pg_policies where tablename = 'kitchen_production'), 4,
+  'as 4 policies de kitchen_production existem');
+select ok((select with_check from pg_policies
+    where policyname = 'kitchen_production_insert_permitted')
+    ilike all(array['%producao_cozinha.lancar%', '%kitchen_production_date_is_open%']),
+  'lançamento exige permissão na loja e data dentro da janela');
+select ok((select with_check from pg_policies
+    where policyname = 'kitchen_production_update_permitted')
+    ilike all(array['%producao_cozinha.lancar%', '%kitchen_production_date_is_open%']),
+  'correção tem WITH CHECK com a mesma exigência do lançamento');
+select ok((select qual from pg_policies
+    where policyname = 'kitchen_production_delete_permitted')
+    ilike '%producao_cozinha.lancar%',
+  'exclusão exige a permissão da loja');
+select ok((select qual from pg_policies
+    where policyname = 'kitchen_production_select_permitted')
+    ilike all(array['%current_user_is_access_admin%', '%producao_cozinha.lancar%']),
+  'leitura restrita a admin ou a quem lança naquela loja');
+select ok(exists(select 1 from pg_constraint
+    where conname = 'kitchen_production_quantity_range'),
+  'quantidade limitada no banco, não só na tela');
+select ok(exists(select 1 from pg_constraint
+    where conname = 'kitchen_production_store_product_date_key'),
+  'um lançamento por loja, produto e dia — toque duplo não duplica');
+select ok(has_function_privilege('authenticated',
+    'private.kitchen_production_date_is_open(date)', 'execute'),
+  'janela de data executável por authenticated (a policy depende disso)');
+select ok(not has_function_privilege('anon',
+    'private.kitchen_production_date_is_open(date)', 'execute'),
+  'janela de data negada a anon');
 
 select * from finish();
 rollback;

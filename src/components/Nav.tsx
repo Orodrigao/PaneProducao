@@ -8,7 +8,7 @@ import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
-  Factory, FileText, DollarSign, ShieldCheck, PanelLeft,
+  Factory, FileText, DollarSign, ShieldCheck, PanelLeft, ChefHat,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -23,6 +23,7 @@ const PRIMARY: NavLink[] = [
 
 const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   { group: 'Operação', items: [
+    { href: '/producao-cozinha',  label: 'Cozinha',   Icon: ChefHat },
     { href: '/sobras',            label: 'Sobras',    Icon: Recycle },
     { href: '/fechamento-caixa',  label: 'Caixa',     Icon: DollarSign },
     { href: '/estoque-congelado', label: 'Congelado', Icon: Snowflake },
