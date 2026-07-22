@@ -54,9 +54,11 @@ describe('coletor CNM', () => {
   })
 
   it('mantém sessão e relatórios dentro do workspace por padrão', () => {
-    const config = createCnmCollectorConfig({}, 'C:/repo')
-    expect(config.profileDir.replace(/\\/g, '/')).toBe('C:/repo/storage/cnm/profile')
-    expect(config.downloadDir.replace(/\\/g, '/')).toBe('C:/repo/storage/cnm/downloads')
+    // Base absoluta válida em qualquer sistema (Windows, macOS e o Linux do CI).
+    const base = process.platform === 'win32' ? 'C:/repo' : '/repo'
+    const config = createCnmCollectorConfig({}, base)
+    expect(config.profileDir.replace(/\\/g, '/')).toBe(`${base}/storage/cnm/profile`)
+    expect(config.downloadDir.replace(/\\/g, '/')).toBe(`${base}/storage/cnm/downloads`)
     expect(config.timeoutMs).toBe(60_000)
     expect(config.chromeExecutablePath).toBeUndefined()
   })
