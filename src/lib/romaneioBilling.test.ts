@@ -147,6 +147,55 @@ describe('romaneioBilling', () => {
     expect(result.total).toBe(0)
   })
 
+  // Rede de segurança contra gramas digitadas no campo de kg (caso real de
+  // produção: Ciabatta 6000 "kg" numa viagem = R$ 111 mil de cobrança errada).
+  it('bloqueia item por peso com mais de 10 kg num único romaneio, mesmo com preço', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'ciabatta', productSource: 'bread', productName: 'Ciabatta', qtySent: 6000 },
+    ], [
+      { productId: 'ciabatta', productSource: 'bread', unitPrice: 18.5, pricingUnit: 'kg' },
+    ])
+
+    expect(result.rows[0].issues).toContain('suspicious_quantity')
+    expect(result.rows[0].total).toBeNull()
+    expect(result.hasBlockingIssues).toBe(true)
+    expect(result.total).toBe(0)
+  })
+
+  it('marca quantidade suspeita também quando só o aceito passa de 10 kg', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'mini', productSource: 'bread', productName: 'Mini Croissant (kg)', qtySent: 1.45, qtyAccepted: 1450 },
+    ], [
+      { productId: 'mini', productSource: 'bread', unitPrice: 55, pricingUnit: 'kg' },
+    ])
+
+    expect(result.rows[0].issues).toContain('suspicious_quantity')
+  })
+
+  it('não marca soma de viagens acima de 10 kg quando cada romaneio é normal', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'ciabatta', productSource: 'bread', productName: 'Ciabatta (kg)', qtySent: 6 },
+      { id: 'i2', romaneioId: 'r2', productId: 'ciabatta', productSource: 'bread', productName: 'Ciabatta (kg)', qtySent: 6.5 },
+    ], [
+      { productId: 'ciabatta', productSource: 'bread', unitPrice: 18.5, pricingUnit: 'kg' },
+    ])
+
+    expect(result.rows[0].issues).toEqual([])
+    expect(result.rows[0].sentQuantity).toBeCloseTo(12.5)
+    expect(result.hasBlockingIssues).toBe(false)
+  })
+
+  it('não marca produto por unidade com quantidade alta', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'croissant', productSource: 'bread', productName: 'Croissant', qtySent: 250 },
+    ], [
+      { productId: 'croissant', productSource: 'bread', unitPrice: 4.65, pricingUnit: 'un' },
+    ])
+
+    expect(result.rows[0].issues).toEqual([])
+    expect(result.rows[0].total).toBeCloseTo(1162.5)
+  })
+
   it('preço zerado na identidade direta não esconde o preço válido da ponte', () => {
     const result = calculateRomaneioBilling([
       { id: 'i1', romaneioId: 'r1', productId: 'pizza_legado', productSource: 'bread', productName: 'Pizza Redonda', qtySent: 4 },

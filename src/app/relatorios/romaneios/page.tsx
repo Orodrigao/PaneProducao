@@ -91,6 +91,9 @@ function errorMessage(error: unknown) {
 }
 
 function issueLabel(row: RomaneioBillingRow) {
+  if (row.issues.includes('suspicious_quantity')) {
+    return 'Quantidade suspeita: mais de 10 kg num único romaneio. Confira se não foi digitado em gramas.'
+  }
   if (row.issues.includes('unit_mismatch')) {
     return `Unidade incompatível: este item deve ser cobrado por ${row.billingUnit}.`
   }
@@ -303,6 +306,7 @@ export default function RelatorioRomaneiosEX() {
 
   const missingPriceRows = billing.rows.filter(row => row.issues.includes('missing_price'))
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))
+  const suspiciousRows = billing.rows.filter(row => row.issues.includes('suspicious_quantity'))
   const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues
 
   return (
@@ -378,6 +382,12 @@ export default function RelatorioRomaneiosEX() {
               <div className="ps-warning danger" role="alert">
                 <AlertTriangle size={16}/>
                 {incompatibleUnitRows.length} produto(s) têm unidade incompatível. Ciabatta e mini croissant devem estar em kg; os demais, em unidade.
+              </div>
+            )}
+            {suspiciousRows.length > 0 && (
+              <div className="ps-warning danger" role="alert">
+                <AlertTriangle size={16}/>
+                {suspiciousRows.length} produto(s) com quantidade suspeita: mais de 10 kg num único romaneio — pode ter sido digitado em gramas. A cobrança fica bloqueada até o lançamento ser conferido.
               </div>
             )}
 
