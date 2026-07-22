@@ -1,0 +1,39 @@
+name: Banco (migrations)
+
+# Aplica em produção as migrations que entraram na main via PR.
+# Este workflow é o ÚNICO caminho de mudança de schema em produção.
+# Nunca aplicar migration manualmente (CLI local, MCP ou SQL Editor).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+
+concurrency:
+  group: banco-producao
+  cancel-in-progress: false
+
+jobs:
+  aplicar-migrations:
+    name: Aplicar migrations em produção
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: gohluceldchoitihrimw
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Conectar ao projeto
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Mostrar o que será aplicado
+        run: supabase db push --dry-run
+
+      - name: Aplicar migrations
+        run: supabase db push
