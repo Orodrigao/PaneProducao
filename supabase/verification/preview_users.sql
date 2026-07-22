@@ -33,6 +33,17 @@ begin
 
   if not exists (
     select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste@gmail.com'
+      and profile.allowed_routes ->> 0 = '/'
+      and profile.allowed_routes ? '*'
+  ) then
+    raise exception 'Administrador de teste precisa iniciar em / e manter acesso total.';
+  end if;
+
+  if not exists (
+    select 1
     from public.app_user_permissions assignment
     join auth.users user_account on user_account.id = assignment.user_id
     where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'

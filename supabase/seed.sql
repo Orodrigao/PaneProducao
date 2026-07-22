@@ -69,7 +69,7 @@ on conflict (id) do update set
 
 with test_profiles(email, display_name, role, store, allowed_routes) as (
   values
-    ('rodrigao+teste@gmail.com', 'Rodrigo Teste', 'admin', null, '["*"]'::jsonb),
+    ('rodrigao+teste@gmail.com', 'Rodrigo Teste', 'admin', null, '["/", "*"]'::jsonb),
     ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/"]'::jsonb),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
