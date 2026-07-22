@@ -1,0 +1,201 @@
+name: Banco Preview
+
+# Banco remoto descartavel usado pelos previews da Vercel e pelos worktrees.
+# Uma PR com migration so pode ser testada depois que este workflow ficar verde.
+# Fechar ou integrar a PR reconstrui o ambiente a partir da main, removendo
+# migrations que nunca chegaram a producao.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - "supabase/verification/**"
+      - "supabase/seed.sql"
+      - "supabase/config.toml"
+      - "scripts/provision-preview-users.mjs"
+      - ".github/workflows/banco-preview.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - "supabase/verification/**"
+      - "supabase/seed.sql"
+      - "supabase/config.toml"
+      - "scripts/provision-preview-users.mjs"
+      - ".github/workflows/banco-preview.yml"
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: "Digite RECONSTRUIR para restaurar o banco Preview a partir da main"
+        required: true
+        type: string
+
+concurrency:
+  group: banco-preview-compartilhado
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  PREVIEW_PROJECT_REF: tuqzhjsbodoycjbmwuqm
+  PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
+  PRODUCTION_PROJECT_REF: gohluceldchoitihrimw
+
+jobs:
+  reconstruir-pr:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    name: Reconstruir com as migrations desta PR
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_OWNER_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PREVIEW_DB_PASSWORD }}
+      SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Impedir duas PRs de migration no mesmo banco
+        env:
+          CURRENT_PR: ${{ github.event.pull_request.number }}
+        run: |
+          OTHER_MIGRATION_PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,files | jq --argjson current "$CURRENT_PR" '[.[] | select(.number != $current) | select(any(.files[]; .path | startswith("supabase/migrations/"))) | .number]')"
+          OTHER_MIGRATION_COUNT="$(jq 'length' <<<"$OTHER_MIGRATION_PRS")"
+
+          if [[ "$OTHER_MIGRATION_COUNT" -gt 0 ]]; then
+            echo "O Banco Preview esta reservado por outra PR com migration: $OTHER_MIGRATION_PRS"
+            echo "Finalize essa PR antes de reconstruir o banco para a PR atual."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Confirmar que o alvo nunca e producao
+        run: |
+          if [[ "$PREVIEW_PROJECT_REF" == "$PRODUCTION_PROJECT_REF" || "$PREVIEW_PROJECT_REF" != "tuqzhjsbodoycjbmwuqm" ]]; then
+            echo "ALVO BLOQUEADO: o workflow Banco Preview nao recebeu o projeto de teste esperado."
+            exit 1
+          fi
+
+      - name: Confirmar que o projeto de teste esta acordado
+        run: |
+          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '.[] | select(.id == $ref) | .status')"
+          if [[ "$PROJECT_STATUS" != "ACTIVE_HEALTHY" ]]; then
+            echo "Banco de teste indisponivel (estado: ${PROJECT_STATUS:-nao encontrado})."
+            echo "Reative PaneERP Preview no Supabase antes de investigar a funcionalidade."
+            exit 1
+          fi
+
+      - name: Conectar exclusivamente ao Banco Preview
+        run: supabase link --project-ref "$PREVIEW_PROJECT_REF"
+
+      - name: Reconstruir schema e dados ficticios desta PR
+        run: supabase db reset --linked --yes
+
+      - name: Obter credencial temporaria do Auth de teste
+        run: |
+          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '.[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
+          if [[ -z "$SERVICE_ROLE_KEY" || "$SERVICE_ROLE_KEY" == "null" ]]; then
+            echo "Nao foi possivel obter a chave administrativa do Banco Preview."
+            exit 1
+          fi
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          echo "SUPABASE_PREVIEW_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+
+      - name: Recriar contas ficticias pelo Supabase Auth
+        run: node scripts/provision-preview-users.mjs
+
+      - name: Ligar perfis e permissoes as contas ficticias
+        run: supabase db query --linked --file supabase/seed.sql
+
+      - name: Confirmar perfis permitidos e bloqueados
+        run: supabase db query --linked --file supabase/verification/preview_users.sql
+
+      - name: Verificar invariantes e seed no Banco Preview
+        run: supabase test db --linked
+
+  restaurar-main:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false) ||
+      github.event_name == 'workflow_dispatch'
+    name: Restaurar Banco Preview para a main
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_OWNER_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PREVIEW_DB_PASSWORD }}
+      SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
+    steps:
+      - name: Exigir confirmacao da reconstrucao manual
+        if: github.event_name == 'workflow_dispatch' && inputs.confirmacao != 'RECONSTRUIR'
+        run: |
+          echo "Confirmacao invalida. Digite RECONSTRUIR para continuar."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Confirmar que o alvo nunca e producao
+        run: |
+          if [[ "$PREVIEW_PROJECT_REF" == "$PRODUCTION_PROJECT_REF" || "$PREVIEW_PROJECT_REF" != "tuqzhjsbodoycjbmwuqm" ]]; then
+            echo "ALVO BLOQUEADO: o workflow Banco Preview nao recebeu o projeto de teste esperado."
+            exit 1
+          fi
+
+      - name: Confirmar que o projeto de teste esta acordado
+        run: |
+          PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '.[] | select(.id == $ref) | .status')"
+          if [[ "$PROJECT_STATUS" != "ACTIVE_HEALTHY" ]]; then
+            echo "Banco de teste indisponivel (estado: ${PROJECT_STATUS:-nao encontrado})."
+            echo "Reative PaneERP Preview no Supabase antes de investigar a funcionalidade."
+            exit 1
+          fi
+
+      - name: Conectar exclusivamente ao Banco Preview
+        run: supabase link --project-ref "$PREVIEW_PROJECT_REF"
+
+      - name: Apagar desvios e reconstruir a partir da main
+        run: supabase db reset --linked --yes
+
+      - name: Obter credencial temporaria do Auth de teste
+        run: |
+          SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '.[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
+          if [[ -z "$SERVICE_ROLE_KEY" || "$SERVICE_ROLE_KEY" == "null" ]]; then
+            echo "Nao foi possivel obter a chave administrativa do Banco Preview."
+            exit 1
+          fi
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          echo "SUPABASE_PREVIEW_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+
+      - name: Recriar contas ficticias pelo Supabase Auth
+        run: node scripts/provision-preview-users.mjs
+
+      - name: Ligar perfis e permissoes as contas ficticias
+        run: supabase db query --linked --file supabase/seed.sql
+
+      - name: Confirmar perfis permitidos e bloqueados
+        run: supabase db query --linked --file supabase/verification/preview_users.sql
+
+      - name: Verificar invariantes e seed canonicos
+        run: supabase test db --linked
