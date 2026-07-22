@@ -218,6 +218,11 @@ Nenhuma funcionalidade nova começa pela implementação.
 - Um worktree, uma tarefa e um escopo. O worktree nasce com a tarefa e
   morre com ela: mergeou ou fechou o PR → deletar branch (local e remota) e
   worktree no mesmo dia. Worktree sem tarefa ativa é entulho.
+- Nascimento de um worktree (vale para qualquer agente, em qualquer
+  sistema): criar fora da pasta do repositório principal → copiar
+  `.env.example` para `.env.local` → `npm ci`. Sem esses dois passos o
+  ambiente local não funciona — `.env.local` e `node_modules` não
+  acompanham o worktree.
 - Se houver alteração local não relacionada, parar e isolar o trabalho.
 - Implementar somente a fase aprovada.
 - Não refatorar módulos vizinhos por iniciativa própria.
