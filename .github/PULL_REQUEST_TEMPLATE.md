@@ -16,6 +16,7 @@
 - [ ] `npx tsc --noEmit`
 - [ ] `npm test`
 - [ ] `npm run build`
+- [ ] `Banco Preview` verde (obrigatorio quando houver migration ou seed)
 - [ ] Fluxo completo testado no navegador
 
 ## Matriz de verificação
