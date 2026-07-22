@@ -123,7 +123,7 @@ with requested_permissions(email, permission_key, scope) as (
   where lower(user_account.email) = 'rodrigao+teste@gmail.com'
 )
 insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
-select user_id, permission_key, scope, null from resolved_permissions
+select user_id, permission_key, scope, null::uuid from resolved_permissions
 union all
-select user_id, permission_key, scope, null from admin_permissions
+select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
