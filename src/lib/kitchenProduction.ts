@@ -160,3 +160,38 @@ export function isEmptyKitchenSavePlan(plan: KitchenSavePlan): boolean {
 export function totalKitchenQuantity(quantities: Readonly<Record<string, number>>): number {
   return Object.values(quantities).reduce((total, value) => total + sanitizeKitchenQuantity(value), 0)
 }
+
+// PostgREST responde 'PGRST205' quando a tabela não está no cache do schema e o
+// Postgres responde '42P01' quando ela não existe. Antes do deploy da migration
+// os dois significam a mesma coisa para quem está olhando a tela.
+const MISSING_TABLE_CODES = new Set(['PGRST205', '42P01'])
+const DENIED_CODES = new Set(['42501', 'PGRST301'])
+
+function errorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return ''
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : ''
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return ''
+  const message = (error as { message?: unknown }).message
+  return typeof message === 'string' ? message : ''
+}
+
+/**
+ * Mensagem honesta para quem está na cozinha. Culpar a internet quando o
+ * problema é outro faz a pessoa tentar de novo para sempre.
+ */
+export function describeKitchenError(error: unknown): string {
+  const code = errorCode(error)
+  const message = errorMessage(error)
+
+  if (MISSING_TABLE_CODES.has(code) || message.includes('kitchen_production')) {
+    return 'Esta tela ainda não foi liberada no banco de dados. Isso é normal antes da mudança ir para o ar — avise o Rodrigo se continuar assim depois disso.'
+  }
+  if (DENIED_CODES.has(code)) {
+    return 'Seu acesso não permite lançar nesta loja. Peça a permissão Produção da Cozinha ao administrador.'
+  }
+  return 'Não deu para falar com o sistema agora. Confira a internet e tente de novo.'
+}

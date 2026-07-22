@@ -8,6 +8,7 @@ import { formatDate, formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   KITCHEN_MAX_QUANTITY,
   buildKitchenSavePlan,
+  describeKitchenError,
   groupKitchenItems,
   isEmptyKitchenSavePlan,
   isKitchenDateOpen,
@@ -105,8 +106,8 @@ export default function ProducaoCozinhaPage() {
       setItems(kitchenItems)
       setEntries(dayEntries)
       setQuantities(saved)
-    } catch {
-      setLoadError('Não foi possível carregar a lista. Verifique a internet e tente de novo.')
+    } catch (error) {
+      setLoadError(describeKitchenError(error))
       setItems([])
       setEntries([])
       setQuantities({})
@@ -145,8 +146,8 @@ export default function ProducaoCozinhaPage() {
       await applyKitchenSavePlan(plan)
       await loadDay(store, date)
       showToastPS('Produção salva!')
-    } catch {
-      showToastPS('Não deu para salvar. Tente de novo.')
+    } catch (error) {
+      showToastPS(describeKitchenError(error))
     } finally {
       setSaving(false)
     }

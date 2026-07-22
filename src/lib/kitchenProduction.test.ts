@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildKitchenSavePlan,
   canLaunchKitchenProduction,
+  describeKitchenError,
   groupKitchenItems,
   isEmptyKitchenSavePlan,
   isKitchenDateOpen,
@@ -190,6 +191,24 @@ describe('agrupamento e totais', () => {
 
   it('soma o total do dia ignorando lixo', () => {
     expect(totalKitchenQuantity({ a: 6, b: 4, c: -2 })).toBe(10)
+  })
+})
+
+describe('describeKitchenError', () => {
+  it('explica a tabela ausente em vez de culpar a internet', () => {
+    expect(describeKitchenError({ code: 'PGRST205' })).toContain('liberada no banco')
+    expect(describeKitchenError({ code: '42P01' })).toContain('liberada no banco')
+    expect(describeKitchenError({ message: 'relation "public.kitchen_production" does not exist' }))
+      .toContain('liberada no banco')
+  })
+
+  it('aponta a permissão quando o banco nega o acesso', () => {
+    expect(describeKitchenError({ code: '42501' })).toContain('Produção da Cozinha')
+  })
+
+  it('cai na mensagem de rede só quando não sabe a causa', () => {
+    expect(describeKitchenError(new Error('Failed to fetch'))).toContain('internet')
+    expect(describeKitchenError(null)).toContain('internet')
   })
 })
 
