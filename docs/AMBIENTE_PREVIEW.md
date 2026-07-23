@@ -27,6 +27,11 @@ O passo 5 não é limpeza opcional. Ele remove migrations de uma PR descartada,
 impedindo que o próximo preview converse com um schema que nunca existiu em
 produção.
 
+Os objetos novos do banco nascem sem acesso automático para a API. Toda
+migration que criar tabela, sequência ou função deve conceder explicitamente
+somente os acessos necessários. Isso mantém produção, CI e Preview com a mesma
+regra, independentemente dos padrões do projeto hospedado.
+
 ## Banco compartilhado no plano gratuito
 
 Existe um único Banco Preview. Duas PRs com migrations abertas poderiam
