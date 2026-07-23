@@ -94,6 +94,12 @@ Riscos ainda abertos:
   concessão por loja não abre o painel;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
+- o `npm audit --omit=dev` ainda sinaliza o PostCSS e o Sharp transitivos do
+  Next.js 15.5.21. O app estático não processa CSS nem imagens enviados por
+  usuários, portanto os caminhos descritos pelos avisos não são alcançáveis
+  hoje. Não forçar versões internas fora do intervalo suportado pelo Next;
+  reabrir quando houver backport oficial compatível ou se o ERP passar a
+  processar CSS/imagem não confiável;
 - `src/lib/database.types.ts` está obsoleto (ainda descreve `app_users`, não
   contém `app_profiles`, `app_permissions`, `app_user_permissions` nem
   `cash_closings`) e o cliente Supabase nem o utiliza;
