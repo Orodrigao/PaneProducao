@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildKitchenSavePlan,
+  buildKitchenBatchRequests,
   canLaunchKitchenProduction,
   describeKitchenError,
   groupKitchenItems,
-  isEmptyKitchenSavePlan,
+  isEmptyKitchenBatchRequest,
   isKitchenDateOpen,
   kitchenStoresForUser,
+  kitchenTotalsByProduct,
   normalizeKitchenStore,
   sanitizeKitchenQuantity,
   shiftDateKey,
@@ -14,9 +15,16 @@ import {
   type KitchenEntry,
 } from './kitchenProduction'
 
-const entry = (overrides: Partial<KitchenEntry> & Pick<KitchenEntry, 'id' | 'product_id' | 'quantity'>): KitchenEntry => ({
+const entry = (
+  overrides: Partial<KitchenEntry> & Pick<KitchenEntry, 'id' | 'product_id' | 'quantity'>,
+): KitchenEntry => ({
+  recorded_by: 'user-1',
   recorded_by_name: 'Cozinha',
-  updated_at: '2026-07-22T18:00:00Z',
+  produced_at: '2026-07-22T18:00:00Z',
+  corrected_at: null,
+  corrected_by: null,
+  cancelled_at: null,
+  cancelled_by: null,
   ...overrides,
 })
 
@@ -100,73 +108,59 @@ describe('isKitchenDateOpen', () => {
   })
 })
 
-describe('buildKitchenSavePlan', () => {
-  const base = {
-    store: 'jc' as const,
-    recordDate: '2026-07-22',
-    recordedBy: 'user-1',
-    recordedByName: 'Cozinha JC',
-  }
-
-  it('grava apenas o item novo', () => {
-    const plan = buildKitchenSavePlan({
-      ...base,
-      quantities: { 'prod-a': 6, 'prod-b': 0 },
-      entries: [],
+describe('buildKitchenBatchRequests', () => {
+  it('cada salvamento gera somente os novos lotes informados', () => {
+    const firstSave = buildKitchenBatchRequests({
+      quantities: { 'prod-a': 4, 'prod-b': 0 },
+    })
+    const secondSave = buildKitchenBatchRequests({
+      quantities: { 'prod-a': 3, 'prod-b': 0 },
     })
 
-    expect(plan.upserts).toEqual([{
-      store: 'jc',
+    expect(firstSave).toEqual([{ product_id: 'prod-a', quantity: 4 }])
+    expect(secondSave).toEqual([{ product_id: 'prod-a', quantity: 3 }])
+  })
+
+  it('ignora zero e limita cada lote ao teto aceito pelo banco', () => {
+    const batches = buildKitchenBatchRequests({
+      quantities: { zero: 0, negative: -2, maximum: 4000 },
+    })
+
+    expect(batches).toEqual([{ product_id: 'maximum', quantity: 999 }])
+    expect(isEmptyKitchenBatchRequest([])).toBe(true)
+  })
+})
+
+describe('kitchenTotalsByProduct', () => {
+  it('soma lotes independentes e desconsidera os cancelados', () => {
+    const totals = kitchenTotalsByProduct([
+      entry({ id: 'row-1', product_id: 'prod-a', quantity: 4 }),
+      entry({ id: 'row-2', product_id: 'prod-a', quantity: 3 }),
+      entry({
+        id: 'row-3',
+        product_id: 'prod-a',
+        quantity: 8,
+        cancelled_at: '2026-07-22T19:00:00Z',
+        cancelled_by: 'user-1',
+      }),
+      entry({ id: 'row-4', product_id: 'prod-b', quantity: 2 }),
+    ])
+
+    expect(totals).toEqual({ 'prod-a': 7, 'prod-b': 2 })
+  })
+
+  it('a correção muda a quantidade sem apagar o horário original', () => {
+    const corrected = entry({
+      id: 'row-1',
       product_id: 'prod-a',
-      record_date: '2026-07-22',
-      quantity: 6,
-      recorded_by: 'user-1',
-      recorded_by_name: 'Cozinha JC',
-    }])
-    expect(plan.deleteIds).toEqual([])
-  })
-
-  it('ignora item que não mudou', () => {
-    const plan = buildKitchenSavePlan({
-      ...base,
-      quantities: { 'prod-a': 6 },
-      entries: [entry({ id: 'row-1', product_id: 'prod-a', quantity: 6 })],
+      quantity: 5,
+      produced_at: '2026-07-22T18:00:00Z',
+      corrected_at: '2026-07-22T18:15:00Z',
+      corrected_by: 'user-1',
     })
 
-    expect(isEmptyKitchenSavePlan(plan)).toBe(true)
-  })
-
-  it('atualiza a quantidade corrigida', () => {
-    const plan = buildKitchenSavePlan({
-      ...base,
-      quantities: { 'prod-a': 8 },
-      entries: [entry({ id: 'row-1', product_id: 'prod-a', quantity: 6 })],
-    })
-
-    expect(plan.upserts).toHaveLength(1)
-    expect(plan.upserts[0].quantity).toBe(8)
-    expect(plan.deleteIds).toEqual([])
-  })
-
-  it('apaga o lançamento zerado em vez de gravar zero', () => {
-    const plan = buildKitchenSavePlan({
-      ...base,
-      quantities: { 'prod-a': 0 },
-      entries: [entry({ id: 'row-1', product_id: 'prod-a', quantity: 6 })],
-    })
-
-    expect(plan.upserts).toEqual([])
-    expect(plan.deleteIds).toEqual(['row-1'])
-  })
-
-  it('não deixa passar quantidade fora do limite aceito pelo banco', () => {
-    const plan = buildKitchenSavePlan({
-      ...base,
-      quantities: { 'prod-a': 4000 },
-      entries: [],
-    })
-
-    expect(plan.upserts[0].quantity).toBe(999)
+    expect(kitchenTotalsByProduct([corrected])).toEqual({ 'prod-a': 5 })
+    expect(corrected.produced_at).toBe('2026-07-22T18:00:00Z')
   })
 })
 
@@ -189,7 +183,7 @@ describe('agrupamento e totais', () => {
     ])
   })
 
-  it('soma o total do dia ignorando lixo', () => {
+  it('soma o total dos campos ignorando lixo', () => {
     expect(totalKitchenQuantity({ a: 6, b: 4, c: -2 })).toBe(10)
   })
 })

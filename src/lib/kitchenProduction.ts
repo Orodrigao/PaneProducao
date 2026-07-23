@@ -27,22 +27,18 @@ export interface KitchenEntry {
   id: string
   product_id: string
   quantity: number
+  recorded_by: string
   recorded_by_name: string | null
-  updated_at: string | null
+  produced_at: string
+  corrected_at: string | null
+  corrected_by: string | null
+  cancelled_at: string | null
+  cancelled_by: string | null
 }
 
-export interface KitchenUpsertRow {
-  store: KitchenStore
+export interface KitchenBatchRequest {
   product_id: string
-  record_date: string
   quantity: number
-  recorded_by: string | null
-  recorded_by_name: string | null
-}
-
-export interface KitchenSavePlan {
-  upserts: KitchenUpsertRow[]
-  deleteIds: string[]
 }
 
 export function normalizeKitchenStore(value: string | null | undefined): KitchenStore | null {
@@ -113,48 +109,34 @@ export function groupKitchenItems(
   return Array.from(groups, ([category, groupedItems]) => ({ category, items: groupedItems }))
 }
 
-/**
- * Compara o que está na tela com o que já está gravado e devolve só a diferença:
- * grava o que mudou, apaga o que voltou a zero e ignora o resto.
- */
-export function buildKitchenSavePlan(params: {
-  store: KitchenStore
-  recordDate: string
+/** Cada clique em salvar representa novos lotes, nunca o acumulado do dia. */
+export function buildKitchenBatchRequests(params: {
   quantities: Readonly<Record<string, number>>
-  entries: readonly KitchenEntry[]
-  recordedBy: string | null
-  recordedByName: string | null
-}): KitchenSavePlan {
-  const { store, recordDate, quantities, entries, recordedBy, recordedByName } = params
-  const entryByProduct = new Map(entries.map(entry => [entry.product_id, entry]))
-  const upserts: KitchenUpsertRow[] = []
-  const deleteIds: string[] = []
-
-  for (const [productId, rawQuantity] of Object.entries(quantities)) {
+}): KitchenBatchRequest[] {
+  const batches: KitchenBatchRequest[] = []
+  for (const [product_id, rawQuantity] of Object.entries(params.quantities)) {
     const quantity = sanitizeKitchenQuantity(rawQuantity)
-    const existing = entryByProduct.get(productId)
-
-    if (quantity === 0) {
-      if (existing) deleteIds.push(existing.id)
-      continue
-    }
-    if (existing && sanitizeKitchenQuantity(existing.quantity) === quantity) continue
-
-    upserts.push({
-      store,
-      product_id: productId,
-      record_date: recordDate,
-      quantity,
-      recorded_by: recordedBy,
-      recorded_by_name: recordedByName,
-    })
+    if (quantity > 0) batches.push({ product_id, quantity })
   }
-
-  return { upserts, deleteIds }
+  return batches
 }
 
-export function isEmptyKitchenSavePlan(plan: KitchenSavePlan): boolean {
-  return plan.upserts.length === 0 && plan.deleteIds.length === 0
+export function isEmptyKitchenBatchRequest(
+  batches: readonly KitchenBatchRequest[],
+): boolean {
+  return batches.length === 0
+}
+
+export function kitchenTotalsByProduct(
+  entries: readonly KitchenEntry[],
+): Record<string, number> {
+  const totals: Record<string, number> = {}
+  for (const entry of entries) {
+    if (entry.cancelled_at) continue
+    totals[entry.product_id] = (totals[entry.product_id] ?? 0)
+      + sanitizeKitchenQuantity(entry.quantity)
+  }
+  return totals
 }
 
 export function totalKitchenQuantity(quantities: Readonly<Record<string, number>>): number {

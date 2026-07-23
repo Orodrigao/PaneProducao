@@ -1,164 +1,449 @@
--- Producao da Cozinha — registro diario do que a cozinha realmente produziu.
+-- Produção da Cozinha — lotes reais, lançados conforme a demanda.
 --
--- Contexto: product_production ja existe, mas e a LISTA PEDIDA pelo admin a
--- Padaria (aba "Itens JC"), escrita somente por admin. Falta o par realizado,
--- equivalente a production_actuals dos paes. Esta migration cria esse registro
--- para os itens de cozinha (bruschettas, pizzas por sabor, pastinhas).
---
--- Quem lanca e definido pela permissao granular producao_cozinha.lancar, com
--- escopo por loja. Nenhuma tabela existente muda de comportamento.
+-- Cada salvamento cria novos lotes. O horário, a data e a autoria vêm do
+-- servidor; correções e cancelamentos preservam o lançamento original.
 
--- 1. Permissao nova no catalogo (idempotente, mesmo padrao do catalogo base).
-INSERT INTO "public"."app_permissions" ("key", "module", "label", "description", "sort_order") VALUES
-	('producao_cozinha.lancar', 'Operacao', 'Producao da Cozinha', 'Lancar a producao diaria da cozinha na loja concedida.', 100)
-ON CONFLICT (key) DO UPDATE SET
-  module = excluded.module,
-  label = excluded.label,
-  description = excluded.description,
-  sort_order = excluded.sort_order
-WHERE (app_permissions.module, app_permissions.label,
-       app_permissions.description, app_permissions.sort_order)
-  IS DISTINCT FROM
-      (excluded.module, excluded.label,
-       excluded.description, excluded.sort_order);
+-- 1. Permissão granular do módulo.
+INSERT INTO "public"."app_permissions" (
+  "key", "module", "label", "description", "sort_order"
+) VALUES (
+  'producao_cozinha.lancar',
+  'Operacao',
+  'Producao da Cozinha',
+  'Lancar a producao da cozinha na loja concedida.',
+  100
+)
+ON CONFLICT ("key") DO UPDATE SET
+  "module" = excluded."module",
+  "label" = excluded."label",
+  "description" = excluded."description",
+  "sort_order" = excluded."sort_order"
+WHERE (
+  "app_permissions"."module",
+  "app_permissions"."label",
+  "app_permissions"."description",
+  "app_permissions"."sort_order"
+) IS DISTINCT FROM (
+  excluded."module",
+  excluded."label",
+  excluded."description",
+  excluded."sort_order"
+);
 
--- 2. Registro diario. Uma linha por (loja, produto, data).
+-- 2. Histórico imutável por lote. Não existe unicidade por produto/dia:
+-- produzir 4 e depois 3 precisa gerar duas linhas e totalizar 7.
 CREATE TABLE IF NOT EXISTS "public"."kitchen_production" (
   "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
   "store" "text" NOT NULL,
   "product_id" "uuid" NOT NULL,
   "record_date" "date" NOT NULL,
-  "quantity" numeric NOT NULL,
-  "recorded_by" "uuid",
+  "quantity" integer NOT NULL,
+  "recorded_by" "uuid" NOT NULL,
   "recorded_by_name" "text",
-  "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+  "produced_at" timestamp with time zone DEFAULT "pg_catalog"."now"() NOT NULL,
+  "corrected_at" timestamp with time zone,
+  "corrected_by" "uuid",
+  "cancelled_at" timestamp with time zone,
+  "cancelled_by" "uuid",
   CONSTRAINT "kitchen_production_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "kitchen_production_store_product_date_key" UNIQUE ("store", "product_id", "record_date"),
   CONSTRAINT "kitchen_production_product_id_fkey" FOREIGN KEY ("product_id")
     REFERENCES "public"."products"("id") ON DELETE RESTRICT,
-  CONSTRAINT "kitchen_production_store_valid" CHECK ("store" IN ('jc', 'ja', 'ex')),
-  -- Quantidade e contagem de peca/pote: inteira, positiva e com teto de sanidade.
-  -- Licao de 2026-07-21 (validar-tambem-na-saida): numero que vira dinheiro
-  -- precisa de limite no banco, nao so na tela.
-  CONSTRAINT "kitchen_production_quantity_whole" CHECK ("quantity" = "trunc"("quantity")),
-  CONSTRAINT "kitchen_production_quantity_range" CHECK ("quantity" > 0 AND "quantity" <= 999)
+  CONSTRAINT "kitchen_production_store_valid"
+    CHECK ("store" IN ('jc', 'ja', 'ex')),
+  CONSTRAINT "kitchen_production_quantity_range"
+    CHECK ("quantity" > 0 AND "quantity" <= 999),
+  CONSTRAINT "kitchen_production_server_date"
+    CHECK (
+      "record_date" =
+      ("produced_at" AT TIME ZONE 'America/Sao_Paulo')::date
+    ),
+  CONSTRAINT "kitchen_production_correction_audit"
+    CHECK (("corrected_at" IS NULL) = ("corrected_by" IS NULL)),
+  CONSTRAINT "kitchen_production_cancellation_audit"
+    CHECK (("cancelled_at" IS NULL) = ("cancelled_by" IS NULL))
 );
 
 ALTER TABLE "public"."kitchen_production" OWNER TO "postgres";
 
-COMMENT ON TABLE "public"."kitchen_production" IS 'Producao diaria realizada pela cozinha (bruschettas, pizzas, pastinhas). Uma linha por (loja, produto, data). Lancada em /producao-cozinha por quem tem producao_cozinha.lancar na loja. Diferente de product_production, que e a lista pedida a Padaria.';
+COMMENT ON TABLE "public"."kitchen_production" IS
+  'Lotes produzidos pela cozinha. Cada salvamento cria uma linha com horário e autor do servidor; correções e cancelamentos preservam o evento original.';
 
 CREATE INDEX IF NOT EXISTS "kitchen_production_date_store_idx"
-  ON "public"."kitchen_production" USING "btree" ("record_date", "store");
+  ON "public"."kitchen_production" USING "btree"
+  ("record_date", "store", "produced_at" DESC);
 
 CREATE INDEX IF NOT EXISTS "kitchen_production_product_idx"
-  ON "public"."kitchen_production" USING "btree" ("product_id");
+  ON "public"."kitchen_production" USING "btree"
+  ("product_id", "record_date");
 
-CREATE OR REPLACE FUNCTION "public"."set_kitchen_production_updated_at"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    SET "search_path" TO ''
-    AS $$
+CREATE INDEX IF NOT EXISTS "kitchen_production_author_today_idx"
+  ON "public"."kitchen_production" USING "btree"
+  ("recorded_by", "record_date", "produced_at" DESC);
+
+-- 3. Grava todos os produtos de um clique na mesma transação. Assim uma falha
+-- não deixa metade do salvamento registrada.
+CREATE OR REPLACE FUNCTION "public"."record_kitchen_batches"(
+  "p_store" "text",
+  "p_batches" "jsonb"
+) RETURNS "jsonb"
+  LANGUAGE "plpgsql" SECURITY DEFINER
+  SET "search_path" TO ''
+  AS $$
+declare
+  v_user_id uuid := auth.uid();
+  v_profile_name text;
+  v_profile_role text;
+  v_store text := pg_catalog.lower(pg_catalog.btrim(p_store));
+  v_batch jsonb;
+  v_product_id uuid;
+  v_quantity numeric;
+  v_produced_at timestamptz := pg_catalog.now();
+  v_count integer := 0;
 begin
-  new.updated_at = pg_catalog.now();
-  return new;
+  if v_user_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Entre com e-mail para lancar a producao da cozinha.';
+  end if;
+
+  select profile.display_name, profile.role
+    into v_profile_name, v_profile_role
+  from public.app_profiles as profile
+  where profile.user_id = v_user_id
+    and profile.active;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'Usuario sem perfil ativo.';
+  end if;
+
+  if v_store is null or v_store not in ('jc', 'ja', 'ex') then
+    raise exception using
+      errcode = '22023',
+      message = 'Loja invalida.';
+  end if;
+
+  if v_profile_role is distinct from 'admin'
+    and not private.current_user_has_permission(
+      'producao_cozinha.lancar',
+      v_store
+    )
+  then
+    raise exception using
+      errcode = '42501',
+      message = 'Sem permissao para lancar a producao nesta loja.';
+  end if;
+
+  if p_batches is null
+    or pg_catalog.jsonb_typeof(p_batches) <> 'array'
+    or pg_catalog.jsonb_array_length(p_batches) = 0
+    or pg_catalog.jsonb_array_length(p_batches) > 100
+  then
+    raise exception using
+      errcode = '22023',
+      message = 'Informe de 1 a 100 lotes para salvar.';
+  end if;
+
+  for v_batch in
+    select value from pg_catalog.jsonb_array_elements(p_batches)
+  loop
+    if pg_catalog.jsonb_typeof(v_batch) <> 'object'
+      or pg_catalog.jsonb_typeof(v_batch -> 'product_id') <> 'string'
+      or pg_catalog.jsonb_typeof(v_batch -> 'quantity') <> 'number'
+    then
+      raise exception using
+        errcode = '22023',
+        message = 'Lote invalido.';
+    end if;
+
+    begin
+      v_product_id := (v_batch ->> 'product_id')::uuid;
+      v_quantity := (v_batch ->> 'quantity')::numeric;
+    exception
+      when invalid_text_representation or numeric_value_out_of_range then
+        raise exception using
+          errcode = '22023',
+          message = 'Produto ou quantidade invalida.';
+    end;
+
+    if v_quantity <> pg_catalog.trunc(v_quantity)
+      or v_quantity < 1
+      or v_quantity > 999
+    then
+      raise exception using
+        errcode = '22023',
+        message = 'A quantidade deve ser inteira, entre 1 e 999.';
+    end if;
+
+    if not exists (
+      select 1
+      from public.products as product
+      where product.id = v_product_id
+        and product.active
+        and product.production_area = 'cozinha'
+    ) then
+      raise exception using
+        errcode = '23503',
+        message = 'Produto ativo da cozinha nao encontrado.';
+    end if;
+
+    insert into public.kitchen_production (
+      store,
+      product_id,
+      record_date,
+      quantity,
+      recorded_by,
+      recorded_by_name,
+      produced_at
+    ) values (
+      v_store,
+      v_product_id,
+      (v_produced_at at time zone 'America/Sao_Paulo')::date,
+      v_quantity::integer,
+      v_user_id,
+      v_profile_name,
+      v_produced_at
+    );
+
+    v_count := v_count + 1;
+  end loop;
+
+  return pg_catalog.jsonb_build_object(
+    'saved_count', v_count,
+    'produced_at', v_produced_at
+  );
 end;
 $$;
 
-ALTER FUNCTION "public"."set_kitchen_production_updated_at"() OWNER TO "postgres";
+ALTER FUNCTION "public"."record_kitchen_batches"("text", "jsonb")
+  OWNER TO "postgres";
 
-REVOKE ALL ON FUNCTION "public"."set_kitchen_production_updated_at"()
-  FROM PUBLIC, "anon", "authenticated";
-GRANT ALL ON FUNCTION "public"."set_kitchen_production_updated_at"()
-  TO "service_role";
+COMMENT ON FUNCTION "public"."record_kitchen_batches"("text", "jsonb") IS
+  'Cria lotes da cozinha com horário e autoria do servidor, validando perfil, loja, produto e quantidade.';
 
-DROP TRIGGER IF EXISTS "kitchen_production_set_updated_at" ON "public"."kitchen_production";
-CREATE TRIGGER "kitchen_production_set_updated_at"
-  BEFORE UPDATE ON "public"."kitchen_production"
-  FOR EACH ROW EXECUTE FUNCTION "public"."set_kitchen_production_updated_at"();
-
--- 3. Janela de correcao: quem lanca pode corrigir hoje e ontem; admin corrige
--- qualquer data. Evita reescrita silenciosa de historico sem travar a operacao
--- de quem so consegue lancar na manha seguinte.
-CREATE OR REPLACE FUNCTION "private"."kitchen_production_date_is_open"("p_record_date" "date")
-  RETURNS boolean
-  LANGUAGE "sql" STABLE
+-- 4. Correção mantém produced_at e recorded_by originais. Quem lançou pode
+-- corrigir o próprio lote no mesmo dia; administrador pode corrigir histórico.
+CREATE OR REPLACE FUNCTION "public"."correct_kitchen_batch"(
+  "p_batch_id" "uuid",
+  "p_quantity" integer
+) RETURNS "jsonb"
+  LANGUAGE "plpgsql" SECURITY DEFINER
   SET "search_path" TO ''
   AS $$
-    select p_record_date
-      between ((pg_catalog.now() at time zone 'America/Sao_Paulo')::date - 1)
-          and ((pg_catalog.now() at time zone 'America/Sao_Paulo')::date);
-  $$;
+declare
+  v_user_id uuid := auth.uid();
+  v_profile_role text;
+  v_batch public.kitchen_production%rowtype;
+  v_now timestamptz := pg_catalog.now();
+begin
+  if v_user_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Entre com e-mail para corrigir o lote.';
+  end if;
 
-ALTER FUNCTION "private"."kitchen_production_date_is_open"("date") OWNER TO "postgres";
+  select profile.role
+    into v_profile_role
+  from public.app_profiles as profile
+  where profile.user_id = v_user_id
+    and profile.active;
 
--- A policy e avaliada com os privilegios de quem consulta: sem EXECUTE explicito
--- o lancamento falharia com "permission denied for function". Mesmo tratamento
--- dado as demais funcoes do schema private.
-REVOKE ALL ON FUNCTION "private"."kitchen_production_date_is_open"("date") FROM PUBLIC;
-GRANT ALL ON FUNCTION "private"."kitchen_production_date_is_open"("date") TO "authenticated";
-GRANT ALL ON FUNCTION "private"."kitchen_production_date_is_open"("date") TO "service_role";
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'Usuario sem perfil ativo.';
+  end if;
 
--- 4. RLS: a autorizacao efetiva. Nada para anon.
+  if p_quantity is null or p_quantity < 1 or p_quantity > 999 then
+    raise exception using
+      errcode = '22023',
+      message = 'A quantidade deve ser inteira, entre 1 e 999.';
+  end if;
+
+  select *
+    into v_batch
+  from public.kitchen_production
+  where id = p_batch_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'Lote da cozinha nao encontrado.';
+  end if;
+
+  if v_batch.cancelled_at is not null then
+    raise exception using
+      errcode = '22023',
+      message = 'Lote cancelado nao pode ser corrigido.';
+  end if;
+
+  if v_profile_role is distinct from 'admin'
+    and (
+      v_batch.recorded_by <> v_user_id
+      or v_batch.record_date <>
+        (v_now at time zone 'America/Sao_Paulo')::date
+      or not private.current_user_has_permission(
+        'producao_cozinha.lancar',
+        v_batch.store
+      )
+    )
+  then
+    raise exception using
+      errcode = '42501',
+      message = 'Voce so pode corrigir seus lotes de hoje.';
+  end if;
+
+  update public.kitchen_production
+  set quantity = p_quantity,
+      corrected_at = v_now,
+      corrected_by = v_user_id
+  where id = v_batch.id;
+
+  return pg_catalog.jsonb_build_object(
+    'batch_id', v_batch.id,
+    'quantity', p_quantity,
+    'corrected_at', v_now
+  );
+end;
+$$;
+
+ALTER FUNCTION "public"."correct_kitchen_batch"("uuid", integer)
+  OWNER TO "postgres";
+
+COMMENT ON FUNCTION "public"."correct_kitchen_batch"("uuid", integer) IS
+  'Corrige a quantidade e preserva horário e autor originais, registrando quem corrigiu e quando.';
+
+-- 5. Cancelamento é lógico: a linha permanece para auditoria e deixa de entrar
+-- nos totais. Repetir o cancelamento é seguro.
+CREATE OR REPLACE FUNCTION "public"."cancel_kitchen_batch"(
+  "p_batch_id" "uuid"
+) RETURNS "jsonb"
+  LANGUAGE "plpgsql" SECURITY DEFINER
+  SET "search_path" TO ''
+  AS $$
+declare
+  v_user_id uuid := auth.uid();
+  v_profile_role text;
+  v_batch public.kitchen_production%rowtype;
+  v_now timestamptz := pg_catalog.now();
+begin
+  if v_user_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Entre com e-mail para cancelar o lote.';
+  end if;
+
+  select profile.role
+    into v_profile_role
+  from public.app_profiles as profile
+  where profile.user_id = v_user_id
+    and profile.active;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'Usuario sem perfil ativo.';
+  end if;
+
+  select *
+    into v_batch
+  from public.kitchen_production
+  where id = p_batch_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'Lote da cozinha nao encontrado.';
+  end if;
+
+  if v_profile_role is distinct from 'admin'
+    and (
+      v_batch.recorded_by <> v_user_id
+      or v_batch.record_date <>
+        (v_now at time zone 'America/Sao_Paulo')::date
+      or not private.current_user_has_permission(
+        'producao_cozinha.lancar',
+        v_batch.store
+      )
+    )
+  then
+    raise exception using
+      errcode = '42501',
+      message = 'Voce so pode cancelar seus lotes de hoje.';
+  end if;
+
+  if v_batch.cancelled_at is null then
+    update public.kitchen_production
+    set cancelled_at = v_now,
+        cancelled_by = v_user_id
+    where id = v_batch.id;
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'batch_id', v_batch.id,
+    'already_cancelled', v_batch.cancelled_at is not null,
+    'cancelled_at', coalesce(v_batch.cancelled_at, v_now)
+  );
+end;
+$$;
+
+ALTER FUNCTION "public"."cancel_kitchen_batch"("uuid")
+  OWNER TO "postgres";
+
+COMMENT ON FUNCTION "public"."cancel_kitchen_batch"("uuid") IS
+  'Cancela logicamente um lote e preserva a linha para auditoria.';
+
+-- 6. RLS e grants: o navegador só lê o que lhe cabe. Toda escrita passa pelas
+-- funções acima, que carimbam e validam o contexto real da sessão.
 ALTER TABLE "public"."kitchen_production" ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "public"."kitchen_production" FROM "anon";
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "public"."kitchen_production" TO "authenticated";
-GRANT ALL ON TABLE "public"."kitchen_production" TO "service_role";
+REVOKE ALL ON TABLE "public"."kitchen_production"
+  FROM PUBLIC, "anon", "authenticated";
+GRANT SELECT ON TABLE "public"."kitchen_production"
+  TO "authenticated";
+GRANT ALL ON TABLE "public"."kitchen_production"
+  TO "service_role";
 
-DROP POLICY IF EXISTS "kitchen_production_select_permitted" ON "public"."kitchen_production";
+DROP POLICY IF EXISTS "kitchen_production_select_permitted"
+  ON "public"."kitchen_production";
 CREATE POLICY "kitchen_production_select_permitted"
-  ON "public"."kitchen_production" FOR SELECT TO "authenticated"
-  USING (
-    (SELECT "private"."current_user_is_access_admin"())
-    OR (SELECT "private"."current_user_has_permission"('producao_cozinha.lancar', "kitchen_production"."store"))
-  );
-
-DROP POLICY IF EXISTS "kitchen_production_insert_permitted" ON "public"."kitchen_production";
-CREATE POLICY "kitchen_production_insert_permitted"
-  ON "public"."kitchen_production" FOR INSERT TO "authenticated"
-  WITH CHECK (
-    (SELECT "private"."current_user_is_access_admin"())
-    OR (
-      (SELECT "private"."current_user_has_permission"('producao_cozinha.lancar', "kitchen_production"."store"))
-      AND (SELECT "private"."kitchen_production_date_is_open"("kitchen_production"."record_date"))
-    )
-  );
-
-DROP POLICY IF EXISTS "kitchen_production_update_permitted" ON "public"."kitchen_production";
-CREATE POLICY "kitchen_production_update_permitted"
-  ON "public"."kitchen_production" FOR UPDATE TO "authenticated"
+  ON "public"."kitchen_production"
+  FOR SELECT TO "authenticated"
   USING (
     (SELECT "private"."current_user_is_access_admin"())
     OR (
-      (SELECT "private"."current_user_has_permission"('producao_cozinha.lancar', "kitchen_production"."store"))
-      AND (SELECT "private"."kitchen_production_date_is_open"("kitchen_production"."record_date"))
-    )
-  )
-  WITH CHECK (
-    (SELECT "private"."current_user_is_access_admin"())
-    OR (
-      (SELECT "private"."current_user_has_permission"('producao_cozinha.lancar', "kitchen_production"."store"))
-      AND (SELECT "private"."kitchen_production_date_is_open"("kitchen_production"."record_date"))
-    )
-  );
-
-DROP POLICY IF EXISTS "kitchen_production_delete_permitted" ON "public"."kitchen_production";
-CREATE POLICY "kitchen_production_delete_permitted"
-  ON "public"."kitchen_production" FOR DELETE TO "authenticated"
-  USING (
-    (SELECT "private"."current_user_is_access_admin"())
-    OR (
-      (SELECT "private"."current_user_has_permission"('producao_cozinha.lancar', "kitchen_production"."store"))
-      AND (SELECT "private"."kitchen_production_date_is_open"("kitchen_production"."record_date"))
+      "kitchen_production"."recorded_by" = (SELECT "auth"."uid"())
+      AND "kitchen_production"."record_date" =
+        (("pg_catalog"."now"() AT TIME ZONE 'America/Sao_Paulo')::date)
+      AND (
+        SELECT "private"."current_user_has_permission"(
+          'producao_cozinha.lancar',
+          "kitchen_production"."store"
+        )
+      )
     )
   );
 
--- 5. Marca os itens de cozinha do piloto. products.production_area ja existe e
--- hoje so e lido pela tela /produtos; marcar aqui faz a tela nova nascer com a
--- lista certa sem exigir cadastro manual. Nao sobrescreve area ja definida e nao
--- toca em is_fabricacao_propria (que alimenta a auditoria de CMV — fora do
--- escopo). Ambiente novo (CI) nao tem produtos: o UPDATE atinge zero linhas.
+REVOKE ALL ON FUNCTION "public"."record_kitchen_batches"("text", "jsonb")
+  FROM PUBLIC, "anon", "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."record_kitchen_batches"("text", "jsonb")
+  TO "authenticated", "service_role";
+
+REVOKE ALL ON FUNCTION "public"."correct_kitchen_batch"("uuid", integer)
+  FROM PUBLIC, "anon", "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."correct_kitchen_batch"("uuid", integer)
+  TO "authenticated", "service_role";
+
+REVOKE ALL ON FUNCTION "public"."cancel_kitchen_batch"("uuid")
+  FROM PUBLIC, "anon", "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."cancel_kitchen_batch"("uuid")
+  TO "authenticated", "service_role";
+
+-- 7. Itens do piloto. Ambiente novo de CI não tem produtos, então o UPDATE é
+-- naturalmente inofensivo.
 UPDATE "public"."products"
    SET "production_area" = 'cozinha'
  WHERE "production_area" IS NULL

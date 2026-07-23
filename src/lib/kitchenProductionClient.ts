@@ -5,10 +5,10 @@ import { supabase } from '@/lib/supabase'
 import {
   KITCHEN_PRODUCTION_AREA,
   KITCHEN_PRODUCTION_PERMISSION,
+  type KitchenBatchRequest,
   type KitchenEntry,
   type KitchenItem,
   type KitchenPermission,
-  type KitchenSavePlan,
   type KitchenStore,
 } from '@/lib/kitchenProduction'
 
@@ -31,9 +31,21 @@ export async function loadKitchenEntries(
 ): Promise<KitchenEntry[]> {
   const { data, error } = await supabase
     .from('kitchen_production')
-    .select('id,product_id,quantity,recorded_by_name,updated_at')
+    .select(`
+      id,
+      product_id,
+      quantity,
+      recorded_by,
+      recorded_by_name,
+      produced_at,
+      corrected_at,
+      corrected_by,
+      cancelled_at,
+      cancelled_by
+    `)
     .eq('store', store)
     .eq('record_date', recordDate)
+    .order('produced_at', { ascending: false })
 
   if (error) throw error
   return (data ?? []) as KitchenEntry[]
@@ -49,19 +61,28 @@ export async function loadKitchenPermissions(): Promise<KitchenPermission[]> {
   return (data ?? []) as KitchenPermission[]
 }
 
-export async function applyKitchenSavePlan(plan: KitchenSavePlan): Promise<void> {
-  if (plan.upserts.length > 0) {
-    const { error } = await supabase
-      .from('kitchen_production')
-      .upsert(plan.upserts, { onConflict: 'store,product_id,record_date' })
-    if (error) throw error
-  }
+export async function recordKitchenBatches(
+  store: KitchenStore,
+  batches: readonly KitchenBatchRequest[],
+): Promise<void> {
+  const { error } = await supabase.rpc('record_kitchen_batches', {
+    p_store: store,
+    p_batches: batches,
+  })
+  if (error) throw error
+}
 
-  if (plan.deleteIds.length > 0) {
-    const { error } = await supabase
-      .from('kitchen_production')
-      .delete()
-      .in('id', plan.deleteIds)
-    if (error) throw error
-  }
+export async function correctKitchenBatch(batchId: string, quantity: number): Promise<void> {
+  const { error } = await supabase.rpc('correct_kitchen_batch', {
+    p_batch_id: batchId,
+    p_quantity: quantity,
+  })
+  if (error) throw error
+}
+
+export async function cancelKitchenBatch(batchId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_kitchen_batch', {
+    p_batch_id: batchId,
+  })
+  if (error) throw error
 }

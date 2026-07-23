@@ -7,15 +7,14 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDate, formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   KITCHEN_MAX_QUANTITY,
-  buildKitchenSavePlan,
+  buildKitchenBatchRequests,
   describeKitchenError,
   groupKitchenItems,
-  isEmptyKitchenSavePlan,
-  isKitchenDateOpen,
+  isEmptyKitchenBatchRequest,
   kitchenStoresForUser,
+  kitchenTotalsByProduct,
   normalizeKitchenStore,
   sanitizeKitchenQuantity,
-  shiftDateKey,
   totalKitchenQuantity,
   type KitchenEntry,
   type KitchenItem,
@@ -23,10 +22,10 @@ import {
   type KitchenStore,
 } from '@/lib/kitchenProduction'
 import {
-  applyKitchenSavePlan,
   loadKitchenEntries,
   loadKitchenItems,
   loadKitchenPermissions,
+  recordKitchenBatches,
 } from '@/lib/kitchenProductionClient'
 
 const STORE_LABEL: Record<KitchenStore, string> = {
@@ -55,13 +54,14 @@ export default function ProducaoCozinhaPage() {
     [user, permissions, isAdmin],
   )
   const today = todayKey()
-  const dateIsOpen = isAdmin || isKitchenDateOpen(date, today)
-  const total = totalKitchenQuantity(quantities)
+  const dateIsOpen = date === today
+  const batchTotal = totalKitchenQuantity(quantities)
+  const dayTotal = Object.values(kitchenTotalsByProduct(entries))
+    .reduce((sum, quantity) => sum + quantity, 0)
   const groups = useMemo(() => groupKitchenItems(items), [items])
   const lastEntry = useMemo(
     () => entries.reduce<KitchenEntry | null>((latest, entry) => {
-      if (!entry.updated_at) return latest
-      return !latest?.updated_at || entry.updated_at > latest.updated_at ? entry : latest
+      return !latest || entry.produced_at > latest.produced_at ? entry : latest
     }, null),
     [entries],
   )
@@ -102,7 +102,6 @@ export default function ProducaoCozinhaPage() {
       ])
       const saved: Record<string, number> = {}
       kitchenItems.forEach(item => { saved[item.id] = 0 })
-      dayEntries.forEach(entry => { saved[entry.product_id] = sanitizeKitchenQuantity(entry.quantity) })
       setItems(kitchenItems)
       setEntries(dayEntries)
       setQuantities(saved)
@@ -126,26 +125,21 @@ export default function ProducaoCozinhaPage() {
   }
 
   const handleSave = async () => {
-    if (!store || !user) return
-    const plan = buildKitchenSavePlan({
-      store,
-      recordDate: date,
+    if (!store) return
+    const batches = buildKitchenBatchRequests({
       quantities,
-      entries,
-      recordedBy: user.id,
-      recordedByName: user.displayName,
     })
 
-    if (isEmptyKitchenSavePlan(plan)) {
-      showToastPS('Nada mudou desde o último salvamento.')
+    if (isEmptyKitchenBatchRequest(batches)) {
+      showToastPS('Informe pelo menos uma quantidade para salvar.')
       return
     }
 
     setSaving(true)
     try {
-      await applyKitchenSavePlan(plan)
+      await recordKitchenBatches(store, batches)
       await loadDay(store, date)
-      showToastPS('Produção salva!')
+      showToastPS('Novo lote salvo!')
     } catch (error) {
       showToastPS(describeKitchenError(error))
     } finally {
@@ -199,7 +193,7 @@ export default function ProducaoCozinhaPage() {
     <>
       <h1 className="ps-page-title"><ChefHat size={23} /> Cozinha</h1>
       <p className="ps-page-lead">
-        Informe quanto saiu de cada item hoje. Deixe em zero o que não foi produzido.
+        Informe somente o que acabou de ficar pronto. Cada salvamento cria um novo lote.
       </p>
 
       <section className="ps-filters" style={{ alignItems: 'stretch' }}>
@@ -216,17 +210,10 @@ export default function ProducaoCozinhaPage() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
-                className={`ps-btn${date === today ? ' primary' : ''}`}
+                className="ps-btn primary"
                 onClick={() => setDate(today)}
               >
                 Hoje
-              </button>
-              <button
-                type="button"
-                className={`ps-btn${date !== today ? ' primary' : ''}`}
-                onClick={() => setDate(shiftDateKey(today, -1))}
-              >
-                Ontem
               </button>
             </div>
           )}
@@ -249,8 +236,8 @@ export default function ProducaoCozinhaPage() {
 
       <p className="ps-page-lead" style={{ marginTop: 4 }}>
         {STORE_LABEL[store]} · {formatDateBR(date)}
-        {lastEntry?.updated_at && (
-          <> · salvo em {formatDate(lastEntry.updated_at)}
+        {lastEntry?.produced_at && (
+          <> · último lote às {formatDate(lastEntry.produced_at)}
             {lastEntry.recorded_by_name ? ` por ${lastEntry.recorded_by_name}` : ''}</>
         )}
       </p>
@@ -261,9 +248,9 @@ export default function ProducaoCozinhaPage() {
 
       {!dateIsOpen && (
         <div className="ps-card" style={{ borderColor: '#E6B5AC' }}>
-          <b>Dia fechado para lançamento</b>
+          <b>Consulta de dia anterior</b>
           <p style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            Você pode lançar hoje e ontem. Para corrigir um dia mais antigo, peça ao administrador.
+            Novos lotes recebem automaticamente o horário de agora. Volte para hoje para lançar.
           </p>
         </div>
       )}
@@ -336,8 +323,14 @@ export default function ProducaoCozinhaPage() {
       {!loading && items.length > 0 && (
         <div className="ps-card" style={{ marginTop: 18, gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Total do dia</span>
-            <b style={{ fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>{total}</b>
+            <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+              {date === today ? 'Já produzido hoje' : 'Produzido neste dia'}
+            </span>
+            <b style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{dayTotal}</b>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Este novo lote</span>
+            <b style={{ fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>{batchTotal}</b>
           </div>
           <button
             type="button"
