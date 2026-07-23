@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   assertSafeSupabaseEnvironment,
   assertValidSupabasePublicKey,
@@ -6,6 +6,11 @@ import {
 
 const PRODUCTION_URL = 'https://gohluceldchoitihrimw.supabase.co'
 const PREVIEW_URL = 'https://tuqzhjsbodoycjbmwuqm.supabase.co'
+const PREVIEW_KEY = 'sb_publishable_MRaAwUY1Wq2eWCHGIgljHQ_BM26DSWc'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('assertSafeSupabaseEnvironment', () => {
   it('impede que preview da Vercel converse com o banco de producao', () => {
@@ -53,26 +58,23 @@ describe('assertSafeSupabaseEnvironment', () => {
 })
 
 describe('assertValidSupabasePublicKey', () => {
-  it('interrompe o build quando o Supabase recusa a chave publica', async () => {
-    const fetchImpl = async () => new Response(
-      JSON.stringify({ message: 'Invalid API key' }),
-      { status: 401 },
-    )
-
+  it('interrompe o build quando a chave publica nao pertence ao projeto', async () => {
     await expect(assertValidSupabasePublicKey({
       supabaseUrl: PRODUCTION_URL,
       supabaseKey: 'chave-publica-invalida',
-      fetchImpl,
-    })).rejects.toThrow(/chave publica.*recusada/i)
+    })).rejects.toThrow(/chave publica.*nao pertence/i)
   })
 
-  it('permite o build quando o Supabase aceita a chave publica', async () => {
-    const fetchImpl = async () => new Response('{}', { status: 200 })
+  it('valida a chave conhecida sem depender de acesso à rede', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('rede indisponivel')
+    })
+    vi.stubGlobal('fetch', fetchSpy)
 
     await expect(assertValidSupabasePublicKey({
       supabaseUrl: PREVIEW_URL,
-      supabaseKey: 'chave-publica-valida',
-      fetchImpl,
+      supabaseKey: PREVIEW_KEY,
     })).resolves.toBeUndefined()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
