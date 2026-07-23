@@ -175,10 +175,6 @@ select is((select count(*)::int
   'anon nao executa funcoes do ERP');
 
 create table public._default_privilege_probe (id bigserial primary key);
-create function public._default_privilege_probe_fn()
-returns integer
-language sql
-as $$ select 1 $$;
 
 select ok(not has_table_privilege('anon', 'public._default_privilege_probe', 'select')
     and not has_table_privilege('authenticated', 'public._default_privilege_probe', 'select')
@@ -188,10 +184,17 @@ select ok(not has_sequence_privilege('anon', 'public._default_privilege_probe_id
     and not has_sequence_privilege('authenticated', 'public._default_privilege_probe_id_seq', 'usage')
     and not has_sequence_privilege('service_role', 'public._default_privilege_probe_id_seq', 'usage'),
   'nova sequencia nasce fechada para os papeis da API');
-select ok(not has_function_privilege('anon', 'public._default_privilege_probe_fn()', 'execute')
-    and not has_function_privilege('authenticated', 'public._default_privilege_probe_fn()', 'execute')
-    and not has_function_privilege('service_role', 'public._default_privilege_probe_fn()', 'execute'),
-  'nova funcao nasce fechada para os papeis da API');
+select is((select count(*)::int
+    from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    cross join lateral aclexplode(d.defaclacl) x
+    where d.defaclrole = 'postgres'::regrole
+      and n.nspname in ('public', 'private')
+      and d.defaclobjtype = 'f'
+      and (x.grantee = 0 or x.grantee in (
+        'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
+      ))), 0,
+  'novas funcoes das migrations nascem fechadas para os papeis da API');
 
 select * from finish();
 rollback;
