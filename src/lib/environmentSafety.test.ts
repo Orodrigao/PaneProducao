@@ -65,6 +65,13 @@ describe('assertValidSupabasePublicKey', () => {
     })).rejects.toThrow(/chave publica.*nao pertence/i)
   })
 
+  it('recusa caractere invisivel no fim da chave publica', async () => {
+    await expect(assertValidSupabasePublicKey({
+      supabaseUrl: PREVIEW_URL,
+      supabaseKey: `${PREVIEW_KEY}\r`,
+    })).rejects.toThrow(/chave publica.*nao pertence/i)
+  })
+
   it('valida a chave conhecida sem depender de acesso à rede', async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('rede indisponivel')
