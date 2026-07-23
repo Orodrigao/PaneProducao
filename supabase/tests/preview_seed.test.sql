@@ -14,24 +14,19 @@ select is(
 
 select is(
   (select count(*)::int from public.products
-    where id in (
-      '10000000-0000-4000-8000-000000000001',
-      '10000000-0000-4000-8000-000000000002',
-      '10000000-0000-4000-8000-000000000003'
-    ) and name like '[TESTE]%'),
-  3,
-  'seed usa somente nomes de produtos explicitamente ficticios'
+    where id::text like '10000000-0000-4000-8000-0000000000%'
+      and name like '[TESTE]%'),
+  20,
+  'seed cria o catalogo ficticio completo da Cozinha'
 );
 
 select is(
   (select count(*)::int from public.products
-    where id in (
-      '10000000-0000-4000-8000-000000000001',
-      '10000000-0000-4000-8000-000000000002',
-      '10000000-0000-4000-8000-000000000003'
-    ) and production_area = 'cozinha'),
-  3,
-  'seed deixa produtos da Cozinha prontos para o primeiro piloto'
+    where id::text like '10000000-0000-4000-8000-0000000000%'
+      and active
+      and production_area = 'cozinha'),
+  20,
+  'seed deixa todo o catalogo ficticio ativo na Cozinha'
 );
 
 select is(

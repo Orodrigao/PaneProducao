@@ -1,6 +1,7 @@
 // src/lib/auth.ts — autenticacao por Supabase Auth
 
 import { withTimeout } from '@/lib/supabaseRest'
+import { KITCHEN_PRODUCTION_PERMISSION, KITCHEN_PRODUCTION_ROUTE } from '@/lib/kitchenProduction'
 
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
 export interface AppUser {
@@ -20,7 +21,7 @@ const LEGACY_AUTH_STORAGE_KEYS = ['pane_users_cache', 'pane_user_id']
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/fechamento-caixa', '/romaneio', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes'],
+  admin:      ['/', '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes'],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
@@ -57,9 +58,21 @@ export function resolveAllowedRoutes(
     && (permission.scope === '*' || permission.scope === store),
   )
 
-  if (!canAccessPjOrders) return baseRoutes.filter(route => route !== '/pedidos-pj')
-  if (baseRoutes.includes('/pedidos-pj')) return baseRoutes
-  return [...baseRoutes, '/pedidos-pj']
+  const routes = canAccessPjOrders
+    ? (baseRoutes.includes('/pedidos-pj') ? baseRoutes : [...baseRoutes, '/pedidos-pj'])
+    : baseRoutes.filter(route => route !== '/pedidos-pj')
+
+  // Produção da Cozinha: qualquer escopo concedido abre a rota; a loja de cada
+  // lançamento é decidida na tela e travada pelas policies. Exigir escopo `*`
+  // aqui repetiria o defeito conhecido do painel do Romaneio, em que a
+  // concessão por loja não abria a tela.
+  const canLaunchKitchenProduction = permissions.some(permission =>
+    permission.permission_key === KITCHEN_PRODUCTION_PERMISSION,
+  )
+
+  if (!canLaunchKitchenProduction) return routes.filter(route => route !== KITCHEN_PRODUCTION_ROUTE)
+  if (routes.includes(KITCHEN_PRODUCTION_ROUTE)) return routes
+  return [...routes, KITCHEN_PRODUCTION_ROUTE]
 }
 
 export interface AuthActionResult {
