@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(66);
+select plan(67);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -201,6 +201,10 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'private.kitchen_production_date_is_open(date)', 'execute'),
   'janela de data negada a anon');
+select ok(not has_function_privilege('authenticated',
+    'public.set_kitchen_production_updated_at()', 'execute'),
+  'gatilho interno da cozinha nao e executavel por authenticated');
+
 -- Privilegios deterministicos entre producao e bancos reconstruidos
 select is((select count(*)::int
     from information_schema.role_table_grants

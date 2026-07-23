@@ -67,6 +67,11 @@ $$;
 
 ALTER FUNCTION "public"."set_kitchen_production_updated_at"() OWNER TO "postgres";
 
+REVOKE ALL ON FUNCTION "public"."set_kitchen_production_updated_at"()
+  FROM PUBLIC, "anon", "authenticated";
+GRANT ALL ON FUNCTION "public"."set_kitchen_production_updated_at"()
+  TO "service_role";
+
 DROP TRIGGER IF EXISTS "kitchen_production_set_updated_at" ON "public"."kitchen_production";
 CREATE TRIGGER "kitchen_production_set_updated_at"
   BEFORE UPDATE ON "public"."kitchen_production"
