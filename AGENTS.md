@@ -206,6 +206,11 @@ Preview` foi pausado antes de investigar a funcionalidade.
 
 Nenhuma funcionalidade nova começa pela implementação.
 
+Para conduzir Descoberta e Plano, siga o roteiro guiado em
+`.claude/skills/nova-funcionalidade/SKILL.md` — ele operacionaliza esta
+seção (entrevista passo a passo, plano em fases e briefing autocontido
+para o executor) e vale para qualquer agente, Claude ou Codex.
+
 ### 1. Descoberta
 
 - Entrevistar Rodrigo: problema, usuários, exceções, frequência, dados e
@@ -336,6 +341,10 @@ depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
 - **`docs/examples/` e `test/fixtures/`:** dados de exemplo, sempre
   anonimizados.
 - **`supabase/`:** migrations e testes pgTAP, nos formatos já definidos.
+- **`.claude/skills/`:** skills compartilhadas do harness de IA, uma por
+  pasta com `SKILL.md`. É o único conteúdo de `.claude/` versionado; as
+  configurações locais por máquina (`settings.local.json`, `launch.json`)
+  seguem ignoradas. Skill nunca contém segredo.
 - **Proibido em qualquer lugar:** markdown dentro de `src/`, arquivos de
   rascunho ou anotação (`NOTES.md`, `TODO.md`, `RESUMO.md`, `PLANO_V2.md`),
   relatório de tarefa como arquivo novo (o PR é o relatório) e qualquer
