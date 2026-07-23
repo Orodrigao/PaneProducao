@@ -697,6 +697,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-leftover-alert div,.ps-leftover-overdue div{ display:flex; flex-direction:column; gap:2px; flex:1; }
 .ps-leftover-alert span,.ps-leftover-overdue span{ font-size:12px; line-height:1.35; }
 .ps-leftover-overdue{ border-color:var(--honey-line); background:var(--honey-tint); color:var(--crust); }
+.ps-leftover-alert.ok{ border-color:var(--sage); background:#EEF2E7; color:#586543; }
 .ps-leftover-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .ps-leftover-card-head>div:first-child{ min-width:0; }
 .ps-leftover-card-head span{ display:block; margin-top:3px; color:var(--ink-faint); font-size:12px; font-weight:600; }
