@@ -107,6 +107,8 @@ e é aplicada pela Action. O repositório ControlePizza não aplica schema
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes, com contexto por loja;
+- produção da Cozinha registrada em lotes conforme a demanda, com histórico
+  diário por produto e correção pela própria equipe no dia atual e anterior;
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
