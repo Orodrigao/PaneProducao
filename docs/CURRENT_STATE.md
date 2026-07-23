@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-23
 
-**Base observada:** `origin/main` no commit `40bc227`
+**Base observada:** `origin/main` até a incorporação da PR `#166`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -13,8 +13,7 @@ O projeto está em estabilização e conclusão da Sprint 0 de segurança.
 
 Funcionalidades novas que adicionem dados financeiros devem esperar:
 
-1. baseline de testes e navegador no `main`;
-2. conclusão da auditoria e do hardening Auth/RLS.
+1. conclusão da auditoria e do hardening Auth/RLS.
 
 ## Autenticação
 
@@ -29,6 +28,11 @@ Estado conhecido:
   a gestão de permissões granulares tem tela administrativa própria no app;
 - `app_users` e a coluna histórica de PIN permanecem no banco apenas para
   rollback administrativo controlado, sem exposição pela Data API.
+- o CI executa uma baseline de navegador no Google Chrome contra contas
+  fictícias do Banco Preview: pessoa sem sessão, administrador em Sobras com
+  JC/JA, Cozinha JC permitida e Vendas JA bloqueada da Produção da Cozinha.
+  A senha fica somente no secret do GitHub; screenshots, vídeos e traces estão
+  desligados.
 
 ## Permissões — três níveis que precisam concordar
 
@@ -157,21 +161,20 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 
 ## Bloqueios atuais
 
-1. Muitos branches e worktrees antigos aumentam o risco de partir de base
-   desatualizada.
-2. Ausência de baseline recente e único no navegador.
-3. Policies anônimas permissivas remanescentes em áreas operacionais.
-4. RLS não pode ser declarado concluído sem nova auditoria live.
-5. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
+1. A baseline de navegador cobre o núcleo de Auth e acesso, mas a matriz dos
+   módulos operacionais ainda precisa crescer progressivamente conforme cada
+   fluxo for estabilizado.
+2. Policies anônimas permissivas remanescentes em áreas operacionais.
+3. RLS não pode ser declarado concluído sem nova auditoria live.
+4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
 
 ## Próximas fases aprovadas
 
-1. Organizar branches/worktrees sem perder trabalho.
-2. Executar baseline técnico e smoke tests no navegador.
-3. Priorizar regressões reproduzíveis.
-4. Aplicar o hardening Auth/RLS em lotes pequenos nas próximas tabelas
+1. Ampliar a matriz de navegador somente nos módulos tocados por cada lote.
+2. Priorizar regressões reproduzíveis.
+3. Aplicar o hardening Auth/RLS em lotes pequenos nas próximas tabelas
    operacionais, com validação por perfil e loja antes de cada aplicação em
    produção.
 
