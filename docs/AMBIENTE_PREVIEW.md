@@ -95,6 +95,27 @@ preview inteiro apresentar erro:
 O workflow falha com essa orientação quando detecta que o projeto não está
 saudável.
 
+## Smoke tests no navegador
+
+O CI possui o controle `Navegador (login, perfis e lojas)`. Ele inicia a
+versão da própria branch localmente, usando `.env.example`, e executa no Google
+Chrome uma baseline sem gravação operacional:
+
+- uma pessoa sem sessão é enviada ao login;
+- o administrador abre Sobras e encontra JC e JA;
+- Cozinha JC entra na Produção da Cozinha;
+- Vendas JA é bloqueada da Produção da Cozinha.
+
+O comando local é `npm run test:browser`. Sem
+`SUPABASE_TEST_USER_PASSWORD`, somente o cenário público roda e os três logins
+ficam explicitamente marcados como ignorados. No GitHub, a ausência do secret
+falha o job antes do teste — nunca transforma cenário não executado em
+aprovação.
+
+A configuração usa somente `http://127.0.0.1` para o site da branch. A trava
+existente no build valida que o Supabase é o projeto Preview. Screenshots,
+vídeos, traces e relatórios com sessão não são gerados.
+
 ## Reconstrução manual
 
 Em GitHub Actions, execute `Banco Preview` por `workflow_dispatch` e informe
