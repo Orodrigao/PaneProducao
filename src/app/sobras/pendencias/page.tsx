@@ -1,13 +1,16 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Check,
   Clock3,
   LoaderCircle,
+  Lock,
   MapPin,
   PackageOpen,
   Snowflake,
@@ -19,7 +22,7 @@ import {
   type LeftoverDestination,
   type ManagedStore,
 } from '@/lib/breadLeftovers'
-import { isValidClosingDate } from '@/lib/breadLeftoverClosing'
+import { blocksClosing, closingResumePath, isValidClosingDate } from '@/lib/breadLeftoverClosing'
 import { supabase } from '@/lib/supabase'
 import { formatDateBR, showToast, todayKey } from '@/lib/utils'
 
@@ -95,9 +98,13 @@ function formatQuantity(value: number): string {
 }
 
 export default function BreadLeftoverPendingPage() {
+  const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
   const [store, setStore] = useState<ManagedStore>('jc')
   const [targetDate, setTargetDate] = useState(todayKey())
+  // Data do fechamento que o banco recusou. Só existe quando a pessoa chegou
+  // aqui empurrada pelo bloqueio, e é ela que define quais lotes travam.
+  const [blockedClosingDate, setBlockedClosingDate] = useState('')
   const [breads, setBreads] = useState<Record<string, BreadRow>>({})
   const [leftovers, setLeftovers] = useState<LeftoverRow[]>([])
   const [plans, setPlans] = useState<ReusePlanRow[]>([])
@@ -127,6 +134,7 @@ export default function BreadLeftoverPendingPage() {
       }
       if (requestedDate && isValidClosingDate(requestedDate, todayKey())) {
         setTargetDate(requestedDate)
+        if (params.get('blocked') === '1') setBlockedClosingDate(requestedDate)
       }
     })
     return () => { active = false }
@@ -234,6 +242,12 @@ export default function BreadLeftoverPendingPage() {
   const awaitingOven = useMemo(
     () => leftovers.filter(leftover => leftover.reconciliation_status === 'awaiting_oven'),
     [leftovers],
+  )
+  const closingBlockers = useMemo(
+    () => (blockedClosingDate
+      ? leftovers.filter(leftover => blocksClosing(leftover, blockedClosingDate))
+      : []),
+    [blockedClosingDate, leftovers],
   )
 
   async function confirmReuse(plan: ReusePlanRow) {
@@ -386,6 +400,44 @@ export default function BreadLeftoverPendingPage() {
                 </div>
               </div>
 
+              {blockedClosingDate && (
+                closingBlockers.length > 0 ? (
+                  <div className="ps-leftover-overdue" role="alert">
+                    <Lock size={19} />
+                    <div>
+                      <b>
+                        O fechamento de {formatDateBR(blockedClosingDate)} está preso
+                        {closingBlockers.length === 1
+                          ? ' por 1 lote'
+                          : ` por ${closingBlockers.length} lotes`}
+                      </b>
+                      <span>
+                        Sobra de dia anterior não pode ficar sem destino. Resolva
+                        {closingBlockers.length === 1 ? ' o lote marcado' : ' os lotes marcados'} abaixo
+                        e volte para salvar a contagem — ela continua guardada.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ps-leftover-alert ok">
+                    <Check size={19} />
+                    <div>
+                      <b>Pendências resolvidas</b>
+                      <span>O fechamento de {formatDateBR(blockedClosingDate)} já pode ser salvo.</span>
+                      <div style={{marginTop:10}}>
+                        <button
+                          type="button"
+                          className="ps-btn success sm"
+                          onClick={() => router.push(closingResumePath(store, blockedClosingDate))}
+                        >
+                          Voltar e concluir o fechamento <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
+
               {overdueCount > 0 && (
                 <div className="ps-leftover-overdue">
                   <Clock3 size={19} />
@@ -483,6 +535,11 @@ export default function BreadLeftoverPendingPage() {
                             <div className="ps-leftover-balance"><span>Sem destino</span><b>{formatQuantity(leftover.pending_quantity)}</b><small>{bread?.unit ?? 'un'}</small></div>
                           </div>
 
+                          {blockedClosingDate && blocksClosing(leftover, blockedClosingDate) && (
+                            <div className="ps-leftover-age">
+                              <Lock size={15} /> Trava o fechamento de {formatDateBR(blockedClosingDate)}
+                            </div>
+                          )}
                           {age >= 1 && <div className="ps-leftover-age"><Clock3 size={15} /> Pendente desde ontem</div>}
                           {leftover.reconciliation_status === 'awaiting_oven' && (
                             <div className="ps-leftover-age"><Clock3 size={15} /> Lote provisório · aguardando Forno</div>

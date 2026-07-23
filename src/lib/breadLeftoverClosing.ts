@@ -22,8 +22,28 @@ export function closingBreadIds(
   return ids
 }
 
-export function leftoverPendingPath(store: 'jc' | 'ja', recordDate: string): string {
-  return `/sobras/pendencias?store=${store}&date=${encodeURIComponent(recordDate)}`
+// `blocked` marca a ida à Central causada pela recusa do fechamento. A Central
+// usa isso para dizer qual fechamento está preso e devolver a pessoa para ele.
+export function leftoverPendingPath(
+  store: 'jc' | 'ja',
+  recordDate: string,
+  options: { blocked?: boolean } = {},
+): string {
+  const path = `/sobras/pendencias?store=${store}&date=${encodeURIComponent(recordDate)}`
+  return options.blocked ? `${path}&blocked=1` : path
+}
+
+export function closingResumePath(store: 'jc' | 'ja', recordDate: string): string {
+  return `/sobras?resume=${store}&date=${encodeURIComponent(recordDate)}`
+}
+
+// Só trava o fechamento o lote sem destino de um dia ANTERIOR ao que se quer
+// fechar — a mesma regra do banco em register_bread_leftovers.
+export function blocksClosing(
+  leftover: { pending_quantity: number; record_date: string },
+  closingDate: string,
+): boolean {
+  return leftover.pending_quantity > 0 && leftover.record_date < closingDate
 }
 
 export function isPendingLeftoversError(message: string): boolean {

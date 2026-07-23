@@ -12,6 +12,14 @@ import {
   isValidClosingDate,
   leftoverPendingPath,
 } from '@/lib/breadLeftoverClosing'
+import {
+  applyLeftoverDraft,
+  browserDraftStorage,
+  buildLeftoverDraft,
+  clearLeftoverDraft,
+  readLeftoverDraft,
+  writeLeftoverDraft,
+} from '@/lib/breadLeftoverDraft'
 
 interface Product { id: string; name: string; category: string; unit: string | null; kind: string | null; is_shelf: boolean }
 interface Bread   { id: string; name: string; unit: string | null; is_shelf: boolean }
@@ -29,6 +37,12 @@ function yesterdayKey(): string {
   const d = new Date(todayKey() + 'T00:00:00')
   d.setDate(d.getDate() - 1)
   return d.toISOString().slice(0, 10)
+}
+
+function draftTimeLabel(iso: string): string {
+  const moment = new Date(iso)
+  if (Number.isNaN(moment.getTime())) return 'há pouco'
+  return `às ${moment.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 export default function SobrasPage() {
@@ -57,6 +71,11 @@ export default function SobrasPage() {
   // Filtro de categoria do form. null = "Todas". '__breads__' = só o bloco de pães.
   // Senão, nome exato da category de products. Resetado a cada troca de modo.
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  // Fechamento recusado pelo banco por sobra pendente de dia anterior. Fica na
+  // tela até a pessoa resolver: a contagem digitada continua aqui.
+  const [closingBlocked, setClosingBlocked] = useState(false)
+  // Horário do rascunho recuperado, quando a contagem voltou do bloqueio.
+  const [draftRecoveredAt, setDraftRecoveredAt] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -65,6 +84,18 @@ export default function SobrasPage() {
       if (!u) { router.replace('/login'); return }
       setUser(u)
       if (u.store && (STORES as readonly string[]).includes(u.store)) setSelectedStore(u.store)
+
+      // Volta da Central depois de resolver o que travava o fechamento.
+      const params = new URLSearchParams(window.location.search)
+      const resumeStore = params.get('resume')
+      const resumeDate = params.get('date')
+      if (resumeStore !== 'jc' && resumeStore !== 'ja') return
+
+      const ownStoreOnly = u.role === 'vendas' && !!u.store
+      if (!ownStoreOnly) setSelectedStore(resumeStore)
+      if (resumeDate && isValidClosingDate(resumeDate, todayKey())) setClosingDate(resumeDate)
+      setPhysicalLocation('balcao_fechamento')
+      setMode('sobra')
     })
     return () => { active = false }
   }, [router])
@@ -115,7 +146,14 @@ export default function SobrasPage() {
       for (const row of savedRows) {
         if (row.product_id) vals['bread_'+row.product_id] = Number(row.quantity)
       }
-      setQtys(vals)
+      // Contagem que o banco recusou volta por cima do que está salvo, para
+      // ninguém precisar recontar o balcão.
+      const draft = readLeftoverDraft(browserDraftStorage())
+      const recovered = applyLeftoverDraft(vals, draft, selectedStore, closingDate)
+      setQtys(recovered.quantities)
+      setDraftRecoveredAt(recovered.applied && draft ? draft.savedAt : null)
+      // Trocar de loja ou de data é outro fechamento: o aviso do anterior sai.
+      setClosingBlocked(false)
       setPrevCounts({})
       setTodayKeysWithData(new Set())
     } else if (mode === 'descarte') {
@@ -199,6 +237,12 @@ export default function SobrasPage() {
     setOvenBreadIds(new Set())
     setPhysicalLocation('balcao_fechamento')
     setMode('sobra')
+  }
+
+  function discardDraft() {
+    clearLeftoverDraft(browserDraftStorage())
+    setDraftRecoveredAt(null)
+    void loadData()
   }
 
   function includeClosingBread(bread: Bread) {
@@ -294,6 +338,10 @@ export default function SobrasPage() {
         if (error) throw error
         const result = data as unknown as RegisterLeftoversResult | null
         const awaiting = Number(result?.awaiting_oven_items ?? 0)
+        // Entrou no banco: o rascunho perdeu a razão de existir.
+        clearLeftoverDraft(browserDraftStorage())
+        setClosingBlocked(false)
+        setDraftRecoveredAt(null)
         showToast(awaiting > 0
           ? `Sobras salvas. ${awaiting} ${awaiting === 1 ? 'pão aguarda' : 'pães aguardam'} o Forno.`
           : `Sobras ${selectedStore.toUpperCase()} salvas e conciliadas.`)
@@ -398,8 +446,14 @@ export default function SobrasPage() {
         && (selectedStore === 'jc' || selectedStore === 'ja')
         && isPendingLeftoversError(message)
       ) {
-        showToast('Resolva primeiro as sobras pendentes. Abrindo a Central de Pendências.')
-        router.push(leftoverPendingPath(selectedStore, date))
+        // O banco recusou por sobra de ontem sem destino. Guardar a contagem e
+        // avisar na própria tela: sair daqui na hora fazia a pessoa perder tudo
+        // o que digitou e nunca ler o motivo.
+        writeLeftoverDraft(
+          browserDraftStorage(),
+          buildLeftoverDraft(selectedStore, date, qtys, new Date().toISOString()),
+        )
+        setClosingBlocked(true)
         return
       }
       showToast('Erro: '+message)
@@ -566,6 +620,53 @@ export default function SobrasPage() {
                   </select>
                 </div>
               </div>
+
+              {closingBlocked && (
+                <div className="ps-leftover-overdue" style={{marginBottom:12}} role="alert">
+                  <AlertTriangle size={20}/>
+                  <div>
+                    <b>O fechamento não foi salvo</b>
+                    <span>
+                      A {STORE_LABEL[selectedStore]?.split(' — ')[1] ?? selectedStore.toUpperCase()} ainda
+                      tem sobra de um dia anterior sem destino, e o sistema não deixa fechar hoje com
+                      isso em aberto. <b>Sua contagem está guardada</b> — resolva as pendências e volte
+                      para salvar.
+                    </span>
+                    <div style={{display:'flex', gap:8, marginTop:10, flexWrap:'wrap'}}>
+                      <button
+                        type="button"
+                        className="ps-btn primary sm"
+                        onClick={() => router.push(
+                          leftoverPendingPath(selectedStore as 'jc' | 'ja', closingDate, { blocked: true }),
+                        )}
+                      >
+                        Resolver pendências agora
+                      </button>
+                      <button type="button" className="ps-btn ghost sm" onClick={() => setClosingBlocked(false)}>
+                        Fico aqui
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {draftRecoveredAt && (
+                <div className="ps-leftover-alert" style={{marginBottom:12}}>
+                  <ClipboardCheck size={20}/>
+                  <div>
+                    <b>Recuperamos a sua contagem</b>
+                    <span>
+                      Números digitados {draftTimeLabel(draftRecoveredAt)} e ainda não salvos. Confira e
+                      salve para concluir o fechamento.
+                    </span>
+                    <div style={{marginTop:10}}>
+                      <button type="button" className="ps-btn ghost sm" onClick={discardDraft}>
+                        Descartar e contar de novo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {breads.some(bread => !ovenBreadIds.has(bread.id)) && (
                 <div className="ps-leftover-alert" style={{marginBottom:12}}>

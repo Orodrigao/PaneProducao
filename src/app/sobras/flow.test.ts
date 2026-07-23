@@ -19,4 +19,21 @@ describe('trajetória do fechamento de sobras', () => {
     expect(pendingSource).toContain('A contagem e os destinos estão preservados')
   })
 
+  // 2026-07-22: o fechamento da JC foi recusado por uma sobra de ontem sem
+  // destino; a tela trocou na mesma hora e levou junto a contagem já digitada,
+  // sem tempo de ler o motivo. A pessoa achou que tinha salvo.
+  it('recusa por pendência guarda a contagem e explica sem trocar de tela', () => {
+    expect(registerSource).toContain('writeLeftoverDraft(')
+    expect(registerSource).toContain('setClosingBlocked(true)')
+    expect(registerSource).toContain('O fechamento não foi salvo')
+    expect(registerSource).not.toContain('Abrindo a Central de Pendências')
+  })
+
+  it('a Central aponta o lote que trava e devolve a pessoa ao fechamento', () => {
+    expect(pendingSource).toContain('blocksClosing(')
+    expect(pendingSource).toContain('está preso')
+    expect(pendingSource).toContain('Trava o fechamento de')
+    expect(pendingSource).toContain('closingResumePath(')
+  })
+
 })

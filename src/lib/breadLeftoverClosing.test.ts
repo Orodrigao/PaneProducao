@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  blocksClosing,
   closingBreadIds,
+  closingResumePath,
   isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
@@ -27,6 +29,24 @@ describe('fechamento físico de sobras', () => {
   it('leva a loja e a data do fechamento para a Central', () => {
     expect(leftoverPendingPath('ja', '2026-07-13'))
       .toBe('/sobras/pendencias?store=ja&date=2026-07-13')
+  })
+
+  it('sinaliza quando a ida à Central veio de um fechamento recusado', () => {
+    expect(leftoverPendingPath('jc', '2026-07-22', { blocked: true }))
+      .toBe('/sobras/pendencias?store=jc&date=2026-07-22&blocked=1')
+  })
+
+  it('sabe voltar para o fechamento que ficou preso', () => {
+    expect(closingResumePath('jc', '2026-07-22'))
+      .toBe('/sobras?resume=jc&date=2026-07-22')
+  })
+
+  it('só considera bloqueador o lote sem destino de dia anterior', () => {
+    const closing = '2026-07-22'
+
+    expect(blocksClosing({ pending_quantity: 8, record_date: '2026-07-21' }, closing)).toBe(true)
+    expect(blocksClosing({ pending_quantity: 0, record_date: '2026-07-21' }, closing)).toBe(false)
+    expect(blocksClosing({ pending_quantity: 8, record_date: '2026-07-22' }, closing)).toBe(false)
   })
 
   it('reconhece o bloqueio de pendências retornado pelo banco', () => {
