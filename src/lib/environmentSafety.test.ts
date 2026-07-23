@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { assertSafeSupabaseEnvironment } from './environmentSafety'
+import {
+  assertSafeSupabaseEnvironment,
+  assertValidSupabasePublicKey,
+} from './environmentSafety'
 
 const PRODUCTION_URL = 'https://gohluceldchoitihrimw.supabase.co'
 const PREVIEW_URL = 'https://tuqzhjsbodoycjbmwuqm.supabase.co'
@@ -46,5 +49,30 @@ describe('assertSafeSupabaseEnvironment', () => {
       supabaseUrl: undefined,
       vercelEnvironment: 'preview',
     })).toThrow(/NEXT_PUBLIC_SUPABASE_URL ausente/i)
+  })
+})
+
+describe('assertValidSupabasePublicKey', () => {
+  it('interrompe o build quando o Supabase recusa a chave publica', async () => {
+    const fetchImpl = async () => new Response(
+      JSON.stringify({ message: 'Invalid API key' }),
+      { status: 401 },
+    )
+
+    await expect(assertValidSupabasePublicKey({
+      supabaseUrl: PRODUCTION_URL,
+      supabaseKey: 'chave-publica-invalida',
+      fetchImpl,
+    })).rejects.toThrow(/chave publica.*recusada/i)
+  })
+
+  it('permite o build quando o Supabase aceita a chave publica', async () => {
+    const fetchImpl = async () => new Response('{}', { status: 200 })
+
+    await expect(assertValidSupabasePublicKey({
+      supabaseUrl: PREVIEW_URL,
+      supabaseKey: 'chave-publica-valida',
+      fetchImpl,
+    })).resolves.toBeUndefined()
   })
 })
