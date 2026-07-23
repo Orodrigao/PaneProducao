@@ -40,7 +40,7 @@ test('administrador encontra JC e JA ao registrar Sobras', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /O que registrar/ })).toBeVisible()
   await page.getByText('Registrar Sobras', { exact: true }).click()
 
-  const storeSelector = page.locator('select.ps-select')
+  const storeSelector = page.locator('.ps-card', { hasText: 'Loja:' }).locator('select.ps-select')
   await expect(storeSelector).toBeVisible()
   await expect(storeSelector.locator('option')).toHaveText([
     'JC — Júlio de Castilhos',
@@ -53,7 +53,8 @@ test('Cozinha JC entra na tela concedida para a própria função', async ({ pag
 
   await expect(page).toHaveURL(/\/producao-cozinha$/)
   await expect(page.getByRole('heading', { name: 'Cozinha' })).toBeVisible()
-  await expect(page.getByText('Cozinha JC Teste / JC', { exact: true })).toBeVisible()
+  await expect(page.getByText('Cozinha JC Teste', { exact: true })).toBeVisible()
+  await expect(page.getByText('Sem acesso ao lançamento', { exact: true })).toHaveCount(0)
 })
 
 test('Vendas JA não entra na Produção da Cozinha', async ({ page }) => {
