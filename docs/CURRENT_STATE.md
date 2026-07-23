@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-23
 
-**Base observada:** `origin/main` até a incorporação da PR `#166`
+**Base observada:** `origin/main` até a incorporação da PR `#168`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
