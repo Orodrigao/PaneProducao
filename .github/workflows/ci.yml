@@ -60,7 +60,12 @@ jobs:
 
       - name: Confirmar que o Preview está disponível
         run: |
-          if ! curl --fail --silent --show-error --retry 2 "$PREVIEW_SUPABASE_URL/auth/v1/health" >/dev/null; then
+          set -a
+          source .env.example
+          set +a
+          if ! curl --fail --silent --show-error --retry 2 \
+            --header "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            "$PREVIEW_SUPABASE_URL/auth/v1/health" >/dev/null; then
             echo "PaneERP Preview esta indisponivel ou pausado. Reative o projeto antes de investigar o ERP."
             exit 1
           fi
