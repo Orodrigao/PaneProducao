@@ -53,7 +53,9 @@ test('Cozinha JC entra na tela concedida para a própria função', async ({ pag
 
   await expect(page).toHaveURL(/\/producao-cozinha$/)
   await expect(page.getByRole('heading', { name: 'Cozinha' })).toBeVisible()
-  await expect(page.getByText('Cozinha JC Teste', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('banner').getByText('Cozinha JC Teste', { exact: true }),
+  ).toBeVisible()
   await expect(page.getByText('Sem acesso ao lançamento', { exact: true })).toHaveCount(0)
 })
 
