@@ -19,9 +19,26 @@ insert into public.products (
   is_fabricacao_propria, production_days, production_area
 )
 values
-  ('10000000-0000-4000-8000-000000000001', '[TESTE] Bruschetta da Cozinha', 'Bruschettas', true, 10, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000002', '[TESTE] Pizza da Cozinha', 'Pizzas', true, 20, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000003', '[TESTE] Pastinha da Cozinha', 'Pastinhas', true, 30, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha')
+  ('10000000-0000-4000-8000-000000000001', '[TESTE] Bruschetta Brie', 'Bruschettas', true, 10, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000002', '[TESTE] Bruschetta de Alcachofra', 'Bruschettas', true, 20, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000003', '[TESTE] Bruschetta Gorgonzola', 'Bruschettas', true, 30, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000004', '[TESTE] Bruschetta Parma', 'Bruschettas', true, 40, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000005', '[TESTE] Pastinha de Azeitona', 'Pastas & Pesto', true, 50, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000006', '[TESTE] Pastinha de Frango', 'Pastas & Pesto', true, 60, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000007', '[TESTE] Pastinha de Manjericão', 'Pastas & Pesto', true, 70, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000008', '[TESTE] Pastinha de Tomate-Seco', 'Pastas & Pesto', true, 80, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000009', '[TESTE] Pesto Rosso', 'Pastas & Pesto', true, 90, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000010', '[TESTE] Pesto Verde', 'Pastas & Pesto', true, 100, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000011', '[TESTE] Pizza Redonda de Calabresa', 'Pizza Redonda', true, 110, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000012', '[TESTE] Pizza Redonda de Portuguesa', 'Pizza Redonda', true, 120, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000013', '[TESTE] Pizza Redonda de Queijo e Cebola', 'Pizza Redonda', true, 130, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000014', '[TESTE] Pizza Redonda Margherita', 'Pizza Redonda', true, 140, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000015', '[TESTE] Pizza Romana de Calabresa', 'Pizza Romana', true, 150, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000016', '[TESTE] Pizza Romana de Carne e Azeitona', 'Pizza Romana', true, 160, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000017', '[TESTE] Pizza Romana de Carne e Cebola Caramelizada', 'Pizza Romana', true, 170, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000018', '[TESTE] Pizza Romana de Carne e Coalho', 'Pizza Romana', true, 180, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000019', '[TESTE] Pizza Romana de Gorgonzola', 'Pizza Romana', true, 190, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000020', '[TESTE] Pizza Romana de Parma', 'Pizza Romana', true, 200, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha')
 on conflict (id) do update set
   name = excluded.name,
   category = excluded.category,
