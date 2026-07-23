@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(52);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 26,
@@ -72,6 +72,13 @@ select ok(exists(select 1 from pg_trigger where tgname = 'reconcile_bread_leftov
 select ok(not has_function_privilege('authenticated',
     'public.reconcile_bread_leftovers_after_oven()', 'execute'),
   'conciliação de sobras não é executável por authenticated');
+
+select ok(not has_function_privilege('authenticated',
+    'public.set_app_profiles_updated_at()', 'execute'),
+  'gatilho de perfis nao e executavel por authenticated');
+select ok(not has_function_privilege('authenticated',
+    'public.set_cash_closings_updated_at()', 'execute'),
+  'gatilho de caixa nao e executavel por authenticated');
 
 -- Envio de Pedidos PJ
 select ok(exists(select 1 from information_schema.columns where table_schema = 'public'
@@ -150,6 +157,44 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'public.replace_user_permissions(uuid, jsonb)', 'execute'),
   'substituição da matriz negada a anon');
+
+-- Privilegios deterministicos entre producao e bancos reconstruidos
+select is((select count(*)::int
+    from information_schema.role_table_grants
+    where grantee = 'anon'
+      and table_schema = 'public'
+      and table_name not in (
+        'pizza_categorias', 'pizza_despesas', 'pizza_usuarios', 'pizza_vendas'
+      )), 0,
+  'anon acessa somente as tabelas legadas do ControlePizza');
+select is((select count(*)::int
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and has_function_privilege('anon', p.oid, 'execute')), 0,
+  'anon nao executa funcoes do ERP');
+
+create table public._default_privilege_probe (id bigserial primary key);
+
+select ok(not has_table_privilege('anon', 'public._default_privilege_probe', 'select')
+    and not has_table_privilege('authenticated', 'public._default_privilege_probe', 'select')
+    and not has_table_privilege('service_role', 'public._default_privilege_probe', 'select'),
+  'nova tabela nasce fechada para os papeis da API');
+select ok(not has_sequence_privilege('anon', 'public._default_privilege_probe_id_seq', 'usage')
+    and not has_sequence_privilege('authenticated', 'public._default_privilege_probe_id_seq', 'usage')
+    and not has_sequence_privilege('service_role', 'public._default_privilege_probe_id_seq', 'usage'),
+  'nova sequencia nasce fechada para os papeis da API');
+select is((select count(*)::int
+    from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    cross join lateral aclexplode(d.defaclacl) x
+    where d.defaclrole = 'postgres'::regrole
+      and n.nspname in ('public', 'private')
+      and d.defaclobjtype = 'f'
+      and (x.grantee = 0 or x.grantee in (
+        'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
+      ))), 0,
+  'novas funcoes das migrations nascem fechadas para os papeis da API');
 
 select * from finish();
 rollback;

@@ -148,6 +148,10 @@ máquina — nem site, nem banco.
 - Merge na `main` → produção no ar em ~1 minuto. Não existe outro caminho.
 - Push em branch de PR → link de preview, estável durante a vida do PR. O
   bot da Vercel comenta o link no próprio PR ("Visit Preview").
+- Preview e máquina local usam exclusivamente o projeto Supabase
+  `PaneERP Preview`; a configuração de produção existe somente no escopo
+  Production da Vercel. A trava do build deve falhar se essas portas se
+  cruzarem.
 - Build da `main` quebrado → o deploy é recusado e produção continua na
   versão anterior. Corrija com novo PR; nunca com deploy manual.
 - `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo
@@ -163,6 +167,16 @@ máquina — nem site, nem banco.
   ensaia a história completa do schema num banco local descartável (workflow
   `CI Banco`); só depois do merge a Action aplica em produção com
   `supabase db push`.
+- PR aberta com migration também reconstrói automaticamente o projeto
+  `PaneERP Preview` usando a história e o seed daquela branch (workflow
+  `Banco Preview`). O link da Vercel só vale para teste depois que os três
+  checks, Vercel, CI Banco e Banco Preview, estiverem verdes.
+- Fechar ou integrar a PR reconstrói o Banco Preview a partir da `main`.
+  Esse reset é obrigatório: remove migration de PR descartada e devolve os
+  dados fictícios conhecidos. Nunca copie dados reais de produção para lá.
+- O plano gratuito fornece um único Banco Preview compartilhado: somente
+  uma PR com migration pode ficar ativa por vez. A automação deve bloquear
+  a segunda, nunca alternar silenciosamente o schema entre duas PRs.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
   migration precisa conviver tanto com a versão do site que está no ar
   quanto com a que está entrando. Mudança destrutiva (remover ou renomear
@@ -182,8 +196,11 @@ máquina — nem site, nem banco.
   auditoria live somente leitura — nunca deduzido de arquivo local.
 
 **Semáforo (CI):** todo PR roda lint, tipos, testes e build no GitHub.
-Merge exige CI verde + teste do Rodrigo no preview. CI vermelho = não
-mergeia, sem exceção.
+PR com migration ou seed também exige `CI Banco` e `Banco Preview` verdes.
+Merge exige todos os checks aplicáveis verdes + teste do Rodrigo no preview.
+CI vermelho = não mergeia, sem exceção. Se o Preview inteiro falhar depois
+de um período sem uso, confira primeiro se o projeto gratuito `PaneERP
+Preview` foi pausado antes de investigar a funcionalidade.
 
 ## Fluxo para nova funcionalidade
 
@@ -222,7 +239,8 @@ Nenhuma funcionalidade nova começa pela implementação.
   sistema): criar fora da pasta do repositório principal → copiar
   `.env.example` para `.env.local` → `npm ci`. Sem esses dois passos o
   ambiente local não funciona — `.env.local` e `node_modules` não
-  acompanham o worktree.
+  acompanham o worktree. `.env.example` sempre aponta ao Banco Preview;
+  banco de produção em arquivo local é falha de segurança.
 - Se houver alteração local não relacionada, parar e isolar o trabalho.
 - Implementar somente a fase aprovada.
 - Não refatorar módulos vizinhos por iniciativa própria.
