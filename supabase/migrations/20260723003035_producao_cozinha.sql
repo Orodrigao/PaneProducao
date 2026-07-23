@@ -457,6 +457,8 @@ UPDATE "public"."products"
      'Pastinha de Frango',
      'Pastinha de Manjericão',
      'Pastinha de Tomate-Seco',
+     'Pesto Rosso',
+     'Pesto Verde',
      'Pizza Redonda de Calabresa',
      'Pizza Redonda de Portuguesa',
      'Pizza Redonda de Queijo e Cebola',
