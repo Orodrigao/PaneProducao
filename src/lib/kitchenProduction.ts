@@ -41,6 +41,13 @@ export interface KitchenBatchRequest {
   quantity: number
 }
 
+export interface KitchenDaySummaryItem {
+  product_id: string
+  name: string
+  unit: string | null
+  quantity: number
+}
+
 export function normalizeKitchenStore(value: string | null | undefined): KitchenStore | null {
   const normalized = (value ?? '').trim().toLowerCase()
   return KITCHEN_STORES.includes(normalized as KitchenStore) ? normalized as KitchenStore : null
@@ -137,6 +144,19 @@ export function kitchenTotalsByProduct(
       + sanitizeKitchenQuantity(entry.quantity)
   }
   return totals
+}
+
+export function buildKitchenDaySummary(
+  items: readonly KitchenItem[],
+  entries: readonly KitchenEntry[],
+): KitchenDaySummaryItem[] {
+  const totals = kitchenTotalsByProduct(entries)
+  return items.flatMap(item => {
+    const quantity = totals[item.id] ?? 0
+    return quantity > 0
+      ? [{ product_id: item.id, name: item.name, unit: item.unit, quantity }]
+      : []
+  })
 }
 
 export function totalKitchenQuantity(quantities: Readonly<Record<string, number>>): number {

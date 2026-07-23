@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation'
 import { ChefHat, Minus, Plus, Save } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDate, formatDateBR, showToastPS, todayKey } from '@/lib/utils'
+import { KitchenDaySummary } from '@/components/kitchen/KitchenDaySummary'
 import {
   KITCHEN_MAX_QUANTITY,
   buildKitchenBatchRequests,
+  buildKitchenDaySummary,
   describeKitchenError,
   groupKitchenItems,
   isEmptyKitchenBatchRequest,
   kitchenStoresForUser,
-  kitchenTotalsByProduct,
   normalizeKitchenStore,
   sanitizeKitchenQuantity,
   totalKitchenQuantity,
@@ -56,8 +57,8 @@ export default function ProducaoCozinhaPage() {
   const today = todayKey()
   const dateIsOpen = date === today
   const batchTotal = totalKitchenQuantity(quantities)
-  const dayTotal = Object.values(kitchenTotalsByProduct(entries))
-    .reduce((sum, quantity) => sum + quantity, 0)
+  const daySummary = buildKitchenDaySummary(items, entries)
+  const dayTotal = daySummary.reduce((sum, row) => sum + row.quantity, 0)
   const groups = useMemo(() => groupKitchenItems(items), [items])
   const lastEntry = useMemo(
     () => entries.reduce<KitchenEntry | null>((latest, entry) => {
@@ -322,12 +323,11 @@ export default function ProducaoCozinhaPage() {
 
       {!loading && items.length > 0 && (
         <div className="ps-card" style={{ marginTop: 18, gap: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
-              {date === today ? 'Já produzido hoje' : 'Produzido neste dia'}
-            </span>
-            <b style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{dayTotal}</b>
-          </div>
+          <KitchenDaySummary
+            title={date === today ? 'Produção de hoje' : 'Produção deste dia'}
+            rows={daySummary}
+            total={dayTotal}
+          />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Este novo lote</span>
             <b style={{ fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>{batchTotal}</b>

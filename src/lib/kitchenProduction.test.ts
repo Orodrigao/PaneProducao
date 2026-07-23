@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildKitchenBatchRequests,
+  buildKitchenDaySummary,
   canLaunchKitchenProduction,
   describeKitchenError,
   groupKitchenItems,
@@ -161,6 +162,34 @@ describe('kitchenTotalsByProduct', () => {
 
     expect(kitchenTotalsByProduct([corrected])).toEqual({ 'prod-a': 5 })
     expect(corrected.produced_at).toBe('2026-07-22T18:00:00Z')
+  })
+})
+
+describe('buildKitchenDaySummary', () => {
+  it('mostra o que foi produzido por produto e ignora lotes cancelados', () => {
+    const summary = buildKitchenDaySummary(
+      [
+        { id: 'prod-a', name: 'Bruschetta Caprese', category: 'Bruschettas', unit: 'un' },
+        { id: 'prod-b', name: 'Pastinha de Frango', category: 'Pastinhas', unit: 'pote' },
+      ],
+      [
+        entry({ id: 'row-1', product_id: 'prod-a', quantity: 4 }),
+        entry({ id: 'row-2', product_id: 'prod-a', quantity: 3 }),
+        entry({
+          id: 'row-3',
+          product_id: 'prod-a',
+          quantity: 8,
+          cancelled_at: '2026-07-22T19:00:00Z',
+          cancelled_by: 'user-1',
+        }),
+        entry({ id: 'row-4', product_id: 'prod-b', quantity: 2 }),
+      ],
+    )
+
+    expect(summary).toEqual([
+      { product_id: 'prod-a', name: 'Bruschetta Caprese', unit: 'un', quantity: 7 },
+      { product_id: 'prod-b', name: 'Pastinha de Frango', unit: 'pote', quantity: 2 },
+    ])
   })
 })
 
