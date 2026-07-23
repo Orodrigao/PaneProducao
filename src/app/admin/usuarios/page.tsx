@@ -6,17 +6,20 @@ import { ShieldCheck } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import {
   assignmentId,
+  buildPermissionAssignments,
   formatRole,
   formatStore,
   groupPermissions,
   isPjOrderSingleCheckboxPermission,
   isSingleCheckboxPermissionChecked,
   loadAccessManagementData,
-  parseAssignmentId,
+  permissionStoreScopes,
   replaceUserPermissions,
+  togglePermissionAssignment,
   toggleSingleCheckboxPermission,
   type AccessManagementData,
   type AccessProfile,
+  type PermissionScope,
 } from '@/lib/adminPermissions'
 import { SupabaseRestError } from '@/lib/supabaseRest'
 import styles from './page.module.css'
@@ -76,14 +79,8 @@ export default function AdminUsuariosPage() {
     setMessage('')
   }
 
-  function togglePermission(key: string, scope = '*') {
-    const id = `${key}|${scope}`
-    setDraft(current => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  function togglePermission(key: string, scope: PermissionScope = '*') {
+    setDraft(current => togglePermissionAssignment(current, key, scope))
   }
 
   function togglePjOrderPermission(key: string) {
@@ -95,7 +92,7 @@ export default function AdminUsuariosPage() {
     setSaving(true)
     setMessage('')
     try {
-      const assignments = Array.from(draft, parseAssignmentId)
+      const assignments = buildPermissionAssignments(draft)
       await replaceUserPermissions(selected.user_id, assignments)
       setData(current => current ? {
         ...current,
@@ -127,7 +124,7 @@ export default function AdminUsuariosPage() {
         <main className="ps-scroll ps-pad">
           <div className="ps-banner honey">
             <ShieldCheck size={20} aria-hidden="true" />
-            <span><b>Acesso individual.</b> No Romaneio, cada ação pode valer para uma loja ou para todas.</span>
+            <span><b>Acesso individual.</b> No Romaneio e na Produção da Cozinha, cada ação pode valer para uma loja ou para todas.</span>
           </div>
 
           {schemaPending && (
@@ -179,9 +176,9 @@ export default function AdminUsuariosPage() {
                               {permission.description && <small>{permission.description}</small>}
                             </span>
                           </label>
-                          {permission.key.startsWith('romaneio.') && permission.key !== 'romaneio.acessar' && (
+                          {permissionStoreScopes(permission.key).length > 0 && (
                             <div className={styles.scopeOptions} aria-label={`Lojas para ${permission.label}`}>
-                              {(['jc', 'ja', 'ex'] as const).map(scope => (
+                              {permissionStoreScopes(permission.key).map(scope => (
                                 <label key={scope}>
                                   <input
                                     type="checkbox"

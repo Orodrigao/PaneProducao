@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-22
+**Data de referência:** 2026-07-23
 
-**Base observada:** `origin/main` no commit `7fcd9aa`, mais o pacote do processo confiável (baseline do banco, CI e Actions)
+**Base observada:** `origin/main` no commit `40bc227`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -34,27 +34,30 @@ Estado conhecido:
 
 1. **`allowed_routes` em `app_profiles`** — ainda decide menu e guarda das
    rotas antigas no cliente (`src/lib/auth.ts`). Perfil sem `allowed_routes`
-   recebe defaults por role definidos no código. Exceção já unificada:
-   `/pedidos-pj` deriva da permissão granular `pedidos_pj.acessar`.
+   recebe defaults por role definidos no código. Exceções já unificadas:
+   `/pedidos-pj` deriva da permissão granular `pedidos_pj.acessar` e
+   `/producao-cozinha` deriva de `producao_cozinha.lancar`.
 2. **`app_permissions` + `app_user_permissions`** — catálogo e concessões
    granulares por usuário, com escopo por loja (`*`, `jc`, `ja`, `ex`).
-   Hoje governam as ações do Romaneio, o acesso e a confirmação de envio de Pedidos PJ
-   via RPCs (`replace_user_permissions`, `confirm_pj_order_dispatch`,
+   Hoje governam as ações do Romaneio, o acesso e a confirmação de envio de
+   Pedidos PJ e a Produção da Cozinha por loja via RPCs
+   (`replace_user_permissions`, `confirm_pj_order_dispatch`,
    `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
-   `approve_romaneio_divergence`). Administradas pela tela de gestão de
-   acessos.
+   `approve_romaneio_divergence`, `record_kitchen_batches`,
+   `correct_kitchen_batch`, `cancel_kitchen_batch`). Administradas pela tela
+   de gestão de acessos.
 3. **Policies RLS** — a autorização efetiva do acesso direto às tabelas. As
    ações do Romaneio passam por RPCs `SECURITY DEFINER` com validação interna
    e grants `EXECUTE` próprios — proteção adicional que também precisa de
    revisão em mudança de acesso.
 
-**Risco central:** fora de Pedidos PJ, os níveis 1 e 2 não são sincronizados. O backfill da
-migration `20260718181203` derivou permissões de `allowed_routes` uma única
-vez; desde então a tela administrativa escreve somente `app_user_permissions`,
-enquanto menu e guarda das demais rotas continuam lendo `allowed_routes`.
-Alterar acesso em um nível não altera o outro — causa provável de "usuário
-perdeu a tela". Mudança de acesso deve verificar os três níveis até essa
-unificação ser concluída para os módulos restantes.
+**Risco central:** fora de Pedidos PJ e Produção da Cozinha, os níveis 1 e 2
+não são sincronizados. O backfill da migration `20260718181203` derivou
+permissões de `allowed_routes` uma única vez; desde então a tela administrativa
+escreve somente `app_user_permissions`, enquanto menu e guarda das demais rotas
+continuam lendo `allowed_routes`. Alterar acesso em um nível não altera o outro
+— causa provável de "usuário perdeu a tela". Mudança de acesso deve verificar
+os três níveis até essa unificação ser concluída para os módulos restantes.
 
 ## RLS e Supabase
 
@@ -107,6 +110,9 @@ e é aplicada pela Action. O repositório ControlePizza não aplica schema
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes, com contexto por loja;
+- produção da Cozinha registrada em lotes conforme a demanda e resumo diário
+  por produto; o banco já possui ações protegidas de correção e cancelamento,
+  mas a interface dessas ações ainda não foi implementada;
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas

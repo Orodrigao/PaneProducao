@@ -9,6 +9,7 @@ on:
     paths:
       - "supabase/migrations/**"
       - "supabase/tests/**"
+      - "supabase/seed.sql"
       - "supabase/config.toml"
 
 jobs:

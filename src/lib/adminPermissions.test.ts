@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildPermissionAssignments,
   formatRole,
   formatStore,
   groupPermissions,
   isPjOrderSingleCheckboxPermission,
   isSingleCheckboxPermissionChecked,
+  permissionStoreScopes,
+  togglePermissionAssignment,
   toggleSingleCheckboxPermission,
   type PermissionDefinition,
 } from './adminPermissions'
@@ -57,5 +60,58 @@ describe('apresentação da gestão de acesso', () => {
     expect(isPjOrderSingleCheckboxPermission('pedidos_pj.acessar')).toBe(true)
     expect(isPjOrderSingleCheckboxPermission('pedidos_pj.confirmar_envio')).toBe(true)
     expect(isPjOrderSingleCheckboxPermission('romaneio.confirmar_saida')).toBe(false)
+  })
+})
+
+describe('permissões com escopo por loja', () => {
+  it('oferece JC, JA e EX para a Cozinha sem alterar as regras existentes', () => {
+    expect(permissionStoreScopes('producao_cozinha.lancar')).toEqual(['jc', 'ja', 'ex'])
+    expect(permissionStoreScopes('romaneio.confirmar_saida')).toEqual(['jc', 'ja', 'ex'])
+    expect(permissionStoreScopes('romaneio.acessar')).toEqual([])
+    expect(permissionStoreScopes('pedidos_pj.acessar')).toEqual([])
+  })
+
+  it('adiciona uma loja da Cozinha sem retirar nenhum acesso existente', () => {
+    const existing = new Set([
+      'romaneio.acessar|*',
+      'romaneio.confirmar_saida|ex',
+      'pedidos_pj.acessar|jc',
+      'pedidos_pj.confirmar_envio|jc',
+      'producao_cozinha.lancar|ja',
+    ])
+
+    const withKitchenJc = togglePermissionAssignment(
+      existing,
+      'producao_cozinha.lancar',
+      'jc',
+    )
+
+    expect(withKitchenJc).toEqual(new Set([
+      ...existing,
+      'producao_cozinha.lancar|jc',
+    ]))
+    expect(existing).not.toContain('producao_cozinha.lancar|jc')
+    expect(togglePermissionAssignment(
+      withKitchenJc,
+      'producao_cozinha.lancar',
+      'jc',
+    )).toEqual(existing)
+  })
+
+  it('envia a matriz completa ao salvar depois de escolher a loja da Cozinha', () => {
+    const assignments = togglePermissionAssignment(new Set([
+      'romaneio.acessar|*',
+      'romaneio.confirmar_saida|ex',
+      'pedidos_pj.acessar|jc',
+      'pedidos_pj.confirmar_envio|jc',
+    ]), 'producao_cozinha.lancar', 'jc')
+
+    expect(buildPermissionAssignments(assignments)).toEqual([
+      { permissionKey: 'romaneio.acessar', scope: '*' },
+      { permissionKey: 'romaneio.confirmar_saida', scope: 'ex' },
+      { permissionKey: 'pedidos_pj.acessar', scope: 'jc' },
+      { permissionKey: 'pedidos_pj.confirmar_envio', scope: 'jc' },
+      { permissionKey: 'producao_cozinha.lancar', scope: 'jc' },
+    ])
   })
 })

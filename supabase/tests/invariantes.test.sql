@@ -7,11 +7,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(71);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 26,
-  'catálogo completo com 26 permissões');
+select is((select count(*)::int from public.app_permissions), 27,
+  'catálogo completo com 27 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
@@ -72,6 +72,13 @@ select ok(exists(select 1 from pg_trigger where tgname = 'reconcile_bread_leftov
 select ok(not has_function_privilege('authenticated',
     'public.reconcile_bread_leftovers_after_oven()', 'execute'),
   'conciliação de sobras não é executável por authenticated');
+
+select ok(not has_function_privilege('authenticated',
+    'public.set_app_profiles_updated_at()', 'execute'),
+  'gatilho de perfis nao e executavel por authenticated');
+select ok(not has_function_privilege('authenticated',
+    'public.set_cash_closings_updated_at()', 'execute'),
+  'gatilho de caixa nao e executavel por authenticated');
 
 -- Envio de Pedidos PJ
 select ok(exists(select 1 from information_schema.columns where table_schema = 'public'
@@ -150,6 +157,133 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'public.replace_user_permissions(uuid, jsonb)', 'execute'),
   'substituição da matriz negada a anon');
+
+-- Produção da Cozinha: lotes independentes, autoria e horário do servidor
+select ok(exists(select 1 from public.app_permissions where key = 'producao_cozinha.lancar'),
+  'permissão de lançar produção da cozinha presente no catálogo');
+select ok((select relrowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'kitchen_production'),
+  'RLS habilitada em kitchen_production');
+select ok(not has_table_privilege('anon', 'public.kitchen_production', 'select'),
+  'anon não lê a produção da cozinha');
+select ok(not has_table_privilege('anon', 'public.kitchen_production', 'insert'),
+  'anon não escreve produção da cozinha');
+select ok(has_table_privilege('authenticated', 'public.kitchen_production', 'select'),
+  'authenticated pode ler somente as linhas liberadas pela RLS');
+select ok(not has_table_privilege('authenticated', 'public.kitchen_production', 'insert'),
+  'authenticated não insere diretamente: usa a ação protegida');
+select ok(not has_table_privilege('authenticated', 'public.kitchen_production', 'update'),
+  'authenticated não corrige diretamente: usa a ação protegida');
+select ok(not has_table_privilege('authenticated', 'public.kitchen_production', 'delete'),
+  'authenticated não apaga o histórico');
+select is((select count(*)::int from pg_policies where tablename = 'kitchen_production'), 1,
+  'kitchen_production expõe somente a policy de leitura');
+select ok((select qual from pg_policies
+    where policyname = 'kitchen_production_select_permitted')
+    ilike all(array[
+      '%current_user_is_access_admin%',
+      '%producao_cozinha.lancar%',
+      '%recorded_by%',
+      '%record_date%'
+    ]),
+  'cozinha lê apenas seus lotes de hoje; admin lê o histórico');
+select ok(exists(select 1 from pg_constraint
+    where conname = 'kitchen_production_quantity_range'),
+  'quantidade limitada no banco, não só na tela');
+select ok(not exists(select 1 from pg_constraint
+    where conname = 'kitchen_production_store_product_date_key'),
+  'vários lotes do mesmo produto podem existir no mesmo dia');
+select ok((select is_nullable = 'NO' from information_schema.columns
+    where table_schema = 'public' and table_name = 'kitchen_production'
+      and column_name = 'produced_at'),
+  'horário original do lote é obrigatório');
+select ok((select is_nullable = 'NO' from information_schema.columns
+    where table_schema = 'public' and table_name = 'kitchen_production'
+      and column_name = 'recorded_by'),
+  'autor original do lote é obrigatório');
+select is((select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'kitchen_production'
+      and column_name in ('corrected_at', 'corrected_by', 'cancelled_at', 'cancelled_by')), 4,
+  'correção e cancelamento deixam trilha de auditoria');
+select is((select count(*)::int
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'record_kitchen_batches',
+        'correct_kitchen_batch',
+        'cancel_kitchen_batch'
+      )
+      and p.prosecdef), 3,
+  'as três ações da cozinha são SECURITY DEFINER');
+select is((select count(*)::int
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'record_kitchen_batches',
+        'correct_kitchen_batch',
+        'cancel_kitchen_batch'
+      )
+      and has_function_privilege('authenticated', p.oid, 'execute')), 3,
+  'authenticated executa as três ações protegidas');
+select is((select count(*)::int
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'record_kitchen_batches',
+        'correct_kitchen_batch',
+        'cancel_kitchen_batch'
+      )
+      and has_function_privilege('anon', p.oid, 'execute')), 0,
+  'anon não executa ações da cozinha');
+select is((select count(*)::int
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'record_kitchen_batches',
+        'correct_kitchen_batch',
+        'cancel_kitchen_batch'
+      )
+      and coalesce(array_to_string(p.proconfig, ','), '') ilike '%search_path=%'), 3,
+  'as ações protegidas usam search_path seguro');
+
+-- Privilegios deterministicos entre producao e bancos reconstruidos
+select is((select count(*)::int
+    from information_schema.role_table_grants
+    where grantee = 'anon'
+      and table_schema = 'public'
+      and table_name not in (
+        'pizza_categorias', 'pizza_despesas', 'pizza_usuarios', 'pizza_vendas'
+      )), 0,
+  'anon acessa somente as tabelas legadas do ControlePizza');
+select is((select count(*)::int
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and has_function_privilege('anon', p.oid, 'execute')), 0,
+  'anon nao executa funcoes do ERP');
+
+create table public._default_privilege_probe (id bigserial primary key);
+
+select ok(not has_table_privilege('anon', 'public._default_privilege_probe', 'select')
+    and not has_table_privilege('authenticated', 'public._default_privilege_probe', 'select')
+    and not has_table_privilege('service_role', 'public._default_privilege_probe', 'select'),
+  'nova tabela nasce fechada para os papeis da API');
+select ok(not has_sequence_privilege('anon', 'public._default_privilege_probe_id_seq', 'usage')
+    and not has_sequence_privilege('authenticated', 'public._default_privilege_probe_id_seq', 'usage')
+    and not has_sequence_privilege('service_role', 'public._default_privilege_probe_id_seq', 'usage'),
+  'nova sequencia nasce fechada para os papeis da API');
+select is((select count(*)::int
+    from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    cross join lateral aclexplode(d.defaclacl) x
+    where d.defaclrole = 'postgres'::regrole
+      and n.nspname in ('public', 'private')
+      and d.defaclobjtype = 'f'
+      and (x.grantee = 0 or x.grantee in (
+        'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
+      ))), 0,
+  'novas funcoes das migrations nascem fechadas para os papeis da API');
 
 select * from finish();
 rollback;

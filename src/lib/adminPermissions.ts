@@ -1,4 +1,5 @@
 import { supabaseRestFetch } from '@/lib/supabaseRest'
+import { KITCHEN_PRODUCTION_PERMISSION } from '@/lib/kitchenProduction'
 
 export interface AccessProfile {
   user_id: string
@@ -23,6 +24,9 @@ interface PermissionAssignment {
 }
 
 export type PermissionScope = '*' | 'jc' | 'ja' | 'ex'
+export type StorePermissionScope = Exclude<PermissionScope, '*'>
+
+const STORE_PERMISSION_SCOPES: readonly StorePermissionScope[] = ['jc', 'ja', 'ex']
 
 export interface ScopedPermission {
   permissionKey: string
@@ -33,6 +37,10 @@ export interface AccessManagementData {
   profiles: AccessProfile[]
   permissions: PermissionDefinition[]
   assignments: Record<string, ScopedPermission[]>
+}
+
+export function buildPermissionAssignments(assignments: ReadonlySet<string>): ScopedPermission[] {
+  return Array.from(assignments, parseAssignmentId)
 }
 
 export async function loadAccessManagementData(): Promise<AccessManagementData> {
@@ -85,6 +93,29 @@ export function isSingleCheckboxPermissionChecked(assignments: ReadonlySet<strin
 export function isPjOrderSingleCheckboxPermission(permissionKey: string): boolean {
   return permissionKey === 'pedidos_pj.acessar'
     || permissionKey === 'pedidos_pj.confirmar_envio'
+}
+
+export function permissionStoreScopes(permissionKey: string): readonly StorePermissionScope[] {
+  const isScopedRomaneioPermission = permissionKey.startsWith('romaneio.')
+    && permissionKey !== 'romaneio.acessar'
+
+  return permissionKey === KITCHEN_PRODUCTION_PERMISSION || isScopedRomaneioPermission
+    ? STORE_PERMISSION_SCOPES
+    : []
+}
+
+export function togglePermissionAssignment(
+  assignments: ReadonlySet<string>,
+  permissionKey: string,
+  scope: PermissionScope = '*',
+): Set<string> {
+  const next = new Set(assignments)
+  const assignment = `${permissionKey}|${scope}`
+
+  if (next.has(assignment)) next.delete(assignment)
+  else next.add(assignment)
+
+  return next
 }
 
 export function toggleSingleCheckboxPermission(assignments: ReadonlySet<string>, permissionKey: string): Set<string> {
