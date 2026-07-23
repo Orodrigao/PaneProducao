@@ -9,11 +9,11 @@ jobs:
   verificacao:
     name: Verificação (lint, tipos, testes, build)
     runs-on: ubuntu-latest
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Preparar ambiente local seguro
+        run: cp .env.example .env.local
 
       - uses: actions/setup-node@v4
         with:
