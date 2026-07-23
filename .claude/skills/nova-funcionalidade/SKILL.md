@@ -28,6 +28,19 @@ migrations e testes) deve estar concluído antes de apresentar qualquer
 solução ou plano — mas a auditoria profunda pode esperar as primeiras
 respostas da descoberta, porque um pedido vago ainda não diz onde olhar.
 
+**Coordene com o outro agente.** No PaneERP, Claude e Codex (Sol)
+trabalham em paralelo, e o AGENTS.md proíbe os dois de tocar o mesmo
+fluxo — sobreposição de área, não só de arquivo. As branches `codex/*`,
+os worktrees e as PRs abertas mostram onde o outro está mexendo agora,
+mas o git só revela o presente: as próximas fases planejadas do outro
+agente não estão em lugar nenhum que você possa ler. Por isso, pergunte
+ao Rodrigo se há trabalho paralelo em andamento e qual área ele cobre,
+antes de recomendar por onde começar. Isso muda a ordem das fases, não
+só o isolamento da branch: uma fase que mexe na área do outro agente
+espera ele terminar. (Nesta skill isso já mordeu uma vez — uma sequência
+recomendada colidiu com a frente de segurança do Sol sobre custos, e só
+não virou retrabalho porque o Rodrigo avisou a tempo.)
+
 ## Etapa 1 — Descoberta
 
 O pedido é sintoma, não especificação. O objetivo desta etapa é você
@@ -102,7 +115,8 @@ termina testável no navegador. Para cada fase:
 - objetivo em uma frase leiga;
 - escopo (o que entra e o que NÃO entra);
 - arquivos e tabelas prováveis, com caminhos reais vindos da auditoria;
-- dependências de fases anteriores e bloqueios conhecidos;
+- dependências de fases anteriores, de bloqueios conhecidos e da área
+  coberta pelo outro agente (uma fase espera o outro liberar a área);
 - riscos e o que pode quebrar;
 - critérios de aceite;
 - testes: a matriz perfil × loja afetada, nunca só admin; mudança de
