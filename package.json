@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run && node --test scripts/*.test.mjs",
+    "test:browser": "playwright test",
     "test:watch": "vitest",
     "cnm:login": "tsx scripts/cnm-login.ts",
     "cnm:download": "tsx scripts/cnm-download.ts"
@@ -21,6 +22,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

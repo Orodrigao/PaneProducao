@@ -18,3 +18,6 @@ storage/cnm/
 playwright/.auth/
 .storage-state/
 storage-state*.json
+test-results/
+playwright-report/
+blob-report/

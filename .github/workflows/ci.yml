@@ -35,3 +35,46 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  navegador:
+    name: Navegador (login, perfis e lojas)
+    needs: verificacao
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
+      SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirmar ambiente fictício e credencial de teste
+        run: |
+          if ! grep -q "$PREVIEW_SUPABASE_URL" .env.example; then
+            echo "Teste de navegador bloqueado: .env.example nao aponta ao PaneERP Preview."
+            exit 1
+          fi
+          if [[ -z "$SUPABASE_TEST_USER_PASSWORD" ]]; then
+            echo "Teste de navegador bloqueado: SUPABASE_TEST_USER_PASSWORD nao esta configurado."
+            exit 1
+          fi
+
+      - name: Confirmar que o Preview está disponível
+        run: |
+          if ! curl --fail --silent --show-error --retry 2 "$PREVIEW_SUPABASE_URL/auth/v1/health" >/dev/null; then
+            echo "PaneERP Preview esta indisponivel ou pausado. Reative o projeto antes de investigar o ERP."
+            exit 1
+          fi
+
+      - name: Preparar ambiente local seguro
+        run: cp .env.example .env.local
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Smoke tests no navegador
+        run: npm run test:browser
