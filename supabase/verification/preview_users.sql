@@ -68,8 +68,8 @@ begin
       ('encomendas.acessar', '*'),
       ('congelado.acessar', '*'),
       ('romaneio.acessar', '*'),
-      ('romaneio.visualizar', 'ja'),
-      ('romaneio.confirmar_saida', 'ja')
+      ('romaneio.visualizar', '*'),
+      ('romaneio.confirmar_saida', '*')
   ), actual as (
     select assignment.permission_key, assignment.scope
     from public.app_user_permissions assignment

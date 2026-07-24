@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(6);
+select plan(7);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -56,6 +56,19 @@ select is(
     ) and coalesce(walkin_name, '') <> ''),
   0,
   'seed nao inclui nome ou telefone de cliente real'
+);
+
+select is(
+  (select count(*)::int
+   from public.romaneios romaneio
+   join public.destinations destination on destination.id = romaneio.destination_id
+   where romaneio.id = '40000000-0000-4000-8000-000000000004'
+     and romaneio.record_date = current_date
+     and romaneio.trip_number = 4
+     and romaneio.status = 'separado'
+     and destination.code = 'ex'),
+  1,
+  'seed cria viagem EX separada para validar a entregadora'
 );
 
 select * from finish();
