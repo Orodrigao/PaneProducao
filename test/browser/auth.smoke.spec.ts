@@ -16,7 +16,7 @@ async function enterWithPreviewAccount(
   email: string,
 ) {
   const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas fictícias existe somente no secret do GitHub.')
+  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
 
   await page.goto('/login')
   await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
@@ -25,7 +25,15 @@ async function enterWithPreviewAccount(
   await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
 }
 
-test('quem não entrou é levado ao login ao abrir uma tela protegida', async ({ page }) => {
+async function expectRouteVisible(page: import('@playwright/test').Page, href: string) {
+  await expect(page.locator(`a[href="${href}"]`).first()).toBeAttached()
+}
+
+async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
+  await expect(page.locator(`a[href="${href}"]`)).toHaveCount(0)
+}
+
+test('quem nao entrou e levado ao login ao abrir uma tela protegida', async ({ page }) => {
   await page.goto('/sobras')
 
   await expect(page).toHaveURL(/\/login$/)
@@ -48,7 +56,7 @@ test('administrador encontra JC e JA ao registrar Sobras', async ({ page }) => {
   ])
 })
 
-test('Cozinha JC entra na tela concedida para a própria função', async ({ page }) => {
+test('Cozinha JC entra na tela concedida para a propria funcao', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.cozinhaJc)
 
   await expect(page).toHaveURL(/\/producao-cozinha$/)
@@ -59,10 +67,45 @@ test('Cozinha JC entra na tela concedida para a própria função', async ({ pag
   await expect(page.getByText('Sem acesso ao lançamento', { exact: true })).toHaveCount(0)
 })
 
-test('Vendas JA não entra na Produção da Cozinha', async ({ page }) => {
+test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+
+  await expect(page).toHaveURL(/\/romaneio$/)
+  await expect(page.getByText('Romaneios', { exact: true })).toBeVisible()
+  await expect(page.getByText('Vendas JA Teste', { exact: true })).toBeVisible()
+
+  for (const route of [
+    '/romaneio',
+    '/fechamento-caixa',
+    '/sobras',
+    '/encomendas',
+    '/estoque-congelado',
+  ]) {
+    await expectRouteVisible(page, route)
+  }
+
+  for (const route of [
+    '/producao-cozinha',
+    '/compras',
+    '/pedidos-pj',
+    '/relatorios',
+    '/admin/usuarios',
+  ]) {
+    await expectRouteHidden(page, route)
+  }
+
+  await expect(page.getByRole('button', { name: 'Novo Romaneio' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Conferir chegada/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Aprovar diverg/ })).toHaveCount(0)
+
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/romaneio$/)
+})
+
+test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.vendasJa)
   await page.goto('/producao-cozinha')
 
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/romaneio$/)
   await expect(page.getByRole('heading', { name: 'Cozinha' })).toHaveCount(0)
 })

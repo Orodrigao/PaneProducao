@@ -8,6 +8,7 @@ export function resolveProductionHomeUserKey(
   if (user.role === 'admin') return 'rodrigo'
   if (user.role === 'expedicao' && user.store === 'jc') return 'gustavo'
   if (user.role === 'expedicao') return 'marselle'
+  if (user.role === 'vendas' && user.store === 'ja') return null
   if (user.role === 'vendas') return 'marselle'
   if (user.role === 'financeiro') return 'elis'
   if (user.role === 'producao') return 'geolar'

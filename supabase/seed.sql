@@ -87,7 +87,7 @@ on conflict (id) do update set
 with test_profiles(email, display_name, role, store, allowed_routes) as (
   values
     ('rodrigao+teste@gmail.com', 'Rodrigo Teste', 'admin', null, '["/", "*"]'::jsonb),
-    ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/"]'::jsonb),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/romaneio", "/fechamento-caixa", "/sobras", "/encomendas", "/estoque-congelado"]'::jsonb),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb)
@@ -118,6 +118,13 @@ where assignment.user_id in (
 
 with requested_permissions(email, permission_key, scope) as (
   values
+    ('rodrigao+teste-vendas-ja@gmail.com', 'caixa.acessar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'sobras.acessar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'encomendas.acessar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'congelado.acessar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.acessar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.visualizar', 'ja'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.confirmar_saida', 'ja'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.acessar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.visualizar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.criar', '*'),

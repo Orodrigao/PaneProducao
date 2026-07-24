@@ -12,6 +12,7 @@ declare
   ];
   user_count integer;
   profile_count integer;
+  vendas_ja_permission_diff integer;
 begin
   select count(*) into user_count
   from auth.users
@@ -40,6 +41,54 @@ begin
       and profile.allowed_routes ? '*'
   ) then
     raise exception 'Administrador de teste precisa iniciar em / e manter acesso total.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-vendas-ja@gmail.com'
+      and profile.role = 'vendas'
+      and lower(profile.store) = 'ja'
+      and profile.allowed_routes = '[
+        "/romaneio",
+        "/fechamento-caixa",
+        "/sobras",
+        "/encomendas",
+        "/estoque-congelado"
+      ]'::jsonb
+  ) then
+    raise exception 'Perfil Vendas JA deve entrar pelo Romaneio e ter somente as cinco rotas aprovadas.';
+  end if;
+
+  with expected(permission_key, scope) as (
+    values
+      ('caixa.acessar', '*'),
+      ('sobras.acessar', '*'),
+      ('encomendas.acessar', '*'),
+      ('congelado.acessar', '*'),
+      ('romaneio.acessar', '*'),
+      ('romaneio.visualizar', 'ja'),
+      ('romaneio.confirmar_saida', 'ja')
+  ), actual as (
+    select assignment.permission_key, assignment.scope
+    from public.app_user_permissions assignment
+    join auth.users user_account on user_account.id = assignment.user_id
+    where lower(user_account.email) = 'rodrigao+teste-vendas-ja@gmail.com'
+  ), permission_diff as (
+    (select permission_key, scope from expected
+     except
+     select permission_key, scope from actual)
+    union all
+    (select permission_key, scope from actual
+     except
+     select permission_key, scope from expected)
+  )
+  select count(*) into vendas_ja_permission_diff
+  from permission_diff;
+
+  if vendas_ja_permission_diff <> 0 then
+    raise exception 'Permissoes do Vendas JA diferem da matriz aprovada.';
   end if;
 
   if not exists (
