@@ -123,8 +123,8 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-vendas-ja@gmail.com', 'encomendas.acessar', '*'),
     ('rodrigao+teste-vendas-ja@gmail.com', 'congelado.acessar', '*'),
     ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.acessar', '*'),
-    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.visualizar', 'ja'),
-    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.confirmar_saida', 'ja'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.visualizar', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.confirmar_saida', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.acessar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.visualizar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.criar', '*'),
@@ -151,3 +151,28 @@ select user_id, permission_key, scope, null::uuid from resolved_permissions
 union all
 select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
+
+insert into public.romaneios (
+  id, record_date, destination_id, trip_number, status, created_by, obs
+)
+values
+  (
+    '40000000-0000-4000-8000-000000000004',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    4,
+    'separado',
+    'Rodrigo Teste',
+    '[TESTE] viagem EX visivel para a entregadora'
+  )
+on conflict (id) do update set
+  record_date = excluded.record_date,
+  destination_id = excluded.destination_id,
+  trip_number = excluded.trip_number,
+  status = excluded.status,
+  created_by = excluded.created_by,
+  obs = excluded.obs,
+  sent_by = null,
+  sent_at = null,
+  confirmed_by = null,
+  confirmed_at = null;
