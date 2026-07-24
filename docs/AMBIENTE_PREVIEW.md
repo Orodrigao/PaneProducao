@@ -54,7 +54,7 @@ Contas com senha são criadas pelo mecanismo oficial do Supabase Auth, nunca
 por migration. E-mails previstos:
 
 - `rodrigao+teste@gmail.com` — administrador;
-- `rodrigao+teste-vendas-ja@gmail.com` — perfil sem acesso à Cozinha;
+- `rodrigao+teste-vendas-ja@gmail.com` — Vendas JA, entra no Romaneio e testa as cinco rotas aprovadas;
 - `rodrigao+teste-expedicao-jc@gmail.com` — saída de Romaneio/PJ;
 - `rodrigao+teste-romaneio-ex@gmail.com` — conferência da EX;
 - `rodrigao+teste-cozinha-jc@gmail.com` — Produção da Cozinha na JC.
