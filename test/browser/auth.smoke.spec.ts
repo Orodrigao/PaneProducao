@@ -72,7 +72,9 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
 
   await expect(page).toHaveURL(/\/romaneio$/)
   await expect(page.getByText('Romaneios', { exact: true })).toBeVisible()
-  await expect(page.getByText('Vendas JA Teste', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('banner').getByText('Vendas JA Teste', { exact: true }),
+  ).toBeVisible()
 
   for (const route of [
     '/romaneio',
