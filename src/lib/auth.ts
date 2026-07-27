@@ -2,6 +2,7 @@
 
 import { withTimeout } from '@/lib/supabaseRest'
 import { KITCHEN_PRODUCTION_PERMISSION, KITCHEN_PRODUCTION_ROUTE } from '@/lib/kitchenProduction'
+import { PRODUCTION_PLANNING_ROUTE } from '@/lib/productionPlanning'
 
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
 export interface AppUser {
@@ -21,7 +22,7 @@ const LEGACY_AUTH_STORAGE_KEYS = ['pane_users_cache', 'pane_user_id']
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes'],
+  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes'],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
