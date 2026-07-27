@@ -778,6 +778,11 @@ export default function ProductionPlanningPage() {
                               </small>
                             </label>
                           )}
+                          {!hasFrozenOption && canEdit && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                              <Snowflake size={13} /> Congelados: 0 disp.
+                            </span>
+                          )}
                           {useFrozen && (
                             <input
                               className="ps-input"
@@ -808,6 +813,11 @@ export default function ProductionPlanningPage() {
                                 {leftoverAvailable} disp.
                               </small>
                             </label>
+                          )}
+                          {!hasLeftoverOption && canEdit && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                              <PackageOpen size={13} /> Sobra: 0 disp.
+                            </span>
                           )}
                           {useLeftover && (
                             <input

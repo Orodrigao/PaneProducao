@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(92);
+select plan(96);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -147,6 +147,30 @@ select ok(obj_description('public.production_plan_items'::regclass, 'pg_class')
 select ok(not has_function_privilege('authenticated',
     'public.set_production_planning_updated_at()', 'execute'),
   'gatilho do planejamento nao e executavel por authenticated');
+
+-- Estoque congelado: rota especifica ou permissao geral do admin
+select ok((select qual from pg_policies
+    where policyname = 'frozen_products_manage_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%'])
+    and (select with_check from pg_policies
+      where policyname = 'frozen_products_manage_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%']),
+  'cadastro de congelados aceita rota especifica ou permissao geral');
+select ok((select qual from pg_policies
+    where policyname = 'frozen_stock_manage_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%'])
+    and (select with_check from pg_policies
+      where policyname = 'frozen_stock_manage_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%']),
+  'saldo de congelados aceita rota especifica ou permissao geral');
+select ok((select with_check from pg_policies
+    where policyname = 'frozen_movements_insert_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%']),
+  'entrada de movimento congelado aceita rota especifica ou permissao geral');
+select ok((select qual from pg_policies
+    where policyname = 'frozen_movements_select_route_store')
+    ilike all(array['%/estoque-congelado%', '%*%']),
+  'historico de congelados aceita rota especifica ou permissao geral');
 
 -- Envio de Pedidos PJ
 select ok(exists(select 1 from information_schema.columns where table_schema = 'public'
