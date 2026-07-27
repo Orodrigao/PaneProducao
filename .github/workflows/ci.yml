@@ -70,6 +70,36 @@ jobs:
             exit 1
           fi
 
+      - name: Esperar Banco Preview quando a PR muda banco
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          DB_CHANGES="$(gh pr diff "$PR_NUMBER" --name-only | grep -E '^((supabase/(migrations|tests|verification)/)|supabase/(seed\.sql|config\.toml)|scripts/provision-preview-users\.mjs|\.github/workflows/banco-preview\.yml)' || true)"
+          if [[ -z "$DB_CHANGES" ]]; then
+            echo "PR sem mudança de banco; seguindo com o navegador."
+            exit 0
+          fi
+
+          echo "PR muda banco; aguardando Banco Preview ficar verde antes do navegador."
+          for attempt in {1..60}; do
+            BUCKET="$(gh pr checks "$PR_NUMBER" --json name,bucket --jq '.[] | select(.name == "Reconstruir com as migrations desta PR") | .bucket' | tail -n 1)"
+            if [[ "$BUCKET" == "pass" ]]; then
+              echo "Banco Preview pronto."
+              exit 0
+            fi
+            if [[ "$BUCKET" == "fail" || "$BUCKET" == "cancel" ]]; then
+              echo "Banco Preview terminou com estado: $BUCKET"
+              exit 1
+            fi
+            echo "Banco Preview ainda em andamento (${BUCKET:-sem check}); tentativa $attempt/60."
+            sleep 10
+          done
+
+          echo "Banco Preview nao ficou pronto dentro do tempo esperado."
+          exit 1
+
       - name: Preparar ambiente local seguro
         run: cp .env.example .env.local
 
