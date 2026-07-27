@@ -157,6 +157,15 @@ insert into public.romaneios (
 )
 values
   (
+    '40000000-0000-4000-8000-000000000002',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    2,
+    'com_divergencia',
+    'Rodrigo Teste',
+    '[TESTE] viagem EX com reposicao pendente'
+  ),
+  (
     '40000000-0000-4000-8000-000000000004',
     current_date,
     '20000000-0000-4000-8000-000000000003',
@@ -176,3 +185,70 @@ on conflict (id) do update set
   sent_at = null,
   confirmed_by = null,
   confirmed_at = null;
+
+insert into public.romaneio_items (
+  id,
+  romaneio_id,
+  product_id,
+  product_source,
+  product_name,
+  qty_sent,
+  qty_received,
+  qty_accepted,
+  unit_price,
+  divergence_reason,
+  item_status
+)
+values (
+  '41000000-0000-4000-8000-000000000002',
+  '40000000-0000-4000-8000-000000000002',
+  'teste-baguete',
+  'bread',
+  '[TESTE] Baguete',
+  10,
+  8,
+  8,
+  1,
+  '[TESTE] faltou na contagem fisica',
+  'divergencia'
+)
+on conflict (id) do update set
+  romaneio_id = excluded.romaneio_id,
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  qty_sent = excluded.qty_sent,
+  qty_received = excluded.qty_received,
+  qty_accepted = excluded.qty_accepted,
+  unit_price = excluded.unit_price,
+  divergence_reason = excluded.divergence_reason,
+  item_status = excluded.item_status;
+
+insert into public.romaneio_replacement_pending (
+  id,
+  destination_id,
+  source_romaneio_id,
+  source_item_id,
+  product_id,
+  product_source,
+  product_name,
+  pending_quantity,
+  status,
+  created_by
+)
+values (
+  '42000000-0000-4000-8000-000000000002',
+  '20000000-0000-4000-8000-000000000003',
+  '40000000-0000-4000-8000-000000000002',
+  '41000000-0000-4000-8000-000000000002',
+  'teste-baguete',
+  'bread',
+  '[TESTE] Baguete',
+  2,
+  'aberta',
+  'Rodrigo Teste'
+)
+on conflict (source_item_id) do update set
+  pending_quantity = excluded.pending_quantity,
+  status = excluded.status,
+  updated_at = now();

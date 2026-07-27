@@ -17,11 +17,14 @@ import {
   nextRomaneioTripNumber,
   normalizeRomaneioQty,
   orderQuantitiesByBreadId,
+  pendingReplacementQuantitiesByProductId,
   parseRomaneioQty,
+  romaneioExcessOverRequestedQty,
   romaneioOrderProgressLabel,
   ROMANEIO_WEIGHT_LIMIT_KG,
   sentQuantitiesByProductId,
   type RomaneioOrderRow,
+  type RomaneioReplacementPendingRow,
   type RomaneioSentItemRow,
   type RomaneioProductOption,
   type RomaneioUnit,
@@ -48,7 +51,7 @@ interface RomaneioTripRow { trip_number:number|null }
 interface RomaneioDraftExistingRow extends RomaneioTripRow { id:string }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
-interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
@@ -294,6 +297,11 @@ async function sbDel(table:string, match:Record<string,string>) {
   const q=Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
   await supabaseRestFetch(`${table}?${q}`,{method:'DELETE'})
 }
+async function loadOpenReplacementPendings(destId: string): Promise<RomaneioReplacementPendingRow[]> {
+  if (!destId) return []
+  const params = `destination_id=eq.${destId}&status=eq.aberta&product_source=eq.bread&select=product_id,pending_quantity`
+  return await sbGet('romaneio_replacement_pending', params) as RomaneioReplacementPendingRow[]
+}
 
 // ── Main ──────────────────────────────────────────────────────────
 export default function RomaneioPage() {
@@ -312,6 +320,7 @@ export default function RomaneioPage() {
   // detalhe
   const [detailRom, setDetailRom] = useState<Romaneio|null>(null)
   const [detailItems, setDetailItems] = useState<RomItem[]>([])
+  const [detailReplacementPendingQtys, setDetailReplacementPendingQtys] = useState<Record<string, number>>({})
   const [printAfterOpen, setPrintAfterOpen] = useState(false)
   // criar
   const [criarDate, setCriarDate] = useState(todayKey())
@@ -414,7 +423,13 @@ export default function RomaneioPage() {
         sbGet('romaneios',`id=eq.${romId}&select=*,destinations(name,code)`),
         sbGet('romaneio_items',`romaneio_id=eq.${romId}&order=product_name.asc`)
       ])
-      setDetailRom(roms[0]); setDetailItems(items)
+      const rom = roms[0] as Romaneio | undefined
+      const replacementRows = rom && normalizeDestination(rom.destinations?.code) === 'EX'
+        ? await loadOpenReplacementPendings(rom.destination_id)
+        : []
+      setDetailRom(rom ?? null)
+      setDetailItems(items)
+      setDetailReplacementPendingQtys(pendingReplacementQuantitiesByProductId(replacementRows))
       setPrintAfterOpen(printAfterLoad)
       setScreen('detalhe')
     } catch(e) { showToastPS('Erro ao carregar') }
@@ -453,9 +468,13 @@ export default function RomaneioPage() {
     const orderRequest = orderStore
       ? sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
       : Promise.resolve([])
-    const [existing, orders] = await Promise.all([
+    const replacementRequest = destinationCode === 'EX'
+      ? loadOpenReplacementPendings(destId)
+      : Promise.resolve([])
+    const [existing, orders, replacementRows] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
       orderRequest,
+      replacementRequest,
     ])
     const existingRows = existing as RomaneioDraftExistingRow[]
     const previousItemRows = existingRows.length
@@ -463,22 +482,28 @@ export default function RomaneioPage() {
       : []
     const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
     const previouslySentQtys = sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[])
+    const replacementPendingQtys = pendingReplacementQuantitiesByProductId(replacementRows as RomaneioReplacementPendingRow[])
     let bds = breads
     const orderRows = orders as RomaneioOrderRow[]
-    if (orderRows.length) {
-      const ids = [...new Set(orderRows.map(o => o.bread_id).filter((id): id is string => Boolean(id)))]
+    const pendingIds = Object.keys(replacementPendingQtys)
+    if (orderRows.length || pendingIds.length) {
+      const ids = [...new Set([
+        ...orderRows.map(o => o.bread_id).filter((id): id is string => Boolean(id)),
+        ...pendingIds,
+      ])]
       if (ids.length) {
         const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`) as Bread[]
         if (byOrder.length) bds = byOrder
       }
     }
-    bds = filterPendingRomaneioBreads(bds, orderQtys, previouslySentQtys)
+    bds = filterPendingRomaneioBreads(bds, orderQtys, previouslySentQtys, replacementPendingQtys)
     return {
       destId,
       breads: bds,
       qtys: {},
       orderQtys,
       previouslySentQtys,
+      replacementPendingQtys,
       extras: {},
       trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
       obs: '',
@@ -992,26 +1017,37 @@ export default function RomaneioPage() {
               <div className="ps-label" style={{marginTop:20}}>Itens</div>
               {detailItems.length===0 && <div className="ps-empty">Nenhum item.</div>}
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {detailItems.map(it=>(
-                  <div key={it.id} className="ps-item">
-                    <div className="ps-item-head">
-                      <div className="ps-item-name">{it.product_name}</div>
-                      <span className={`ps-status ${it.item_status||'pendente'}`}>{it.item_status||'pendente'}</span>
-                    </div>
-                    <div className="ps-item-meta">
-                      <span>Enviado: <b>{it.qty_sent}</b></span>
-                      {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
-                      {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
-                    </div>
-                    {it.divergence_reason && (
-                      <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>
-                        <AlertTriangle size={12} style={{verticalAlign:-2,marginRight:4}}/>
-                        {it.divergence_reason}
+                {detailItems.map(it=>{
+                  const replacementPendingQty = it.product_source === 'bread'
+                    ? detailReplacementPendingQtys[it.product_id] || 0
+                    : 0
+                  return (
+                    <div key={it.id} className="ps-item">
+                      <div className="ps-item-head">
+                        <div className="ps-item-name">{it.product_name}</div>
+                        <span className={`ps-status ${it.item_status||'pendente'}`}>{it.item_status||'pendente'}</span>
                       </div>
-                    )}
-                    {it.obs && <div style={{fontSize:12,color:'var(--ink-soft)'}}>{it.obs}</div>}
-                  </div>
-                ))}
+                      <div className="ps-item-meta">
+                        <span>Enviado: <b>{it.qty_sent}</b></span>
+                        {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
+                        {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
+                      </div>
+                      {replacementPendingQty > 0 && (
+                        <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,padding:'8px 10px',borderRadius:12,background:'rgba(164, 55, 55, 0.10)',color:'var(--berry)',fontSize:13,fontWeight:800,lineHeight:1.35}}>
+                          <AlertTriangle size={14}/>
+                          <span>Reposição pendente: +{formatRomaneioQty(replacementPendingQty)}</span>
+                        </div>
+                      )}
+                      {it.divergence_reason && (
+                        <div style={{fontSize:12,color:'var(--berry)',fontWeight:600}}>
+                          <AlertTriangle size={12} style={{verticalAlign:-2,marginRight:4}}/>
+                          {it.divergence_reason}
+                        </div>
+                      )}
+                      {it.obs && <div style={{fontSize:12,color:'var(--ink-soft)'}}>{it.obs}</div>}
+                    </div>
+                  )
+                })}
               </div>
 
               {canPerformRomaneioAction(permissions, 'approve', detailRom.destinations?.code) && detailRom.status==='com_divergencia' && (
@@ -1074,9 +1110,16 @@ export default function RomaneioPage() {
                       const qty = activeDraft.qtys[option.key]||0
                       const orderQty = activeDraft.orderQtys?.[option.productId] || 0
                       const previouslySentQty = activeDraft.previouslySentQtys?.[option.productId] || 0
+                      const replacementPendingQty = activeDraft.replacementPendingQtys?.[option.productId] || 0
                       const progressQty = previouslySentQty + qty
+                      const excessQty = romaneioExcessOverRequestedQty({
+                        ordered: orderQty,
+                        previouslySent: previouslySentQty,
+                        pendingReplacement: replacementPendingQty,
+                        currentSent: qty,
+                      })
                       return (
-                        <div key={option.key} className={`ps-card ${qty>0?'active':''}`}>
+                        <div key={option.key} className={`ps-card ${qty>0?'active':''}`} style={replacementPendingQty > 0 ? {borderColor:'var(--berry)',boxShadow:'0 0 0 1px rgba(164, 55, 55, 0.18)'} : undefined}>
                           <div className="ps-card-head">
                             <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
                               <div className="ps-pname">{option.displayName}</div>
@@ -1084,6 +1127,12 @@ export default function RomaneioPage() {
                             </div>
                             <span className="ps-store-chip" style={{alignSelf:'flex-start',background:'var(--line-soft)',color:'var(--ink-soft)'}}>{option.unit}</span>
                           </div>
+                          {replacementPendingQty > 0 && (
+                            <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(164, 55, 55, 0.10)',color:'var(--berry)',fontSize:13,fontWeight:800,lineHeight:1.35}}>
+                              <AlertTriangle size={14}/>
+                              <span>Reposição pendente: +{formatRomaneioQty(replacementPendingQty)} {option.unit}</span>
+                            </div>
+                          )}
                           <div className="ps-stepper">
                             <button className="ps-step" onClick={()=>criarChangeQty(option.key,-option.step)} disabled={qty<=0} aria-label="Diminuir">
                               <span style={{fontSize:20,fontWeight:700}}>−</span>
@@ -1098,6 +1147,12 @@ export default function RomaneioPage() {
                               <span style={{fontSize:20,fontWeight:700}}>+</span>
                             </button>
                           </div>
+                          {excessQty > 0 && (
+                            <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(178, 103, 40, 0.12)',color:'#8E4E22',fontSize:12,fontWeight:700,lineHeight:1.35}}>
+                              <AlertTriangle size={13}/>
+                              <span>Enviando {formatRomaneioQty(excessQty)} {option.unit} acima do pedido + pendência. Pode seguir se foi pedido extra da EX.</span>
+                            </div>
+                          )}
                           {isWeightControlledRomaneioProduct(option.productName) && (
                             <div style={{fontSize:12,color:'var(--ink-soft)',marginTop:8,lineHeight:1.4}}>
                               Peso enviado em kg. Ex.: <b>1,450</b> = 1.450 g. Máximo: 10 kg.

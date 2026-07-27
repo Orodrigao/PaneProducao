@@ -32,6 +32,18 @@ export interface RomaneioSentItemRow {
   qty_sent: number | string | null
 }
 
+export interface RomaneioReplacementPendingRow {
+  product_id: string | null
+  pending_quantity: number | string | null
+}
+
+export interface RomaneioExcessRequest {
+  ordered: number
+  previouslySent: number
+  pendingReplacement: number
+  currentSent: number
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -174,16 +186,35 @@ export function sentQuantitiesByProductId(rows: RomaneioSentItemRow[]): Record<s
   }, {})
 }
 
+export function pendingReplacementQuantitiesByProductId(rows: RomaneioReplacementPendingRow[]): Record<string, number> {
+  return rows.reduce<Record<string, number>>((quantities, row) => {
+    if (!row.product_id) return quantities
+    const quantity = Number(row.pending_quantity)
+    if (!Number.isFinite(quantity) || quantity <= 0) return quantities
+
+    quantities[row.product_id] = (quantities[row.product_id] ?? 0) + quantity
+    return quantities
+  }, {})
+}
+
 export function filterPendingRomaneioBreads<T extends { id: string }>(
   breads: T[],
   orderQuantities: Record<string, number>,
   previouslySentQuantities: Record<string, number>,
+  pendingReplacementQuantities: Record<string, number> = {},
 ): T[] {
   return breads.filter(bread => {
     const ordered = orderQuantities[bread.id] ?? 0
     const previouslySent = previouslySentQuantities[bread.id] ?? 0
-    return ordered <= 0 || previouslySent < ordered
+    const pendingReplacement = pendingReplacementQuantities[bread.id] ?? 0
+    return pendingReplacement > 0 || ordered <= 0 || previouslySent < ordered
   })
+}
+
+export function romaneioExcessOverRequestedQty(request: RomaneioExcessRequest): number {
+  const remainingOrder = Math.max(0, request.ordered - request.previouslySent)
+  const requested = remainingOrder + request.pendingReplacement
+  return normalizeRomaneioQty(Math.max(0, request.currentSent - requested))
 }
 
 export function romaneioOrderProgressLabel(ordered: number, separated: number): string {
