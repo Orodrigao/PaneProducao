@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(71);
+select plan(77);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -65,6 +65,25 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'public.confirm_romaneio_receipt(uuid, jsonb)', 'execute'),
   'recebimento do romaneio negado a anon');
+select ok(exists(select 1 from information_schema.tables where table_schema = 'public'
+    and table_name = 'romaneio_replacement_pending'),
+  'fila de reposicao do Romaneio existe');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'romaneio_replacement_pending'),
+  'fila de reposicao tem RLS habilitada e forcada');
+select ok(not has_table_privilege('anon', 'public.romaneio_replacement_pending', 'select'),
+  'anon nao le pendencias de reposicao');
+select ok(has_table_privilege('authenticated', 'public.romaneio_replacement_pending', 'select'),
+  'authenticated tem grant de leitura da fila de reposicao');
+select ok(exists(select 1 from pg_policies where tablename = 'romaneio_replacement_pending'
+    and policyname = 'romaneio_replacement_pending_select_permission'
+    and qual ilike all(array['%romaneio.visualizar%', '%romaneio.administrar%'])),
+  'leitura da fila de reposicao usa permissao granular do Romaneio');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
+    ilike all(array['%romaneio_replacement_pending%', '%lower(v_destination_code) = ''ex''%', '%qty_sent - item.qty_accepted%']),
+  'conferencia EX cria pendencia por enviado menos aceito');
 
 -- Sobras: conciliação interna pelo forno
 select ok(exists(select 1 from pg_trigger where tgname = 'reconcile_bread_leftovers_after_oven'),

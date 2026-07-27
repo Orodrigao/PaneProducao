@@ -9,6 +9,8 @@ import {
   labelRomaneioExtraName,
   nextRomaneioTripNumber,
   orderQuantitiesByBreadId,
+  pendingReplacementQuantitiesByProductId,
+  romaneioExcessOverRequestedQty,
   parseRomaneioQty,
   romaneioOrderProgressLabel,
   sentQuantitiesByProductId,
@@ -145,6 +147,47 @@ describe('romaneioDraft', () => {
       { id: 'croissant', name: 'Croissant' },
       { id: 'especial', name: 'Pao especial' },
     ])
+  })
+
+  it('mantem visivel o pao com reposicao pendente mesmo se o pedido ja foi enviado', () => {
+    const breads = [
+      { id: 'baguete', name: 'Baguete' },
+      { id: 'croissant', name: 'Croissant' },
+    ]
+
+    expect(filterPendingRomaneioBreads(
+      breads,
+      { baguete: 20, croissant: 30 },
+      { baguete: 20, croissant: 30 },
+      { baguete: 2 },
+    )).toEqual([
+      { id: 'baguete', name: 'Baguete' },
+    ])
+  })
+
+  it('soma reposicoes abertas por produto e ignora linhas invalidas', () => {
+    expect(pendingReplacementQuantitiesByProductId([
+      { product_id: 'baguete', pending_quantity: 2 },
+      { product_id: 'baguete', pending_quantity: '1.5' },
+      { product_id: 'ciabatta', pending_quantity: 0 },
+      { product_id: null, pending_quantity: 4 },
+    ])).toEqual({ baguete: 3.5 })
+  })
+
+  it('avisa somente quando enviado passa do pedido restante mais pendencia', () => {
+    expect(romaneioExcessOverRequestedQty({
+      ordered: 20,
+      previouslySent: 12,
+      pendingReplacement: 2,
+      currentSent: 10,
+    })).toBe(0)
+
+    expect(romaneioExcessOverRequestedQty({
+      ordered: 20,
+      previouslySent: 12,
+      pendingReplacement: 2,
+      currentSent: 11,
+    })).toBe(1)
   })
 
   it('mantem o pao completo disponivel para ser adicionado pela busca', () => {

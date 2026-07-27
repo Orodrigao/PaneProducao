@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(9);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -69,6 +69,30 @@ select is(
      and destination.code = 'ex'),
   1,
   'seed cria viagem EX separada para validar a entregadora'
+);
+
+select is(
+  (
+    select pending.pending_quantity
+    from public.romaneio_replacement_pending pending
+    where pending.id = '42000000-0000-4000-8000-000000000002'
+      and pending.destination_id = '20000000-0000-4000-8000-000000000003'
+      and pending.product_id = 'teste-baguete'
+      and pending.status = 'aberta'
+  ),
+  2::numeric,
+  'seed cria reposicao pendente ficticia da EX'
+);
+
+select is(
+  (select count(*)::int
+   from public.romaneio_replacement_pending pending
+   join public.romaneio_items item on item.id = pending.source_item_id
+   where pending.id = '42000000-0000-4000-8000-000000000002'
+     and item.qty_sent = 10
+     and item.qty_accepted = 8),
+  1,
+  'pendencia ficticia representa enviado menos aceito'
 );
 
 select * from finish();

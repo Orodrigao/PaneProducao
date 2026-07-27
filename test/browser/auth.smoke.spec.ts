@@ -107,6 +107,23 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
   await expect(page).toHaveURL(/\/romaneio$/)
 })
 
+test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.admin)
+  await page.goto('/romaneio')
+
+  await page.getByRole('button', { name: 'Novo Romaneio' }).click()
+  await page.getByRole('tab', { name: /\[TESTE\] Exposicao/ }).click()
+
+  const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
+  await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible()
+  await expect(bagueteCard.locator('input.ps-qty')).toHaveValue('')
+
+  await bagueteCard.locator('input.ps-qty').fill('3')
+  await expect(
+    bagueteCard.getByText('Enviando 1 un acima do pedido + pendência'),
+  ).toBeVisible()
+})
+
 test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.vendasJa)
   await page.goto('/producao-cozinha')
