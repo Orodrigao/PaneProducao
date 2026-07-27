@@ -15,6 +15,7 @@ import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
   calculateNewProductionQuantity,
+  matchesPlanningBreadSearch,
   normalizePlannedQuantity,
   plannedBreadsForDate,
   statusAllowsDraftEditing,
@@ -189,12 +190,29 @@ export default function ProductionPlanningPage() {
   const totalPlanned = PRODUCTION_PLAN_STORES.reduce((total, store) =>
     total + visibleBreads.reduce((storeTotal, bread) =>
       storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0), 0)
+  const storeTotals = PRODUCTION_PLAN_STORES.map(store => ({
+    store,
+    total: visibleBreads.reduce((storeTotal, bread) =>
+      storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0),
+  }))
+  const filledBreadCount = visibleBreads.filter(bread =>
+    PRODUCTION_PLAN_STORES.some(store =>
+      normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0) > 0,
+    ),
+  ).length
 
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status))
+  const searchQuery = search.trim()
+  const searchIsActive = searchQuery.length >= 2
+  const matchingCatalogBreads = searchIsActive
+    ? breads.filter(bread => matchesPlanningBreadSearch(bread.name, searchQuery))
+    : []
+  const matchingPlannedCount = matchingCatalogBreads
+    .filter(bread => plannedBreadIds.includes(bread.id))
+    .length
   const availableExtras = breads.filter(bread => {
     if (plannedBreadIds.includes(bread.id)) return false
-    const query = search.trim().toLowerCase()
-    return query.length >= 2 && bread.name.toLowerCase().includes(query)
+    return matchesPlanningBreadSearch(bread.name, searchQuery)
   }).slice(0, 8)
 
   async function createPlan() {
@@ -374,10 +392,20 @@ export default function ProductionPlanningPage() {
           </div>
 
           <section className="ps-card" style={{ marginTop: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div>
                 <div className="ps-label" style={{ marginTop: 0 }}>Total planejado</div>
                 <b style={{ fontSize: 28, fontVariantNumeric: 'tabular-nums' }}>{totalPlanned}</b>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                  {storeTotals.map(row => (
+                    <span key={row.store} className="ps-store-chip">
+                      {STORE_LABEL[row.store]} {row.total}
+                    </span>
+                  ))}
+                  <span className="ps-store-chip" style={{ background: 'var(--line-soft)', color: 'var(--ink-soft)' }}>
+                    {filledBreadCount} {filledBreadCount === 1 ? 'pão' : 'pães'} com quantidade
+                  </span>
+                </div>
               </div>
               <button type="button" className="ps-btn primary" onClick={savePlan} disabled={!canEdit || saving}>
                 <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
@@ -475,6 +503,18 @@ export default function ProductionPlanningPage() {
                       <Plus size={16} />
                     </button>
                   ))}
+                </div>
+              )}
+              {searchIsActive && availableExtras.length === 0 && (
+                <div className="ps-empty" style={{ marginTop: 10, padding: '12px 10px' }}>
+                  {matchingPlannedCount > 0
+                    ? 'Esse pão já está neste planejamento.'
+                    : 'Nenhum pão ativo encontrado fora deste planejamento.'}
+                </div>
+              )}
+              {!searchIsActive && search.length > 0 && (
+                <div style={{ marginTop: 10, color: 'var(--ink-soft)', fontSize: 13, fontWeight: 700 }}>
+                  Digite pelo menos 2 letras para buscar.
                 </div>
               )}
             </section>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateNewProductionQuantity,
+  matchesPlanningBreadSearch,
   normalizePlannedQuantity,
   plannedBreadsForDate,
   statusAllowsDraftEditing,
@@ -32,6 +33,12 @@ describe('productionPlanning', () => {
     expect(normalizePlannedQuantity('4.8')).toBe(4)
     expect(normalizePlannedQuantity(-2)).toBe(0)
     expect(normalizePlannedQuantity('abc')).toBe(0)
+  })
+
+  it('busca pão avulso ignorando acentos e usando todas as palavras', () => {
+    expect(matchesPlanningBreadSearch('Pão Integral Longa Fermentação', 'integral')).toBe(true)
+    expect(matchesPlanningBreadSearch('Pão Integral Longa Fermentação', 'pao longa')).toBe(true)
+    expect(matchesPlanningBreadSearch('Baguete', 'integral')).toBe(false)
   })
 
   it('só permite edição livre em rascunho ou reaberto', () => {

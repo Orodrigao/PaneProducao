@@ -59,6 +59,22 @@ export function plannedBreadsForDate<T extends PlanningBreadLite>(
   )
 }
 
+export function normalizePlanningSearch(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+export function matchesPlanningBreadSearch(breadName: string, query: string): boolean {
+  const normalizedQuery = normalizePlanningSearch(query)
+  if (normalizedQuery.length < 2) return false
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean)
+  const normalizedName = normalizePlanningSearch(breadName)
+  return tokens.every(token => normalizedName.includes(token))
+}
+
 export function calculateNewProductionQuantity(item: ProductionPlanItemInput): number {
   const planned = normalizePlannedQuantity(item.plannedQuantity)
   const frozen = normalizePlannedQuantity(item.frozenQuantity ?? 0)
