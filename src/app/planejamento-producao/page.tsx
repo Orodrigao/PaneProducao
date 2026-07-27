@@ -14,7 +14,7 @@ import { getCurrentUser, getCurrentUserAsync, roleColor, type AppUser } from '@/
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
-  calculateNewProductionQuantity,
+  calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
   plannedBreadsForDate,
@@ -48,6 +48,23 @@ interface ProductionPlanItemRow {
   is_extra: boolean
 }
 
+interface ProductionPlanItemSummaryRow {
+  plan_id: string
+  store: ProductionPlanStore
+  planned_quantity: number
+  frozen_quantity: number
+  leftover_proposed_quantity: number
+  leftover_confirmed_quantity: number | null
+}
+
+interface ProductionPlanSummary {
+  id: string
+  production_date: string
+  status: ProductionPlanStatus
+  total: number
+  storeTotals: Record<ProductionPlanStore, number>
+}
+
 interface BreadRow extends PlanningBreadLite {
   days: number[]
 }
@@ -67,6 +84,15 @@ function dateLabel(dateKey: string) {
   return formatDateBR(dateKey)
 }
 
+function storedItemTotal(item: ProductionPlanItemSummaryRow) {
+  return calculatePlannedTotalQuantity({
+    newQuantity: item.planned_quantity,
+    frozenQuantity: item.frozen_quantity,
+    leftoverProposedQuantity: item.leftover_proposed_quantity,
+    leftoverConfirmedQuantity: item.leftover_confirmed_quantity,
+  })
+}
+
 export default function ProductionPlanningPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
@@ -75,6 +101,7 @@ export default function ProductionPlanningPage() {
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
+  const [openPlans, setOpenPlans] = useState<ProductionPlanSummary[]>([])
   const [quantities, setQuantities] = useState<QuantityInputs>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -103,6 +130,59 @@ export default function ProductionPlanningPage() {
 
     if (breadError) throw breadError
     setBreads((data ?? []) as BreadRow[])
+  }, [])
+
+  const loadOpenPlans = useCallback(async () => {
+    const { data: planRows, error: planError } = await supabase
+      .from('production_plans')
+      .select('id,production_date,status,created_by_name,reopened_reason,created_at,updated_at')
+      .neq('status', 'fechado')
+      .order('production_date', { ascending: true })
+      .limit(20)
+
+    if (planError) throw planError
+    const plans = (planRows ?? []) as ProductionPlanRow[]
+    const planIds = plans.map(openPlan => openPlan.id)
+
+    if (planIds.length === 0) {
+      setOpenPlans([])
+      return
+    }
+
+    const { data: itemRows, error: itemError } = await supabase
+      .from('production_plan_items')
+      .select('plan_id,store,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity')
+      .in('plan_id', planIds)
+
+    if (itemError) throw itemError
+    const summaryItems = (itemRows ?? []) as ProductionPlanItemSummaryRow[]
+    const itemsByPlan = new Map<string, ProductionPlanItemSummaryRow[]>()
+
+    for (const item of summaryItems) {
+      const current = itemsByPlan.get(item.plan_id) ?? []
+      current.push(item)
+      itemsByPlan.set(item.plan_id, current)
+    }
+
+    setOpenPlans(plans.map(openPlan => {
+      const planItems = itemsByPlan.get(openPlan.id) ?? []
+      const storeTotals = Object.fromEntries(
+        PRODUCTION_PLAN_STORES.map(store => [
+          store,
+          planItems
+            .filter(item => item.store === store)
+            .reduce((total, item) => total + storedItemTotal(item), 0),
+        ]),
+      ) as Record<ProductionPlanStore, number>
+
+      return {
+        id: openPlan.id,
+        production_date: openPlan.production_date,
+        status: openPlan.status,
+        total: planItems.reduce((total, item) => total + storedItemTotal(item), 0),
+        storeTotals,
+      }
+    }))
   }, [])
 
   const loadPlan = useCallback(async (targetDate: string) => {
@@ -154,7 +234,7 @@ export default function ProductionPlanningPage() {
     if (!ready || user?.role !== 'admin') return
     let alive = true
     setLoading(true)
-    Promise.all([loadBreads(), loadPlan(date)])
+    Promise.all([loadBreads(), loadOpenPlans(), loadPlan(date)])
       .catch(() => {
         if (alive) setError('Não foi possível carregar o planejamento agora.')
       })
@@ -162,7 +242,7 @@ export default function ProductionPlanningPage() {
         if (alive) setLoading(false)
       })
     return () => { alive = false }
-  }, [date, loadBreads, loadPlan, ready, user?.role])
+  }, [date, loadBreads, loadOpenPlans, loadPlan, ready, user?.role])
 
   const expectedBreads = useMemo(() => plannedBreadsForDate(breads, date), [breads, date])
   const itemsByBread = useMemo(() => {
@@ -187,18 +267,22 @@ export default function ProductionPlanningPage() {
     .filter((bread): bread is BreadRow => Boolean(bread))
     .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
 
-  const totalPlanned = PRODUCTION_PLAN_STORES.reduce((total, store) =>
-    total + visibleBreads.reduce((storeTotal, bread) =>
-      storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0), 0)
+  const plannedTotalForItem = (item: ProductionPlanItemRow) => calculatePlannedTotalQuantity({
+    newQuantity: quantities[itemKey(item.store, item.bread_id)] ?? item.planned_quantity,
+    frozenQuantity: item.frozen_quantity,
+    leftoverProposedQuantity: item.leftover_proposed_quantity,
+    leftoverConfirmedQuantity: item.leftover_confirmed_quantity,
+  })
+
+  const totalPlanned = items.reduce((total, item) => total + plannedTotalForItem(item), 0)
   const storeTotals = PRODUCTION_PLAN_STORES.map(store => ({
     store,
-    total: visibleBreads.reduce((storeTotal, bread) =>
-      storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0),
+    total: items
+      .filter(item => item.store === store)
+      .reduce((storeTotal, item) => storeTotal + plannedTotalForItem(item), 0),
   }))
   const filledBreadCount = visibleBreads.filter(bread =>
-    PRODUCTION_PLAN_STORES.some(store =>
-      normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0) > 0,
-    ),
+    (itemsByBread.get(bread.id) ?? []).some(item => plannedTotalForItem(item) > 0),
   ).length
 
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status))
@@ -253,6 +337,7 @@ export default function ProductionPlanningPage() {
 
       showToastPS('Planejamento criado.')
       await loadPlan(date)
+      void loadOpenPlans().catch(() => undefined)
     } catch {
       setError('Não foi possível criar o planejamento.')
     } finally {
@@ -285,6 +370,7 @@ export default function ProductionPlanningPage() {
 
       showToastPS('Rascunho salvo.')
       await loadPlan(date)
+      void loadOpenPlans().catch(() => undefined)
     } catch {
       setError('Não foi possível salvar o rascunho.')
     } finally {
@@ -310,9 +396,27 @@ export default function ProductionPlanningPage() {
       setSearch('')
       showToastPS('Pão incluído.')
       await loadPlan(date)
+      void loadOpenPlans().catch(() => undefined)
     } catch {
       setError('Não foi possível incluir este pão.')
     }
+  }
+
+  async function refreshPlanning() {
+    setError('')
+    try {
+      await Promise.all([loadOpenPlans(), loadPlan(date)])
+    } catch {
+      setError('Não foi possível carregar os planejamentos agora.')
+    }
+  }
+
+  function openPlanDate(planDate: string) {
+    if (planDate === date) {
+      void loadPlan(planDate)
+      return
+    }
+    setDate(planDate)
   }
 
   const shell = (children: React.ReactNode) => (
@@ -346,6 +450,52 @@ export default function ProductionPlanningPage() {
     <>
       <h1 className="ps-page-title"><CalendarCheck size={23} /> Planejamento</h1>
 
+      <section className="ps-card" style={{ marginTop: 14 }}>
+        <div className="ps-card-head">
+          <div>
+            <b>Planejamentos em aberto</b>
+            <p style={{ margin: '4px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
+              Toque em uma data para abrir o planejamento.
+            </p>
+          </div>
+          <span className="ps-store-chip">{openPlans.length}</span>
+        </div>
+
+        {openPlans.length === 0 ? (
+          <div className="ps-empty" style={{ padding: '12px 10px', marginTop: 10 }}>
+            Nenhum planejamento em aberto.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+            {openPlans.map(openPlan => (
+              <button
+                key={openPlan.id}
+                type="button"
+                className="ps-btn ghost"
+                onClick={() => openPlanDate(openPlan.production_date)}
+                style={{
+                  justifyContent: 'space-between',
+                  borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
+                  background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
+                }}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                  <b>{dateLabel(openPlan.production_date)}</b>
+                  <small style={{ color: 'var(--ink-soft)', fontWeight: 700 }}>
+                    {PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
+                  </small>
+                </span>
+                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <span className="ps-store-chip">Total {openPlan.total}</span>
+                  <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
+                  <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="ps-filters" style={{ alignItems: 'stretch' }}>
         <label className="ps-fieldgroup">
           <span className="ps-fieldlabel">Data de produção</span>
@@ -356,7 +506,7 @@ export default function ProductionPlanningPage() {
             className="ps-input"
           />
         </label>
-        <button type="button" className="ps-btn ghost" onClick={() => loadPlan(date)} disabled={loading}>
+        <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading}>
           <RefreshCw size={16} /> Atualizar
         </button>
       </section>
@@ -424,8 +574,7 @@ export default function ProductionPlanningPage() {
             {visibleBreads.map(bread => {
               const breadItems = itemsByBread.get(bread.id) ?? []
               const extra = breadItems.some(item => item.is_extra)
-              const breadTotal = PRODUCTION_PLAN_STORES.reduce((total, store) =>
-                total + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0)
+              const breadTotal = breadItems.reduce((total, item) => total + plannedTotalForItem(item), 0)
 
               return (
                 <div key={bread.id} className={`ps-card ${breadTotal > 0 ? 'active' : ''}`}>
@@ -440,29 +589,31 @@ export default function ProductionPlanningPage() {
                   <div className="ps-grid" style={{ marginTop: 8 }}>
                     {PRODUCTION_PLAN_STORES.map(store => {
                       const key = itemKey(store, bread.id)
-                      const planned = normalizePlannedQuantity(quantities[key] ?? 0)
+                      const fresh = normalizePlannedQuantity(quantities[key] ?? 0)
                       const item = breadItems.find(row => row.store === store)
-                      const newProduction = calculateNewProductionQuantity({
-                        plannedQuantity: planned,
-                        frozenQuantity: item?.frozen_quantity ?? 0,
-                        leftoverConfirmedQuantity: item?.leftover_confirmed_quantity ?? 0,
-                      })
+                      const frozen = normalizePlannedQuantity(item?.frozen_quantity ?? 0)
+                      const leftover = normalizePlannedQuantity(
+                        item?.leftover_confirmed_quantity ?? item?.leftover_proposed_quantity ?? 0,
+                      )
+                      const total = item
+                        ? plannedTotalForItem(item)
+                        : calculatePlannedTotalQuantity({ newQuantity: fresh, frozenQuantity: frozen, leftoverProposedQuantity: leftover })
 
                       return (
                         <label key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
-                          <span className="ps-fieldlabel">{STORE_LABEL[store]}</span>
+                          <span className="ps-fieldlabel">{STORE_LABEL[store]} novos</span>
                           <input
                             className="ps-input"
                             type="number"
                             inputMode="numeric"
                             min={0}
-                            value={planned}
+                            value={fresh}
                             disabled={!canEdit}
                             onFocus={event => event.currentTarget.select()}
                             onChange={event => setQuantity(store, bread.id, Number(event.target.value))}
                           />
                           <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
-                            Novo previsto: {newProduction}
+                            Total: {total} = novo {fresh} + congelado {frozen} + sobra {leftover}
                           </span>
                         </label>
                       )

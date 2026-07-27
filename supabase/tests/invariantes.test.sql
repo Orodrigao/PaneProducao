@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(90);
+select plan(92);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -136,6 +136,14 @@ select ok((select with_check from pg_policies
     where policyname = 'production_plan_items_insert_admin')
     ilike '%current_user_is_access_admin%',
   'insercao de itens do planejamento exige admin');
+select ok((select pg_get_constraintdef(oid)
+    from pg_constraint
+    where conname = 'production_plan_items_quantities_check')
+    not ilike '%frozen_quantity + leftover_proposed_quantity <= planned_quantity%',
+  'planejamento nao trata congelado e sobra como desconto do total');
+select ok(obj_description('public.production_plan_items'::regclass, 'pg_class')
+    ilike all(array['%soma%', '%paes novos%', '%congelados%', '%sobras%']),
+  'comentario do planejamento registra total por soma das partes');
 select ok(not has_function_privilege('authenticated',
     'public.set_production_planning_updated_at()', 'execute'),
   'gatilho do planejamento nao e executavel por authenticated');
