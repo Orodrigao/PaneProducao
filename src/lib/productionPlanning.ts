@@ -29,16 +29,19 @@ export interface PlanningBreadLite {
 }
 
 export interface ProductionPlanItemInput {
-  plannedQuantity: number
+  newQuantity: number
   frozenQuantity?: number | null
+  leftoverProposedQuantity?: number | null
   leftoverConfirmedQuantity?: number | null
 }
 
-export function normalizePlannedQuantity(value: unknown): number {
+export function normalizePlanQuantity(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return 0
   return Math.trunc(parsed)
 }
+
+export const normalizePlannedQuantity = normalizePlanQuantity
 
 export function weekdayIndex(dateKey: string): number {
   const parsed = new Date(`${dateKey}T12:00:00`)
@@ -75,11 +78,11 @@ export function matchesPlanningBreadSearch(breadName: string, query: string): bo
   return tokens.every(token => normalizedName.includes(token))
 }
 
-export function calculateNewProductionQuantity(item: ProductionPlanItemInput): number {
-  const planned = normalizePlannedQuantity(item.plannedQuantity)
-  const frozen = normalizePlannedQuantity(item.frozenQuantity ?? 0)
-  const leftover = normalizePlannedQuantity(item.leftoverConfirmedQuantity ?? 0)
-  return Math.max(0, planned - frozen - leftover)
+export function calculatePlannedTotalQuantity(item: ProductionPlanItemInput): number {
+  const fresh = normalizePlanQuantity(item.newQuantity)
+  const frozen = normalizePlanQuantity(item.frozenQuantity ?? 0)
+  const leftover = normalizePlanQuantity(item.leftoverConfirmedQuantity ?? item.leftoverProposedQuantity ?? 0)
+  return fresh + frozen + leftover
 }
 
 export function statusAllowsDraftEditing(status: ProductionPlanStatus): boolean {

@@ -14,7 +14,7 @@ import { getCurrentUser, getCurrentUserAsync, roleColor, type AppUser } from '@/
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
-  calculateNewProductionQuantity,
+  calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
   plannedBreadsForDate,
@@ -187,18 +187,22 @@ export default function ProductionPlanningPage() {
     .filter((bread): bread is BreadRow => Boolean(bread))
     .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
 
-  const totalPlanned = PRODUCTION_PLAN_STORES.reduce((total, store) =>
-    total + visibleBreads.reduce((storeTotal, bread) =>
-      storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0), 0)
+  const plannedTotalForItem = (item: ProductionPlanItemRow) => calculatePlannedTotalQuantity({
+    newQuantity: quantities[itemKey(item.store, item.bread_id)] ?? item.planned_quantity,
+    frozenQuantity: item.frozen_quantity,
+    leftoverProposedQuantity: item.leftover_proposed_quantity,
+    leftoverConfirmedQuantity: item.leftover_confirmed_quantity,
+  })
+
+  const totalPlanned = items.reduce((total, item) => total + plannedTotalForItem(item), 0)
   const storeTotals = PRODUCTION_PLAN_STORES.map(store => ({
     store,
-    total: visibleBreads.reduce((storeTotal, bread) =>
-      storeTotal + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0),
+    total: items
+      .filter(item => item.store === store)
+      .reduce((storeTotal, item) => storeTotal + plannedTotalForItem(item), 0),
   }))
   const filledBreadCount = visibleBreads.filter(bread =>
-    PRODUCTION_PLAN_STORES.some(store =>
-      normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0) > 0,
-    ),
+    (itemsByBread.get(bread.id) ?? []).some(item => plannedTotalForItem(item) > 0),
   ).length
 
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status))
@@ -424,8 +428,7 @@ export default function ProductionPlanningPage() {
             {visibleBreads.map(bread => {
               const breadItems = itemsByBread.get(bread.id) ?? []
               const extra = breadItems.some(item => item.is_extra)
-              const breadTotal = PRODUCTION_PLAN_STORES.reduce((total, store) =>
-                total + normalizePlannedQuantity(quantities[itemKey(store, bread.id)] ?? 0), 0)
+              const breadTotal = breadItems.reduce((total, item) => total + plannedTotalForItem(item), 0)
 
               return (
                 <div key={bread.id} className={`ps-card ${breadTotal > 0 ? 'active' : ''}`}>
@@ -440,29 +443,31 @@ export default function ProductionPlanningPage() {
                   <div className="ps-grid" style={{ marginTop: 8 }}>
                     {PRODUCTION_PLAN_STORES.map(store => {
                       const key = itemKey(store, bread.id)
-                      const planned = normalizePlannedQuantity(quantities[key] ?? 0)
+                      const fresh = normalizePlannedQuantity(quantities[key] ?? 0)
                       const item = breadItems.find(row => row.store === store)
-                      const newProduction = calculateNewProductionQuantity({
-                        plannedQuantity: planned,
-                        frozenQuantity: item?.frozen_quantity ?? 0,
-                        leftoverConfirmedQuantity: item?.leftover_confirmed_quantity ?? 0,
-                      })
+                      const frozen = normalizePlannedQuantity(item?.frozen_quantity ?? 0)
+                      const leftover = normalizePlannedQuantity(
+                        item?.leftover_confirmed_quantity ?? item?.leftover_proposed_quantity ?? 0,
+                      )
+                      const total = item
+                        ? plannedTotalForItem(item)
+                        : calculatePlannedTotalQuantity({ newQuantity: fresh, frozenQuantity: frozen, leftoverProposedQuantity: leftover })
 
                       return (
                         <label key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
-                          <span className="ps-fieldlabel">{STORE_LABEL[store]}</span>
+                          <span className="ps-fieldlabel">{STORE_LABEL[store]} novos</span>
                           <input
                             className="ps-input"
                             type="number"
                             inputMode="numeric"
                             min={0}
-                            value={planned}
+                            value={fresh}
                             disabled={!canEdit}
                             onFocus={event => event.currentTarget.select()}
                             onChange={event => setQuantity(store, bread.id, Number(event.target.value))}
                           />
                           <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
-                            Novo previsto: {newProduction}
+                            Total: {total} = novo {fresh} + congelado {frozen} + sobra {leftover}
                           </span>
                         </label>
                       )
