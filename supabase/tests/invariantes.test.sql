@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(77);
+select plan(90);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -98,6 +98,47 @@ select ok(not has_function_privilege('authenticated',
 select ok(not has_function_privilege('authenticated',
     'public.set_cash_closings_updated_at()', 'execute'),
   'gatilho de caixa nao e executavel por authenticated');
+
+-- Planejamento de producao JC/JA
+select ok(exists(select 1 from information_schema.tables where table_schema = 'public'
+    and table_name = 'production_plans'),
+  'planejamento de producao existe');
+select ok(exists(select 1 from information_schema.tables where table_schema = 'public'
+    and table_name = 'production_plan_items'),
+  'itens do planejamento de producao existem');
+select ok(exists(select 1 from pg_constraint
+    where conname = 'production_plans_one_per_date'),
+  'planejamento tem um registro por data de producao');
+select ok(exists(select 1 from pg_constraint
+    where conname = 'production_plan_items_unique'),
+  'planejamento tem um item por loja e pao');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'production_plans'),
+  'production_plans tem RLS habilitada e forcada');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'production_plan_items'),
+  'production_plan_items tem RLS habilitada e forcada');
+select ok(not has_table_privilege('anon', 'public.production_plans', 'select'),
+  'anon nao le planejamento');
+select ok(not has_table_privilege('anon', 'public.production_plan_items', 'select'),
+  'anon nao le itens do planejamento');
+select ok(has_table_privilege('authenticated', 'public.production_plans', 'select'),
+  'authenticated tem grant de leitura do planejamento; RLS restringe a admin');
+select ok(has_table_privilege('authenticated', 'public.production_plan_items', 'select'),
+  'authenticated tem grant de leitura dos itens; RLS restringe a admin');
+select ok((select qual from pg_policies
+    where policyname = 'production_plans_select_admin')
+    ilike '%current_user_is_access_admin%',
+  'leitura do planejamento exige admin');
+select ok((select with_check from pg_policies
+    where policyname = 'production_plan_items_insert_admin')
+    ilike '%current_user_is_access_admin%',
+  'insercao de itens do planejamento exige admin');
+select ok(not has_function_privilege('authenticated',
+    'public.set_production_planning_updated_at()', 'execute'),
+  'gatilho do planejamento nao e executavel por authenticated');
 
 -- Envio de Pedidos PJ
 select ok(exists(select 1 from information_schema.columns where table_schema = 'public'
