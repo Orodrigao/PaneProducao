@@ -11,6 +11,8 @@ const previewAccounts = {
   cozinhaJc: 'rodrigao+teste-cozinha-jc@gmail.com',
 } as const
 
+const slowPreviewDataTimeoutMs = 15_000
+
 async function enterWithPreviewAccount(
   page: import('@playwright/test').Page,
   email: string,
@@ -115,7 +117,10 @@ test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', asy
   await page.getByRole('tab', { name: /\[TESTE\] Exposicao/ }).click()
 
   const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
-  await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible()
+  await expect(bagueteCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
   await expect(bagueteCard.locator('input.ps-qty')).toHaveValue('')
 
   await bagueteCard.locator('input.ps-qty').fill('3')
