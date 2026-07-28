@@ -418,8 +418,23 @@ export function logout() {
 
 export function canAccess(user: AppUser, pathname: string): boolean {
   if (user.role === 'admin') return true
+
+  const routeMatches = (route: string) =>
+    route === '*'
+    || route === pathname
+    || (route !== '/' && pathname.startsWith(route + '/'))
+
+  if (pathname.startsWith('/relatorios/')) {
+    return user.allowedRoutes.some(route =>
+      route === '*'
+      || route === pathname
+      || (route !== '/' && route !== '/relatorios' && pathname.startsWith(route + '/'))
+      || (user.role === 'financeiro' && route === '/relatorios')
+    )
+  }
+
   return user.allowedRoutes.some(route =>
-    route === pathname || (route !== '/' && pathname.startsWith(route + '/'))
+    routeMatches(route)
   )
 }
 
