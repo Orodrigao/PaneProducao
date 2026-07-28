@@ -5,20 +5,28 @@ import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
   CalendarCheck,
+  PackageOpen,
   Plus,
   RefreshCw,
   Save,
   Search,
+  Snowflake,
 } from 'lucide-react'
 import { getCurrentUser, getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
+  aggregateFrozenBreadAvailability,
+  aggregatePlanningLeftoverAvailability,
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
+  planningAvailabilityKey,
   plannedBreadsForDate,
   statusAllowsDraftEditing,
+  type PlanningFrozenProductRow,
+  type PlanningFrozenStockRow,
+  type PlanningPendingLeftoverRow,
   type PlanningBreadLite,
   type ProductionPlanStatus,
   type ProductionPlanStore,
@@ -70,6 +78,7 @@ interface BreadRow extends PlanningBreadLite {
 }
 
 type QuantityInputs = Record<string, number>
+type ToggleInputs = Record<string, boolean>
 
 const STORE_LABEL: Record<ProductionPlanStore, string> = {
   jc: 'JC',
@@ -77,7 +86,7 @@ const STORE_LABEL: Record<ProductionPlanStore, string> = {
 }
 
 function itemKey(store: ProductionPlanStore, breadId: string) {
-  return `${store}:${breadId}`
+  return planningAvailabilityKey(store, breadId)
 }
 
 function dateLabel(dateKey: string) {
@@ -103,6 +112,12 @@ export default function ProductionPlanningPage() {
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
   const [openPlans, setOpenPlans] = useState<ProductionPlanSummary[]>([])
   const [quantities, setQuantities] = useState<QuantityInputs>({})
+  const [frozenQuantities, setFrozenQuantities] = useState<QuantityInputs>({})
+  const [leftoverQuantities, setLeftoverQuantities] = useState<QuantityInputs>({})
+  const [frozenEnabled, setFrozenEnabled] = useState<ToggleInputs>({})
+  const [leftoverEnabled, setLeftoverEnabled] = useState<ToggleInputs>({})
+  const [frozenAvailability, setFrozenAvailability] = useState<QuantityInputs>({})
+  const [leftoverAvailability, setLeftoverAvailability] = useState<QuantityInputs>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -185,6 +200,44 @@ export default function ProductionPlanningPage() {
     }))
   }, [])
 
+  const loadAvailability = useCallback(async (targetDate: string) => {
+    try {
+      const [frozenProductsResult, frozenStockResult, leftoversResult] = await Promise.all([
+        supabase
+          .from('frozen_products')
+          .select('id,product_id,product_source,visible_stores,store')
+          .eq('active', true)
+          .eq('product_source', 'bread'),
+        supabase
+          .from('frozen_stock')
+          .select('frozen_product_id,location,quantity'),
+        supabase
+          .from('sobras')
+          .select('store,product_id,pending_quantity')
+          .in('store', ['jc', 'ja'])
+          .eq('product_source', 'bread')
+          .lt('record_date', targetDate)
+          .gt('pending_quantity', 0),
+      ])
+
+      if (frozenProductsResult.error) throw frozenProductsResult.error
+      if (frozenStockResult.error) throw frozenStockResult.error
+      if (leftoversResult.error) throw leftoversResult.error
+
+      setFrozenAvailability(Object.fromEntries(aggregateFrozenBreadAvailability(
+        (frozenProductsResult.data ?? []) as PlanningFrozenProductRow[],
+        (frozenStockResult.data ?? []) as PlanningFrozenStockRow[],
+      )))
+      setLeftoverAvailability(Object.fromEntries(aggregatePlanningLeftoverAvailability(
+        (leftoversResult.data ?? []) as PlanningPendingLeftoverRow[],
+      )))
+    } catch (availabilityError) {
+      setFrozenAvailability({})
+      setLeftoverAvailability({})
+      throw availabilityError
+    }
+  }, [])
+
   const loadPlan = useCallback(async (targetDate: string) => {
     setLoading(true)
     setError('')
@@ -202,6 +255,10 @@ export default function ProductionPlanningPage() {
       if (!loadedPlan) {
         setItems([])
         setQuantities({})
+        setFrozenQuantities({})
+        setLeftoverQuantities({})
+        setFrozenEnabled({})
+        setLeftoverEnabled({})
         return
       }
 
@@ -220,10 +277,39 @@ export default function ProductionPlanningPage() {
           normalizePlannedQuantity(item.planned_quantity),
         ]),
       ))
+      setFrozenQuantities(Object.fromEntries(
+        loadedItems.map(item => [
+          itemKey(item.store, item.bread_id),
+          normalizePlannedQuantity(item.frozen_quantity),
+        ]),
+      ))
+      setLeftoverQuantities(Object.fromEntries(
+        loadedItems.map(item => [
+          itemKey(item.store, item.bread_id),
+          normalizePlannedQuantity(item.leftover_proposed_quantity),
+        ]),
+      ))
+      setFrozenEnabled(Object.fromEntries(
+        loadedItems.map(item => [
+          itemKey(item.store, item.bread_id),
+          normalizePlannedQuantity(item.frozen_quantity) > 0,
+        ]),
+      ))
+      setLeftoverEnabled(Object.fromEntries(
+        loadedItems.map(item => [
+          itemKey(item.store, item.bread_id),
+          normalizePlannedQuantity(item.leftover_proposed_quantity) > 0
+            || item.leftover_confirmed_quantity !== null,
+        ]),
+      ))
     } catch {
       setPlan(null)
       setItems([])
       setQuantities({})
+      setFrozenQuantities({})
+      setLeftoverQuantities({})
+      setFrozenEnabled({})
+      setLeftoverEnabled({})
       setError('Não foi possível carregar o planejamento agora.')
     } finally {
       setLoading(false)
@@ -234,7 +320,7 @@ export default function ProductionPlanningPage() {
     if (!ready || user?.role !== 'admin') return
     let alive = true
     setLoading(true)
-    Promise.all([loadBreads(), loadOpenPlans(), loadPlan(date)])
+    Promise.all([loadBreads(), loadOpenPlans(), loadAvailability(date), loadPlan(date)])
       .catch(() => {
         if (alive) setError('Não foi possível carregar o planejamento agora.')
       })
@@ -242,7 +328,7 @@ export default function ProductionPlanningPage() {
         if (alive) setLoading(false)
       })
     return () => { alive = false }
-  }, [date, loadBreads, loadOpenPlans, loadPlan, ready, user?.role])
+  }, [date, loadAvailability, loadBreads, loadOpenPlans, loadPlan, ready, user?.role])
 
   const expectedBreads = useMemo(() => plannedBreadsForDate(breads, date), [breads, date])
   const itemsByBread = useMemo(() => {
@@ -269,8 +355,8 @@ export default function ProductionPlanningPage() {
 
   const plannedTotalForItem = (item: ProductionPlanItemRow) => calculatePlannedTotalQuantity({
     newQuantity: quantities[itemKey(item.store, item.bread_id)] ?? item.planned_quantity,
-    frozenQuantity: item.frozen_quantity,
-    leftoverProposedQuantity: item.leftover_proposed_quantity,
+    frozenQuantity: frozenQuantities[itemKey(item.store, item.bread_id)] ?? item.frozen_quantity,
+    leftoverProposedQuantity: leftoverQuantities[itemKey(item.store, item.bread_id)] ?? item.leftover_proposed_quantity,
     leftoverConfirmedQuantity: item.leftover_confirmed_quantity,
   })
 
@@ -324,6 +410,8 @@ export default function ProductionPlanningPage() {
           store,
           bread_id: bread.id,
           planned_quantity: 0,
+          frozen_quantity: 0,
+          leftover_proposed_quantity: 0,
           is_extra: false,
         })),
       )
@@ -352,6 +440,36 @@ export default function ProductionPlanningPage() {
     }))
   }
 
+  function setFrozenQuantity(store: ProductionPlanStore, breadId: string, value: number) {
+    const key = itemKey(store, breadId)
+    setFrozenQuantities(prev => ({
+      ...prev,
+      [key]: normalizePlannedQuantity(value),
+    }))
+    setFrozenEnabled(prev => ({ ...prev, [key]: true }))
+  }
+
+  function setLeftoverQuantity(store: ProductionPlanStore, breadId: string, value: number) {
+    const key = itemKey(store, breadId)
+    setLeftoverQuantities(prev => ({
+      ...prev,
+      [key]: normalizePlannedQuantity(value),
+    }))
+    setLeftoverEnabled(prev => ({ ...prev, [key]: true }))
+  }
+
+  function setFrozenUse(store: ProductionPlanStore, breadId: string, enabled: boolean) {
+    const key = itemKey(store, breadId)
+    setFrozenEnabled(prev => ({ ...prev, [key]: enabled }))
+    if (!enabled) setFrozenQuantities(prev => ({ ...prev, [key]: 0 }))
+  }
+
+  function setLeftoverUse(store: ProductionPlanStore, breadId: string, enabled: boolean) {
+    const key = itemKey(store, breadId)
+    setLeftoverEnabled(prev => ({ ...prev, [key]: enabled }))
+    if (!enabled) setLeftoverQuantities(prev => ({ ...prev, [key]: 0 }))
+  }
+
   async function savePlan() {
     if (!plan || !canEdit || saving) return
     setSaving(true)
@@ -361,6 +479,12 @@ export default function ProductionPlanningPage() {
         .from('production_plan_items')
         .update({
           planned_quantity: normalizePlannedQuantity(quantities[itemKey(item.store, item.bread_id)] ?? 0),
+          frozen_quantity: frozenEnabled[itemKey(item.store, item.bread_id)]
+            ? normalizePlannedQuantity(frozenQuantities[itemKey(item.store, item.bread_id)] ?? 0)
+            : 0,
+          leftover_proposed_quantity: leftoverEnabled[itemKey(item.store, item.bread_id)]
+            ? normalizePlannedQuantity(leftoverQuantities[itemKey(item.store, item.bread_id)] ?? 0)
+            : 0,
         })
         .eq('id', item.id))
 
@@ -382,12 +506,14 @@ export default function ProductionPlanningPage() {
     if (!plan || !canEdit) return
     try {
       const rows = PRODUCTION_PLAN_STORES.map(store => ({
-        plan_id: plan.id,
-        store,
-        bread_id: breadId,
-        planned_quantity: 0,
-        is_extra: true,
-      }))
+          plan_id: plan.id,
+          store,
+          bread_id: breadId,
+          planned_quantity: 0,
+          frozen_quantity: 0,
+          leftover_proposed_quantity: 0,
+          is_extra: true,
+        }))
       const { error: insertError } = await supabase
         .from('production_plan_items')
         .insert(rows)
@@ -405,7 +531,7 @@ export default function ProductionPlanningPage() {
   async function refreshPlanning() {
     setError('')
     try {
-      await Promise.all([loadOpenPlans(), loadPlan(date)])
+      await Promise.all([loadOpenPlans(), loadAvailability(date), loadPlan(date)])
     } catch {
       setError('Não foi possível carregar os planejamentos agora.')
     }
@@ -575,6 +701,10 @@ export default function ProductionPlanningPage() {
               const breadItems = itemsByBread.get(bread.id) ?? []
               const extra = breadItems.some(item => item.is_extra)
               const breadTotal = breadItems.reduce((total, item) => total + plannedTotalForItem(item), 0)
+              const breadFrozenAvailable = PRODUCTION_PLAN_STORES
+                .reduce((total, store) => total + (frozenAvailability[itemKey(store, bread.id)] ?? 0), 0)
+              const breadLeftoverAvailable = PRODUCTION_PLAN_STORES
+                .reduce((total, store) => total + (leftoverAvailability[itemKey(store, bread.id)] ?? 0), 0)
 
               return (
                 <div key={bread.id} className={`ps-card ${breadTotal > 0 ? 'active' : ''}`}>
@@ -583,7 +713,15 @@ export default function ProductionPlanningPage() {
                       <div className="ps-pname">{bread.name}</div>
                       {extra && <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>Avulso desta data</span>}
                     </div>
-                    <span className="ps-store-chip">{breadTotal}</span>
+                    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {breadFrozenAvailable > 0 && (
+                        <span className="ps-store-chip"><Snowflake size={13} /> {breadFrozenAvailable}</span>
+                      )}
+                      {breadLeftoverAvailable > 0 && (
+                        <span className="ps-store-chip"><PackageOpen size={13} /> {breadLeftoverAvailable}</span>
+                      )}
+                      <span className="ps-store-chip">Total {breadTotal}</span>
+                    </span>
                   </div>
 
                   <div className="ps-grid" style={{ marginTop: 8 }}>
@@ -591,31 +729,121 @@ export default function ProductionPlanningPage() {
                       const key = itemKey(store, bread.id)
                       const fresh = normalizePlannedQuantity(quantities[key] ?? 0)
                       const item = breadItems.find(row => row.store === store)
-                      const frozen = normalizePlannedQuantity(item?.frozen_quantity ?? 0)
-                      const leftover = normalizePlannedQuantity(
-                        item?.leftover_confirmed_quantity ?? item?.leftover_proposed_quantity ?? 0,
+                      const frozen = normalizePlannedQuantity(frozenQuantities[key] ?? item?.frozen_quantity ?? 0)
+                      const leftoverProposal = normalizePlannedQuantity(
+                        leftoverQuantities[key] ?? item?.leftover_proposed_quantity ?? 0,
                       )
+                      const leftoverConfirmed = item?.leftover_confirmed_quantity ?? null
+                      const leftover = normalizePlannedQuantity(leftoverConfirmed ?? leftoverProposal)
+                      const frozenAvailable = frozenAvailability[key] ?? 0
+                      const leftoverAvailable = leftoverAvailability[key] ?? 0
+                      const useFrozen = frozenEnabled[key] ?? frozen > 0
+                      const useLeftover = leftoverEnabled[key] ?? leftover > 0
+                      const hasFrozenOption = frozenAvailable > 0 || frozen > 0 || useFrozen
+                      const hasLeftoverOption = leftoverAvailable > 0 || leftoverProposal > 0 || leftoverConfirmed !== null || useLeftover
+                      const canToggleFrozen = canEdit && (frozenAvailable > 0 || frozen > 0)
+                      const canToggleLeftover = canEdit && (leftoverAvailable > 0 || leftoverProposal > 0)
                       const total = item
                         ? plannedTotalForItem(item)
                         : calculatePlannedTotalQuantity({ newQuantity: fresh, frozenQuantity: frozen, leftoverProposedQuantity: leftover })
 
                       return (
-                        <label key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
-                          <span className="ps-fieldlabel">{STORE_LABEL[store]} novos</span>
-                          <input
-                            className="ps-input"
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            value={fresh}
-                            disabled={!canEdit}
-                            onFocus={event => event.currentTarget.select()}
-                            onChange={event => setQuantity(store, bread.id, Number(event.target.value))}
-                          />
+                        <div key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
+                          <label className="ps-fieldgroup" style={{ margin: 0 }}>
+                            <span className="ps-fieldlabel">{STORE_LABEL[store]} novos</span>
+                            <input
+                              className="ps-input"
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              value={fresh}
+                              disabled={!canEdit}
+                              onFocus={event => event.currentTarget.select()}
+                              onChange={event => setQuantity(store, bread.id, Number(event.target.value))}
+                            />
+                          </label>
+
+                          {hasFrozenOption && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, fontWeight: 800, color: canToggleFrozen || useFrozen ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
+                              <input
+                                type="checkbox"
+                                checked={useFrozen}
+                                disabled={!canEdit || (!canToggleFrozen && !useFrozen)}
+                                onChange={event => setFrozenUse(store, bread.id, event.target.checked)}
+                              />
+                              <Snowflake size={14} />
+                              <span>Usar congelados</span>
+                              <small style={{ marginLeft: 'auto', color: 'var(--ink-soft)', fontWeight: 700 }}>
+                                {frozenAvailable} disp.
+                              </small>
+                            </label>
+                          )}
+                          {!hasFrozenOption && canEdit && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                              <Snowflake size={13} /> Congelados: 0 disp.
+                            </span>
+                          )}
+                          {useFrozen && (
+                            <input
+                              className="ps-input"
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={frozenAvailable > 0 ? frozenAvailable : undefined}
+                              value={frozen || ''}
+                              placeholder="0"
+                              disabled={!canEdit}
+                              onFocus={event => event.currentTarget.select()}
+                              onChange={event => setFrozenQuantity(store, bread.id, Number(event.target.value))}
+                              style={{ marginTop: 6 }}
+                            />
+                          )}
+
+                          {hasLeftoverOption && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, fontWeight: 800, color: canToggleLeftover || useLeftover ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
+                              <input
+                                type="checkbox"
+                                checked={useLeftover}
+                                disabled={!canEdit || leftoverConfirmed !== null || (!canToggleLeftover && !useLeftover)}
+                                onChange={event => setLeftoverUse(store, bread.id, event.target.checked)}
+                              />
+                              <PackageOpen size={14} />
+                              <span>Usar sobra</span>
+                              <small style={{ marginLeft: 'auto', color: 'var(--ink-soft)', fontWeight: 700 }}>
+                                {leftoverAvailable} disp.
+                              </small>
+                            </label>
+                          )}
+                          {!hasLeftoverOption && canEdit && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                              <PackageOpen size={13} /> Sobra: 0 disp.
+                            </span>
+                          )}
+                          {useLeftover && (
+                            <input
+                              className="ps-input"
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={leftoverAvailable > 0 ? leftoverAvailable : undefined}
+                              value={leftoverProposal || ''}
+                              placeholder="0"
+                              disabled={!canEdit || leftoverConfirmed !== null}
+                              onFocus={event => event.currentTarget.select()}
+                              onChange={event => setLeftoverQuantity(store, bread.id, Number(event.target.value))}
+                              style={{ marginTop: 6 }}
+                            />
+                          )}
+                          {leftoverConfirmed !== null && (
+                            <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                              Geolar confirmou {leftover} da sobra.
+                            </span>
+                          )}
+
                           <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
                             Total: {total} = novo {fresh} + congelado {frozen} + sobra {leftover}
                           </span>
-                        </label>
+                        </div>
                       )
                     })}
                   </div>
