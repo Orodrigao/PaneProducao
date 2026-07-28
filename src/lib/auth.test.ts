@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAppUser,
+  canAccess,
   fetchCurrentAuthUser,
   navigateAfterAuthentication,
   normalizeEmailInput,
@@ -63,6 +64,55 @@ describe('resolveAllowedRoutes', () => {
     ])
 
     expect(routes).toEqual(['/', '/producao-cozinha'])
+  })
+})
+
+describe('canAccess', () => {
+  it('libera a lista de Relatorios e somente Romaneios para perfil restrito com esse acesso', () => {
+    const user = {
+      id: 'uuid-marselle',
+      username: 'marselle',
+      displayName: 'Marselle',
+      role: 'vendas' as const,
+      active: true,
+      allowedRoutes: ['/relatorios', '/relatorios/romaneios'],
+      store: 'ex',
+    }
+
+    expect(canAccess(user, '/relatorios')).toBe(true)
+    expect(canAccess(user, '/relatorios/romaneios')).toBe(true)
+    expect(canAccess(user, '/relatorios/pj')).toBe(false)
+    expect(canAccess(user, '/relatorios/sobras-descartes')).toBe(false)
+    expect(canAccess(user, '/relatorios/prateleira')).toBe(false)
+  })
+
+  it('preserva o acesso amplo de financeiro aos relatorios existentes', () => {
+    const user = {
+      id: 'uuid-financeiro',
+      username: 'financeiro',
+      displayName: 'Financeiro',
+      role: 'financeiro' as const,
+      active: true,
+      allowedRoutes: ['/relatorios'],
+      store: null,
+    }
+
+    expect(canAccess(user, '/relatorios/pj')).toBe(true)
+    expect(canAccess(user, '/relatorios/sobras-descartes')).toBe(true)
+  })
+
+  it('mantem a regra de subpaginas para outras telas', () => {
+    const user = {
+      id: 'uuid-compras',
+      username: 'compras',
+      displayName: 'Compras',
+      role: 'compras' as const,
+      active: true,
+      allowedRoutes: ['/produtos'],
+      store: 'jc',
+    }
+
+    expect(canAccess(user, '/produtos/cmv')).toBe(true)
   })
 })
 

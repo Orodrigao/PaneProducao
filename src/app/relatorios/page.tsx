@@ -75,6 +75,12 @@ export default function RelatoriosIndex() {
 
   if (!user) return null
 
+  const availableReports = ALL_REPORTS.filter(r => r.status === 'ready' && canAccess(user, r.href))
+  const visibleReports = ALL_REPORTS.filter(r => {
+    if (r.status === 'ready') return canAccess(user, r.href)
+    return user.role === 'admin' || user.role === 'financeiro'
+  })
+
   return (
     <div className="ps-canvas">
       <div className="ps-shell">
@@ -94,10 +100,10 @@ export default function RelatoriosIndex() {
 
         <div className="ps-scroll ps-pad">
           <h1 className="ps-page-title">📈 Relatórios</h1>
-          <p className="ps-page-lead">{roleLabel(user.role)} · {ALL_REPORTS.filter(r => r.status === 'ready' && canAccess(user, r.href)).length} disponíveis</p>
+          <p className="ps-page-lead">{roleLabel(user.role)} · {availableReports.length} disponíveis</p>
 
           <div className="ps-report-grid">
-            {ALL_REPORTS.map(r => {
+            {visibleReports.map(r => {
               const isReady = r.status === 'ready'
               const accessible = isReady && canAccess(user, r.href)
               const disabledCls = accessible ? '' : 'disabled'
