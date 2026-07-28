@@ -102,8 +102,10 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
   await expect(page.getByRole('button', { name: /Conferir chegada/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Aprovar diverg/ })).toHaveCount(0)
   const exTrip = page.locator('.ps-card', { hasText: /Exposicao.*Viagem 4/ })
-  await expect(exTrip).toBeVisible()
-  await expect(exTrip.getByRole('button', { name: /Marcar Enviado/ })).toBeVisible()
+  await expect(exTrip).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(exTrip.getByRole('button', { name: /Marcar Enviado/ })).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
 
   await page.goto('/')
   await expect(page).toHaveURL(/\/romaneio$/)
