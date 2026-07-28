@@ -153,7 +153,7 @@ select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
 
 insert into public.romaneios (
-  id, record_date, destination_id, trip_number, status, created_by, obs
+  id, record_date, destination_id, trip_number, status, created_by, obs, sent_by, sent_at
 )
 values
   (
@@ -163,7 +163,9 @@ values
     2,
     'com_divergencia',
     'Rodrigo Teste',
-    '[TESTE] viagem EX com reposicao pendente'
+    '[TESTE] viagem EX com reposicao pendente',
+    'Expedicao JC Teste',
+    (now() at time zone 'America/Sao_Paulo') - interval '20 minutes'
   ),
   (
     '40000000-0000-4000-8000-000000000004',
@@ -172,7 +174,20 @@ values
     4,
     'separado',
     'Rodrigo Teste',
-    '[TESTE] viagem EX visivel para a entregadora'
+    '[TESTE] viagem EX visivel para a entregadora',
+    null,
+    null
+  ),
+  (
+    '40000000-0000-4000-8000-000000000005',
+    (now() at time zone 'America/Sao_Paulo')::date,
+    '20000000-0000-4000-8000-000000000003',
+    5,
+    'enviado',
+    'Rodrigo Teste',
+    '[TESTE] viagem EX pendente de conferencia',
+    'Expedicao JC Teste',
+    (now() at time zone 'America/Sao_Paulo') - interval '10 minutes'
   )
 on conflict (id) do update set
   record_date = excluded.record_date,
@@ -181,8 +196,8 @@ on conflict (id) do update set
   status = excluded.status,
   created_by = excluded.created_by,
   obs = excluded.obs,
-  sent_by = null,
-  sent_at = null,
+  sent_by = excluded.sent_by,
+  sent_at = excluded.sent_at,
   confirmed_by = null,
   confirmed_at = null;
 
@@ -199,19 +214,33 @@ insert into public.romaneio_items (
   divergence_reason,
   item_status
 )
-values (
-  '41000000-0000-4000-8000-000000000002',
-  '40000000-0000-4000-8000-000000000002',
-  'teste-baguete',
-  'bread',
-  '[TESTE] Baguete',
-  10,
-  8,
-  8,
-  1,
-  '[TESTE] faltou na contagem fisica',
-  'divergencia'
-)
+values
+  (
+    '41000000-0000-4000-8000-000000000002',
+    '40000000-0000-4000-8000-000000000002',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete',
+    10,
+    8,
+    8,
+    1,
+    '[TESTE] faltou na contagem fisica',
+    'divergencia'
+  ),
+  (
+    '41000000-0000-4000-8000-000000000005',
+    '40000000-0000-4000-8000-000000000005',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete',
+    8,
+    null,
+    null,
+    1,
+    null,
+    'pendente'
+  )
 on conflict (id) do update set
   romaneio_id = excluded.romaneio_id,
   product_id = excluded.product_id,

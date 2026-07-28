@@ -746,6 +746,23 @@ export default function RomaneioPage() {
   }
 
   const saveConferencia = async () => {
+    if (!confRomId || confItems.length === 0) {
+      showToastPS('Carregue os itens do romaneio antes de salvar a conferência.')
+      return
+    }
+    const incompleteItem = confItems.find(item => {
+      const conference = confData[item.id]
+      return !conference
+        || !Number.isFinite(conference.rec)
+        || !Number.isFinite(conference.acc)
+        || conference.rec < 0
+        || conference.acc < 0
+        || conference.acc > conference.rec
+    })
+    if (incompleteItem) {
+      showToastPS(`Confira recebido e aceito de ${incompleteItem.product_name} antes de fechar.`)
+      return
+    }
     const overweightItem = confItems.find(item => {
       const conference = confData[item.id]
       return conference

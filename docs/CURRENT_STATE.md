@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-28
 
-**Base observada:** `origin/main` em `b04e4d1`, até a incorporação da PR `#178`
+**Base observada:** `origin/main` em `f319fed`, até a incorporação da PR `#181`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -76,6 +76,8 @@ auditoria live):
 - policies autenticadas de componentes de ficha;
 - fechamento de caixa;
 - funções do Romaneio com permissões granulares.
+- recebimento do Romaneio com bloqueio de payload vazio, parcial, duplicado
+  ou com quantidade aceita maior que recebida.
 - fila segura e confirmação de envio de Pedidos PJ pela Expedição JC; a
   migration está aplicada em produção e a matriz permitida/bloqueada passou no
   banco e no preview; o frontend foi incorporado à `main` pelo PR 149.
@@ -87,8 +89,6 @@ Riscos ainda abertos:
   declarar Sprint 0 concluída;
 - as migrations de permissões de 2026-07-18 não têm registro de aplicação em
   produção; confirmar antes de assumir vigência;
-- `confirm_romaneio_receipt` aceita payload vazio ou parcial e ainda assim
-  pode fechar o romaneio como `conferido` (migration `20260718203439`);
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;

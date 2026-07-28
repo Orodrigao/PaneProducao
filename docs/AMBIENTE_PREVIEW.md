@@ -45,8 +45,10 @@ não dependa de schema ainda não integrado.
 O seed cria:
 
 - as lojas JC, JA e EX com identificação explícita de teste;
-- três produtos da área Cozinha;
+- o catálogo fictício da área Cozinha;
 - dois pães e pedidos do dia para JA e EX;
+- romaneios fictícios da EX, incluindo uma viagem enviada para testar
+  conferência pendente;
 - perfis e permissões somente quando as respectivas contas já existem no
   Supabase Auth.
 
