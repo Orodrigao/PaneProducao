@@ -13,6 +13,8 @@ import {
   planningAvailabilityKey,
   productionPlanItemOrderQuantity,
   summarizePlanItemsByStore,
+  subtractPlanningReuseProposals,
+  storeNeedsOrderConversion,
   statusAllowsDraftEditing,
   weekdayIndex,
 } from './productionPlanning'
@@ -117,6 +119,24 @@ describe('productionPlanning', () => {
     })
   })
 
+  it('remove sobras ja propostas de outras telas da disponibilidade do planejamento', () => {
+    const available = subtractPlanningReuseProposals(
+      new Map([
+        ['jc:baguete', 5],
+        ['ja:baguete', 4],
+      ]),
+      [
+        { store: 'jc', bread_id: 'baguete', proposed_quantity: 3, status: 'proposed' },
+        { store: 'ja', bread_id: 'baguete', proposed_quantity: 2, status: 'confirmed' },
+      ],
+    )
+
+    expect(Object.fromEntries(available)).toEqual({
+      'jc:baguete': 2,
+      'ja:baguete': 4,
+    })
+  })
+
   it('transforma um item planejado em quantidade total de pedido', () => {
     expect(productionPlanItemOrderQuantity({
       store: 'jc',
@@ -161,5 +181,15 @@ describe('productionPlanning', () => {
       { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 2, leftover_proposed_quantity: 1 },
       { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0 },
     ])).toEqual({ jc: 8, ja: 3 })
+  })
+
+  it('nao pede nova conversao quando a loja ja virou pedido', () => {
+    const items = [
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 2, leftover_proposed_quantity: 1, order_created_at: '2026-07-28T01:00:00Z' },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+    ]
+
+    expect(storeNeedsOrderConversion(items, 'jc')).toBe(false)
+    expect(storeNeedsOrderConversion(items, 'ja')).toBe(true)
   })
 })

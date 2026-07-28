@@ -4,6 +4,7 @@ import {
   aggregateWholePending,
   clampReuseProposal,
   leftoverAgeDays,
+  subtractActiveReuseProposals,
   subtractConfirmedReuse,
   validateDestinationQuantity,
 } from './breadLeftovers'
@@ -20,6 +21,23 @@ describe('aggregateWholePending', () => {
     expect(result.get('jc-integral')).toBe(6)
     expect(result.get('ja-integral')).toBe(3)
     expect(result.has('ex-integral')).toBe(false)
+  })
+
+  it('desconta propostas ativas para nao oferecer a mesma sobra duas vezes', () => {
+    const available = subtractActiveReuseProposals(
+      new Map([
+        ['jc-integral', 6],
+        ['ja-integral', 3],
+      ]),
+      [
+        { store: 'jc', bread_id: 'integral', proposed_quantity: 4, status: 'proposed' },
+        { store: 'jc', bread_id: 'integral', proposed_quantity: 1, status: 'cancelled' },
+        { store: 'ja', bread_id: 'integral', proposed_quantity: 2, status: 'confirmed' },
+      ],
+    )
+
+    expect(available.get('jc-integral')).toBe(2)
+    expect(available.get('ja-integral')).toBe(3)
   })
 })
 

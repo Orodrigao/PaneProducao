@@ -21,12 +21,15 @@ import {
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
+  planNeedsOrderConversion,
   planningAvailabilityKey,
   plannedBreadsForDate,
   statusAllowsDraftEditing,
+  subtractPlanningReuseProposals,
   type PlanningFrozenProductRow,
   type PlanningFrozenStockRow,
   type PlanningPendingLeftoverRow,
+  type PlanningReuseProposalRow,
   type PlanningBreadLite,
   type ProductionPlanStatus,
   type ProductionPlanStore,
@@ -54,15 +57,19 @@ interface ProductionPlanItemRow {
   leftover_proposed_quantity: number
   leftover_confirmed_quantity: number | null
   is_extra: boolean
+  order_created_at: string | null
+  order_created_by_name: string | null
 }
 
 interface ProductionPlanItemSummaryRow {
   plan_id: string
   store: ProductionPlanStore
+  bread_id: string
   planned_quantity: number
   frozen_quantity: number
   leftover_proposed_quantity: number
   leftover_confirmed_quantity: number | null
+  order_created_at: string | null
 }
 
 interface ProductionPlanSummary {
@@ -166,7 +173,7 @@ export default function ProductionPlanningPage() {
 
     const { data: itemRows, error: itemError } = await supabase
       .from('production_plan_items')
-      .select('plan_id,store,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity')
+      .select('plan_id,store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity,order_created_at')
       .in('plan_id', planIds)
 
     if (itemError) throw itemError
@@ -179,30 +186,32 @@ export default function ProductionPlanningPage() {
       itemsByPlan.set(item.plan_id, current)
     }
 
-    setOpenPlans(plans.map(openPlan => {
+    setOpenPlans(plans.flatMap(openPlan => {
       const planItems = itemsByPlan.get(openPlan.id) ?? []
+      if (!planNeedsOrderConversion(planItems)) return []
+      const pendingItems = planItems.filter(item => !item.order_created_at)
       const storeTotals = Object.fromEntries(
         PRODUCTION_PLAN_STORES.map(store => [
           store,
-          planItems
+          pendingItems
             .filter(item => item.store === store)
             .reduce((total, item) => total + storedItemTotal(item), 0),
         ]),
       ) as Record<ProductionPlanStore, number>
 
-      return {
+      return [{
         id: openPlan.id,
         production_date: openPlan.production_date,
         status: openPlan.status,
-        total: planItems.reduce((total, item) => total + storedItemTotal(item), 0),
+        total: pendingItems.reduce((total, item) => total + storedItemTotal(item), 0),
         storeTotals,
-      }
+      }]
     }))
   }, [])
 
   const loadAvailability = useCallback(async (targetDate: string) => {
     try {
-      const [frozenProductsResult, frozenStockResult, leftoversResult] = await Promise.all([
+      const [frozenProductsResult, frozenStockResult, leftoversResult, reusePlansResult] = await Promise.all([
         supabase
           .from('frozen_products')
           .select('id,product_id,product_source,visible_stores,store')
@@ -218,18 +227,27 @@ export default function ProductionPlanningPage() {
           .eq('product_source', 'bread')
           .lt('record_date', targetDate)
           .gt('pending_quantity', 0),
+        supabase
+          .from('bread_reuse_plans')
+          .select('store,bread_id,proposed_quantity,status')
+          .eq('status', 'proposed'),
       ])
 
       if (frozenProductsResult.error) throw frozenProductsResult.error
       if (frozenStockResult.error) throw frozenStockResult.error
       if (leftoversResult.error) throw leftoversResult.error
+      if (reusePlansResult.error) throw reusePlansResult.error
 
       setFrozenAvailability(Object.fromEntries(aggregateFrozenBreadAvailability(
         (frozenProductsResult.data ?? []) as PlanningFrozenProductRow[],
         (frozenStockResult.data ?? []) as PlanningFrozenStockRow[],
       )))
-      setLeftoverAvailability(Object.fromEntries(aggregatePlanningLeftoverAvailability(
+      const rawLeftovers = aggregatePlanningLeftoverAvailability(
         (leftoversResult.data ?? []) as PlanningPendingLeftoverRow[],
+      )
+      setLeftoverAvailability(Object.fromEntries(subtractPlanningReuseProposals(
+        rawLeftovers,
+        (reusePlansResult.data ?? []) as PlanningReuseProposalRow[],
       )))
     } catch (availabilityError) {
       setFrozenAvailability({})
@@ -264,7 +282,7 @@ export default function ProductionPlanningPage() {
 
       const { data: itemData, error: itemError } = await supabase
         .from('production_plan_items')
-        .select('id,plan_id,store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity,is_extra')
+        .select('id,plan_id,store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity,is_extra,order_created_at,order_created_by_name')
         .eq('plan_id', loadedPlan.id)
         .order('store', { ascending: true })
 
@@ -475,7 +493,7 @@ export default function ProductionPlanningPage() {
     setSaving(true)
     setError('')
     try {
-      const updates = items.map(item => supabase
+      const updates = items.filter(item => !item.order_created_at).map(item => supabase
         .from('production_plan_items')
         .update({
           planned_quantity: normalizePlannedQuantity(quantities[itemKey(item.store, item.bread_id)] ?? 0),
@@ -729,6 +747,8 @@ export default function ProductionPlanningPage() {
                       const key = itemKey(store, bread.id)
                       const fresh = normalizePlannedQuantity(quantities[key] ?? 0)
                       const item = breadItems.find(row => row.store === store)
+                      const convertedToOrder = Boolean(item?.order_created_at)
+                      const canEditItem = canEdit && !convertedToOrder
                       const frozen = normalizePlannedQuantity(frozenQuantities[key] ?? item?.frozen_quantity ?? 0)
                       const leftoverProposal = normalizePlannedQuantity(
                         leftoverQuantities[key] ?? item?.leftover_proposed_quantity ?? 0,
@@ -741,8 +761,8 @@ export default function ProductionPlanningPage() {
                       const useLeftover = leftoverEnabled[key] ?? leftover > 0
                       const hasFrozenOption = frozenAvailable > 0 || frozen > 0 || useFrozen
                       const hasLeftoverOption = leftoverAvailable > 0 || leftoverProposal > 0 || leftoverConfirmed !== null || useLeftover
-                      const canToggleFrozen = canEdit && (frozenAvailable > 0 || frozen > 0)
-                      const canToggleLeftover = canEdit && (leftoverAvailable > 0 || leftoverProposal > 0)
+                      const canToggleFrozen = canEditItem && (frozenAvailable > 0 || frozen > 0)
+                      const canToggleLeftover = canEditItem && (leftoverAvailable > 0 || leftoverProposal > 0)
                       const total = item
                         ? plannedTotalForItem(item)
                         : calculatePlannedTotalQuantity({ newQuantity: fresh, frozenQuantity: frozen, leftoverProposedQuantity: leftover })
@@ -757,18 +777,23 @@ export default function ProductionPlanningPage() {
                               inputMode="numeric"
                               min={0}
                               value={fresh}
-                              disabled={!canEdit}
+                              disabled={!canEditItem}
                               onFocus={event => event.currentTarget.select()}
                               onChange={event => setQuantity(store, bread.id, Number(event.target.value))}
                             />
                           </label>
+                          {convertedToOrder && (
+                            <span style={{ display: 'block', marginTop: 6, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 800 }}>
+                              Pedido já gerado.
+                            </span>
+                          )}
 
                           {hasFrozenOption && (
                             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, fontWeight: 800, color: canToggleFrozen || useFrozen ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
                               <input
                                 type="checkbox"
                                 checked={useFrozen}
-                                disabled={!canEdit || (!canToggleFrozen && !useFrozen)}
+                                disabled={!canEditItem || (!canToggleFrozen && !useFrozen)}
                                 onChange={event => setFrozenUse(store, bread.id, event.target.checked)}
                               />
                               <Snowflake size={14} />
@@ -778,7 +803,7 @@ export default function ProductionPlanningPage() {
                               </small>
                             </label>
                           )}
-                          {!hasFrozenOption && canEdit && (
+                          {!hasFrozenOption && canEditItem && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
                               <Snowflake size={13} /> Congelados: 0 disp.
                             </span>
@@ -792,7 +817,7 @@ export default function ProductionPlanningPage() {
                               max={frozenAvailable > 0 ? frozenAvailable : undefined}
                               value={frozen || ''}
                               placeholder="0"
-                              disabled={!canEdit}
+                              disabled={!canEditItem}
                               onFocus={event => event.currentTarget.select()}
                               onChange={event => setFrozenQuantity(store, bread.id, Number(event.target.value))}
                               style={{ marginTop: 6 }}
@@ -804,7 +829,7 @@ export default function ProductionPlanningPage() {
                               <input
                                 type="checkbox"
                                 checked={useLeftover}
-                                disabled={!canEdit || leftoverConfirmed !== null || (!canToggleLeftover && !useLeftover)}
+                                disabled={!canEditItem || leftoverConfirmed !== null || (!canToggleLeftover && !useLeftover)}
                                 onChange={event => setLeftoverUse(store, bread.id, event.target.checked)}
                               />
                               <PackageOpen size={14} />
@@ -814,7 +839,7 @@ export default function ProductionPlanningPage() {
                               </small>
                             </label>
                           )}
-                          {!hasLeftoverOption && canEdit && (
+                          {!hasLeftoverOption && canEditItem && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
                               <PackageOpen size={13} /> Sobra: 0 disp.
                             </span>
@@ -828,7 +853,7 @@ export default function ProductionPlanningPage() {
                               max={leftoverAvailable > 0 ? leftoverAvailable : undefined}
                               value={leftoverProposal || ''}
                               placeholder="0"
-                              disabled={!canEdit || leftoverConfirmed !== null}
+                              disabled={!canEditItem || leftoverConfirmed !== null}
                               onFocus={event => event.currentTarget.select()}
                               onChange={event => setLeftoverQuantity(store, bread.id, Number(event.target.value))}
                               style={{ marginTop: 6 }}
