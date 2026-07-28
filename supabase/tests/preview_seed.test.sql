@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(10);
+select plan(12);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -78,6 +78,34 @@ select is(
      and destination.code = 'ex'),
   1,
   'seed cria viagem EX separada para validar a entregadora'
+);
+
+select is(
+  (select count(*)::int
+   from public.romaneios romaneio
+   join public.destinations destination on destination.id = romaneio.destination_id
+   where romaneio.id = '40000000-0000-4000-8000-000000000005'
+     and romaneio.record_date = (now() at time zone 'America/Sao_Paulo')::date
+     and romaneio.trip_number = 5
+     and romaneio.status = 'enviado'
+     and romaneio.sent_by = 'Expedicao JC Teste'
+     and romaneio.sent_at is not null
+     and destination.code = 'ex'),
+  1,
+  'seed cria viagem EX enviada para validar conferencia pendente'
+);
+
+select is(
+  (select count(*)::int
+   from public.romaneio_items item
+   where item.romaneio_id = '40000000-0000-4000-8000-000000000005'
+     and item.product_id = 'teste-baguete'
+     and item.qty_sent = 8
+     and item.qty_received is null
+     and item.qty_accepted is null
+     and item.item_status = 'pendente'),
+  1,
+  'viagem EX pendente de conferencia tem item ficticio para abrir a tela'
 );
 
 select is(

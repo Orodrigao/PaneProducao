@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(3);
+select plan(10);
 
 insert into auth.users (
   id,
@@ -61,16 +61,67 @@ insert into public.romaneios (
   created_by,
   sent_by,
   sent_at
-) values (
-  '90000000-0000-4000-8000-000000000020',
-  current_date,
-  '20000000-0000-4000-8000-000000000003',
-  1,
-  'enviado',
-  'Teste',
-  'Teste',
-  now()
-);
+) values
+  (
+    '90000000-0000-4000-8000-000000000020',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    91,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000021',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    92,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000022',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    93,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000023',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    94,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000024',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    95,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000025',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    96,
+    'enviado',
+    'Teste',
+    'Teste',
+    now()
+  );
 
 insert into public.romaneio_items (
   id,
@@ -81,16 +132,97 @@ insert into public.romaneio_items (
   qty_sent,
   unit_price,
   item_status
-) values (
-  '90000000-0000-4000-8000-000000000030',
-  '90000000-0000-4000-8000-000000000020',
-  'teste-baguete',
-  'bread',
-  '[TESTE] Baguete',
-  10,
-  1,
-  'pendente'
-);
+) values
+  (
+    '90000000-0000-4000-8000-000000000030',
+    '90000000-0000-4000-8000-000000000020',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete',
+    10,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000031',
+    '90000000-0000-4000-8000-000000000021',
+    'teste-vazio',
+    'bread',
+    '[TESTE] Vazio',
+    5,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000032',
+    '90000000-0000-4000-8000-000000000022',
+    'teste-parcial-a',
+    'bread',
+    '[TESTE] Parcial A',
+    5,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000033',
+    '90000000-0000-4000-8000-000000000022',
+    'teste-parcial-b',
+    'bread',
+    '[TESTE] Parcial B',
+    6,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000034',
+    '90000000-0000-4000-8000-000000000023',
+    'teste-duplicado-a',
+    'bread',
+    '[TESTE] Duplicado A',
+    5,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000035',
+    '90000000-0000-4000-8000-000000000023',
+    'teste-duplicado-b',
+    'bread',
+    '[TESTE] Duplicado B',
+    6,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000036',
+    '90000000-0000-4000-8000-000000000024',
+    'teste-aceito-maior',
+    'bread',
+    '[TESTE] Aceito Maior',
+    5,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000037',
+    '90000000-0000-4000-8000-000000000025',
+    'teste-completo-a',
+    'bread',
+    '[TESTE] Completo A',
+    5,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000038',
+    '90000000-0000-4000-8000-000000000025',
+    'teste-completo-b',
+    'bread',
+    '[TESTE] Completo B',
+    6,
+    1,
+    'pendente'
+  );
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
@@ -130,6 +262,113 @@ select is(
   ),
   'aberta',
   'pendencia nasce aberta para a proxima viagem'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+
+select throws_ok(
+  $$ select public.confirm_romaneio_receipt('90000000-0000-4000-8000-000000000021', '[]'::jsonb) $$,
+  '22023',
+  'A conferencia precisa informar todos os itens do romaneio.',
+  'conferencia vazia nao fecha romaneio'
+);
+
+reset role;
+
+select is(
+  (select status from public.romaneios where id = '90000000-0000-4000-8000-000000000021'),
+  'enviado',
+  'romaneio com conferencia vazia permanece enviado'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+
+select throws_ok(
+  $$ select public.confirm_romaneio_receipt(
+    '90000000-0000-4000-8000-000000000022',
+    '[{
+      "id": "90000000-0000-4000-8000-000000000032",
+      "qty_received": 5,
+      "qty_accepted": 5,
+      "divergence_reason": "",
+      "obs": ""
+    }]'::jsonb
+  ) $$,
+  '22023',
+  'Confira todos os itens antes de fechar o romaneio.',
+  'conferencia parcial nao fecha romaneio'
+);
+
+reset role;
+
+select is(
+  (select status from public.romaneios where id = '90000000-0000-4000-8000-000000000022'),
+  'enviado',
+  'romaneio com conferencia parcial permanece enviado'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+
+select throws_ok(
+  $$ select public.confirm_romaneio_receipt(
+    '90000000-0000-4000-8000-000000000023',
+    '[{
+      "id": "90000000-0000-4000-8000-000000000034",
+      "qty_received": 5,
+      "qty_accepted": 5,
+      "divergence_reason": "",
+      "obs": ""
+    }, {
+      "id": "90000000-0000-4000-8000-000000000034",
+      "qty_received": 5,
+      "qty_accepted": 5,
+      "divergence_reason": "",
+      "obs": ""
+    }]'::jsonb
+  ) $$,
+  '22023',
+  'A conferencia nao pode repetir item do romaneio.',
+  'conferencia com item repetido nao fecha romaneio'
+);
+
+select throws_ok(
+  $$ select public.confirm_romaneio_receipt(
+    '90000000-0000-4000-8000-000000000024',
+    '[{
+      "id": "90000000-0000-4000-8000-000000000036",
+      "qty_received": 4,
+      "qty_accepted": 5,
+      "divergence_reason": "",
+      "obs": ""
+    }]'::jsonb
+  ) $$,
+  '22023',
+  'Quantidade aceita nao pode ser maior que recebida.',
+  'conferencia com aceito maior que recebido nao fecha romaneio'
+);
+
+select is(
+  public.confirm_romaneio_receipt(
+    '90000000-0000-4000-8000-000000000025',
+    '[{
+      "id": "90000000-0000-4000-8000-000000000037",
+      "qty_received": 5,
+      "qty_accepted": 5,
+      "divergence_reason": "",
+      "obs": ""
+    }, {
+      "id": "90000000-0000-4000-8000-000000000038",
+      "qty_received": 6,
+      "qty_accepted": 6,
+      "divergence_reason": "",
+      "obs": ""
+    }]'::jsonb
+  ),
+  'conferido',
+  'conferencia completa sem divergencia fecha romaneio'
 );
 
 select * from finish();

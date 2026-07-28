@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(96);
+select plan(97);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -84,6 +84,10 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
     ilike all(array['%romaneio_replacement_pending%', '%lower(v_destination_code) = ''ex''%', '%qty_sent - item.qty_accepted%']),
   'conferencia EX cria pendencia por enviado menos aceito');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
+    ilike all(array['%jsonb_array_length%', '%count(distinct id)%', '%qty_accepted > qty_received%']),
+  'recebimento do romaneio bloqueia payload vazio, duplicado e quantidade aceita invalida');
 
 -- Sobras: conciliação interna pelo forno
 select ok(exists(select 1 from pg_trigger where tgname = 'reconcile_bread_leftovers_after_oven'),

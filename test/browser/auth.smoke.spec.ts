@@ -8,6 +8,7 @@ test.use({
 const previewAccounts = {
   admin: 'rodrigao+teste@gmail.com',
   vendasJa: 'rodrigao+teste-vendas-ja@gmail.com',
+  romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
   cozinhaJc: 'rodrigao+teste-cozinha-jc@gmail.com',
 } as const
 
@@ -131,6 +132,27 @@ test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', asy
   await expect(
     bagueteCard.getByText('Enviando 1 un acima do pedido + pendência'),
   ).toBeVisible()
+})
+
+test('Romaneio EX abre conferencia pendente da propria loja', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.romaneioEx)
+
+  await expect(page).toHaveURL(/\/romaneio$/)
+  await expect(
+    page.getByRole('banner').getByText('Romaneio EX Teste', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Novo Romaneio' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Marcar Enviado/ })).toHaveCount(0)
+
+  const exPendingTitle = page.getByText('[TESTE] Exposicao · Viagem 5', { exact: true })
+  await expect(exPendingTitle).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  const exPendingTrip = exPendingTitle.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " ps-card ")][1]')
+  await expect(exPendingTrip.getByText('Enviado', { exact: true })).toBeVisible()
+  await exPendingTrip.getByRole('button', { name: /Conferir chegada/ }).click()
+
+  await expect(page.getByText('[TESTE] Exposicao · Viagem 5', { exact: true })).toBeVisible()
+  await expect(page.getByText('[TESTE] Baguete', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Salvar Confer/ })).toBeVisible()
 })
 
 test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
