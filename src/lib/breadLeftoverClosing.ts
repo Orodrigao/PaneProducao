@@ -6,6 +6,11 @@ export interface SavedClosingBreadRow {
   product_id: string | null
 }
 
+export interface BreadLeftoverItemPayload {
+  bread_id: string
+  quantity: number
+}
+
 export function closingBreadIds(
   ordered: ClosingBreadSourceRow[],
   produced: ClosingBreadSourceRow[],
@@ -54,6 +59,32 @@ export function isValidClosingDate(recordDate: string, today: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(recordDate) && recordDate <= today
 }
 
+export function buildBreadLeftoverItems(
+  visibleBreadIds: string[],
+  quantities: Record<string, number>,
+): BreadLeftoverItemPayload[] {
+  const items = new Map<string, number>()
+
+  for (const breadId of visibleBreadIds) {
+    if (!breadId) continue
+    items.set(breadId, normalizeQuantity(quantities[`bread_${breadId}`] ?? 0))
+  }
+
+  for (const [key, quantity] of Object.entries(quantities)) {
+    if (!key.startsWith('bread_')) continue
+    const breadId = key.slice('bread_'.length)
+    const normalized = normalizeQuantity(quantity)
+    if (!breadId || normalized <= 0 || items.has(breadId)) continue
+    items.set(breadId, normalized)
+  }
+
+  return [...items.entries()].map(([bread_id, quantity]) => ({ bread_id, quantity }))
+}
+
+export function hasPositiveBreadLeftover(items: BreadLeftoverItemPayload[]): boolean {
+  return items.some(item => item.quantity > 0)
+}
+
 export function resolvePendingLeftoverStore(
   user: { role: string; store?: string | null } | null,
   requestedStore: string | null,
@@ -62,4 +93,8 @@ export function resolvePendingLeftoverStore(
   if (requestedStore === 'jc' || requestedStore === 'ja') return requestedStore
   if (user?.store === 'jc' || user?.store === 'ja') return user.store
   return 'jc'
+}
+
+function normalizeQuantity(value: number): number {
+  return Number.isFinite(value) && value > 0 ? value : 0
 }

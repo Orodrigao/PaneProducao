@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   blocksClosing,
+  buildBreadLeftoverItems,
   closingBreadIds,
   closingResumePath,
+  hasPositiveBreadLeftover,
   isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
@@ -69,5 +71,24 @@ describe('fechamento físico de sobras', () => {
     expect(resolvePendingLeftoverStore({ role: 'vendas', store: 'jc' }, 'ja')).toBe('jc')
     expect(resolvePendingLeftoverStore({ role: 'admin', store: 'ja' }, null)).toBe('ja')
     expect(resolvePendingLeftoverStore(null, null)).toBe('jc')
+  })
+
+  it('envia pao avulso preenchido mesmo se a lista visual recarregou vazia', () => {
+    const items = buildBreadLeftoverItems([], {
+      bread_baguete: 4,
+      produto_qualquer: 9,
+    })
+
+    expect(items).toEqual([{ bread_id: 'baguete', quantity: 4 }])
+    expect(hasPositiveBreadLeftover(items)).toBe(true)
+  })
+
+  it('preserva paes visiveis zerados para permitir corrigir sobra ja salva', () => {
+    const items = buildBreadLeftoverItems(['baguete'], {
+      bread_baguete: 0,
+    })
+
+    expect(items).toEqual([{ bread_id: 'baguete', quantity: 0 }])
+    expect(hasPositiveBreadLeftover(items)).toBe(false)
   })
 })
