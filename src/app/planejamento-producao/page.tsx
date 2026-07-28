@@ -21,6 +21,8 @@ import {
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
+  planHasOrderConversion,
+  planIsFullyConvertedToOrders,
   planNeedsOrderConversion,
   planningAvailabilityKey,
   plannedBreadsForDate,
@@ -188,6 +190,7 @@ export default function ProductionPlanningPage() {
 
     setOpenPlans(plans.flatMap(openPlan => {
       const planItems = itemsByPlan.get(openPlan.id) ?? []
+      if (planHasOrderConversion(planItems)) return []
       if (!planNeedsOrderConversion(planItems)) return []
       const pendingItems = planItems.filter(item => !item.order_created_at)
       const storeTotals = Object.fromEntries(
@@ -389,7 +392,9 @@ export default function ProductionPlanningPage() {
     (itemsByBread.get(bread.id) ?? []).some(item => plannedTotalForItem(item) > 0),
   ).length
 
-  const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status))
+  const planningHasOrderConversion = planHasOrderConversion(items)
+  const planningFullyConvertedToOrder = planIsFullyConvertedToOrders(items)
+  const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status) && !planningHasOrderConversion)
   const searchQuery = search.trim()
   const searchIsActive = searchQuery.length >= 2
   const matchingCatalogBreads = searchIsActive
@@ -682,7 +687,9 @@ export default function ProductionPlanningPage() {
       {!loading && plan && (
         <>
           <div className="ps-banner honey" style={{ marginTop: 14 }}>
-            <span>{dateLabel(plan.production_date)} · {PRODUCTION_PLAN_STATUS_LABELS[plan.status]}</span>
+            <span>
+              {dateLabel(plan.production_date)} {' - '} {planningHasOrderConversion ? 'Pedido gerado' : PRODUCTION_PLAN_STATUS_LABELS[plan.status]}
+            </span>
           </div>
 
           <section className="ps-card" style={{ marginTop: 14 }}>
@@ -701,15 +708,21 @@ export default function ProductionPlanningPage() {
                   </span>
                 </div>
               </div>
-              <button type="button" className="ps-btn primary" onClick={savePlan} disabled={!canEdit || saving}>
-                <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
-              </button>
+              {canEdit && (
+                <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
+                  <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
+                </button>
+              )}
             </div>
           </section>
 
           {!canEdit && (
             <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC' }}>
-              <AlertTriangle size={16} /> Planejamento travado.
+              <AlertTriangle size={16} /> {planningFullyConvertedToOrder
+                ? 'Esse planejamento ja virou pedido e nao pode mais ser alterado aqui.'
+                : planningHasOrderConversion
+                  ? 'Parte deste planejamento ja virou pedido e nao pode mais ser alterada aqui.'
+                : 'Planejamento travado.'}
             </div>
           )}
 

@@ -12,6 +12,8 @@ import {
   plannedBreadsForDate,
   planningAvailabilityKey,
   productionPlanItemOrderQuantity,
+  planHasOrderConversion,
+  planIsFullyConvertedToOrders,
   summarizePlanItemsByStore,
   subtractPlanningReuseProposals,
   storeNeedsOrderConversion,
@@ -191,5 +193,21 @@ describe('productionPlanning', () => {
 
     expect(storeNeedsOrderConversion(items, 'jc')).toBe(false)
     expect(storeNeedsOrderConversion(items, 'ja')).toBe(true)
+  })
+
+  it('identifica planejamento que ja virou pedido por completo sem bloquear rascunho zerado', () => {
+    const emptyDraft = [
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 0, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 0, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+    ]
+    const fullyConverted = [
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: '2026-07-28T01:00:00Z' },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 0, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+    ]
+
+    expect(planHasOrderConversion(emptyDraft)).toBe(false)
+    expect(planIsFullyConvertedToOrders(emptyDraft)).toBe(false)
+    expect(planHasOrderConversion(fullyConverted)).toBe(true)
+    expect(planIsFullyConvertedToOrders(fullyConverted)).toBe(true)
   })
 })

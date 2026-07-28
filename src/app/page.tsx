@@ -72,6 +72,13 @@ function dateLabel(dateStr: string) {
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
 }
+function operationalErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return fallback
+}
 function deliveryDayLabel(delivIdx: number) {
   const todayIdx = nowBrasilia().getDay()
   const d = nowBrasilia()
@@ -540,7 +547,7 @@ export default function ProducaoPage() {
       }
     } catch(e) {
       setSyncState('error')
-      showToast('Erro ao salvar. Tente novamente.')
+      showToast(operationalErrorMessage(e, 'Erro ao salvar. Tente novamente.'))
     } finally { setSaving(false) }
   }
 
@@ -563,19 +570,30 @@ export default function ProducaoPage() {
       return
     }
 
+    const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
+    const hasLeftoverProposal = leftoverProposals.some(proposal => proposal.quantity > 0)
+    if (hasLeftoverProposal) {
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        showToast('Entre com e-mail para salvar as sobras junto com o pedido.')
+        return
+      }
+    }
+
     setPlanningImportSaving(true)
     setSyncState('syncing')
     try {
       await sbDel('orders', { store, order_date: date })
       await sbInsert('orders', rows)
 
-      const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
-      const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
-        p_target_production_date: date,
-        p_store: store,
-        p_proposals: leftoverProposals,
-      })
-      if (reuseError) throw reuseError
+      if (hasLeftoverProposal) {
+        const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
+          p_target_production_date: date,
+          p_store: store,
+          p_proposals: leftoverProposals,
+        })
+        if (reuseError) throw reuseError
+      }
 
       const map = await loadOrders(date)
       setOrders(map)
@@ -612,7 +630,7 @@ export default function ProducaoPage() {
       showToast(`Pedido ${store.toUpperCase()} gerado pelo Planejamento.`)
     } catch(e) {
       setSyncState('error')
-      showToast('Erro ao transformar o Planejamento em Pedido.')
+      showToast(operationalErrorMessage(e, 'Erro ao transformar o Planejamento em Pedido.'))
     } finally {
       setPlanningImportSaving(false)
     }

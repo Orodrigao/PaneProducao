@@ -205,6 +205,21 @@ export function planNeedsOrderConversion(
   return PRODUCTION_PLAN_STORES.some(store => storeNeedsOrderConversion(items, store))
 }
 
+export function planHasOrderConversion(
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return items.some(item =>
+    productionPlanItemOrderQuantity(item) > 0
+    && Boolean(item.order_created_at),
+  )
+}
+
+export function planIsFullyConvertedToOrders(
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return planHasOrderConversion(items) && !planNeedsOrderConversion(items)
+}
+
 export function statusAllowsDraftEditing(status: ProductionPlanStatus): boolean {
   return status === 'rascunho' || status === 'reaberto'
 }
