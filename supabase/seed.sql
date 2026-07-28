@@ -67,9 +67,9 @@ insert into public.orders (
   order_type, product_source, product_name, needs_production
 )
 values
-  ('30000000-0000-4000-8000-000000000001', 'ja', 'teste-baguete', 20, current_date, '[TESTE] pedido para validar envio completo', 'producao', 'bread', '[TESTE] Baguete', true),
-  ('30000000-0000-4000-8000-000000000002', 'ja', 'teste-ciabatta', 12, current_date, '[TESTE] pedido para validar envio parcial', 'producao', 'bread', '[TESTE] Ciabatta', true),
-  ('30000000-0000-4000-8000-000000000003', 'ex', 'teste-baguete', 8, current_date, '[TESTE] pedido para validar conferencia', 'producao', 'bread', '[TESTE] Baguete', true)
+  ('30000000-0000-4000-8000-000000000001', 'ja', 'teste-baguete', 20, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar envio completo', 'producao', 'bread', '[TESTE] Baguete', true),
+  ('30000000-0000-4000-8000-000000000002', 'ja', 'teste-ciabatta', 12, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar envio parcial', 'producao', 'bread', '[TESTE] Ciabatta', true),
+  ('30000000-0000-4000-8000-000000000003', 'ex', 'teste-baguete', 8, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar conferencia', 'producao', 'bread', '[TESTE] Baguete', true)
 on conflict (id) do update set
   store = excluded.store,
   bread_id = excluded.bread_id,
@@ -158,7 +158,7 @@ insert into public.romaneios (
 values
   (
     '40000000-0000-4000-8000-000000000002',
-    current_date,
+    (now() at time zone 'America/Sao_Paulo')::date,
     '20000000-0000-4000-8000-000000000003',
     2,
     'com_divergencia',
@@ -167,7 +167,7 @@ values
   ),
   (
     '40000000-0000-4000-8000-000000000004',
-    current_date,
+    (now() at time zone 'America/Sao_Paulo')::date,
     '20000000-0000-4000-8000-000000000003',
     4,
     'separado',

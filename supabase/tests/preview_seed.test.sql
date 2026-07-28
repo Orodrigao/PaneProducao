@@ -42,7 +42,7 @@ select is(
       '30000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000002',
       '30000000-0000-4000-8000-000000000003'
-    ) and order_date = current_date),
+    ) and order_date = (now() at time zone 'America/Sao_Paulo')::date),
   3,
   'seed cria pedidos do dia para testar JA e EX'
 );
@@ -63,7 +63,7 @@ select is(
    from public.romaneios romaneio
    join public.destinations destination on destination.id = romaneio.destination_id
    where romaneio.id = '40000000-0000-4000-8000-000000000004'
-     and romaneio.record_date = current_date
+     and romaneio.record_date = (now() at time zone 'America/Sao_Paulo')::date
      and romaneio.trip_number = 4
      and romaneio.status = 'separado'
      and destination.code = 'ex'),
