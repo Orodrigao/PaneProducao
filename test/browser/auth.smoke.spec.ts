@@ -101,7 +101,9 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
   await expect(page.getByRole('button', { name: 'Novo Romaneio' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Conferir chegada/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Aprovar diverg/ })).toHaveCount(0)
-  const exTrip = page.locator('.ps-card', { hasText: /Exposicao.*Viagem 4/ })
+  const exTripTitle = page.getByText('[TESTE] Exposicao · Viagem 4', { exact: true })
+  await expect(exTripTitle).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  const exTrip = exTripTitle.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " ps-card ")][1]')
   await expect(exTrip).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(exTrip.getByRole('button', { name: /Marcar Enviado/ })).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
