@@ -44,22 +44,22 @@ where plan.status <> 'fechado'
     where item.plan_id = plan.id
       and (
         item.planned_quantity
-    + item.frozen_quantity
-    + coalesce(item.leftover_confirmed_quantity, item.leftover_proposed_quantity)
-  ) > 0
-  and exists (
-    select 1
-    from public.orders as ord
-    where ord.cancelled_at is null
-      and ord.order_date = plan.production_date
-      and ord.store = item.store
-      and ord.bread_id = item.bread_id
-      and ord.quantity = (
-        item.planned_quantity
         + item.frozen_quantity
         + coalesce(item.leftover_confirmed_quantity, item.leftover_proposed_quantity)
+      ) > 0
+      and exists (
+        select 1
+        from public.orders as ord
+        where ord.cancelled_at is null
+          and ord.order_date = plan.production_date
+          and ord.store = item.store
+          and ord.bread_id = item.bread_id
+          and ord.quantity = (
+            item.planned_quantity
+            + item.frozen_quantity
+            + coalesce(item.leftover_confirmed_quantity, item.leftover_proposed_quantity)
+          )
       )
-  );
   )
   and not exists (
     select 1
