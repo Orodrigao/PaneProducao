@@ -7,10 +7,19 @@ import {
   type ProductionHomeUserKey,
 } from '@/lib/productionHomeAccess'
 import { aggregateWholePending, clampReuseProposal } from '@/lib/breadLeftovers'
+import {
+  PRODUCTION_PLAN_STATUS_LABELS,
+  buildLeftoverProposalDraftsFromPlan,
+  buildProductionOrderDraftsFromPlan,
+  summarizePlanItemsByStore,
+  type ProductionPlanOrderItemInput,
+  type ProductionPlanStatus,
+  type ProductionPlanStore,
+} from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
-import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check } from 'lucide-react'
+import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
 const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
@@ -35,6 +44,13 @@ type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
 
 interface BreadForm { name:string; days:number[]; is_pj:boolean }
 interface ReusePlanSummary { status:string; proposedQuantity:number; confirmedQuantity:number }
+interface ProductionPlanForOrder {
+  id: string
+  productionDate: string
+  status: ProductionPlanStatus
+  items: ProductionPlanOrderItemInput[]
+  storeTotals: Record<ProductionPlanStore, number>
+}
 
 // ── utils ──────────────────────────────────────────────────────────
 function deliveryDateKey(delivIdx: number) {
@@ -129,6 +145,7 @@ export default function ProducaoPage() {
   const [pendingLeftovers, setPendingLeftovers] = useState<Record<string,number>>({})
   const [reuseProposalQtys, setReuseProposalQtys] = useState<Record<string,number>>({})
   const [reusePlans, setReusePlans] = useState<Record<string,ReusePlanSummary>>({})
+  const [productionPlanForOrder, setProductionPlanForOrder] = useState<ProductionPlanForOrder|null>(null)
   const [obsMap, setObsMap] = useState<Record<string,string>>({})
   const [pjClient, setPjClient] = useState('')
   const [pjDate, setPjDate] = useState('')
@@ -142,6 +159,7 @@ export default function ProducaoPage() {
   const [breadForm, setBreadForm] = useState<BreadForm>({ name:'', days:[1,2,3,4,5,6], is_pj:false })
   const [deletingBread, setDeletingBread] = useState<Bread|null>(null)
   const [saving, setSaving] = useState(false)
+  const [planningImportSaving, setPlanningImportSaving] = useState(false)
   // geolar date picker
   const [geolarDate, setGeolarDate] = useState(todayKey())
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
@@ -229,6 +247,44 @@ export default function ProducaoPage() {
       setPendingLeftovers({})
       setReuseProposalQtys({})
       setReusePlans({})
+    }
+  }, [])
+
+  const loadProductionPlanForOrders = useCallback(async (dateKey: string) => {
+    try {
+      const { data: planData, error: planError } = await supabase
+        .from('production_plans')
+        .select('id,production_date,status')
+        .eq('production_date', dateKey)
+        .maybeSingle()
+
+      if (planError) throw planError
+      if (!planData) {
+        setProductionPlanForOrder(null)
+        return null
+      }
+
+      const { data: itemData, error: itemError } = await supabase
+        .from('production_plan_items')
+        .select('store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity')
+        .eq('plan_id', planData.id)
+        .in('store', ['jc', 'ja'])
+
+      if (itemError) throw itemError
+
+      const items = (itemData ?? []) as ProductionPlanOrderItemInput[]
+      const loadedPlan: ProductionPlanForOrder = {
+        id: String(planData.id),
+        productionDate: String(planData.production_date),
+        status: planData.status as ProductionPlanStatus,
+        items,
+        storeTotals: summarizePlanItemsByStore(items),
+      }
+      setProductionPlanForOrder(loadedPlan)
+      return loadedPlan
+    } catch {
+      setProductionPlanForOrder(null)
+      return null
     }
   }, [])
 
@@ -344,6 +400,7 @@ export default function ProducaoPage() {
       setOrderDate(defDate)
       initOrderState(map, bds)
       await loadReuseContext(defDate)
+      await loadProductionPlanForOrders(defDate)
       setActiveTab(0)
       // Rodrigão: pré-carrega catálogo de Itens JC pra evitar lag ao clicar a aba
       if (user === 'rodrigo') {
@@ -370,6 +427,7 @@ export default function ProducaoPage() {
     setCurrentUser(null)
     setBreads([]); setOrders({}); setQtys({}); setObsMap({})
     setPendingLeftovers({}); setReuseProposalQtys({}); setReusePlans({})
+    setProductionPlanForOrder(null)
     setActiveTab(0)
     setScreen('login')
     authLogout()
@@ -400,6 +458,7 @@ export default function ProducaoPage() {
       setOrders(map)
       initOrderState(map, breads)
       await loadReuseContext(newDate)
+      await loadProductionPlanForOrders(newDate)
     } catch(e) { showToast('Erro ao carregar pedidos.') }
     finally { hideLoad() }
   }
@@ -479,6 +538,53 @@ export default function ProducaoPage() {
       setSyncState('error')
       showToast('Erro ao salvar. Tente novamente.')
     } finally { setSaving(false) }
+  }
+
+  const importPlanningAsOrder = async (store: ProductionPlanStore) => {
+    const date = deliveryDateKey(delivIdx)
+    const plan = productionPlanForOrder?.productionDate === date ? productionPlanForOrder : null
+    if (!plan) {
+      showToast('Nenhum planejamento salvo para esta data.')
+      return
+    }
+
+    const rows = buildProductionOrderDraftsFromPlan(plan.items, store, date)
+    if (rows.length === 0) {
+      showToast(`Planejamento sem quantidade para ${store.toUpperCase()}.`)
+      return
+    }
+
+    const existingTotal = calcTotal(store)
+    if (existingTotal > 0 && !window.confirm(`Substituir o pedido ${store.toUpperCase()} de ${dateLabel(date)} pelo Planejamento?\n\nPedido atual: ${existingTotal}\nPlanejamento: ${plan.storeTotals[store]}`)) {
+      return
+    }
+
+    setPlanningImportSaving(true)
+    setSyncState('syncing')
+    try {
+      await sbDel('orders', { store, order_date: date })
+      await sbInsert('orders', rows)
+
+      const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
+      const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
+        p_target_production_date: date,
+        p_store: store,
+        p_proposals: leftoverProposals,
+      })
+      if (reuseError) throw reuseError
+
+      const map = await loadOrders(date)
+      setOrders(map)
+      initOrderState(map, breads)
+      await loadReuseContext(date)
+      setSyncState('')
+      showToast(`Pedido ${store.toUpperCase()} gerado pelo Planejamento.`)
+    } catch(e) {
+      setSyncState('error')
+      showToast('Erro ao transformar o Planejamento em Pedido.')
+    } finally {
+      setPlanningImportSaving(false)
+    }
   }
 
   const sendTelegram = async (store: Store, rows: any[], storeBreads: Bread[]) => {
@@ -754,6 +860,12 @@ export default function ProducaoPage() {
   const isReportTab = reportTabActive
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
   const isItensTab = tabDefs[activeTab]?.label === 'Itens JC'
+  const planningImport = (activeStore === 'jc' || activeStore === 'ja') && productionPlanForOrder?.productionDate === orderDate
+    ? {
+      status: productionPlanForOrder.status,
+      total: productionPlanForOrder.storeTotals[activeStore],
+    }
+    : null
 
   const globalUser = getCurrentUser()
   const displayName = globalUser?.displayName ?? ''
@@ -814,12 +926,17 @@ export default function ProducaoPage() {
               pendingLeftovers={pendingLeftovers}
               reuseProposalQtys={reuseProposalQtys}
               reusePlans={reusePlans}
+              planningImport={planningImport}
+              planningImportSaving={planningImportSaving}
               obs={obsMap[activeStore]||''}
               pjClient={pjClient}
               pjDate={pjDate}
               onDelivChange={changeDelivDay}
               onQtyChange={(key,val)=>setQty(key,val)}
               onReuseChange={(key,val)=>setReuseProposal(key,val)}
+              onImportPlanning={(activeStore === 'jc' || activeStore === 'ja')
+                ? () => importPlanningAsOrder(activeStore)
+                : undefined}
               onObsChange={(obs)=>setObsMap(prev=>({...prev,[activeStore]:obs}))}
               onPjClientChange={setPjClient}
               onPjDateChange={setPjDate}
@@ -963,15 +1080,18 @@ interface OrderFormProps {
   pendingLeftovers:Record<string,number>
   reuseProposalQtys:Record<string,number>
   reusePlans:Record<string,ReusePlanSummary>
+  planningImport:{ status: ProductionPlanStatus; total: number }|null
+  planningImportSaving:boolean
   onDelivChange:(idx:number)=>void
   onQtyChange:(key:string,val:number)=>void
   onReuseChange:(key:string,val:number)=>void
+  onImportPlanning?:()=>void
   onObsChange:(obs:string)=>void
   onPjClientChange:(v:string)=>void
   onPjDateChange:(v:string)=>void
 }
 
-function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLeftovers, reuseProposalQtys, reusePlans, obs, pjClient, pjDate, onDelivChange, onQtyChange, onReuseChange, onObsChange, onPjClientChange, onPjDateChange }:OrderFormProps) {
+function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLeftovers, reuseProposalQtys, reusePlans, planningImport, planningImportSaving, obs, pjClient, pjDate, onDelivChange, onQtyChange, onReuseChange, onImportPlanning, onObsChange, onPjClientChange, onPjDateChange }:OrderFormProps) {
   const storeName = {jc:'Julio de Castilhos',ja:'Jardim América',ex:'Exposição',pj:'PJ'}[store]||store.toUpperCase()
 
   return (
@@ -992,6 +1112,28 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLefto
             ))}
           </div>
         </>
+      )}
+
+      {!isPJ && planningImport && (
+        <div style={{ marginTop: 12, padding: '12px 14px', border: '1px solid var(--honey-line)', borderRadius: 'var(--r-ctrl)', background: 'var(--honey-tint)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CalendarCheck size={18} />
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <b style={{ fontSize: 14 }}>Planejamento salvo</b>
+              <small style={{ color: 'var(--ink-soft)', fontWeight: 700 }}>
+                {planningImport.total} pães · {PRODUCTION_PLAN_STATUS_LABELS[planningImport.status]}
+              </small>
+            </span>
+          </div>
+          <button
+            type="button"
+            className="ps-btn primary"
+            disabled={isLocked || planningImportSaving || planningImport.total <= 0 || !onImportPlanning}
+            onClick={onImportPlanning}
+          >
+            {planningImportSaving ? 'Gerando...' : 'Transformar em Pedido'}
+          </button>
+        </div>
       )}
 
       <div className="ps-section">

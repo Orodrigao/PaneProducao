@@ -35,6 +35,29 @@ export interface ProductionPlanItemInput {
   leftoverConfirmedQuantity?: number | null
 }
 
+export interface ProductionPlanOrderItemInput {
+  store: ProductionPlanStore | string | null
+  bread_id: string | null
+  planned_quantity: number | string | null
+  frozen_quantity?: number | string | null
+  leftover_proposed_quantity?: number | string | null
+  leftover_confirmed_quantity?: number | string | null
+}
+
+export interface ProductionOrderDraftFromPlan {
+  store: ProductionPlanStore
+  bread_id: string
+  quantity: number
+  order_date: string
+  order_type: 'producao'
+  obs: string
+}
+
+export interface ProductionLeftoverProposalFromPlan {
+  bread_id: string
+  quantity: number
+}
+
 export interface PlanningFrozenProductRow {
   id: string
   product_id: string | null
@@ -103,6 +126,58 @@ export function calculatePlannedTotalQuantity(item: ProductionPlanItemInput): nu
   const frozen = normalizePlanQuantity(item.frozenQuantity ?? 0)
   const leftover = normalizePlanQuantity(item.leftoverConfirmedQuantity ?? item.leftoverProposedQuantity ?? 0)
   return fresh + frozen + leftover
+}
+
+export function productionPlanItemOrderQuantity(item: ProductionPlanOrderItemInput): number {
+  return calculatePlannedTotalQuantity({
+    newQuantity: normalizePlanQuantity(item.planned_quantity),
+    frozenQuantity: normalizePlanQuantity(item.frozen_quantity ?? 0),
+    leftoverProposedQuantity: normalizePlanQuantity(item.leftover_proposed_quantity ?? 0),
+    leftoverConfirmedQuantity: item.leftover_confirmed_quantity == null
+      ? null
+      : normalizePlanQuantity(item.leftover_confirmed_quantity),
+  })
+}
+
+export function buildProductionOrderDraftsFromPlan(
+  items: readonly ProductionPlanOrderItemInput[],
+  store: ProductionPlanStore,
+  orderDate: string,
+): ProductionOrderDraftFromPlan[] {
+  return items
+    .filter(item => item.store === store && Boolean(item.bread_id))
+    .map(item => ({
+      store,
+      bread_id: String(item.bread_id),
+      quantity: productionPlanItemOrderQuantity(item),
+      order_date: orderDate,
+      order_type: 'producao' as const,
+      obs: 'Gerado pelo Planejamento',
+    }))
+    .filter(row => row.quantity > 0)
+}
+
+export function buildLeftoverProposalDraftsFromPlan(
+  items: readonly ProductionPlanOrderItemInput[],
+  store: ProductionPlanStore,
+): ProductionLeftoverProposalFromPlan[] {
+  return items
+    .filter(item => item.store === store && Boolean(item.bread_id))
+    .map(item => ({
+      bread_id: String(item.bread_id),
+      quantity: normalizePlanQuantity(item.leftover_proposed_quantity ?? 0),
+    }))
+}
+
+export function summarizePlanItemsByStore(
+  items: readonly ProductionPlanOrderItemInput[],
+): Record<ProductionPlanStore, number> {
+  return Object.fromEntries(PRODUCTION_PLAN_STORES.map(store => [
+    store,
+    items
+      .filter(item => item.store === store)
+      .reduce((total, item) => total + productionPlanItemOrderQuantity(item), 0),
+  ])) as Record<ProductionPlanStore, number>
 }
 
 export function statusAllowsDraftEditing(status: ProductionPlanStatus): boolean {

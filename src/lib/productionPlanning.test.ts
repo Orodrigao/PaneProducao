@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateFrozenBreadAvailability,
   aggregatePlanningLeftoverAvailability,
+  buildLeftoverProposalDraftsFromPlan,
+  buildProductionOrderDraftsFromPlan,
   calculatePlannedTotalQuantity,
   frozenLocationPlanningStore,
   matchesPlanningBreadSearch,
@@ -9,6 +11,8 @@ import {
   normalizePlanningStores,
   plannedBreadsForDate,
   planningAvailabilityKey,
+  productionPlanItemOrderQuantity,
+  summarizePlanItemsByStore,
   statusAllowsDraftEditing,
   weekdayIndex,
 } from './productionPlanning'
@@ -111,5 +115,51 @@ describe('productionPlanning', () => {
       'jc:baguete': 3,
       'ja:baguete': 3,
     })
+  })
+
+  it('transforma um item planejado em quantidade total de pedido', () => {
+    expect(productionPlanItemOrderQuantity({
+      store: 'jc',
+      bread_id: 'baguete',
+      planned_quantity: 5,
+      frozen_quantity: 3,
+      leftover_proposed_quantity: 2,
+      leftover_confirmed_quantity: null,
+    })).toBe(10)
+  })
+
+  it('gera linhas de pedido somente para a loja escolhida e com total positivo', () => {
+    const rows = buildProductionOrderDraftsFromPlan([
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 2, leftover_proposed_quantity: 1 },
+      { store: 'jc', bread_id: 'ciabatta', planned_quantity: 0, frozen_quantity: 0, leftover_proposed_quantity: 0 },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 9, frozen_quantity: 0, leftover_proposed_quantity: 0 },
+    ], 'jc', '2026-07-28')
+
+    expect(rows).toEqual([{
+      store: 'jc',
+      bread_id: 'baguete',
+      quantity: 8,
+      order_date: '2026-07-28',
+      order_type: 'producao',
+      obs: 'Gerado pelo Planejamento',
+    }])
+  })
+
+  it('leva as propostas de sobra do planejamento para a rotina de sobras da producao', () => {
+    expect(buildLeftoverProposalDraftsFromPlan([
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, leftover_proposed_quantity: 2 },
+      { store: 'jc', bread_id: 'ciabatta', planned_quantity: 5, leftover_proposed_quantity: 0 },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 5, leftover_proposed_quantity: 4 },
+    ], 'jc')).toEqual([
+      { bread_id: 'baguete', quantity: 2 },
+      { bread_id: 'ciabatta', quantity: 0 },
+    ])
+  })
+
+  it('resume o planejamento por loja para mostrar a acao na producao', () => {
+    expect(summarizePlanItemsByStore([
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 2, leftover_proposed_quantity: 1 },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0 },
+    ])).toEqual({ jc: 8, ja: 3 })
   })
 })
