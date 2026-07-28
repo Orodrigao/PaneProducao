@@ -7,9 +7,10 @@ import {
 } from './romaneioBilling'
 
 describe('romaneioBilling', () => {
-  it('aplica kg somente para ciabatta e mini croissant', () => {
+  it('aplica kg para produtos vendidos por peso no romaneio', () => {
     expect(billingUnitForRomaneioProduct('Ciabatta (kg)')).toBe('kg')
     expect(billingUnitForRomaneioProduct('Mini Croissant')).toBe('kg')
+    expect(billingUnitForRomaneioProduct('Pizza Romana de Calabresa')).toBe('kg')
     expect(billingUnitForRomaneioProduct('Baguete')).toBe('un')
     expect(billingUnitForRomaneioProduct('Pão Italiano')).toBe('un')
   })
@@ -209,5 +210,21 @@ describe('romaneioBilling', () => {
     expect(result.rows[0].unitPrice).toBe(25)
     expect(result.rows[0].issues).toEqual([])
     expect(result.total).toBe(100)
+  })
+
+  it('cobra Pizza Romana por kg quando a Tabela Buck esta em kg', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'pizza-romana', productSource: 'product', productName: 'Pizza Romana de Calabresa', qtySent: 3.25 },
+    ], [
+      { productId: 'pizza-romana', productSource: 'product', unitPrice: 72, pricingUnit: 'kg' },
+    ])
+
+    expect(result.rows[0]).toMatchObject({
+      billingUnit: 'kg',
+      unitPrice: 72,
+      total: 234,
+      issues: [],
+    })
+    expect(result.hasBlockingIssues).toBe(false)
   })
 })

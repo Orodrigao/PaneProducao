@@ -60,11 +60,15 @@ export function isMiniCroissantName(name: string): boolean {
   return normalized.includes('mini') && normalized.includes('croissant')
 }
 
+export function isPizzaRomanaName(name: string): boolean {
+  return normalizeText(name).includes('pizza romana')
+}
+
 export function isWeightControlledRomaneioProduct(name: string): boolean {
   const normalized = normalizeText(name)
   if (normalized.includes('(un)')) return false
   if (normalized.includes('(kg)')) return true
-  return isCiabattaName(name) || isMiniCroissantName(name)
+  return isCiabattaName(name) || isMiniCroissantName(name) || isPizzaRomanaName(name)
 }
 
 export function labelRomaneioExtraName(name: string, unit: RomaneioUnit): string {
@@ -131,8 +135,8 @@ export function buildRomaneioProductOptions(
       ]
     }
 
-    const unit = isMiniCroissantName(bread.name) ? 'kg' : unitFromCatalog(bread.unit)
-    return [makeOption(bread, unit, unit === 'kg' && isMiniCroissantName(bread.name))]
+    const unit = isMiniCroissantName(bread.name) || isPizzaRomanaName(bread.name) ? 'kg' : unitFromCatalog(bread.unit)
+    return [makeOption(bread, unit, unit === 'kg' && isWeightControlledRomaneioProduct(bread.name))]
   })
 }
 

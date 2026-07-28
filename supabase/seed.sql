@@ -33,12 +33,12 @@ values
   ('10000000-0000-4000-8000-000000000012', '[TESTE] Pizza Redonda de Portuguesa', 'Pizza Redonda', true, 120, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
   ('10000000-0000-4000-8000-000000000013', '[TESTE] Pizza Redonda de Queijo e Cebola', 'Pizza Redonda', true, 130, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
   ('10000000-0000-4000-8000-000000000014', '[TESTE] Pizza Redonda Margherita', 'Pizza Redonda', true, 140, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000015', '[TESTE] Pizza Romana de Calabresa', 'Pizza Romana', true, 150, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000016', '[TESTE] Pizza Romana de Carne e Azeitona', 'Pizza Romana', true, 160, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000017', '[TESTE] Pizza Romana de Carne e Cebola Caramelizada', 'Pizza Romana', true, 170, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000018', '[TESTE] Pizza Romana de Carne e Coalho', 'Pizza Romana', true, 180, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000019', '[TESTE] Pizza Romana de Gorgonzola', 'Pizza Romana', true, 190, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
-  ('10000000-0000-4000-8000-000000000020', '[TESTE] Pizza Romana de Parma', 'Pizza Romana', true, 200, 'un', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha')
+  ('10000000-0000-4000-8000-000000000015', '[TESTE] Pizza Romana de Calabresa', 'Pizza Romana', true, 150, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000016', '[TESTE] Pizza Romana de Carne e Azeitona', 'Pizza Romana', true, 160, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000017', '[TESTE] Pizza Romana de Carne e Cebola Caramelizada', 'Pizza Romana', true, 170, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000018', '[TESTE] Pizza Romana de Carne e Coalho', 'Pizza Romana', true, 180, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000019', '[TESTE] Pizza Romana de Gorgonzola', 'Pizza Romana', true, 190, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha'),
+  ('10000000-0000-4000-8000-000000000020', '[TESTE] Pizza Romana de Parma', 'Pizza Romana', true, 200, 'kg', 'final', true, '{0,1,2,3,4,5,6}', 'cozinha')
 on conflict (id) do update set
   name = excluded.name,
   category = excluded.category,

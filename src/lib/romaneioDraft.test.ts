@@ -29,15 +29,26 @@ describe('romaneioDraft', () => {
     expect(options.map(option => option.productName)).toEqual(['Ciabatta (un)', 'Ciabatta (kg)'])
   })
 
-  it('trata mini croissant como kg mesmo se o cadastro vier como unidade', () => {
+  it('trata mini croissant e pizza romana como kg mesmo se o cadastro vier como unidade', () => {
     const [option] = buildRomaneioProductOptions([
       { id: 'mini-croissant', name: 'Mini Croissant', unit: 'un' },
+    ])
+    const [pizzaOption] = buildRomaneioProductOptions([
+      { id: 'pizza-romana-calabresa', name: 'Pizza Romana de Calabresa', unit: 'un' },
     ])
 
     expect(option).toMatchObject({
       key: 'mini-croissant__kg',
       productId: 'mini-croissant',
       productName: 'Mini Croissant (kg)',
+      unit: 'kg',
+      allowDecimal: true,
+      step: 0.1,
+    })
+    expect(pizzaOption).toMatchObject({
+      key: 'pizza-romana-calabresa__kg',
+      productId: 'pizza-romana-calabresa',
+      productName: 'Pizza Romana de Calabresa (kg)',
       unit: 'kg',
       allowDecimal: true,
       step: 0.1,
@@ -63,11 +74,12 @@ describe('romaneioDraft', () => {
     expect(formatRomaneioWeightInGrams(1.45)).toBe('1.450')
   })
 
-  it('bloqueia ciabatta e mini croissant acima de 10 kg', () => {
+  it('bloqueia ciabatta, mini croissant e pizza romana acima de 10 kg', () => {
     expect(exceedsRomaneioWeightLimit('Ciabatta (kg)', 10)).toBe(false)
     expect(exceedsRomaneioWeightLimit('Ciabatta (kg)', 10.001)).toBe(true)
     expect(exceedsRomaneioWeightLimit('Ciabatta (un)', 11)).toBe(false)
     expect(exceedsRomaneioWeightLimit('Mini Croissant (kg)', 1450)).toBe(true)
+    expect(exceedsRomaneioWeightLimit('Pizza Romana de Calabresa', 1450)).toBe(true)
     expect(exceedsRomaneioWeightLimit('Baguete', 1450)).toBe(false)
   })
 

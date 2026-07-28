@@ -381,7 +381,7 @@ export default function RelatorioRomaneiosEX() {
             {incompatibleUnitRows.length > 0 && (
               <div className="ps-warning danger" role="alert">
                 <AlertTriangle size={16}/>
-                {incompatibleUnitRows.length} produto(s) têm unidade incompatível. Ciabatta e mini croissant devem estar em kg; os demais, em unidade.
+                {incompatibleUnitRows.length} produto(s) têm unidade incompatível. Ciabatta, mini croissant e Pizza Romana devem estar em kg; os demais, em unidade.
               </div>
             )}
             {suspiciousRows.length > 0 && (

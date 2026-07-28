@@ -1,5 +1,5 @@
 import { createProductIdentityResolver, productIdentityKey, type ProductLegacyLink } from './productIdentity'
-import { ROMANEIO_WEIGHT_LIMIT_KG } from './romaneioDraft'
+import { isWeightControlledRomaneioProduct, ROMANEIO_WEIGHT_LIMIT_KG } from './romaneioDraft'
 
 export type RomaneioBillingUnit = 'un' | 'kg'
 export type RomaneioBillingIssue = 'missing_price' | 'unit_mismatch' | 'suspicious_quantity'
@@ -65,10 +65,7 @@ function isBillingUnit(value: string | null | undefined): value is RomaneioBilli
 }
 
 export function billingUnitForRomaneioProduct(productName: string): RomaneioBillingUnit {
-  const name = normalizedText(productName)
-  return name.includes('ciabatta') || (name.includes('mini') && name.includes('croissant'))
-    ? 'kg'
-    : 'un'
+  return isWeightControlledRomaneioProduct(productName) ? 'kg' : 'un'
 }
 
 export function explicitUnitInRomaneioProduct(productName: string): RomaneioBillingUnit | null {
