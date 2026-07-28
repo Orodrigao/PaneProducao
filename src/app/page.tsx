@@ -6,12 +6,14 @@ import {
   resolveProductionHomeUserKey,
   type ProductionHomeUserKey,
 } from '@/lib/productionHomeAccess'
-import { aggregateWholePending, clampReuseProposal } from '@/lib/breadLeftovers'
+import { aggregateWholePending, clampReuseProposal, subtractActiveReuseProposals } from '@/lib/breadLeftovers'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   buildLeftoverProposalDraftsFromPlan,
   buildProductionOrderDraftsFromPlan,
+  planNeedsOrderConversion,
   summarizePlanItemsByStore,
+  storeNeedsOrderConversion,
   type ProductionPlanOrderItemInput,
   type ProductionPlanStatus,
   type ProductionPlanStore,
@@ -69,6 +71,13 @@ function parseDays(d: any): number[] {
 function dateLabel(dateStr: string) {
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
+}
+function operationalErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return fallback
 }
 function deliveryDayLabel(delivIdx: number) {
   const todayIdx = nowBrasilia().getDay()
@@ -218,18 +227,19 @@ export default function ProducaoPage() {
           .gt('pending_quantity', 0),
         supabase
           .from('bread_reuse_plans')
-          .select('store, bread_id, proposed_quantity, confirmed_quantity, status')
-          .eq('target_production_date', dateKey),
+          .select('store, bread_id, proposed_quantity, confirmed_quantity, status, target_production_date'),
       ])
       if (leftoversResult.error) throw leftoversResult.error
       if (plansResult.error) throw plansResult.error
 
+      const rawPending = aggregateWholePending(leftoversResult.data ?? [])
+      const currentPlans = (plansResult.data ?? []).filter(plan => plan.target_production_date === dateKey)
       const pending = Object.fromEntries(
-        aggregateWholePending(leftoversResult.data ?? []).entries(),
+        subtractActiveReuseProposals(rawPending, plansResult.data ?? []).entries(),
       )
       const proposals: Record<string,number> = {}
       const loadedPlans: Record<string,ReusePlanSummary> = {}
-      for (const plan of plansResult.data ?? []) {
+      for (const plan of currentPlans) {
         if ((plan.store !== 'jc' && plan.store !== 'ja') || !plan.bread_id) continue
         const key = `${plan.store}-${plan.bread_id}`
         const proposedQuantity = Number(plan.proposed_quantity ?? 0)
@@ -256,6 +266,7 @@ export default function ProducaoPage() {
         .from('production_plans')
         .select('id,production_date,status')
         .eq('production_date', dateKey)
+        .neq('status', 'fechado')
         .maybeSingle()
 
       if (planError) throw planError
@@ -266,7 +277,7 @@ export default function ProducaoPage() {
 
       const { data: itemData, error: itemError } = await supabase
         .from('production_plan_items')
-        .select('store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity')
+        .select('store,bread_id,planned_quantity,frozen_quantity,leftover_proposed_quantity,leftover_confirmed_quantity,order_created_at')
         .eq('plan_id', planData.id)
         .in('store', ['jc', 'ja'])
 
@@ -483,7 +494,7 @@ export default function ProducaoPage() {
             : clampReuseProposal(
                 reuseProposalQtys[`${store}-${b.id}`] ?? 0,
                 qtys[`${store}-${b.id}`] ?? 0,
-                pendingLeftovers[`${store}-${b.id}`] ?? 0,
+                (pendingLeftovers[`${store}-${b.id}`] ?? 0) + (reuseProposalQtys[`${store}-${b.id}`] ?? 0),
               ),
         }))
       : []
@@ -536,7 +547,7 @@ export default function ProducaoPage() {
       }
     } catch(e) {
       setSyncState('error')
-      showToast('Erro ao salvar. Tente novamente.')
+      showToast(operationalErrorMessage(e, 'Erro ao salvar. Tente novamente.'))
     } finally { setSaving(false) }
   }
 
@@ -559,29 +570,67 @@ export default function ProducaoPage() {
       return
     }
 
+    const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
+    const hasLeftoverProposal = leftoverProposals.some(proposal => proposal.quantity > 0)
+    if (hasLeftoverProposal) {
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        showToast('Entre com e-mail para salvar as sobras junto com o pedido.')
+        return
+      }
+    }
+
     setPlanningImportSaving(true)
     setSyncState('syncing')
     try {
       await sbDel('orders', { store, order_date: date })
       await sbInsert('orders', rows)
 
-      const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
-      const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
-        p_target_production_date: date,
-        p_store: store,
-        p_proposals: leftoverProposals,
-      })
-      if (reuseError) throw reuseError
+      if (hasLeftoverProposal) {
+        const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
+          p_target_production_date: date,
+          p_store: store,
+          p_proposals: leftoverProposals,
+        })
+        if (reuseError) throw reuseError
+      }
 
       const map = await loadOrders(date)
       setOrders(map)
       initOrderState(map, breads)
       await loadReuseContext(date)
+
+      const importedAt = new Date().toISOString()
+      const actorName = getCurrentUser()?.displayName ?? currentUser ?? 'Usuário'
+      const { error: itemUpdateError } = await supabase
+        .from('production_plan_items')
+        .update({
+          order_created_at: importedAt,
+          order_created_by_name: actorName,
+        })
+        .eq('plan_id', plan.id)
+        .eq('store', store)
+      if (itemUpdateError) throw itemUpdateError
+
+      const updatedItems = plan.items.map(item =>
+        item.store === store
+          ? { ...item, order_created_at: importedAt }
+          : item,
+      )
+      if (!planNeedsOrderConversion(updatedItems)) {
+        const { error: planUpdateError } = await supabase
+          .from('production_plans')
+          .update({ status: 'fechado' })
+          .eq('id', plan.id)
+        if (planUpdateError) throw planUpdateError
+      }
+
+      await loadProductionPlanForOrders(date)
       setSyncState('')
       showToast(`Pedido ${store.toUpperCase()} gerado pelo Planejamento.`)
     } catch(e) {
       setSyncState('error')
-      showToast('Erro ao transformar o Planejamento em Pedido.')
+      showToast(operationalErrorMessage(e, 'Erro ao transformar o Planejamento em Pedido.'))
     } finally {
       setPlanningImportSaving(false)
     }
@@ -811,7 +860,7 @@ export default function ProducaoPage() {
         ...prev,
         [key]: reusePlans[key]?.status === 'confirmed'
           ? prev[key] ?? reusePlans[key].proposedQuantity
-          : clampReuseProposal(prev[key] ?? 0, quantity, pendingLeftovers[key] ?? 0),
+          : clampReuseProposal(prev[key] ?? 0, quantity, (pendingLeftovers[key] ?? 0) + (prev[key] ?? 0)),
       }))
     }
   }
@@ -820,7 +869,7 @@ export default function ProducaoPage() {
     if (reusePlans[key]?.status === 'confirmed') return
     setReuseProposalQtys(prev => ({
       ...prev,
-      [key]: clampReuseProposal(val, qtys[key] ?? 0, pendingLeftovers[key] ?? 0),
+      [key]: clampReuseProposal(val, qtys[key] ?? 0, (pendingLeftovers[key] ?? 0) + (prev[key] ?? 0)),
     }))
   }
 
@@ -861,6 +910,7 @@ export default function ProducaoPage() {
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
   const isItensTab = tabDefs[activeTab]?.label === 'Itens JC'
   const planningImport = (activeStore === 'jc' || activeStore === 'ja') && productionPlanForOrder?.productionDate === orderDate
+    && storeNeedsOrderConversion(productionPlanForOrder.items, activeStore)
     ? {
       status: productionPlanForOrder.status,
       total: productionPlanForOrder.storeTotals[activeStore],
@@ -1155,7 +1205,7 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLefto
             const reusePlan = reusePlans[key]
             const confirmed = reusePlan?.status === 'confirmed'
             const canPlanReuse = (store === 'jc' || store === 'ja') && (pending > 0 || Boolean(reusePlan))
-            const reuseLimit = Math.min(val, pending)
+            const reuseLimit = Math.min(val, pending + proposal)
             return (
               <div key={b.id} className={'ps-card'+(val>0?' active':'')}>
                 <div className="ps-card-head">

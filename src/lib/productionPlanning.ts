@@ -42,6 +42,7 @@ export interface ProductionPlanOrderItemInput {
   frozen_quantity?: number | string | null
   leftover_proposed_quantity?: number | string | null
   leftover_confirmed_quantity?: number | string | null
+  order_created_at?: string | null
 }
 
 export interface ProductionOrderDraftFromPlan {
@@ -76,6 +77,13 @@ export interface PlanningPendingLeftoverRow {
   store: string | null
   product_id: string | null
   pending_quantity: number | string | null
+}
+
+export interface PlanningReuseProposalRow {
+  store: string | null
+  bread_id: string | null
+  proposed_quantity: number | string | null
+  status: string | null
 }
 
 export function normalizePlanQuantity(value: unknown): number {
@@ -180,6 +188,38 @@ export function summarizePlanItemsByStore(
   ])) as Record<ProductionPlanStore, number>
 }
 
+export function storeNeedsOrderConversion(
+  items: readonly ProductionPlanOrderItemInput[],
+  store: ProductionPlanStore,
+): boolean {
+  return items.some(item =>
+    item.store === store
+    && productionPlanItemOrderQuantity(item) > 0
+    && !item.order_created_at,
+  )
+}
+
+export function planNeedsOrderConversion(
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return PRODUCTION_PLAN_STORES.some(store => storeNeedsOrderConversion(items, store))
+}
+
+export function planHasOrderConversion(
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return items.some(item =>
+    productionPlanItemOrderQuantity(item) > 0
+    && Boolean(item.order_created_at),
+  )
+}
+
+export function planIsFullyConvertedToOrders(
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return planHasOrderConversion(items) && !planNeedsOrderConversion(items)
+}
+
 export function statusAllowsDraftEditing(status: ProductionPlanStatus): boolean {
   return status === 'rascunho' || status === 'reaberto'
 }
@@ -250,4 +290,27 @@ export function aggregatePlanningLeftoverAvailability(
   }
 
   return totals
+}
+
+export function subtractPlanningReuseProposals(
+  availability: Map<string, number>,
+  proposals: PlanningReuseProposalRow[],
+): Map<string, number> {
+  const adjusted = new Map(availability)
+
+  for (const proposal of proposals) {
+    if (
+      (proposal.store !== 'jc' && proposal.store !== 'ja')
+      || !proposal.bread_id
+      || proposal.status !== 'proposed'
+    ) continue
+
+    const quantity = normalizePlanQuantity(proposal.proposed_quantity)
+    if (quantity <= 0) continue
+
+    const key = planningAvailabilityKey(proposal.store, proposal.bread_id)
+    adjusted.set(key, Math.max(0, (adjusted.get(key) ?? 0) - quantity))
+  }
+
+  return adjusted
 }

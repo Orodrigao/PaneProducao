@@ -22,7 +22,12 @@ import {
   type LeftoverDestination,
   type ManagedStore,
 } from '@/lib/breadLeftovers'
-import { blocksClosing, closingResumePath, isValidClosingDate } from '@/lib/breadLeftoverClosing'
+import {
+  blocksClosing,
+  closingResumePath,
+  isValidClosingDate,
+  resolvePendingLeftoverStore,
+} from '@/lib/breadLeftoverClosing'
 import { supabase } from '@/lib/supabase'
 import { formatDateBR, showToast, todayKey } from '@/lib/utils'
 
@@ -127,11 +132,7 @@ export default function BreadLeftoverPendingPage() {
       const requestedStore = params.get('store')
       const requestedDate = params.get('date')
 
-      if (current?.store === 'ja' || current?.store === 'jc') {
-        setStore(current.store)
-      } else if (requestedStore === 'ja' || requestedStore === 'jc') {
-        setStore(requestedStore)
-      }
+      setStore(resolvePendingLeftoverStore(current, requestedStore))
       if (requestedDate && isValidClosingDate(requestedDate, todayKey())) {
         setTargetDate(requestedDate)
         if (params.get('blocked') === '1') setBlockedClosingDate(requestedDate)

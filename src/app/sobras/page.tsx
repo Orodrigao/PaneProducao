@@ -7,7 +7,9 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, todayKey, todayLabel, showToast } from '@/lib/utils'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
 import {
+  buildBreadLeftoverItems,
   closingBreadIds,
+  hasPositiveBreadLeftover,
   isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
@@ -320,15 +322,12 @@ export default function SobrasPage() {
           showToast('Escolha hoje ou uma data anterior para o fechamento.')
           return
         }
-        if (filled === 0) {
+        const breadItems = buildBreadLeftoverItems(breads.map(bread => bread.id), qtys)
+        if (!hasPositiveBreadLeftover(breadItems)) {
           showToast('Informe ao menos uma sobra para salvar.')
           return
         }
 
-        const breadItems = breads.map(bread => ({
-          bread_id: bread.id,
-          quantity: qtys['bread_'+bread.id] ?? 0,
-        }))
         const { data, error } = await supabase.rpc('register_bread_leftovers', {
           p_record_date: date,
           p_store: selectedStore,
@@ -337,6 +336,10 @@ export default function SobrasPage() {
         })
         if (error) throw error
         const result = data as unknown as RegisterLeftoversResult | null
+        const savedItems = Number(result?.saved_items ?? 0)
+        if (savedItems <= 0) {
+          throw new Error('A sobra nao foi gravada. Revise o pao e a quantidade antes de salvar.')
+        }
         const awaiting = Number(result?.awaiting_oven_items ?? 0)
         // Entrou no banco: o rascunho perdeu a razão de existir.
         clearLeftoverDraft(browserDraftStorage())

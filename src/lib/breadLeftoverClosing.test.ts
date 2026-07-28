@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   blocksClosing,
+  buildBreadLeftoverItems,
   closingBreadIds,
   closingResumePath,
+  hasPositiveBreadLeftover,
   isPendingLeftoversError,
   isValidClosingDate,
   leftoverPendingPath,
+  resolvePendingLeftoverStore,
 } from './breadLeftoverClosing'
 
 describe('fechamento físico de sobras', () => {
@@ -61,5 +64,31 @@ describe('fechamento físico de sobras', () => {
     expect(isValidClosingDate('2026-07-12', '2026-07-13')).toBe(true)
     expect(isValidClosingDate('2026-07-14', '2026-07-13')).toBe(false)
     expect(isValidClosingDate('13/07/2026', '2026-07-13')).toBe(false)
+  })
+
+  it('respeita a loja da URL para admin e trava vendas na propria loja', () => {
+    expect(resolvePendingLeftoverStore({ role: 'admin', store: 'jc' }, 'ja')).toBe('ja')
+    expect(resolvePendingLeftoverStore({ role: 'vendas', store: 'jc' }, 'ja')).toBe('jc')
+    expect(resolvePendingLeftoverStore({ role: 'admin', store: 'ja' }, null)).toBe('ja')
+    expect(resolvePendingLeftoverStore(null, null)).toBe('jc')
+  })
+
+  it('envia pao avulso preenchido mesmo se a lista visual recarregou vazia', () => {
+    const items = buildBreadLeftoverItems([], {
+      bread_baguete: 4,
+      produto_qualquer: 9,
+    })
+
+    expect(items).toEqual([{ bread_id: 'baguete', quantity: 4 }])
+    expect(hasPositiveBreadLeftover(items)).toBe(true)
+  })
+
+  it('preserva paes visiveis zerados para permitir corrigir sobra ja salva', () => {
+    const items = buildBreadLeftoverItems(['baguete'], {
+      bread_baguete: 0,
+    })
+
+    expect(items).toEqual([{ bread_id: 'baguete', quantity: 0 }])
+    expect(hasPositiveBreadLeftover(items)).toBe(false)
   })
 })

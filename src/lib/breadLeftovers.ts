@@ -19,6 +19,13 @@ export interface ConfirmedReuseRow {
   status: string
 }
 
+export interface ActiveReuseProposalRow {
+  store: string | null
+  bread_id: string | null
+  proposed_quantity: number | string | null
+  status: string | null
+}
+
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
 export function leftoverKey(store: ManagedStore, breadId: string): string {
@@ -65,6 +72,29 @@ export function subtractConfirmedReuse(
 
   for (const [breadId, quantity] of planned) {
     adjusted.set(breadId, Math.max(0, quantity - (confirmed.get(breadId) ?? 0)))
+  }
+
+  return adjusted
+}
+
+export function subtractActiveReuseProposals(
+  pending: Map<string, number>,
+  proposals: ActiveReuseProposalRow[],
+): Map<string, number> {
+  const adjusted = new Map(pending)
+
+  for (const proposal of proposals) {
+    if (
+      (proposal.store !== 'jc' && proposal.store !== 'ja')
+      || !proposal.bread_id
+      || proposal.status !== 'proposed'
+    ) continue
+
+    const quantity = Number(proposal.proposed_quantity ?? 0)
+    if (!Number.isFinite(quantity) || quantity <= 0) continue
+
+    const key = leftoverKey(proposal.store, proposal.bread_id)
+    adjusted.set(key, Math.max(0, (adjusted.get(key) ?? 0) - Math.floor(quantity)))
   }
 
   return adjusted
