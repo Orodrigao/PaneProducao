@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-28
 
-**Base observada:** `origin/main` em `f319fed`, até a incorporação da PR `#181`
+**Base observada:** `origin/main` em `0f8bdc2`, até a incorporação da PR `#182`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -84,11 +84,11 @@ auditoria live):
 
 Riscos ainda abertos:
 
-- o último inventário live completo registrou tabelas sem RLS e policies
-  anônimas permissivas; o estado live precisa ser reauditado antes de
-  declarar Sprint 0 concluída;
-- as migrations de permissões de 2026-07-18 não têm registro de aplicação em
-  produção; confirmar antes de assumir vigência;
+- a auditoria live somente leitura de 2026-07-28 confirmou melhora material:
+  todas as tabelas públicas auditadas estão com RLS ligado e não há policies
+  `anon` permissivas; Sprint 0 ainda não fecha porque restam grants `anon` do
+  ControlePizza, exposição GraphQL, funções `SECURITY DEFINER` chamáveis por
+  usuários logados e proteção contra senha vazada desligada;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -167,8 +167,11 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 1. A baseline de navegador cobre o núcleo de Auth e acesso, mas a matriz dos
    módulos operacionais ainda precisa crescer progressivamente conforme cada
    fluxo for estabilizado.
-2. Policies anônimas permissivas remanescentes em áreas operacionais.
-3. RLS não pode ser declarado concluído sem nova auditoria live.
+2. Grants anônimos remanescentes nas tabelas legadas `pizza_*` do ControlePizza
+   e exposição GraphQL de objetos do schema público.
+3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
+   live de 2026-07-28: ControlePizza/`anon`, GraphQL, funções privilegiadas e
+   configuração de senha vazada.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
