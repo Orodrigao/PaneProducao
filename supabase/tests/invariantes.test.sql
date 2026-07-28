@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(96);
+select plan(97);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 27,
@@ -376,6 +376,17 @@ select is((select count(*)::int
         'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
       ))), 0,
   'novas funcoes das migrations nascem fechadas para os papeis da API');
+
+select is((select count(*)::int
+    from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    cross join lateral aclexplode(d.defaclacl) x
+    where d.defaclrole = 'supabase_admin'::regrole
+      and n.nspname in ('public', 'private')
+      and (x.grantee = 0 or x.grantee in (
+        'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
+      ))), 0,
+  'novos objetos do supabase_admin nascem fechados para os papeis da API');
 
 select * from finish();
 rollback;
