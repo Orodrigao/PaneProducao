@@ -617,7 +617,7 @@ export default function RomaneioPage() {
     const incompatibleDraftItem = items.find(([key]) => !key.startsWith('extra_') && !optionByKey.has(key))
     if (incompatibleDraftItem) {
       savingRomaneioRef.current = false
-      showToastPS('⚠️ Para a EX, informe Ciabatta em kg antes de fechar o romaneio')
+      showToastPS('⚠️ Para a EX, informe os produtos por peso em kg antes de fechar o romaneio')
       return
     }
     const overweightItem = items.find(([key, quantity]) => {
