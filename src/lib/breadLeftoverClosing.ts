@@ -53,3 +53,13 @@ export function isPendingLeftoversError(message: string): boolean {
 export function isValidClosingDate(recordDate: string, today: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(recordDate) && recordDate <= today
 }
+
+export function resolvePendingLeftoverStore(
+  user: { role: string; store?: string | null } | null,
+  requestedStore: string | null,
+): 'jc' | 'ja' {
+  if (user?.role === 'vendas' && (user.store === 'jc' || user.store === 'ja')) return user.store
+  if (requestedStore === 'jc' || requestedStore === 'ja') return requestedStore
+  if (user?.store === 'jc' || user?.store === 'ja') return user.store
+  return 'jc'
+}
