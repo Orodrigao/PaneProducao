@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-23
+**Data de referência:** 2026-07-28
 
-**Base observada:** `origin/main` até a incorporação da PR `#168`
+**Base observada:** `origin/main` em `b04e4d1`, até a incorporação da PR `#178`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -100,9 +100,6 @@ Riscos ainda abertos:
   hoje. Não forçar versões internas fora do intervalo suportado pelo Next;
   reabrir quando houver backport oficial compatível ou se o ERP passar a
   processar CSS/imagem não confiável;
-- `src/lib/database.types.ts` está obsoleto (ainda descreve `app_users`, não
-  contém `app_profiles`, `app_permissions`, `app_user_permissions` nem
-  `cash_closings`) e o cliente Supabase nem o utiliza;
 - o TypeScript aceita o role `romaneio`, mas a constraint de `app_profiles`
   no schema versionado não o inclui.
 
