@@ -90,7 +90,8 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/romaneio", "/fechamento-caixa", "/sobras", "/encomendas", "/estoque-congelado"]'::jsonb),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
-    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb)
+    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
+    ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -112,7 +113,8 @@ where assignment.user_id in (
     'rodrigao+teste-vendas-ja@gmail.com',
     'rodrigao+teste-expedicao-jc@gmail.com',
     'rodrigao+teste-romaneio-ex@gmail.com',
-    'rodrigao+teste-cozinha-jc@gmail.com'
+    'rodrigao+teste-cozinha-jc@gmail.com',
+    'rodrigao+teste-geolar-jc@gmail.com'
   )
 );
 

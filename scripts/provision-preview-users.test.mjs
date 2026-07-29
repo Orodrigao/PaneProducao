@@ -41,13 +41,13 @@ describe('ensurePreviewUsers', () => {
       new Response(JSON.stringify({
         users: [{ id: 'usuario-existente', email: 'rodrigao+teste@gmail.com' }],
       }), { status: 200 }),
-      ...Array.from({ length: 5 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: 6 }, () => new Response('{}', { status: 200 })),
     ]
     const fetchImpl = mock.fn(async () => responses.shift())
 
     await ensurePreviewUsers({ ...SAFE_ENVIRONMENT, fetchImpl })
 
-    assert.equal(fetchImpl.mock.callCount(), 6)
+    assert.equal(fetchImpl.mock.callCount(), 7)
     assert.match(fetchImpl.mock.calls[1].arguments[0], /admin\/users\/usuario-existente$/)
     assert.equal(fetchImpl.mock.calls[1].arguments[1].method, 'PUT')
     assert.match(fetchImpl.mock.calls[2].arguments[0], /admin\/users$/)

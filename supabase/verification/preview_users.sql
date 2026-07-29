@@ -8,7 +8,8 @@ declare
     'rodrigao+teste-vendas-ja@gmail.com',
     'rodrigao+teste-expedicao-jc@gmail.com',
     'rodrigao+teste-romaneio-ex@gmail.com',
-    'rodrigao+teste-cozinha-jc@gmail.com'
+    'rodrigao+teste-cozinha-jc@gmail.com',
+    'rodrigao+teste-geolar-jc@gmail.com'
   ];
   user_count integer;
   profile_count integer;
@@ -18,8 +19,8 @@ begin
   from auth.users
   where lower(email) = any(expected_users);
 
-  if user_count <> 5 then
-    raise exception 'Banco Preview deveria ter 5 contas ficticias, encontrou %.', user_count;
+  if user_count <> 6 then
+    raise exception 'Banco Preview deveria ter 6 contas ficticias, encontrou %.', user_count;
   end if;
 
   select count(*) into profile_count
@@ -28,8 +29,8 @@ begin
   where lower(user_account.email) = any(expected_users)
     and profile.active;
 
-  if profile_count <> 5 then
-    raise exception 'Banco Preview deveria ter 5 perfis ativos, encontrou %.', profile_count;
+  if profile_count <> 6 then
+    raise exception 'Banco Preview deveria ter 6 perfis ativos, encontrou %.', profile_count;
   end if;
 
   if not exists (
@@ -121,6 +122,18 @@ begin
       and assignment.permission_key = 'producao_cozinha.lancar'
   ) then
     raise exception 'Perfil Vendas JA recebeu acesso indevido a Producao da Cozinha.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-geolar-jc@gmail.com'
+      and profile.role = 'producao'
+      and lower(profile.store) = 'jc'
+      and profile.allowed_routes = '["/"]'::jsonb
+  ) then
+    raise exception 'Perfil Geolar JC deve entrar na tela de Producao e ficar limitado a ela.';
   end if;
 
   if exists (
