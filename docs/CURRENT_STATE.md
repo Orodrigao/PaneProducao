@@ -2,7 +2,7 @@
 
 **Data de referência:** 2026-07-28
 
-**Base observada:** `origin/main` em `f319fed`, até a incorporação da PR `#181`
+**Base observada:** `origin/main` em `0f8bdc2`, até a incorporação da PR `#182`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -84,11 +84,12 @@ auditoria live):
 
 Riscos ainda abertos:
 
-- o último inventário live completo registrou tabelas sem RLS e policies
-  anônimas permissivas; o estado live precisa ser reauditado antes de
-  declarar Sprint 0 concluída;
-- as migrations de permissões de 2026-07-18 não têm registro de aplicação em
-  produção; confirmar antes de assumir vigência;
+- a auditoria live somente leitura de 2026-07-28 confirmou melhora material:
+  todas as tabelas públicas auditadas estão com RLS ligado e não há policies
+  `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
+  aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
+  porque restam exposição GraphQL relevante ao ERP, funções `SECURITY DEFINER`
+  chamáveis por usuários logados e proteção contra senha vazada desligada;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -113,6 +114,12 @@ projeto compartilhado: o baseline inclui os objetos do ControlePizza, e
 qualquer mudança de schema — do ERP ou do ControlePizza — entra por PR aqui
 e é aplicada pela Action. O repositório ControlePizza não aplica schema
 (regra em AGENTS.md, seção Deploy e produção).
+
+Em 2026-07-28, Rodrigo decidiu não investir hardening no ControlePizza, porque
+essa parte será desativada em breve e não estará no projeto final. Até a
+desativação, os grants legados `anon` em `pizza_*` são risco aceito: não mexer
+neles sem nova decisão explícita e não criar dependência nova do ERP sobre essas
+tabelas.
 
 ## Capacidades já presentes
 
@@ -167,8 +174,11 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 1. A baseline de navegador cobre o núcleo de Auth e acesso, mas a matriz dos
    módulos operacionais ainda precisa crescer progressivamente conforme cada
    fluxo for estabilizado.
-2. Policies anônimas permissivas remanescentes em áreas operacionais.
-3. RLS não pode ser declarado concluído sem nova auditoria live.
+2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
+   ControlePizza/`pizza_*` é exceção legada aceita até desativação.
+3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
+   live de 2026-07-28 no escopo do ERP: GraphQL, funções privilegiadas e
+   configuração de senha vazada.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
