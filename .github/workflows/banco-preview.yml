@@ -18,14 +18,6 @@ on:
       - ".github/workflows/banco-preview.yml"
   push:
     branches: [main]
-    paths:
-      - "supabase/migrations/**"
-      - "supabase/tests/**"
-      - "supabase/verification/**"
-      - "supabase/seed.sql"
-      - "supabase/config.toml"
-      - "scripts/provision-preview-users.mjs"
-      - ".github/workflows/banco-preview.yml"
   workflow_dispatch:
     inputs:
       confirmacao:

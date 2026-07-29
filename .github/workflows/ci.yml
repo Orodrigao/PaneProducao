@@ -70,12 +70,36 @@ jobs:
             exit 1
           fi
 
-      - name: Esperar Banco Preview quando a PR muda banco
-        if: github.event_name == 'pull_request'
+      - name: Esperar Banco Preview quando necessario
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
+            for attempt in {1..60}; do
+              CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
+              CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
+              CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
+
+              if [[ "$CHECK_STATUS" == "completed" && "$CHECK_CONCLUSION" == "success" ]]; then
+                echo "Banco Preview pronto."
+                exit 0
+              fi
+              if [[ "$CHECK_STATUS" == "completed" ]]; then
+                echo "Banco Preview terminou com estado: ${CHECK_CONCLUSION:-desconhecido}"
+                exit 1
+              fi
+
+              echo "Banco Preview ainda em andamento (${CHECK_STATUS:-sem check}); tentativa $attempt/60."
+              sleep 10
+            done
+
+            echo "Banco Preview nao ficou pronto dentro do tempo esperado."
+            exit 1
+          fi
+
           DB_CHANGES="$(gh pr diff "$PR_NUMBER" --name-only | grep -E '^((supabase/(migrations|tests|verification)/)|supabase/(seed\.sql|config\.toml)|scripts/provision-preview-users\.mjs|\.github/workflows/banco-preview\.yml)' || true)"
           if [[ -z "$DB_CHANGES" ]]; then
             echo "PR sem mudança de banco; seguindo com o navegador."
