@@ -84,10 +84,11 @@ test('Geolar recebe o cenario de sobras e fica bloqueada ate conferir', async ({
   await expect(page.getByText('Conferir reaproveitamento', { exact: true })).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
-  await expect(page.getByText('[TESTE] Baguete', { exact: true }).first()).toBeVisible({
+  const reuseCard = page.locator('.ps-reuse-card', { hasText: '[TESTE] Baguete' }).first()
+  await expect(reuseCard).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
-  await expect(page.getByRole('button', { name: 'Recusar reaproveitamento' })).toBeVisible()
+  await expect(reuseCard.getByRole('button', { name: 'Recusar reaproveitamento' })).toBeVisible()
 
   const confirmedQuantity = page.locator('input[id^="confirmed-"]').first()
   await confirmedQuantity.fill('2')

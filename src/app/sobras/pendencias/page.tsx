@@ -134,9 +134,11 @@ export default function BreadLeftoverPendingPage() {
       const requestedDate = params.get('date')
 
       setStore(resolvePendingLeftoverStore(current, requestedStore))
-      if (requestedDate && isValidClosingDate(requestedDate, todayKey())) {
+      if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
         setTargetDate(requestedDate)
-        if (params.get('blocked') === '1') setBlockedClosingDate(requestedDate)
+        if (params.get('blocked') === '1' && isValidClosingDate(requestedDate, todayKey())) {
+          setBlockedClosingDate(requestedDate)
+        }
       }
     })
     return () => { active = false }
