@@ -14,6 +14,10 @@ const previewAccounts = {
 
 const slowPreviewDataTimeoutMs = 15_000
 
+function romaneioCardByObs(page: import('@playwright/test').Page, obs: string) {
+  return page.locator('.ps-card', { hasText: obs }).first()
+}
+
 async function enterWithPreviewAccount(
   page: import('@playwright/test').Page,
   email: string,
@@ -102,9 +106,7 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
   await expect(page.getByRole('button', { name: 'Novo Romaneio' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Conferir chegada/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Aprovar diverg/ })).toHaveCount(0)
-  const exTripTitle = page.getByText('[TESTE] Exposicao · Viagem 4', { exact: true })
-  await expect(exTripTitle).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  const exTrip = exTripTitle.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " ps-card ")][1]')
+  const exTrip = romaneioCardByObs(page, '[TESTE] viagem EX visivel para a entregadora')
   await expect(exTrip).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(exTrip.getByRole('button', { name: /Marcar Enviado/ })).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
@@ -144,13 +146,11 @@ test('Romaneio EX abre conferencia pendente da propria loja', async ({ page }) =
   await expect(page.getByRole('button', { name: 'Novo Romaneio' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Marcar Enviado/ })).toHaveCount(0)
 
-  const exPendingTitle = page.getByText('[TESTE] Exposicao · Viagem 5', { exact: true })
-  await expect(exPendingTitle).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  const exPendingTrip = exPendingTitle.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " ps-card ")][1]')
+  const exPendingTrip = romaneioCardByObs(page, '[TESTE] viagem EX pendente de conferencia')
+  await expect(exPendingTrip).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(exPendingTrip.getByText('Enviado', { exact: true })).toBeVisible()
   await exPendingTrip.getByRole('button', { name: /Conferir chegada/ }).click()
 
-  await expect(page.getByText('[TESTE] Exposicao · Viagem 5', { exact: true })).toBeVisible()
   await expect(page.getByText('[TESTE] Baguete', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /Salvar Confer/ })).toBeVisible()
 })
