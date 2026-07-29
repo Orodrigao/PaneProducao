@@ -929,7 +929,7 @@ export default function ProducaoPage() {
       reuseGate={geolarReuseGate}
       onDateChange={loadGeolar}
       onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope)}
-      onOpenPending={()=>router.push('/sobras/pendencias')}
+      onOpenPending={()=>router.push(`/sobras/pendencias?date=${encodeURIComponent(geolarDate)}&store=jc`)}
       onRefreshReuse={()=>void loadGeolarReuseGate(geolarDate)}
       onLogout={logout}
       loading={loading} loadingMsg={loadingMsg}

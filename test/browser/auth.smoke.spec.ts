@@ -10,6 +10,7 @@ const previewAccounts = {
   vendasJa: 'rodrigao+teste-vendas-ja@gmail.com',
   romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
   cozinhaJc: 'rodrigao+teste-cozinha-jc@gmail.com',
+  geolarJc: 'rodrigao+teste-geolar-jc@gmail.com',
 } as const
 
 const slowPreviewDataTimeoutMs = 15_000
@@ -68,6 +69,24 @@ test('Cozinha JC entra na tela concedida para a propria funcao', async ({ page }
     page.getByRole('banner').getByText('Cozinha JC Teste', { exact: true }),
   ).toBeVisible()
   await expect(page.getByText('Sem acesso ao lançamento', { exact: true })).toHaveCount(0)
+})
+
+test('Geolar recebe o cenario de sobras e fica bloqueada ate conferir', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.geolarJc)
+
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Confira as sobras antes da produção' })).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
+
+  await page.getByRole('button', { name: 'Conferir sobras e reaproveitamento' }).click()
+  await expect(page).toHaveURL(/\/sobras\/pendencias\?date=/)
+  await expect(page.getByText('Conferir reaproveitamento', { exact: true })).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
+  await expect(page.getByText('[TESTE] Baguete', { exact: true }).first()).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
 })
 
 test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ page }) => {
