@@ -67,6 +67,11 @@ function deliveryDateKey(delivIdx: number) {
   d.setDate(d.getDate() + daysAhead)
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+function requestedProductionDate() {
+  if (typeof window === 'undefined') return null
+  const date = new URLSearchParams(window.location.search).get('date')
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null
+}
 function parseDays(d: any): number[] {
   if (Array.isArray(d)) return d.map(Number)
   if (typeof d === 'string') return d.replace(/[{}\s]/g,'').split(',').map(Number).filter((n:number) => !isNaN(n))
@@ -418,7 +423,7 @@ export default function ProducaoPage() {
       setDelivIdx(todayDelivIdx)
       setIsLocked(checkDeadline())
       if (user === 'geolar') {
-        const defDate = deliveryDateKey(todayDelivIdx)
+        const defDate = requestedProductionDate() ?? deliveryDateKey(todayDelivIdx)
         setGeolarDate(defDate)
         await loadGeolarReuseGate(defDate)
         const map = await loadOrders(defDate)

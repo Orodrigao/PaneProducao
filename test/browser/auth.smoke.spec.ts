@@ -87,6 +87,18 @@ test('Geolar recebe o cenario de sobras e fica bloqueada ate conferir', async ({
   await expect(page.getByText('[TESTE] Baguete', { exact: true }).first()).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
+  await expect(page.getByRole('button', { name: 'Recusar reaproveitamento' })).toBeVisible()
+
+  const confirmedQuantity = page.locator('input[id^="confirmed-"]').first()
+  await confirmedQuantity.fill('2')
+  await page.getByRole('button', { name: 'Confirmar para a vitrine' }).click()
+
+  await expect(page).toHaveURL(/\/\?date=\d{4}-\d{2}-\d{2}/, {
+    timeout: slowPreviewDataTimeoutMs,
+  })
+  await expect(page.getByRole('button', { name: 'Conferir sobras e reaproveitamento' })).toBeVisible({
+    timeout: slowPreviewDataTimeoutMs,
+  })
 })
 
 test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ page }) => {
