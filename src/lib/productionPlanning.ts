@@ -130,14 +130,18 @@ export function matchesPlanningBreadSearch(breadName: string, query: string): bo
 }
 
 export function calculatePlannedTotalQuantity(item: ProductionPlanItemInput): number {
-  const fresh = normalizePlanQuantity(item.newQuantity)
+  return normalizePlanQuantity(item.newQuantity)
+}
+
+export function calculateNewProductionQuantity(item: ProductionPlanItemInput): number {
+  const planned = calculatePlannedTotalQuantity(item)
   const frozen = normalizePlanQuantity(item.frozenQuantity ?? 0)
   const leftover = normalizePlanQuantity(item.leftoverConfirmedQuantity ?? item.leftoverProposedQuantity ?? 0)
-  return fresh + frozen + leftover
+  return Math.max(0, planned - frozen - leftover)
 }
 
 export function productionPlanItemOrderQuantity(item: ProductionPlanOrderItemInput): number {
-  return calculatePlannedTotalQuantity({
+  return calculateNewProductionQuantity({
     newQuantity: normalizePlanQuantity(item.planned_quantity),
     frozenQuantity: normalizePlanQuantity(item.frozen_quantity ?? 0),
     leftoverProposedQuantity: normalizePlanQuantity(item.leftover_proposed_quantity ?? 0),

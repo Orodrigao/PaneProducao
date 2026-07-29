@@ -46,6 +46,10 @@ type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
 
 interface BreadForm { name:string; days:number[]; is_pj:boolean }
 interface ReusePlanSummary { status:string; proposedQuantity:number; confirmedQuantity:number }
+interface GeolarReuseGateState {
+  status: 'loading' | 'ready' | 'error'
+  hasPendingProposal: boolean
+}
 interface ProductionPlanForOrder {
   id: string
   productionDate: string
@@ -171,6 +175,7 @@ export default function ProducaoPage() {
   const [planningImportSaving, setPlanningImportSaving] = useState(false)
   // geolar date picker
   const [geolarDate, setGeolarDate] = useState(todayKey())
+  const [geolarReuseGate, setGeolarReuseGate] = useState<GeolarReuseGateState>({ status: 'loading', hasPendingProposal: false })
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
   const [geolarEnc, setGeolarEnc] = useState<{client:string;name:string;qty:number}[]>([])
   const [geolarPj, setGeolarPj]   = useState<{client:string;name:string;qty:number}[]>([])
@@ -180,6 +185,7 @@ export default function ProducaoPage() {
   const [prodObs, setProdObs]     = useState('')
   const [prodDate, setProdDate]   = useState(todayKey())
   const [prodSaving, setProdSaving] = useState(false)
+  const geolarReuseRequestRef = useRef(0)
 
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
   const hideLoad = () => setLoading(false)
@@ -257,6 +263,29 @@ export default function ProducaoPage() {
       setPendingLeftovers({})
       setReuseProposalQtys({})
       setReusePlans({})
+    }
+  }, [])
+
+  const loadGeolarReuseGate = useCallback(async (dateKey: string) => {
+    const requestId = ++geolarReuseRequestRef.current
+    setGeolarReuseGate({ status: 'loading', hasPendingProposal: false })
+    try {
+      const { data, error } = await supabase
+        .from('bread_reuse_plans')
+        .select('id')
+        .eq('target_production_date', dateKey)
+        .eq('status', 'proposed')
+        .in('store', ['jc', 'ja'])
+
+      if (error) throw error
+      if (requestId !== geolarReuseRequestRef.current) return
+      setGeolarReuseGate({
+        status: 'ready',
+        hasPendingProposal: (data ?? []).length > 0,
+      })
+    } catch {
+      if (requestId !== geolarReuseRequestRef.current) return
+      setGeolarReuseGate({ status: 'error', hasPendingProposal: false })
     }
   }, [])
 
@@ -391,6 +420,7 @@ export default function ProducaoPage() {
       if (user === 'geolar') {
         const defDate = deliveryDateKey(todayDelivIdx)
         setGeolarDate(defDate)
+        await loadGeolarReuseGate(defDate)
         const map = await loadOrders(defDate)
         setGeolarOrders(map)
         setOrders(map)
@@ -762,6 +792,7 @@ export default function ProducaoPage() {
     setProdDate(dateKey)
     showLoad('Carregando produção...')
     try {
+      await loadGeolarReuseGate(dateKey)
       await loadBreads()
       const map = await loadOrders(dateKey)
       setGeolarOrders(map)
@@ -895,9 +926,11 @@ export default function ProducaoPage() {
       enc={geolarEnc} pj={geolarPj}
       delivIdx={delivIdx}
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
+      reuseGate={geolarReuseGate}
       onDateChange={loadGeolar}
       onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope)}
       onOpenPending={()=>router.push('/sobras/pendencias')}
+      onRefreshReuse={()=>void loadGeolarReuseGate(geolarDate)}
       onLogout={logout}
       loading={loading} loadingMsg={loadingMsg}
     />
@@ -1580,11 +1613,12 @@ interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
   enc:{client:string;name:string;qty:number}[]; pj:{client:string;name:string;qty:number}[]
   prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
-  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onOpenPending:()=>void; onLogout:()=>void
+  reuseGate:GeolarReuseGateState
+  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onOpenPending:()=>void; onRefreshReuse:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, onDateChange, onWhatsApp, onOpenPending, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   let grand = 0
@@ -1608,6 +1642,38 @@ function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems
     window.print()
     setPrintScope('')
   }, [printScope])
+
+  if (reuseGate.status !== 'ready' || reuseGate.hasPendingProposal) {
+    return (
+      <div id="app">
+        <div className="topbar">
+          <div className="topbar-logo" onClick={onLogout} style={{cursor:'pointer'}}>Pane &amp; Salute</div>
+          <span className="topbar-badge tb-gray">Geolar</span>
+          <button className="btn-logout" onClick={onLogout}>Sair</button>
+        </div>
+        <div style={{padding:'16px'}}>
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:8,marginBottom:'1rem'}}>
+            <span style={{fontSize:12,color:'var(--text-muted)'}}>Data dos pedidos:</span>
+            <input type="date" value={geolarDate} className="obs-area" style={{width:'auto',padding:'6px 10px',fontSize:13,minHeight:'auto'}} onChange={e=>onDateChange(e.target.value)}/>
+          </div>
+          <div className="ps-card" role="alert" style={{borderColor: reuseGate.status === 'error' ? '#E6B5AC' : 'var(--honey-line)', background: reuseGate.status === 'error' ? 'var(--berry-tint)' : 'var(--honey-tint)'}}>
+            <h3 style={{marginTop:0}}>{reuseGate.status === 'error' ? 'Não foi possível conferir as sobras' : reuseGate.status === 'loading' ? 'Conferindo sobras…' : 'Confira as sobras antes da produção'}</h3>
+            <p style={{marginBottom:12}}>
+              {reuseGate.status === 'error'
+                ? 'Atualize a conferência antes de abrir a lista de produção.'
+                : reuseGate.status === 'loading'
+                  ? 'A lista só será liberada depois dessa conferência.'
+                  : 'Existe reaproveitamento aguardando sua confirmação. A lista de produção fica bloqueada até definir o destino.'}
+            </p>
+            <div className="btn-row">
+              {reuseGate.status === 'error' && <button className="btn-action" onClick={onRefreshReuse}>Tentar novamente</button>}
+              <button className="btn-action" onClick={onOpenPending}>Conferir sobras e reaproveitamento</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div id="app" className={printScope==='breads' ? 'print-only-breads' : printScope==='itens' ? 'print-only-itens' : ''}>
