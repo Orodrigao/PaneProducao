@@ -62,6 +62,11 @@ por migration. E-mails previstos:
 - `rodrigao+teste-cozinha-jc@gmail.com` — Produção da Cozinha na JC;
 - `rodrigao+teste-geolar-jc@gmail.com` — tela de Produção da Geolar na JC.
 
+O seed também prepara um cenário da Geolar no próximo dia de produção: pedido
+de 10 Baguetes na JC, com 5 unidades no freezer, 2 sobras pendentes e 3
+unidades novas. A proposta de sobra fica pendente para a tela começar
+bloqueada e ser liberada após a conferência.
+
 As contas são criadas pela API oficial do Supabase Auth depois de cada reset.
 Todas usam uma senha fictícia que obedece à política do aplicativo e fica no
 secret `SUPABASE_TEST_USER_PASSWORD` do GitHub e no gerenciador de senhas do
