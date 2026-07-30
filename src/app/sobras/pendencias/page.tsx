@@ -14,6 +14,7 @@ import {
   MapPin,
   PackageOpen,
   Snowflake,
+  X,
 } from 'lucide-react'
 import { getCurrentUserAsync, type AppUser } from '@/lib/auth'
 import {
@@ -133,9 +134,11 @@ export default function BreadLeftoverPendingPage() {
       const requestedDate = params.get('date')
 
       setStore(resolvePendingLeftoverStore(current, requestedStore))
-      if (requestedDate && isValidClosingDate(requestedDate, todayKey())) {
+      if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
         setTargetDate(requestedDate)
-        if (params.get('blocked') === '1') setBlockedClosingDate(requestedDate)
+        if (params.get('blocked') === '1' && isValidClosingDate(requestedDate, todayKey())) {
+          setBlockedClosingDate(requestedDate)
+        }
       }
     })
     return () => { active = false }
@@ -251,8 +254,14 @@ export default function BreadLeftoverPendingPage() {
     [blockedClosingDate, leftovers],
   )
 
-  async function confirmReuse(plan: ReusePlanRow) {
-    const rawQuantity = confirmedInputs[plan.id]?.trim() ?? ''
+  async function confirmReuse(plan: ReusePlanRow, forcedQuantity?: number) {
+    if (forcedQuantity === 0 && !window.confirm(`Recusar o reaproveitamento de ${breads[plan.bread_id]?.name ?? plan.bread_id}? O previsto do Forno será mantido.`)) {
+      return
+    }
+
+    const rawQuantity = forcedQuantity === undefined
+      ? confirmedInputs[plan.id]?.trim() ?? ''
+      : String(forcedQuantity)
     if (!/^\d+$/.test(rawQuantity)) {
       showToast('Informe uma quantidade inteira para confirmar.')
       return
@@ -270,8 +279,13 @@ export default function BreadLeftoverPendingPage() {
         p_confirmed_quantity: quantity,
       })
       if (error) throw error
-      showToast('Reaproveitamento confirmado. O previsto do Forno foi atualizado.')
-      await loadData()
+      const otherPendingPlans = plans.some(candidate => candidate.id !== plan.id && candidate.status === 'proposed')
+      if (otherPendingPlans) {
+        showToast('Decisão salva. Ainda há reaproveitamentos para conferir.')
+        await loadData()
+      } else {
+        window.location.assign(`/?date=${encodeURIComponent(targetDate)}`)
+      }
     } catch (error: unknown) {
       showToast(`Erro: ${errorMessage(error)}`)
     } finally {
@@ -481,7 +495,11 @@ export default function BreadLeftoverPendingPage() {
                             <div className="ps-reuse-proposed"><span>Rodrigo propôs</span><b>{plan.proposed_quantity}</b></div>
                           </div>
                           {confirmed ? (
-                            <div className="ps-reuse-confirmed"><Check size={19} /><b>{plan.confirmed_quantity ?? 0} confirmados</b><span>Já reduziu o previsto do Forno.</span></div>
+                            (plan.confirmed_quantity ?? 0) > 0 ? (
+                              <div className="ps-reuse-confirmed"><Check size={19} /><b>{plan.confirmed_quantity} confirmados</b><span>Já reduziu o previsto do Forno.</span></div>
+                            ) : (
+                              <div className="ps-reuse-confirmed"><X size={19} /><b>Reaproveitamento recusado</b><span>O previsto do Forno foi mantido.</span></div>
+                            )
                           ) : (
                             <>
                               <label className="ps-label" htmlFor={`confirmed-${plan.id}`}>Quantos estão aptos a voltar?</label>
@@ -499,6 +517,10 @@ export default function BreadLeftoverPendingPage() {
                               <button type="button" className="ps-btn success block" disabled={isSaving} onClick={() => void confirmReuse(plan)}>
                                 {isSaving ? <LoaderCircle className="ps-spin" size={19} /> : <Check size={19} />}
                                 Confirmar para a vitrine
+                              </button>
+                              <button type="button" className="ps-btn block" disabled={isSaving} onClick={() => void confirmReuse(plan, 0)}>
+                                <X size={19} />
+                                Recusar reaproveitamento
                               </button>
                             </>
                           )}

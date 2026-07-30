@@ -59,7 +59,13 @@ por migration. E-mails previstos:
 - `rodrigao+teste-vendas-ja@gmail.com` — Vendas JA, entra no Romaneio e testa as cinco rotas aprovadas;
 - `rodrigao+teste-expedicao-jc@gmail.com` — saída de Romaneio/PJ;
 - `rodrigao+teste-romaneio-ex@gmail.com` — conferência da EX;
-- `rodrigao+teste-cozinha-jc@gmail.com` — Produção da Cozinha na JC.
+- `rodrigao+teste-cozinha-jc@gmail.com` — Produção da Cozinha na JC;
+- `rodrigao+teste-geolar-jc@gmail.com` — tela de Produção da Geolar na JC.
+
+O seed também prepara um cenário da Geolar no próximo dia de produção: pedido
+de 10 Baguetes na JC, com 5 unidades no freezer, 2 sobras pendentes e 3
+unidades novas. A proposta de sobra fica pendente para a tela começar
+bloqueada e ser liberada após a conferência.
 
 As contas são criadas pela API oficial do Supabase Auth depois de cada reset.
 Todas usam uma senha fictícia que obedece à política do aplicativo e fica no
@@ -73,7 +79,7 @@ O workflow espera estes secrets, instalados somente na fase de ativação:
 - `SUPABASE_OWNER_ACCESS_TOKEN` — token criado pela conta proprietária do
   Rodrigo;
 - `SUPABASE_PREVIEW_DB_PASSWORD` — senha técnica apenas do banco de teste;
-- `SUPABASE_TEST_USER_PASSWORD` — senha compartilhada apenas pelas cinco
+- `SUPABASE_TEST_USER_PASSWORD` — senha compartilhada apenas pelas seis
   contas fictícias do ambiente de teste.
 
 A chave administrativa do Auth não fica gravada como secret adicional. O

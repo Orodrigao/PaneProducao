@@ -18,6 +18,7 @@ import {
   PRODUCTION_PLAN_STORES,
   aggregateFrozenBreadAvailability,
   aggregatePlanningLeftoverAvailability,
+  calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
   normalizePlannedQuantity,
@@ -776,14 +777,26 @@ export default function ProductionPlanningPage() {
                       const hasLeftoverOption = leftoverAvailable > 0 || leftoverProposal > 0 || leftoverConfirmed !== null || useLeftover
                       const canToggleFrozen = canEditItem && (frozenAvailable > 0 || frozen > 0)
                       const canToggleLeftover = canEditItem && (leftoverAvailable > 0 || leftoverProposal > 0)
+                      const newProduction = item
+                        ? calculateNewProductionQuantity({
+                          newQuantity: fresh,
+                          frozenQuantity: frozen,
+                          leftoverProposedQuantity: leftoverProposal,
+                          leftoverConfirmedQuantity: leftoverConfirmed,
+                        })
+                        : calculateNewProductionQuantity({
+                          newQuantity: fresh,
+                          frozenQuantity: frozen,
+                          leftoverProposedQuantity: leftover,
+                        })
                       const total = item
                         ? plannedTotalForItem(item)
-                        : calculatePlannedTotalQuantity({ newQuantity: fresh, frozenQuantity: frozen, leftoverProposedQuantity: leftover })
+                        : calculatePlannedTotalQuantity({ newQuantity: fresh })
 
                       return (
                         <div key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
                           <label className="ps-fieldgroup" style={{ margin: 0 }}>
-                            <span className="ps-fieldlabel">{STORE_LABEL[store]} novos</span>
+                            <span className="ps-fieldlabel">{STORE_LABEL[store]} total</span>
                             <input
                               className="ps-input"
                               type="number"
@@ -879,7 +892,7 @@ export default function ProductionPlanningPage() {
                           )}
 
                           <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
-                            Total: {total} = novo {fresh} + congelado {frozen} + sobra {leftover}
+                            Total: {total} = novo {newProduction} + congelado {frozen} + sobra {leftover}
                           </span>
                         </div>
                       )

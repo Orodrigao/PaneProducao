@@ -4,6 +4,7 @@ import {
   aggregatePlanningLeftoverAvailability,
   buildLeftoverProposalDraftsFromPlan,
   buildProductionOrderDraftsFromPlan,
+  calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
   frozenLocationPlanningStore,
   matchesPlanningBreadSearch,
@@ -34,21 +35,28 @@ describe('productionPlanning', () => {
     expect(plannedBreadsForDate(breads, '2026-07-27').map(bread => bread.id)).toEqual(['integral'])
   })
 
-  it('calcula o total planejado somando novo, congelado e sobra confirmada', () => {
+  it('mantem a demanda total separada das fontes de atendimento', () => {
     expect(calculatePlannedTotalQuantity({
       newQuantity: 20,
       frozenQuantity: 5,
       leftoverConfirmedQuantity: 3,
-    })).toBe(28)
+    })).toBe(20)
+  })
+
+  it('calcula somente a producao nova depois de descontar congelado e sobra', () => {
+    expect(calculateNewProductionQuantity({
+      newQuantity: 10,
+      frozenQuantity: 8,
+    })).toBe(2)
   })
 
   it('usa a sobra proposta enquanto Geolar ainda nao confirmou', () => {
-    expect(calculatePlannedTotalQuantity({
+    expect(calculateNewProductionQuantity({
       newQuantity: 20,
       frozenQuantity: 5,
       leftoverProposedQuantity: 4,
       leftoverConfirmedQuantity: null,
-    })).toBe(29)
+    })).toBe(11)
   })
 
   it('normaliza quantidade planejada para unidade inteira positiva', () => {
@@ -139,7 +147,7 @@ describe('productionPlanning', () => {
     })
   })
 
-  it('transforma um item planejado em quantidade total de pedido', () => {
+  it('transforma um item planejado em quantidade nova de pedido', () => {
     expect(productionPlanItemOrderQuantity({
       store: 'jc',
       bread_id: 'baguete',
@@ -147,7 +155,7 @@ describe('productionPlanning', () => {
       frozen_quantity: 3,
       leftover_proposed_quantity: 2,
       leftover_confirmed_quantity: null,
-    })).toBe(10)
+    })).toBe(0)
   })
 
   it('gera linhas de pedido somente para a loja escolhida e com total positivo', () => {
@@ -160,7 +168,7 @@ describe('productionPlanning', () => {
     expect(rows).toEqual([{
       store: 'jc',
       bread_id: 'baguete',
-      quantity: 8,
+      quantity: 2,
       order_date: '2026-07-28',
       order_type: 'producao',
       obs: 'Gerado pelo Planejamento',
@@ -182,7 +190,7 @@ describe('productionPlanning', () => {
     expect(summarizePlanItemsByStore([
       { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 2, leftover_proposed_quantity: 1 },
       { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0 },
-    ])).toEqual({ jc: 8, ja: 3 })
+    ])).toEqual({ jc: 2, ja: 3 })
   })
 
   it('nao pede nova conversao quando a loja ja virou pedido', () => {

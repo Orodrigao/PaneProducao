@@ -8,7 +8,8 @@ declare
     'rodrigao+teste-vendas-ja@gmail.com',
     'rodrigao+teste-expedicao-jc@gmail.com',
     'rodrigao+teste-romaneio-ex@gmail.com',
-    'rodrigao+teste-cozinha-jc@gmail.com'
+    'rodrigao+teste-cozinha-jc@gmail.com',
+    'rodrigao+teste-geolar-jc@gmail.com'
   ];
   user_count integer;
   profile_count integer;
@@ -18,8 +19,8 @@ begin
   from auth.users
   where lower(email) = any(expected_users);
 
-  if user_count <> 5 then
-    raise exception 'Banco Preview deveria ter 5 contas ficticias, encontrou %.', user_count;
+  if user_count <> 6 then
+    raise exception 'Banco Preview deveria ter 6 contas ficticias, encontrou %.', user_count;
   end if;
 
   select count(*) into profile_count
@@ -28,8 +29,8 @@ begin
   where lower(user_account.email) = any(expected_users)
     and profile.active;
 
-  if profile_count <> 5 then
-    raise exception 'Banco Preview deveria ter 5 perfis ativos, encontrou %.', profile_count;
+  if profile_count <> 6 then
+    raise exception 'Banco Preview deveria ter 6 perfis ativos, encontrou %.', profile_count;
   end if;
 
   if not exists (
@@ -121,6 +122,81 @@ begin
       and assignment.permission_key = 'producao_cozinha.lancar'
   ) then
     raise exception 'Perfil Vendas JA recebeu acesso indevido a Producao da Cozinha.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-geolar-jc@gmail.com'
+      and profile.role = 'producao'
+      and lower(profile.store) = 'jc'
+      and profile.allowed_routes = '["/", "/sobras"]'::jsonb
+  ) then
+    raise exception 'Perfil Geolar JC deve entrar na tela de Producao e abrir a conferencia de sobras.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.orders order_row
+    where order_row.id = '30000000-0000-4000-8000-000000000004'
+      and order_row.store = 'jc'
+      and order_row.bread_id = 'teste-baguete'
+      and order_row.quantity = 3
+      and order_row.obs = '[TESTE] pedido total 10 = 5 congelados + 2 sobras + 3 novos'
+  ) then
+    raise exception 'Cenario Geolar deve ter pedido de 3 paes novos para demanda total de 10.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.frozen_stock stock
+    join public.frozen_products product on product.id = stock.frozen_product_id
+    where product.product_id = 'teste-baguete'
+      and product.store = 'jc'
+      and stock.location = 'jc-freezer'
+      and stock.quantity = 5
+  ) then
+    raise exception 'Cenario Geolar deve ter 5 paes congelados no freezer JC.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.sobras leftover
+    where leftover.id = '53000000-0000-4000-8000-000000000001'
+      and leftover.store = 'jc'
+      and leftover.product_id = 'teste-baguete'
+      and leftover.pending_quantity = 2
+      and leftover.status = 'pending'
+  ) then
+    raise exception 'Cenario Geolar deve ter 2 paes de sobra pendentes na JC.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.production_plans plan
+    join public.production_plan_items item on item.plan_id = plan.id
+    where plan.id = '54000000-0000-4000-8000-000000000001'
+      and plan.status = 'aguardando_geolar'
+      and item.store = 'jc'
+      and item.bread_id = 'teste-baguete'
+      and item.planned_quantity = 10
+      and item.frozen_quantity = 5
+      and item.leftover_proposed_quantity = 2
+  ) then
+    raise exception 'Cenario Geolar deve ter planejamento 10 = 5 congelados + 2 sobras + 3 novos.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.bread_reuse_plans reuse_plan
+    where reuse_plan.id = '56000000-0000-4000-8000-000000000001'
+      and reuse_plan.store = 'jc'
+      and reuse_plan.bread_id = 'teste-baguete'
+      and reuse_plan.proposed_quantity = 2
+      and reuse_plan.status = 'proposed'
+  ) then
+    raise exception 'Cenario Geolar deve bloquear a lista com reaproveitamento pendente.';
   end if;
 
   if exists (

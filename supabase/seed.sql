@@ -84,13 +84,58 @@ on conflict (id) do update set
   cancelled_by = null,
   cancel_reason = null;
 
+with test_schedule as (
+  select (
+    (now() at time zone 'America/Sao_Paulo')::date
+    + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+        when 0 then 1
+        when 1 then 1
+        when 2 then 1
+        when 3 then 1
+        when 4 then 2
+        when 5 then 1
+        when 6 then 2
+      end::integer
+  ) as production_date
+)
+insert into public.orders (
+  id, store, bread_id, quantity, order_date, obs,
+  order_type, product_source, product_name, needs_production
+)
+select
+  '30000000-0000-4000-8000-000000000004',
+  'jc',
+  'teste-baguete',
+  3,
+  production_date,
+  '[TESTE] pedido total 10 = 5 congelados + 2 sobras + 3 novos',
+  'producao',
+  'bread',
+  '[TESTE] Baguete',
+  true
+from test_schedule
+on conflict (id) do update set
+  store = excluded.store,
+  bread_id = excluded.bread_id,
+  quantity = excluded.quantity,
+  order_date = excluded.order_date,
+  obs = excluded.obs,
+  order_type = excluded.order_type,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  needs_production = excluded.needs_production,
+  cancelled_at = null,
+  cancelled_by = null,
+  cancel_reason = null;
+
 with test_profiles(email, display_name, role, store, allowed_routes) as (
   values
     ('rodrigao+teste@gmail.com', 'Rodrigo Teste', 'admin', null, '["/", "*"]'::jsonb),
     ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/romaneio", "/fechamento-caixa", "/sobras", "/encomendas", "/estoque-congelado"]'::jsonb),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
-    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb)
+    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
+    ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -112,7 +157,8 @@ where assignment.user_id in (
     'rodrigao+teste-vendas-ja@gmail.com',
     'rodrigao+teste-expedicao-jc@gmail.com',
     'rodrigao+teste-romaneio-ex@gmail.com',
-    'rodrigao+teste-cozinha-jc@gmail.com'
+    'rodrigao+teste-cozinha-jc@gmail.com',
+    'rodrigao+teste-geolar-jc@gmail.com'
   )
 );
 
@@ -151,6 +197,227 @@ select user_id, permission_key, scope, null::uuid from resolved_permissions
 union all
 select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
+
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit,
+  min_stock, active, store, visible_stores
+)
+values (
+  '50000000-0000-4000-8000-000000000001',
+  'teste-baguete',
+  'bread',
+  '[TESTE] Baguete',
+  'un',
+  0,
+  true,
+  'jc',
+  array['jc']::text[]
+)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit = excluded.unit,
+  min_stock = excluded.min_stock,
+  active = excluded.active,
+  store = excluded.store,
+  visible_stores = excluded.visible_stores;
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity, updated_at)
+values (
+  '51000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  'jc-freezer',
+  5,
+  now()
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  quantity = excluded.quantity,
+  updated_at = excluded.updated_at;
+
+insert into public.frozen_movements (
+  id, frozen_product_id, location, movement_type, quantity,
+  previous_quantity, responsible, obs
+)
+values (
+  '52000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  'jc-freezer',
+  'entrada',
+  5,
+  0,
+  'Rodrigo Teste',
+  '[TESTE] saldo congelado reservado para o planejamento da Geolar'
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  movement_type = excluded.movement_type,
+  quantity = excluded.quantity,
+  previous_quantity = excluded.previous_quantity,
+  responsible = excluded.responsible,
+  obs = excluded.obs;
+
+with test_schedule as (
+  select (
+    (now() at time zone 'America/Sao_Paulo')::date
+    + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+        when 0 then 1
+        when 1 then 1
+        when 2 then 1
+        when 3 then 1
+        when 4 then 2
+        when 5 then 1
+        when 6 then 2
+      end::integer
+  ) as production_date
+)
+insert into public.sobras (
+  id, record_date, responsible, product_id, quantity, obs,
+  product_source, store, lot_code, pending_quantity, status,
+  physical_location, reconciliation_status, updated_at
+)
+select
+  '53000000-0000-4000-8000-000000000001',
+  production_date - 1,
+  'Geolar JC Teste',
+  'teste-baguete',
+  2,
+  '[TESTE] sobra reservada para reaproveitamento na produção seguinte',
+  'bread',
+  'jc',
+  'L' || to_char(production_date - 1, 'MMDD'),
+  2,
+  'pending',
+  'padaria_cozinha',
+  'awaiting_oven',
+  now()
+from test_schedule
+on conflict (id) do update set
+  record_date = excluded.record_date,
+  responsible = excluded.responsible,
+  product_id = excluded.product_id,
+  quantity = excluded.quantity,
+  obs = excluded.obs,
+  product_source = excluded.product_source,
+  store = excluded.store,
+  lot_code = excluded.lot_code,
+  pending_quantity = excluded.pending_quantity,
+  status = excluded.status,
+  physical_location = excluded.physical_location,
+  reconciliation_status = excluded.reconciliation_status,
+  updated_at = excluded.updated_at;
+
+with test_schedule as (
+  select (
+    (now() at time zone 'America/Sao_Paulo')::date
+    + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+        when 0 then 1
+        when 1 then 1
+        when 2 then 1
+        when 3 then 1
+        when 4 then 2
+        when 5 then 1
+        when 6 then 2
+      end::integer
+  ) as production_date
+), test_admin as (
+  select id
+  from auth.users
+  where lower(email) = 'rodrigao+teste@gmail.com'
+)
+insert into public.production_plans (
+  id, production_date, status, created_by, created_by_name, updated_at
+)
+select
+  '54000000-0000-4000-8000-000000000001',
+  production_date,
+  'aguardando_geolar',
+  test_admin.id,
+  'Rodrigo Teste',
+  now()
+from test_schedule
+cross join test_admin
+on conflict (production_date) do update set
+  status = excluded.status,
+  created_by = excluded.created_by,
+  created_by_name = excluded.created_by_name,
+  updated_at = excluded.updated_at;
+
+insert into public.production_plan_items (
+  id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
+  leftover_proposed_quantity, leftover_confirmed_quantity, is_extra,
+  order_created_at, order_created_by_name, updated_at
+)
+select
+  '55000000-0000-4000-8000-000000000001',
+  plan.id,
+  'jc',
+  'teste-baguete',
+  10,
+  5,
+  2,
+  null,
+  false,
+  now(),
+  'Rodrigo Teste',
+  now()
+from public.production_plans plan
+where plan.id = '54000000-0000-4000-8000-000000000001'
+on conflict (plan_id, store, bread_id) do update set
+  planned_quantity = excluded.planned_quantity,
+  frozen_quantity = excluded.frozen_quantity,
+  leftover_proposed_quantity = excluded.leftover_proposed_quantity,
+  leftover_confirmed_quantity = excluded.leftover_confirmed_quantity,
+  is_extra = excluded.is_extra,
+  order_created_at = excluded.order_created_at,
+  order_created_by_name = excluded.order_created_by_name,
+  updated_at = excluded.updated_at;
+
+with test_schedule as (
+  select (
+    (now() at time zone 'America/Sao_Paulo')::date
+    + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+        when 0 then 1
+        when 1 then 1
+        when 2 then 1
+        when 3 then 1
+        when 4 then 2
+        when 5 then 1
+        when 6 then 2
+      end::integer
+  ) as production_date
+), test_admin as (
+  select id
+  from auth.users
+  where lower(email) = 'rodrigao+teste@gmail.com'
+)
+insert into public.bread_reuse_plans (
+  id, target_production_date, store, bread_id, proposed_quantity,
+  confirmed_quantity, status, proposed_by, proposed_by_name, updated_at
+)
+select
+  '56000000-0000-4000-8000-000000000001',
+  production_date,
+  'jc',
+  'teste-baguete',
+  2,
+  null,
+  'proposed',
+  test_admin.id,
+  'Rodrigo Teste',
+  now()
+from test_schedule
+cross join test_admin
+on conflict (target_production_date, store, bread_id) do update set
+  proposed_quantity = excluded.proposed_quantity,
+  confirmed_quantity = excluded.confirmed_quantity,
+  status = excluded.status,
+  proposed_by = excluded.proposed_by,
+  proposed_by_name = excluded.proposed_by_name,
+  updated_at = excluded.updated_at;
 
 insert into public.romaneios (
   id, record_date, destination_id, trip_number, status, created_by, obs, sent_by, sent_at
