@@ -50,8 +50,11 @@ interface Romaneio { id:string; record_date:string; destination_id:string; trip_
 interface RomaneioTripRow { trip_number:number|null }
 interface RomaneioDraftExistingRow extends RomaneioTripRow { id:string }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
+interface RomaneioProductionComposition { total:number; newQuantity:number; leftoverQuantity:number; frozenQuantity:number }
+interface RomaneioProductionCompositionRow { bread_id:string; planned_quantity:number|string|null; frozen_quantity:number|string|null; leftover_quantity:number|string|null; new_quantity:number|string|null }
+interface CriarDraftCompositionStorage { [breadId:string]: RomaneioProductionComposition }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
-interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; productionCompositions?:CriarDraftCompositionStorage; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
@@ -138,6 +141,12 @@ function formatDraftTotal(qtys: Record<string, number>, options: RomaneioProduct
   return parts.join(' · ') || '0 un'
 }
 
+function compositionLabel(composition: RomaneioProductionComposition | undefined, unit: string) {
+  if (!composition) return ''
+  const suffix = unit ? ` ${unit}` : ''
+  return `Pão novo: ${formatRomaneioQty(composition.newQuantity)}${suffix} · Sobra: ${formatRomaneioQty(composition.leftoverQuantity)}${suffix} · Congelado: ${formatRomaneioQty(composition.frozenQuantity)}${suffix}`
+}
+
 function RomaneioQuantityInput({
   value,
   allowDecimal,
@@ -184,7 +193,7 @@ function RomaneioQuantityInput({
   )
 }
 // ── Supabase ────────────────────────────────────────────────────────
-function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
+function RomaneioPrint({ rom, items, compositions = {} }: { rom: Romaneio; items: RomItem[]; compositions?: Record<string, RomaneioProductionComposition> }) {
   const recipient = recipientForDestination(rom.destinations)
   const totalSent = items.reduce((sum, item) => sum + Number(item.qty_sent || 0), 0)
 
@@ -242,6 +251,7 @@ function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
           <thead>
             <tr>
               <th>Produto</th>
+              <th>Origem planejada</th>
               <th>Enviado</th>
               <th>Recebido</th>
               <th>Aceito</th>
@@ -251,6 +261,7 @@ function RomaneioPrint({ rom, items }: { rom: Romaneio; items: RomItem[] }) {
             {items.map(item => (
               <tr key={item.id}>
                 <td>{item.product_name}</td>
+                <td>{compositionLabel(compositions[item.product_id], '') || '-'}</td>
                 <td>{formatRomaneioQty(Number(item.qty_sent || 0))}</td>
                 <td>{item.qty_received != null ? formatRomaneioQty(Number(item.qty_received)) : '-'}</td>
                 <td>{item.qty_accepted != null ? formatRomaneioQty(Number(item.qty_accepted)) : '-'}</td>
@@ -303,6 +314,29 @@ async function loadOpenReplacementPendings(destId: string): Promise<RomaneioRepl
   return await sbGet('romaneio_replacement_pending', params) as RomaneioReplacementPendingRow[]
 }
 
+async function loadProductionCompositions(date: string, destinationCode: string | null | undefined) {
+  const store = normalizeDestination(destinationCode).toLowerCase()
+  if (store !== 'jc' && store !== 'ja') return {} as Record<string, RomaneioProductionComposition>
+
+  const response = await supabaseRestFetch('rpc/get_romaneio_production_composition', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_production_date: date, p_store: store }),
+  })
+  const rows = await response.json() as RomaneioProductionCompositionRow[]
+  const compositions: Record<string, RomaneioProductionComposition> = {}
+  rows.forEach(row => {
+    if (!row.bread_id) return
+    compositions[row.bread_id] = {
+      total: Math.max(0, Number(row.planned_quantity ?? 0)),
+      newQuantity: Math.max(0, Number(row.new_quantity ?? 0)),
+      leftoverQuantity: Math.max(0, Number(row.leftover_quantity ?? 0)),
+      frozenQuantity: Math.max(0, Number(row.frozen_quantity ?? 0)),
+    }
+  })
+  return compositions
+}
+
 // ── Main ──────────────────────────────────────────────────────────
 export default function RomaneioPage() {
   const router = useRouter()
@@ -320,6 +354,7 @@ export default function RomaneioPage() {
   // detalhe
   const [detailRom, setDetailRom] = useState<Romaneio|null>(null)
   const [detailItems, setDetailItems] = useState<RomItem[]>([])
+  const [detailCompositions, setDetailCompositions] = useState<Record<string, RomaneioProductionComposition>>({})
   const [detailReplacementPendingQtys, setDetailReplacementPendingQtys] = useState<Record<string, number>>({})
   const [printAfterOpen, setPrintAfterOpen] = useState(false)
   // criar
@@ -427,8 +462,10 @@ export default function RomaneioPage() {
       const replacementRows = rom && normalizeDestination(rom.destinations?.code) === 'EX'
         ? await loadOpenReplacementPendings(rom.destination_id)
         : []
+      const compositions = rom ? await loadProductionCompositions(rom.record_date, rom.destinations?.code) : {}
       setDetailRom(rom ?? null)
       setDetailItems(items)
+      setDetailCompositions(compositions)
       setDetailReplacementPendingQtys(pendingReplacementQuantitiesByProductId(replacementRows))
       setPrintAfterOpen(printAfterLoad)
       setScreen('detalhe')
@@ -471,16 +508,22 @@ export default function RomaneioPage() {
     const replacementRequest = destinationCode === 'EX'
       ? loadOpenReplacementPendings(destId)
       : Promise.resolve([])
-    const [existing, orders, replacementRows] = await Promise.all([
+    const compositionRequest = loadProductionCompositions(date, destinationCode)
+    const [existing, orders, replacementRows, productionCompositions] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
       orderRequest,
       replacementRequest,
+      compositionRequest,
     ])
     const existingRows = existing as RomaneioDraftExistingRow[]
     const previousItemRows = existingRows.length
       ? await sbGet('romaneio_items',`romaneio_id=in.(${existingRows.map(row => row.id).join(',')})&product_source=eq.bread&select=product_id,qty_sent`)
       : []
     const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
+    const requestedQtys = { ...orderQtys }
+    Object.entries(productionCompositions as Record<string, RomaneioProductionComposition>).forEach(([breadId, composition]) => {
+      requestedQtys[breadId] = composition.total
+    })
     const previouslySentQtys = sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[])
     const replacementPendingQtys = pendingReplacementQuantitiesByProductId(replacementRows as RomaneioReplacementPendingRow[])
     let bds = breads
@@ -496,14 +539,15 @@ export default function RomaneioPage() {
         if (byOrder.length) bds = byOrder
       }
     }
-    bds = filterPendingRomaneioBreads(bds, orderQtys, previouslySentQtys, replacementPendingQtys)
+    bds = filterPendingRomaneioBreads(bds, requestedQtys, previouslySentQtys, replacementPendingQtys)
     return {
       destId,
       breads: bds,
       qtys: {},
-      orderQtys,
+      orderQtys: requestedQtys,
       previouslySentQtys,
       replacementPendingQtys,
+      productionCompositions: productionCompositions as Record<string, RomaneioProductionComposition>,
       extras: {},
       trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
       obs: '',
@@ -1035,6 +1079,7 @@ export default function RomaneioPage() {
               {detailItems.length===0 && <div className="ps-empty">Nenhum item.</div>}
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {detailItems.map(it=>{
+                  const productionComposition = detailCompositions[it.product_id]
                   const replacementPendingQty = it.product_source === 'bread'
                     ? detailReplacementPendingQtys[it.product_id] || 0
                     : 0
@@ -1049,6 +1094,11 @@ export default function RomaneioPage() {
                         {it.qty_received!=null && <span>Recebido: <b>{it.qty_received}</b></span>}
                         {it.qty_accepted!=null && <span>Aceito: <b>{it.qty_accepted}</b></span>}
                       </div>
+                      {productionComposition && (
+                        <div style={{marginTop:6,padding:'8px 10px',borderRadius:12,background:'rgba(142, 78, 34, 0.08)',color:'var(--ink-soft)',fontSize:12,fontWeight:700,lineHeight:1.45}}>
+                          {compositionLabel(productionComposition, '')}
+                        </div>
+                      )}
                       {replacementPendingQty > 0 && (
                         <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,padding:'8px 10px',borderRadius:12,background:'rgba(164, 55, 55, 0.10)',color:'var(--berry)',fontSize:13,fontWeight:800,lineHeight:1.35}}>
                           <AlertTriangle size={14}/>
@@ -1075,7 +1125,7 @@ export default function RomaneioPage() {
             </div>
           </div>
         </div>
-        <RomaneioPrint rom={detailRom} items={detailItems}/>
+        <RomaneioPrint rom={detailRom} items={detailItems} compositions={detailCompositions}/>
         </>
       )}
 
@@ -1125,6 +1175,7 @@ export default function RomaneioPage() {
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {activeOptions.map(option=>{
                       const qty = activeDraft.qtys[option.key]||0
+                      const productionComposition = activeDraft.productionCompositions?.[option.productId]
                       const orderQty = activeDraft.orderQtys?.[option.productId] || 0
                       const previouslySentQty = activeDraft.previouslySentQtys?.[option.productId] || 0
                       const replacementPendingQty = activeDraft.replacementPendingQtys?.[option.productId] || 0
@@ -1148,6 +1199,11 @@ export default function RomaneioPage() {
                             <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(164, 55, 55, 0.10)',color:'var(--berry)',fontSize:13,fontWeight:800,lineHeight:1.35}}>
                               <AlertTriangle size={14}/>
                               <span>Reposição pendente: +{formatRomaneioQty(replacementPendingQty)} {option.unit}</span>
+                            </div>
+                          )}
+                          {productionComposition && (
+                            <div style={{marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(142, 78, 34, 0.08)',color:'var(--ink-soft)',fontSize:12,fontWeight:700,lineHeight:1.45}}>
+                              {compositionLabel(productionComposition, option.unit)}
                             </div>
                           )}
                           <div className="ps-stepper">
