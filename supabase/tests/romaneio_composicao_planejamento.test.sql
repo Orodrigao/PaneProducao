@@ -31,6 +31,11 @@ select set_config(
   (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'),
   false
 );
+select set_config(
+  'test.romaneio_ex_id',
+  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-romaneio-ex@gmail.com'),
+  false
+);
 
 insert into public.production_plans (
   id, production_date, status, created_by, created_by_name
@@ -102,11 +107,16 @@ select is(
   'Expedicao recebe a producao nova residual'
 );
 
+select set_config(
+  'request.jwt.claim.sub',
+  current_setting('test.romaneio_ex_id'),
+  true
+);
 select throws_ok(
-  $$ select * from public.get_romaneio_production_composition(current_date + 60, 'ja') $$,
+  $$ select * from public.get_romaneio_production_composition(current_date + 60, 'jc') $$,
   '42501',
   'Sem permissao para consultar a composicao desta loja.',
-  'Expedicao JC nao consulta a composicao da JA'
+  'Expedicao EX nao consulta a composicao de JC'
 );
 
 select throws_ok(
