@@ -112,7 +112,7 @@ select is(
   (select proposed_quantity from public.bread_reuse_plans
    where target_production_date = current_date + 61
      and store = 'jc' and bread_id = 'teste-baguete'),
-  2::numeric,
+  2,
   'Importacao salva a proposta mesmo sem pedido novo'
 );
 
