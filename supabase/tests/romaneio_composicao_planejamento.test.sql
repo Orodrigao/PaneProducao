@@ -115,7 +115,7 @@ select set_config(
 select throws_ok(
   $$ select * from public.get_romaneio_production_composition(current_date + 60, 'jc') $$,
   '42501',
-  'Sem permissao para consultar a composicao desta loja.',
+  'Sem permissão para consultar a composição desta loja.',
   'Expedicao EX nao consulta a composicao de JC'
 );
 
