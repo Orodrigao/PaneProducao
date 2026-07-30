@@ -21,21 +21,56 @@ select ok(
   'Anonimo nao pode consultar a composicao do Romaneio'
 );
 
-select set_config(
-  'test.admin_id',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste@gmail.com'),
-  false
-);
-select set_config(
-  'test.expedicao_jc_id',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'),
-  false
-);
-select set_config(
-  'test.romaneio_ex_id',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-romaneio-ex@gmail.com'),
-  false
-);
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data, is_super_admin
+) values
+  (
+    '93000000-0000-4000-8000-000000000001',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'composicao-admin-test@example.com',
+    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+    now(), now(), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb, false
+  ),
+  (
+    '93000000-0000-4000-8000-000000000002',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'composicao-expedicao-jc-test@example.com',
+    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+    now(), now(), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb, false
+  ),
+  (
+    '93000000-0000-4000-8000-000000000003',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'composicao-romaneio-ex-test@example.com',
+    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+    now(), now(), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb, false
+  );
+
+insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
+values
+  ('93000000-0000-4000-8000-000000000001', 'Composicao Admin', 'admin', null, true, '["*"]'::jsonb),
+  ('93000000-0000-4000-8000-000000000002', 'Composicao Expedicao JC', 'expedicao', 'jc', true, '["/romaneio"]'::jsonb),
+  ('93000000-0000-4000-8000-000000000003', 'Composicao Romaneio EX', 'expedicao', 'ex', true, '["/romaneio"]'::jsonb);
+
+insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
+values
+  ('93000000-0000-4000-8000-000000000001', 'romaneio.visualizar', '*', null),
+  ('93000000-0000-4000-8000-000000000001', 'romaneio.criar', '*', null),
+  ('93000000-0000-4000-8000-000000000002', 'romaneio.visualizar', '*', null),
+  ('93000000-0000-4000-8000-000000000002', 'romaneio.criar', '*', null),
+  ('93000000-0000-4000-8000-000000000003', 'romaneio.visualizar', 'ex', null);
+
+select set_config('test.admin_id', '93000000-0000-4000-8000-000000000001', false);
+select set_config('test.expedicao_jc_id', '93000000-0000-4000-8000-000000000002', false);
+select set_config('test.romaneio_ex_id', '93000000-0000-4000-8000-000000000003', false);
 
 insert into public.production_plans (
   id, production_date, status, created_by, created_by_name
