@@ -21,6 +21,17 @@ select ok(
   'Anonimo nao pode consultar a composicao do Romaneio'
 );
 
+select set_config(
+  'test.admin_id',
+  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste@gmail.com'),
+  false
+);
+select set_config(
+  'test.expedicao_jc_id',
+  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'),
+  false
+);
+
 insert into public.production_plans (
   id, production_date, status, created_by, created_by_name
 )
@@ -28,10 +39,9 @@ select
   '70000000-0000-4000-8000-000000000001',
   current_date + 60,
   'aguardando_geolar',
-  user_account.id,
+  current_setting('test.admin_id')::uuid,
   'Teste composicao'
-from auth.users user_account
-where lower(user_account.email) = 'rodrigao+teste@gmail.com';
+;
 
 insert into public.production_plan_items (
   id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
@@ -60,15 +70,14 @@ select
   2,
   2,
   'confirmed',
-  user_account.id,
+  current_setting('test.admin_id')::uuid,
   'Teste composicao'
-from auth.users user_account
-where lower(user_account.email) = 'rodrigao+teste@gmail.com';
+;
 
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'),
+  current_setting('test.expedicao_jc_id'),
   true
 );
 
@@ -109,7 +118,7 @@ select throws_ok(
 
 select set_config(
   'request.jwt.claim.sub',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste@gmail.com'),
+  current_setting('test.admin_id'),
   true
 );
 select is(
@@ -120,7 +129,7 @@ select is(
 
 select set_config(
   'request.jwt.claim.sub',
-  (select user_account.id::text from auth.users user_account where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'),
+  current_setting('test.expedicao_jc_id'),
   true
 );
 select throws_ok(
