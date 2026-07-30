@@ -9,9 +9,6 @@ import {
 import { aggregateWholePending, clampReuseProposal, subtractActiveReuseProposals } from '@/lib/breadLeftovers'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
-  buildLeftoverProposalDraftsFromPlan,
-  buildProductionOrderDraftsFromPlan,
-  planNeedsOrderConversion,
   summarizePlanItemsByStore,
   storeNeedsOrderConversion,
   type ProductionPlanOrderItemInput,
@@ -594,8 +591,7 @@ export default function ProducaoPage() {
       return
     }
 
-    const rows = buildProductionOrderDraftsFromPlan(plan.items, store, date)
-    if (rows.length === 0) {
+    if (plan.storeTotals[store] <= 0) {
       showToast(`Planejamento sem quantidade para ${store.toUpperCase()}.`)
       return
     }
@@ -605,60 +601,21 @@ export default function ProducaoPage() {
       return
     }
 
-    const leftoverProposals = buildLeftoverProposalDraftsFromPlan(plan.items, store)
-    const hasLeftoverProposal = leftoverProposals.some(proposal => proposal.quantity > 0)
-    if (hasLeftoverProposal) {
-      const { data: sessionData } = await supabase.auth.getSession()
-      if (!sessionData.session) {
-        showToast('Entre com e-mail para salvar as sobras junto com o pedido.')
-        return
-      }
-    }
-
     setPlanningImportSaving(true)
     setSyncState('syncing')
     try {
-      await sbDel('orders', { store, order_date: date })
-      await sbInsert('orders', rows)
-
-      if (hasLeftoverProposal) {
-        const { error: reuseError } = await supabase.rpc('save_bread_reuse_proposals', {
-          p_target_production_date: date,
-          p_store: store,
-          p_proposals: leftoverProposals,
-        })
-        if (reuseError) throw reuseError
-      }
+      const actorName = getCurrentUser()?.displayName ?? currentUser ?? 'Usuário'
+      const { error: importError } = await supabase.rpc('import_production_plan_order', {
+        p_plan_id: plan.id,
+        p_store: store,
+        p_actor_name: actorName,
+      })
+      if (importError) throw importError
 
       const map = await loadOrders(date)
       setOrders(map)
       initOrderState(map, breads)
       await loadReuseContext(date)
-
-      const importedAt = new Date().toISOString()
-      const actorName = getCurrentUser()?.displayName ?? currentUser ?? 'Usuário'
-      const { error: itemUpdateError } = await supabase
-        .from('production_plan_items')
-        .update({
-          order_created_at: importedAt,
-          order_created_by_name: actorName,
-        })
-        .eq('plan_id', plan.id)
-        .eq('store', store)
-      if (itemUpdateError) throw itemUpdateError
-
-      const updatedItems = plan.items.map(item =>
-        item.store === store
-          ? { ...item, order_created_at: importedAt }
-          : item,
-      )
-      if (!planNeedsOrderConversion(updatedItems)) {
-        const { error: planUpdateError } = await supabase
-          .from('production_plans')
-          .update({ status: 'fechado' })
-          .eq('id', plan.id)
-        if (planUpdateError) throw planUpdateError
-      }
 
       await loadProductionPlanForOrders(date)
       setSyncState('')
