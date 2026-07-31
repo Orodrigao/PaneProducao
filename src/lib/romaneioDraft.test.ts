@@ -10,6 +10,7 @@ import {
   nextRomaneioTripNumber,
   orderQuantitiesByBreadId,
   pendingReplacementQuantitiesByProductId,
+  romaneioCandidateBreadIds,
   romaneioExcessOverRequestedQty,
   parseRomaneioQty,
   romaneioOrderProgressLabel,
@@ -133,6 +134,14 @@ describe('romaneioDraft', () => {
       { bread_id: null, quantity: 10 },
       { bread_id: 'invalido', quantity: 0 },
     ])).toEqual({ baguete: 15, croissant: 40 })
+  })
+
+  it('mantem no romaneio o pao que so existe na composicao do planejamento', () => {
+    expect(romaneioCandidateBreadIds(
+      [{ bread_id: 'baguete', quantity: 3 }],
+      ['ciabatta'],
+      [],
+    )).toEqual(['baguete', 'ciabatta'])
   })
 
   it('soma o que ja foi enviado nas viagens anteriores', () => {

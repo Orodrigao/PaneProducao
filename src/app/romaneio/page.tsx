@@ -19,6 +19,7 @@ import {
   orderQuantitiesByBreadId,
   pendingReplacementQuantitiesByProductId,
   parseRomaneioQty,
+  romaneioCandidateBreadIds,
   romaneioExcessOverRequestedQty,
   romaneioOrderProgressLabel,
   ROMANEIO_WEIGHT_LIMIT_KG,
@@ -528,16 +529,12 @@ export default function RomaneioPage() {
     const replacementPendingQtys = pendingReplacementQuantitiesByProductId(replacementRows as RomaneioReplacementPendingRow[])
     let bds = breads
     const orderRows = orders as RomaneioOrderRow[]
+    const compositionIds = Object.keys(productionCompositions as Record<string, RomaneioProductionComposition>)
     const pendingIds = Object.keys(replacementPendingQtys)
-    if (orderRows.length || pendingIds.length) {
-      const ids = [...new Set([
-        ...orderRows.map(o => o.bread_id).filter((id): id is string => Boolean(id)),
-        ...pendingIds,
-      ])]
-      if (ids.length) {
-        const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`) as Bread[]
-        if (byOrder.length) bds = byOrder
-      }
+    const ids = romaneioCandidateBreadIds(orderRows, compositionIds, pendingIds)
+    if (ids.length) {
+      const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`) as Bread[]
+      if (byOrder.length) bds = byOrder
     }
     bds = filterPendingRomaneioBreads(bds, requestedQtys, previouslySentQtys, replacementPendingQtys)
     return {

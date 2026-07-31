@@ -179,6 +179,18 @@ export function orderQuantitiesByBreadId(rows: RomaneioOrderRow[]): Record<strin
   }, {})
 }
 
+export function romaneioCandidateBreadIds(
+  orderRows: RomaneioOrderRow[],
+  compositionBreadIds: string[],
+  pendingReplacementBreadIds: string[],
+): string[] {
+  return [...new Set([
+    ...orderRows.map(row => row.bread_id).filter((id): id is string => Boolean(id)),
+    ...compositionBreadIds.filter(Boolean),
+    ...pendingReplacementBreadIds.filter(Boolean),
+  ])]
+}
+
 export function sentQuantitiesByProductId(rows: RomaneioSentItemRow[]): Record<string, number> {
   return rows.reduce<Record<string, number>>((quantities, row) => {
     if (!row.product_id) return quantities
