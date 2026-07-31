@@ -78,9 +78,9 @@ insert into public.sobras (
 )
 values (
   '74200000-0000-4000-8000-000000000001',
-  current_date,
+  current_date + 2,
   'Teste sobras', 'teste-baguete', 2, 'Teste reaproveitamento',
-  'bread', 'jc', 'L' || to_char(current_date, 'MMDD'), 2, 'pending',
+  'bread', 'jc', 'L' || to_char(current_date + 2, 'MMDD'), 2, 'pending',
   'mesa_separacao', 'not_required'
 );
 

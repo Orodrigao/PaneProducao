@@ -69,7 +69,8 @@ insert into public.orders (
 values
   ('30000000-0000-4000-8000-000000000001', 'ja', 'teste-baguete', 20, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar envio completo', 'producao', 'bread', '[TESTE] Baguete', true),
   ('30000000-0000-4000-8000-000000000002', 'ja', 'teste-ciabatta', 12, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar envio parcial', 'producao', 'bread', '[TESTE] Ciabatta', true),
-  ('30000000-0000-4000-8000-000000000003', 'ex', 'teste-baguete', 8, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar conferencia', 'producao', 'bread', '[TESTE] Baguete', true)
+  ('30000000-0000-4000-8000-000000000003', 'ex', 'teste-baguete', 8, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido para validar conferencia', 'producao', 'bread', '[TESTE] Baguete', true),
+  ('30000000-0000-4000-8000-000000000005', 'jc', 'teste-baguete', 3, (now() at time zone 'America/Sao_Paulo')::date, '[TESTE] pedido novo ao lado de uma composicao somente reaproveitada', 'producao', 'bread', '[TESTE] Baguete', true)
 on conflict (id) do update set
   store = excluded.store,
   bread_id = excluded.bread_id,
@@ -237,6 +238,68 @@ on conflict (id) do update set
   quantity = excluded.quantity,
   updated_at = excluded.updated_at;
 
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit,
+  min_stock, active, store, visible_stores
+)
+values (
+  '50000000-0000-4000-8000-000000000002',
+  'teste-ciabatta',
+  'bread',
+  '[TESTE] Ciabatta',
+  'un',
+  0,
+  true,
+  'jc',
+  array['jc']::text[]
+)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit = excluded.unit,
+  min_stock = excluded.min_stock,
+  active = excluded.active,
+  store = excluded.store,
+  visible_stores = excluded.visible_stores;
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity, updated_at)
+values (
+  '51000000-0000-4000-8000-000000000002',
+  '50000000-0000-4000-8000-000000000002',
+  'jc-freezer',
+  8,
+  now()
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  quantity = excluded.quantity,
+  updated_at = excluded.updated_at;
+
+insert into public.frozen_movements (
+  id, frozen_product_id, location, movement_type, quantity,
+  previous_quantity, responsible, obs
+)
+values (
+  '52000000-0000-4000-8000-000000000002',
+  '50000000-0000-4000-8000-000000000002',
+  'jc-freezer',
+  'entrada',
+  8,
+  0,
+  'Rodrigo Teste',
+  '[TESTE] oito ciabattas congeladas para a composicao do dia'
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  movement_type = excluded.movement_type,
+  quantity = excluded.quantity,
+  previous_quantity = excluded.previous_quantity,
+  responsible = excluded.responsible,
+  obs = excluded.obs;
+
 insert into public.frozen_movements (
   id, frozen_product_id, location, movement_type, quantity,
   previous_quantity, responsible, obs
@@ -310,6 +373,42 @@ on conflict (id) do update set
   reconciliation_status = excluded.reconciliation_status,
   updated_at = excluded.updated_at;
 
+insert into public.sobras (
+  id, record_date, responsible, product_id, quantity, obs,
+  product_source, store, lot_code, pending_quantity, status,
+  physical_location, reconciliation_status, updated_at
+)
+values (
+  '53000000-0000-4000-8000-000000000002',
+  (now() at time zone 'America/Sao_Paulo')::date - 1,
+  'Geolar JC Teste',
+  'teste-ciabatta',
+  2,
+  '[TESTE] duas ciabattas de sobra para a composicao do dia',
+  'bread',
+  'jc',
+  'L' || to_char((now() at time zone 'America/Sao_Paulo')::date - 1, 'MMDD'),
+  2,
+  'pending',
+  'padaria_cozinha',
+  'awaiting_oven',
+  now()
+)
+on conflict (id) do update set
+  record_date = excluded.record_date,
+  responsible = excluded.responsible,
+  product_id = excluded.product_id,
+  quantity = excluded.quantity,
+  obs = excluded.obs,
+  product_source = excluded.product_source,
+  store = excluded.store,
+  lot_code = excluded.lot_code,
+  pending_quantity = excluded.pending_quantity,
+  status = excluded.status,
+  physical_location = excluded.physical_location,
+  reconciliation_status = excluded.reconciliation_status,
+  updated_at = excluded.updated_at;
+
 with test_schedule as (
   select (
     (now() at time zone 'America/Sao_Paulo')::date
@@ -366,6 +465,53 @@ select
   now()
 from public.production_plans plan
 where plan.id = '54000000-0000-4000-8000-000000000001'
+on conflict (plan_id, store, bread_id) do update set
+  planned_quantity = excluded.planned_quantity,
+  frozen_quantity = excluded.frozen_quantity,
+  leftover_proposed_quantity = excluded.leftover_proposed_quantity,
+  leftover_confirmed_quantity = excluded.leftover_confirmed_quantity,
+  is_extra = excluded.is_extra,
+  order_created_at = excluded.order_created_at,
+  order_created_by_name = excluded.order_created_by_name,
+  updated_at = excluded.updated_at;
+
+insert into public.production_plans (
+  id, production_date, status, created_by, created_by_name, updated_at
+)
+values (
+  '54000000-0000-4000-8000-000000000002',
+  (now() at time zone 'America/Sao_Paulo')::date,
+  'aguardando_geolar',
+  '94000000-0000-4000-8000-000000000001',
+  'Rodrigo Teste',
+  now()
+)
+on conflict (production_date) do update set
+  status = excluded.status,
+  created_by = excluded.created_by,
+  created_by_name = excluded.created_by_name,
+  updated_at = excluded.updated_at;
+
+insert into public.production_plan_items (
+  id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
+  leftover_proposed_quantity, leftover_confirmed_quantity, is_extra,
+  order_created_at, order_created_by_name, updated_at
+)
+select
+  '55000000-0000-4000-8000-000000000002',
+  plan.id,
+  'jc',
+  'teste-ciabatta',
+  10,
+  8,
+  2,
+  2,
+  false,
+  null,
+  null,
+  now()
+from public.production_plans plan
+where plan.production_date = (now() at time zone 'America/Sao_Paulo')::date
 on conflict (plan_id, store, bread_id) do update set
   planned_quantity = excluded.planned_quantity,
   frozen_quantity = excluded.frozen_quantity,

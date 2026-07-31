@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(16);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -50,10 +50,11 @@ select is(
     where id in (
       '30000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000002',
-      '30000000-0000-4000-8000-000000000003'
+      '30000000-0000-4000-8000-000000000003',
+      '30000000-0000-4000-8000-000000000005'
     ) and order_date = (now() at time zone 'America/Sao_Paulo')::date),
-  3,
-  'seed cria pedidos do dia para testar JA e EX'
+  4,
+  'seed cria pedidos do dia para testar JA, EX e composicao no JC'
 );
 
 select is(
@@ -61,7 +62,8 @@ select is(
     where id in (
       '30000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000002',
-      '30000000-0000-4000-8000-000000000003'
+      '30000000-0000-4000-8000-000000000003',
+      '30000000-0000-4000-8000-000000000005'
     ) and coalesce(walkin_name, '') <> ''),
   0,
   'seed nao inclui nome ou telefone de cliente real'
@@ -130,6 +132,46 @@ select is(
      and item.qty_accepted = 8),
   1,
   'pendencia ficticia representa enviado menos aceito'
+);
+
+select is(
+  (select quantity from public.frozen_stock stock
+   join public.frozen_products product on product.id = stock.frozen_product_id
+   where product.product_id = 'teste-ciabatta' and product.store = 'jc'),
+  8,
+  'seed prepara oito ciabattas congeladas para a composicao do dia'
+);
+
+select is(
+  (select pending_quantity from public.sobras
+   where product_id = 'teste-ciabatta'
+     and store = 'jc'
+     and record_date = (now() at time zone 'America/Sao_Paulo')::date - 1),
+  2::numeric,
+  'seed prepara duas ciabattas de sobra para a composicao do dia'
+);
+
+select is(
+  (select item.planned_quantity
+   from public.production_plan_items item
+   join public.production_plans plan on plan.id = item.plan_id
+   where plan.production_date = (now() at time zone 'America/Sao_Paulo')::date
+     and item.store = 'jc'
+     and item.bread_id = 'teste-ciabatta'),
+  10,
+  'seed cria producao do dia com ciabatta composta'
+);
+
+select is(
+  (select item.frozen_quantity + item.leftover_confirmed_quantity
+   from public.production_plan_items item
+   join public.production_plans plan on plan.id = item.plan_id
+   where plan.production_date = (now() at time zone 'America/Sao_Paulo')::date
+     and item.store = 'jc'
+     and item.bread_id = 'teste-ciabatta'
+     and item.order_created_at is null),
+  10,
+  'composicao do dia fecha oito congelados mais duas sobras sem pedido novo'
 );
 
 select * from finish();
