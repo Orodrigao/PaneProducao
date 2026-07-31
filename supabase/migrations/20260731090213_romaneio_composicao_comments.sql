@@ -1,5 +1,5 @@
 comment on table public.production_plan_items is
-  'Itens planejados por loja e pao. planned_quantity e o total do dia; a producao nova e o saldo apos congelados e sobras usadas.';
+  'Itens planejados por loja e pao. planned_quantity e o total do dia, formado pela soma de paes novos, congelados e sobras usadas.';
 
 comment on column public.production_plan_items.planned_quantity is
   'Quantidade total planejada para o dia. Nome legado mantido para compatibilidade de deploy; a producao nova e derivada da composicao.';
