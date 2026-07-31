@@ -475,22 +475,17 @@ on conflict (plan_id, store, bread_id) do update set
   order_created_by_name = excluded.order_created_by_name,
   updated_at = excluded.updated_at;
 
-with test_admin as (
-  select id
-  from auth.users
-  where lower(email) = 'rodrigao+teste@gmail.com'
-)
 insert into public.production_plans (
   id, production_date, status, created_by, created_by_name, updated_at
 )
-select
+values (
   '54000000-0000-4000-8000-000000000002',
   (now() at time zone 'America/Sao_Paulo')::date,
   'aguardando_geolar',
-  test_admin.id,
+  '94000000-0000-4000-8000-000000000001',
   'Rodrigo Teste',
   now()
-from test_admin
+)
 on conflict (production_date) do update set
   status = excluded.status,
   created_by = excluded.created_by,
