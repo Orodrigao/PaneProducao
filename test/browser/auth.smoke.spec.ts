@@ -201,7 +201,7 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
   await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
 
-  await expect(page.getByText('Contas a pagar', { exact: true })).toBeVisible()
+  await expect(page.getByRole('banner').getByText('Contas a pagar', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Nova compra manual' }).click()
   await page.locator('select').first().selectOption('40000000-0000-4000-8000-000000000001')
 
