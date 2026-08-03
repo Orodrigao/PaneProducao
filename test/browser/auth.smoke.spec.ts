@@ -207,7 +207,7 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
 
   const itemCards = page.locator('.ps-card', { hasText: 'Produto do cadastro ou outro item' })
   await expect(itemCards.first()).toBeVisible()
-  await itemCards.first().locator('select').selectOption('10000000-0000-4000-8000-000000000021')
+  await itemCards.first().locator('select').first().selectOption('10000000-0000-4000-8000-000000000021')
   await itemCards.first().locator('input[type="number"]').nth(0).fill('2')
   await itemCards.first().locator('input[type="number"]').nth(1).fill('50')
   await page.getByRole('button', { name: 'Adicionar item' }).click()
