@@ -5,6 +5,8 @@ import { KITCHEN_PRODUCTION_PERMISSION, KITCHEN_PRODUCTION_ROUTE } from '@/lib/k
 import { PRODUCTION_PLANNING_ROUTE } from '@/lib/productionPlanning'
 
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
+export const PAYABLES_PERMISSION = 'contas_pagar.acessar'
+export const PAYABLES_ROUTE = '/contas-pagar'
 export interface AppUser {
   id: string
   username: string
@@ -22,13 +24,13 @@ const LEGACY_AUTH_STORAGE_KEYS = ['pane_users_cache', 'pane_user_id']
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes'],
+  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes', PAYABLES_ROUTE],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
   compras:    ['/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/estoque-paes'],
   romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/fechamento-caixa', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios'],
+  financeiro: ['/', '/sobras', '/fechamento-caixa', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', PAYABLES_ROUTE],
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
@@ -71,9 +73,18 @@ export function resolveAllowedRoutes(
     permission.permission_key === KITCHEN_PRODUCTION_PERMISSION,
   )
 
-  if (!canLaunchKitchenProduction) return routes.filter(route => route !== KITCHEN_PRODUCTION_ROUTE)
-  if (routes.includes(KITCHEN_PRODUCTION_ROUTE)) return routes
-  return [...routes, KITCHEN_PRODUCTION_ROUTE]
+  const withKitchenRoute = canLaunchKitchenProduction
+    ? (routes.includes(KITCHEN_PRODUCTION_ROUTE) ? routes : [...routes, KITCHEN_PRODUCTION_ROUTE])
+    : routes.filter(route => route !== KITCHEN_PRODUCTION_ROUTE)
+
+  const canAccessPayables = permissions.some(permission =>
+    permission.permission_key === PAYABLES_PERMISSION
+      && (permission.scope === '*' || permission.scope === 'jc'),
+  )
+
+  if (!canAccessPayables) return withKitchenRoute.filter(route => route !== PAYABLES_ROUTE)
+  if (withKitchenRoute.includes(PAYABLES_ROUTE)) return withKitchenRoute
+  return [...withKitchenRoute, PAYABLES_ROUTE]
 }
 
 export interface AuthActionResult {

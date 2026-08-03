@@ -65,6 +65,14 @@ describe('resolveAllowedRoutes', () => {
 
     expect(routes).toEqual(['/', '/producao-cozinha'])
   })
+
+  it('abre Contas a pagar somente com permissão explícita da JC', () => {
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/'], [
+      { permission_key: 'contas_pagar.acessar', scope: 'jc' },
+    ])).toEqual(['/', '/contas-pagar'])
+
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/', '/contas-pagar'], [])).toEqual(['/'])
+  })
 })
 
 describe('canAccess', () => {

@@ -42,6 +42,7 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
     { href: '/encomendas',   label: 'Encomendas',   Icon: Cake },
   ]},
   { group: 'Gestão', items: [
+    { href: '/contas-pagar',       label: 'Contas a pagar', Icon: DollarSign },
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
     { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
   ]},

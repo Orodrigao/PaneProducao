@@ -11,6 +11,7 @@ const previewAccounts = {
   romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
   cozinhaJc: 'rodrigao+teste-cozinha-jc@gmail.com',
   geolarJc: 'rodrigao+teste-geolar-jc@gmail.com',
+  financeiroJc: 'rodrigao+teste-financeiro-jc@gmail.com',
 } as const
 
 const slowPreviewDataTimeoutMs = 15_000
@@ -131,6 +132,7 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
     '/pedidos-pj',
     '/relatorios',
     '/admin/usuarios',
+    '/contas-pagar',
   ]) {
     await expectRouteHidden(page, route)
   }
@@ -193,4 +195,30 @@ test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/romaneio$/)
   await expect(page.getByRole('heading', { name: 'Cozinha' })).toHaveCount(0)
+})
+
+test('Financeiro JC registra compra manual paga a vista sem baixar estoque', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+
+  await expect(page.getByText('Contas a pagar', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Nova compra manual' }).click()
+  await page.locator('select').first().selectOption('40000000-0000-4000-8000-000000000001')
+
+  const itemCards = page.locator('.ps-card', { hasText: 'Produto do cadastro ou outro item' })
+  await expect(itemCards.first()).toBeVisible()
+  await itemCards.first().locator('select').selectOption('10000000-0000-4000-8000-000000000021')
+  await itemCards.first().locator('input[type="number"]').nth(0).fill('2')
+  await itemCards.first().locator('input[type="number"]').nth(1).fill('50')
+  await page.getByRole('button', { name: 'Adicionar item' }).click()
+
+  const secondItem = itemCards.nth(1)
+  await secondItem.locator('select').selectOption('10000000-0000-4000-8000-000000000022')
+  await secondItem.locator('input[type="number"]').nth(0).fill('3')
+  await secondItem.locator('input[type="number"]').nth(1).fill('50')
+  await page.getByRole('button', { name: 'Registrar conta' }).click()
+
+  await expect(page.getByText('[TESTE] Fornecedor CEASA JC', { exact: true })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.getByText('Paga', { exact: true })).toBeVisible()
+  await expect(page.getByText('R$ 250,00', { exact: true })).toBeVisible()
 })

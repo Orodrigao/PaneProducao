@@ -9,6 +9,7 @@ export const PREVIEW_USERS = [
   { email: 'rodrigao+teste-romaneio-ex@gmail.com', displayName: 'Romaneio EX Teste' },
   { email: 'rodrigao+teste-cozinha-jc@gmail.com', displayName: 'Cozinha JC Teste' },
   { email: 'rodrigao+teste-geolar-jc@gmail.com', displayName: 'Geolar JC Teste' },
+  { email: 'rodrigao+teste-financeiro-jc@gmail.com', displayName: 'Financeiro JC Teste' },
 ]
 
 const COMMON_WEAK_PASSWORDS = new Set([
