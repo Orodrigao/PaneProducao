@@ -13,14 +13,15 @@ O Banco Preview contém apenas dados fictícios gerados por
 `supabase/seed.sql`. Nunca recebe cópia de clientes, vendas, preços, usuários
 ou documentos de produção.
 
-## Ciclo de uma PR com migration
+## Ciclo de uma PR
 
-1. Abrir ou atualizar a PR dispara `CI Banco` e `Banco Preview`.
-2. `CI Banco` ensaia migrations e seed num banco local descartável.
+1. Abrir ou atualizar qualquer PR dispara `Banco Preview`.
+2. Quando a PR tem migration, `CI Banco` também ensaia migrations e seed num
+   banco local descartável.
 3. `Banco Preview` apaga o ambiente remoto de teste, reaplica a história
    completa da branch, carrega o seed e roda os pgTAP.
-4. O preview só está liberado quando Vercel, CI Banco e Banco Preview estão
-   verdes.
+4. O preview só está liberado quando Vercel e os checks de banco aplicáveis
+   (`CI Banco`, quando há migration, e `Banco Preview`) estão verdes.
 5. Fechar ou integrar a PR reconstrói o Banco Preview usando a `main`.
 
 O passo 5 não é limpeza opcional. Ele remove migrations de uma PR descartada,
@@ -35,10 +36,11 @@ regra, independentemente dos padrões do projeto hospedado.
 ## Banco compartilhado no plano gratuito
 
 Existe um único Banco Preview. Duas PRs com migrations abertas poderiam
-trocar o schema uma da outra; por isso a automação bloqueia a segunda. Enquanto
-uma PR com migration estiver usando o banco, outra PR que tente reconstruí-lo
-também espera. PR sem mudança de banco pode continuar em paralelo, desde que
-não dependa de schema ainda não integrado.
+trocar o schema uma da outra; por isso a automação bloqueia a segunda. Como
+qualquer PR agora reconstrói os dados fictícios antes do smoke de navegador,
+uma PR sem migration também não pode validar enquanto outra PR com migration
+estiver usando o banco. O bloqueio evita que um teste converse com o schema ou
+com os dados de outra tarefa.
 
 ## Dados e contas fictícias
 

@@ -8,14 +8,6 @@ name: Banco Preview
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
-    paths:
-      - "supabase/migrations/**"
-      - "supabase/tests/**"
-      - "supabase/verification/**"
-      - "supabase/seed.sql"
-      - "supabase/config.toml"
-      - "scripts/provision-preview-users.mjs"
-      - ".github/workflows/banco-preview.yml"
   push:
     branches: [main]
   workflow_dispatch:
