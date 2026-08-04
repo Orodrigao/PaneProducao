@@ -208,6 +208,7 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-cozinha-jc@gmail.com', 'producao_cozinha.lancar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.acessar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.importar_xml', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.baixar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc')
 ), resolved_permissions as (
