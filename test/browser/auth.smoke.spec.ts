@@ -217,7 +217,8 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
   await page.locator('input[type="number"]').nth(3).fill('50')
   await page.getByRole('button', { name: 'Registrar conta' }).click()
 
-  await expect(page.getByText('[TESTE] Fornecedor CEASA JC', { exact: true })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await expect(page.getByText('Paga', { exact: true })).toBeVisible()
-  await expect(page.getByText('R$ 250,00', { exact: true })).toBeVisible()
+  const purchaseCard = page.locator('.ps-card', { hasText: 'R$ 250,00' }).first()
+  await expect(purchaseCard).toContainText('[TESTE] Fornecedor CEASA JC', { timeout: slowPreviewDataTimeoutMs })
+  await expect(purchaseCard.getByText('Paga', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('R$ 250,00', { exact: true })).toBeVisible()
 })
