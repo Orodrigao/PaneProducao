@@ -24,6 +24,7 @@ export interface RomaneioBillingPrice {
 
 export interface RomaneioBillingRow {
   key: string
+  itemIds: string[]
   productId: string
   productSource: string
   productName: string
@@ -147,6 +148,7 @@ export function calculateRomaneioBilling(
       const unitPrice = issues.length ? null : numericPrice
       rowsByKey.set(rowKey, {
         key: rowKey,
+        itemIds: [item.id],
         productId: item.productId,
         productSource: item.productSource,
         productName: item.productName,
@@ -158,6 +160,9 @@ export function calculateRomaneioBilling(
         total: unitPrice === null ? null : billedQuantity * unitPrice,
         issues,
       })
+    }
+    if (rowsByKey.get(rowKey) && !rowsByKey.get(rowKey)!.itemIds.includes(item.id)) {
+      rowsByKey.get(rowKey)!.itemIds.push(item.id)
     }
     trips.add(item.romaneioId)
   })
