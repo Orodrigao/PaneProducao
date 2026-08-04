@@ -6,6 +6,7 @@ import { AlertTriangle, ChevronLeft, CircleDollarSign, PackageCheck, Printer, Ro
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR } from '@/lib/utils'
+import { canPerformRomaneioAction, loadCurrentRomaneioPermissions } from '@/lib/romaneioPermissions'
 import {
   calculateRomaneioBilling,
   isBuckPriceTierName,
@@ -31,6 +32,7 @@ interface PriceTier {
 interface PriceTierItem {
   product_id: string
   product_source: string
+  product_name: string
   unit_price: number | string | null
   pricing_unit: string | null
   active: boolean
@@ -56,6 +58,14 @@ interface RomaneioItem {
 interface ProductLegacyRow {
   id: string
   legacy_bread_id: string | null
+}
+
+interface CorrectionOption {
+  productId: string
+  productSource: 'bread' | 'product'
+  productName: string
+  unitPrice: number
+  pricingUnit: 'un' | 'kg'
 }
 
 const PANE_SENDER = {
@@ -98,6 +108,29 @@ function issueLabel(row: RomaneioBillingRow) {
     return `Unidade incompatível: este item deve ser cobrado por ${row.billingUnit}.`
   }
   return 'Sem preço ativo na Tabela Buck para este produto.'
+}
+
+function correctionOptionKey(option: Pick<CorrectionOption, 'productSource' | 'productId'>) {
+  return `${option.productSource}:${option.productId}`
+}
+
+function correctionOptionsForRow(row: RomaneioBillingRow, prices: PriceTierItem[]): CorrectionOption[] {
+  const options = new Map<string, CorrectionOption>()
+  prices.forEach(price => {
+    if (price.product_source !== 'bread' && price.product_source !== 'product') return
+    if (price.pricing_unit !== row.billingUnit) return
+    const unitPrice = Number(price.unit_price)
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) return
+    const option: CorrectionOption = {
+      productId: price.product_id,
+      productSource: price.product_source,
+      productName: price.product_name,
+      unitPrice,
+      pricingUnit: row.billingUnit,
+    }
+    options.set(correctionOptionKey(option), option)
+  })
+  return Array.from(options.values()).sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR'))
 }
 
 function BillingPrint({
@@ -191,10 +224,18 @@ export default function RelatorioRomaneiosEX() {
   const [legacyLinks, setLegacyLinks] = useState<ProductLegacyLink[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [canCorrectExtra, setCanCorrectExtra] = useState(false)
+  const [linkingRowKey, setLinkingRowKey] = useState<string | null>(null)
+  const [linkTargetKey, setLinkTargetKey] = useState('')
+  const [savingLink, setSavingLink] = useState(false)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     setUser(getCurrentUser())
+    loadCurrentRomaneioPermissions()
+      .then(permissions => setCanCorrectExtra(canPerformRomaneioAction(permissions, 'manage', 'ex')))
+      .catch(() => setCanCorrectExtra(false))
   }, [])
 
   const loadReport = useCallback(async () => {
@@ -236,7 +277,7 @@ export default function RelatorioRomaneiosEX() {
         tier
           ? supabase
             .from('price_tier_items')
-            .select('product_id,product_source,unit_price,pricing_unit,active')
+            .select('product_id,product_source,product_name,unit_price,pricing_unit,active')
             .eq('tier_id', tier.id)
             .eq('active', true)
           : Promise.resolve({ data: [], error: null }),
@@ -309,6 +350,90 @@ export default function RelatorioRomaneiosEX() {
   const suspiciousRows = billing.rows.filter(row => row.issues.includes('suspicious_quantity'))
   const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues
 
+  const startLinking = (row: RomaneioBillingRow) => {
+    const options = correctionOptionsForRow(row, prices)
+    setLinkingRowKey(row.key)
+    setLinkTargetKey(options[0] ? correctionOptionKey(options[0]) : '')
+    setActionMessage(null)
+  }
+
+  const cancelLinking = () => {
+    if (savingLink) return
+    setLinkingRowKey(null)
+    setLinkTargetKey('')
+  }
+
+  const saveLink = async (row: RomaneioBillingRow) => {
+    const options = correctionOptionsForRow(row, prices)
+    const target = options.find(option => correctionOptionKey(option) === linkTargetKey)
+    if (!target) {
+      setActionMessage('Escolha um produto cadastrado com preço Buck ativo.')
+      return
+    }
+    if (row.itemIds.length !== 1) {
+      setActionMessage('Este nome reúne mais de um lançamento. Corrija cada lançamento separadamente.')
+      return
+    }
+    if (!confirm(`Vincular este lançamento a “${target.productName}” por ${formatBRL(target.unitPrice)}/${target.pricingUnit}?`)) return
+
+    setSavingLink(true)
+    setActionMessage(null)
+    try {
+      const { error } = await supabase.rpc('correct_romaneio_extra_item', {
+        p_item_id: row.itemIds[0],
+        p_product_source: target.productSource,
+        p_product_id: target.productId,
+      })
+      if (error) throw error
+      setLinkingRowKey(null)
+      setLinkTargetKey('')
+      setActionMessage(`Lançamento vinculado a “${target.productName}”. Recalculando a cobrança...`)
+      setReloadKey(value => value + 1)
+    } catch (error) {
+      setActionMessage(errorMessage(error))
+    } finally {
+      setSavingLink(false)
+    }
+  }
+
+  const renderExtraCorrection = (row: RomaneioBillingRow) => {
+    if (!canCorrectExtra || row.productSource !== 'extra' || !row.issues.includes('missing_price')) return null
+    const options = correctionOptionsForRow(row, prices)
+    const isOpen = linkingRowKey === row.key
+    return (
+      <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: 'rgba(178, 103, 40, 0.09)' }}>
+        {options.length === 0 ? (
+          <span style={{ color: 'var(--ink-soft)', fontSize: 12 }}>Nenhum produto com preço Buck ativo nesta unidade.</span>
+        ) : isOpen ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <select
+              className="ps-input"
+              style={{ flex: '1 1 220px', minWidth: 0, padding: '6px 8px', fontSize: 12 }}
+              value={linkTargetKey}
+              onChange={event => setLinkTargetKey(event.target.value)}
+              disabled={savingLink}
+              aria-label={`Produto cadastrado para ${row.productName}`}
+            >
+              {options.map(option => (
+                <option key={correctionOptionKey(option)} value={correctionOptionKey(option)}>
+                  {option.productName} — {formatBRL(option.unitPrice)}/{option.pricingUnit}
+                </option>
+              ))}
+            </select>
+            <button className="ps-btn sm" onClick={() => saveLink(row)} disabled={savingLink}>
+              {savingLink ? 'Salvando...' : 'Confirmar vínculo'}
+            </button>
+            <button className="ps-btn ghost sm" onClick={cancelLinking} disabled={savingLink}>Cancelar</button>
+          </div>
+        ) : (
+          <button className="ps-btn ghost sm" onClick={() => startLinking(row)}>
+            Vincular ao produto cadastrado
+          </button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       {range && (
@@ -360,6 +485,9 @@ export default function RelatorioRomaneiosEX() {
 
             {loadError && (
               <div className="ps-warning danger" role="alert">{loadError}</div>
+            )}
+            {actionMessage && (
+              <div className="ps-warning" role="status">{actionMessage}</div>
             )}
             {!loadError && destination === null && range && !loading && (
               <div className="ps-warning danger" role="alert">O destino EX não está ativo no cadastro de destinos.</div>
@@ -425,6 +553,7 @@ export default function RelatorioRomaneiosEX() {
                         <div style={{ color: row.issues.length ? 'var(--berry)' : 'var(--ink-soft)', fontSize: 11, marginTop: 3 }}>
                           {row.issues.length ? issueLabel(row) : `${row.tripCount} viagem(ns)`}
                         </div>
+                        {renderExtraCorrection(row)}
                       </td>
                       <td className="right">{formatQuantity(row.sentQuantity, row.billingUnit)}</td>
                       <td className="right">{formatQuantity(row.billedQuantity, row.billingUnit)}</td>
@@ -461,6 +590,7 @@ export default function RelatorioRomaneiosEX() {
                     <div className="ps-report-row-metric"><span>Total</span><b>{row.total === null ? '—' : formatBRL(row.total)}</b></div>
                   </div>
                   {row.issues.length > 0 && <div className="ps-report-row-note">{issueLabel(row)}</div>}
+                  {renderExtraCorrection(row)}
                 </div>
               ))}
             </div>

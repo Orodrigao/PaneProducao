@@ -41,6 +41,18 @@ describe('romaneioBilling', () => {
       ['Ciabatta (kg)', 3.2, 64],
       ['Mini Croissant (kg)', 1.5, 45],
     ])
+    expect(result.rows.find(row => row.productName === 'Baguete')?.itemIds).toEqual(['i1'])
+  })
+
+  it('mantem todos os ids fisicos quando uma linha agrega lancamentos iguais', () => {
+    const result = calculateRomaneioBilling([
+      { id: 'i1', romaneioId: 'r1', productId: 'baguete', productSource: 'bread', productName: 'Baguete', qtySent: 4 },
+      { id: 'i2', romaneioId: 'r2', productId: 'baguete', productSource: 'bread', productName: 'Baguete', qtySent: 5 },
+    ], [
+      { productId: 'baguete', productSource: 'bread', unitPrice: 4, pricingUnit: 'un' },
+    ])
+
+    expect(result.rows[0]?.itemIds).toEqual(['i1', 'i2'])
   })
 
   it('não inclui no total itens sem preço ou com unidade incompatível', () => {
