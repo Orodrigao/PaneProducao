@@ -99,8 +99,13 @@ export function permissionStoreScopes(permissionKey: string): readonly StorePerm
   const isScopedRomaneioPermission = permissionKey.startsWith('romaneio.')
     && permissionKey !== 'romaneio.acessar'
   const isScopedPayablesPermission = permissionKey.startsWith('contas_pagar.')
+  const isScopedLeftoverPermission = permissionKey === 'sobras.dar_destino'
 
-  return permissionKey === KITCHEN_PRODUCTION_PERMISSION || isScopedRomaneioPermission || isScopedPayablesPermission
+  if (isScopedLeftoverPermission) return ['jc', 'ja']
+
+  return permissionKey === KITCHEN_PRODUCTION_PERMISSION
+    || isScopedRomaneioPermission
+    || isScopedPayablesPermission
     ? STORE_PERMISSION_SCOPES
     : []
 }

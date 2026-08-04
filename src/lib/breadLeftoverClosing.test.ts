@@ -66,9 +66,10 @@ describe('fechamento físico de sobras', () => {
     expect(isValidClosingDate('13/07/2026', '2026-07-13')).toBe(false)
   })
 
-  it('respeita a loja da URL para admin e trava vendas na propria loja', () => {
+  it('respeita a loja da URL para admin e trava perfis operacionais na propria loja', () => {
     expect(resolvePendingLeftoverStore({ role: 'admin', store: 'jc' }, 'ja')).toBe('ja')
     expect(resolvePendingLeftoverStore({ role: 'vendas', store: 'jc' }, 'ja')).toBe('jc')
+    expect(resolvePendingLeftoverStore({ role: 'expedicao', store: 'jc' }, 'ja')).toBe('jc')
     expect(resolvePendingLeftoverStore({ role: 'admin', store: 'ja' }, null)).toBe('ja')
     expect(resolvePendingLeftoverStore(null, null)).toBe('jc')
   })

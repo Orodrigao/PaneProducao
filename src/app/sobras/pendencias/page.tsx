@@ -346,7 +346,8 @@ export default function BreadLeftoverPendingPage() {
     }
   }
 
-  const storeLocked = user?.role === 'vendas' && (user.store === 'jc' || user.store === 'ja')
+  const storeLocked = (user?.role === 'vendas' || user?.role === 'expedicao')
+    && (user.store === 'jc' || user.store === 'ja')
   const notApplicable = user?.role === 'vendas' && user.store === 'ex'
 
   if (loading) {

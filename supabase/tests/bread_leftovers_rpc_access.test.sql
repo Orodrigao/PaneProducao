@@ -5,7 +5,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(17);
 
 select is((select count(*)::int
     from pg_proc p
@@ -131,6 +131,11 @@ values (
   'sobras.acessar',
   'ja',
   null
+), (
+  '91000000-0000-4000-8000-000000000002',
+  'sobras.dar_destino',
+  'jc',
+  null
 );
 
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
@@ -167,6 +172,19 @@ insert into public.sobras (
   'jc',
   'L' || to_char(((now() at time zone 'America/Sao_Paulo')::date - 1), 'MMDD'),
   3,
+  'pending',
+  'balcao_fechamento',
+  'awaiting_oven'
+), (
+  '91000000-0000-4000-8000-000000000011',
+  ((now() at time zone 'America/Sao_Paulo')::date - 1),
+  'Teste',
+  'teste-sobras-rpc',
+  'bread',
+  2,
+  'ja',
+  'L' || to_char(((now() at time zone 'America/Sao_Paulo')::date - 1), 'MMDD'),
+  2,
   'pending',
   'balcao_fechamento',
   'awaiting_oven'
@@ -269,6 +287,53 @@ select is(
     where store = 'ja' and product_id = 'teste-sobras-rpc'),
   'mesa_separacao',
   'local fisico fica gravado na sobra permitida'
+);
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000002', true);
+
+select throws_ok(
+  $$ select public.resolve_bread_leftover(
+    '91000000-0000-4000-8000-000000000011',
+    'discard',
+    1,
+    null
+  ) $$,
+  '42501',
+  'Usuario sem permissao para dar destino a sobra.',
+  'expedicao nao da destino fora do escopo JC'
+);
+
+select is(
+  (public.resolve_bread_leftover(
+    '91000000-0000-4000-8000-000000000010',
+    'discard',
+    1,
+    null
+  ) ->> 'pending_quantity')::numeric,
+  2::numeric,
+  'expedicao da destino a sobra da propria loja'
+);
+
+select is(
+  public.update_bread_leftover_location(
+    '91000000-0000-4000-8000-000000000010',
+    'mesa_separacao'
+  ) ->> 'physical_location',
+  'mesa_separacao',
+  'expedicao altera local de sobra da propria loja'
+);
+
+select throws_ok(
+  $$ select public.update_bread_leftover_location(
+    '91000000-0000-4000-8000-000000000011',
+    'mesa_separacao'
+  ) $$,
+  '42501',
+  'Usuario sem permissao para alterar o local.',
+  'expedicao nao altera local fora do escopo JC'
 );
 
 select * from finish();

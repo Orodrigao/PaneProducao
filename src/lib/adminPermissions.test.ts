@@ -67,6 +67,7 @@ describe('permissões com escopo por loja', () => {
   it('oferece JC, JA e EX para a Cozinha sem alterar as regras existentes', () => {
     expect(permissionStoreScopes('producao_cozinha.lancar')).toEqual(['jc', 'ja', 'ex'])
     expect(permissionStoreScopes('romaneio.confirmar_saida')).toEqual(['jc', 'ja', 'ex'])
+    expect(permissionStoreScopes('sobras.dar_destino')).toEqual(['jc', 'ja'])
     expect(permissionStoreScopes('romaneio.acessar')).toEqual([])
     expect(permissionStoreScopes('pedidos_pj.acessar')).toEqual([])
   })
