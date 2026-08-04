@@ -1,21 +1,14 @@
 name: Banco Preview
 
 # Banco remoto descartavel usado pelos previews da Vercel e pelos worktrees.
-# Uma PR com migration so pode ser testada depois que este workflow ficar verde.
+# Toda PR que usa o smoke de navegador so pode ser testada depois que este
+# workflow ficar verde.
 # Fechar ou integrar a PR reconstrui o ambiente a partir da main, removendo
 # migrations que nunca chegaram a producao.
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
-    paths:
-      - "supabase/migrations/**"
-      - "supabase/tests/**"
-      - "supabase/verification/**"
-      - "supabase/seed.sql"
-      - "supabase/config.toml"
-      - "scripts/provision-preview-users.mjs"
-      - ".github/workflows/banco-preview.yml"
   push:
     branches: [main]
   workflow_dispatch:
@@ -41,7 +34,7 @@ env:
 jobs:
   reconstruir-pr:
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
-    name: Reconstruir com as migrations desta PR
+    name: Reconstruir Preview desta PR
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_OWNER_ACCESS_TOKEN }}

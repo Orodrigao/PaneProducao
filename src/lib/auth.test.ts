@@ -8,17 +8,24 @@ import {
   passwordPolicyChecklist,
   passwordRecoveryErrorMessage,
   resolveAllowedRoutes,
+  signInWithEmailPassword,
   validatePasswordSetup,
 } from './auth'
 
 const authSupabaseMock = vi.hoisted(() => ({
   getSession: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signOut: vi.fn(),
   from: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    auth: { getSession: authSupabaseMock.getSession },
+    auth: {
+      getSession: authSupabaseMock.getSession,
+      signInWithPassword: authSupabaseMock.signInWithPassword,
+      signOut: authSupabaseMock.signOut,
+    },
     from: authSupabaseMock.from,
   },
 }))
@@ -196,6 +203,64 @@ describe('fetchCurrentAuthUser', () => {
 
     expect(user?.allowedRoutes).toContain('/pedidos-pj')
     expect(authSupabaseMock.from).toHaveBeenCalledWith('app_user_permissions')
+  })
+})
+
+describe('signInWithEmailPassword', () => {
+  beforeEach(() => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('window', {})
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    })
+    authSupabaseMock.signInWithPassword.mockResolvedValue({ error: null })
+    authSupabaseMock.getSession
+      .mockResolvedValueOnce({ data: { session: null }, error: null })
+      .mockResolvedValue({
+        data: { session: { user: { id: 'uuid-admin', email: 'admin@paneesalute.com.br' } } },
+        error: null,
+      })
+    authSupabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'app_profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  user_id: 'uuid-admin',
+                  display_name: 'Administrador',
+                  role: 'admin',
+                  active: true,
+                  allowed_routes: ['/'],
+                  store: null,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }
+      }
+
+      return {
+        select: () => ({
+          eq: async () => ({ data: [], error: null }),
+        }),
+      }
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  it('relê a sessão e o perfil quando a sessão recém-criada ainda não apareceu', async () => {
+    const result = await signInWithEmailPassword('admin@paneesalute.com.br', 'senha-valida')
+
+    expect(result).toMatchObject({ ok: true, user: { role: 'admin' } })
+    expect(authSupabaseMock.getSession).toHaveBeenCalledTimes(2)
   })
 })
 
