@@ -254,7 +254,7 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
         <input className="ps-input" value={draft.notes} onChange={event => updateDraft('notes', event.target.value)} placeholder="Ex.: compra semanal do CEASA" />
       </div>
 
-      <div className="ps-totalbar" style={{ position: 'relative', margin: '16px -14px -14px' }}>
+      <div className="ps-totalbar">
         <div className="ps-total-num"><b>{formatBRL(total)}</b><span>{draft.paid ? 'paga à vista' : `${draft.installments.length} parcela(s)`}</span></div>
         <button className="ps-save" disabled={saving || total <= 0} onClick={save}><Save size={16} /> {saving ? 'Salvando...' : 'Registrar conta'}</button>
       </div>
