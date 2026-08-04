@@ -738,6 +738,11 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-status.aprovado{ background:var(--crust-tint); color:var(--crust); border-color:var(--honey-line); }
 .ps-status.fechado{ background:var(--ps-ink); color:var(--cream); }
 .ps-status.pendente{ background:var(--honey-tint); color:#7A5418; border-color:var(--honey-line); }
+.ps-status.cancelado{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
+.ps-list-row{ display:flex; align-items:center; padding:9px 0; border-top:1px solid var(--ps-line); font-size:13px; }
+.ps-help{ display:block; margin-top:5px; color:var(--ink-faint); font-size:12px; }
+.ps-checkrow{ display:flex; align-items:center; gap:7px; font-size:13px; }
+.ps-link{ border:0; padding:0; background:none; color:var(--crust); text-decoration:underline; cursor:pointer; font:inherit; }
 .ps-status.ok{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }
 .ps-status.divergencia{ background:var(--berry-tint); color:var(--berry); border-color:#E6B5AC; }
 .ps-status.entrada{ background:#E3F0E0; color:var(--sage); border-color:#C5D5BA; }

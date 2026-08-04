@@ -50,6 +50,28 @@ on conflict (id) do update set
   production_days = excluded.production_days,
   production_area = excluded.production_area;
 
+insert into public.products (
+  id, name, category, active, sort_order, unit, kind,
+  is_fabricacao_propria, production_days, production_area
+)
+values
+  ('10000000-0000-4000-8000-000000000021', '[TESTE] Manjericão', 'Insumos', true, 210, 'kg', 'insumo', false, '{0,1,2,3,4,5,6}', 'outros'),
+  ('10000000-0000-4000-8000-000000000022', '[TESTE] Tomate cereja', 'Insumos', true, 220, 'kg', 'insumo', false, '{0,1,2,3,4,5,6}', 'outros')
+on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  active = excluded.active,
+  sort_order = excluded.sort_order,
+  unit = excluded.unit,
+  kind = excluded.kind,
+  is_fabricacao_propria = excluded.is_fabricacao_propria,
+  production_days = excluded.production_days,
+  production_area = excluded.production_area;
+
+insert into public.suppliers (id, name, active)
+values ('40000000-0000-4000-8000-000000000001', '[TESTE] Fornecedor CEASA JC', true)
+on conflict (id) do update set name = excluded.name, active = excluded.active;
+
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
 values
   ('teste-baguete', '[TESTE] Baguete', '{0,1,2,3,4,5,6}', true, 'un', false, false),
@@ -136,7 +158,8 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
-    ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb)
+    ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -159,7 +182,8 @@ where assignment.user_id in (
     'rodrigao+teste-expedicao-jc@gmail.com',
     'rodrigao+teste-romaneio-ex@gmail.com',
     'rodrigao+teste-cozinha-jc@gmail.com',
-    'rodrigao+teste-geolar-jc@gmail.com'
+    'rodrigao+teste-geolar-jc@gmail.com',
+    'rodrigao+teste-financeiro-jc@gmail.com'
   )
 );
 
@@ -181,7 +205,11 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.acessar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.visualizar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.conferir_recebimento', 'ex'),
-    ('rodrigao+teste-cozinha-jc@gmail.com', 'producao_cozinha.lancar', 'jc')
+    ('rodrigao+teste-cozinha-jc@gmail.com', 'producao_cozinha.lancar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.acessar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.baixar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested

@@ -16,7 +16,7 @@ select is(
   (select count(*)::int from public.products
     where id::text like '10000000-0000-4000-8000-0000000000%'
       and name like '[TESTE]%'),
-  20,
+  22,
   'seed cria o catalogo ficticio completo da Cozinha'
 );
 

@@ -98,8 +98,9 @@ export function isPjOrderSingleCheckboxPermission(permissionKey: string): boolea
 export function permissionStoreScopes(permissionKey: string): readonly StorePermissionScope[] {
   const isScopedRomaneioPermission = permissionKey.startsWith('romaneio.')
     && permissionKey !== 'romaneio.acessar'
+  const isScopedPayablesPermission = permissionKey.startsWith('contas_pagar.')
 
-  return permissionKey === KITCHEN_PRODUCTION_PERMISSION || isScopedRomaneioPermission
+  return permissionKey === KITCHEN_PRODUCTION_PERMISSION || isScopedRomaneioPermission || isScopedPayablesPermission
     ? STORE_PERMISSION_SCOPES
     : []
 }
