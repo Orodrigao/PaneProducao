@@ -20,6 +20,7 @@ export interface AppUser {
 
 const AUTH_PROFILE_CACHE_KEY = 'pane_auth_profile_cache'
 const LEGACY_AUTH_STORAGE_KEYS = ['pane_users_cache', 'pane_user_id']
+const AUTH_PROFILE_RETRY_DELAYS_MS = [100, 300] as const
 
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
@@ -347,7 +348,12 @@ export async function signInWithEmailPassword(email: string, password: string): 
       return { ok: false, message: 'E-mail ou senha inválidos.' }
     }
 
-    const user = await fetchCurrentAuthUser()
+    let user = await fetchCurrentAuthUser()
+    for (const delayMs of AUTH_PROFILE_RETRY_DELAYS_MS) {
+      if (user) break
+      await new Promise(resolve => globalThis.setTimeout(resolve, delayMs))
+      user = await fetchCurrentAuthUser()
+    }
     if (!user) {
       await supabase.auth.signOut({ scope: 'local' })
       cacheAuthUser(null)
