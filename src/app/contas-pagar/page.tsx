@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
+import PendingPayableItems from '@/components/PendingPayableItems'
+import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import { supabase } from '@/lib/supabase'
 import {
   cancelPayable,
@@ -17,10 +19,12 @@ import {
   statusLabel,
   type PayableProduct,
   type PayablePurchaseRow,
+  loadPendingPayableItems,
+  type PendingPayableItemRow,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
 
-interface SupplierOption { id: string; name: string }
+type SupplierOption = XmlSupplierOption
 
 function paymentLabel(value: PayablePurchaseRow['payment_method']): string {
   return ({
@@ -46,7 +50,10 @@ export default function ContasPagarPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [showXmlImport, setShowXmlImport] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [pendingPurchaseId, setPendingPurchaseId] = useState<string | null>(null)
+  const [pendingItems, setPendingItems] = useState<PendingPayableItemRow[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -54,8 +61,8 @@ export default function ContasPagarPage() {
     try {
       const [rows, suppliersResponse, productsResponse] = await Promise.all([
         loadPayablePurchases(),
-        supabase.from('suppliers').select('id,name').eq('active', true).order('name'),
-        supabase.from('products').select('id,name,unit').eq('active', true).or('kind.eq.insumo,is_revenda.eq.true').order('name'),
+        supabase.from('suppliers').select('id,name,cnpj').eq('active', true).order('name'),
+        supabase.from('products').select('id,name,unit,category').eq('active', true).or('kind.eq.insumo,is_revenda.eq.true').order('name'),
       ])
       if (suppliersResponse.error) throw suppliersResponse.error
       if (productsResponse.error) throw productsResponse.error
@@ -69,6 +76,25 @@ export default function ContasPagarPage() {
       setLoading(false)
     }
   }, [])
+
+  async function openPendingItems(purchaseId: string) {
+    setBusyId(purchaseId)
+    try {
+      setPendingItems(await loadPendingPayableItems(purchaseId))
+      setPendingPurchaseId(purchaseId)
+    } catch (loadError) {
+      console.error(loadError)
+      showToast('Não foi possível abrir os itens pendentes.')
+    } finally { setBusyId(null) }
+  }
+
+  async function refreshPendingItems() {
+    if (!pendingPurchaseId) return
+    const items = await loadPendingPayableItems(pendingPurchaseId)
+    setPendingItems(items)
+    if (items.length === 0) setPendingPurchaseId(null)
+    await load()
+  }
 
   useEffect(() => { void load() }, [load])
 
@@ -117,7 +143,7 @@ export default function ContasPagarPage() {
         <header className="ps-header">
           <div className="ps-wordmark">
             <div className="ps-mark"><WalletCards size={18} /></div>
-            <div className="ps-brand"><b>Contas a pagar</b><span>JC · fase manual</span></div>
+            <div className="ps-brand"><b>Contas a pagar</b><span>JC · manual e NF-e</span></div>
           </div>
           <button className="ps-iconbtn" onClick={() => void load()} aria-label="Atualizar contas" title="Atualizar"><RefreshCw size={17} /></button>
         </header>
@@ -125,7 +151,7 @@ export default function ContasPagarPage() {
         <div className="ps-scroll ps-pad">
           <div className="ps-banner honey">
             <b>Financeiro da JC</b>
-            <small>Registre a compra completa. Nesta fase, o lançamento financeiro não baixa o estoque.</small>
+            <small>Registre compras sem nota ou importe NF-e. O financeiro fica rastreado; o estoque será integrado depois.</small>
           </div>
 
           {(reminders.overdue > 0 || reminders.dueSoon > 0) && (
@@ -142,8 +168,18 @@ export default function ContasPagarPage() {
               onCancel={() => setShowForm(false)}
               onSaved={async () => { setShowForm(false); await load() }}
             />
+          ) : showXmlImport ? (
+            <XmlPayableImport
+              suppliers={suppliers}
+              products={products}
+              onCancel={() => setShowXmlImport(false)}
+              onSaved={async () => { setShowXmlImport(false); await load() }}
+            />
           ) : (
-            <button className="ps-btn primary block" style={{ marginTop: 14 }} onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
+            <div className="ps-fieldrow" style={{ marginTop: 14 }}>
+              <button className="ps-btn primary block" onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
+              <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
+            </div>
           )}
 
           {error && (
@@ -173,6 +209,12 @@ export default function ContasPagarPage() {
                   <strong style={{ fontSize: 18 }}>{formatBRL(purchase.total_value)}</strong>
                 </div>
                 {purchase.notes && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>{purchase.notes}</small>}
+                {purchase.origin === 'xml' && purchase.nfe_key && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>NF-e {purchase.nfe_number ?? ''}{purchase.nfe_series ? ` · série ${purchase.nfe_series}` : ''} · chave {purchase.nfe_key}</small>}
+                {purchase.classification_status === 'pendente' && (
+                  pendingPurchaseId === purchase.id
+                    ? <PendingPayableItems items={pendingItems} products={products} onChanged={refreshPendingItems} onClose={() => setPendingPurchaseId(null)} />
+                    : <button className="ps-btn ghost sm" style={{ marginBottom: 8 }} disabled={busyId === purchase.id} onClick={() => void openPendingItems(purchase.id)}>{busyId === purchase.id ? 'Abrindo...' : 'Classificar itens pendentes'}</button>
+                )}
                 {pending.map(installment => (
                   <div key={installment.id} className="ps-list-row" style={{ gap: 8 }}>
                     <span style={{ flex: 1 }}>

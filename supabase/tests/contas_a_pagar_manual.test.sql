@@ -12,8 +12,8 @@ select ok(exists(select 1 from information_schema.tables where table_schema = 'p
 select ok(exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = 'payable_events'),
   'auditoria das contas existe');
 
-select is((select count(*)::int from public.app_permissions where key like 'contas_pagar.%'), 4,
-  'as quatro permissoes da fase manual existem');
+select is((select count(*)::int from public.app_permissions where key like 'contas_pagar.%'), 5,
+  'as cinco permissoes de contas a pagar existem');
 select ok((select relrowsecurity and relforcerowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relname = 'payable_purchases'),
   'contas a pagar tem RLS forcada');

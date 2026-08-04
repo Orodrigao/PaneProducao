@@ -1,13 +1,15 @@
 import { supabase } from '@/lib/supabase'
+import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
 export type PayablePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
-export type PayableDocumentType = 'sem_nota' | 'recibo'
+export type PayableDocumentType = 'sem_nota' | 'recibo' | 'nfe'
 
 export interface PayableProduct {
   id: string
   name: string
   unit: string | null
+  category?: string | null
 }
 
 export interface PayableItemDraft {
@@ -55,8 +57,29 @@ export interface PayablePurchaseRow {
   status: PayableStatus
   total_value: number | string
   notes: string | null
+  origin?: 'manual' | 'xml'
+  nfe_key?: string | null
+  nfe_number?: string | null
+  nfe_series?: string | null
+  classification_status?: 'completa' | 'pendente'
   suppliers: PayableSupplier | PayableSupplier[] | null
   payable_installments: PayableInstallmentRow[]
+}
+
+export interface PendingPayableItemRow {
+  id: string
+  purchase_id: string
+  item_name: string
+  unit: string
+  quantity: number | string
+  unit_price: number | string
+  line_total: number | string
+  source_description: string | null
+  source_unit: string | null
+  source_quantity: number | string | null
+  source_product_code: string | null
+  source_ean: string | null
+  conversion_basis: NfeItemDraft['conversionBasis'] | null
 }
 
 export function roundMoney(value: number): number {
@@ -139,11 +162,23 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,suppliers(name),payable_installments(id,installment_number,due_date,amount,status)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,amount,status)')
     .order('purchase_date', { ascending: false })
 
   if (error) throw error
   return (data ?? []) as PayablePurchaseRow[]
+}
+
+export async function loadPendingPayableItems(purchaseId: string): Promise<PendingPayableItemRow[]> {
+  const { data, error } = await supabase
+    .from('payable_purchase_items')
+    .select('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    .eq('purchase_id', purchaseId)
+    .eq('mapping_status', 'pendente')
+    .order('source_line_number')
+
+  if (error) throw error
+  return (data ?? []) as PendingPayableItemRow[]
 }
 
 export async function createManualPayable(draft: PayableDraft, requestId: string): Promise<string> {
@@ -172,6 +207,73 @@ export async function createManualPayable(draft: PayableDraft, requestId: string
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu o lançamento criado.')
   return data
+}
+
+export async function createPayableCatalogProduct(name: string, category: string, unit: string): Promise<string> {
+  const { data, error } = await supabase.rpc('create_payable_catalog_product', {
+    p_name: name.trim(),
+    p_category: category.trim(),
+    p_unit: unit.trim(),
+  })
+  if (error) throw error
+  if (typeof data !== 'string') throw new Error('O banco não devolveu o item cadastrado.')
+  return data
+}
+
+export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {
+  const { data, error } = await supabase.rpc('create_xml_payable', {
+    p_request_id: requestId,
+    p_access_key: draft.accessKey,
+    p_supplier_id: supplierId,
+    p_nfe_number: draft.number,
+    p_nfe_series: draft.series,
+    p_issue_date: draft.issueDate,
+    p_payment_method: draft.paymentMethod,
+    p_total_value: draft.total,
+    p_notes: notes,
+    p_items: draft.items.map(item => ({
+      line_number: item.lineNumber,
+      supplier_product_code: item.supplierCode,
+      supplier_ean: item.ean,
+      source_description: item.description,
+      source_unit: item.purchaseUnit,
+      source_quantity: item.quantity,
+      product_id: item.baseProductId,
+      conversion_basis: item.conversionBasis,
+      conversion_factor: item.conversionFactor,
+      usable_quantity: item.usableQuantity,
+      unit_price: item.unitPrice,
+      line_total: item.lineTotal,
+      remember_conversion: item.rememberConversion,
+    })),
+    p_installments: draft.installments.map(item => ({
+      installment_number: item.number,
+      due_date: item.dueDate,
+      amount: item.amount,
+    })),
+  })
+  if (error) throw error
+  if (typeof data !== 'string') throw new Error('O banco não devolveu a conta importada.')
+  return data
+}
+
+export async function classifyPayableItem(
+  itemId: string,
+  productId: string,
+  basis: NfeItemDraft['conversionBasis'],
+  factor: number,
+  usableQuantity: number,
+  rememberConversion: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('classify_payable_item', {
+    p_item_id: itemId,
+    p_product_id: productId,
+    p_conversion_basis: basis,
+    p_conversion_factor: factor,
+    p_usable_quantity: usableQuantity,
+    p_remember_conversion: rememberConversion,
+  })
+  if (error) throw error
 }
 
 export async function payInstallment(installmentId: string): Promise<void> {
