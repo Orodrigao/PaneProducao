@@ -220,7 +220,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
             <b>Parcelas do financeiro</b>
             {draft.installments.map(installment => <small key={installment.number} style={{ display: 'block' }}>Parcela {installment.number} · vence em {installment.dueDate} · {formatBRL(installment.amount)}</small>)}
           </div>
-          <div className="ps-totalbar" style={{ position: 'relative', margin: '16px -14px -14px' }}>
+          <div className="ps-totalbar">
             <div className="ps-total-num"><b>{formatBRL(draft.total)}</b><span>{mappedCount === draft.items.length ? 'itens classificados' : `${draft.items.length - mappedCount} item(ns) pendente(s)`}</span></div>
             <button className="ps-save" disabled={saving || !supplierId} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>
           </div>
