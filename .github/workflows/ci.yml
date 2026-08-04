@@ -102,7 +102,7 @@ jobs:
 
           echo "Aguardando o Banco Preview reconstruir os dados ficticios desta PR."
           for attempt in {1..60}; do
-            BUCKET="$(gh pr checks "$PR_NUMBER" --json name,bucket --jq '.[] | select(.name == "Reconstruir com as migrations desta PR") | .bucket' | tail -n 1)"
+            BUCKET="$(gh pr checks "$PR_NUMBER" --json name,bucket --jq '.[] | select(.name == "Reconstruir Preview desta PR") | .bucket' | tail -n 1)"
             if [[ "$BUCKET" == "pass" ]]; then
               echo "Banco Preview pronto."
               exit 0
