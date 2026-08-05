@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculateNetLineTotal,
   calculateNormalizedUnitCost,
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
@@ -20,6 +21,8 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
     taxQuantity: 2,
     taxUnit: 'PACOTE',
     unitPrice: 54.03,
+    grossLineTotal: 108.06,
+    discountValue: 0,
     lineTotal: 108.06,
     baseProductId: null,
     baseProductName: null,
@@ -35,6 +38,10 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
 }
 
 describe('conversão de itens importados da NF-e', () => {
+  it('desconta o valor informado no item antes de fechar o total da NF', () => {
+    expect(calculateNetLineTotal(1967.70, 39.10)).toBe(1928.60)
+  })
+
   it('calcula 1.000 sacos quando são 2 pacotes de 500 unidades', () => {
     expect(calculateUsableQuantity(2, 500)).toBe(1000)
     expect(conversionFactorFromUsableQuantity(2, 1000)).toBe(500)

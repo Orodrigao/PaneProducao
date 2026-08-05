@@ -201,7 +201,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
           {draft.items.map((item, index) => (
             <div className="ps-card" key={`${item.lineNumber}-${item.description}`} style={{ marginBottom: 8, padding: 10, background: 'var(--cream-raise)' }}>
               <b>{item.lineNumber}. {item.description}</b>
-              <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
+              <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
               <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => setCreatingLine(index)} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>

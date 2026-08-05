@@ -13,6 +13,8 @@ export interface NfeItemDraft {
   taxQuantity: number | null
   taxUnit: string | null
   unitPrice: number
+  grossLineTotal: number
+  discountValue: number
   lineTotal: number
   baseProductId: string | null
   baseProductName: string | null
@@ -66,6 +68,10 @@ function formatCost(value: number, unit: string): string {
 
 export function calculateUsableQuantity(quantity: number, conversionFactor: number): number {
   return round(quantity * conversionFactor, 6)
+}
+
+export function calculateNetLineTotal(grossLineTotal: number, discountValue: number): number {
+  return round(grossLineTotal - discountValue, 2)
 }
 
 export function conversionFactorFromUsableQuantity(quantity: number, usableQuantity: number): number {
@@ -158,6 +164,8 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     const prod = firstElement(detail, 'prod')
     if (!prod) throw new Error('Um item da NF-e não possui dados de produto.')
     const purchaseUnit = childText(prod, 'uCom') || childText(prod, 'uTrib') || 'un'
+    const grossLineTotal = numberValue(childText(prod, 'vProd'))
+    const discountValue = numberValue(childText(prod, 'vDesc'))
     return {
       lineNumber: numberValue(detail.getAttribute('nItem') ?? '0'),
       supplierCode: childText(prod, 'cProd') || null,
@@ -169,7 +177,9 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       taxQuantity: childText(prod, 'qTrib') ? numberValue(childText(prod, 'qTrib')) : null,
       taxUnit: childText(prod, 'uTrib') || null,
       unitPrice: numberValue(childText(prod, 'vUnCom') || childText(prod, 'vUnTrib')),
-      lineTotal: numberValue(childText(prod, 'vProd')),
+      grossLineTotal,
+      discountValue,
+      lineTotal: calculateNetLineTotal(grossLineTotal, discountValue),
       baseProductId: null,
       baseProductName: null,
       baseUnit: null,
