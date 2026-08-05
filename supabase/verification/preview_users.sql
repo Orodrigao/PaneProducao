@@ -106,6 +106,27 @@ begin
 
   if not exists (
     select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'
+      and profile.allowed_routes ? '/sobras'
+  ) then
+    raise exception 'Perfil Expedicao JC deve abrir a Central de Pendencias.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.app_user_permissions assignment
+    join auth.users user_account on user_account.id = assignment.user_id
+    where lower(user_account.email) = 'rodrigao+teste-expedicao-jc@gmail.com'
+      and assignment.permission_key = 'sobras.dar_destino'
+      and assignment.scope = 'jc'
+  ) then
+    raise exception 'Perfil Expedicao JC ficou sem permissao para dar destino a sobras da JC.';
+  end if;
+
+  if not exists (
+    select 1
     from public.app_user_permissions assignment
     join auth.users user_account on user_account.id = assignment.user_id
     where lower(user_account.email) = 'rodrigao+teste-romaneio-ex@gmail.com'

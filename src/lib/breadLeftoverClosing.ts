@@ -89,7 +89,10 @@ export function resolvePendingLeftoverStore(
   user: { role: string; store?: string | null } | null,
   requestedStore: string | null,
 ): 'jc' | 'ja' {
-  if (user?.role === 'vendas' && (user.store === 'jc' || user.store === 'ja')) return user.store
+  if (
+    (user?.role === 'vendas' || user?.role === 'expedicao')
+    && (user.store === 'jc' || user.store === 'ja')
+  ) return user.store
   if (requestedStore === 'jc' || requestedStore === 'ja') return requestedStore
   if (user?.store === 'jc' || user?.store === 'ja') return user.store
   return 'jc'
