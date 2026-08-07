@@ -34,9 +34,7 @@ function paidDate(value: string | null | undefined): string {
   return value ? formatDate(value.slice(0, 10)) : '-'
 }
 
-function brNumber(value: number): string {
-  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+const currencyNumberFormat = 'R$ #,##0.00'
 
 function reportModeLabel(mode: PayablesReportMode): string {
   return mode === 'compras' ? 'Compras realizadas pela data da compra' : 'Movimento financeiro por vencimentos e baixas'
@@ -79,39 +77,76 @@ export default function ContasPagarRelatorioPage() {
       Vencimento: row.vencimento ? formatDate(row.vencimento) : '',
       Baixa: row.baixa ? formatDate(row.baixa) : '',
       Situação: row.situacao,
-      'Valor (R$)': brNumber(row.valor),
+      'Valor (R$)': row.valor,
       Critério: row.criterio,
     }))
+    const periodLabel = `${from ? formatDate(from) : '-'} a ${to ? formatDate(to) : '-'}`
+    const reportValue = mode === 'compras' ? report.summary.purchaseTotal : report.summary.scheduledTotal
     const summaryRows = [
-      ['Contas a pagar', reportModeLabel(mode)],
-      ['Período', `${from ? formatDate(from) : '-'} a ${to ? formatDate(to) : '-'}`],
+      ['CONTAS A PAGAR'],
+      [reportModeLabel(mode)],
+      [`Período: ${periodLabel}`],
       [],
+      ['RESUMO DO PERÍODO'],
       ['Indicador', 'Valor'],
-      [mode === 'compras' ? 'Total comprado' : 'Vencimentos no período', brNumber(mode === 'compras' ? report.summary.purchaseTotal : report.summary.scheduledTotal)],
-      ['Baixado', brNumber(report.summary.paidTotal)],
-      ['Em aberto', brNumber(report.summary.openTotal)],
-      ['Vencido', brNumber(report.summary.overdueTotal)],
+      [mode === 'compras' ? 'Total comprado' : 'Vencimentos no período', reportValue],
+      ['Baixado', report.summary.paidTotal],
+      ['Em aberto', report.summary.openTotal],
+      ['Vencido', report.summary.overdueTotal],
       [],
+      ['QUANTIDADE DE LANÇAMENTOS'],
+      ['Indicador', 'Quantidade'],
       ['Contas', report.purchases.length],
       ['Parcelas', report.rows.length],
     ]
     const detailRows = [
+      ['PARCELAS DO PERÍODO'],
+      [reportModeLabel(mode)],
+      [`Período: ${periodLabel}`],
+      [],
       ['Fornecedor', 'Documento', 'Data da compra', 'Parcela', 'Vencimento', 'Baixa', 'Situação', 'Valor (R$)', 'Critério'],
       ...rows.map(row => Object.values(row)),
     ]
     const workbook = utils.book_new()
     const summarySheet = utils.aoa_to_sheet(summaryRows)
-    summarySheet['!cols'] = [{ wch: 30 }, { wch: 30 }]
-    summarySheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }]
+    summarySheet['!cols'] = [{ wch: 34 }, { wch: 24 }]
+    summarySheet['!rows'] = [
+      { hpt: 26 }, { hpt: 21 }, { hpt: 19 }, { hpt: 8 },
+      { hpt: 21 }, { hpt: 20 }, { hpt: 20 }, { hpt: 20 }, { hpt: 20 },
+      { hpt: 8 }, { hpt: 21 }, { hpt: 20 }, { hpt: 20 }, { hpt: 20 },
+    ]
+    summarySheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
+      { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } },
+      { s: { r: 10, c: 0 }, e: { r: 10, c: 1 } },
+    ]
+    for (const address of ['B7', 'B8', 'B9', 'B10']) {
+      summarySheet[address].z = currencyNumberFormat
+    }
     const detailSheet = utils.aoa_to_sheet(detailRows)
     detailSheet['!cols'] = [
       { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 16 },
       { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 24 },
     ]
-    detailSheet['!autofilter'] = { ref: `A1:I${detailRows.length}` }
+    detailSheet['!rows'] = [
+      { hpt: 26 }, { hpt: 21 }, { hpt: 19 }, { hpt: 8 }, { hpt: 22 },
+      ...rows.map(() => ({ hpt: 20 })),
+    ]
+    detailSheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
+    ]
+    detailSheet['!autofilter'] = { ref: `A5:I${detailRows.length}` }
+    rows.forEach((_, index) => {
+      const address = `H${index + 6}`
+      detailSheet[address].z = currencyNumberFormat
+    })
     utils.book_append_sheet(workbook, summarySheet, 'Resumo')
     utils.book_append_sheet(workbook, detailSheet, 'Parcelas')
-    const file = write(workbook, { bookType: 'xlsx', type: 'array' })
+    const file = write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true })
     const blob = new Blob([file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
