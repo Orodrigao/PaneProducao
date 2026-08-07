@@ -75,7 +75,12 @@ on conflict (id) do update set name = excluded.name, active = excluded.active;
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
 values
   ('teste-baguete', '[TESTE] Baguete', '{0,1,2,3,4,5,6}', true, 'un', false, false),
-  ('teste-ciabatta', '[TESTE] Ciabatta', '{0,1,2,3,4,5,6}', true, 'un', false, false)
+  ('teste-ciabatta', '[TESTE] Ciabatta', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  -- Exclusivos do cenario PJ: nao entram na composicao de planejamento nem no
+  -- cenario de sobras, para nao alterar as quantidades ja conferidas por outros
+  -- testes.
+  ('teste-brioche-pj', '[TESTE] Brioche PJ', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-focaccia-pj', '[TESTE] Focaccia PJ', '{0,1,2,3,4,5,6}', true, 'kg', false, false)
 on conflict (id) do update set
   name = excluded.name,
   days = excluded.days,
@@ -83,6 +88,161 @@ on conflict (id) do update set
   unit = excluded.unit,
   is_special = excluded.is_special,
   is_shelf = excluded.is_shelf;
+
+-- Cenario comercial PJ: tabela de preco, clientes e pedidos.
+-- Sem isso o Preview nao permite criar nem conferir Pedido PJ, e o relatorio de
+-- Vendas PJ fica sempre zerado.
+
+insert into public.price_tiers (id, name, description, active)
+values ('50000000-0000-4000-8000-000000000001', '[TESTE] Tabela PJ', 'Precos ficticios para validar Pedidos PJ e o relatorio de Vendas PJ.', true)
+on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  active = excluded.active;
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name,
+  unit_price, pricing_unit, pack_size, active
+)
+values
+  -- Pacote de 21: reproduz o caso real que inflava o relatorio de Vendas PJ.
+  ('51000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 1.60, 'un', 21, true),
+  -- Preco por quilo: o outro caminho da conta, que nunca usou pacote.
+  ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001',
+   'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ', 89.00, 'kg', 1, true),
+  ('51000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001',
+   'teste-baguete', 'bread', '[TESTE] Baguete', 2.97, 'un', 1, true)
+on conflict (id) do update set
+  tier_id = excluded.tier_id,
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit_price = excluded.unit_price,
+  pricing_unit = excluded.pricing_unit,
+  pack_size = excluded.pack_size,
+  active = excluded.active;
+
+insert into public.customers (
+  id, name, doc, contact, default_tier_id, discount_pct, delivery_hours, active, notes
+)
+values
+  ('60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ', '00.000.000/0001-91',
+   'contato-teste@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48, true,
+   'Cliente ficticio para validar Pedidos PJ.'),
+  ('60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ', '00.000.000/0002-72',
+   'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24, true,
+   'Cliente ficticio com desconto base de 10% para validar o calculo da tabela.')
+on conflict (id) do update set
+  name = excluded.name,
+  doc = excluded.doc,
+  contact = excluded.contact,
+  default_tier_id = excluded.default_tier_id,
+  discount_pct = excluded.discount_pct,
+  delivery_hours = excluded.delivery_hours,
+  active = excluded.active,
+  notes = excluded.notes;
+
+-- Pedidos PJ ficticios. `quantity` ja e a quantidade final vendida
+-- (pacotes x pack_size); o valor da linha e sempre unit_price x quantity.
+--
+-- Os gatilhos `guard_pj_dispatch_write` e `guard_dispatched_pj_order_changes`
+-- reservam a confirmacao de envio para a acao protegida do banco. O seed usa a
+-- mesma chave que essa acao usa, e so para semear o pedido ja enviado; a chave
+-- e fechada logo abaixo. Sem isso o cenario nao consegue representar um pedido
+-- no Historico, e reaplicar o seed falharia ao tocar essa linha.
+select set_config('pane.pj_dispatch_rpc', 'on', false);
+
+insert into public.orders (
+  id, store, order_type, order_group_id, customer_id, pj_client,
+  bread_id, product_source, product_name,
+  quantity, unit_price, pack_size, pricing_unit,
+  order_date, delivery_date, production_date, pj_delivery_date,
+  obs, needs_production,
+  dispatched_at, dispatched_by, dispatched_by_name,
+  cancelled_at, cancelled_by, cancel_reason
+)
+values
+  -- Em aberto: 12 pacotes de 21 = 252 un x R$ 1,60 = R$ 403,20.
+  ('30000000-0000-4000-8000-000000000101', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000001',
+   '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
+   252, 1.60, 21, 'un',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   '[TESTE] pedido com pacote de 21 para conferir o valor do relatorio', false,
+   null, null, null, null, null, null),
+  -- Em aberto por quilo: 4,5 kg x R$ 89,00 = R$ 400,50.
+  ('30000000-0000-4000-8000-000000000102', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000002',
+   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ',
+   4.5, 89.00, 1, 'kg',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   '[TESTE] pedido por quilo, sem pacote', false,
+   null, null, null, null, null, null),
+  -- Enviado: sai da fila e vai para o Historico. 2 pacotes de 21 = 42 un = R$ 67,20.
+  ('30000000-0000-4000-8000-000000000103', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000003',
+   '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
+   42, 1.60, 21, 'un',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   '[TESTE] pedido ja enviado pela Expedicao', false,
+   now() - interval '2 hours', null, '[TESTE] Expedicao JC',
+   null, null, null),
+  -- Cancelado: nao entra em nenhuma soma.
+  ('30000000-0000-4000-8000-000000000104', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000004',
+   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
+   21, 1.60, 21, 'un',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date,
+   '[TESTE] pedido cancelado, fora de qualquer soma', false,
+   null, null, null,
+   now() - interval '1 hour', '[TESTE] Financeiro JC',
+   'Cenario de teste do cancelamento')
+on conflict (id) do update set
+  store = excluded.store,
+  order_type = excluded.order_type,
+  order_group_id = excluded.order_group_id,
+  customer_id = excluded.customer_id,
+  pj_client = excluded.pj_client,
+  bread_id = excluded.bread_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  quantity = excluded.quantity,
+  unit_price = excluded.unit_price,
+  pack_size = excluded.pack_size,
+  pricing_unit = excluded.pricing_unit,
+  order_date = excluded.order_date,
+  delivery_date = excluded.delivery_date,
+  production_date = excluded.production_date,
+  pj_delivery_date = excluded.pj_delivery_date,
+  obs = excluded.obs,
+  needs_production = excluded.needs_production,
+  dispatched_at = excluded.dispatched_at,
+  dispatched_by = excluded.dispatched_by,
+  dispatched_by_name = excluded.dispatched_by_name,
+  cancelled_at = excluded.cancelled_at,
+  cancelled_by = excluded.cancelled_by,
+  cancel_reason = excluded.cancel_reason;
+
+-- Fecha a chave: a partir daqui a confirmacao de envio volta a exigir a acao
+-- protegida, inclusive para o restante deste seed.
+select set_config('pane.pj_dispatch_rpc', '', false);
 
 insert into public.orders (
   id, store, bread_id, quantity, order_date, obs,
