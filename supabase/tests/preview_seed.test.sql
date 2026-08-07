@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(21);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -172,6 +172,52 @@ select is(
      and item.order_created_at is null),
   10,
   'composicao do dia fecha oito congelados mais duas sobras sem pedido novo'
+);
+
+select is(
+  (select count(*)::int from public.price_tier_items
+    where tier_id = '50000000-0000-4000-8000-000000000001' and active),
+  3,
+  'seed cria a tabela de preco ficticia de PJ com tres itens'
+);
+
+select is(
+  (select count(*)::int from public.customers
+    where id::text like '60000000-0000-4000-8000-0000000000%'
+      and active
+      and default_tier_id = '50000000-0000-4000-8000-000000000001'),
+  2,
+  'seed cria clientes PJ ficticios ja ligados a uma tabela de preco'
+);
+
+select is(
+  (select count(*)::int from public.customers
+    where id::text like '60000000-0000-4000-8000-0000000000%'
+      and (name not like '[TESTE]%' or contact not like '%@exemplo.invalid')),
+  0,
+  'seed nao inclui nome ou contato de cliente real'
+);
+
+select is(
+  (select count(*)::int from public.orders
+    where id::text like '30000000-0000-4000-8000-0000000001%'
+      and order_type = 'pj'
+      and store = 'pj'),
+  4,
+  'seed cria pedidos PJ em aberto, por quilo, enviado e cancelado'
+);
+
+-- Trava do valor: a linha do pedido ja guarda a quantidade final vendida, entao
+-- o total e sempre unit_price x quantity. Multiplicar por pack_size de novo
+-- inflaria a soma para R$ 10.278,90. Ver lessons.md 2026-07-21
+-- (validar-tambem-na-saida) e src/lib/pjSalesReport.ts.
+select is(
+  (select round(sum(unit_price * quantity), 2) from public.orders
+    where id::text like '30000000-0000-4000-8000-0000000001%'
+      and order_type = 'pj'
+      and cancelled_at is null),
+  870.90::numeric,
+  'pedidos PJ ficticios nao cancelados somam R$ 870,90'
 );
 
 select * from finish();
