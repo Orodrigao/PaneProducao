@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(15);
+select plan(18);
 
 select ok(exists(select 1 from public.app_permissions where key = 'contas_pagar.importar_xml'),
   'permissao de importar XML existe');
@@ -28,6 +28,13 @@ select ok(has_function_privilege('authenticated', 'public.create_payable_catalog
   'authenticated cadastra item inline mediante validação interna');
 select ok(not has_function_privilege('anon', 'public.create_payable_catalog_product(text, text, text)', 'execute'),
   'anon não cadastra item inline');
+select ok(has_function_privilege('authenticated', 'public.create_payable_supplier(text, text)', 'execute'),
+  'authenticated cadastra fornecedor inline mediante validação interna');
+select ok(not has_function_privilege('anon', 'public.create_payable_supplier(text, text)', 'execute'),
+  'anon não cadastra fornecedor inline');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'create_payable_supplier') ilike all(array['%current_user_can_payables%', '%regexp_replace%', '%inativo%']),
+  'cadastro inline valida permissão, normaliza documento e evita fornecedor inativo duplicado');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'create_xml_payable') ilike all(array['%nfe_key%', '%request_id%', '%installments%', '%classification_status%']),
   'importação valida idempotência, parcelas e pendências');

@@ -41,6 +41,12 @@ export interface PayableSupplier {
   name: string
 }
 
+export interface PayableSupplierOption {
+  id: string
+  name: string
+  cnpj: string | null
+}
+
 export interface PayableInstallmentRow {
   id: string
   installment_number: number
@@ -219,6 +225,23 @@ export async function createPayableCatalogProduct(name: string, category: string
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu o item cadastrado.')
   return data
+}
+
+export async function createPayableSupplier(name: string, cnpj: string): Promise<PayableSupplierOption> {
+  const { data, error } = await supabase.rpc('create_payable_supplier', {
+    p_name: name.trim(),
+    p_cnpj: cnpj.trim() || null,
+  })
+  if (error) throw error
+  const supplier = Array.isArray(data) ? data[0] : data
+  if (!supplier || typeof supplier.id !== 'string' || typeof supplier.name !== 'string') {
+    throw new Error('O banco nÃ£o devolveu o fornecedor cadastrado.')
+  }
+  return {
+    id: supplier.id,
+    name: supplier.name,
+    cnpj: typeof supplier.cnpj === 'string' ? supplier.cnpj : null,
+  }
 }
 
 export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {

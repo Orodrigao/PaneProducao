@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FileUp, Save, X } from 'lucide-react'
+import { FileUp, Plus, Save, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
   parseNfeXml,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/nfeXml'
 import {
   createPayableCatalogProduct,
+  createPayableSupplier,
   createXmlPayable,
   formatBRL,
   type PayableProduct,
@@ -86,10 +87,13 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const requestIdRef = useRef(crypto.randomUUID())
   const [draft, setDraft] = useState<NfeDraft | null>(null)
   const [supplierId, setSupplierId] = useState('')
+  const [availableSuppliers, setAvailableSuppliers] = useState(suppliers)
   const [catalog, setCatalog] = useState(products)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
+  const [creatingSupplier, setCreatingSupplier] = useState(false)
+  const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
   const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
 
   async function readFile(file: File) {
@@ -97,9 +101,10 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     try {
       const nextDraft = parseNfeXml(await file.text())
       setDraft(nextDraft)
-      const matched = suppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
+      setCreatingSupplier(false)
+      const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
       setSupplierId(matched?.id ?? '')
-      if (!matched) setError(`Fornecedor do XML: ${nextDraft.supplierName}. Selecione o cadastro correspondente.`)
+      if (!matched) setError(`Fornecedor do XML: ${nextDraft.supplierName}. Cadastre-o aqui ou selecione um cadastro correspondente.`)
       if (matched) await loadMappings(matched.id, nextDraft)
     } catch (readError) {
       setDraft(null)
@@ -108,7 +113,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   }
 
   async function loadMappings(nextSupplierId: string, nextDraft = draft) {
-    if (!nextDraft) return
+    if (!nextDraft || !nextSupplierId) return
     const { data, error: mappingError } = await (await import('@/lib/supabase')).supabase
       .from('payable_product_mappings')
       .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor')
@@ -155,6 +160,29 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     } finally { setSaving(false) }
   }
 
+  function openSupplierForm() {
+    if (!draft) return
+    setNewSupplier({ name: draft.supplierName, cnpj: draft.supplierCnpj })
+    setCreatingSupplier(true)
+  }
+
+  async function saveNewSupplier() {
+    if (!newSupplier.name.trim()) { showToast('Informe o nome do fornecedor.'); return }
+    setSaving(true)
+    try {
+      const supplier = await createPayableSupplier(newSupplier.name, newSupplier.cnpj)
+      setAvailableSuppliers(previous => previous.some(item => item.id === supplier.id)
+        ? previous
+        : [...previous, supplier].sort((left, right) => left.name.localeCompare(right.name)))
+      setSupplierId(supplier.id)
+      setCreatingSupplier(false)
+      await loadMappings(supplier.id)
+      showToast('Fornecedor cadastrado e vinculado à NF-e.')
+    } catch (saveError) {
+      showToast(saveError instanceof Error ? saveError.message : 'Não foi possível cadastrar o fornecedor.')
+    } finally { setSaving(false) }
+  }
+
   async function confirmImport() {
     if (!draft) return
     if (!supplierId) { showToast('Selecione o fornecedor desta NF-e.'); return }
@@ -193,9 +221,25 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
             <div className="ps-fieldlabel">Fornecedor no ERP *</div>
             <select className="ps-select" value={supplierId} onChange={event => { setSupplierId(event.target.value); void loadMappings(event.target.value) }}>
               <option value="">Selecione o fornecedor</option>
-              {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.cnpj ? ` · ${supplier.cnpj}` : ''}</option>)}
+              {availableSuppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.cnpj ? ` · ${supplier.cnpj}` : ''}</option>)}
             </select>
+            {!supplierId && <button className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={openSupplierForm}><Plus size={14} /> Cadastrar fornecedor com dados da NF-e</button>}
           </div>
+
+          {creatingSupplier && (
+            <div className="ps-banner" style={{ marginTop: 10 }}>
+              <b>Cadastro rápido do fornecedor</b>
+              <small style={{ display: 'block', marginTop: 3 }}>Confira os dados lidos da NF-e. Depois de salvar, ele ficará selecionado nesta importação.</small>
+              <div className="ps-fieldrow" style={{ marginTop: 8 }}>
+                <div className="ps-fieldgroup"><div className="ps-fieldlabel">Nome do fornecedor *</div><input className="ps-input" placeholder="Nome do fornecedor" value={newSupplier.name} onChange={event => setNewSupplier(previous => ({ ...previous, name: event.target.value }))} /></div>
+                <div className="ps-fieldgroup"><div className="ps-fieldlabel">CNPJ/CPF</div><input className="ps-input" placeholder="CNPJ ou CPF" value={newSupplier.cnpj} onChange={event => setNewSupplier(previous => ({ ...previous, cnpj: event.target.value }))} /></div>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <button className="ps-btn primary sm" disabled={saving} onClick={() => void saveNewSupplier()}><Save size={14} /> {saving ? 'Salvando...' : 'Cadastrar e usar fornecedor'}</button>{' '}
+                <button className="ps-btn ghost sm" disabled={saving} onClick={() => setCreatingSupplier(false)}>Cancelar</button>
+              </div>
+            </div>
+          )}
 
           <div className="ps-label" style={{ marginTop: 14 }}>Itens da NF-e · {mappedCount}/{draft.items.length} classificados</div>
           {draft.items.map((item, index) => (
