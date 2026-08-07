@@ -53,6 +53,15 @@ Não reabrir sem evidência nova.
    Não haverá importação de arquivo do Bling.
 7. **Quem opera é a Elis, perfil `financeiro`**, no celular. Volume observado:
    cerca de 30 cobranças por mês, R$ 8 mil a R$ 19 mil.
+8. **A cobrança de pedido PJ nasce do envio confirmado pela Expedição**, não de
+   data de entrega no calendário. Decidido em 2026-08-07; substitui a decisão
+   anterior de que o financeiro geraria a cobrança com um clique.
+   - **Quem cria é o sistema, não a pessoa.** A ação protegida que registra o
+     envio gera a cobrança dentro dela; a Expedição não recebe nenhuma
+     permissão financeira e continua sem ver valores.
+   - **Rede de proteção obrigatória:** lista de pedidos com entrega vencida e
+     sem envio confirmado. É o que impede um esquecimento da Expedição virar
+     faturamento perdido.
 
 ## Três origens, um único destino
 
@@ -110,6 +119,14 @@ Levantados na descoberta, com evidência nos dados de produção:
 6. **22 tabelas de preço ativas para 32 clientes**, 18 delas atendendo um único
    cliente, com cópias e nomes repetidos. Sem histórico de preço nem vigência.
    Não bloqueia o módulo; tratado na fase 6.
+7. **Entrega não existe como fato registrado.** O rótulo *entregue* na lista de
+   Pedidos PJ é deduzido de a data de entrega já ter passado, e o relatório de
+   Vendas PJ soma pela data em que a entrega estava agendada. Nenhum dos dois
+   olha para algo que aconteceu. O único fato registrado é a Expedição marcar
+   *Enviado* — e ela marcou **1 pedido em 93** desde julho de 2026.
+   Daí a decisão 8 e a rede de proteção que ela exige: se o hábito da Expedição
+   não mudar, a cobrança para de nascer. Esse é o principal risco operacional
+   do módulo, e ele não é técnico.
 
 ---
 
@@ -251,15 +268,23 @@ sozinha sem perder cobrança já lançada.
 **Escopo — entra:**
 
 - corrigir a edição de pedido PJ para **não apagar e recriar** as linhas;
-- ação que transforma um pedido enviado em cobrança, com o valor calculado pela
-  mesma conta da tela do pedido e validado no banco;
-- uma cobrança por pedido: gerar de novo devolve a mesma, nunca uma segunda;
-- lista de pedidos entregues que ainda não viraram cobrança.
+- a cobrança passa a ser criada **dentro da ação protegida que confirma o
+  envio**, com o valor calculado pela mesma conta da tela do pedido e validado
+  no banco;
+- uma cobrança por pedido: confirmar o envio de novo devolve a mesma cobrança,
+  nunca uma segunda;
+- **lista de pedidos com entrega vencida e sem envio confirmado** — a rede de
+  proteção contra o esquecimento da Expedição.
 
-**Não entra:** geração automática no momento em que a Expedição confirma o
-envio. **Decisão:** quem gera a cobrança é o financeiro, com um clique — a
-Expedição não cria registro financeiro. Se Rodrigo preferir automático, é nova
-aprovação.
+**Não entra:** dar qualquer permissão financeira à Expedição. Ela continua sem
+ver preço, total ou cobrança; quem cria o registro é a ação do banco, não a
+pessoa.
+
+**Risco principal desta fase, e ele é operacional:** desde julho de 2026 a
+Expedição marcou *Enviado* em 1 pedido de 93. Se o hábito não mudar, a cobrança
+deixa de nascer e o faturamento some. A lista de entregas vencidas sem envio
+confirmado é o que torna esse esquecimento visível todo dia — sem ela, esta
+fase troca um problema de digitação por um problema de receita.
 
 **Depende de:** fase 2 e do PR #198 já incorporado.
 
