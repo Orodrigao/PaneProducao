@@ -237,7 +237,11 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 #payables-report-print { display: none; }
 @media print {
   body:has(#payables-report-print) { background: #fff !important; }
+  body:has(#payables-report-print) .app-body { padding-left: 0 !important; }
   body:has(#payables-report-print) .payables-report-screen { display: none !important; }
+  body:has(#payables-report-print) .ps-nav,
+  body:has(#payables-report-print) .ps-sidebar,
+  body:has(#payables-report-print) .ps-sheet-overlay { display: none !important; }
   #payables-report-print {
     display: block; color: #000; font-family: Arial, sans-serif; font-size: 10px;
   }

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, BarChart3, Download, Printer, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { csvExport } from '@/components/reports/csvExport'
 import {
   formatBRL,
   formatDate,
@@ -69,9 +68,10 @@ export default function ContasPagarRelatorioPage() {
 
   const report = useMemo(() => buildPayablesReport(purchases, { mode, from, to }), [purchases, mode, from, to])
 
-  function handleExport() {
+  async function handleExport() {
     if (report.rows.length === 0) return
-    csvExport(buildPayablesReportExportRows(report).map(row => ({
+    const { utils, write } = await import('xlsx')
+    const rows = buildPayablesReportExportRows(report).map(row => ({
       Fornecedor: row.fornecedor,
       Documento: row.documento,
       'Data da compra': row.data_compra ? formatDate(row.data_compra) : '',
@@ -81,7 +81,46 @@ export default function ContasPagarRelatorioPage() {
       Situação: row.situacao,
       'Valor (R$)': brNumber(row.valor),
       Critério: row.criterio,
-    })), `contas-a-pagar-${mode}-${from}-a-${to}.csv`)
+    }))
+    const summaryRows = [
+      ['Contas a pagar', reportModeLabel(mode)],
+      ['Período', `${from ? formatDate(from) : '-'} a ${to ? formatDate(to) : '-'}`],
+      [],
+      ['Indicador', 'Valor'],
+      [mode === 'compras' ? 'Total comprado' : 'Vencimentos no período', brNumber(mode === 'compras' ? report.summary.purchaseTotal : report.summary.scheduledTotal)],
+      ['Baixado', brNumber(report.summary.paidTotal)],
+      ['Em aberto', brNumber(report.summary.openTotal)],
+      ['Vencido', brNumber(report.summary.overdueTotal)],
+      [],
+      ['Contas', report.purchases.length],
+      ['Parcelas', report.rows.length],
+    ]
+    const detailRows = [
+      ['Fornecedor', 'Documento', 'Data da compra', 'Parcela', 'Vencimento', 'Baixa', 'Situação', 'Valor (R$)', 'Critério'],
+      ...rows.map(row => Object.values(row)),
+    ]
+    const workbook = utils.book_new()
+    const summarySheet = utils.aoa_to_sheet(summaryRows)
+    summarySheet['!cols'] = [{ wch: 30 }, { wch: 30 }]
+    summarySheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }]
+    const detailSheet = utils.aoa_to_sheet(detailRows)
+    detailSheet['!cols'] = [
+      { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 16 },
+      { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 24 },
+    ]
+    detailSheet['!autofilter'] = { ref: `A1:I${detailRows.length}` }
+    utils.book_append_sheet(workbook, summarySheet, 'Resumo')
+    utils.book_append_sheet(workbook, detailSheet, 'Parcelas')
+    const file = write(workbook, { bookType: 'xlsx', type: 'array' })
+    const blob = new Blob([file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `contas-a-pagar-${mode}-${from}-a-${to}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   function handlePrint() {
@@ -184,7 +223,7 @@ export default function ContasPagarRelatorioPage() {
           )}
 
           <div className="ps-card no-print" style={{ marginTop: 14, background: 'var(--cream-raise)' }}>
-            <small>O arquivo exportado abre no Excel e mantém uma linha para cada parcela.</small>
+            <small>O arquivo .xlsx abre no Excel com abas de resumo e parcelas.</small>
           </div>
         </div>
       </div>
