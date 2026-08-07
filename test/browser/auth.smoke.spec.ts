@@ -38,6 +38,23 @@ async function expectRouteVisible(page: import('@playwright/test').Page, href: s
   await expect(page.locator(`a[href="${href}"]`).first()).toBeAttached()
 }
 
+// A aba do destino aparece antes de o Romaneio terminar de carregar os dados do
+// dia. Quando a carga termina, a lista de abas e redesenhada e o clique cai num
+// elemento que ja saiu da tela ("element was detached from the DOM"). Clicar ate
+// a aba ficar selecionada absorve esse redesenho sem esconder falha real: se a
+// aba nunca selecionar, o teste falha no tempo limite.
+async function selectRomaneioDestination(
+  page: import('@playwright/test').Page,
+  name: RegExp,
+) {
+  const tab = page.getByRole('tab', { name })
+  await expect(tab).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(async () => {
+    await tab.click({ timeout: 5_000 })
+    await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
+  }).toPass({ timeout: slowPreviewDataTimeoutMs })
+}
+
 async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
   await expect(page.locator(`a[href="${href}"]`)).toHaveCount(0)
 }
@@ -145,7 +162,7 @@ test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', asy
   await page.goto('/romaneio')
 
   await page.getByRole('button', { name: 'Novo Romaneio' }).click()
-  await page.getByRole('tab', { name: /\[TESTE\] Exposicao/ }).click()
+  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/)
 
   const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
   await expect(bagueteCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
