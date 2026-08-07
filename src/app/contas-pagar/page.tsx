@@ -4,19 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
-import PendingPayableItems from '@/components/PendingPayableItems'
+import PayablePurchaseList from '@/components/PayablePurchaseList'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import { supabase } from '@/lib/supabase'
 import {
   cancelPayable,
-  formatBRL,
-  formatDate,
-  installmentLabel,
   isDueSoon,
   isOverdue,
   loadPayablePurchases,
   payInstallment,
-  statusLabel,
   type PayableProduct,
   type PayablePurchaseRow,
   loadPendingPayableItems,
@@ -25,22 +21,6 @@ import {
 import { showToast } from '@/lib/utils'
 
 type SupplierOption = XmlSupplierOption
-
-function paymentLabel(value: PayablePurchaseRow['payment_method']): string {
-  return ({
-    dinheiro: 'Dinheiro',
-    pix: 'PIX',
-    transferencia: 'Transferência',
-    boleto: 'Boleto',
-    cartao: 'Cartão',
-    outro: 'Outro',
-  } as Record<PayablePurchaseRow['payment_method'], string>)[value]
-}
-
-function supplierName(purchase: PayablePurchaseRow): string {
-  const related = purchase.suppliers
-  return (Array.isArray(related) ? related[0]?.name : related?.name) ?? 'Fornecedor não identificado'
-}
 
 export default function ContasPagarPage() {
   const router = useRouter()
@@ -190,45 +170,20 @@ export default function ContasPagarPage() {
           )}
 
           <div className="ps-label">Lançamentos da JC</div>
-          {loading ? <div className="ps-empty">Carregando contas...</div> : purchases.length === 0 ? (
-            <div className="ps-empty">Nenhuma conta registrada ainda.<br /><small>Comece pela compra semanal do CEASA.</small></div>
-          ) : purchases.map(purchase => {
-            const installments = purchase.payable_installments ?? []
-            const pending = installments.filter(installment => installment.status === 'pendente')
-            return (
-              <div className="ps-card" key={purchase.id} style={{ marginBottom: 10 }}>
-                <div className="ps-card-head">
-                  <div>
-                    <b>{supplierName(purchase)}</b>
-                    <small>{formatDate(purchase.purchase_date)} · {purchase.document_type === 'sem_nota' ? 'Sem nota' : 'Recibo'} · {paymentLabel(purchase.payment_method)}</small>
-                  </div>
-                  <span className={`ps-status ${purchase.status === 'paga' ? 'conferido' : purchase.status === 'cancelada' ? 'cancelado' : 'separado'}`}>{statusLabel(purchase.status)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '12px 0 8px' }}>
-                  <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>{installments.length} parcela(s)</span>
-                  <strong style={{ fontSize: 18 }}>{formatBRL(purchase.total_value)}</strong>
-                </div>
-                {purchase.notes && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>{purchase.notes}</small>}
-                {purchase.origin === 'xml' && purchase.nfe_key && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>NF-e {purchase.nfe_number ?? ''}{purchase.nfe_series ? ` · série ${purchase.nfe_series}` : ''} · chave {purchase.nfe_key}</small>}
-                {purchase.classification_status === 'pendente' && (
-                  pendingPurchaseId === purchase.id
-                    ? <PendingPayableItems items={pendingItems} products={products} onChanged={refreshPendingItems} onClose={() => setPendingPurchaseId(null)} />
-                    : <button className="ps-btn ghost sm" style={{ marginBottom: 8 }} disabled={busyId === purchase.id} onClick={() => void openPendingItems(purchase.id)}>{busyId === purchase.id ? 'Abrindo...' : 'Classificar itens pendentes'}</button>
-                )}
-                {pending.map(installment => (
-                  <div key={installment.id} className="ps-list-row" style={{ gap: 8 }}>
-                    <span style={{ flex: 1 }}>
-                      Parcela {installment.installment_number} · {formatDate(installment.due_date)} · {installmentLabel(installment.status)}
-                      {(isOverdue(installment) || isDueSoon(installment)) && <small style={{ display: 'block', color: isOverdue(installment) ? 'var(--berry)' : 'var(--honey-deep)' }}>{isOverdue(installment) ? 'Vencida' : 'Vence em até 7 dias'}</small>}
-                    </span>
-                    <b>{formatBRL(installment.amount)}</b>
-                    <button className="ps-btn success sm" disabled={busyId === installment.id} onClick={() => void handlePay(installment.id)}>{busyId === installment.id ? '...' : 'Baixar'}</button>
-                  </div>
-                ))}
-                {purchase.status === 'aberta' && <button className="ps-btn ghost sm" style={{ marginTop: 10, color: 'var(--berry)' }} disabled={busyId === purchase.id} onClick={() => void handleCancel(purchase.id)}>Cancelar lançamento</button>}
-              </div>
-            )
-          })}
+          {loading ? <div className="ps-empty">Carregando contas...</div> : (
+            <PayablePurchaseList
+              purchases={purchases}
+              products={products}
+              pendingPurchaseId={pendingPurchaseId}
+              pendingItems={pendingItems}
+              busyId={busyId}
+              onOpenPending={purchaseId => void openPendingItems(purchaseId)}
+              onRefreshPending={() => void refreshPendingItems()}
+              onClosePending={() => setPendingPurchaseId(null)}
+              onPay={installmentId => void handlePay(installmentId)}
+              onCancel={purchaseId => void handleCancel(purchaseId)}
+            />
+          )}
 
           <div className="ps-card" style={{ marginTop: 14, background: 'var(--cream-raise)' }}>
             <small>Fornecedor novo? <button className="ps-link" onClick={() => router.push('/fornecedores')}>Cadastre em Fornecedores</button>. A compra permanece somente financeira nesta fase.</small>
