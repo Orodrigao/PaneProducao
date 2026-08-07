@@ -145,6 +145,14 @@ on conflict (id) do update set
 
 -- Pedidos PJ ficticios. `quantity` ja e a quantidade final vendida
 -- (pacotes x pack_size); o valor da linha e sempre unit_price x quantity.
+--
+-- Os gatilhos `guard_pj_dispatch_write` e `guard_dispatched_pj_order_changes`
+-- reservam a confirmacao de envio para a acao protegida do banco. O seed usa a
+-- mesma chave que essa acao usa, e so para semear o pedido ja enviado; a chave
+-- e fechada logo abaixo. Sem isso o cenario nao consegue representar um pedido
+-- no Historico, e reaplicar o seed falharia ao tocar essa linha.
+select set_config('pane.pj_dispatch_rpc', 'on', false);
+
 insert into public.orders (
   id, store, order_type, order_group_id, customer_id, pj_client,
   bread_id, product_source, product_name,
@@ -231,6 +239,10 @@ on conflict (id) do update set
   cancelled_at = excluded.cancelled_at,
   cancelled_by = excluded.cancelled_by,
   cancel_reason = excluded.cancel_reason;
+
+-- Fecha a chave: a partir daqui a confirmacao de envio volta a exigir a acao
+-- protegida, inclusive para o restante deste seed.
+select set_config('pane.pj_dispatch_rpc', '', false);
 
 insert into public.orders (
   id, store, bread_id, quantity, order_date, obs,
