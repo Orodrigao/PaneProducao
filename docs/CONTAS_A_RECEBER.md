@@ -98,6 +98,41 @@ que é a primeira a criar tabela financeira — e a decisão é registrada em
 `CURRENT_STATE.md` na mesma tarefa. As fases 0 e 1 não criam dado financeiro e
 não dependem dessa decisão.
 
+### Gate técnico da fase 2
+
+Revisado por Claude e por Sol (Codex) em 2026-08-07, de forma independente.
+Os dois concordam que **esperar o hardening inteiro não é necessário** e que
+as fases 0 e 1 podem seguir. Também concordam que a fase 2 exige um gate
+próprio — e que "o padrão do contas a pagar parece correto" **não** serve como
+gate, porque a revisão do Sol encontrou um defeito nesse próprio padrão (ver
+achado 8 abaixo).
+
+A fase 2 só começa depois de:
+
+1. proteção contra senha vazada ligada no Auth;
+2. `REVOKE` explícito de `INSERT`, `UPDATE` e `DELETE` para `anon` e
+   `authenticated` nas tabelas novas;
+3. `ENABLE` e `FORCE ROW LEVEL SECURITY` desde a criação;
+4. grants explícitos apenas para a leitura necessária e para a execução das
+   funções exatas, por assinatura;
+5. `SECURITY DEFINER` com `search_path = ''`, dono controlado e sem acesso
+   público;
+6. valor, vencimento, autoria e status calculados e validados no banco, nunca
+   aceitos prontos do navegador;
+7. **criação e baixa em funções separadas, com `lancar` e `baixar` realmente
+   independentes** — o defeito do achado 8 não se repete aqui;
+8. chave idempotente com proteção contra chamadas concorrentes: repetir devolve
+   a mesma cobrança em vez de erro de unicidade;
+9. policies próprias em cada tabela filha, sem depender da visibilidade da
+   tabela-pai;
+10. teste direto por REST, RPC e GraphQL — não apenas pela tela;
+11. matriz no Preview com usuário sem permissão, financeiro autorizado, outra
+    loja e administrador, afirmando que escrita direta na tabela falha.
+
+Não é necessário limpar as 24 funções antigas antes. É necessário provar que
+nenhuma função reutilizada pelo módulo novo abre caminho de leitura ou escrita
+fora do escopo.
+
 ## Achados da auditoria que o plano precisa tratar
 
 Levantados na descoberta, com evidência nos dados de produção:
@@ -127,6 +162,19 @@ Levantados na descoberta, com evidência nos dados de produção:
    Daí a decisão 8 e a rede de proteção que ela exige: se o hábito da Expedição
    não mudar, a cobrança para de nascer. Esse é o principal risco operacional
    do módulo, e ele não é técnico.
+8. **`create_manual_payable` separa mal as permissões — achado do Sol (Codex),
+   2026-08-07, fora do escopo deste plano.** A função aceita `p_paid = true`
+   mas valida somente `contas_pagar.lancar`. Quem pode lançar consegue criar
+   uma conta já quitada sem ter `contas_pagar.baixar`. Hoje isso é invisível
+   porque a mesma pessoa faz as duas coisas; no dia em que lançar e dar baixa
+   forem de gente diferente, a separação não se sustenta. **Não corrigir junto
+   com este módulo** — é tarefa própria, em contas a pagar. Aqui serve como
+   prova de que "a função valida permissão" não equivale a "as
+   responsabilidades estão separadas": ver o item 7 do gate técnico.
+9. **`request_id` protege contra repetição, mas não contra simultaneidade** —
+   também achado do Sol. Duas chamadas ao mesmo tempo produzem erro de
+   unicidade em vez de devolver o mesmo registro. O módulo novo trata isso no
+   item 8 do gate técnico.
 
 ---
 
