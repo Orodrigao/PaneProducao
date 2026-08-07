@@ -8,6 +8,7 @@ import PeriodFilter from '@/components/reports/PeriodFilter'
 import KPICard from '@/components/reports/KPICard'
 import ReportTable, { ReportTableColumn } from '@/components/reports/ReportTable'
 import { csvExport } from '@/components/reports/csvExport'
+import { pjLineUnits, pjLineValue } from '@/lib/pjSalesReport'
 
 interface Order {
   id: string
@@ -16,7 +17,6 @@ interface Order {
   product_source: 'bread' | 'product' | null
   quantity: number
   unit_price: number | string | null
-  pack_size: number | null
   pricing_unit: 'un' | 'kg' | null
   order_date: string
   delivery_date: string | null
@@ -27,19 +27,8 @@ interface Customer { id: string; name: string }
 const formatBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const toISODate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
-// Valor monetário da linha: kg => price*qty; un => price*pack*qty (pack é múltiplo).
-function rowValue(o: Order): number {
-  const price = Number(o.unit_price ?? 0)
-  const qty = Number(o.quantity ?? 0)
-  const pack = Number(o.pack_size ?? 1) || 1
-  return o.pricing_unit === 'kg' ? price * qty : price * pack * qty
-}
-// Quantidade física vendida (un ou kg).
-function rowUnits(o: Order): { qty: number; unit: 'un' | 'kg' } {
-  const q = Number(o.quantity ?? 0)
-  const pack = Number(o.pack_size ?? 1) || 1
-  return o.pricing_unit === 'kg' ? { qty: q, unit: 'kg' } : { qty: q * pack, unit: 'un' }
-}
+const rowValue = pjLineValue
+const rowUnits = pjLineUnits
 
 export default function RelatorioPJ() {
   const router = useRouter()
@@ -69,7 +58,7 @@ export default function RelatorioPJ() {
     // quando o pedido foi gravado sem delivery (pré-PR-C3a).
     const orFilter = `and(delivery_date.gte.${fromISO},delivery_date.lte.${toISO}),and(delivery_date.is.null,order_date.gte.${fromISO},order_date.lte.${toISO})`
     supabase.from('orders')
-      .select('id,customer_id,product_name,product_source,quantity,unit_price,pack_size,pricing_unit,order_date,delivery_date')
+      .select('id,customer_id,product_name,product_source,quantity,unit_price,pricing_unit,order_date,delivery_date')
       .eq('order_type', 'pj')
       .is('cancelled_at', null)
       .or(orFilter)
