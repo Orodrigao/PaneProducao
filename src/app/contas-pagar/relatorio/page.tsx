@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, BarChart3, RefreshCw } from 'lucide-react'
+import { ArrowLeft, BarChart3, Download, Printer, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { csvExport } from '@/components/reports/csvExport'
 import {
   formatBRL,
   formatDate,
@@ -10,7 +11,7 @@ import {
   loadPayablePurchases,
   type PayablePurchaseRow,
 } from '@/lib/payables'
-import { buildPayablesReport, type PayablesReportMode } from '@/lib/payablesReport'
+import { buildPayablesReport, buildPayablesReportExportRows, type PayablesReportMode } from '@/lib/payablesReport'
 
 function monthStart(today = new Date()): string {
   return new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
@@ -31,7 +32,15 @@ function documentLabel(purchase: PayablePurchaseRow): string {
 }
 
 function paidDate(value: string | null | undefined): string {
-  return value ? formatDate(value.slice(0, 10)) : '—'
+  return value ? formatDate(value.slice(0, 10)) : '-'
+}
+
+function brNumber(value: number): string {
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function reportModeLabel(mode: PayablesReportMode): string {
+  return mode === 'compras' ? 'Compras realizadas pela data da compra' : 'Movimento financeiro por vencimentos e baixas'
 }
 
 export default function ContasPagarRelatorioPage() {
@@ -60,8 +69,28 @@ export default function ContasPagarRelatorioPage() {
 
   const report = useMemo(() => buildPayablesReport(purchases, { mode, from, to }), [purchases, mode, from, to])
 
+  function handleExport() {
+    if (report.rows.length === 0) return
+    csvExport(buildPayablesReportExportRows(report).map(row => ({
+      Fornecedor: row.fornecedor,
+      Documento: row.documento,
+      'Data da compra': row.data_compra ? formatDate(row.data_compra) : '',
+      Parcela: row.parcela,
+      Vencimento: row.vencimento ? formatDate(row.vencimento) : '',
+      Baixa: row.baixa ? formatDate(row.baixa) : '',
+      Situação: row.situacao,
+      'Valor (R$)': brNumber(row.valor),
+      Critério: row.criterio,
+    })), `contas-a-pagar-${mode}-${from}-a-${to}.csv`)
+  }
+
+  function handlePrint() {
+    if (report.rows.length > 0) window.print()
+  }
+
   return (
-    <div className="ps-canvas">
+    <>
+    <div className="ps-canvas payables-report-screen">
       <div className="ps-shell">
         <header className="ps-header">
           <div className="ps-wordmark">
@@ -96,6 +125,15 @@ export default function ContasPagarRelatorioPage() {
                 <input id="report-to" className="ps-input" type="date" value={to} onChange={event => setTo(event.target.value)} />
               </div>
             </div>
+          </div>
+
+          <div className="ps-report-actions no-print" style={{ marginTop: 10 }}>
+            <button className="ps-btn ghost" onClick={handleExport} disabled={report.rows.length === 0}>
+              <Download size={16} /> Exportar Excel
+            </button>
+            <button className="ps-btn ghost" onClick={handlePrint} disabled={report.rows.length === 0}>
+              <Printer size={16} /> Imprimir
+            </button>
           </div>
 
           {error && <div className="ps-card" style={{ marginTop: 12, borderColor: 'var(--berry)' }}><b>Não carregou</b><p style={{ margin: '6px 0 10px' }}>{error}</p><button className="ps-btn ghost sm" onClick={() => void load()}>Tentar novamente</button></div>}
@@ -145,11 +183,44 @@ export default function ContasPagarRelatorioPage() {
             </>
           )}
 
-          <div className="ps-card" style={{ marginTop: 14, background: 'var(--cream-raise)' }}>
-            <small>Exportação e impressão serão acrescentadas na próxima fase, depois da conferência dos números.</small>
+          <div className="ps-card no-print" style={{ marginTop: 14, background: 'var(--cream-raise)' }}>
+            <small>O arquivo exportado abre no Excel e mantém uma linha para cada parcela.</small>
           </div>
         </div>
       </div>
     </div>
+      <section id="payables-report-print" aria-label="Relatório impresso de contas a pagar">
+        <header className="payables-print-header">
+          <div>
+            <h1>Contas a pagar</h1>
+            <p>{reportModeLabel(mode)}</p>
+          </div>
+          <div className="payables-print-period">
+            <span>Período</span>
+            <b>{from ? formatDate(from) : '-'} a {to ? formatDate(to) : '-'}</b>
+          </div>
+        </header>
+        <div className="payables-print-summary">
+          <div><span>{mode === 'compras' ? 'Total comprado' : 'Vencimentos no período'}</span><b>{formatBRL(mode === 'compras' ? report.summary.purchaseTotal : report.summary.scheduledTotal)}</b></div>
+          <div><span>Baixado</span><b>{formatBRL(report.summary.paidTotal)}</b></div>
+          <div><span>Em aberto</span><b>{formatBRL(report.summary.openTotal)}</b></div>
+          <div><span>Vencido</span><b>{formatBRL(report.summary.overdueTotal)}</b></div>
+        </div>
+        <table className="payables-print-table">
+          <thead>
+            <tr><th>Fornecedor</th><th>Documento</th><th>Compra</th><th>Parcela</th><th>Vencimento</th><th>Baixa</th><th>Situação</th><th className="right">Valor</th></tr>
+          </thead>
+          <tbody>
+            {buildPayablesReportExportRows(report).map(row => (
+              <tr key={`${row.documento}-${row.parcela}-${row.vencimento}`}>
+                <td>{row.fornecedor}</td><td>{row.documento}</td><td>{row.data_compra ? formatDate(row.data_compra) : '-'}</td><td>{row.parcela}</td><td>{row.vencimento ? formatDate(row.vencimento) : '-'}</td><td>{row.baixa ? formatDate(row.baixa) : '-'}</td><td>{row.situacao}</td><td className="right">{formatBRL(row.valor)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr><td colSpan={7}>Total das parcelas exibidas</td><td className="right">{formatBRL(report.rows.reduce((total, row) => total + Number(row.installment.amount), 0))}</td></tr></tfoot>
+        </table>
+        <p className="payables-print-footnote">{report.purchases.length} conta(s) · {report.rows.length} parcela(s) · Emitido pelo PaneERP</p>
+      </section>
+    </>
   )
 }

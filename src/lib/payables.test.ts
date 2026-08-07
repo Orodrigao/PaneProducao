@@ -10,7 +10,7 @@ import {
   validateDraft,
   type PayableDraft,
 } from './payables'
-import { buildPayablesReport } from './payablesReport'
+import { buildPayablesReport, buildPayablesReportExportRows } from './payablesReport'
 
 const baseDraft: PayableDraft = {
   supplierId: 'supplier-ceasa',
@@ -83,5 +83,20 @@ describe('contas a pagar manual', () => {
     expect(report.summary.scheduledTotal).toBe(50)
     expect(report.summary.paidTotal).toBe(100)
     expect(report.rows).toHaveLength(2)
+  })
+
+  it('monta as linhas exportáveis mantendo uma linha por parcela', () => {
+    const purchase = {
+      id: 'purchase-3', purchase_date: '2026-08-04', document_type: 'nfe' as const,
+      payment_method: 'boleto' as const, status: 'aberta' as const, total_value: 80,
+      notes: null, origin: 'xml' as const, nfe_number: '123', suppliers: { name: 'Fornecedor Excel' }, payable_installments: [
+        { id: 'installment-5', installment_number: 1, due_date: '2026-08-12', amount: 80, status: 'pendente' as const },
+      ],
+    }
+    const report = buildPayablesReport([purchase], { mode: 'compras', from: '2026-08-01', to: '2026-08-31' })
+    expect(buildPayablesReportExportRows(report)).toEqual([{
+      fornecedor: 'Fornecedor Excel', documento: 'NF-e 123', data_compra: '2026-08-04', parcela: 1,
+      vencimento: '2026-08-12', baixa: '', situacao: 'Pendente', valor: 80, criterio: 'Data da compra',
+    }])
   })
 })
