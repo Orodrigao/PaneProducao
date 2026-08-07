@@ -10,6 +10,7 @@ import {
   validateDraft,
   type PayableDraft,
 } from './payables'
+import { buildPayablesReport, buildPayablesReportExportRows } from './payablesReport'
 
 const baseDraft: PayableDraft = {
   supplierId: 'supplier-ceasa',
@@ -52,5 +53,50 @@ describe('contas a pagar manual', () => {
     expect(isOverdue({ id: '1', installment_number: 1, due_date: '2026-08-02', amount: 10, status: 'pendente' }, today)).toBe(true)
     expect(isDueSoon({ id: '2', installment_number: 1, due_date: '2026-08-10', amount: 10, status: 'pendente' }, today)).toBe(true)
     expect(isDueSoon({ id: '3', installment_number: 1, due_date: '2026-08-11', amount: 10, status: 'pendente' }, today)).toBe(false)
+  })
+
+  it('monta o relatório de compras pela data da compra e conserva as parcelas', () => {
+    const purchase = {
+      id: 'purchase-1', purchase_date: '2026-08-03', document_type: 'sem_nota' as const,
+      payment_method: 'boleto' as const, status: 'aberta' as const, total_value: 100,
+      notes: null, suppliers: { name: 'Fornecedor Teste' }, payable_installments: [
+        { id: 'installment-1', installment_number: 1, due_date: '2026-08-10', amount: 50, status: 'pendente' as const },
+        { id: 'installment-2', installment_number: 2, due_date: '2026-09-10', amount: 50, status: 'pendente' as const },
+      ],
+    }
+    const report = buildPayablesReport([purchase], { mode: 'compras', from: '2026-08-01', to: '2026-08-31' }, new Date('2026-08-03T12:00:00Z'))
+    expect(report.summary.purchaseTotal).toBe(100)
+    expect(report.summary.installmentCount).toBe(2)
+    expect(report.summary.openTotal).toBe(100)
+  })
+
+  it('separa vencimentos e baixas pelo período financeiro', () => {
+    const purchase = {
+      id: 'purchase-2', purchase_date: '2026-07-20', document_type: 'nfe' as const,
+      payment_method: 'boleto' as const, status: 'paga' as const, total_value: 100,
+      notes: null, suppliers: { name: 'Fornecedor Teste' }, payable_installments: [
+        { id: 'installment-3', installment_number: 1, due_date: '2026-07-30', amount: 50, status: 'paga' as const, paid_at: '2026-08-02T13:00:00Z' },
+        { id: 'installment-4', installment_number: 2, due_date: '2026-08-30', amount: 50, status: 'paga' as const, paid_at: '2026-08-30T13:00:00Z' },
+      ],
+    }
+    const report = buildPayablesReport([purchase], { mode: 'financeiro', from: '2026-08-01', to: '2026-08-31' })
+    expect(report.summary.scheduledTotal).toBe(50)
+    expect(report.summary.paidTotal).toBe(100)
+    expect(report.rows).toHaveLength(2)
+  })
+
+  it('monta as linhas exportáveis mantendo uma linha por parcela', () => {
+    const purchase = {
+      id: 'purchase-3', purchase_date: '2026-08-04', document_type: 'nfe' as const,
+      payment_method: 'boleto' as const, status: 'aberta' as const, total_value: 80,
+      notes: null, origin: 'xml' as const, nfe_number: '123', suppliers: { name: 'Fornecedor Excel' }, payable_installments: [
+        { id: 'installment-5', installment_number: 1, due_date: '2026-08-12', amount: 80, status: 'pendente' as const },
+      ],
+    }
+    const report = buildPayablesReport([purchase], { mode: 'compras', from: '2026-08-01', to: '2026-08-31' })
+    expect(buildPayablesReportExportRows(report)).toEqual([{
+      fornecedor: 'Fornecedor Excel', documento: 'NF-e 123', data_compra: '2026-08-04', parcela: 1,
+      vencimento: '2026-08-12', baixa: '', situacao: 'Pendente', valor: 80, criterio: 'Data da compra',
+    }])
   })
 })
