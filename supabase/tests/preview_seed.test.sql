@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(22);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -218,6 +218,17 @@ select is(
       and cancelled_at is null),
   870.90::numeric,
   'pedidos PJ ficticios nao cancelados somam R$ 870,90'
+);
+
+select is(
+  (select count(*)::int from public.orders
+    where id::text like '30000000-0000-4000-8000-0000000001%'
+      and (
+        (dispatched_at is not null and dispatched_by_name = '[TESTE] Expedicao JC')
+        or (cancelled_at is not null and nullif(trim(coalesce(cancel_reason, '')), '') is not null)
+      )),
+  2,
+  'cenario PJ cobre um pedido enviado e um cancelado'
 );
 
 select * from finish();
