@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw, WalletCards } from 'lucide-react'
+import { BarChart3, Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
@@ -159,6 +159,7 @@ export default function ContasPagarPage() {
             <div className="ps-fieldrow" style={{ marginTop: 14 }}>
               <button className="ps-btn primary block" onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
               <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
+              <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
             </div>
           )}
 

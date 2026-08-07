@@ -47,6 +47,7 @@ export interface PayableInstallmentRow {
   due_date: string
   amount: number | string
   status: 'pendente' | 'paga' | 'cancelada'
+  paid_at?: string | null
 }
 
 export interface PayablePurchaseRow {
@@ -162,7 +163,7 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,amount,status)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,amount,status,paid_at)')
     .order('purchase_date', { ascending: false })
 
   if (error) throw error
