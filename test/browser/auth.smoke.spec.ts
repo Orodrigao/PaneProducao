@@ -229,3 +229,33 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
   await expect(purchaseCard.getByText('Paga', { exact: true })).toBeVisible()
   await expect(purchaseCard.getByText('R$ 250,00', { exact: true })).toBeVisible()
 })
+
+test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  const uniqueCnpj = `99${Date.now().toString().slice(-12)}`
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260807999999999999550010000000011000000010" versao="4.00">
+    <ide><nNF>999991</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>[TESTE] Fornecedor direto XML</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-XML</cProd><xProd>[TESTE] Item XML</xProd><NCM>17019900</NCM><qCom>1.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
+    <total><ICMSTot><vNF>10.00</vNF></ICMSTot></total>
+    <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'fornecedor-inline.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+  await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Cadastrar fornecedor com dados da NF-e' }).click()
+  await expect(page.locator('input[placeholder="Nome do fornecedor"]')).toHaveValue('[TESTE] Fornecedor direto XML')
+  await expect(page.locator('input[placeholder="CNPJ ou CPF"]')).toHaveValue(uniqueCnpj)
+  await page.getByRole('button', { name: 'Cadastrar e usar fornecedor' }).click()
+  await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+})

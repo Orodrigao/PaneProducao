@@ -187,7 +187,7 @@ export default function ContasPagarPage() {
           )}
 
           <div className="ps-card" style={{ marginTop: 14, background: 'var(--cream-raise)' }}>
-            <small>Fornecedor novo? <button className="ps-link" onClick={() => router.push('/fornecedores')}>Cadastre em Fornecedores</button>. A compra permanece somente financeira nesta fase.</small>
+            <small>Fornecedor novo? No XML, você pode cadastrá-lo direto durante a importação. Para compras manuais, <button className="ps-link" onClick={() => router.push('/fornecedores')}>cadastre em Fornecedores</button>. A compra permanece somente financeira nesta fase.</small>
           </div>
         </div>
       </div>
