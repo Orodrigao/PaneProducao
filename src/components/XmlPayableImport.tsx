@@ -95,12 +95,14 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const [creatingSupplier, setCreatingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
   const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
+  const [autoMappedCount, setAutoMappedCount] = useState(0)
 
   async function readFile(file: File) {
     setError(null)
     try {
       const nextDraft = parseNfeXml(await file.text())
       setDraft(nextDraft)
+      setAutoMappedCount(0)
       setCreatingSupplier(false)
       const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
       setSupplierId(matched?.id ?? '')
@@ -119,16 +121,18 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor')
       .eq('supplier_id', nextSupplierId)
       .eq('active', true)
-    if (mappingError) { setError('Não foi possível carregar os últimos fatores deste fornecedor.'); return }
+    if (mappingError) { setAutoMappedCount(0); setError('Não foi possível carregar os últimos fatores deste fornecedor.'); return }
     const nextMappings = (data ?? []) as ProductMapping[]
-    setDraft({
-      ...nextDraft,
-      items: nextDraft.items.map(item => {
-        const mapping = findMapping(item, nextMappings)
-        const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
-        return product ? withProduct(item, product, Number(mapping?.conversion_factor) || 1) : item
-      }),
+    let appliedCount = 0
+    const mappedItems = nextDraft.items.map(item => {
+      const mapping = findMapping(item, nextMappings)
+      const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
+      if (!product) return item
+      appliedCount += 1
+      return withProduct(item, product, Number(mapping?.conversion_factor) || 1)
     })
+    setAutoMappedCount(appliedCount)
+    setDraft({ ...nextDraft, items: mappedItems })
   }
 
   function updateItem(index: number, next: NfeItemDraft) {
@@ -217,9 +221,15 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
             <small>NF {draft.number}{draft.series ? ` · série ${draft.series}` : ''} · emitida em {draft.issueDate} · {formatBRL(draft.total)}</small>
             <small style={{ display: 'block' }}>Chave: {draft.accessKey}</small>
           </div>
+          {autoMappedCount > 0 && (
+            <div className="ps-banner" style={{ marginTop: 10 }}>
+              <b>{autoMappedCount} {autoMappedCount === 1 ? 'conversão reaproveitada' : 'conversões reaproveitadas'} automaticamente</b>
+              <small style={{ display: 'block', marginTop: 3 }}>O ERP encontrou fornecedor, item-base e fator já confirmados. Confira os itens abaixo e altere somente se necessário.</small>
+            </div>
+          )}
           <div className="ps-fieldgroup" style={{ marginTop: 10 }}>
             <div className="ps-fieldlabel">Fornecedor no ERP *</div>
-            <select className="ps-select" value={supplierId} onChange={event => { setSupplierId(event.target.value); void loadMappings(event.target.value) }}>
+            <select className="ps-select" value={supplierId} onChange={event => { setSupplierId(event.target.value); if (!event.target.value) setAutoMappedCount(0); void loadMappings(event.target.value) }}>
               <option value="">Selecione o fornecedor</option>
               {availableSuppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.cnpj ? ` · ${supplier.cnpj}` : ''}</option>)}
             </select>
