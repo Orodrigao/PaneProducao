@@ -84,6 +84,16 @@ export function calculateNormalizedUnitCost(lineTotal: number, usableQuantity: n
   return round(lineTotal / usableQuantity, 6)
 }
 
+function normalizeUnit(value: string): string {
+  return value.trim().toLocaleUpperCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+export function getConversionUnitWarning(purchaseUnit: string, baseUnit: string, factor: number): string | null {
+  if (!purchaseUnit.trim() || !baseUnit.trim() || !Number.isFinite(factor) || factor <= 0) return null
+  if (normalizeUnit(purchaseUnit) !== normalizeUnit(baseUnit) || Math.abs(factor - 1) < 0.000001) return null
+  return `A NF-e informa ${purchaseUnit} e a receita usa ${baseUnit}. Quando as unidades são iguais, o fator 1 é o correto; o nome da embalagem não muda a unidade cobrada.`
+}
+
 export function formatConversionExplanation(item: NfeItemDraft): ConversionExplanation {
   const factor = item.conversionFactor ?? 0
   const usableQuantity = item.usableQuantity ?? calculateUsableQuantity(item.quantity, factor)

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(22);
 
 select ok(exists(select 1 from public.app_permissions where key = 'contas_pagar.importar_xml'),
   'permissao de importar XML existe');
@@ -43,6 +43,16 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
   'classificação recalcula quantidade útil e custo');
 select ok(exists(select 1 from pg_constraint where conname = 'payable_purchases_classification_status_check'),
   'status de classificação é restrito');
+
+select ok(has_function_privilege('authenticated', 'public.update_payable_product_mappings(uuid, jsonb)', 'execute'),
+  'authenticated pode corrigir conversoes pelo RPC protegido');
+select ok(not has_function_privilege('anon', 'public.update_payable_product_mappings(uuid, jsonb)', 'execute'),
+  'anon nao corrige conversoes');
+select ok(not has_table_privilege('authenticated', 'public.payable_product_mappings', 'update'),
+  'mapeamentos nao aceitam update direto pelo cliente');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'update_payable_product_mappings') ilike all(array['%allowed_routes%', '%base_product_id%', '%conversion_factor%']),
+  'RPC de conversao valida acesso ao cadastro e o produto-base');
 
 select * from finish();
 rollback;

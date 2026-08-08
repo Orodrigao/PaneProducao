@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
+import { getConversionUnitWarning } from '@/lib/nfeXml'
 
 type Kind = 'kit' | 'insumo' | 'final'
 
@@ -22,11 +23,39 @@ interface Product {
   legacy_bread_id: string | null
 }
 
+type PurchaseConversionBasis = 'simple' | 'package' | 'usable'
+
+interface ProductPurchaseConversion {
+  id: string
+  supplier_id: string
+  supplier_name: string
+  supplier_product_code: string | null
+  supplier_ean: string | null
+  supplier_description: string
+  purchase_unit: string
+  base_product_id: string
+  base_unit: string
+  conversion_basis: PurchaseConversionBasis
+  conversion_factor: number | string
+  last_confirmed_at: string | null
+  active: boolean
+}
+
+interface ProductPurchaseConversionRow extends Omit<ProductPurchaseConversion, 'supplier_name' | 'conversion_factor'> {
+  conversion_factor: number
+  suppliers: { name: string } | { name: string }[] | null
+}
+
 type EditableProduct = Partial<Omit<Product, 'cost_price'>> & {
   cost_price?: number | string | null
 }
 
 const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
+const CONVERSION_BASIS_LABELS: Record<PurchaseConversionBasis, string> = {
+  simple: 'Direta',
+  package: 'Embalagem',
+  usable: 'Utilizável (drenado/real)',
+}
 // Mapeia pro chip ps-store-chip (jc=honey/kit, ja=sage/insumo). 'final' fica neutro.
 const KIND_CHIP_CLS: Record<Kind, string> = { kit: 'jc', insumo: 'ja', final: '' }
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
@@ -102,6 +131,9 @@ export default function ProdutosPage() {
   const [breads, setBreads]     = useState<Bread[]>([])
   const [components, setComponents] = useState<Component[]>([])
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
+  const [purchaseConversions, setPurchaseConversions] = useState<ProductPurchaseConversion[]>([])
+  const [conversionEdits, setConversionEdits] = useState<ProductPurchaseConversion[]>([])
+  const [conversionLoadError, setConversionLoadError] = useState<string | null>(null)
   const [loading, setLoading]   = useState(true)
   const [loadError, setLoadError] = useState<string|null>(null)
   const [search, setSearch]     = useState('')
@@ -116,10 +148,15 @@ export default function ProdutosPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const [pRes, bRes, cRes] = await Promise.all([
+      const [pRes, bRes, cRes, mRes] = await Promise.all([
         supabase.from('products').select('*').order('category').order('name'),
         supabase.from('breads').select('*').order('name'),
         supabase.from('product_components').select('parent_product_id,component_source,component_id,quantity'),
+        supabase
+          .from('payable_product_mappings')
+          .select('id,supplier_id,supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,last_confirmed_at,active,suppliers(name)')
+          .eq('active', true)
+          .order('supplier_description'),
       ])
       if (pRes.error) throw pRes.error
       if (bRes.error) throw bRes.error
@@ -127,6 +164,15 @@ export default function ProdutosPage() {
       setProducts(pRes.data||[])
       setBreads(bRes.data||[])
       setComponents((cRes.data||[]) as Component[])
+      setConversionLoadError(mRes.error ? 'Não foi possível carregar as conversões de compra.' : null)
+      const mappingRows = (mRes.data || []) as ProductPurchaseConversionRow[]
+      setPurchaseConversions(mappingRows.map(row => {
+        const supplier = Array.isArray(row.suppliers) ? row.suppliers[0] : row.suppliers
+        return {
+          ...row,
+          supplier_name: supplier?.name || 'Fornecedor sem nome',
+        }
+      }))
       const soRes = await supabase
         .from('product_sale_options')
         .select('id,product_id,name,sale_unit,is_default,active')
@@ -147,6 +193,15 @@ export default function ProdutosPage() {
 
   async function save() {
     if (!editItem?.name?.trim()) { showToast('Nome obrigatório'); return }
+    const conversionPayload = conversionEdits.map(conversion => ({
+      id: conversion.id,
+      conversion_basis: conversion.conversion_basis,
+      conversion_factor: Number(conversion.conversion_factor),
+    }))
+    if (conversionPayload.some(conversion => !Number.isFinite(conversion.conversion_factor) || conversion.conversion_factor <= 0)) {
+      showToast('Todo fator de conversão deve ser maior que zero.')
+      return
+    }
     const { cost_price: rawCostPrice, ...rest } = editItem
     const body: Partial<Product> = {
       ...rest,
@@ -160,6 +215,13 @@ export default function ProdutosPage() {
       } else {
         const { error } = await supabase.from('products').update(body).eq('id', editItem.id!)
         if (error) throw error
+        if (conversionPayload.length > 0) {
+          const { error: conversionError } = await supabase.rpc('update_payable_product_mappings', {
+            p_product_id: editItem.id,
+            p_mappings: conversionPayload,
+          })
+          if (conversionError) throw new Error(`Produto salvo, mas as conversões não foram atualizadas: ${conversionError.message}`)
+        }
         showToast('✅ Salvo')
       }
       setEditItem(null); load()
@@ -185,6 +247,12 @@ export default function ProdutosPage() {
       production_area: fabricacaoPropria ? 'padaria' : null,
       legacy_bread_id: null,
     }
+  }
+
+  function openProductEditor(product: Product) {
+    setIsNew(false)
+    setEditItem({ ...product })
+    setConversionEdits(purchaseConversions.filter(conversion => conversion.base_product_id === product.id).map(conversion => ({ ...conversion })))
   }
 
   const productsForTab = tab === 'fabricacao'
@@ -274,11 +342,11 @@ export default function ProdutosPage() {
               <BarChart3 size={14}/> CMV
             </Link>
             {tab==='produtos' ? (
-              <button onClick={()=>{setIsNew(true);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setConversionEdits([]);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             ) : (
-              <button onClick={()=>{setIsNew(true);setEditItem(newProductDefaults(true))}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setConversionEdits([]);setEditItem(newProductDefaults(true))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             )}
@@ -409,7 +477,7 @@ export default function ProdutosPage() {
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
                         {p.active?'✓ Ativo':'Inativo'}
                       </button>
-                      <button onClick={()=>{setIsNew(false);setEditItem({...p})}} className="ps-iconbtn" style={{width:30, height:30}}>
+                      <button onClick={()=>openProductEditor(p)} className="ps-iconbtn" style={{width:30, height:30}}>
                         <Pencil size={14}/>
                       </button>
                     </div>
@@ -467,6 +535,73 @@ export default function ProdutosPage() {
                   {allCategories.map(c=><option key={c}>{c}</option>)}
                 </select>
               </div>
+              {!isNew && (
+                <div className="ps-banner" style={{ marginTop: 2 }}>
+                  <div style={{ fontWeight: 700, color: 'var(--ps-ink)' }}>Conversões de compra</div>
+                  <small style={{ display: 'block', marginTop: 3 }}>
+                    O fator é específico por fornecedor e embalagem. Ele afeta as próximas importações; notas antigas permanecem como foram registradas.
+                  </small>
+                  {conversionLoadError ? (
+                    <small style={{ display: 'block', marginTop: 8, color: 'var(--berry)' }}>{conversionLoadError}</small>
+                  ) : conversionEdits.length === 0 ? (
+                    <small style={{ display: 'block', marginTop: 8, color: 'var(--ink-faint)' }}>
+                      Nenhuma conversão salva. Ela aparecerá aqui depois que uma NF-e deste fornecedor for confirmada.
+                    </small>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                      {conversionEdits.map(conversion => {
+                        const factor = Number(conversion.conversion_factor)
+                        const unitWarning = getConversionUnitWarning(conversion.purchase_unit, conversion.base_unit, factor)
+                        const supplierCode = conversion.supplier_product_code || conversion.supplier_ean
+                        const confirmedAt = conversion.last_confirmed_at
+                          ? new Date(conversion.last_confirmed_at).toLocaleDateString('pt-BR')
+                          : null
+                        return (
+                          <div key={conversion.id} style={{ paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ps-ink)' }}>{conversion.supplier_name}</div>
+                            <small style={{ display: 'block', marginTop: 2 }}>
+                              {conversion.supplier_description} · compra em {conversion.purchase_unit} → receita em {conversion.base_unit}
+                              {supplierCode ? ` · código ${supplierCode}` : ''}
+                            </small>
+                            <div className="ps-fieldrow" style={{ marginTop: 8 }}>
+                              <div className="ps-fieldgroup">
+                                <div className="ps-fieldlabel">Como calcular</div>
+                                <select
+                                  value={conversion.conversion_basis}
+                                  onChange={event => setConversionEdits(previous => previous.map(item => item.id === conversion.id
+                                    ? { ...item, conversion_basis: event.target.value as PurchaseConversionBasis }
+                                    : item))}
+                                  className="ps-select"
+                                >
+                                  {Object.entries(CONVERSION_BASIS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                </select>
+                              </div>
+                              <div className="ps-fieldgroup">
+                                <div className="ps-fieldlabel">Fator de conversão</div>
+                                <input
+                                  type="number"
+                                  min="0.000001"
+                                  step="0.000001"
+                                  value={conversion.conversion_factor}
+                                  onChange={event => setConversionEdits(previous => previous.map(item => item.id === conversion.id
+                                    ? { ...item, conversion_factor: event.target.value }
+                                    : item))}
+                                  className="ps-input"
+                                />
+                              </div>
+                            </div>
+                            <small style={{ display: 'block', marginTop: 5, color: 'var(--ink-faint)' }}>
+                              Exemplo: 1 {conversion.purchase_unit} × {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : 'fator inválido'} = {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : '—'} {conversion.base_unit}
+                              {confirmedAt ? ` · confirmado em ${confirmedAt}` : ''}
+                            </small>
+                            {unitWarning && <small role="alert" style={{ display: 'block', marginTop: 5, color: 'var(--berry)', fontWeight: 700 }}>{unitWarning}</small>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="ps-fieldgroup">
                 <div className="ps-fieldlabel">Tipo</div>
                 <select value={editItem.kind || 'final'} onChange={e=>setEditItem(prev=>({...prev, kind: e.target.value as Kind}))} className="ps-select">
