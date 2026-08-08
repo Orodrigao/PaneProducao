@@ -6,6 +6,7 @@ import {
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
   formatConversionExplanation,
+  getConversionUnitWarning,
   type NfeConversionBasis,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
@@ -42,6 +43,7 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
   const basis = item.conversionBasis
   const factor = item.conversionFactor ?? 1
   const usable = item.usableQuantity ?? calculateUsableQuantity(item.quantity, factor)
+  const unitWarning = getConversionUnitWarning(item.purchaseUnit, item.baseUnit ?? '', factor)
 
   function updateFactor(value: number) {
     const safe = value > 0 ? value : 0
@@ -64,6 +66,7 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
           ) : (
             <div className="ps-fieldgroup" style={{ marginTop: 8 }}><div className="ps-fieldlabel">Fator por unidade comprada ({item.baseUnit})</div><input className="ps-input" type="number" min="0" step="0.001" value={factor || ''} onChange={event => updateFactor(Number(event.target.value))} /></div>
           )}
+          {unitWarning && <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}><b>Confira o fator antes de continuar</b><small style={{ display: 'block', marginTop: 4 }}>{unitWarning}</small></div>}
           <div style={{ marginTop: 10 }}><b>Conferência do cálculo</b><small style={{ display: 'block', marginTop: 4 }}>{explanation.input}</small><small style={{ display: 'block' }}>{explanation.operation}</small><small style={{ display: 'block' }}>{explanation.output}</small><small style={{ display: 'block', marginTop: 4 }}><b>{explanation.cost}</b></small></div>
         </div>
       )}

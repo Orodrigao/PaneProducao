@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase', () => ({ supabase: {} }))
 import {
   buildInstallments,
+  getPayableErrorMessage,
   isDueSoon,
   isOverdue,
   totalInstallments,
@@ -27,6 +28,13 @@ const baseDraft: PayableDraft = {
 }
 
 describe('contas a pagar manual', () => {
+  it('preserva a mensagem do banco quando a NF-e ja foi importada', () => {
+    expect(getPayableErrorMessage(
+      { message: 'Esta NF-e já foi importada. A chave de acesso não pode ser repetida.' },
+      'Não foi possível importar a NF-e.',
+    )).toContain('Esta NF-e já foi importada')
+  })
+
   it('calcula o total do CEASA por item e por parcela', () => {
     expect(totalItems(baseDraft.items)).toBe(250)
     expect(totalInstallments(baseDraft.installments)).toBe(250)

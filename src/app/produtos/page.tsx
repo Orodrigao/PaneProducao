@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
+import { getConversionUnitWarning } from '@/lib/nfeXml'
 
 type Kind = 'kit' | 'insumo' | 'final'
 
@@ -550,6 +551,7 @@ export default function ProdutosPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
                       {conversionEdits.map(conversion => {
                         const factor = Number(conversion.conversion_factor)
+                        const unitWarning = getConversionUnitWarning(conversion.purchase_unit, conversion.base_unit, factor)
                         const supplierCode = conversion.supplier_product_code || conversion.supplier_ean
                         const confirmedAt = conversion.last_confirmed_at
                           ? new Date(conversion.last_confirmed_at).toLocaleDateString('pt-BR')
@@ -592,6 +594,7 @@ export default function ProdutosPage() {
                               Exemplo: 1 {conversion.purchase_unit} × {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : 'fator inválido'} = {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : '—'} {conversion.base_unit}
                               {confirmedAt ? ` · confirmado em ${confirmedAt}` : ''}
                             </small>
+                            {unitWarning && <small role="alert" style={{ display: 'block', marginTop: 5, color: 'var(--berry)', fontWeight: 700 }}>{unitWarning}</small>}
                           </div>
                         )
                       })}

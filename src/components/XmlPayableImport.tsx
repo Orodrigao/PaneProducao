@@ -14,6 +14,7 @@ import {
   createPayableSupplier,
   createXmlPayable,
   formatBRL,
+  getPayableErrorMessage,
   type PayableProduct,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
@@ -96,12 +97,22 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
   const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
   const [autoMappedCount, setAutoMappedCount] = useState(0)
+  const [duplicateNfe, setDuplicateNfe] = useState(false)
 
   async function readFile(file: File) {
     setError(null)
+    setDuplicateNfe(false)
     try {
       const nextDraft = parseNfeXml(await file.text())
+      const { supabase } = await import('@/lib/supabase')
+      const { data: existingPurchase, error: duplicateError } = await supabase
+        .from('payable_purchases')
+        .select('id')
+        .eq('nfe_key', nextDraft.accessKey)
+        .maybeSingle()
+      if (duplicateError) throw new Error('Não foi possível verificar se esta NF-e já foi importada.')
       setDraft(nextDraft)
+      setDuplicateNfe(Boolean(existingPurchase))
       setAutoMappedCount(0)
       setCreatingSupplier(false)
       const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
@@ -110,7 +121,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       if (matched) await loadMappings(matched.id, nextDraft)
     } catch (readError) {
       setDraft(null)
-      setError(readError instanceof Error ? readError.message : 'Não foi possível ler o XML.')
+      setError(getPayableErrorMessage(readError, 'Não foi possível ler o XML.'))
     }
   }
 
@@ -189,6 +200,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
 
   async function confirmImport() {
     if (!draft) return
+    if (duplicateNfe) { showToast('Esta NF-e já foi importada. Não é necessário cadastrá-la novamente.'); return }
     if (!supplierId) { showToast('Selecione o fornecedor desta NF-e.'); return }
     if (draft.installments.some(item => !item.dueDate || item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
     setSaving(true)
@@ -197,7 +209,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       showToast(draft.items.some(item => item.mappingStatus === 'pendente') ? 'Conta importada. Há itens aguardando classificação.' : 'NF-e importada e custo atualizado.')
       await onSaved()
     } catch (saveError) {
-      showToast(saveError instanceof Error ? saveError.message : 'Não foi possível importar a NF-e.')
+      showToast(getPayableErrorMessage(saveError, 'Não foi possível importar a NF-e.'))
     } finally { setSaving(false) }
   }
 
@@ -221,6 +233,14 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
             <small>NF {draft.number}{draft.series ? ` · série ${draft.series}` : ''} · emitida em {draft.issueDate} · {formatBRL(draft.total)}</small>
             <small style={{ display: 'block' }}>Chave: {draft.accessKey}</small>
           </div>
+          {duplicateNfe && (
+            <div role="alert" className="ps-card" style={{ marginTop: 10, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
+              <b>NF-e já importada</b>
+              <small style={{ display: 'block', marginTop: 4 }}>
+                Esta chave de acesso já está registrada no Contas a pagar. A importação foi bloqueada para evitar duplicidade.
+              </small>
+            </div>
+          )}
           {autoMappedCount > 0 && (
             <div className="ps-banner" style={{ marginTop: 10 }}>
               <b>{autoMappedCount} {autoMappedCount === 1 ? 'conversão reaproveitada' : 'conversões reaproveitadas'} automaticamente</b>
@@ -276,7 +296,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
           </div>
           <div className="ps-totalbar">
             <div className="ps-total-num"><b>{formatBRL(draft.total)}</b><span>{mappedCount === draft.items.length ? 'itens classificados' : `${draft.items.length - mappedCount} item(ns) pendente(s)`}</span></div>
-            <button className="ps-save" disabled={saving || !supplierId} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>
+            <button className="ps-save" disabled={saving || !supplierId || duplicateNfe} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>
           </div>
         </>
       )}
