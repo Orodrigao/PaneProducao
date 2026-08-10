@@ -3,6 +3,7 @@ import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
 export type PayablePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
+export type PayableActualPaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto'
 export type PayableDocumentType = 'sem_nota' | 'recibo' | 'nfe'
 
 export interface PayableProduct {
@@ -60,9 +61,20 @@ export interface PayableInstallmentRow {
   id: string
   installment_number: number
   due_date: string
+  current_due_date?: string | null
   amount: number | string
   status: 'pendente' | 'paga' | 'cancelada'
   paid_at?: string | null
+  paid_date?: string | null
+  paid_amount?: number | string | null
+  paid_method?: PayableActualPaymentMethod | null
+}
+
+export interface PayableInstallmentPaymentDetails {
+  paidDate: string
+  paidAmount: number | string
+  paidMethod: PayableActualPaymentMethod
+  currentDueDate?: string | null
 }
 
 export interface PayablePurchaseRow {
@@ -178,7 +190,7 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,amount,status,paid_at)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
     .order('purchase_date', { ascending: false })
 
   if (error) throw error
@@ -311,6 +323,28 @@ export async function classifyPayableItem(
 
 export async function payInstallment(installmentId: string): Promise<void> {
   const { error } = await supabase.rpc('pay_manual_payable_installment', { p_installment_id: installmentId })
+  if (error) throw error
+}
+
+export async function recordPayableInstallmentPayment(installmentId: string, details: PayableInstallmentPaymentDetails): Promise<void> {
+  const { error } = await supabase.rpc('record_payable_installment_payment', {
+    p_installment_id: installmentId,
+    p_paid_date: details.paidDate,
+    p_paid_amount: Number(details.paidAmount),
+    p_paid_method: details.paidMethod,
+    p_current_due_date: details.currentDueDate || null,
+  })
+  if (error) throw error
+}
+
+export async function correctPayableInstallmentPayment(installmentId: string, details: PayableInstallmentPaymentDetails): Promise<void> {
+  const { error } = await supabase.rpc('correct_payable_installment_payment', {
+    p_installment_id: installmentId,
+    p_paid_date: details.paidDate,
+    p_paid_amount: Number(details.paidAmount),
+    p_paid_method: details.paidMethod,
+    p_current_due_date: details.currentDueDate || null,
+  })
   if (error) throw error
 }
 
