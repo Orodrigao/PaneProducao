@@ -382,7 +382,10 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.importar_xml', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.baixar', 'jc'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc'),
+    -- Sem esta permissao o login filtra /pedidos-pj de volta para fora das
+    -- rotas (resolveAllowedRoutes) e o financeiro nao ve a tela.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
