@@ -123,16 +123,23 @@ on conflict (id) do update set
   pack_size = excluded.pack_size,
   active = excluded.active;
 
+-- O terceiro cliente nasce sem prazo de propósito: e o cenario que prova que a
+-- tela avisa "sem prazo definido" e que o contas a receber nao inventa
+-- vencimento para quem ainda nao combinou prazo.
 insert into public.customers (
-  id, name, doc, contact, default_tier_id, discount_pct, delivery_hours, active, notes
+  id, name, doc, contact, default_tier_id, discount_pct, delivery_hours,
+  payment_term_days, active, notes
 )
 values
   ('60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ', '00.000.000/0001-91',
-   'contato-teste@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48, true,
-   'Cliente ficticio para validar Pedidos PJ.'),
+   'contato-teste@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   28, true, 'Cliente ficticio para validar Pedidos PJ.'),
   ('60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ', '00.000.000/0002-72',
-   'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24, true,
-   'Cliente ficticio com desconto base de 10% para validar o calculo da tabela.')
+   'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24,
+   0, true, 'Cliente ficticio com desconto base de 10% e pagamento a vista.'),
+  ('60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo', '00.000.000/0003-53',
+   'contato-teste3@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   null, true, 'Cliente ficticio sem prazo combinado, para validar o aviso na tela.')
 on conflict (id) do update set
   name = excluded.name,
   doc = excluded.doc,
@@ -140,6 +147,7 @@ on conflict (id) do update set
   default_tier_id = excluded.default_tier_id,
   discount_pct = excluded.discount_pct,
   delivery_hours = excluded.delivery_hours,
+  payment_term_days = excluded.payment_term_days,
   active = excluded.active,
   notes = excluded.notes;
 
