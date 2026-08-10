@@ -2,6 +2,8 @@
 
 **Natureza:** plano de funcionalidade nova, dividido em fases.
 **Status:** descoberta concluída em 2026-08-07. Aguardando aprovação da fase 0.
+Revisado em 2026-08-10 contra o checklist padrão de contas a receber; quatro
+lacunas incorporadas por decisão do Rodrigo (decisão 9).
 **Nível de risco:** ALTO — dinheiro, permissões, RLS e migration.
 Aprovação é **fase a fase**, nunca do plano inteiro de uma vez.
 
@@ -62,6 +64,20 @@ Não reabrir sem evidência nova.
    - **Rede de proteção obrigatória:** lista de pedidos com entrega vencida e
      sem envio confirmado. É o que impede um esquecimento da Expedição virar
      faturamento perdido.
+9. **A baixa registra o fato, não o clique (Rodrigo, 2026-08-10).** Quatro
+   lacunas encontradas na revisão contra o checklist padrão do domínio, todas
+   aprovadas:
+   - a baixa pergunta a **data em que o dinheiro entrou** e o **valor
+     recebido**, com padrão "hoje, valor da cobrança" para não atrasar o dia
+     a dia;
+   - a baixa registra a **forma de recebimento** (Pix, transferência, boleto,
+     dinheiro);
+   - existe **estorno de baixa errada**, com permissão própria, motivo
+     obrigatório e registro de quem desfez;
+   - toda cobrança **mostra a origem** que a gerou (pedido, romaneio ou
+     avulso), com os itens.
+   As lacunas eram as mesmas do contas a pagar, corrigidas lá em paralelo
+   pelo Sol; a regra geral virou o roteiro de benchmark do PR #207.
 
 ## Três origens, um único destino
 
@@ -81,9 +97,14 @@ Registrado para o plano não inchar:
 - emitir ou registrar boleto;
 - integração automática com banco, Bling ou CNM;
 - fatura mensal consolidada para clientes PJ;
-- juros, multa ou correção por atraso;
+- cálculo automático de juros, multa ou correção por atraso — a diferença
+  paga a mais ou a menos fica visível no valor recebido da baixa (decisão 9),
+  sem cálculo;
 - cobrança automática por WhatsApp ou e-mail;
-- pagamento parcial de uma cobrança (uma cobrança é quitada inteira);
+- pagamento parcial de uma cobrança (uma cobrança é quitada inteira) — o
+  valor recebido registrado na baixa permite acrescentar isso no futuro sem
+  refazer o modelo;
+- renegociação de dívida;
 - contas a receber do varejo das lojas — isso é caixa, não fiado.
 
 ## Bloqueio a resolver antes da fase 2
@@ -119,8 +140,9 @@ A fase 2 só começa depois de:
    público;
 6. valor, vencimento, autoria e status calculados e validados no banco, nunca
    aceitos prontos do navegador;
-7. **criação e baixa em funções separadas, com `lancar` e `baixar` realmente
-   independentes** — o defeito do achado 8 não se repete aqui;
+7. **criação, baixa e estorno em funções separadas, com `lancar`, `baixar` e
+   `estornar` realmente independentes** — o defeito do achado 8 não se
+   repete aqui;
 8. chave idempotente com proteção contra chamadas concorrentes: repetir devolve
    a mesma cobrança em vez de erro de unicidade;
 9. policies próprias em cada tabela filha, sem depender da visibilidade da
@@ -261,22 +283,28 @@ e o Bling poder ser desligado.
 
 **Escopo — entra:**
 
-- tabelas de cobrança e de eventos, espelhando o padrão já validado de contas a
-  pagar (`20260803200136_contas_a_pagar_manual.sql`);
-- permissões granulares próprias: acessar, lançar, baixar, cancelar e corrigir;
+- tabelas de cobrança e de eventos, espelhando o padrão de contas a pagar
+  **já com as correções em andamento pelo Sol** (data e valor reais do
+  pagamento) — o molde só é copiado depois dessas correções mergeadas, nunca
+  do esquema antigo (`20260803200136_contas_a_pagar_manual.sql`);
+- permissões granulares próprias: acessar, lançar, baixar, estornar, cancelar
+  e corrigir;
 - ações protegidas no banco (`SECURITY DEFINER`, `search_path` seguro, grants
   explícitos), com escrita **somente por elas** — nunca direto na tabela;
 - RLS em todas as tabelas novas, com policy de leitura por permissão;
 - tela `/contas-receber`: lista de quem deve, com atrasados e a vencer em
-  destaque; lançamento avulso; baixa; cancelamento com motivo; correção de
-  vencimento;
+  destaque; lançamento avulso; baixa com data do recebimento, valor recebido
+  e forma de recebimento (padrão: hoje, valor da cobrança); estorno de baixa
+  com motivo; cancelamento com motivo; correção de vencimento; cada cobrança
+  mostra a origem que a gerou (decisão 9);
 - rota derivada da permissão granular, como já é feito em `/pedidos-pj`.
 
 **Não entra:** geração automática a partir de pedido ou romaneio (fases 3 e 4),
 extrato por cliente (fase 5), pagamento parcial.
 
-**Depende de:** fase 1 (o vencimento vem do prazo do cliente) e da decisão
-sobre o bloqueio de hardening registrada acima.
+**Depende de:** fase 1 (o vencimento vem do prazo do cliente), da decisão
+sobre o bloqueio de hardening registrada acima e do merge das correções do
+contas a pagar (Sol) — o molde das tabelas vem de lá já corrigido.
 
 **Arquivos e tabelas prováveis:** migration nova; `src/app/contas-receber/`;
 `src/lib/receivables.ts` e testes; `src/lib/auth.ts` para a rota.
@@ -296,8 +324,13 @@ sobre o bloqueio de hardening registrada acima.
 - a Elis lança uma cobrança avulsa escolhendo cliente, valor, descrição e data
   base; o vencimento aparece calculado do prazo do cliente;
 - a lista mostra o que está atrasado e o que vence nos próximos dias;
-- a baixa registra quem deu e quando; o cancelamento exige motivo;
-- cobrança já recebida não pode ser cancelada;
+- a baixa registra quem deu, a data em que o dinheiro entrou, o valor
+  recebido e a forma de recebimento — com os padrões preenchidos, dá para
+  baixar em dois toques;
+- estornar uma baixa exige motivo, devolve a cobrança para aberta e registra
+  quem desfez;
+- o cancelamento exige motivo;
+- cobrança já recebida não pode ser cancelada sem estorno antes;
 - repetir a ação (toque duplo, recarregar) não duplica nem corrompe;
 - **um perfil sem a permissão é bloqueado pelo banco**, não apenas pela tela.
 
@@ -345,6 +378,7 @@ cobrado. Ambos precisam de bloqueio explícito no banco.
 **Critérios de aceite:**
 
 - editar um pedido preserva as linhas e a cobrança ligada a ele;
+- abrir a cobrança mostra o pedido que a gerou, com os itens (decisão 9);
 - pedido enviado aparece na lista de pendentes de cobrança e sai de lá quando
   vira cobrança;
 - o valor da cobrança bate **exatamente** com o total mostrado na tela do
@@ -385,6 +419,7 @@ risco e precisa de bloqueio no banco.
 
 - gerar a cobrança da semana cria uma conta da Buck com o mesmo valor do
   documento impresso;
+- abrir a cobrança mostra o período e os romaneios que a geraram (decisão 9);
 - item sem preço ou com unidade incompatível impede a geração e diz o porquê;
 - repetir a geração do mesmo período devolve a mesma cobrança.
 
