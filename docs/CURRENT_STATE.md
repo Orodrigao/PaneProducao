@@ -1,8 +1,8 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-28
+**Data de referência:** 2026-08-07
 
-**Base observada:** `origin/main` em `0f8bdc2`, até a incorporação da PR `#182`
+**Base observada:** `origin/main` em `9646e2b`, até a incorporação da PR `#202`
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -11,9 +11,23 @@ incorporada à `main`.
 
 O projeto está em estabilização e conclusão da Sprint 0 de segurança.
 
-Funcionalidades novas que adicionem dados financeiros devem esperar:
+**Decisão de 2026-08-07 — o bloqueio anterior foi substituído.** Até esta data
+valia a regra "funcionalidade nova com dado financeiro espera a conclusão do
+hardening Auth/RLS". Ela foi revista por Rodrigo depois de duas revisões
+independentes (Claude e Sol/Codex) apoiadas em auditoria live somente leitura:
 
-1. conclusão da auditoria e do hardening Auth/RLS.
+- nenhuma tabela do ERP está exposta ao papel `anon`; as 4 expostas são do
+  ControlePizza, risco legado já aceito;
+- exposição GraphQL ao papel `authenticated` não contorna RLS;
+- as funções `SECURITY DEFINER` listadas são as ações do próprio aplicativo.
+
+O hardening continua e passa a correr **em paralelo**, sem travar o roadmap.
+No lugar do bloqueio geral, cada funcionalidade que criar tabela financeira
+carrega um **gate técnico próprio**, definido no documento da funcionalidade —
+ver o gate da fase 2 em [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md).
+
+Ordem de prioridade acordada para o hardening restante: proteção de senha
+vazada (concluída), revisão das funções privilegiadas, exposição GraphQL.
 
 ## Autenticação
 
@@ -88,8 +102,17 @@ Riscos ainda abertos:
   todas as tabelas públicas auditadas estão com RLS ligado e não há policies
   `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
   aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
-  porque restam exposição GraphQL relevante ao ERP, funções `SECURITY DEFINER`
-  chamáveis por usuários logados e proteção contra senha vazada desligada;
+  porque restam exposição GraphQL relevante ao ERP e funções `SECURITY DEFINER`
+  chamáveis por usuários logados;
+- **a proteção contra senha vazada foi ligada em 2026-08-07** e o aviso
+  correspondente saiu dos advisors do projeto de produção, verificado por
+  leitura após a mudança. Ligada somente em produção; se um dia for ligada no
+  `PaneERP Preview`, a senha das contas fictícias precisa não constar da base
+  de senhas vazadas, sob pena de quebrar a esteira que recria essas contas;
+- `create_manual_payable` aceita `p_paid = true` validando apenas
+  `contas_pagar.lancar`, sem exigir `contas_pagar.baixar`. Quem lança consegue
+  criar conta já quitada. Achado do Sol em 2026-08-07, ainda aberto, com
+  correção prevista em tarefa própria de contas a pagar;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -132,7 +155,10 @@ tabelas.
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
   em Riscos ainda abertos);
 - estoques e fornecedores;
-- clientes, pedidos PJ e encomendas;
+- clientes, pedidos PJ e encomendas; o Banco Preview passou a ter cenário
+  comercial de PJ (clientes, tabela de preço e pedidos em aberto, por quilo,
+  enviado e cancelado), o que tornou Pedidos PJ e o relatório de Vendas PJ
+  testáveis antes de ir ao ar;
 - tabelas e opções de preço;
 - fechamento de caixa;
 - catálogo unificado com `products.kind`;
@@ -177,11 +203,17 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
    ControlePizza/`pizza_*` é exceção legada aceita até desativação.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
-   live de 2026-07-28 no escopo do ERP: GraphQL, funções privilegiadas e
-   configuração de senha vazada.
+   live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas. A
+   configuração de senha vazada saiu desta lista em 2026-08-07. Este bloqueio
+   deixou de travar funcionalidade nova — ver a decisão em Fase estratégica.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
+5. O smoke de navegador falha de forma intermitente por causas de ambiente, não
+   de código: login logo após a recriação das contas fictícias, e o cenário da
+   Geolar, que ainda oscila depois do PR #199. Duas causas já foram corrigidas
+   (PRs #199 e #203). Enquanto restarem, o semáforo segura entregas sem
+   relação com a falha.
 
 ## Próximas fases aprovadas
 
