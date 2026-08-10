@@ -4,6 +4,7 @@ import {
   calculateNormalizedUnitCost,
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
+  getConversionUnitWarning,
   formatConversionExplanation,
   isClassificationComplete,
   type NfeItemDraft,
@@ -51,6 +52,11 @@ describe('conversão de itens importados da NF-e', () => {
   it('calcula custo por kg aproveitável de azeitona drenada', () => {
     expect(calculateUsableQuantity(3, 0.6)).toBe(1.8)
     expect(calculateNormalizedUnitCost(60, 1.8)).toBe(33.333333)
+  })
+
+  it('alerta quando a NF e a receita estao em kg mas o fator nao e 1', () => {
+    expect(getConversionUnitWarning('KG', 'kg', 3)).toContain('fator 1')
+    expect(getConversionUnitWarning('UN', 'kg', 3)).toBeNull()
   })
 
   it('explica o cálculo sem exigir que o usuário faça a conta', () => {
