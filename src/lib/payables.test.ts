@@ -41,6 +41,13 @@ describe('contas a pagar manual', () => {
     expect(validateDraft(baseDraft)).toBeNull()
   })
 
+  it('valida o valor real e a data do pagamento manual', () => {
+    const paidDetails = { paidDate: '2026-08-03', paidAmount: '253.50', paidMethod: 'dinheiro' as const, currentDueDate: '' }
+    expect(validateDraft({ ...baseDraft, paidDetails })).toBeNull()
+    expect(validateDraft({ ...baseDraft, paidDetails: { ...paidDetails, paidAmount: '249.99' } })).toContain('menor que o total')
+    expect(validateDraft({ ...baseDraft, paidDetails: { ...paidDetails, currentDueDate: '2026-08-02' } })).toContain('vencimento atualizado')
+  })
+
   it('distribui parcelas e ajusta o centavo final', () => {
     expect(buildInstallments(100, 3, '2026-08-10')).toEqual([
       { number: 1, dueDate: '2026-08-10', amount: '33.33' },
