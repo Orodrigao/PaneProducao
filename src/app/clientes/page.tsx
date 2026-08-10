@@ -4,6 +4,13 @@ import { Search, Plus, Pencil, Ban, Check, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import {
+  DUPLICATE_CUSTOMER_DOC_MESSAGE,
+  PAYMENT_TERM_MAX_DAYS,
+  formatPaymentTerm,
+  isDuplicateCustomerDocError,
+  parsePaymentTermDays,
+} from '@/lib/customers'
 
 interface PriceTier { id: string; name: string; active: boolean }
 
@@ -15,16 +22,19 @@ interface Customer {
   default_tier_id: string | null
   discount_pct: number
   delivery_hours: number
+  payment_term_days: number | null
   active: boolean
   notes: string | null
   created_at: string
 }
 
-type FormState = Omit<Customer, 'id' | 'created_at'>
+type FormState = Omit<Customer, 'id' | 'created_at' | 'payment_term_days'> & {
+  payment_term_days: string
+}
 
 const EMPTY_FORM: FormState = {
   name: '', doc: '', contact: '', default_tier_id: null,
-  discount_pct: 0, delivery_hours: 48, active: true, notes: ''
+  discount_pct: 0, delivery_hours: 48, payment_term_days: '', active: true, notes: ''
 }
 
 export default function ClientesPage() {
@@ -38,6 +48,7 @@ export default function ClientesPage() {
   const [creating, setCreating]   = useState(false)
   const [saving, setSaving]       = useState(false)
   const [loading, setLoading]     = useState(true)
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => { setUser(getCurrentUser()) }, [])
 
@@ -68,20 +79,26 @@ export default function ClientesPage() {
       (c.contact || '').toLowerCase().includes(q)
   }), [customers, search, showInactive])
 
-  const startCreate = () => { setEditing(null); setForm(EMPTY_FORM); setCreating(true) }
+  const startCreate = () => { setEditing(null); setForm(EMPTY_FORM); setFormError(null); setCreating(true) }
   const startEdit = (c: Customer) => {
     setEditing(c)
+    setFormError(null)
     setForm({
       name: c.name, doc: c.doc || '', contact: c.contact || '',
       default_tier_id: c.default_tier_id, discount_pct: c.discount_pct,
-      delivery_hours: c.delivery_hours, active: c.active, notes: c.notes || '',
+      delivery_hours: c.delivery_hours,
+      payment_term_days: c.payment_term_days === null ? '' : String(c.payment_term_days),
+      active: c.active, notes: c.notes || '',
     })
     setCreating(true)
   }
-  const cancelForm = () => { setCreating(false); setEditing(null) }
+  const cancelForm = () => { setCreating(false); setEditing(null); setFormError(null) }
 
   const save = async () => {
-    if (!form.name.trim()) { showToast('Nome obrigatório'); return }
+    setFormError(null)
+    if (!form.name.trim()) { setFormError('Informe o nome do cliente.'); return }
+    const paymentTerm = parsePaymentTermDays(form.payment_term_days)
+    if (!paymentTerm.ok) { setFormError(paymentTerm.message || 'Prazo de pagamento inválido.'); return }
     setSaving(true)
     const payload = {
       name: form.name.trim(),
@@ -90,6 +107,7 @@ export default function ClientesPage() {
       default_tier_id: form.default_tier_id || null,
       discount_pct: Number(form.discount_pct) || 0,
       delivery_hours: Number(form.delivery_hours) || 48,
+      payment_term_days: paymentTerm.days,
       active: form.active,
       notes: form.notes?.trim() || null,
     }
@@ -97,7 +115,13 @@ export default function ClientesPage() {
       ? await supabase.from('customers').update(payload).eq('id', editing.id)
       : await supabase.from('customers').insert(payload)
     setSaving(false)
-    if (error) { showToast('Erro: ' + error.message); return }
+    if (error) {
+      // Recado fixo dentro do próprio formulário, que continua aberto com o que
+      // foi digitado. Toast sozinho some antes de a pessoa ler e ela perde o
+      // cadastro que acabou de preencher (lessons.md 2026-07-22).
+      setFormError(isDuplicateCustomerDocError(error) ? DUPLICATE_CUSTOMER_DOC_MESSAGE : `Não foi possível salvar: ${error.message}`)
+      return
+    }
     showToast(editing ? '✅ Cliente atualizado' : '✅ Cliente cadastrado')
     cancelForm(); load()
   }
@@ -191,6 +215,17 @@ export default function ClientesPage() {
                     <span className="ps-store-chip" style={{background:'var(--line-soft)', color:'var(--ink-soft)'}}>
                       🚚 {c.delivery_hours}h
                     </span>
+                    <span
+                      className="ps-store-chip"
+                      style={c.payment_term_days === null
+                        ? {background:'var(--berry-tint)', color:'var(--berry)'}
+                        : {background:'var(--line-soft)', color:'var(--ink-soft)'}}
+                      title={c.payment_term_days === null
+                        ? 'Sem prazo combinado: este cliente ainda não gera cobrança automática'
+                        : 'Prazo de pagamento contado da entrega'}
+                    >
+                      💰 {formatPaymentTerm(c.payment_term_days)}
+                    </span>
                   </div>
                   {c.notes && (
                     <div style={{fontSize:12, color:'var(--ink-faint)', fontStyle:'italic'}}>{c.notes}</div>
@@ -245,6 +280,18 @@ export default function ClientesPage() {
               </div>
             </div>
 
+            <div className="ps-fieldgroup" style={{marginBottom:10}}>
+              <div className="ps-fieldlabel">Prazo de pagamento (dias)</div>
+              <input type="number" min={0} max={PAYMENT_TERM_MAX_DAYS} step={1}
+                value={form.payment_term_days}
+                onChange={e=>setForm({...form, payment_term_days: e.target.value})}
+                placeholder="deixe vazio se ainda não combinou" className="ps-input"/>
+              <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:4}}>
+                Contado da entrega. <strong>0</strong> = à vista. Vazio = ainda não combinado —
+                nesse caso o cliente não gera cobrança automática.
+              </div>
+            </div>
+
             <div className="ps-fieldgroup" style={{marginBottom:14}}>
               <div className="ps-fieldlabel">Observações</div>
               <textarea value={form.notes || ''} onChange={e=>setForm({...form, notes:e.target.value})}
@@ -256,6 +303,12 @@ export default function ClientesPage() {
                 <input type="checkbox" checked={form.active} onChange={e=>setForm({...form, active:e.target.checked})}/>
                 Ativo
               </label>
+            )}
+
+            {formError && (
+              <div className="ps-warning" role="alert" style={{marginBottom:14}}>
+                {formError}
+              </div>
             )}
 
             <div className="actions">
