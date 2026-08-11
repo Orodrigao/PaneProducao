@@ -241,7 +241,8 @@ test('Financeiro JC visualiza os itens da NF-e sem alterar a conta', async ({ pa
 
   await expect(purchaseCard.getByText('[TESTE] Farinha de trigo', { exact: true })).toBeVisible()
   await expect(purchaseCard.getByText('[TESTE] Manteiga sem sal', { exact: true })).toBeVisible()
-  await expect(purchaseCard.getByText('R$ 14,95 cada', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('2 kg · R$ 14,95 cada', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('3 un · R$ 20,00 cada', { exact: true })).toBeVisible()
   await expect(purchaseCard.getByText('R$ 29,90', { exact: true })).toBeVisible()
   await expect(purchaseCard.getByText('R$ 60,00', { exact: true })).toBeVisible()
   await expect(purchaseCard.getByRole('button', { name: 'Baixar' })).toHaveCount(2)
