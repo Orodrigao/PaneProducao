@@ -43,16 +43,27 @@ async function expectRouteVisible(page: import('@playwright/test').Page, href: s
 // elemento que ja saiu da tela ("element was detached from the DOM"). Clicar ate
 // a aba ficar selecionada absorve esse redesenho sem esconder falha real: se a
 // aba nunca selecionar, o teste falha no tempo limite.
+//
+// Os cards de produto tem o mesmo problema em outra forma: eles so montam quando
+// a carga do destino termina, e cada consulta dessa carga desiste sozinha em 15s
+// (DEFAULT_REQUEST_TIMEOUT_MS). Se uma consulta falha ou estoura o tempo, a tela
+// mostra "Erro" e fica vazia — so um novo clique na aba dispara nova carga, o
+// mesmo gesto de uma pessoa. Por isso o clique se repete ate o card-evidencia
+// aparecer, com teto proprio: se o card nunca montar, o teste falha do mesmo jeito.
+const romaneioCardRetryTimeoutMs = 30_000
+
 async function selectRomaneioDestination(
   page: import('@playwright/test').Page,
   name: RegExp,
+  dataReadyCard?: import('@playwright/test').Locator,
 ) {
   const tab = page.getByRole('tab', { name })
   await expect(tab).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(async () => {
     await tab.click({ timeout: 5_000 })
     await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
-  }).toPass({ timeout: slowPreviewDataTimeoutMs })
+    if (dataReadyCard) await expect(dataReadyCard).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: dataReadyCard ? romaneioCardRetryTimeoutMs : slowPreviewDataTimeoutMs })
 }
 
 async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
@@ -162,10 +173,9 @@ test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', asy
   await page.goto('/romaneio')
 
   await page.getByRole('button', { name: 'Novo Romaneio' }).click()
-  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/)
-
   const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
-  await expect(bagueteCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/, bagueteCard)
+
   await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
