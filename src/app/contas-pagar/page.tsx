@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
@@ -13,8 +13,10 @@ import {
   isDueSoon,
   isOverdue,
   loadPayablePurchases,
+  loadPayablePurchaseItems,
   type PayableProduct,
   type PayableInstallmentRow,
+  type PayablePurchaseItemRow,
   type PayablePurchaseRow,
   loadPendingPayableItems,
   type PendingPayableItemRow,
@@ -35,6 +37,11 @@ export default function ContasPagarPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pendingPurchaseId, setPendingPurchaseId] = useState<string | null>(null)
   const [pendingItems, setPendingItems] = useState<PendingPayableItemRow[]>([])
+  const [nfeItemsPurchaseId, setNfeItemsPurchaseId] = useState<string | null>(null)
+  const [nfeItems, setNfeItems] = useState<PayablePurchaseItemRow[]>([])
+  const [nfeItemsLoading, setNfeItemsLoading] = useState(false)
+  const [nfeItemsError, setNfeItemsError] = useState<string | null>(null)
+  const nfeItemsRequestId = useRef(0)
   const [paymentTarget, setPaymentTarget] = useState<{
     installment: PayableInstallmentRow
     purchase: PayablePurchaseRow
@@ -80,6 +87,32 @@ export default function ContasPagarPage() {
     setPendingItems(items)
     if (items.length === 0) setPendingPurchaseId(null)
     await load()
+  }
+
+  async function openNfeItems(purchaseId: string) {
+    const requestId = nfeItemsRequestId.current + 1
+    nfeItemsRequestId.current = requestId
+    setNfeItemsPurchaseId(purchaseId)
+    setNfeItems([])
+    setNfeItemsError(null)
+    setNfeItemsLoading(true)
+    try {
+      const items = await loadPayablePurchaseItems(purchaseId)
+      if (nfeItemsRequestId.current === requestId) setNfeItems(items)
+    } catch (loadError) {
+      console.error(loadError)
+      if (nfeItemsRequestId.current === requestId) setNfeItemsError('Não foi possível carregar os itens desta NF-e.')
+    } finally {
+      if (nfeItemsRequestId.current === requestId) setNfeItemsLoading(false)
+    }
+  }
+
+  function closeNfeItems() {
+    nfeItemsRequestId.current += 1
+    setNfeItemsPurchaseId(null)
+    setNfeItems([])
+    setNfeItemsError(null)
+    setNfeItemsLoading(false)
   }
 
   useEffect(() => { void load() }, [load])
@@ -177,10 +210,16 @@ export default function ContasPagarPage() {
               products={products}
               pendingPurchaseId={pendingPurchaseId}
               pendingItems={pendingItems}
+              nfeItemsPurchaseId={nfeItemsPurchaseId}
+              nfeItems={nfeItems}
+              nfeItemsLoading={nfeItemsLoading}
+              nfeItemsError={nfeItemsError}
               busyId={busyId}
               onOpenPending={purchaseId => void openPendingItems(purchaseId)}
               onRefreshPending={() => void refreshPendingItems()}
               onClosePending={() => setPendingPurchaseId(null)}
+              onOpenNfeItems={purchaseId => void openNfeItems(purchaseId)}
+              onCloseNfeItems={closeNfeItems}
               onPay={(installment, purchase) => openPaymentDialog(installment, purchase, 'baixar')}
               onCorrect={(installment, purchase) => openPaymentDialog(installment, purchase, 'corrigir')}
               onCancel={purchaseId => void handleCancel(purchaseId)}

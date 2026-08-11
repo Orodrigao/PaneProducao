@@ -230,6 +230,24 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
   await expect(purchaseCard.getByText('R$ 250,00', { exact: true })).toBeVisible()
 })
 
+test('Financeiro JC visualiza os itens da NF-e sem alterar a conta', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+
+  const purchaseCard = page.locator('.ps-card', { hasText: 'NF-e 999001' }).first()
+  await expect(purchaseCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await purchaseCard.getByRole('button').first().click()
+  await purchaseCard.getByRole('button', { name: 'Ver itens da NF-e' }).click()
+
+  await expect(purchaseCard.getByText('[TESTE] Farinha de trigo', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('[TESTE] Manteiga sem sal', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('2 kg · R$ 14,95 cada', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('3 un · R$ 20,00 cada', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('R$ 29,90', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByText('R$ 60,00', { exact: true })).toBeVisible()
+  await expect(purchaseCard.getByRole('button', { name: 'Baixar' })).toHaveCount(2)
+})
+
 test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')

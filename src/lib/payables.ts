@@ -96,7 +96,7 @@ export interface PayablePurchaseRow {
   payable_installments: PayableInstallmentRow[]
 }
 
-export interface PendingPayableItemRow {
+export interface PayablePurchaseItemRow {
   id: string
   purchase_id: string
   item_name: string
@@ -111,6 +111,8 @@ export interface PendingPayableItemRow {
   source_ean: string | null
   conversion_basis: NfeItemDraft['conversionBasis'] | null
 }
+
+export type PendingPayableItemRow = PayablePurchaseItemRow
 
 export function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -229,6 +231,17 @@ export async function loadPendingPayableItems(purchaseId: string): Promise<Pendi
 
   if (error) throw error
   return (data ?? []) as PendingPayableItemRow[]
+}
+
+export async function loadPayablePurchaseItems(purchaseId: string): Promise<PayablePurchaseItemRow[]> {
+  const { data, error } = await supabase
+    .from('payable_purchase_items')
+    .select('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    .eq('purchase_id', purchaseId)
+    .order('source_line_number')
+
+  if (error) throw error
+  return (data ?? []) as PayablePurchaseItemRow[]
 }
 
 export async function createManualPayable(draft: PayableDraft, requestId: string): Promise<string> {
