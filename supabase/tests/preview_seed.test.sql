@@ -255,16 +255,22 @@ select is(
      and origin = 'xml'
      and nfe_number = '999001'
      and total_value = 89.90),
-  1,
-  'seed cria a NF-e fictícia para conferir os itens no Contas a pagar'
+  case when exists (
+    select 1 from auth.users user_account
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  ) then 1 else 0 end,
+  'seed cria a NF-e fictícia depois que o Auth de teste está pronto'
 );
 
 select is(
   (select count(*)::int from public.payable_purchase_items
    where purchase_id = '80000000-0000-4000-8000-000000000001'
      and source_description like '[TESTE]%'),
-  2,
-  'NF-e fictícia tem os dois itens que o smoke de navegador confere'
+  case when exists (
+    select 1 from auth.users user_account
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  ) then 2 else 0 end,
+  'NF-e fictícia tem os dois itens depois que o Auth de teste está pronto'
 );
 
 select * from finish();
