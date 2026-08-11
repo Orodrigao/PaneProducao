@@ -395,9 +395,11 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 /* Shell (coluna app) */
 .ps-canvas{ min-height:100vh; background:radial-gradient(1200px 600px at 50% -10%, rgba(216,154,60,.07), transparent 60%), var(--flour-deep); display:flex; align-items:flex-start; }
 .ps-shell{ width:100%; min-height:100vh; background:var(--flour); color:var(--ps-ink); font-family:var(--font-ui); position:relative; display:flex; flex-direction:column; }
+.ps-canvas:has(.ps-scroll){ height:100vh; }
+.ps-canvas:has(.ps-scroll) .ps-shell{ height:100%; min-height:100%; }
 .ps-shell *{ box-sizing:border-box; }
-.ps-scroll{ flex:1; overflow-y:auto; padding-bottom:172px; }
-.ps-pad{ padding:0 16px; }
+.ps-scroll{ flex:1; min-height:0; overflow-y:auto; padding-bottom:172px; }
+.ps-pad{ padding-left:16px; padding-right:16px; }
 
 /* Header */
 .ps-header{ position:sticky; top:0; z-index:40; background:color-mix(in srgb, var(--flour) 86%, transparent); backdrop-filter:saturate(1.2) blur(10px); border-bottom:1px solid var(--ps-line); padding:14px 16px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
