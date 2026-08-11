@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
+import { todayKey } from '@/lib/utils'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
 export type PayablePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
@@ -36,6 +37,7 @@ export interface PayableDraft {
   notes: string
   items: PayableItemDraft[]
   installments: PayableInstallmentDraft[]
+  paidDetails?: PayableInstallmentPaymentDetails | null
 }
 
 export function getPayableErrorMessage(error: unknown, fallback: string): string {
@@ -130,6 +132,15 @@ export function installmentLabel(status: PayableInstallmentRow['status']): strin
   return ({ pendente: 'Pendente', paga: 'Paga', cancelada: 'Cancelada' } as Record<PayableInstallmentRow['status'], string>)[status]
 }
 
+export function actualPaymentMethodLabel(method: PayableActualPaymentMethod): string {
+  return ({
+    dinheiro: 'Dinheiro',
+    pix: 'PIX',
+    transferencia: 'Transferência',
+    boleto: 'Boleto',
+  } as Record<PayableActualPaymentMethod, string>)[method]
+}
+
 export function totalItems(items: PayableItemDraft[]): number {
   return roundMoney(items.reduce((total, item) => total + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0))
 }
@@ -168,6 +179,17 @@ export function validateDraft(draft: PayableDraft): string | null {
   }
   if (totalItems(draft.items) !== totalInstallments(draft.installments)) {
     return 'A soma das parcelas precisa ser igual à soma dos itens.'
+  }
+  if (draft.paid && draft.paidDetails) {
+    if (!draft.paidDetails.paidDate) return 'Informe a data em que a compra foi paga.'
+    if (draft.paidDetails.paidDate < draft.purchaseDate || draft.paidDetails.paidDate > todayKey()) return 'A data do pagamento precisa estar entre a compra e hoje.'
+    if (!draft.paidDetails.paidMethod) return 'Informe a forma real de pagamento.'
+    if (!Number.isFinite(Number(draft.paidDetails.paidAmount)) || Number(draft.paidDetails.paidAmount) < totalItems(draft.items)) {
+      return 'O valor pago não pode ser menor que o total da compra.'
+    }
+    if (draft.paidDetails.currentDueDate && draft.paidDetails.currentDueDate < draft.installments[0].dueDate) {
+      return 'O vencimento atualizado não pode ser anterior ao vencimento original.'
+    }
   }
   return null
 }
@@ -234,6 +256,16 @@ export async function createManualPayable(draft: PayableDraft, requestId: string
 
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu o lançamento criado.')
+  if (draft.paid && draft.paidDetails) {
+    const { data: installment, error: installmentError } = await supabase
+      .from('payable_installments')
+      .select('id')
+      .eq('purchase_id', data)
+      .eq('installment_number', 1)
+      .single()
+    if (installmentError) throw installmentError
+    await correctPayableInstallmentPayment(installment.id as string, draft.paidDetails)
+  }
   return data
 }
 

@@ -6,11 +6,13 @@ import PendingPayableItems from '@/components/PendingPayableItems'
 import {
   formatBRL,
   formatDate,
+  actualPaymentMethodLabel,
   installmentLabel,
   isDueSoon,
   isOverdue,
   statusLabel,
   type PayableProduct,
+  type PayableInstallmentRow,
   type PayablePurchaseRow,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -24,7 +26,8 @@ interface PayablePurchaseListProps {
   onOpenPending: (purchaseId: string) => void
   onRefreshPending: () => void
   onClosePending: () => void
-  onPay: (installmentId: string) => void
+  onPay: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
+  onCorrect: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
   onCancel: (purchaseId: string) => void
 }
 
@@ -75,6 +78,7 @@ export default function PayablePurchaseList({
   onRefreshPending,
   onClosePending,
   onPay,
+  onCorrect,
   onCancel,
 }: PayablePurchaseListProps) {
   const [search, setSearch] = useState('')
@@ -176,7 +180,7 @@ export default function PayablePurchaseList({
                         ? <PendingPayableItems items={pendingItems} products={products} onChanged={onRefreshPending} onClose={onClosePending} />
                         : <button type="button" className="ps-btn ghost sm" style={{ marginBottom: 8 }} disabled={busyId === purchase.id} onClick={() => { setExpandedPurchaseId(purchase.id); onOpenPending(purchase.id) }}>{busyId === purchase.id ? 'Abrindo...' : 'Classificar itens pendentes'}</button>
                     )}
-                    {pending.length > 0 && <div style={{ borderTop: purchase.classification_status === 'pendente' ? '1px solid var(--line-soft)' : undefined, paddingTop: purchase.classification_status === 'pendente' ? 4 : 0 }}>
+                    {(pending.length > 0 || installments.some(installment => installment.status === 'paga')) && <div style={{ borderTop: purchase.classification_status === 'pendente' ? '1px solid var(--line-soft)' : undefined, paddingTop: purchase.classification_status === 'pendente' ? 4 : 0 }}>
                       {pending.map(installment => (
                         <div key={installment.id} className="ps-list-row" style={{ gap: 8 }}>
                           <span style={{ flex: 1 }}>
@@ -184,9 +188,27 @@ export default function PayablePurchaseList({
                             {(isOverdue(installment) || isDueSoon(installment)) && <small style={{ display: 'block', color: isOverdue(installment) ? 'var(--berry)' : 'var(--honey-deep)' }}>{isOverdue(installment) ? 'Vencida' : 'Vence em até 7 dias'}</small>}
                           </span>
                           <b>{formatBRL(installment.amount)}</b>
-                          <button type="button" className="ps-btn success sm" disabled={busyId === installment.id} onClick={() => onPay(installment.id)}>{busyId === installment.id ? '...' : 'Baixar'}</button>
+                          <button type="button" className="ps-btn success sm" disabled={busyId === installment.id} onClick={() => onPay(installment, purchase)}>{busyId === installment.id ? '...' : 'Baixar'}</button>
                         </div>
                       ))}
+                      {installments.filter(installment => installment.status === 'paga').map(installment => {
+                        const paidAmount = Number(installment.paid_amount ?? installment.amount)
+                        const extra = Math.max(0, paidAmount - Number(installment.amount))
+                        const dueDate = installment.current_due_date && installment.current_due_date !== installment.due_date
+                          ? ` · boleto atualizado ${formatDate(installment.current_due_date)}`
+                          : ''
+                        return (
+                          <div key={installment.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{ flex: 1 }}>
+                              Parcela {installment.installment_number} · paga em {installment.paid_date ? formatDate(installment.paid_date) : 'data não informada'}{dueDate}
+                              <small style={{ display: 'block', color: 'var(--ink-soft)' }}>
+                                {actualPaymentMethodLabel(installment.paid_method ?? 'boleto')} · original {formatBRL(installment.amount)} · pago {formatBRL(paidAmount)}{extra > 0 ? ` · juros/multa ${formatBRL(extra)}` : ''}
+                              </small>
+                            </span>
+                            <button type="button" className="ps-btn ghost sm" disabled={busyId === installment.id} onClick={() => onCorrect(installment, purchase)}>{busyId === installment.id ? '...' : 'Corrigir baixa'}</button>
+                          </div>
+                        )
+                      })}
                     </div>}
                     {purchase.status === 'aberta' && <button type="button" className="ps-btn ghost sm" style={{ marginTop: 10, color: 'var(--berry)' }} disabled={busyId === purchase.id} onClick={() => onCancel(purchase.id)}>Cancelar lançamento</button>}
                   </div>
