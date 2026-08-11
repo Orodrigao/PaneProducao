@@ -11,9 +11,15 @@ incorporada à `main`.
 
 O projeto está em estabilização e conclusão da Sprint 0 de segurança.
 
-Funcionalidades novas que adicionem dados financeiros devem esperar:
-
-1. conclusão da auditoria e do hardening Auth/RLS.
+**Decisão do Rodrigo, 2026-08-11:** funcionalidade nova com dado financeiro
+**pode andar sem esperar o hardening completo**, desde que cumpra o gate
+técnico por fase definido nos planos ([CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)
+e [FINANCEIRO.md](FINANCEIRO.md)): RLS forçado desde a criação, escrita
+somente por função protegida, grants explícitos, idempotência e matriz de
+teste permitido×bloqueado. Substitui a regra anterior, que exigia a
+conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
+financeiro novo. O hardening restante (GraphQL e funções privilegiadas)
+segue em lotes, em paralelo.
 
 ## Autenticação
 
