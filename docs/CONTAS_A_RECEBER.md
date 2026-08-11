@@ -4,6 +4,9 @@
 **Status:** descoberta concluída em 2026-08-07. Aguardando aprovação da fase 0.
 Revisado em 2026-08-10 contra o checklist padrão de contas a receber; quatro
 lacunas incorporadas por decisão do Rodrigo (decisão 9).
+Fase 0 concluída em 2026-08-11 (seed no PR #202, smoke no PR #208).
+Fase 1 concluída em 2026-08-10 (PR #206). A dependência da fase 2 sobre o
+molde corrigido de contas a pagar foi satisfeita pelo PR #209.
 **Nível de risco:** ALTO — dinheiro, permissões, RLS e migration.
 Aprovação é **fase a fase**, nunca do plano inteiro de uma vez.
 
@@ -205,6 +208,11 @@ Levantados na descoberta, com evidência nos dados de produção:
 Cada fase cabe em uma conversa e termina testável no navegador.
 
 ## Fase 0 — Dados de teste de Pedidos PJ no Banco Preview
+
+**Concluída em 2026-08-11.** Seed pelo PR #202; smoke de navegador pelo
+PR #208. O smoke rendeu dois consertos no cenário de teste: o financeiro
+fictício estava sem as rotas (/pedidos-pj, /relatorios) e sem a permissão
+`pedidos_pj.acessar` — o tripé rota/permissão/RLS valia só em uma perna.
 
 **Objetivo:** poder testar cobrança no preview antes de qualquer coisa ir ao ar.
 
