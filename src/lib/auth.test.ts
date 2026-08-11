@@ -7,6 +7,7 @@ import {
   normalizeEmailInput,
   passwordPolicyChecklist,
   passwordRecoveryErrorMessage,
+  passwordUpdateErrorMessage,
   resolveAllowedRoutes,
   signInWithEmailPassword,
   validatePasswordSetup,
@@ -316,6 +317,20 @@ describe('passwordPolicyChecklist', () => {
     const pending = passwordPolicyChecklist('senha').filter(rule => !rule.valid).map(rule => rule.id)
 
     expect(pending).toEqual(['length', 'case', 'number', 'symbol'])
+  })
+})
+
+describe('passwordUpdateErrorMessage', () => {
+  it('explica quando a senha aparece em vazamentos conhecidos', () => {
+    const message = passwordUpdateErrorMessage({ code: 'weak_password', status: 422 })
+
+    expect(message).toBe('Essa senha aparece em vazamentos conhecidos na internet. Escolha outra.')
+  })
+
+  it('mantém a mensagem genérica para outros erros', () => {
+    expect(passwordUpdateErrorMessage({ status: 500 })).toBe('Não foi possível salvar a senha.')
+    expect(passwordUpdateErrorMessage({ code: 'same_password' })).toBe('Não foi possível salvar a senha.')
+    expect(passwordUpdateErrorMessage(null)).toBe('Não foi possível salvar a senha.')
   })
 })
 
