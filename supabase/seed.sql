@@ -430,17 +430,30 @@ on conflict (id) do update set
   classification_status = excluded.classification_status,
   created_by = excluded.created_by;
 
+with fixture_items (
+  id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
+  source_product_code, source_description, source_unit, source_quantity,
+  conversion_basis, conversion_factor, usable_quantity, normalized_unit_cost,
+  mapping_status
+) as (
+  values
+    ('81000000-0000-4000-8000-000000000001'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, '[TESTE] Farinha de trigo', 'kg', 2, 14.95, 1,
+     'TESTE-FAR-01', '[TESTE] Farinha de trigo', 'kg', 2, 'simple', 1, 2, 14.95, 'mapeado'),
+    ('81000000-0000-4000-8000-000000000002'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, '[TESTE] Manteiga sem sal', 'un', 3, 20, 2,
+     'TESTE-MAN-02', '[TESTE] Manteiga sem sal', 'un', 3, 'simple', 1, 3, 20, 'mapeado')
+)
 insert into public.payable_purchase_items (
   id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
   source_product_code, source_description, source_unit, source_quantity,
   conversion_basis, conversion_factor, usable_quantity, normalized_unit_cost,
   mapping_status
 )
-values
-  ('81000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000001', '[TESTE] Farinha de trigo', 'kg', 2, 14.95, 1,
-   'TESTE-FAR-01', '[TESTE] Farinha de trigo', 'kg', 2, 'simple', 1, 2, 14.95, 'mapeado'),
-  ('81000000-0000-4000-8000-000000000002', '80000000-0000-4000-8000-000000000001', '[TESTE] Manteiga sem sal', 'un', 3, 20, 2,
-   'TESTE-MAN-02', '[TESTE] Manteiga sem sal', 'un', 3, 'simple', 1, 3, 20, 'mapeado')
+select fixture.*
+from fixture_items fixture
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = fixture.purchase_id
+)
 on conflict (id) do update set
   item_name = excluded.item_name,
   unit = excluded.unit,
@@ -457,10 +470,18 @@ on conflict (id) do update set
   normalized_unit_cost = excluded.normalized_unit_cost,
   mapping_status = excluded.mapping_status;
 
+with fixture_installments (id, purchase_id, installment_number, due_date, amount) as (
+  values
+    ('82000000-0000-4000-8000-000000000001'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, 1, (now() at time zone 'America/Sao_Paulo')::date + 7, 44.95),
+    ('82000000-0000-4000-8000-000000000002'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, 2, (now() at time zone 'America/Sao_Paulo')::date + 14, 44.95)
+)
 insert into public.payable_installments (id, purchase_id, installment_number, due_date, amount)
-values
-  ('82000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000001', 1, (now() at time zone 'America/Sao_Paulo')::date + 7, 44.95),
-  ('82000000-0000-4000-8000-000000000002', '80000000-0000-4000-8000-000000000001', 2, (now() at time zone 'America/Sao_Paulo')::date + 14, 44.95)
+select fixture.*
+from fixture_installments fixture
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = fixture.purchase_id
+)
 on conflict (id) do update set
   due_date = excluded.due_date,
   amount = excluded.amount;

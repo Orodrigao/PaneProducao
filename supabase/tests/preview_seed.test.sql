@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(26);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -247,6 +247,24 @@ select is(
       )),
   2,
   'cenario PJ cobre um pedido enviado e um cancelado'
+);
+
+select is(
+  (select count(*)::int from public.payable_purchases
+   where id = '80000000-0000-4000-8000-000000000001'
+     and origin = 'xml'
+     and nfe_number = '999001'
+     and total_value = 89.90),
+  1,
+  'seed cria a NF-e fictícia para conferir os itens no Contas a pagar'
+);
+
+select is(
+  (select count(*)::int from public.payable_purchase_items
+   where purchase_id = '80000000-0000-4000-8000-000000000001'
+     and source_description like '[TESTE]%'),
+  2,
+  'NF-e fictícia tem os dois itens que o smoke de navegador confere'
 );
 
 select * from finish();
