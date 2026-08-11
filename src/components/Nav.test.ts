@@ -45,7 +45,8 @@ describe('navegação responsiva', () => {
     const cssSource = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
 
     expect(cssSource).toContain('#app { width: 100%; padding-bottom: 80px; }')
-    expect(cssSource).toContain('.ps-shell{ width:100%; min-height:100vh;')
+    expect(cssSource).toContain('.ps-canvas:has(.ps-scroll){ height:100vh; }')
+    expect(cssSource).toContain('.ps-canvas:has(.ps-scroll) .ps-shell{ height:100%; min-height:100%; }')
     expect(cssSource).not.toContain('--app-content-max')
   })
 
