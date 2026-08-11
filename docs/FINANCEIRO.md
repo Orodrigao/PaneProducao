@@ -224,8 +224,9 @@ conseguir lançar uma despesa avulsa com categoria em dois toques.
 
 **Não entra:** NF/contas a pagar, recorrência, receita automática, DRE.
 
-**Depende de:** item 1 do gate (proteção de senha vazada) — mesma pendência
-já registrada para a fase 2 do Contas a Receber.
+**Depende de:** item 1 do gate (proteção de senha vazada) — **satisfeito**:
+confirmada ligada em auditoria live de 2026-08-11 (plano Pro ativo,
+HaveIBeenPwned habilitado, mínimo de 10 caracteres no servidor).
 
 **Arquivos e tabelas prováveis:** migration nova; `src/app/financeiro/`;
 `src/lib/finance.ts` e testes; `src/lib/auth.ts`.

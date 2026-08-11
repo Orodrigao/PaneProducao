@@ -88,8 +88,14 @@ Riscos ainda abertos:
   todas as tabelas públicas auditadas estão com RLS ligado e não há policies
   `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
   aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
-  porque restam exposição GraphQL relevante ao ERP, funções `SECURITY DEFINER`
-  chamáveis por usuários logados e proteção contra senha vazada desligada;
+  porque restam exposição GraphQL relevante ao ERP e funções
+  `SECURITY DEFINER` chamáveis por usuários logados;
+- a proteção contra senha vazada foi confirmada **ligada** em auditoria live
+  somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
+  plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
+  caracteres exigido pelo servidor — alinhado ao `PASSWORD_MIN_LENGTH` do
+  app. Isso satisfaz o item 1 do gate técnico dos planos de Contas a Receber
+  e Financeiro;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -177,8 +183,8 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
    ControlePizza/`pizza_*` é exceção legada aceita até desativação.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
-   live de 2026-07-28 no escopo do ERP: GraphQL, funções privilegiadas e
-   configuração de senha vazada.
+   live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas
+   (a configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
