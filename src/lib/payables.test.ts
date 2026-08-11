@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/supabase', () => ({ supabase: {} }))
+const supabaseMocks = vi.hoisted(() => ({ from: vi.fn() }))
+vi.mock('@/lib/supabase', () => ({ supabase: { from: supabaseMocks.from } }))
 import {
   buildInstallments,
   getPayableErrorMessage,
   isDueSoon,
   isOverdue,
+  loadPayablePurchaseItems,
   totalInstallments,
   totalItems,
   validateDraft,
@@ -28,6 +30,23 @@ const baseDraft: PayableDraft = {
 }
 
 describe('contas a pagar manual', () => {
+  beforeEach(() => {
+    supabaseMocks.from.mockReset()
+  })
+
+  it('carrega todos os itens de uma NF-e pela compra, inclusive os já classificados', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [{ id: 'item-1', item_name: 'Leite', mapping_status: 'completa' }], error: null })
+    const eq = vi.fn().mockReturnValue({ order })
+    const select = vi.fn().mockReturnValue({ eq })
+    supabaseMocks.from.mockReturnValue({ select })
+
+    await expect(loadPayablePurchaseItems('purchase-1')).resolves.toEqual([{ id: 'item-1', item_name: 'Leite', mapping_status: 'completa' }])
+    expect(supabaseMocks.from).toHaveBeenCalledWith('payable_purchase_items')
+    expect(select).toHaveBeenCalledWith('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    expect(eq).toHaveBeenCalledWith('purchase_id', 'purchase-1')
+    expect(order).toHaveBeenCalledWith('source_line_number')
+  })
+
   it('preserva a mensagem do banco quando a NF-e ja foi importada', () => {
     expect(getPayableErrorMessage(
       { message: 'Esta NF-e já foi importada. A chave de acesso não pode ser repetida.' },
