@@ -11,9 +11,15 @@ incorporada à `main`.
 
 O projeto está em estabilização e conclusão da Sprint 0 de segurança.
 
-Funcionalidades novas que adicionem dados financeiros devem esperar:
-
-1. conclusão da auditoria e do hardening Auth/RLS.
+**Decisão do Rodrigo, 2026-08-11:** funcionalidade nova com dado financeiro
+**pode andar sem esperar o hardening completo**, desde que cumpra o gate
+técnico por fase definido nos planos ([CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)
+e [FINANCEIRO.md](FINANCEIRO.md)): RLS forçado desde a criação, escrita
+somente por função protegida, grants explícitos, idempotência e matriz de
+teste permitido×bloqueado. Substitui a regra anterior, que exigia a
+conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
+financeiro novo. O hardening restante (GraphQL e funções privilegiadas)
+segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -88,10 +94,14 @@ Riscos ainda abertos:
   todas as tabelas públicas auditadas estão com RLS ligado e não há policies
   `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
   aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
-  porque restam exposição GraphQL relevante ao ERP e funções `SECURITY DEFINER`
-  chamáveis por usuários logados; a proteção contra senha vazada foi ligada em
-  produção em 2026-08-11 (confirmada pelo erro `weak_password` ao definir senha
-  presente em vazamentos conhecidos);
+  porque restam exposição GraphQL relevante ao ERP e funções
+  `SECURITY DEFINER` chamáveis por usuários logados;
+- a proteção contra senha vazada foi confirmada **ligada** em auditoria live
+  somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
+  plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
+  caracteres exigido pelo servidor — alinhado ao `PASSWORD_MIN_LENGTH` do
+  app. Isso satisfaz o item 1 do gate técnico dos planos de Contas a Receber
+  e Financeiro;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -180,7 +190,7 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
    ControlePizza/`pizza_*` é exceção legada aceita até desativação.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
    live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas
-   (a configuração de senha vazada foi resolvida em 2026-08-11).
+   (a configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
