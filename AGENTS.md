@@ -156,6 +156,9 @@ máquina — nem site, nem banco.
   versão anterior. Corrija com novo PR; nunca com deploy manual.
 - `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo
   para ler logs e configuração.
+- CLIs nunca fazem login persistente nesta máquina: passe `vercel --token` e
+  `SUPABASE_ACCESS_TOKEN` por chamada — os logins Dachs e Medtrics do host
+  ficam intactos.
 
 **Banco (Supabase, via Action `Banco (migrations)`):**
 
