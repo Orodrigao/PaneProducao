@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
+import PayablePaymentDialog from '@/components/PayablePaymentDialog'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import { supabase } from '@/lib/supabase'
@@ -12,8 +13,8 @@ import {
   isDueSoon,
   isOverdue,
   loadPayablePurchases,
-  payInstallment,
   type PayableProduct,
+  type PayableInstallmentRow,
   type PayablePurchaseRow,
   loadPendingPayableItems,
   type PendingPayableItemRow,
@@ -34,6 +35,11 @@ export default function ContasPagarPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pendingPurchaseId, setPendingPurchaseId] = useState<string | null>(null)
   const [pendingItems, setPendingItems] = useState<PendingPayableItemRow[]>([])
+  const [paymentTarget, setPaymentTarget] = useState<{
+    installment: PayableInstallmentRow
+    purchase: PayablePurchaseRow
+    mode: 'baixar' | 'corrigir'
+  } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -86,19 +92,13 @@ export default function ContasPagarPage() {
     }
   }, [purchases])
 
-  async function handlePay(installmentId: string) {
-    if (!window.confirm('Confirmar que esta parcela foi paga?')) return
-    setBusyId(installmentId)
-    try {
-      await payInstallment(installmentId)
-      showToast('Parcela baixada.')
-      await load()
-    } catch (payError) {
-      console.error(payError)
-      showToast(payError instanceof Error ? payError.message : 'Não foi possível baixar a parcela.')
-    } finally {
-      setBusyId(null)
-    }
+  function openPaymentDialog(installment: PayableInstallmentRow, purchase: PayablePurchaseRow, mode: 'baixar' | 'corrigir') {
+    setPaymentTarget({ installment, purchase, mode })
+  }
+
+  async function finishPayment() {
+    setPaymentTarget(null)
+    await load()
   }
 
   async function handleCancel(purchaseId: string) {
@@ -181,8 +181,20 @@ export default function ContasPagarPage() {
               onOpenPending={purchaseId => void openPendingItems(purchaseId)}
               onRefreshPending={() => void refreshPendingItems()}
               onClosePending={() => setPendingPurchaseId(null)}
-              onPay={installmentId => void handlePay(installmentId)}
+              onPay={(installment, purchase) => openPaymentDialog(installment, purchase, 'baixar')}
+              onCorrect={(installment, purchase) => openPaymentDialog(installment, purchase, 'corrigir')}
               onCancel={purchaseId => void handleCancel(purchaseId)}
+            />
+          )}
+
+          {paymentTarget && (
+            <PayablePaymentDialog
+              installment={paymentTarget.installment}
+              purchaseDate={paymentTarget.purchase.purchase_date}
+              supplierName={Array.isArray(paymentTarget.purchase.suppliers) ? paymentTarget.purchase.suppliers[0]?.name ?? 'Fornecedor não identificado' : paymentTarget.purchase.suppliers?.name ?? 'Fornecedor não identificado'}
+              mode={paymentTarget.mode}
+              onClose={() => setPaymentTarget(null)}
+              onSaved={finishPayment}
             />
           )}
 

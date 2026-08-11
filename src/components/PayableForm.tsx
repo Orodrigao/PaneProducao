@@ -7,8 +7,10 @@ import {
   buildInstallments,
   createManualPayable,
   formatBRL,
+  actualPaymentMethodLabel,
   totalItems,
   validateDraft,
+  type PayableActualPaymentMethod,
   type PayableDraft,
   type PayableInstallmentDraft,
   type PayableProduct,
@@ -38,6 +40,7 @@ function initialDraft(): PayableDraft {
     notes: '',
     items: [newItem()],
     installments: [{ number: 1, dueDate: date, amount: '0.00' }],
+    paidDetails: { paidDate: date, paidAmount: '0.00', paidMethod: 'dinheiro', currentDueDate: '' },
   }
 }
 
@@ -58,6 +61,9 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
       return {
         ...previous,
         items,
+        paidDetails: previous.paid && previous.paidDetails
+          ? { ...previous.paidDetails, paidAmount: totalItems(items).toFixed(2) }
+          : previous.paidDetails,
         installments: !previous.paid && previous.installments.length === 1
           ? [{ ...previous.installments[0], amount: totalItems(items).toFixed(2) }]
           : previous.installments,
@@ -101,6 +107,14 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
     setDraft(previous => ({
       ...previous,
       paid,
+      paidDetails: paid
+        ? {
+            paidDate: previous.paidDetails?.paidDate ?? todayKey(),
+            paidAmount: totalItems(previous.items).toFixed(2),
+            paidMethod: previous.paidDetails?.paidMethod ?? 'dinheiro',
+            currentDueDate: previous.paidDetails?.currentDueDate ?? '',
+          }
+        : previous.paidDetails,
       installments: paid
         ? [{ number: 1, dueDate: previous.purchaseDate, amount: totalItems(previous.items).toFixed(2) }]
         : buildInstallments(totalItems(previous.items), installmentCount, previous.purchaseDate),
@@ -247,6 +261,40 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
             </div>
           ))}
         </>
+      )}
+
+      {draft.paid && draft.paidDetails && (
+        <div className="ps-card" style={{ marginTop: 14, padding: 10, background: 'var(--cream-raise)' }}>
+          <b>Dados do pagamento real</b>
+          <small style={{ display: 'block', marginTop: 3 }}>A compra entra como paga. Confira a data, o valor e a forma que realmente foram usados.</small>
+          <div className="ps-fieldrow" style={{ marginTop: 10 }}>
+            <div className="ps-fieldgroup">
+              <label className="ps-fieldlabel" htmlFor="manual-paid-date">Data do pagamento *</label>
+              <input id="manual-paid-date" className="ps-input" type="date" min={draft.purchaseDate} max={todayKey()} value={draft.paidDetails.paidDate}
+                onChange={event => setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, paidDate: event.target.value } : previous.paidDetails }))} />
+            </div>
+            <div className="ps-fieldgroup">
+              <label className="ps-fieldlabel" htmlFor="manual-paid-amount">Valor realmente pago *</label>
+              <input id="manual-paid-amount" className="ps-input" type="number" min={total.toFixed(2)} step="0.01" inputMode="decimal" value={draft.paidDetails.paidAmount}
+                onChange={event => setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, paidAmount: event.target.value } : previous.paidDetails }))} />
+            </div>
+          </div>
+          <div className="ps-fieldrow">
+            <div className="ps-fieldgroup">
+              <label className="ps-fieldlabel" htmlFor="manual-paid-method">Forma real de pagamento *</label>
+              <select id="manual-paid-method" className="ps-select" value={draft.paidDetails.paidMethod}
+                onChange={event => setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, paidMethod: event.target.value as PayableActualPaymentMethod } : previous.paidDetails }))}>
+                {(['dinheiro', 'pix', 'transferencia', 'boleto'] as PayableActualPaymentMethod[]).map(method => <option key={method} value={method}>{actualPaymentMethodLabel(method)}</option>)}
+              </select>
+            </div>
+            <div className="ps-fieldgroup">
+              <label className="ps-fieldlabel" htmlFor="manual-current-due-date">Vencimento atualizado</label>
+              <input id="manual-current-due-date" className="ps-input" type="date" min={draft.purchaseDate} value={draft.paidDetails.currentDueDate ?? ''}
+                onChange={event => setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, currentDueDate: event.target.value } : previous.paidDetails }))} />
+              <small className="ps-help">Use apenas se recebeu um boleto atualizado.</small>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="ps-fieldgroup" style={{ marginTop: 14 }}>
