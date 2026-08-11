@@ -327,7 +327,10 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
     ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores"]'::jsonb)
+    -- O financeiro carrega as rotas comerciais do cenario PJ: sem
+    -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
+    -- (o tripe rota-permissao-RLS precisa concordar nos tres).
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -379,7 +382,10 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.importar_xml', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.baixar', 'jc'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc'),
+    -- Sem esta permissao o login filtra /pedidos-pj de volta para fora das
+    -- rotas (resolveAllowedRoutes) e o financeiro nao ve a tela.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
