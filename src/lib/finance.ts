@@ -57,11 +57,12 @@ export interface FinanceAccountRow {
 }
 
 /** Origem do lançamento. 'avulso' é digitado; o resto nasce de outra tela. */
-export type FinanceSource = 'avulso' | 'contas_pagar'
+export type FinanceSource = 'avulso' | 'contas_pagar' | 'recorrencia'
 
 export const FINANCE_SOURCE_LABELS: Record<FinanceSource, string> = {
   avulso: 'Lançamento avulso',
   contas_pagar: 'Contas a pagar',
+  recorrencia: 'Recorrência',
 }
 
 export interface FinanceEntryRow {
@@ -79,10 +80,58 @@ export interface FinanceEntryRow {
   description: string
   source: FinanceSource
   source_ref: string | null
+  recurrence_month: string | null
   reversal_of: string | null
   reversal_reason: string | null
   reversed_at: string | null
   created_at: string
+}
+
+export interface FinanceRecurringRuleRow {
+  id: string
+  name: string
+  category_id: string
+  store: FinanceStore
+  planned_amount: number
+  due_day: number
+  start_month: string
+  end_month: string | null
+  default_account_id: string
+  default_payment_method: FinancePaymentMethod
+  active: boolean
+}
+
+export interface FinanceRecurringForecast {
+  rule: FinanceRecurringRuleRow
+  competenceMonth: string
+  dueDate: string
+  entry: FinanceEntryRow | null
+}
+
+export interface FinanceRecurringRuleDraft {
+  name: string
+  categoryKey: string
+  store: FinanceStore | ''
+  plannedAmount: string
+  dueDay: string
+  startMonth: string
+  endMonth: string
+  defaultAccountKey: string
+  defaultPaymentMethod: FinancePaymentMethod
+}
+
+export function emptyFinanceRecurringRuleDraft(monthKey = currentMonthKey()): FinanceRecurringRuleDraft {
+  return {
+    name: '',
+    categoryKey: '',
+    store: '',
+    plannedAmount: '',
+    dueDay: '10',
+    startMonth: monthKey,
+    endMonth: '',
+    defaultAccountKey: '',
+    defaultPaymentMethod: 'boleto',
+  }
 }
 
 /**
@@ -125,6 +174,23 @@ export function getFinanceErrorMessage(error: unknown, fallback: string): string
 }
 
 export const FINANCE_MAX_AMOUNT = 1_000_000
+
+export function validateFinanceRecurringRuleDraft(draft: FinanceRecurringRuleDraft): string | null {
+  if (draft.name.trim().length < 3) return 'Dê um nome à recorrência com pelo menos 3 letras.'
+  if (!draft.categoryKey) return 'Escolha a categoria da recorrência.'
+  if (!draft.store) return 'Escolha a loja da recorrência.'
+  const amount = parseMoneyInput(draft.plannedAmount)
+  if (!(amount > 0)) return 'Informe um valor previsto maior que zero.'
+  if (amount > FINANCE_MAX_AMOUNT) return 'Valor acima do limite permitido. Confira o que foi digitado.'
+  const dueDay = Number(draft.dueDay)
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return 'Informe um dia de vencimento entre 1 e 31.'
+  if (!/^\d{4}-\d{2}$/.test(draft.startMonth)) return 'Informe o mês de início da recorrência.'
+  if (draft.endMonth && (!/^\d{4}-\d{2}$/.test(draft.endMonth) || draft.endMonth < draft.startMonth)) {
+    return 'O fim da vigência não pode ser antes do início.'
+  }
+  if (!draft.defaultAccountKey) return 'Escolha a conta habitual da recorrência.'
+  return null
+}
 
 /** Mesmo limite do banco: dinheiro validado na entrada E na saída. */
 export function validateFinanceDraft(draft: FinanceEntryDraft, today = todayKey()): string | null {
@@ -202,6 +268,39 @@ export function currentMonthKey(today = todayKey()): string {
   return today.slice(0, 7)
 }
 
+function lastDayOfMonth(monthKey: string): number {
+  const [year, month] = monthKey.split('-').map(Number)
+  return new Date(year, month, 0).getDate()
+}
+
+export function recurringDueDate(monthKey: string, dueDay: number): string {
+  return `${monthKey}-${String(Math.min(dueDay, lastDayOfMonth(monthKey))).padStart(2, '0')}`
+}
+
+export function buildFinanceRecurringForecasts(
+  rules: readonly FinanceRecurringRuleRow[],
+  entries: readonly FinanceEntryRow[],
+  monthKey: string,
+): FinanceRecurringForecast[] {
+  const month = `${monthKey}-01`
+  const entryByRule = new Map<string, FinanceEntryRow>()
+  entries.forEach(entry => {
+    if (entry.source === 'recorrencia' && entry.entry_type === 'lancamento' && entry.reversed_at === null
+      && entry.source_ref && entry.recurrence_month === month) {
+      entryByRule.set(entry.source_ref, entry)
+    }
+  })
+  return rules
+    .filter(rule => rule.active && rule.start_month <= month && (!rule.end_month || rule.end_month >= month))
+    .map(rule => ({
+      rule,
+      competenceMonth: month,
+      dueDate: recurringDueDate(monthKey, rule.due_day),
+      entry: entryByRule.get(rule.id) ?? null,
+    }))
+    .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || left.rule.name.localeCompare(right.rule.name))
+}
+
 export async function loadFinanceCategories(): Promise<FinanceCategoryRow[]> {
   const { data, error } = await supabase
     .from('finance_categories')
@@ -226,13 +325,68 @@ export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntry
   const { start, end } = monthRange(monthKey)
   const { data, error } = await supabase
     .from('finance_entries')
-    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,reversal_of,reversal_reason,reversed_at,created_at')
+    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,reversal_of,reversal_reason,reversed_at,created_at')
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data ?? []) as FinanceEntryRow[]
+}
+
+export async function loadFinanceRecurringRules(): Promise<FinanceRecurringRuleRow[]> {
+  const { data, error } = await supabase
+    .from('finance_recurring_rules')
+    .select('id,name,category_id,store,planned_amount,due_day,start_month,end_month,default_account_id,default_payment_method,active')
+    .order('name')
+  if (error) throw error
+  return (data ?? []) as FinanceRecurringRuleRow[]
+}
+
+export async function createFinanceRecurringRule(draft: FinanceRecurringRuleDraft): Promise<string> {
+  const { data, error } = await supabase.rpc('create_finance_recurring_rule', {
+    p_name: draft.name.trim(),
+    p_category_key: draft.categoryKey,
+    p_store: draft.store,
+    p_planned_amount: parseMoneyInput(draft.plannedAmount),
+    p_due_day: Number(draft.dueDay),
+    p_start_month: `${draft.startMonth}-01`,
+    p_end_month: draft.endMonth ? `${draft.endMonth}-01` : null,
+    p_default_account_key: draft.defaultAccountKey,
+    p_default_payment_method: draft.defaultPaymentMethod,
+  })
+  if (error) throw error
+  return data as string
+}
+
+export async function endFinanceRecurringRule(ruleId: string, endMonthKey: string): Promise<void> {
+  const { error } = await supabase.rpc('end_finance_recurring_rule', {
+    p_rule_id: ruleId,
+    p_end_month: `${endMonthKey}-01`,
+  })
+  if (error) throw error
+}
+
+export async function confirmFinanceRecurringRule(
+  ruleId: string,
+  monthKey: string,
+  paidDate: string,
+  amount: string,
+  paymentMethod: FinancePaymentMethod,
+  accountKey: string,
+  requestId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('confirm_finance_recurring_rule', {
+    p_request_id: requestId,
+    p_rule_id: ruleId,
+    p_competence_month: `${monthKey}-01`,
+    p_paid_date: paidDate,
+    p_amount: parseMoneyInput(amount),
+    p_payment_method: paymentMethod,
+    p_account_key: accountKey,
+  })
+  if (error) throw error
+  return data as string
 }
 
 export async function createFinanceEntry(draft: FinanceEntryDraft, requestId: string): Promise<string> {
