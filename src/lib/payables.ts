@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
+import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
@@ -432,8 +433,10 @@ export function validateCategorySlices(slices: readonly PayableCategorySlice[], 
   const chaves = new Set(preenchidas.map(slice => slice.categoryKey))
   if (chaves.size !== preenchidas.length) return 'A mesma categoria aparece duas vezes.'
 
-  const soma = preenchidas.reduce((acumulado, slice) => acumulado + roundMoney(Number(slice.amount) || 0), 0)
-  if (preenchidas.some(slice => !(Number(slice.amount) > 0))) return 'Cada categoria precisa de um valor maior que zero.'
+  // A Elis digita "1.234,56"; `Number` sozinho leria isso como zero e o
+  // rateio fecharia errado sem ninguém perceber.
+  const soma = preenchidas.reduce((acumulado, slice) => acumulado + parseMoneyInput(slice.amount), 0)
+  if (preenchidas.some(slice => !(parseMoneyInput(slice.amount) > 0))) return 'Cada categoria precisa de um valor maior que zero.'
   if (roundMoney(soma) !== roundMoney(total)) {
     return `A soma das categorias (${formatBRL(soma)}) precisa ser igual ao total da conta (${formatBRL(total)}).`
   }
@@ -459,7 +462,7 @@ export async function setPayableFinanceClassification(
     p_account_key: accountKey || null,
     p_categories: slices
       .filter(slice => slice.categoryKey)
-      .map(slice => ({ category_key: slice.categoryKey, amount: roundMoney(Number(slice.amount) || 0) })),
+      .map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
   })
   if (error) throw error
 }
@@ -476,7 +479,7 @@ export async function reclassifyPayableEntries(
     p_account_key: accountKey || null,
     p_categories: slices
       .filter(slice => slice.categoryKey)
-      .map(slice => ({ category_key: slice.categoryKey, amount: roundMoney(Number(slice.amount) || 0) })),
+      .map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
     p_reason: reason.trim(),
   })
   if (error) throw error

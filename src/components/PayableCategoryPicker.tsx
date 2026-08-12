@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { Plus, X } from 'lucide-react'
 import { formatBRL, PAYABLE_MAX_CATEGORIES, type PayableCategorySlice } from '@/lib/payables'
+import { parseMoneyInput } from '@/lib/cashClosing'
 import type { FinanceAccountRow, FinanceCategoryRow } from '@/lib/finance'
 
 interface PayableCategoryPickerProps {
@@ -53,7 +54,8 @@ export default function PayableCategoryPicker({
     return [...groups.entries()]
   }, [categories])
 
-  const soma = slices.reduce((acumulado, slice) => acumulado + (Number(slice.amount) || 0), 0)
+  // Aceita o jeito que a pessoa escreve dinheiro aqui: "1.234,56".
+  const soma = slices.reduce((acumulado, slice) => acumulado + parseMoneyInput(slice.amount), 0)
   const dividido = slices.length > 1
   const falta = Math.round((total - soma) * 100) / 100
 

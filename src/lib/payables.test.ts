@@ -174,3 +174,26 @@ describe('classificacao financeira da conta a pagar', () => {
     expect(validateCategorySlices(slices(['cmv_materia_prima', '999.99'], ['cmv_embalagem', '0.01']), 1000)).toBeNull()
   })
 })
+
+describe('rateio escrito do jeito brasileiro', () => {
+  // Bug encontrado no teste de navegador: digitar "50,00" virava zero e o
+  // rateio nunca fechava, com uma mensagem que nao explicava nada.
+  it('entende virgula decimal', () => {
+    expect(validateCategorySlices(
+      [{ categoryKey: 'cmv_materia_prima', amount: '50,00' }, { categoryKey: 'cmv_embalagem', amount: '39,90' }],
+      89.9,
+    )).toBeNull()
+  })
+
+  it('entende ponto de milhar com virgula decimal', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '1.234,56' }], 1234.56)).toBeNull()
+  })
+
+  it('continua entendendo ponto decimal, que e como a tela preenche sozinha', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '89.90' }], 89.9)).toBeNull()
+  })
+
+  it('recusa texto que nao e dinheiro', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: 'abc' }], 89.9)).toMatch(/maior que zero/i)
+  })
+})
