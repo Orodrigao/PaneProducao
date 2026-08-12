@@ -92,9 +92,13 @@ create table if not exists public.finance_entries (
   reversed_by uuid references auth.users(id),
   created_by uuid not null references auth.users(id),
   created_at timestamptz not null default now(),
+  -- O motivo aparece nas duas pontas da correção: no contra-lançamento (por
+  -- que ele existe) e no original (por que ele deixou de valer). O que não
+  -- pode existir é motivo em lançamento que ninguém estornou.
   constraint finance_entries_reversal_shape check (
     (entry_type = 'estorno') = (reversal_of is not null)
-    and (entry_type = 'estorno') = (nullif(trim(coalesce(reversal_reason, '')), '') is not null)
+    and (entry_type <> 'estorno' or nullif(trim(coalesce(reversal_reason, '')), '') is not null)
+    and (reversal_reason is null or entry_type = 'estorno' or reversed_at is not null)
   ),
   constraint finance_entries_no_self_reversal check (reversal_of is null or reversal_of <> id)
 );
