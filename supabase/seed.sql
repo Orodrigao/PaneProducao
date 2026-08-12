@@ -330,7 +330,7 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     -- O financeiro carrega as rotas comerciais do cenario PJ: sem
     -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
     -- (o tripe rota-permissao-RLS precisa concordar nos tres).
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -385,7 +385,12 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc'),
     -- Sem esta permissao o login filtra /pedidos-pj de volta para fora das
     -- rotas (resolveAllowedRoutes) e o financeiro nao ve a tela.
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc'),
+    -- Livro-caixa: escopo global porque o livro cobre a empresa inteira,
+    -- inclusive os lancamentos 'geral' (que nao pertencem a uma loja so).
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.acessar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.lancar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.estornar', '*')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
