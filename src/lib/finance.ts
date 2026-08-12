@@ -56,21 +56,41 @@ export interface FinanceAccountRow {
   sort_order: number
 }
 
+/** Origem do lançamento. 'avulso' é digitado; o resto nasce de outra tela. */
+export type FinanceSource = 'avulso' | 'contas_pagar'
+
+export const FINANCE_SOURCE_LABELS: Record<FinanceSource, string> = {
+  avulso: 'Lançamento avulso',
+  contas_pagar: 'Contas a pagar',
+}
+
 export interface FinanceEntryRow {
   id: string
   entry_type: FinanceEntryType
   category_id: string
-  account_id: string
+  // Nulo quando a origem não sabe de qual conta o dinheiro saiu.
+  account_id: string | null
   store: FinanceStore
   competence_month: string
   paid_date: string
+  planned_amount: number
   amount: number
   payment_method: FinancePaymentMethod
   description: string
+  source: FinanceSource
+  source_ref: string | null
   reversal_of: string | null
   reversal_reason: string | null
   reversed_at: string | null
   created_at: string
+}
+
+/**
+ * A diferença entre o previsto e o pago: juro, multa ou desconto.
+ * O `+ 0` evita que uma sobra de arredondamento vire "-0" na tela.
+ */
+export function entryDifference(entry: Pick<FinanceEntryRow, 'planned_amount' | 'amount'>): number {
+  return Math.round((entry.amount - entry.planned_amount) * 100) / 100 + 0
 }
 
 export interface FinanceEntryDraft {
@@ -206,7 +226,7 @@ export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntry
   const { start, end } = monthRange(monthKey)
   const { data, error } = await supabase
     .from('finance_entries')
-    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,amount,payment_method,description,reversal_of,reversal_reason,reversed_at,created_at')
+    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,reversal_of,reversal_reason,reversed_at,created_at')
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
