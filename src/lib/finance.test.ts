@@ -10,17 +10,21 @@ import {
   entryDifference,
   currentMonthKey,
   emptyFinanceDraft,
+  emptyFinanceTransferDraft,
   entrySignedAmount,
   formatCompetenceMonth,
   monthRange,
   summarizeEntries,
+  transferLegIsInflow,
   validateFinanceDraft,
   validateFinanceRecurringRuleDraft,
+  validateFinanceTransferDraft,
   type FinanceCategoryRow,
   type FinanceEntryDraft,
   type FinanceEntryRow,
   type FinanceRecurringRuleDraft,
   type FinanceRecurringRuleRow,
+  type FinanceTransferDraft,
 } from './finance'
 
 const TODAY = '2026-08-12'
@@ -54,7 +58,8 @@ function entry(overrides: Partial<FinanceEntryRow> = {}): FinanceEntryRow {
     store: 'jc', competence_month: '2026-08-01', paid_date: TODAY,
     planned_amount: 150, amount: 150,
     payment_method: 'dinheiro', description: 'Diária do Marcelo',
-    source: 'avulso', source_ref: null, recurrence_month: null, reversal_of: null,
+    source: 'avulso', source_ref: null, recurrence_month: null,
+    transfer_id: null, transfer_leg: null, reversal_of: null,
     reversal_reason: null, reversed_at: null, created_at: '2026-08-12T12:00:00Z',
     ...overrides,
   }
@@ -199,6 +204,71 @@ describe('resumo do mês', () => {
   it('ignora lançamento de categoria desconhecida em vez de somar errado', () => {
     const totals = summarizeEntries([entry({ category_id: 'cat-que-nao-existe' })], categories)
     expect(totals).toEqual({ receita: 0, despesa: 0, saldo: 0 })
+  })
+})
+
+describe('transferencia entre contas', () => {
+  const transferencia: FinanceCategoryRow = {
+    id: 'cat-transferencia', key: 'transferencia', label: 'Transferência entre contas',
+    dre_tier: 'transferencia', dre_group: 'transferencia', nature: 'transferencia', team: null, sort_order: 510,
+  }
+
+  function transferDraft(overrides: Partial<FinanceTransferDraft> = {}): FinanceTransferDraft {
+    return {
+      ...emptyFinanceTransferDraft(),
+      originAccountKey: 'caixa_fisico_jc',
+      destinationAccountKey: 'sicredi_jc',
+      amount: '800,00',
+      transferDate: TODAY,
+      note: '',
+      ...overrides,
+    }
+  }
+
+  it('aceita a sangria do caixa da JC para o banco', () => {
+    expect(validateFinanceTransferDraft(transferDraft(), TODAY)).toBeNull()
+  })
+
+  it('recusa origem igual ao destino', () => {
+    expect(validateFinanceTransferDraft(transferDraft({ destinationAccountKey: 'caixa_fisico_jc' }), TODAY))
+      .toBe('A conta de origem e a de destino precisam ser diferentes.')
+  })
+
+  it('recusa valor zerado e data no futuro', () => {
+    expect(validateFinanceTransferDraft(transferDraft({ amount: '0' }), TODAY))
+      .toBe('Informe um valor maior que zero.')
+    expect(validateFinanceTransferDraft(transferDraft({ transferDate: '2026-08-13' }), TODAY))
+      .toBe('A data da transferência não pode ser no futuro.')
+  })
+
+  it('nao deixa passar valor acima do limite do banco', () => {
+    expect(validateFinanceTransferDraft(transferDraft({ amount: '1000000,01' }), TODAY))
+      .toBe('Valor acima do limite permitido. Confira o que foi digitado.')
+  })
+
+  // O ponto central da fase: dinheiro que só troca de conta não pode virar
+  // despesa nem receita do mês (decisão 7 de docs/FINANCEIRO.md).
+  it('nao entra no resumo do mes', () => {
+    const categories = new Map([
+      [despesa.id, despesa], [receita.id, receita], [transferencia.id, transferencia],
+    ])
+    const totals = summarizeEntries([
+      entry({ id: 'a', category_id: despesa.id, amount: 150 }),
+      entry({ id: 'saida', category_id: transferencia.id, amount: 800, transfer_id: 't-1', transfer_leg: 'saida' }),
+      entry({ id: 'entrada', category_id: transferencia.id, amount: 800, transfer_id: 't-1', transfer_leg: 'entrada' }),
+    ], categories)
+    expect(totals).toEqual({ receita: 0, despesa: 150, saldo: -150 })
+  })
+
+  it('nao tem efeito no caixa pela natureza da categoria', () => {
+    expect(entrySignedAmount(entry({ amount: 800 }), 'transferencia')).toBe(0)
+  })
+
+  it('o sinal de cada perna vem do lado, e o estorno inverte os dois', () => {
+    expect(transferLegIsInflow({ entry_type: 'lancamento', transfer_leg: 'saida' })).toBe(false)
+    expect(transferLegIsInflow({ entry_type: 'lancamento', transfer_leg: 'entrada' })).toBe(true)
+    expect(transferLegIsInflow({ entry_type: 'estorno', transfer_leg: 'saida' })).toBe(true)
+    expect(transferLegIsInflow({ entry_type: 'estorno', transfer_leg: 'entrada' })).toBe(false)
   })
 })
 

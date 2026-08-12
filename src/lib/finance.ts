@@ -57,13 +57,17 @@ export interface FinanceAccountRow {
 }
 
 /** Origem do lançamento. 'avulso' é digitado; o resto nasce de outra tela. */
-export type FinanceSource = 'avulso' | 'contas_pagar' | 'recorrencia'
+export type FinanceSource = 'avulso' | 'contas_pagar' | 'recorrencia' | 'transferencia'
 
 export const FINANCE_SOURCE_LABELS: Record<FinanceSource, string> = {
   avulso: 'Lançamento avulso',
   contas_pagar: 'Contas a pagar',
   recorrencia: 'Recorrência',
+  transferencia: 'Transferência',
 }
+
+/** Lado da transferência: de qual conta saiu e em qual entrou. */
+export type FinanceTransferLeg = 'saida' | 'entrada'
 
 export interface FinanceEntryRow {
   id: string
@@ -81,6 +85,9 @@ export interface FinanceEntryRow {
   source: FinanceSource
   source_ref: string | null
   recurrence_month: string | null
+  // Preenchidos só nas duas pernas de uma transferência; sempre juntos.
+  transfer_id: string | null
+  transfer_leg: FinanceTransferLeg | null
   reversal_of: string | null
   reversal_reason: string | null
   reversed_at: string | null
@@ -192,6 +199,46 @@ export function validateFinanceRecurringRuleDraft(draft: FinanceRecurringRuleDra
   return null
 }
 
+export interface FinanceTransferDraft {
+  originAccountKey: string
+  destinationAccountKey: string
+  amount: string
+  transferDate: string
+  note: string
+}
+
+export function emptyFinanceTransferDraft(): FinanceTransferDraft {
+  return {
+    originAccountKey: '',
+    destinationAccountKey: '',
+    amount: '',
+    transferDate: todayKey(),
+    note: '',
+  }
+}
+
+/**
+ * A trava de origem ≠ destino também vive no banco. Aqui ela existe para o
+ * recado chegar antes do envio — o dinheiro é validado nas duas pontas.
+ */
+export function validateFinanceTransferDraft(draft: FinanceTransferDraft, today = todayKey()): string | null {
+  if (!draft.originAccountKey) return 'Escolha de qual conta o dinheiro saiu.'
+  if (!draft.destinationAccountKey) return 'Escolha para qual conta o dinheiro foi.'
+  if (draft.originAccountKey === draft.destinationAccountKey) {
+    return 'A conta de origem e a de destino precisam ser diferentes.'
+  }
+
+  const amount = parseMoneyInput(draft.amount)
+  if (!(amount > 0)) return 'Informe um valor maior que zero.'
+  if (amount > FINANCE_MAX_AMOUNT) return 'Valor acima do limite permitido. Confira o que foi digitado.'
+
+  if (!draft.transferDate) return 'Informe a data da transferência.'
+  if (draft.transferDate > today) return 'A data da transferência não pode ser no futuro.'
+  if (draft.transferDate < '2020-01-01') return 'Data da transferência muito antiga. Confira o que foi digitado.'
+
+  return null
+}
+
 /** Mesmo limite do banco: dinheiro validado na entrada E na saída. */
 export function validateFinanceDraft(draft: FinanceEntryDraft, today = todayKey()): string | null {
   if (!draft.categoryKey) return 'Escolha a categoria do lançamento.'
@@ -232,8 +279,24 @@ export function formatFinanceMoney(value: number): string {
  * por isso que corrigir nunca precisa apagar nada.
  */
 export function entrySignedAmount(entry: Pick<FinanceEntryRow, 'entry_type' | 'amount'>, nature: FinanceNature): number {
+  // Transferência não é receita nem despesa: o dinheiro só trocou de conta
+  // (decisão 7 de docs/FINANCEIRO.md). Sem este caso, a sangria da JC
+  // apareceria como despesa e inflaria o mês.
+  if (nature === 'transferencia') return 0
   const base = nature === 'receita' ? entry.amount : -entry.amount
   return entry.entry_type === 'estorno' ? -base : base
+}
+
+/**
+ * O sinal de uma perna de transferência não vem da categoria (que não é nem
+ * receita nem despesa), e sim do lado: saiu de uma conta, entrou na outra.
+ * O estorno inverte os dois lados.
+ */
+export function transferLegIsInflow(
+  entry: Pick<FinanceEntryRow, 'entry_type' | 'transfer_leg'>,
+): boolean {
+  const entering = entry.transfer_leg === 'entrada'
+  return entry.entry_type === 'estorno' ? !entering : entering
 }
 
 export interface FinanceMonthTotals {
@@ -251,6 +314,7 @@ export function summarizeEntries(
   for (const entry of entries) {
     const category = categoriesById.get(entry.category_id)
     if (!category) continue
+    if (category.nature === 'transferencia') continue
     const signed = entrySignedAmount(entry, category.nature)
     if (signed >= 0) receita += signed
     else despesa += -signed
@@ -325,7 +389,7 @@ export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntry
   const { start, end } = monthRange(monthKey)
   const { data, error } = await supabase
     .from('finance_entries')
-    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,reversal_of,reversal_reason,reversed_at,created_at')
+    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at')
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
@@ -400,6 +464,29 @@ export async function createFinanceEntry(draft: FinanceEntryDraft, requestId: st
     p_payment_method: draft.paymentMethod,
     p_description: draft.description.trim(),
     p_competence_month: competenceMonthOf(draft.paidDate),
+  })
+  if (error) throw error
+  return data as string
+}
+
+export async function createFinanceTransfer(draft: FinanceTransferDraft, requestId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('create_finance_transfer', {
+    p_request_id: requestId,
+    p_origin_account_key: draft.originAccountKey,
+    p_destination_account_key: draft.destinationAccountKey,
+    p_amount: parseMoneyInput(draft.amount),
+    p_transfer_date: draft.transferDate,
+    p_note: draft.note.trim() || null,
+  })
+  if (error) throw error
+  return data as string
+}
+
+export async function reverseFinanceTransfer(transferId: string, reason: string, requestId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('reverse_finance_transfer', {
+    p_request_id: requestId,
+    p_transfer_id: transferId,
+    p_reason: reason.trim(),
   })
   if (error) throw error
   return data as string

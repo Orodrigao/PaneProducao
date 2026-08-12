@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
+import { ArrowRightLeft, BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
 import FinanceRecurringPanel from '@/components/FinanceRecurringPanel'
+import FinanceTransferForm from '@/components/FinanceTransferForm'
 import {
   currentMonthKey,
   entryDifference,
@@ -18,7 +19,9 @@ import {
   loadFinanceEntries,
   loadFinanceRecurringRules,
   reverseFinanceEntry,
+  reverseFinanceTransfer,
   summarizeEntries,
+  transferLegIsInflow,
   FINANCE_STORE_LABELS,
   type FinanceAccountRow,
   type FinanceCategoryRow,
@@ -37,6 +40,7 @@ export default function FinanceiroPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -93,6 +97,29 @@ export default function FinanceiroPage() {
     }
   }
 
+  // A transferência é um fato só, com duas pernas. Estornar de um lado apenas
+  // faria dinheiro sumir — por isso o banco recusa e a tela nem oferece.
+  async function handleReverseTransfer(entry: FinanceEntryRow) {
+    if (!entry.transfer_id) return
+    const reason = window.prompt('Por que esta transferência será estornada?')?.trim()
+    if (!reason) return
+    if (reason.length < 3) {
+      showToast('Escreva um motivo com pelo menos 3 letras.')
+      return
+    }
+    setBusyId(entry.id)
+    try {
+      await reverseFinanceTransfer(entry.transfer_id, reason, crypto.randomUUID())
+      showToast('Transferência estornada nas duas contas.')
+      await load()
+    } catch (reverseError) {
+      console.error(reverseError)
+      showToast(getFinanceErrorMessage(reverseError, 'Não foi possível estornar a transferência.'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="ps-canvas">
       <div className="ps-shell">
@@ -144,17 +171,30 @@ export default function FinanceiroPage() {
             </div>
           )}
 
-          {showForm ? (
+          {showForm && (
             <FinanceEntryForm
               categories={categories}
               accounts={accounts}
               onCancel={() => setShowForm(false)}
               onSaved={async () => { setShowForm(false); await load() }}
             />
-          ) : (
+          )}
+
+          {showTransfer && (
+            <FinanceTransferForm
+              accounts={accounts}
+              onCancel={() => setShowTransfer(false)}
+              onSaved={async () => { setShowTransfer(false); await load() }}
+            />
+          )}
+
+          {!showForm && !showTransfer && (
             <div className="ps-fieldrow" style={{ marginTop: 14 }}>
               <button className="ps-btn primary block" onClick={() => setShowForm(true)} disabled={loading || categories.length === 0}>
                 <Plus size={16} /> Novo lançamento
+              </button>
+              <button className="ps-btn ghost block" onClick={() => setShowTransfer(true)} disabled={loading || accounts.length < 2}>
+                <ArrowRightLeft size={16} /> Transferir
               </button>
             </div>
           )}
@@ -196,7 +236,10 @@ export default function FinanceiroPage() {
             // O estorno devolve o dinheiro: o sinal é o do efeito no caixa,
             // não o da natureza da categoria.
             const signed = category ? entrySignedAmount(entry, category.nature) : 0
-            const isInflow = signed >= 0
+            // Perna de transferência não tem sinal pela categoria (ela não é
+            // receita nem despesa): quem manda é o lado, saída ou entrada.
+            const isTransfer = entry.transfer_id !== null
+            const isInflow = isTransfer ? transferLegIsInflow(entry) : signed >= 0
             const difference = entryDifference(entry)
             return (
               <article
@@ -242,7 +285,25 @@ export default function FinanceiroPage() {
                   </div>
                 )}
 
-                {!isReversal && !isReversed && (entry.source === 'avulso' || entry.source === 'recorrencia') && (
+                {isTransfer && (
+                  <small style={{ display: 'block', marginTop: 4, opacity: 0.75 }}>
+                    {entry.transfer_leg === 'saida' ? 'Saiu desta conta' : 'Entrou nesta conta'} · não conta como {entry.transfer_leg === 'saida' ? 'despesa' : 'receita'} do mês
+                  </small>
+                )}
+
+                {isTransfer && !isReversal && !isReversed && (
+                  <div className="ps-fieldrow" style={{ marginTop: 10 }}>
+                    <button
+                      className="ps-btn ghost block"
+                      onClick={() => void handleReverseTransfer(entry)}
+                      disabled={busyId === entry.id}
+                    >
+                      <Undo2 size={15} /> {busyId === entry.id ? 'Estornando...' : 'Estornar transferência'}
+                    </button>
+                  </div>
+                )}
+
+                {!isTransfer && !isReversal && !isReversed && (entry.source === 'avulso' || entry.source === 'recorrencia') && (
                   <div className="ps-fieldrow" style={{ marginTop: 10 }}>
                     <button
                       className="ps-btn ghost block"
