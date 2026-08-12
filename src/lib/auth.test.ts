@@ -81,6 +81,36 @@ describe('resolveAllowedRoutes', () => {
 
     expect(resolveAllowedRoutes('financeiro', 'jc', ['/', '/contas-pagar'], [])).toEqual(['/'])
   })
+
+  it('abre o livro financeiro com a permissão concedida, mesmo por uma loja só', () => {
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/'], [
+      { permission_key: 'financeiro.acessar', scope: 'jc' },
+    ])).toEqual(['/', '/financeiro'])
+
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/'], [
+      { permission_key: 'financeiro.acessar', scope: '*' },
+    ])).toEqual(['/', '/financeiro'])
+  })
+
+  it('retira o livro financeiro quando a permissão é revogada', () => {
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/', '/financeiro'], [])).toEqual(['/'])
+  })
+
+  it('não duplica a rota do financeiro quando ela já está nas rotas salvas', () => {
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/', '/financeiro'], [
+      { permission_key: 'financeiro.acessar', scope: '*' },
+    ])).toEqual(['/', '/financeiro'])
+  })
+
+  it('mantém contas a pagar e financeiro independentes', () => {
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/'], [
+      { permission_key: 'financeiro.acessar', scope: '*' },
+    ])).toEqual(['/', '/financeiro'])
+
+    expect(resolveAllowedRoutes('financeiro', 'jc', ['/'], [
+      { permission_key: 'contas_pagar.acessar', scope: 'jc' },
+    ])).toEqual(['/', '/contas-pagar'])
+  })
 })
 
 describe('canAccess', () => {

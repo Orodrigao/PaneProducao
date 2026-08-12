@@ -140,6 +140,7 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
     '/relatorios',
     '/admin/usuarios',
     '/contas-pagar',
+    '/financeiro',
   ]) {
     await expectRouteHidden(page, route)
   }
@@ -276,4 +277,52 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   await expect(page.locator('input[placeholder="CNPJ ou CPF"]')).toHaveValue(uniqueCnpj)
   await page.getByRole('button', { name: 'Cadastrar e usar fornecedor' }).click()
   await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+})
+
+test('Vendas JA nao entra no livro financeiro', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await page.goto('/financeiro')
+
+  await expect(page).toHaveURL(/\/romaneio$/)
+  await expect(page.getByText('livro de entradas e saídas')).toHaveCount(0)
+})
+
+test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/financeiro')
+
+  await expect(page.getByText('livro de entradas e saídas')).toBeVisible()
+
+  // O Banco Preview nao e limpo entre execucoes: cada rodada precisa de textos
+  // proprios, senao a rodada seguinte encontra varios lancamentos iguais e nao
+  // sabe qual conferir. O carimbo vale para a descricao E para o motivo.
+  const carimbo = Date.now()
+  const descricao = `[TESTE] diaria ${carimbo}`
+  const motivo = `[TESTE] estorno ${carimbo}`
+
+  await page.getByRole('button', { name: 'Novo lançamento' }).click()
+  await page.locator('#finance-category').selectOption('mao_obra_diarias')
+  await page.locator('#finance-amount').fill('150,00')
+  await page.locator('#finance-store').selectOption('jc')
+  await page.locator('#finance-account').selectOption('caixa_fisico_jc')
+  await page.locator('#finance-description').fill(descricao)
+  await page.getByRole('button', { name: 'Salvar lançamento' }).click()
+
+  // Toda conferencia olha somente os cartoes desta rodada; o livro guarda o
+  // que as rodadas anteriores lancaram.
+  const cartoes = page.locator('article', { hasText: descricao })
+  await expect(cartoes).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+  await expect(cartoes.first()).toContainText('− R$ 150,00')
+
+  // O estorno pergunta o motivo por window.prompt; sem resposta ele nao acontece.
+  page.once('dialog', dialog => void dialog.accept(motivo))
+  await cartoes.first().getByRole('button', { name: 'Estornar' }).click()
+
+  // O original continua no livro, marcado, e o contra-lancamento aparece ao
+  // lado — devolvendo o dinheiro, com o sinal invertido.
+  await expect(cartoes).toHaveCount(2, { timeout: slowPreviewDataTimeoutMs })
+  await expect(cartoes.first()).toContainText('Estorno de:')
+  await expect(cartoes.first()).toContainText('+ R$ 150,00')
+  await expect(cartoes.last()).toContainText(`Estornado · motivo: ${motivo}`)
+  await expect(cartoes.last().getByRole('button', { name: 'Estornar' })).toHaveCount(0)
 })
