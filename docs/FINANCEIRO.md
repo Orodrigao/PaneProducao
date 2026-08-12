@@ -261,6 +261,15 @@ lançamento.
 
 ## Fase 1 — Contas a Pagar entra no livro
 
+**Concluída em 2026-08-12** (PR #222), aplicada em produção e confirmada por
+leitura live. Dois desvios conscientes do briefing: a reclassificação mora em
+Contas a pagar (e não no livro), porque exigiria dar permissão de contas a
+pagar a quem só cuida do financeiro; e o livro guarda apenas o realizado — a
+conta em aberto continua vivendo em `payable_installments`, para não existirem
+duas verdades sobre a mesma dívida. Quatro defeitos foram achados pelos
+testes, sendo o mais grave silencioso: a função de rateio não rodava por
+conflito de nomes, e a baixa teria acontecido sem gerar despesa nenhuma.
+
 **Objetivo:** a compra com NF e o boleto passam a alimentar o DRE.
 
 **Escopo — entra:**

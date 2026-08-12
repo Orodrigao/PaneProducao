@@ -164,6 +164,13 @@ tabelas.
   (PR #218) e confirmado por leitura live: RLS ligada e forçada nas três
   tabelas, sem `insert` para `authenticated`, 26 categorias e 10 contas
   semeadas;
+- contas a pagar alimentando o livro (fase 1, PR #222, em produção desde
+  2026-08-12): a baixa e a correção da baixa geram os lançamentos na mesma
+  transação, com categoria de DRE escolhida na tela, rateio em até três
+  gavetas e **competência pelo mês da compra**, não pelo mês do pagamento.
+  Corrigir a baixa estorna e relança. Conta sem categoria entra como
+  `nao_classificado`. Confirmado por leitura live: o backfill converteu a
+  única parcela paga existente (R$ 260,00);
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
