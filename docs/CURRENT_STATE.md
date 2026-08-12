@@ -105,6 +105,15 @@ Riscos ainda abertos:
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
+- **os perfis `admin` não enxergam as telas financeiras.** Auditoria live de
+  2026-08-12: `allowed_routes` de Rodrigão e Suélen é uma lista fixa que não
+  inclui `/contas-pagar` nem `/financeiro`, e `resolveAllowedRoutes` devolve
+  `allowed_routes` sem alterações quando o papel é `admin` — a permissão
+  granular não acrescenta rota para esse papel. Não é regressão da fase 0 do
+  Financeiro (o mesmo já valia para Contas a pagar); é a face visível do
+  descompasso entre os planos de permissão. Só a Elis (`financeiro`, escopo
+  `*`) enxerga as duas telas hoje. Corrigir exige decisão do Rodrigo sobre
+  quem deve ver o quê;
 - o token do bot Telegram ainda é usado no frontend com prefixo
   `NEXT_PUBLIC_`;
 - o `npm audit --omit=dev` ainda sinaliza o PostCSS e o Sharp transitivos do
@@ -147,6 +156,14 @@ tabelas.
 - clientes, pedidos PJ e encomendas;
 - tabelas e opções de preço;
 - fechamento de caixa;
+- livro-caixa financeiro (fase 0 de [FINANCEIRO.md](FINANCEIRO.md)): lançamento
+  avulso de entrada e saída com categoria obrigatória do DRE, loja
+  (`jc`/`ja`/`geral`) e conta (bancos e caixas físicos). Escrita somente pelas
+  funções `create_finance_entry` e `reverse_finance_entry`; correção é
+  contra-lançamento, nunca sobrescrita. Aplicado em produção em 2026-08-12
+  (PR #218) e confirmado por leitura live: RLS ligada e forçada nas três
+  tabelas, sem `insert` para `authenticated`, 26 categorias e 10 contas
+  semeadas;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
