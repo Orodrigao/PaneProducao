@@ -27,7 +27,9 @@ select is((select count(*)::int
       and coalesce(array_to_string(p.proconfig, ','), '') ilike '%search_path=%'), 2,
   'as acoes do livro usam search_path seguro');
 
-select is((select count(*)::int from public.app_permissions where key like 'financeiro.%'), 3,
+select is((select count(*)::int from public.app_permissions where key in (
+  'financeiro.acessar', 'financeiro.lancar', 'financeiro.estornar'
+)), 3,
   'as tres permissoes do livro existem');
 
 select ok((select count(*) from public.finance_categories where active) >= 26,
