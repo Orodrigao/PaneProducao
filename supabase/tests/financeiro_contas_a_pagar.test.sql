@@ -70,7 +70,7 @@ insert into public.payable_purchases (
   payment_method, status, total_value, created_by
 ) values (
   '93000000-0000-4000-8000-0000000000c1',
-  '93000000-0000-4000-8000-0000000000r1',
+  '93000000-0000-4000-8000-0000000000a1',
   'jc', '93000000-0000-4000-8000-0000000000f1', date '2026-07-28', 'manual', 'sem_nota',
   'boleto', 'aberta', 1000.00, '93000000-0000-4000-8000-000000000001'
 );
@@ -78,7 +78,7 @@ insert into public.payable_purchases (
 insert into public.payable_installments (
   id, purchase_id, installment_number, due_date, amount, status
 ) values (
-  '93000000-0000-4000-8000-0000000000p1',
+  '93000000-0000-4000-8000-0000000000e1',
   '93000000-0000-4000-8000-0000000000c1',
   1, date '2026-08-10', 1000.00, 'pendente'
 );
@@ -140,39 +140,39 @@ select lives_ok(
 -- Pagou 1.020 (20 de juros) em 12/08.
 select lives_ok(
   $$ select public.record_payable_installment_payment(
-    '93000000-0000-4000-8000-0000000000p1'::uuid,
+    '93000000-0000-4000-8000-0000000000e1'::uuid,
     date '2026-08-12', 1020.00, 'boleto', null
   ) $$,
   'financeiro baixa a parcela'
 );
 
 select is((select count(*)::int from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 2,
   'o rateio em duas categorias gera dois lancamentos');
 
 select is((select sum(amount) from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 1020.00,
   'a soma dos lancamentos bate exatamente com o valor pago');
 
 select is((select distinct competence_month from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), date '2026-07-01',
   'a compra de julho paga em agosto pesa em julho');
 
 select is((select distinct paid_date from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), date '2026-08-12',
   'a data real do lancamento e o dia em que o dinheiro saiu');
 
 select ok((select sum(planned_amount) < sum(amount) from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null),
   'o previsto fica abaixo do realizado: a diferenca e o juro pago');
 
 select is((select count(distinct account_id)::int from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null and account_id is not null), 1,
   'os lancamentos sabem de qual conta o dinheiro saiu');
 
@@ -180,30 +180,30 @@ select is((select count(distinct account_id)::int from public.finance_entries
 
 select lives_ok(
   $$ select public.correct_payable_installment_payment(
-    '93000000-0000-4000-8000-0000000000p1'::uuid,
+    '93000000-0000-4000-8000-0000000000e1'::uuid,
     date '2026-08-12', 1000.00, 'pix', null
   ) $$,
   'financeiro corrige a baixa'
 );
 
 select is((select count(*)::int from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid and entry_type = 'estorno'), 2,
+    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid and entry_type = 'estorno'), 2,
   'a correcao estorna os lancamentos antigos em vez de apaga-los');
 
 select is((select count(*)::int from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 2,
   'a correcao deixa dois lancamentos ativos');
 
 select is((select sum(amount) from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid
+    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 1000.00,
   'os lancamentos ativos somam o valor corrigido');
 
 -- Efeito liquido no caixa: 1020 - 1020 (estorno) + 1000 = 1000.
 select is((select sum(case when entry_type = 'estorno' then -amount else amount end)
     from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000p1'::uuid), 1000.00,
+    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid), 1000.00,
   'somando estornos e lancamentos, a conta liquida e o valor corrigido');
 
 -- Conta sem classificação ---------------------------------------------------
@@ -213,21 +213,21 @@ insert into public.payable_purchases (
   payment_method, status, total_value, created_by
 ) values (
   '93000000-0000-4000-8000-0000000000c2',
-  '93000000-0000-4000-8000-0000000000r2',
+  '93000000-0000-4000-8000-0000000000a2',
   'jc', '93000000-0000-4000-8000-0000000000f1', date '2026-08-01', 'manual', 'sem_nota',
   'dinheiro', 'aberta', 80.00, '93000000-0000-4000-8000-000000000001'
 );
 insert into public.payable_installments (
   id, purchase_id, installment_number, due_date, amount, status
 ) values (
-  '93000000-0000-4000-8000-0000000000p2',
+  '93000000-0000-4000-8000-0000000000e2',
   '93000000-0000-4000-8000-0000000000c2',
   1, date '2026-08-01', 80.00, 'pendente'
 );
 
 select lives_ok(
   $$ select public.record_payable_installment_payment(
-    '93000000-0000-4000-8000-0000000000p2'::uuid,
+    '93000000-0000-4000-8000-0000000000e2'::uuid,
     date '2026-08-01', 80.00, 'dinheiro', null
   ) $$,
   'conta sem classificacao tambem pode ser baixada'
@@ -235,7 +235,7 @@ select lives_ok(
 
 select is((select category.key from public.finance_entries entry
     join public.finance_categories category on category.id = entry.category_id
-    where entry.source_ref = '93000000-0000-4000-8000-0000000000p2'::uuid
+    where entry.source_ref = '93000000-0000-4000-8000-0000000000e2'::uuid
       and entry.entry_type = 'lancamento'), 'nao_classificado',
   'sem classificacao a despesa entra visivel como nao classificada, nunca fora do DRE');
 
@@ -252,13 +252,13 @@ select lives_ok(
 
 select is((select category.key from public.finance_entries entry
     join public.finance_categories category on category.id = entry.category_id
-    where entry.source_ref = '93000000-0000-4000-8000-0000000000p2'::uuid
+    where entry.source_ref = '93000000-0000-4000-8000-0000000000e2'::uuid
       and entry.entry_type = 'lancamento' and entry.reversed_at is null), 'manutencao',
   'depois da reclassificacao o lancamento ativo esta na categoria certa');
 
 select is((select sum(case when entry_type = 'estorno' then -amount else amount end)
     from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000p2'::uuid), 80.00,
+    where source_ref = '93000000-0000-4000-8000-0000000000e2'::uuid), 80.00,
   'reclassificar nao muda o total do mes, so a gaveta');
 
 reset role;
