@@ -5,7 +5,7 @@ import { todayKey } from '@/lib/utils'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
 export type PayablePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
-export type PayableActualPaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto'
+export type PayableActualPaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao'
 export type PayableDocumentType = 'sem_nota' | 'recibo' | 'nfe'
 
 export interface PayableProduct {
@@ -39,6 +39,8 @@ export interface PayableDraft {
   items: PayableItemDraft[]
   installments: PayableInstallmentDraft[]
   paidDetails?: PayableInstallmentPaymentDetails | null
+  financeAccountKey?: string
+  financeCategories?: PayableCategorySlice[]
 }
 
 export function getPayableErrorMessage(error: unknown, fallback: string): string {
@@ -93,6 +95,7 @@ export interface PayablePurchaseRow {
   nfe_number?: string | null
   nfe_series?: string | null
   classification_status?: 'completa' | 'pendente'
+  finance_account_id?: string | null
   suppliers: PayableSupplier | PayableSupplier[] | null
   payable_installments: PayableInstallmentRow[]
 }
@@ -141,6 +144,7 @@ export function actualPaymentMethodLabel(method: PayableActualPaymentMethod): st
     pix: 'PIX',
     transferencia: 'Transferência',
     boleto: 'Boleto',
+    cartao: 'Cartão',
   } as Record<PayableActualPaymentMethod, string>)[method]
 }
 
@@ -215,7 +219,7 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,finance_account_id,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
     .order('purchase_date', { ascending: false })
 
   if (error) throw error
@@ -246,6 +250,20 @@ export async function loadPayablePurchaseItems(purchaseId: string): Promise<Paya
 }
 
 export async function createManualPayable(draft: PayableDraft, requestId: string): Promise<string> {
+  if (draft.paid && draft.paidDetails) {
+    const { data, error } = await supabase.rpc('create_and_pay_manual_payable', {
+      p_request_id: requestId, p_supplier_id: draft.supplierId, p_purchase_date: draft.purchaseDate,
+      p_document_type: draft.documentType, p_payment_method: draft.paymentMethod, p_notes: draft.notes,
+      p_items: draft.items.map(item => ({ product_id: item.productId || null, item_name: item.itemName.trim(), unit: item.unit.trim(), quantity: Number(item.quantity), unit_price: Number(item.unitPrice) })),
+      p_installments: draft.installments.map(item => ({ installment_number: item.number, due_date: item.dueDate, amount: Number(item.amount) })),
+      p_paid_date: draft.paidDetails.paidDate, p_paid_amount: Number(draft.paidDetails.paidAmount), p_paid_method: draft.paidDetails.paidMethod,
+      p_current_due_date: draft.paidDetails.currentDueDate || null, p_account_key: draft.financeAccountKey || null,
+      p_categories: (draft.financeCategories ?? []).filter(slice => slice.categoryKey).map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
+    })
+    if (error) throw error
+    if (typeof data !== 'string') throw new Error('O banco não devolveu o lançamento criado.')
+    return data
+  }
   const { data, error } = await supabase.rpc('create_manual_payable', {
     p_request_id: requestId,
     p_supplier_id: draft.supplierId,
@@ -270,16 +288,6 @@ export async function createManualPayable(draft: PayableDraft, requestId: string
 
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu o lançamento criado.')
-  if (draft.paid && draft.paidDetails) {
-    const { data: installment, error: installmentError } = await supabase
-      .from('payable_installments')
-      .select('id')
-      .eq('purchase_id', data)
-      .eq('installment_number', 1)
-      .single()
-    if (installmentError) throw installmentError
-    await correctPayableInstallmentPayment(installment.id as string, draft.paidDetails)
-  }
   return data
 }
 
@@ -390,6 +398,21 @@ export async function correctPayableInstallmentPayment(installmentId: string, de
     p_paid_amount: Number(details.paidAmount),
     p_paid_method: details.paidMethod,
     p_current_due_date: details.currentDueDate || null,
+  })
+  if (error) throw error
+}
+
+export async function correctPayablePaymentAndClassification(
+  installmentId: string,
+  details: PayableInstallmentPaymentDetails,
+  accountKey: string,
+  slices: readonly PayableCategorySlice[],
+): Promise<void> {
+  const { error } = await supabase.rpc('correct_payable_payment_and_classification', {
+    p_installment_id: installmentId, p_paid_date: details.paidDate, p_paid_amount: Number(details.paidAmount),
+    p_paid_method: details.paidMethod, p_current_due_date: details.currentDueDate || null,
+    p_account_key: accountKey || null,
+    p_categories: slices.filter(slice => slice.categoryKey).map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
   })
   if (error) throw error
 }

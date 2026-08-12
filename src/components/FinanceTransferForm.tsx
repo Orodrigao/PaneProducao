@@ -23,6 +23,7 @@ function accountLabel(account: FinanceAccountRow): string {
 }
 
 export default function FinanceTransferForm({ accounts, onCancel, onSaved }: FinanceTransferFormProps) {
+  const transferableAccounts = accounts.filter(account => account.kind !== 'cartao_credito')
   const [draft, setDraft] = useState<FinanceTransferDraft>(emptyFinanceTransferDraft())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,8 +39,8 @@ export default function FinanceTransferForm({ accounts, onCancel, onSaved }: Fin
   // O destino nunca oferece a conta já escolhida como origem: o erro mais
   // fácil de cometer é o que a tela não deixa acontecer.
   const destinations = useMemo(
-    () => accounts.filter(account => account.key !== draft.originAccountKey),
-    [accounts, draft.originAccountKey],
+    () => transferableAccounts.filter(account => account.key !== draft.originAccountKey),
+    [transferableAccounts, draft.originAccountKey],
   )
 
   async function save() {
@@ -86,7 +87,7 @@ export default function FinanceTransferForm({ accounts, onCancel, onSaved }: Fin
           onChange={event => update({ originAccountKey: event.target.value })}
         >
           <option value="">Escolha a conta de origem</option>
-          {accounts.map(account => (
+          {transferableAccounts.map(account => (
             <option key={account.key} value={account.key}>{accountLabel(account)}</option>
           ))}
         </select>

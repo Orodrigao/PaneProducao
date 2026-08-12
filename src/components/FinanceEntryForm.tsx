@@ -67,8 +67,8 @@ export default function FinanceEntryForm({ categories, accounts, onCancel, onSav
   }, [categories])
 
   const availableAccounts = useMemo(() => {
-    if (!draft.store || draft.store === 'geral') return accounts.filter(account => account.kind === 'banco')
-    return accounts.filter(account => account.kind === 'banco' || account.store === draft.store)
+    if (!draft.store || draft.store === 'geral') return accounts.filter(account => account.kind === 'banco' || account.kind === 'cartao_credito')
+    return accounts.filter(account => account.kind === 'banco' || account.kind === 'cartao_credito' || account.store === draft.store)
   }, [accounts, draft.store])
 
   const selectedCategory = categories.find(category => category.key === draft.categoryKey) ?? null
