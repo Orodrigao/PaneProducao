@@ -201,6 +201,14 @@ aprovação própria antes de começar.
 
 ## Fase 0 — Alicerce: livro-caixa, categorias e lançamento avulso
 
+**Concluída em 2026-08-12** (PR #218), aplicada em produção pela Action e
+confirmada por leitura live. Três defeitos foram achados pelos próprios
+testes durante a execução: o estorno não funcionava (o mesmo campo guardava
+dois motivos diferentes), a tela não tinha link no menu (o `Nav` é uma quarta
+lista que precisa concordar com rota, permissão e RLS) e o estorno aparecia
+com sinal de saída na lista. Pendência aberta pela fase, registrada em
+[CURRENT_STATE.md](CURRENT_STATE.md): perfis `admin` não enxergam a tela.
+
 **Objetivo:** existir o registro central que segura todo o resto — e a Elis
 conseguir lançar uma despesa avulsa com categoria em dois toques.
 
