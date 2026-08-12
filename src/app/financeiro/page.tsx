@@ -5,6 +5,7 @@ import { BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
 import {
   currentMonthKey,
+  entrySignedAmount,
   formatCompetenceMonth,
   formatFinanceMoney,
   getFinanceErrorMessage,
@@ -163,6 +164,10 @@ export default function FinanceiroPage() {
             const account = accountsById.get(entry.account_id)
             const isReversal = entry.entry_type === 'estorno'
             const isReversed = entry.reversed_at !== null
+            // O estorno devolve o dinheiro: o sinal é o do efeito no caixa,
+            // não o da natureza da categoria.
+            const signed = category ? entrySignedAmount(entry, category.nature) : 0
+            const isInflow = signed >= 0
             return (
               <article
                 key={entry.id}
@@ -176,8 +181,8 @@ export default function FinanceiroPage() {
                       {category?.label ?? 'Categoria removida'} · {FINANCE_STORE_LABELS[entry.store]} · {account?.label ?? 'Conta removida'}
                     </small>
                   </div>
-                  <b style={{ color: category?.nature === 'receita' ? 'var(--basil)' : 'var(--berry)' }}>
-                    {category?.nature === 'receita' ? '+' : '−'} {formatFinanceMoney(entry.amount)}
+                  <b style={{ color: isInflow ? 'var(--basil)' : 'var(--berry)' }}>
+                    {isInflow ? '+' : '−'} {formatFinanceMoney(entry.amount)}
                   </b>
                 </div>
 
