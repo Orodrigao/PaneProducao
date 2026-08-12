@@ -188,4 +188,13 @@ $$;
 revoke all on function public.correct_payable_payment_and_classification(uuid, date, numeric, text, date, text, jsonb) from public, anon;
 grant execute on function public.correct_payable_payment_and_classification(uuid, date, numeric, text, date, text, jsonb) to authenticated;
 
+-- Funcoes de gatilho e auxiliares nunca sao endpoints da API. Postgres concede
+-- EXECUTE a PUBLIC por padrao ao criar funcao; fechamos cada assinatura aqui.
+revoke all on function private.assert_finance_account_payment_match(uuid, text) from public, anon, authenticated;
+revoke all on function private.check_finance_entry_account_payment() from public, anon, authenticated;
+revoke all on function private.check_payable_installment_account_payment() from public, anon, authenticated;
+revoke all on function private.check_payable_purchase_account_payment() from public, anon, authenticated;
+revoke all on function private.block_legacy_paid_installment() from public, anon, authenticated;
+revoke all on function private.block_card_transfer() from public, anon, authenticated;
+
 commit;
