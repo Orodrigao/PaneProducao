@@ -330,6 +330,11 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- Estornar perna solta é proibido: quebraria o par e faria dinheiro sumir.
+--
+-- ATENÇÃO ao mexer aqui: esta função já foi redefinida pela migration das
+-- recorrências, que passou a copiar `source_ref` e `recurrence_month` para o
+-- contra-lançamento — sem isso a previsão da recorrência não volta a aparecer
+-- como pendência. O corpo abaixo parte daquela versão, não da original.
 -- ---------------------------------------------------------------------------
 create or replace function public.reverse_finance_entry(
   p_request_id uuid,
@@ -387,14 +392,15 @@ begin
   insert into public.finance_entries (
     request_id, entry_type, category_id, account_id, store, competence_month,
     due_date, planned_amount, paid_date, amount, payment_method, description,
-    source, reversal_of, reversal_reason, created_by
+    source, source_ref, recurrence_month, reversal_of, reversal_reason, created_by
   )
   values (
     p_request_id, 'estorno', v_original.category_id, v_original.account_id, v_original.store,
     v_original.competence_month, v_original.due_date, v_original.planned_amount,
     current_date, v_original.amount, v_original.payment_method,
     'Estorno de: ' || v_original.description,
-    v_original.source, v_original.id, trim(p_reason), (select auth.uid())
+    v_original.source, v_original.source_ref, v_original.recurrence_month,
+    v_original.id, trim(p_reason), (select auth.uid())
   )
   returning id into v_reversal_id;
 
