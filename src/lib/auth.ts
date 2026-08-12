@@ -216,6 +216,19 @@ export function validatePasswordSetup(password: string, confirmation: string): A
   return { ok: true, message: 'Senha válida.' }
 }
 
+export function passwordUpdateErrorMessage(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'weak_password'
+  ) {
+    return 'Essa senha aparece em vazamentos conhecidos na internet. Escolha outra.'
+  }
+
+  return 'Não foi possível salvar a senha.'
+}
+
 export function passwordRecoveryErrorMessage(error: unknown): string {
   if (
     typeof error === 'object'
@@ -418,7 +431,7 @@ export async function updateCurrentUserPassword(password: string, confirmation: 
 
     const { error } = await withTimeout(supabase.auth.updateUser({ password }))
     if (error) {
-      return { ok: false, message: 'Não foi possível salvar a senha.' }
+      return { ok: false, message: passwordUpdateErrorMessage(error) }
     }
     clearPasswordRecoverySession()
 
