@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "supabase/migrations/**"
+      - ".github/workflows/banco.yml"
 
 concurrency:
   group: banco-producao
