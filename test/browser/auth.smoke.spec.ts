@@ -293,7 +293,13 @@ test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', asy
 
   await expect(page.getByText('livro de entradas e saídas')).toBeVisible()
 
-  const descricao = `[TESTE] diaria ${Date.now()}`
+  // O Banco Preview nao e limpo entre execucoes: cada rodada precisa de textos
+  // proprios, senao a rodada seguinte encontra varios lancamentos iguais e nao
+  // sabe qual conferir. O carimbo vale para a descricao E para o motivo.
+  const carimbo = Date.now()
+  const descricao = `[TESTE] diaria ${carimbo}`
+  const motivo = `[TESTE] estorno ${carimbo}`
+
   await page.getByRole('button', { name: 'Novo lançamento' }).click()
   await page.locator('#finance-category').selectOption('mao_obra_diarias')
   await page.locator('#finance-amount').fill('150,00')
@@ -302,17 +308,21 @@ test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', asy
   await page.locator('#finance-description').fill(descricao)
   await page.getByRole('button', { name: 'Salvar lançamento' }).click()
 
-  const lancamento = page.locator('article', { hasText: descricao }).first()
-  await expect(lancamento).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await expect(lancamento).toContainText('− R$ 150,00')
+  // Toda conferencia olha somente os cartoes desta rodada; o livro guarda o
+  // que as rodadas anteriores lancaram.
+  const cartoes = page.locator('article', { hasText: descricao })
+  await expect(cartoes).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+  await expect(cartoes.first()).toContainText('− R$ 150,00')
 
   // O estorno pergunta o motivo por window.prompt; sem resposta ele nao acontece.
-  page.once('dialog', dialog => void dialog.accept('[TESTE] estorno automatico'))
-  await lancamento.getByRole('button', { name: 'Estornar' }).click()
+  page.once('dialog', dialog => void dialog.accept(motivo))
+  await cartoes.first().getByRole('button', { name: 'Estornar' }).click()
 
-  // O original continua no livro, marcado, e o contra-lancamento aparece ao lado.
-  await expect(page.locator('article', { hasText: descricao }).first())
-    .toContainText('Estorno de:', { timeout: slowPreviewDataTimeoutMs })
-  await expect(page.getByText(`Estornado · motivo: [TESTE] estorno automatico`)).toBeVisible()
-  await expect(page.locator('article', { hasText: descricao })).toHaveCount(2)
+  // O original continua no livro, marcado, e o contra-lancamento aparece ao
+  // lado — devolvendo o dinheiro, com o sinal invertido.
+  await expect(cartoes).toHaveCount(2, { timeout: slowPreviewDataTimeoutMs })
+  await expect(cartoes.first()).toContainText('Estorno de:')
+  await expect(cartoes.first()).toContainText('+ R$ 150,00')
+  await expect(cartoes.last()).toContainText(`Estornado · motivo: ${motivo}`)
+  await expect(cartoes.last().getByRole('button', { name: 'Estornar' })).toHaveCount(0)
 })
