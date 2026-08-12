@@ -1,11 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
 import {
   currentMonthKey,
+  entryDifference,
   entrySignedAmount,
+  FINANCE_SOURCE_LABELS,
   formatCompetenceMonth,
   formatFinanceMoney,
   getFinanceErrorMessage,
@@ -22,6 +25,7 @@ import {
 import { showToast } from '@/lib/utils'
 
 export default function FinanceiroPage() {
+  const router = useRouter()
   const [monthKey, setMonthKey] = useState(currentMonthKey())
   const [categories, setCategories] = useState<FinanceCategoryRow[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
@@ -100,6 +104,14 @@ export default function FinanceiroPage() {
             <small>Todo dinheiro que entra ou sai é registrado aqui, com categoria. Errou? Estorne — o lançamento original nunca é apagado.</small>
           </div>
 
+          <div className="ps-card" style={{ marginTop: 12, background: 'var(--cream-raise)' }}>
+            <small>
+              <b>Compra de fornecedor não se lança aqui.</b> Ela entra em{' '}
+              <button className="ps-link" onClick={() => router.push('/contas-pagar')}>Contas a pagar</button>
+              {' '}e aparece neste livro sozinha quando o boleto é baixado. Lançar nos dois lugares conta o gasto duas vezes.
+            </small>
+          </div>
+
           <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
             <label className="ps-fieldlabel" htmlFor="finance-month">Mês</label>
             <input
@@ -161,13 +173,14 @@ export default function FinanceiroPage() {
 
           {!loading && !error && entries.map(entry => {
             const category = categoriesById.get(entry.category_id)
-            const account = accountsById.get(entry.account_id)
+            const account = entry.account_id ? accountsById.get(entry.account_id) : null
             const isReversal = entry.entry_type === 'estorno'
             const isReversed = entry.reversed_at !== null
             // O estorno devolve o dinheiro: o sinal é o do efeito no caixa,
             // não o da natureza da categoria.
             const signed = category ? entrySignedAmount(entry, category.nature) : 0
             const isInflow = signed >= 0
+            const difference = entryDifference(entry)
             return (
               <article
                 key={entry.id}
@@ -178,7 +191,7 @@ export default function FinanceiroPage() {
                   <div>
                     <b>{entry.description}</b>
                     <small>
-                      {category?.label ?? 'Categoria removida'} · {FINANCE_STORE_LABELS[entry.store]} · {account?.label ?? 'Conta removida'}
+                      {category?.label ?? 'Categoria removida'} · {FINANCE_STORE_LABELS[entry.store]} · {account?.label ?? 'conta não informada'}
                     </small>
                   </div>
                   <b style={{ color: isInflow ? 'var(--basil)' : 'var(--berry)' }}>
@@ -186,7 +199,20 @@ export default function FinanceiroPage() {
                   </b>
                 </div>
 
-                <small style={{ display: 'block', marginTop: 6 }}>{entry.paid_date}</small>
+                <small style={{ display: 'block', marginTop: 6 }}>
+                  {entry.paid_date}
+                  {entry.source !== 'avulso' && ` · veio de ${FINANCE_SOURCE_LABELS[entry.source]}`}
+                  {entry.competence_month.slice(0, 7) !== entry.paid_date.slice(0, 7)
+                    && ` · pesa em ${formatCompetenceMonth(entry.competence_month.slice(0, 7))}`}
+                </small>
+
+                {difference !== 0 && !isReversal && (
+                  <small style={{ display: 'block', marginTop: 4, color: 'var(--berry)' }}>
+                    {difference > 0
+                      ? `Pagou ${formatFinanceMoney(difference)} a mais que o previsto (juros ou multa).`
+                      : `Pagou ${formatFinanceMoney(-difference)} a menos que o previsto.`}
+                  </small>
+                )}
 
                 {isReversal && (
                   <div className="ps-alert" role="note" style={{ marginTop: 8 }}>
@@ -199,7 +225,7 @@ export default function FinanceiroPage() {
                   </div>
                 )}
 
-                {!isReversal && !isReversed && (
+                {!isReversal && !isReversed && entry.source === 'avulso' && (
                   <div className="ps-fieldrow" style={{ marginTop: 10 }}>
                     <button
                       className="ps-btn ghost block"
@@ -207,6 +233,16 @@ export default function FinanceiroPage() {
                       disabled={busyId === entry.id}
                     >
                       <Undo2 size={15} /> {busyId === entry.id ? 'Estornando...' : 'Estornar'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Lançamento gerado por outra tela se corrige lá, senão o
+                    livro e a origem passam a contar histórias diferentes. */}
+                {!isReversal && !isReversed && entry.source === 'contas_pagar' && (
+                  <div className="ps-fieldrow" style={{ marginTop: 10 }}>
+                    <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar')}>
+                      Corrigir em Contas a pagar
                     </button>
                   </div>
                 )}

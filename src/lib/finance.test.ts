@@ -6,6 +6,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
 import {
   competenceMonthOf,
+  entryDifference,
   currentMonthKey,
   emptyFinanceDraft,
   entrySignedAmount,
@@ -46,8 +47,10 @@ const receita: FinanceCategoryRow = {
 function entry(overrides: Partial<FinanceEntryRow> = {}): FinanceEntryRow {
   return {
     id: 'entry-1', entry_type: 'lancamento', category_id: 'cat-diarias', account_id: 'acc-1',
-    store: 'jc', competence_month: '2026-08-01', paid_date: TODAY, amount: 150,
-    payment_method: 'dinheiro', description: 'Diária do Marcelo', reversal_of: null,
+    store: 'jc', competence_month: '2026-08-01', paid_date: TODAY,
+    planned_amount: 150, amount: 150,
+    payment_method: 'dinheiro', description: 'Diária do Marcelo',
+    source: 'avulso', source_ref: null, reversal_of: null,
     reversal_reason: null, reversed_at: null, created_at: '2026-08-12T12:00:00Z',
     ...overrides,
   }
@@ -144,5 +147,23 @@ describe('resumo do mês', () => {
   it('ignora lançamento de categoria desconhecida em vez de somar errado', () => {
     const totals = summarizeEntries([entry({ category_id: 'cat-que-nao-existe' })], categories)
     expect(totals).toEqual({ receita: 0, despesa: 0, saldo: 0 })
+  })
+})
+
+describe('diferenca entre previsto e realizado', () => {
+  it('mostra o juro pago a mais', () => {
+    expect(entryDifference({ planned_amount: 1000, amount: 1020 })).toBe(20)
+  })
+
+  it('mostra o desconto obtido', () => {
+    expect(entryDifference({ planned_amount: 1000, amount: 980 })).toBe(-20)
+  })
+
+  it('e zero quando pagou o previsto', () => {
+    expect(entryDifference({ planned_amount: 150, amount: 150 })).toBe(0)
+  })
+
+  it('nao deixa sobra de arredondamento aparecer como diferenca', () => {
+    expect(entryDifference({ planned_amount: 0.1 + 0.2, amount: 0.3 })).toBe(0)
   })
 })

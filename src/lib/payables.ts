@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
+import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
@@ -399,4 +400,88 @@ export async function cancelPayable(purchaseId: string, reason: string): Promise
     p_reason: reason,
   })
   if (error) throw error
+}
+
+// --- Classificação financeira (fase 1 do Financeiro) ------------------------
+// A categoria de DRE é uma propriedade do que foi comprado, não do pagamento:
+// por isso vive na compra, e cada parcela paga distribui o valor entre as
+// categorias proporcionalmente.
+
+export const PAYABLE_MAX_CATEGORIES = 3
+
+export interface PayableCategorySlice {
+  categoryKey: string
+  amount: string
+}
+
+export interface PayableCategoryRow {
+  purchase_id: string
+  category_id: string
+  amount: number
+}
+
+/**
+ * O rateio precisa fechar com o total da conta — é o que garante que a soma
+ * dos lançamentos gerados seja exatamente o valor pago. O banco valida de
+ * novo; aqui o recado chega antes de a Elis mandar.
+ */
+export function validateCategorySlices(slices: readonly PayableCategorySlice[], total: number): string | null {
+  const preenchidas = slices.filter(slice => slice.categoryKey)
+  if (preenchidas.length === 0) return 'Escolha ao menos uma categoria.'
+  if (preenchidas.length > PAYABLE_MAX_CATEGORIES) return `No máximo ${PAYABLE_MAX_CATEGORIES} categorias por conta.`
+
+  const chaves = new Set(preenchidas.map(slice => slice.categoryKey))
+  if (chaves.size !== preenchidas.length) return 'A mesma categoria aparece duas vezes.'
+
+  // A Elis digita "1.234,56"; `Number` sozinho leria isso como zero e o
+  // rateio fecharia errado sem ninguém perceber.
+  const soma = preenchidas.reduce((acumulado, slice) => acumulado + parseMoneyInput(slice.amount), 0)
+  if (preenchidas.some(slice => !(parseMoneyInput(slice.amount) > 0))) return 'Cada categoria precisa de um valor maior que zero.'
+  if (roundMoney(soma) !== roundMoney(total)) {
+    return `A soma das categorias (${formatBRL(soma)}) precisa ser igual ao total da conta (${formatBRL(total)}).`
+  }
+  return null
+}
+
+export async function loadPayableCategories(purchaseId: string): Promise<PayableCategoryRow[]> {
+  const { data, error } = await supabase
+    .from('payable_purchase_categories')
+    .select('purchase_id,category_id,amount')
+    .eq('purchase_id', purchaseId)
+  if (error) throw error
+  return (data ?? []) as PayableCategoryRow[]
+}
+
+export async function setPayableFinanceClassification(
+  purchaseId: string,
+  accountKey: string | null,
+  slices: readonly PayableCategorySlice[],
+): Promise<void> {
+  const { error } = await supabase.rpc('set_payable_finance_classification', {
+    p_purchase_id: purchaseId,
+    p_account_key: accountKey || null,
+    p_categories: slices
+      .filter(slice => slice.categoryKey)
+      .map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
+  })
+  if (error) throw error
+}
+
+/** Conta já paga: estorna os lançamentos e relança na categoria certa. */
+export async function reclassifyPayableEntries(
+  purchaseId: string,
+  accountKey: string | null,
+  slices: readonly PayableCategorySlice[],
+  reason: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('reclassify_payable_finance_entries', {
+    p_purchase_id: purchaseId,
+    p_account_key: accountKey || null,
+    p_categories: slices
+      .filter(slice => slice.categoryKey)
+      .map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
+    p_reason: reason.trim(),
+  })
+  if (error) throw error
+  return (data as number) ?? 0
 }

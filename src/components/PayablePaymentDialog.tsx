@@ -3,22 +3,33 @@
 import { useMemo, useState } from 'react'
 import { Save, X } from 'lucide-react'
 import { showToast, todayKey } from '@/lib/utils'
+import PayableCategoryPicker from '@/components/PayableCategoryPicker'
 import {
   actualPaymentMethodLabel,
   correctPayableInstallmentPayment,
   formatBRL,
   recordPayableInstallmentPayment,
   roundMoney,
+  setPayableFinanceClassification,
+  validateCategorySlices,
   type PayableActualPaymentMethod,
+  type PayableCategorySlice,
   type PayableInstallmentPaymentDetails,
   type PayableInstallmentRow,
 } from '@/lib/payables'
+import type { FinanceAccountRow, FinanceCategoryRow } from '@/lib/finance'
 
 interface PayablePaymentDialogProps {
   installment: PayableInstallmentRow
+  purchaseId: string
   purchaseDate: string
+  purchaseTotal: number
   supplierName: string
   mode: 'baixar' | 'corrigir'
+  financeCategories: readonly FinanceCategoryRow[]
+  financeAccounts: readonly FinanceAccountRow[]
+  initialSlices: PayableCategorySlice[]
+  initialAccountKey: string
   onClose: () => void
   onSaved: () => Promise<void> | void
 }
@@ -29,9 +40,15 @@ function defaultMethod(installment: PayableInstallmentRow): PayableActualPayment
 
 export default function PayablePaymentDialog({
   installment,
+  purchaseId,
   purchaseDate,
+  purchaseTotal,
   supplierName,
   mode,
+  financeCategories,
+  financeAccounts,
+  initialSlices,
+  initialAccountKey,
   onClose,
   onSaved,
 }: PayablePaymentDialogProps) {
@@ -40,6 +57,10 @@ export default function PayablePaymentDialog({
   const [paidAmount, setPaidAmount] = useState(String(installment.paid_amount ?? originalAmount.toFixed(2)))
   const [paidMethod, setPaidMethod] = useState<PayableActualPaymentMethod>(defaultMethod(installment))
   const [currentDueDate, setCurrentDueDate] = useState(installment.current_due_date ?? '')
+  const [slices, setSlices] = useState<PayableCategorySlice[]>(
+    initialSlices.length > 0 ? initialSlices : [{ categoryKey: '', amount: purchaseTotal.toFixed(2) }],
+  )
+  const [accountKey, setAccountKey] = useState(initialAccountKey)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,7 +73,7 @@ export default function PayablePaymentDialog({
     if (paidDate < purchaseDate || paidDate > todayKey()) return 'A data do pagamento precisa estar entre a compra e hoje.'
     if (!Number.isFinite(numericAmount) || numericAmount < originalAmount) return 'O valor pago não pode ser menor que o valor original.'
     if (currentDueDate && currentDueDate < installment.due_date) return 'O vencimento atualizado não pode ser anterior ao vencimento original.'
-    return null
+    return validateCategorySlices(slices, purchaseTotal)
   }
 
   async function save() {
@@ -76,6 +97,9 @@ export default function PayablePaymentDialog({
     setSaving(true)
     setError(null)
     try {
+      // A classificação vai antes: a baixa lê o rateio para repartir o valor
+      // pago entre as categorias. Se ela falhar, o pagamento não acontece.
+      await setPayableFinanceClassification(purchaseId, accountKey || null, slices)
       if (mode === 'baixar') {
         await recordPayableInstallmentPayment(installment.id, details)
       } else {
@@ -133,6 +157,21 @@ export default function PayablePaymentDialog({
             <small className="ps-help">Preencha só se a empresa mandou outro boleto.</small>
           </div>
         </div>
+
+        <PayableCategoryPicker
+          categories={financeCategories}
+          accounts={financeAccounts}
+          slices={slices}
+          accountKey={accountKey}
+          total={purchaseTotal}
+          disabled={saving}
+          onChangeSlices={next => { setSlices(next); setError(null) }}
+          onChangeAccount={next => { setAccountKey(next); setError(null) }}
+        />
+        <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>
+          A conta entra no DRE pelo mês da compra ({purchaseDate.slice(0, 7).split('-').reverse().join('/')}),
+          mesmo sendo paga hoje.
+        </small>
 
         <div className="ps-card" style={{ marginTop: 12, padding: 10, background: 'var(--cream-raise)' }}>
           <small>Acréscimo registrado como juros/multa</small>

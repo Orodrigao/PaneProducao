@@ -10,6 +10,7 @@ import {
   loadPayablePurchaseItems,
   totalInstallments,
   totalItems,
+  validateCategorySlices,
   validateDraft,
   type PayableDraft,
 } from './payables'
@@ -132,5 +133,67 @@ describe('contas a pagar manual', () => {
       fornecedor: 'Fornecedor Excel', documento: 'NF-e 123', data_compra: '2026-08-04', parcela: 1,
       vencimento: '2026-08-12', baixa: '', situacao: 'Pendente', valor: 80, criterio: 'Data da compra',
     }])
+  })
+})
+
+describe('classificacao financeira da conta a pagar', () => {
+  const slices = (...pares: [string, string][]) => pares.map(([categoryKey, amount]) => ({ categoryKey, amount }))
+
+  it('aceita uma categoria que leva o total da conta', () => {
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '1000']), 1000)).toBeNull()
+  })
+
+  it('aceita o rateio que fecha com o total', () => {
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '700'], ['cmv_embalagem', '300']), 1000)).toBeNull()
+  })
+
+  // A soma tem de fechar: e ela que garante que os lancamentos gerados somem
+  // exatamente o valor pago.
+  it('recusa rateio que nao fecha, para mais ou para menos', () => {
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '700']), 1000)).toMatch(/igual ao total/i)
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '700'], ['cmv_embalagem', '400']), 1000)).toMatch(/igual ao total/i)
+  })
+
+  it('recusa categoria repetida', () => {
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '500'], ['cmv_materia_prima', '500']), 1000))
+      .toMatch(/duas vezes/i)
+  })
+
+  it('recusa mais de tres categorias', () => {
+    expect(validateCategorySlices(
+      slices(['a', '250'], ['b', '250'], ['c', '250'], ['d', '250']), 1000,
+    )).toMatch(/no m[áa]ximo 3 categorias/i)
+  })
+
+  it('recusa fatia sem categoria ou sem valor', () => {
+    expect(validateCategorySlices(slices(['', '1000']), 1000)).toMatch(/ao menos uma categoria/i)
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '0']), 1000)).toMatch(/maior que zero/i)
+  })
+
+  it('tolera centavos escritos com virgula decimal ja convertidos', () => {
+    expect(validateCategorySlices(slices(['cmv_materia_prima', '999.99'], ['cmv_embalagem', '0.01']), 1000)).toBeNull()
+  })
+})
+
+describe('rateio escrito do jeito brasileiro', () => {
+  // Bug encontrado no teste de navegador: digitar "50,00" virava zero e o
+  // rateio nunca fechava, com uma mensagem que nao explicava nada.
+  it('entende virgula decimal', () => {
+    expect(validateCategorySlices(
+      [{ categoryKey: 'cmv_materia_prima', amount: '50,00' }, { categoryKey: 'cmv_embalagem', amount: '39,90' }],
+      89.9,
+    )).toBeNull()
+  })
+
+  it('entende ponto de milhar com virgula decimal', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '1.234,56' }], 1234.56)).toBeNull()
+  })
+
+  it('continua entendendo ponto decimal, que e como a tela preenche sozinha', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '89.90' }], 89.9)).toBeNull()
+  })
+
+  it('recusa texto que nao e dinheiro', () => {
+    expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: 'abc' }], 89.9)).toMatch(/maior que zero/i)
   })
 })

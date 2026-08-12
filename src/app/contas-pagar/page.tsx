@@ -19,8 +19,16 @@ import {
   type PayablePurchaseItemRow,
   type PayablePurchaseRow,
   loadPendingPayableItems,
+  loadPayableCategories,
   type PendingPayableItemRow,
+  type PayableCategorySlice,
 } from '@/lib/payables'
+import {
+  loadFinanceAccounts,
+  loadFinanceCategories,
+  type FinanceAccountRow,
+  type FinanceCategoryRow,
+} from '@/lib/finance'
 import { showToast } from '@/lib/utils'
 
 type SupplierOption = XmlSupplierOption
@@ -46,22 +54,30 @@ export default function ContasPagarPage() {
     installment: PayableInstallmentRow
     purchase: PayablePurchaseRow
     mode: 'baixar' | 'corrigir'
+    slices: PayableCategorySlice[]
+    accountKey: string
   } | null>(null)
+  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryRow[]>([])
+  const [financeAccounts, setFinanceAccounts] = useState<FinanceAccountRow[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [rows, suppliersResponse, productsResponse] = await Promise.all([
+      const [rows, suppliersResponse, productsResponse, categoryRows, accountRows] = await Promise.all([
         loadPayablePurchases(),
         supabase.from('suppliers').select('id,name,cnpj').eq('active', true).order('name'),
         supabase.from('products').select('id,name,unit,category').eq('active', true).or('kind.eq.insumo,is_revenda.eq.true').order('name'),
+        loadFinanceCategories(),
+        loadFinanceAccounts(),
       ])
       if (suppliersResponse.error) throw suppliersResponse.error
       if (productsResponse.error) throw productsResponse.error
       setPurchases(rows)
       setSuppliers((suppliersResponse.data ?? []) as SupplierOption[])
       setProducts((productsResponse.data ?? []) as PayableProduct[])
+      setFinanceCategories(categoryRows)
+      setFinanceAccounts(accountRows)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as contas da JC. Confira sua permissão e tente novamente.')
@@ -125,8 +141,23 @@ export default function ContasPagarPage() {
     }
   }, [purchases])
 
-  function openPaymentDialog(installment: PayableInstallmentRow, purchase: PayablePurchaseRow, mode: 'baixar' | 'corrigir') {
-    setPaymentTarget({ installment, purchase, mode })
+  async function openPaymentDialog(installment: PayableInstallmentRow, purchase: PayablePurchaseRow, mode: 'baixar' | 'corrigir') {
+    setBusyId(purchase.id)
+    try {
+      // A classificação já salva volta preenchida: a Elis confirma em vez de
+      // escolher tudo de novo a cada parcela.
+      const salvas = await loadPayableCategories(purchase.id)
+      const porId = new Map(financeCategories.map(category => [category.id, category.key]))
+      const slices: PayableCategorySlice[] = salvas
+        .map(linha => ({ categoryKey: porId.get(linha.category_id) ?? '', amount: Number(linha.amount).toFixed(2) }))
+        .filter(slice => slice.categoryKey)
+      setPaymentTarget({ installment, purchase, mode, slices, accountKey: '' })
+    } catch (loadError) {
+      console.error(loadError)
+      showToast('Não foi possível carregar a categoria desta conta.')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function finishPayment() {
@@ -220,8 +251,8 @@ export default function ContasPagarPage() {
               onClosePending={() => setPendingPurchaseId(null)}
               onOpenNfeItems={purchaseId => void openNfeItems(purchaseId)}
               onCloseNfeItems={closeNfeItems}
-              onPay={(installment, purchase) => openPaymentDialog(installment, purchase, 'baixar')}
-              onCorrect={(installment, purchase) => openPaymentDialog(installment, purchase, 'corrigir')}
+              onPay={(installment, purchase) => void openPaymentDialog(installment, purchase, 'baixar')}
+              onCorrect={(installment, purchase) => void openPaymentDialog(installment, purchase, 'corrigir')}
               onCancel={purchaseId => void handleCancel(purchaseId)}
             />
           )}
@@ -229,9 +260,15 @@ export default function ContasPagarPage() {
           {paymentTarget && (
             <PayablePaymentDialog
               installment={paymentTarget.installment}
+              purchaseId={paymentTarget.purchase.id}
               purchaseDate={paymentTarget.purchase.purchase_date}
+              purchaseTotal={Number(paymentTarget.purchase.total_value)}
               supplierName={Array.isArray(paymentTarget.purchase.suppliers) ? paymentTarget.purchase.suppliers[0]?.name ?? 'Fornecedor não identificado' : paymentTarget.purchase.suppliers?.name ?? 'Fornecedor não identificado'}
               mode={paymentTarget.mode}
+              financeCategories={financeCategories}
+              financeAccounts={financeAccounts}
+              initialSlices={paymentTarget.slices}
+              initialAccountKey={paymentTarget.accountKey}
               onClose={() => setPaymentTarget(null)}
               onSaved={finishPayment}
             />
