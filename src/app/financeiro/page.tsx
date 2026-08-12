@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
+import FinanceRecurringPanel from '@/components/FinanceRecurringPanel'
 import {
   currentMonthKey,
   entryDifference,
@@ -15,12 +16,14 @@ import {
   loadFinanceAccounts,
   loadFinanceCategories,
   loadFinanceEntries,
+  loadFinanceRecurringRules,
   reverseFinanceEntry,
   summarizeEntries,
   FINANCE_STORE_LABELS,
   type FinanceAccountRow,
   type FinanceCategoryRow,
   type FinanceEntryRow,
+  type FinanceRecurringRuleRow,
 } from '@/lib/finance'
 import { showToast } from '@/lib/utils'
 
@@ -30,6 +33,7 @@ export default function FinanceiroPage() {
   const [categories, setCategories] = useState<FinanceCategoryRow[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
   const [entries, setEntries] = useState<FinanceEntryRow[]>([])
+  const [recurringRules, setRecurringRules] = useState<FinanceRecurringRuleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -39,14 +43,16 @@ export default function FinanceiroPage() {
     setLoading(true)
     setError(null)
     try {
-      const [categoryRows, accountRows, entryRows] = await Promise.all([
+      const [categoryRows, accountRows, entryRows, recurringRuleRows] = await Promise.all([
         loadFinanceCategories(),
         loadFinanceAccounts(),
         loadFinanceEntries(monthKey),
+        loadFinanceRecurringRules(),
       ])
       setCategories(categoryRows)
       setAccounts(accountRows)
       setEntries(entryRows)
+      setRecurringRules(recurringRuleRows)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar o financeiro. Confira sua permissão e tente novamente.')
@@ -153,6 +159,17 @@ export default function FinanceiroPage() {
             </div>
           )}
 
+          {!loading && !error && (
+            <FinanceRecurringPanel
+              monthKey={monthKey}
+              categories={categories}
+              accounts={accounts}
+              entries={entries}
+              rules={recurringRules}
+              onChanged={load}
+            />
+          )}
+
           {error && (
             <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
               <b>{error}</b>
@@ -225,14 +242,14 @@ export default function FinanceiroPage() {
                   </div>
                 )}
 
-                {!isReversal && !isReversed && entry.source === 'avulso' && (
+                {!isReversal && !isReversed && (entry.source === 'avulso' || entry.source === 'recorrencia') && (
                   <div className="ps-fieldrow" style={{ marginTop: 10 }}>
                     <button
                       className="ps-btn ghost block"
                       onClick={() => void handleReverse(entry)}
                       disabled={busyId === entry.id}
                     >
-                      <Undo2 size={15} /> {busyId === entry.id ? 'Estornando...' : 'Estornar'}
+                      <Undo2 size={15} /> {busyId === entry.id ? 'Estornando...' : entry.source === 'recorrencia' ? 'Estornar confirmação' : 'Estornar'}
                     </button>
                   </div>
                 )}

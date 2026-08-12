@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
 import {
+  buildFinanceRecurringForecasts,
   competenceMonthOf,
   entryDifference,
   currentMonthKey,
@@ -14,9 +15,12 @@ import {
   monthRange,
   summarizeEntries,
   validateFinanceDraft,
+  validateFinanceRecurringRuleDraft,
   type FinanceCategoryRow,
   type FinanceEntryDraft,
   type FinanceEntryRow,
+  type FinanceRecurringRuleDraft,
+  type FinanceRecurringRuleRow,
 } from './finance'
 
 const TODAY = '2026-08-12'
@@ -50,8 +54,26 @@ function entry(overrides: Partial<FinanceEntryRow> = {}): FinanceEntryRow {
     store: 'jc', competence_month: '2026-08-01', paid_date: TODAY,
     planned_amount: 150, amount: 150,
     payment_method: 'dinheiro', description: 'Diária do Marcelo',
-    source: 'avulso', source_ref: null, reversal_of: null,
+    source: 'avulso', source_ref: null, recurrence_month: null, reversal_of: null,
     reversal_reason: null, reversed_at: null, created_at: '2026-08-12T12:00:00Z',
+    ...overrides,
+  }
+}
+
+function recurringRule(overrides: Partial<FinanceRecurringRuleRow> = {}): FinanceRecurringRuleRow {
+  return {
+    id: 'rule-aluguel', name: 'Aluguel da JC', category_id: 'cat-diarias', store: 'jc',
+    planned_amount: 2000, due_day: 31, start_month: '2026-01-01', end_month: null,
+    default_account_id: 'acc-1', default_payment_method: 'boleto', active: true,
+    ...overrides,
+  }
+}
+
+function recurringDraft(overrides: Partial<FinanceRecurringRuleDraft> = {}): FinanceRecurringRuleDraft {
+  return {
+    name: 'Aluguel da JC', categoryKey: 'ocupacao', store: 'jc', plannedAmount: '2.000,00',
+    dueDay: '10', startMonth: '2026-08', endMonth: '', defaultAccountKey: 'banco_sicredi_jc',
+    defaultPaymentMethod: 'boleto',
     ...overrides,
   }
 }
@@ -110,6 +132,36 @@ describe('competência', () => {
 
   it('sabe o mês corrente', () => {
     expect(currentMonthKey(TODAY)).toBe('2026-08')
+  })
+})
+
+describe('recorrências', () => {
+  it('valida os dados que definem a previsão mensal', () => {
+    expect(validateFinanceRecurringRuleDraft(recurringDraft())).toBeNull()
+    expect(validateFinanceRecurringRuleDraft(recurringDraft({ defaultAccountKey: '' }))).toMatch(/conta habitual/i)
+    expect(validateFinanceRecurringRuleDraft(recurringDraft({ endMonth: '2026-07' }))).toMatch(/fim da vigência/i)
+  })
+
+  it('calcula a pendência virtual e ajusta dia 31 para fevereiro', () => {
+    const [forecast] = buildFinanceRecurringForecasts([recurringRule()], [], '2026-02')
+    expect(forecast.dueDate).toBe('2026-02-28')
+    expect(forecast.entry).toBeNull()
+  })
+
+  it('some depois da vigência e mostra o pagamento confirmado no mês certo', () => {
+    const rule = recurringRule({ end_month: '2026-08-01' })
+    const paid = entry({
+      source: 'recorrencia', source_ref: rule.id, recurrence_month: '2026-08-01', amount: 2050,
+    })
+    expect(buildFinanceRecurringForecasts([rule], [paid], '2026-08')[0]?.entry?.amount).toBe(2050)
+    expect(buildFinanceRecurringForecasts([rule], [paid], '2026-09')).toEqual([])
+  })
+
+  it('volta a mostrar a pendência se o lançamento do mês foi estornado', () => {
+    const reversed = entry({
+      source: 'recorrencia', source_ref: 'rule-aluguel', recurrence_month: '2026-08-01', reversed_at: '2026-08-12T12:00:00Z',
+    })
+    expect(buildFinanceRecurringForecasts([recurringRule()], [reversed], '2026-08')[0]?.entry).toBeNull()
   })
 })
 

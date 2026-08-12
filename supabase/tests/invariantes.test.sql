@@ -7,11 +7,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(110);
+select plan(117);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 36,
-  'catálogo completo com 36 permissões');
+select is((select count(*)::int from public.app_permissions), 38,
+  'catálogo completo com 38 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
@@ -420,6 +420,26 @@ select ok(not has_function_privilege('anon',
 select ok(exists(select 1 from pg_indexes
     where schemaname = 'public' and indexname = 'finance_entries_one_reversal_idx'),
   'um estorno por lancamento, mesmo em chamadas simultaneas');
+
+-- Recorrências: previsão virtual com escrita só pela confirmação protegida.
+select ok(exists(select 1 from public.app_permissions where key = 'financeiro.recorrencias_gerenciar'),
+  'permissao de gerenciar recorrencias presente');
+select ok(exists(select 1 from public.app_permissions where key = 'financeiro.recorrencias_confirmar'),
+  'permissao de confirmar recorrencias presente');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'finance_recurring_rules'),
+  'regras recorrentes tem RLS habilitada e forcada');
+select ok(not has_table_privilege('anon', 'public.finance_recurring_rules', 'select'),
+  'anon nao le regras recorrentes');
+select ok(not has_table_privilege('authenticated', 'public.finance_recurring_rules', 'insert'),
+  'ninguem cria regra recorrente direto na tabela');
+select ok(has_function_privilege('authenticated',
+    'public.confirm_finance_recurring_rule(uuid, uuid, date, date, numeric, text, text)', 'execute'),
+  'pagamento recorrente e confirmado pela funcao protegida');
+select ok(not has_function_privilege('anon',
+    'public.confirm_finance_recurring_rule(uuid, uuid, date, date, numeric, text, text)', 'execute'),
+  'anon nao confirma pagamento recorrente');
 
 select * from finish();
 rollback;
