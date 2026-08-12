@@ -13,6 +13,7 @@ import {
   statusLabel,
   type PayableProduct,
   type PayableInstallmentRow,
+  type PayablePurchaseItemRow,
   type PayablePurchaseRow,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -22,10 +23,16 @@ interface PayablePurchaseListProps {
   products: PayableProduct[]
   pendingPurchaseId: string | null
   pendingItems: PendingPayableItemRow[]
+  nfeItemsPurchaseId: string | null
+  nfeItems: PayablePurchaseItemRow[]
+  nfeItemsLoading: boolean
+  nfeItemsError: string | null
   busyId: string | null
   onOpenPending: (purchaseId: string) => void
   onRefreshPending: () => void
   onClosePending: () => void
+  onOpenNfeItems: (purchaseId: string) => void
+  onCloseNfeItems: () => void
   onPay: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
   onCorrect: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
   onCancel: (purchaseId: string) => void
@@ -68,15 +75,25 @@ function statusClass(status: PayablePurchaseRow['status']): string {
   return status === 'paga' ? 'conferido' : status === 'cancelada' ? 'cancelado' : 'separado'
 }
 
+function formatQuantity(value: number | string): string {
+  return Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
+}
+
 export default function PayablePurchaseList({
   purchases,
   products,
   pendingPurchaseId,
   pendingItems,
+  nfeItemsPurchaseId,
+  nfeItems,
+  nfeItemsLoading,
+  nfeItemsError,
   busyId,
   onOpenPending,
   onRefreshPending,
   onClosePending,
+  onOpenNfeItems,
+  onCloseNfeItems,
   onPay,
   onCorrect,
   onCancel,
@@ -175,6 +192,21 @@ export default function PayablePurchaseList({
                   <div style={{ borderTop: '1px solid var(--line-soft)', padding: '10px 12px 12px' }}>
                     {purchase.notes && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>{purchase.notes}</small>}
                     {purchase.origin === 'xml' && purchase.nfe_key && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>Chave da NF-e: {purchase.nfe_key}</small>}
+                    {purchase.origin === 'xml' && (
+                      nfeItemsPurchaseId === purchase.id ? (
+                        <div className="ps-banner honey" style={{ marginBottom: 8 }}>
+                          <div className="ps-card-head"><b>Itens da NF-e</b><button type="button" className="ps-iconbtn" onClick={onCloseNfeItems} aria-label="Fechar itens da NF-e">×</button></div>
+                          {nfeItemsLoading ? <small aria-live="polite">Carregando itens...</small> : nfeItemsError ? (
+                            <><small style={{ display: 'block', color: 'var(--berry)', marginTop: 6 }}>{nfeItemsError}</small><button type="button" className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={() => onOpenNfeItems(purchase.id)}>Tentar novamente</button></>
+                          ) : nfeItems.length === 0 ? <small style={{ display: 'block', marginTop: 6 }}>Esta NF-e não tem itens para mostrar.</small> : nfeItems.map(item => (
+                            <div key={item.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                              <span style={{ flex: 1 }}><b>{item.source_description ?? item.item_name}</b><small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 3 }}>{formatQuantity(item.source_quantity ?? item.quantity)} {item.source_unit ?? item.unit} · {formatBRL(item.unit_price)} cada</small></span>
+                              <b>{formatBRL(item.line_total)}</b>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <button type="button" className="ps-btn ghost sm" style={{ marginBottom: 8 }} onClick={() => onOpenNfeItems(purchase.id)}>Ver itens da NF-e</button>
+                    )}
                     {purchase.classification_status === 'pendente' && (
                       pendingPurchaseId === purchase.id
                         ? <PendingPayableItems items={pendingItems} products={products} onChanged={onRefreshPending} onClose={onClosePending} />
