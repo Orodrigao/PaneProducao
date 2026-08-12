@@ -208,6 +208,10 @@ select is((select sum(case when entry_type = 'estorno' then -amount else amount 
 
 -- Conta sem classificação ---------------------------------------------------
 
+-- O cenário é montado fora do papel de usuário: a tabela não aceita escrita
+-- direta de quem está logado, e é exatamente isso que a fase 0 garante.
+reset role;
+
 insert into public.payable_purchases (
   id, request_id, store, supplier_id, purchase_date, origin, document_type,
   payment_method, status, total_value, created_by
@@ -224,6 +228,9 @@ insert into public.payable_installments (
   '93000000-0000-4000-8000-0000000000c2',
   1, date '2026-08-01', 80.00, 'pendente'
 );
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '93000000-0000-4000-8000-000000000001', true);
 
 select lives_ok(
   $$ select public.record_payable_installment_payment(

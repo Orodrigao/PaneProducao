@@ -93,11 +93,14 @@ grant select on public.payable_purchase_categories to authenticated;
 -- ---------------------------------------------------------------------------
 -- Repartição do valor pago entre as categorias da compra.
 -- ---------------------------------------------------------------------------
+-- Os nomes de saída não repetem nomes de coluna das tabelas consultadas: em
+-- plpgsql, parâmetro de retorno e coluna com o mesmo nome viram referência
+-- ambígua e a função quebra em tempo de execução.
 create or replace function private.split_payable_amount(
   p_purchase_id uuid,
   p_amount numeric
 )
-returns table (category_id uuid, amount numeric)
+returns table (fatia_category_id uuid, fatia_valor numeric)
 language plpgsql
 stable
 security definer
@@ -129,29 +132,29 @@ begin
   -- a soma das partes precisa bater exatamente com o valor pago.
   return query
   with proporcional as (
-    select split.category_id,
+    select split.category_id as cat_id,
            round(p_amount * split.amount / v_total, 2) as valor,
            split.amount as peso
     from public.payable_purchase_categories split
     where split.purchase_id = p_purchase_id
   ), positivas as (
-    select * from proporcional where valor > 0
+    select * from proporcional where proporcional.valor > 0
+  ), maior as (
+    select positivas.cat_id
+    from positivas
+    order by positivas.peso desc, positivas.cat_id
+    limit 1
   ), com_resto as (
-    select positivas.category_id,
+    select positivas.cat_id,
            positivas.valor
              + case
-                 when positivas.peso = (select max(peso) from positivas)
-                   and positivas.category_id = (
-                     select category_id from positivas
-                     order by peso desc, category_id
-                     limit 1
-                   )
-                 then round(p_amount, 2) - (select sum(valor) from positivas)
+                 when positivas.cat_id = (select maior.cat_id from maior)
+                 then round(p_amount, 2) - (select sum(positivas2.valor) from positivas positivas2)
                  else 0
                end as valor
     from positivas
   )
-  select com_resto.category_id, com_resto.valor
+  select com_resto.cat_id, com_resto.valor
   from com_resto
   where com_resto.valor > 0;
 end;
@@ -256,9 +259,9 @@ begin
   loop
     -- Previsto e realizado convivem: a diferença entre eles é o juro ou a
     -- multa que a padaria pagou a mais.
-    v_planejado := round(v_fatia.amount * v_row.valor_original / nullif(v_row.paid_amount, 0), 2);
+    v_planejado := round(v_fatia.fatia_valor * v_row.valor_original / nullif(v_row.paid_amount, 0), 2);
     if v_planejado is null or v_planejado <= 0 then
-      v_planejado := v_fatia.amount;
+      v_planejado := v_fatia.fatia_valor;
     end if;
 
     insert into public.finance_entries (
@@ -267,9 +270,9 @@ begin
       source, source_ref, created_by
     )
     values (
-      gen_random_uuid(), 'lancamento', v_fatia.category_id, v_row.finance_account_id,
+      gen_random_uuid(), 'lancamento', v_fatia.fatia_category_id, v_row.finance_account_id,
       'jc', v_competencia, v_row.vencimento, v_planejado, v_row.paid_date,
-      v_fatia.amount,
+      v_fatia.fatia_valor,
       coalesce(v_row.paid_method, 'outro'), v_descricao,
       'contas_pagar', p_installment_id, p_user_id
     );
