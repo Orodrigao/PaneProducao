@@ -11,6 +11,7 @@ import {
   installmentLabel,
   isDueSoon,
   isOverdue,
+  prioritizeOverduePayablePurchases,
   statusLabel,
   type PayableProduct,
   type PayableInstallmentRow,
@@ -120,10 +121,11 @@ export default function PayablePurchaseList({
 
   const filteredPurchases = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
-    return purchases.filter(purchase => (
+    const matchingPurchases = purchases.filter(purchase => (
       (statusFilter === 'todas' || purchase.status === statusFilter)
       && (!normalizedSearch || purchaseSearchText(purchase).includes(normalizedSearch))
     ))
+    return prioritizeOverduePayablePurchases(matchingPurchases)
   }, [purchases, search, statusFilter])
 
   const summary = useMemo(() => ({
@@ -181,7 +183,18 @@ export default function PayablePurchaseList({
             const expanded = expandedPurchaseId === purchase.id || pendingPurchaseId === purchase.id
 
             return (
-              <div className="ps-card" key={purchase.id} style={{ marginBottom: 8, padding: 0, overflow: 'hidden' }}>
+              <div
+                className="ps-card"
+                key={purchase.id}
+                style={{
+                  marginBottom: 8,
+                  padding: 0,
+                  overflow: 'hidden',
+                  borderColor: overdue ? '#E6B5AC' : undefined,
+                  background: overdue ? 'var(--berry-tint)' : undefined,
+                  boxShadow: overdue ? '0 2px 10px rgba(168,57,43,.12)' : undefined,
+                }}
+              >
                 <button
                   type="button"
                   aria-expanded={expanded}

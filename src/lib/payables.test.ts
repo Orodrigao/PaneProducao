@@ -10,6 +10,7 @@ import {
   isOverdue,
   loadPayablePurchaseItems,
   payableDetailUrl,
+  prioritizeOverduePayablePurchases,
   totalInstallments,
   totalItems,
   validateCategorySlices,
@@ -101,6 +102,18 @@ describe('contas a pagar manual', () => {
     expect(isOverdue(installment, today)).toBe(false)
     expect(isDueSoon(installment, today)).toBe(true)
     expect(payableDetailUrl('purchase 1', installment.id)).toBe('/contas-pagar?purchase=purchase+1&installment=installment+1')
+  })
+
+  it('prioriza no topo as contas com parcela vencida e preserva a ordem das demais', () => {
+    const today = new Date('2026-08-03T12:00:00Z')
+    const purchases = [
+      { id: 'future', purchase_date: '2026-08-03', document_type: 'sem_nota' as const, payment_method: 'boleto' as const, status: 'aberta' as const, total_value: 10, notes: null, suppliers: null, payable_installments: [{ id: 'future-1', installment_number: 1, due_date: '2026-08-10', amount: 10, status: 'pendente' as const }] },
+      { id: 'overdue', purchase_date: '2026-08-02', document_type: 'sem_nota' as const, payment_method: 'boleto' as const, status: 'aberta' as const, total_value: 20, notes: null, suppliers: null, payable_installments: [{ id: 'overdue-1', installment_number: 1, due_date: '2026-08-02', amount: 20, status: 'pendente' as const }] },
+      { id: 'paid', purchase_date: '2026-08-01', document_type: 'sem_nota' as const, payment_method: 'boleto' as const, status: 'paga' as const, total_value: 30, notes: null, suppliers: null, payable_installments: [{ id: 'paid-1', installment_number: 1, due_date: '2026-08-01', amount: 30, status: 'paga' as const }] },
+    ]
+
+    expect(prioritizeOverduePayablePurchases(purchases, today).map(purchase => purchase.id)).toEqual(['overdue', 'future', 'paid'])
+    expect(purchases.map(purchase => purchase.id)).toEqual(['future', 'overdue', 'paid'])
   })
 
   it('monta o relatório de compras pela data da compra e conserva as parcelas', () => {
