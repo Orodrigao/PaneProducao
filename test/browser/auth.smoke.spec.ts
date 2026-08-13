@@ -59,12 +59,18 @@ async function expectRouteHidden(page: import('@playwright/test').Page, href: st
   await expect(page.locator(`a[href="${href}"]`)).toHaveCount(0)
 }
 
-test('quem nao entrou e levado ao login ao abrir uma tela protegida', async ({ page }) => {
+test('quem nao entrou volta à tela protegida depois do login', async ({ page }) => {
   await page.goto('/sobras')
 
-  await expect(page).toHaveURL(/\/login$/)
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fsobras$/)
   await expect(page.getByRole('heading', { name: 'Pane & Salute' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible()
+})
+
+test('link de uma parcela preserva a compra e a parcela até o login', async ({ page }) => {
+  await page.goto('/contas-pagar?purchase=compra-teste&installment=parcela-teste')
+
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fcontas-pagar%3Fpurchase%3Dcompra-teste%26installment%3Dparcela-teste$/)
 })
 
 test('administrador encontra JC e JA ao registrar Sobras', async ({ page }) => {
