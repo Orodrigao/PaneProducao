@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(17);
 
 select ok(exists(
   select 1
@@ -120,6 +120,17 @@ reset role;
 select ok((select status = 'enviado' and sent_at is not null and provider_message_id = 'resend-test-message'
   from private.payable_due_report_runs),
   'o aceite do provedor fica registrado');
+
+set local role service_role;
+select is(
+  (public.claim_payable_due_report_for_delivery(
+    current_setting('test.payable_due_report_secret'),
+    (date_trunc('day', now() at time zone 'America/Sao_Paulo') + time '06:15') at time zone 'America/Sao_Paulo'
+  ) ->> 'state'),
+  'ja_enviado',
+  'o relatÃ³rio enviado nÃ£o cria nem reserva uma nova tentativa no mesmo dia'
+);
+reset role;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '98000000-0000-4000-8000-000000000002', true);
