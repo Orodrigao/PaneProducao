@@ -326,6 +326,10 @@ próprio arquivo qual id foi preservado e qual foi absorvido.
 ## Fase 2 — A tela de Contas a receber e o lançamento avulso
 
 **Reescrita em 2026-08-13** para nascer ligada ao livro-caixa (decisão 10).
+**Concluída em 2026-08-13 (PR #232),** testada por Rodrigo no preview. O teste
+dele encontrou dois defeitos que os automáticos não pegaram: a origem nova sem
+nome na tela do Financeiro e a baixa sem evidência visível quando a receita cai
+em mês anterior — ver `lessons.md`.
 
 **Objetivo:** existir um único lugar que responde quem deve, quanto e quando —
 e o Bling poder ser desligado. Ao dar baixa, o dinheiro aparece no caixa sem

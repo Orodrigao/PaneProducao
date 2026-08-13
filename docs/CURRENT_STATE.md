@@ -174,6 +174,15 @@ tabelas.
   (PR #218) e confirmado por leitura live: RLS ligada e forçada nas três
   tabelas, sem `insert` para `authenticated`, 26 categorias e 10 contas
   semeadas;
+- contas a receber (fase 2 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
+  cobrança de cliente PJ digitada à mão em `/contas-receber`, com vencimento
+  calculado do prazo do cliente, baixa (data, valor, forma e conta), estorno,
+  cancelamento e correção de vencimento. Escrita somente pelas cinco funções
+  protegidas; RLS ligada e forçada em `receivables` e `receivable_events`. A
+  baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
+  **com competência no mês do faturamento** — cliente que paga atrasado gera
+  receita em mês anterior ao do recebimento. Geração automática a partir de
+  pedido PJ e do romaneio da Buck ainda não existe (fases 3 e 4);
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
