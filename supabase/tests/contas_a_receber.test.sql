@@ -10,7 +10,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(41);
+select plan(42);
 
 -- Estrutura ----------------------------------------------------------------
 
@@ -76,7 +76,12 @@ values
   ('94000000-0000-4000-8000-000000000001', 'contas_receber.baixar', 'jc', null),
   ('94000000-0000-4000-8000-000000000001', 'contas_receber.estornar', 'jc', null),
   ('94000000-0000-4000-8000-000000000001', 'contas_receber.cancelar', 'jc', null),
-  ('94000000-0000-4000-8000-000000000001', 'contas_receber.corrigir_vencimento', 'jc', null);
+  ('94000000-0000-4000-8000-000000000001', 'contas_receber.corrigir_vencimento', 'jc', null),
+  -- Somente LER o livro, de proposito. Sem financeiro.lancar nem
+  -- financeiro.estornar: e o que prova que dar baixa escreve no livro por
+  -- dentro da acao protegida, sem exigir permissao de lancamento de quem
+  -- opera o contas a receber.
+  ('94000000-0000-4000-8000-000000000001', 'financeiro.acessar', '*', null);
 
 -- Um cliente com 30 dias de prazo e outro sem prazo combinado.
 insert into public.customers (id, name, doc, payment_term_days, active)
@@ -216,6 +221,13 @@ select is((select status from public.receivables
   'a cobranca fica marcada como recebida');
 
 -- A ponte com o livro ------------------------------------------------------
+
+-- Quem deu a baixa nao tem financeiro.lancar: o lancamento nasceu por dentro
+-- da acao protegida, e nao pela permissao de quem clicou.
+select ok(not exists(select 1 from public.app_user_permissions
+    where user_id = '94000000-0000-4000-8000-000000000001'
+      and permission_key in ('financeiro.lancar', 'financeiro.estornar')),
+  'quem baixou nao tem permissao de lancar no livro');
 
 select is((select count(*)::int from public.finance_entries
     where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1,
