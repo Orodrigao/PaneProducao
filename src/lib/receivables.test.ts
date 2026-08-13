@@ -12,7 +12,10 @@ import {
   sortReceivables,
   summarizeReceivables,
   validateReceivableDraft,
+  pjOrderCanBeBilled,
+  summarizePjOrdersToBill,
   validateReceivablePaymentDraft,
+  type PjOrderToBillRow,
   type ReceivableRow,
 } from '@/lib/receivables'
 
@@ -143,5 +146,36 @@ describe('sortReceivables', () => {
     expect(ordenado.map(row => row.id)).toEqual([
       'atrasada-velha', 'atrasada-nova', 'a-vencer', 'recebida',
     ])
+  })
+})
+
+describe('pedidos PJ a faturar', () => {
+  const pedido = (overrides: Partial<PjOrderToBillRow> = {}): PjOrderToBillRow => ({
+    order_group_id: 'g1',
+    customer_id: 'c1',
+    customer_name: '[TESTE] Cliente',
+    payment_term_days: 15,
+    delivery_date: '2026-08-12',
+    dispatched_at: null,
+    items: 2,
+    amount: 150,
+    ...overrides,
+  })
+
+  it('pedido de cliente sem prazo nao pode ser cobrado', () => {
+    expect(pjOrderCanBeBilled(pedido())).toBe(true)
+    expect(pjOrderCanBeBilled(pedido({ payment_term_days: null }))).toBe(false)
+    // Zero é à vista, não é ausência de prazo.
+    expect(pjOrderCanBeBilled(pedido({ payment_term_days: 0 }))).toBe(true)
+  })
+
+  it('separa o quanto esta travado por falta de prazo do cliente', () => {
+    const resumo = summarizePjOrdersToBill([
+      pedido({ order_group_id: 'a', amount: 150 }),
+      pedido({ order_group_id: 'b', amount: 80, payment_term_days: null }),
+    ])
+    expect(resumo.total).toBe(230)
+    expect(resumo.bloqueados).toBe(1)
+    expect(resumo.valorBloqueado).toBe(80)
   })
 })

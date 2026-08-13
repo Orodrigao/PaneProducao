@@ -114,6 +114,26 @@ Não reabrir sem evidência nova.
       resultado; pagar e receber são as duas telas do dia a dia da Elis, com
       permissões separadas.
 
+11. **Dois caminhos para a mesma cobrança (Rodrigo, 2026-08-13).** A decisão 8
+    dizia que a cobrança nasce do envio confirmado pela Expedição. A medição em
+    produção antes de implementar a fase 3 mostrou que isso não se sustenta:
+    **116 pedidos PJ desde junho de 2026, 1 com envio confirmado** — 27 em
+    junho (nenhum), 44 em julho (um) e 45 em agosto até o dia 13 (nenhum),
+    somando R$ 47 mil. Construir só o caminho automático faria a cobrança
+    deixar de nascer para quase todos os pedidos.
+    - a cobrança continua nascendo **por dentro** da ação que confirma o
+      envio, sem nenhuma permissão financeira para a Expedição;
+    - **e** o financeiro passa a ter a lista de *entregues e ainda não
+      cobrados*, marcando vários e gerando de uma vez;
+    - os dois caminhos chamam a mesma função no banco, então valor,
+      vencimento e travas não podem divergir;
+    - **cliente sem prazo cadastrado não trava o envio.** A confirmação
+      acontece, a cobrança não nasce, e o pedido fica na lista até alguém
+      cadastrar o prazo. Travar a operação por causa de um campo do financeiro
+      é acoplamento que quebra a padaria.
+    Se o hábito da Expedição melhorar, o caminho automático assume sozinho e a
+    lista esvazia — sem mudar nada no código.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
