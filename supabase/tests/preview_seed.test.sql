@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(26);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -186,8 +186,26 @@ select is(
     where id::text like '60000000-0000-4000-8000-0000000000%'
       and active
       and default_tier_id = '50000000-0000-4000-8000-000000000001'),
-  2,
+  3,
   'seed cria clientes PJ ficticios ja ligados a uma tabela de preco'
+);
+
+select is(
+  (select count(*)::int from public.customers
+    where id::text like '60000000-0000-4000-8000-0000000000%'
+      and payment_term_days is not null),
+  2,
+  'seed cria clientes com prazo de pagamento combinado'
+);
+
+-- Cenario obrigatorio do contas a receber: cliente sem prazo nao pode gerar
+-- cobranca, entao precisa existir um no Preview para a tela ser testavel.
+select is(
+  (select count(*)::int from public.customers
+    where id::text like '60000000-0000-4000-8000-0000000000%'
+      and payment_term_days is null),
+  1,
+  'seed cria um cliente sem prazo definido'
 );
 
 select is(
@@ -229,6 +247,30 @@ select is(
       )),
   2,
   'cenario PJ cobre um pedido enviado e um cancelado'
+);
+
+select is(
+  (select count(*)::int from public.payable_purchases
+   where id = '80000000-0000-4000-8000-000000000001'
+     and origin = 'xml'
+     and nfe_number = '999001'
+     and total_value = 89.90),
+  case when exists (
+    select 1 from auth.users user_account
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  ) then 1 else 0 end,
+  'seed cria a NF-e fictícia depois que o Auth de teste está pronto'
+);
+
+select is(
+  (select count(*)::int from public.payable_purchase_items
+   where purchase_id = '80000000-0000-4000-8000-000000000001'
+     and source_description like '[TESTE]%'),
+  case when exists (
+    select 1 from auth.users user_account
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  ) then 2 else 0 end,
+  'NF-e fictícia tem os dois itens depois que o Auth de teste está pronto'
 );
 
 select * from finish();

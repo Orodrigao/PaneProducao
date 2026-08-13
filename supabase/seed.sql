@@ -123,16 +123,23 @@ on conflict (id) do update set
   pack_size = excluded.pack_size,
   active = excluded.active;
 
+-- O terceiro cliente nasce sem prazo de propósito: e o cenario que prova que a
+-- tela avisa "sem prazo definido" e que o contas a receber nao inventa
+-- vencimento para quem ainda nao combinou prazo.
 insert into public.customers (
-  id, name, doc, contact, default_tier_id, discount_pct, delivery_hours, active, notes
+  id, name, doc, contact, default_tier_id, discount_pct, delivery_hours,
+  payment_term_days, active, notes
 )
 values
   ('60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ', '00.000.000/0001-91',
-   'contato-teste@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48, true,
-   'Cliente ficticio para validar Pedidos PJ.'),
+   'contato-teste@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   28, true, 'Cliente ficticio para validar Pedidos PJ.'),
   ('60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ', '00.000.000/0002-72',
-   'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24, true,
-   'Cliente ficticio com desconto base de 10% para validar o calculo da tabela.')
+   'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24,
+   0, true, 'Cliente ficticio com desconto base de 10% e pagamento a vista.'),
+  ('60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo', '00.000.000/0003-53',
+   'contato-teste3@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   null, true, 'Cliente ficticio sem prazo combinado, para validar o aviso na tela.')
 on conflict (id) do update set
   name = excluded.name,
   doc = excluded.doc,
@@ -140,6 +147,7 @@ on conflict (id) do update set
   default_tier_id = excluded.default_tier_id,
   discount_pct = excluded.discount_pct,
   delivery_hours = excluded.delivery_hours,
+  payment_term_days = excluded.payment_term_days,
   active = excluded.active,
   notes = excluded.notes;
 
@@ -319,7 +327,10 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
     ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores"]'::jsonb)
+    -- O financeiro carrega as rotas comerciais do cenario PJ: sem
+    -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
+    -- (o tripe rota-permissao-RLS precisa concordar nos tres).
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -371,7 +382,15 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.importar_xml', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.baixar', 'jc'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.cancelar', 'jc'),
+    -- Sem esta permissao o login filtra /pedidos-pj de volta para fora das
+    -- rotas (resolveAllowedRoutes) e o financeiro nao ve a tela.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc'),
+    -- Livro-caixa: escopo global porque o livro cobre a empresa inteira,
+    -- inclusive os lancamentos 'geral' (que nao pertencem a uma loja so).
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.acessar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.lancar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.estornar', '*')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
@@ -388,6 +407,89 @@ select user_id, permission_key, scope, null::uuid from resolved_permissions
 union all
 select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
+
+-- NF-e fictícia somente para conferir a visualização dos itens no Contas a pagar.
+insert into public.payable_purchases (
+  id, request_id, store, supplier_id, purchase_date, origin, document_type,
+  payment_method, status, total_value, notes, nfe_key, nfe_number, nfe_series,
+  nfe_issued_at, classification_status, created_by
+)
+select
+  '80000000-0000-4000-8000-000000000001',
+  '80000000-0000-4000-8000-000000000002',
+  'jc',
+  '40000000-0000-4000-8000-000000000001',
+  (now() at time zone 'America/Sao_Paulo')::date,
+  'xml', 'nfe', 'boleto', 'aberta', 89.90,
+  '[TESTE] NF-e para visualizar itens importados.',
+  '35260812345678000195550010009990011009990011', '999001', '1',
+  (now() at time zone 'America/Sao_Paulo')::date, 'completa',
+  user_account.id
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+on conflict (id) do update set
+  purchase_date = excluded.purchase_date,
+  total_value = excluded.total_value,
+  notes = excluded.notes,
+  nfe_issued_at = excluded.nfe_issued_at,
+  classification_status = excluded.classification_status,
+  created_by = excluded.created_by;
+
+with fixture_items (
+  id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
+  source_product_code, source_description, source_unit, source_quantity,
+  conversion_basis, conversion_factor, usable_quantity, normalized_unit_cost,
+  mapping_status
+) as (
+  values
+    ('81000000-0000-4000-8000-000000000001'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, '[TESTE] Farinha de trigo', 'kg', 2, 14.95, 1,
+     'TESTE-FAR-01', '[TESTE] Farinha de trigo', 'kg', 2, 'simple', 1, 2, 14.95, 'mapeado'),
+    ('81000000-0000-4000-8000-000000000002'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, '[TESTE] Manteiga sem sal', 'un', 3, 20, 2,
+     'TESTE-MAN-02', '[TESTE] Manteiga sem sal', 'un', 3, 'simple', 1, 3, 20, 'mapeado')
+)
+insert into public.payable_purchase_items (
+  id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
+  source_product_code, source_description, source_unit, source_quantity,
+  conversion_basis, conversion_factor, usable_quantity, normalized_unit_cost,
+  mapping_status
+)
+select fixture.*
+from fixture_items fixture
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = fixture.purchase_id
+)
+on conflict (id) do update set
+  item_name = excluded.item_name,
+  unit = excluded.unit,
+  quantity = excluded.quantity,
+  unit_price = excluded.unit_price,
+  source_line_number = excluded.source_line_number,
+  source_product_code = excluded.source_product_code,
+  source_description = excluded.source_description,
+  source_unit = excluded.source_unit,
+  source_quantity = excluded.source_quantity,
+  conversion_basis = excluded.conversion_basis,
+  conversion_factor = excluded.conversion_factor,
+  usable_quantity = excluded.usable_quantity,
+  normalized_unit_cost = excluded.normalized_unit_cost,
+  mapping_status = excluded.mapping_status;
+
+with fixture_installments (id, purchase_id, installment_number, due_date, amount) as (
+  values
+    ('82000000-0000-4000-8000-000000000001'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, 1, (now() at time zone 'America/Sao_Paulo')::date + 7, 44.95),
+    ('82000000-0000-4000-8000-000000000002'::uuid, '80000000-0000-4000-8000-000000000001'::uuid, 2, (now() at time zone 'America/Sao_Paulo')::date + 14, 44.95)
+)
+insert into public.payable_installments (id, purchase_id, installment_number, due_date, amount)
+select fixture.*
+from fixture_installments fixture
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = fixture.purchase_id
+)
+on conflict (id) do update set
+  due_date = excluded.due_date,
+  amount = excluded.amount;
 
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit,

@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Plus, RefreshCw, WalletCards } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
+import PayablePaymentDialog from '@/components/PayablePaymentDialog'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import { supabase } from '@/lib/supabase'
@@ -12,12 +13,22 @@ import {
   isDueSoon,
   isOverdue,
   loadPayablePurchases,
-  payInstallment,
+  loadPayablePurchaseItems,
   type PayableProduct,
+  type PayableInstallmentRow,
+  type PayablePurchaseItemRow,
   type PayablePurchaseRow,
   loadPendingPayableItems,
+  loadPayableCategories,
   type PendingPayableItemRow,
+  type PayableCategorySlice,
 } from '@/lib/payables'
+import {
+  loadFinanceAccounts,
+  loadFinanceCategories,
+  type FinanceAccountRow,
+  type FinanceCategoryRow,
+} from '@/lib/finance'
 import { showToast } from '@/lib/utils'
 
 type SupplierOption = XmlSupplierOption
@@ -34,21 +45,40 @@ export default function ContasPagarPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pendingPurchaseId, setPendingPurchaseId] = useState<string | null>(null)
   const [pendingItems, setPendingItems] = useState<PendingPayableItemRow[]>([])
+  const [nfeItemsPurchaseId, setNfeItemsPurchaseId] = useState<string | null>(null)
+  const [nfeItems, setNfeItems] = useState<PayablePurchaseItemRow[]>([])
+  const [nfeItemsLoading, setNfeItemsLoading] = useState(false)
+  const [nfeItemsError, setNfeItemsError] = useState<string | null>(null)
+  const nfeItemsRequestId = useRef(0)
+  const [paymentTarget, setPaymentTarget] = useState<{
+    installment: PayableInstallmentRow
+    purchase: PayablePurchaseRow
+    mode: 'baixar' | 'corrigir'
+    slices: PayableCategorySlice[]
+    accountKey: string
+  } | null>(null)
+  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryRow[]>([])
+  const [financeAccounts, setFinanceAccounts] = useState<FinanceAccountRow[]>([])
+  const [focusedPayable, setFocusedPayable] = useState<{ purchaseId: string; installmentId: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [rows, suppliersResponse, productsResponse] = await Promise.all([
+      const [rows, suppliersResponse, productsResponse, categoryRows, accountRows] = await Promise.all([
         loadPayablePurchases(),
         supabase.from('suppliers').select('id,name,cnpj').eq('active', true).order('name'),
         supabase.from('products').select('id,name,unit,category').eq('active', true).or('kind.eq.insumo,is_revenda.eq.true').order('name'),
+        loadFinanceCategories(),
+        loadFinanceAccounts(),
       ])
       if (suppliersResponse.error) throw suppliersResponse.error
       if (productsResponse.error) throw productsResponse.error
       setPurchases(rows)
       setSuppliers((suppliersResponse.data ?? []) as SupplierOption[])
       setProducts((productsResponse.data ?? []) as PayableProduct[])
+      setFinanceCategories(categoryRows)
+      setFinanceAccounts(accountRows)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as contas da JC. Confira sua permissão e tente novamente.')
@@ -76,7 +106,40 @@ export default function ContasPagarPage() {
     await load()
   }
 
+  async function openNfeItems(purchaseId: string) {
+    const requestId = nfeItemsRequestId.current + 1
+    nfeItemsRequestId.current = requestId
+    setNfeItemsPurchaseId(purchaseId)
+    setNfeItems([])
+    setNfeItemsError(null)
+    setNfeItemsLoading(true)
+    try {
+      const items = await loadPayablePurchaseItems(purchaseId)
+      if (nfeItemsRequestId.current === requestId) setNfeItems(items)
+    } catch (loadError) {
+      console.error(loadError)
+      if (nfeItemsRequestId.current === requestId) setNfeItemsError('Não foi possível carregar os itens desta NF-e.')
+    } finally {
+      if (nfeItemsRequestId.current === requestId) setNfeItemsLoading(false)
+    }
+  }
+
+  function closeNfeItems() {
+    nfeItemsRequestId.current += 1
+    setNfeItemsPurchaseId(null)
+    setNfeItems([])
+    setNfeItemsError(null)
+    setNfeItemsLoading(false)
+  }
+
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search)
+    const purchaseId = search.get('purchase')
+    const installmentId = search.get('installment')
+    if (purchaseId && installmentId) setFocusedPayable({ purchaseId, installmentId })
+  }, [])
 
   const reminders = useMemo(() => {
     const installments = purchases.flatMap(purchase => purchase.payable_installments ?? [])
@@ -86,19 +149,29 @@ export default function ContasPagarPage() {
     }
   }, [purchases])
 
-  async function handlePay(installmentId: string) {
-    if (!window.confirm('Confirmar que esta parcela foi paga?')) return
-    setBusyId(installmentId)
+  async function openPaymentDialog(installment: PayableInstallmentRow, purchase: PayablePurchaseRow, mode: 'baixar' | 'corrigir') {
+    setBusyId(purchase.id)
     try {
-      await payInstallment(installmentId)
-      showToast('Parcela baixada.')
-      await load()
-    } catch (payError) {
-      console.error(payError)
-      showToast(payError instanceof Error ? payError.message : 'Não foi possível baixar a parcela.')
+      // A classificação já salva volta preenchida: a Elis confirma em vez de
+      // escolher tudo de novo a cada parcela.
+      const salvas = await loadPayableCategories(purchase.id)
+      const porId = new Map(financeCategories.map(category => [category.id, category.key]))
+      const slices: PayableCategorySlice[] = salvas
+        .map(linha => ({ categoryKey: porId.get(linha.category_id) ?? '', amount: Number(linha.amount).toFixed(2) }))
+        .filter(slice => slice.categoryKey)
+      const accountKey = financeAccounts.find(account => account.id === purchase.finance_account_id)?.key ?? ''
+      setPaymentTarget({ installment, purchase, mode, slices, accountKey })
+    } catch (loadError) {
+      console.error(loadError)
+      showToast('Não foi possível carregar a categoria desta conta.')
     } finally {
       setBusyId(null)
     }
+  }
+
+  async function finishPayment() {
+    setPaymentTarget(null)
+    await load()
   }
 
   async function handleCancel(purchaseId: string) {
@@ -145,6 +218,8 @@ export default function ContasPagarPage() {
             <PayableForm
               suppliers={suppliers}
               products={products}
+              financeCategories={financeCategories}
+              financeAccounts={financeAccounts}
               onCancel={() => setShowForm(false)}
               onSaved={async () => { setShowForm(false); await load() }}
             />
@@ -177,12 +252,38 @@ export default function ContasPagarPage() {
               products={products}
               pendingPurchaseId={pendingPurchaseId}
               pendingItems={pendingItems}
+              nfeItemsPurchaseId={nfeItemsPurchaseId}
+              nfeItems={nfeItems}
+              nfeItemsLoading={nfeItemsLoading}
+              nfeItemsError={nfeItemsError}
               busyId={busyId}
+              focusedPurchaseId={focusedPayable?.purchaseId}
+              focusedInstallmentId={focusedPayable?.installmentId}
               onOpenPending={purchaseId => void openPendingItems(purchaseId)}
               onRefreshPending={() => void refreshPendingItems()}
               onClosePending={() => setPendingPurchaseId(null)}
-              onPay={installmentId => void handlePay(installmentId)}
+              onOpenNfeItems={purchaseId => void openNfeItems(purchaseId)}
+              onCloseNfeItems={closeNfeItems}
+              onPay={(installment, purchase) => void openPaymentDialog(installment, purchase, 'baixar')}
+              onCorrect={(installment, purchase) => void openPaymentDialog(installment, purchase, 'corrigir')}
               onCancel={purchaseId => void handleCancel(purchaseId)}
+            />
+          )}
+
+          {paymentTarget && (
+            <PayablePaymentDialog
+              installment={paymentTarget.installment}
+              purchaseId={paymentTarget.purchase.id}
+              purchaseDate={paymentTarget.purchase.purchase_date}
+              purchaseTotal={Number(paymentTarget.purchase.total_value)}
+              supplierName={Array.isArray(paymentTarget.purchase.suppliers) ? paymentTarget.purchase.suppliers[0]?.name ?? 'Fornecedor não identificado' : paymentTarget.purchase.suppliers?.name ?? 'Fornecedor não identificado'}
+              mode={paymentTarget.mode}
+              financeCategories={financeCategories}
+              financeAccounts={financeAccounts}
+              initialSlices={paymentTarget.slices}
+              initialAccountKey={paymentTarget.accountKey}
+              onClose={() => setPaymentTarget(null)}
+              onSaved={finishPayment}
             />
           )}
 

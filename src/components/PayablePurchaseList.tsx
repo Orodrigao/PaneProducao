@@ -1,16 +1,20 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import PendingPayableItems from '@/components/PendingPayableItems'
 import {
   formatBRL,
   formatDate,
+  actualPaymentMethodLabel,
+  effectiveDueDate,
   installmentLabel,
   isDueSoon,
   isOverdue,
   statusLabel,
   type PayableProduct,
+  type PayableInstallmentRow,
+  type PayablePurchaseItemRow,
   type PayablePurchaseRow,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -20,11 +24,20 @@ interface PayablePurchaseListProps {
   products: PayableProduct[]
   pendingPurchaseId: string | null
   pendingItems: PendingPayableItemRow[]
+  nfeItemsPurchaseId: string | null
+  nfeItems: PayablePurchaseItemRow[]
+  nfeItemsLoading: boolean
+  nfeItemsError: string | null
   busyId: string | null
+  focusedPurchaseId?: string | null
+  focusedInstallmentId?: string | null
   onOpenPending: (purchaseId: string) => void
   onRefreshPending: () => void
   onClosePending: () => void
-  onPay: (installmentId: string) => void
+  onOpenNfeItems: (purchaseId: string) => void
+  onCloseNfeItems: () => void
+  onPay: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
+  onCorrect: (installment: PayableInstallmentRow, purchase: PayablePurchaseRow) => void
   onCancel: (purchaseId: string) => void
 }
 
@@ -65,21 +78,45 @@ function statusClass(status: PayablePurchaseRow['status']): string {
   return status === 'paga' ? 'conferido' : status === 'cancelada' ? 'cancelado' : 'separado'
 }
 
+function formatQuantity(value: number | string): string {
+  return Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
+}
+
 export default function PayablePurchaseList({
   purchases,
   products,
   pendingPurchaseId,
   pendingItems,
+  nfeItemsPurchaseId,
+  nfeItems,
+  nfeItemsLoading,
+  nfeItemsError,
   busyId,
+  focusedPurchaseId = null,
+  focusedInstallmentId = null,
   onOpenPending,
   onRefreshPending,
   onClosePending,
+  onOpenNfeItems,
+  onCloseNfeItems,
   onPay,
+  onCorrect,
   onCancel,
 }: PayablePurchaseListProps) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todas')
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!focusedPurchaseId) return
+    setExpandedPurchaseId(focusedPurchaseId)
+  }, [focusedPurchaseId])
+
+  useEffect(() => {
+    if (!focusedInstallmentId) return
+    const target = document.getElementById(`payable-installment-${focusedInstallmentId}`)
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusedInstallmentId, expandedPurchaseId, purchases])
 
   const filteredPurchases = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
@@ -171,22 +208,60 @@ export default function PayablePurchaseList({
                   <div style={{ borderTop: '1px solid var(--line-soft)', padding: '10px 12px 12px' }}>
                     {purchase.notes && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>{purchase.notes}</small>}
                     {purchase.origin === 'xml' && purchase.nfe_key && <small style={{ display: 'block', color: 'var(--ink-soft)', marginBottom: 8 }}>Chave da NF-e: {purchase.nfe_key}</small>}
+                    {purchase.origin === 'xml' && (
+                      nfeItemsPurchaseId === purchase.id ? (
+                        <div className="ps-banner honey" style={{ marginBottom: 8 }}>
+                          <div className="ps-card-head"><b>Itens da NF-e</b><button type="button" className="ps-iconbtn" onClick={onCloseNfeItems} aria-label="Fechar itens da NF-e">×</button></div>
+                          {nfeItemsLoading ? <small aria-live="polite">Carregando itens...</small> : nfeItemsError ? (
+                            <><small style={{ display: 'block', color: 'var(--berry)', marginTop: 6 }}>{nfeItemsError}</small><button type="button" className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={() => onOpenNfeItems(purchase.id)}>Tentar novamente</button></>
+                          ) : nfeItems.length === 0 ? <small style={{ display: 'block', marginTop: 6 }}>Esta NF-e não tem itens para mostrar.</small> : nfeItems.map(item => (
+                            <div key={item.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                              <span style={{ flex: 1 }}><b>{item.source_description ?? item.item_name}</b><small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 3 }}>{formatQuantity(item.source_quantity ?? item.quantity)} {item.source_unit ?? item.unit} · {formatBRL(item.unit_price)} cada</small></span>
+                              <b>{formatBRL(item.line_total)}</b>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <button type="button" className="ps-btn ghost sm" style={{ marginBottom: 8 }} onClick={() => onOpenNfeItems(purchase.id)}>Ver itens da NF-e</button>
+                    )}
                     {purchase.classification_status === 'pendente' && (
                       pendingPurchaseId === purchase.id
                         ? <PendingPayableItems items={pendingItems} products={products} onChanged={onRefreshPending} onClose={onClosePending} />
                         : <button type="button" className="ps-btn ghost sm" style={{ marginBottom: 8 }} disabled={busyId === purchase.id} onClick={() => { setExpandedPurchaseId(purchase.id); onOpenPending(purchase.id) }}>{busyId === purchase.id ? 'Abrindo...' : 'Classificar itens pendentes'}</button>
                     )}
-                    {pending.length > 0 && <div style={{ borderTop: purchase.classification_status === 'pendente' ? '1px solid var(--line-soft)' : undefined, paddingTop: purchase.classification_status === 'pendente' ? 4 : 0 }}>
+                    {(pending.length > 0 || installments.some(installment => installment.status === 'paga')) && <div style={{ borderTop: purchase.classification_status === 'pendente' ? '1px solid var(--line-soft)' : undefined, paddingTop: purchase.classification_status === 'pendente' ? 4 : 0 }}>
                       {pending.map(installment => (
-                        <div key={installment.id} className="ps-list-row" style={{ gap: 8 }}>
+                        <div
+                          key={installment.id}
+                          id={`payable-installment-${installment.id}`}
+                          className="ps-list-row"
+                          style={focusedInstallmentId === installment.id ? { gap: 8, background: 'var(--honey-tint)', borderRadius: 8, padding: 8 } : { gap: 8 }}
+                        >
                           <span style={{ flex: 1 }}>
-                            Parcela {installment.installment_number} · {formatDate(installment.due_date)} · {installmentLabel(installment.status)}
+                            Parcela {installment.installment_number} · {formatDate(effectiveDueDate(installment))} · {installmentLabel(installment.status)}
                             {(isOverdue(installment) || isDueSoon(installment)) && <small style={{ display: 'block', color: isOverdue(installment) ? 'var(--berry)' : 'var(--honey-deep)' }}>{isOverdue(installment) ? 'Vencida' : 'Vence em até 7 dias'}</small>}
                           </span>
                           <b>{formatBRL(installment.amount)}</b>
-                          <button type="button" className="ps-btn success sm" disabled={busyId === installment.id} onClick={() => onPay(installment.id)}>{busyId === installment.id ? '...' : 'Baixar'}</button>
+                          <button type="button" className="ps-btn success sm" disabled={busyId === installment.id} onClick={() => onPay(installment, purchase)}>{busyId === installment.id ? '...' : 'Baixar'}</button>
                         </div>
                       ))}
+                      {installments.filter(installment => installment.status === 'paga').map(installment => {
+                        const paidAmount = Number(installment.paid_amount ?? installment.amount)
+                        const extra = Math.max(0, paidAmount - Number(installment.amount))
+                        const dueDate = installment.current_due_date && installment.current_due_date !== installment.due_date
+                          ? ` · boleto atualizado ${formatDate(installment.current_due_date)}`
+                          : ''
+                        return (
+                          <div key={installment.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{ flex: 1 }}>
+                              Parcela {installment.installment_number} · paga em {installment.paid_date ? formatDate(installment.paid_date) : 'data não informada'}{dueDate}
+                              <small style={{ display: 'block', color: 'var(--ink-soft)' }}>
+                                {actualPaymentMethodLabel(installment.paid_method ?? 'boleto')} · original {formatBRL(installment.amount)} · pago {formatBRL(paidAmount)}{extra > 0 ? ` · juros/multa ${formatBRL(extra)}` : ''}
+                              </small>
+                            </span>
+                            <button type="button" className="ps-btn ghost sm" disabled={busyId === installment.id} onClick={() => onCorrect(installment, purchase)}>{busyId === installment.id ? '...' : 'Corrigir baixa'}</button>
+                          </div>
+                        )
+                      })}
                     </div>}
                     {purchase.status === 'aberta' && <button type="button" className="ps-btn ghost sm" style={{ marginTop: 10, color: 'var(--berry)' }} disabled={busyId === purchase.id} onClick={() => onCancel(purchase.id)}>Cancelar lançamento</button>}
                   </div>

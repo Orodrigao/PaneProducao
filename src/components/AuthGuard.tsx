@@ -22,7 +22,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!alive) return
 
       if (!user) {
-        router.replace('/login')
+        const returnTo = `${window.location.pathname}${window.location.search}`
+        router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`)
         return
       }
 

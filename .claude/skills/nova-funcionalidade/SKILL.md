@@ -89,8 +89,36 @@ vá ler. A pergunta boa nasce da auditoria ("hoje o fechamento grava X;
 o que você quer aparece antes ou depois disso?"). Se a funcionalidade já
 existir parcialmente, mostre o que existe antes de propor construir.
 
-**Quando trouxer valor real**, pesquise como ferramentas consolidadas
-resolvem o mesmo problema e traga a comparação em linguagem leiga.
+**Módulo com nome de mercado: benchmark obrigatório.** Se o pedido é
+um módulo que qualquer sistema tem — contas a pagar, contas a receber,
+estoque, caixa, folha —, a descoberta não parte só da cabeça do
+Rodrigo: parte do padrão do mercado. Monte primeiro a lista do que
+qualquer sistema desse tipo oferece e apresente-a para ele decidir
+item a item: entra agora, fica para uma fase futura ou fica fora. A
+entrevista serve para cortar e adaptar o padrão, não para reinventá-lo
+— o que o Rodrigo não pedir por esquecimento vira decisão consciente
+registrada, nunca omissão silenciosa. Plano que chegou pronto de fora
+(outra ferramenta, outro agente, conversa antiga) passa pelo mesmo
+checklist antes de virar código. Para fluxo que só existe na
+Pane&Salute, pesquise ferramentas consolidadas quando trouxer valor
+real. (Regra nascida do contas a pagar: a entrevista cobriu só o que
+foi lembrado, e o módulo nasceu sem juros de atraso, sem data real de
+pagamento e sem tela dos itens da NF.)
+
+**Percorra o ciclo de vida completo de cada registro central.** Não só
+o caminho feliz: liste todos os estados pelos quais o registro passa e
+o que o usuário faz em cada um. Um boleto, por exemplo: emitido, a
+vencer, pago no dia, pago atrasado, pago parcial, renegociado,
+cancelado. Para registro de dinheiro a regra é fixa: sempre existem o
+previsto E o realizado — data prevista e data real, valor previsto e
+valor real. Modelo que guarda só um dos dois está errado por
+definição.
+
+**Regra da volta do dado.** Todo dado que entra no sistema precisa de
+um lugar onde é visto de novo. Se o plano importa ou grava algo e
+nenhuma tela mostra, ou não precisava entrar, ou está faltando tela —
+o plano não fecha com essa ponta solta. (Também do contas a pagar: os
+itens da NF eram salvos no banco e nenhuma tela os mostrava.)
 
 **Custo escondido:** se o pedido simples tiver consequência cara, diga
 ANTES de o plano fechar. Se a descoberta revelar que o problema real é
@@ -124,6 +152,14 @@ termina testável no navegador. Para cada fase:
   deve ser bloqueado;
 - recuperação se der errado — lembrando que migration mergeada não se
   desfaz nem se edita: recuperação de banco é sempre migration nova.
+
+Para plano de módulo inteiro (mais de duas fases, ou qualquer coisa
+com dado financeiro), antes de pedir a aprovação do Rodrigo peça uma
+revisão adversarial a um segundo agente — o Claude consulta o Sol, o
+Sol consulta o Claude; sem ponte disponível, uma sessão nova sem o
+contexto desta serve — com uma pergunta única: "o que falta neste
+plano que qualquer sistema desse tipo tem?" Cada lacuna apontada
+entra no plano ou é descartada por escrito, nunca ignorada.
 
 Apresente o plano em linguagem leiga primeiro; o detalhe técnico vem
 depois, como apoio. Risco médio: aprovação do plano libera a execução.

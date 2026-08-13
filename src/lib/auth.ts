@@ -7,6 +7,8 @@ import { PRODUCTION_PLANNING_ROUTE } from '@/lib/productionPlanning'
 export type Role = 'admin' | 'producao' | 'vendas' | 'estoque' | 'compras' | 'romaneio' | 'financeiro' | 'expedicao'
 export const PAYABLES_PERMISSION = 'contas_pagar.acessar'
 export const PAYABLES_ROUTE = '/contas-pagar'
+export const FINANCE_PERMISSION = 'financeiro.acessar'
+export const FINANCE_ROUTE = '/financeiro'
 export interface AppUser {
   id: string
   username: string
@@ -25,13 +27,13 @@ const AUTH_PROFILE_RETRY_DELAYS_MS = [100, 300] as const
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes', PAYABLES_ROUTE],
+  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes', PAYABLES_ROUTE, FINANCE_ROUTE],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
   compras:    ['/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/estoque-paes'],
   romaneio:   ['/romaneio'],
-  financeiro: ['/', '/sobras', '/fechamento-caixa', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', PAYABLES_ROUTE],
+  financeiro: ['/', '/sobras', '/fechamento-caixa', '/compras', '/cotacoes', '/fornecedores', '/estoque-congelado', '/estoque', '/romaneio', '/estoque-paes', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', PAYABLES_ROUTE, FINANCE_ROUTE],
   expedicao:  ['/', '/sobras', '/estoque-congelado', '/estoque', '/romaneio'],
 }
 
@@ -83,9 +85,19 @@ export function resolveAllowedRoutes(
       && (permission.scope === '*' || permission.scope === 'jc'),
   )
 
-  if (!canAccessPayables) return withKitchenRoute.filter(route => route !== PAYABLES_ROUTE)
-  if (withKitchenRoute.includes(PAYABLES_ROUTE)) return withKitchenRoute
-  return [...withKitchenRoute, PAYABLES_ROUTE]
+  const withPayablesRoute = !canAccessPayables
+    ? withKitchenRoute.filter(route => route !== PAYABLES_ROUTE)
+    : (withKitchenRoute.includes(PAYABLES_ROUTE) ? withKitchenRoute : [...withKitchenRoute, PAYABLES_ROUTE])
+
+  // Livro financeiro: qualquer escopo concedido abre a rota. O livro cobre a
+  // empresa inteira e a loja de cada lançamento é travada pela função do
+  // banco; exigir escopo `*` aqui repetiria o defeito do painel do Romaneio,
+  // em que a concessão por loja não abria a tela.
+  const canAccessFinance = permissions.some(permission => permission.permission_key === FINANCE_PERMISSION)
+
+  if (!canAccessFinance) return withPayablesRoute.filter(route => route !== FINANCE_ROUTE)
+  if (withPayablesRoute.includes(FINANCE_ROUTE)) return withPayablesRoute
+  return [...withPayablesRoute, FINANCE_ROUTE]
 }
 
 export interface AuthActionResult {
@@ -202,6 +214,19 @@ export function validatePasswordSetup(password: string, confirmation: string): A
     return { ok: false, message: 'As senhas não conferem.' }
   }
   return { ok: true, message: 'Senha válida.' }
+}
+
+export function passwordUpdateErrorMessage(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'weak_password'
+  ) {
+    return 'Essa senha aparece em vazamentos conhecidos na internet. Escolha outra.'
+  }
+
+  return 'Não foi possível salvar a senha.'
 }
 
 export function passwordRecoveryErrorMessage(error: unknown): string {
@@ -406,7 +431,7 @@ export async function updateCurrentUserPassword(password: string, confirmation: 
 
     const { error } = await withTimeout(supabase.auth.updateUser({ password }))
     if (error) {
-      return { ok: false, message: 'Não foi possível salvar a senha.' }
+      return { ok: false, message: passwordUpdateErrorMessage(error) }
     }
     clearPasswordRecoverySession()
 

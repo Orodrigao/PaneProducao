@@ -7,11 +7,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(98);
+select plan(117);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 33,
-  'catálogo completo com 33 permissões');
+select is((select count(*)::int from public.app_permissions), 39,
+  'catálogo completo com 39 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
@@ -382,6 +382,64 @@ select is((select count(*)::int
         'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
       ))), 0,
   'novas funcoes das migrations nascem fechadas para os papeis da API');
+
+-- Financeiro (livro-caixa): RLS forçada e nenhuma porta de escrita direta.
+-- A gravação é exclusiva das funções protegidas; se algum dia um grant de
+-- insert aparecer aqui, o livro deixa de ser confiável.
+select ok(exists(select 1 from public.app_permissions where key = 'financeiro.lancar'),
+  'permissao de lancamento financeiro presente');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'finance_entries'),
+  'finance_entries tem RLS habilitada e forcada');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'finance_categories'),
+  'finance_categories tem RLS habilitada e forcada');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'finance_accounts'),
+  'finance_accounts tem RLS habilitada e forcada');
+select ok(not has_table_privilege('anon', 'public.finance_entries', 'select'),
+  'anon nao le o livro financeiro');
+select ok(not has_table_privilege('authenticated', 'public.finance_entries', 'insert'),
+  'ninguem escreve direto no livro financeiro');
+select ok(not has_table_privilege('authenticated', 'public.finance_entries', 'update'),
+  'ninguem altera lancamento direto');
+select ok(not has_table_privilege('authenticated', 'public.finance_entries', 'delete'),
+  'ninguem apaga lancamento');
+select ok(has_function_privilege('authenticated',
+    'public.create_finance_entry(uuid, text, text, text, numeric, date, text, text, date)', 'execute'),
+  'financeiro lanca pela funcao protegida');
+select ok(not has_function_privilege('anon',
+    'public.create_finance_entry(uuid, text, text, text, numeric, date, text, text, date)', 'execute'),
+  'anon nao lanca no financeiro');
+select ok(not has_function_privilege('anon',
+    'public.reverse_finance_entry(uuid, uuid, text)', 'execute'),
+  'anon nao estorna lancamento');
+select ok(exists(select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'finance_entries_one_reversal_idx'),
+  'um estorno por lancamento, mesmo em chamadas simultaneas');
+
+-- Recorrências: previsão virtual com escrita só pela confirmação protegida.
+select ok(exists(select 1 from public.app_permissions where key = 'financeiro.recorrencias_gerenciar'),
+  'permissao de gerenciar recorrencias presente');
+select ok(exists(select 1 from public.app_permissions where key = 'financeiro.recorrencias_confirmar'),
+  'permissao de confirmar recorrencias presente');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'finance_recurring_rules'),
+  'regras recorrentes tem RLS habilitada e forcada');
+select ok(not has_table_privilege('anon', 'public.finance_recurring_rules', 'select'),
+  'anon nao le regras recorrentes');
+select ok(not has_table_privilege('authenticated', 'public.finance_recurring_rules', 'insert'),
+  'ninguem cria regra recorrente direto na tabela');
+select ok(has_function_privilege('authenticated',
+    'public.confirm_finance_recurring_rule(uuid, uuid, date, date, numeric, text, text)', 'execute'),
+  'pagamento recorrente e confirmado pela funcao protegida');
+select ok(not has_function_privilege('anon',
+    'public.confirm_finance_recurring_rule(uuid, uuid, date, date, numeric, text, text)', 'execute'),
+  'anon nao confirma pagamento recorrente');
 
 select * from finish();
 rollback;
