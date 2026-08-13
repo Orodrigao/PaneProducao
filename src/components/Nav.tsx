@@ -9,7 +9,7 @@ import {
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
   Factory, FileText, DollarSign, ShieldCheck, PanelLeft, ChefHat,
-  CalendarCheck, BookOpenCheck,
+  CalendarCheck, BookOpenCheck, HandCoins,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -44,6 +44,7 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   { group: 'Gestão', items: [
     { href: '/financeiro',         label: 'Financeiro', Icon: BookOpenCheck },
     { href: '/contas-pagar',       label: 'Contas a pagar', Icon: DollarSign },
+    { href: '/contas-receber',     label: 'Contas a receber', Icon: HandCoins },
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
     { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
   ]},

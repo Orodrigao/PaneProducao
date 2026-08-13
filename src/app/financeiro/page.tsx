@@ -10,7 +10,7 @@ import {
   currentMonthKey,
   entryDifference,
   entrySignedAmount,
-  FINANCE_SOURCE_LABELS,
+  financeSourceLabel,
   formatCompetenceMonth,
   formatFinanceMoney,
   getFinanceErrorMessage,
@@ -282,7 +282,7 @@ export default function FinanceiroPage() {
 
                 <small style={{ display: 'block', marginTop: 6 }}>
                   {entry.paid_date}
-                  {entry.source !== 'avulso' && ` · veio de ${FINANCE_SOURCE_LABELS[entry.source]}`}
+                  {entry.source !== 'avulso' && ` · veio de ${financeSourceLabel(entry.source)}`}
                   {entry.competence_month.slice(0, 7) !== entry.paid_date.slice(0, 7)
                     && ` · pesa em ${formatCompetenceMonth(entry.competence_month.slice(0, 7))}`}
                 </small>

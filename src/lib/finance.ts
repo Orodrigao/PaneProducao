@@ -57,13 +57,25 @@ export interface FinanceAccountRow {
 }
 
 /** Origem do lançamento. 'avulso' é digitado; o resto nasce de outra tela. */
-export type FinanceSource = 'avulso' | 'contas_pagar' | 'recorrencia' | 'transferencia'
+export type FinanceSource = 'avulso' | 'contas_pagar' | 'contas_receber' | 'recorrencia' | 'transferencia'
 
 export const FINANCE_SOURCE_LABELS: Record<FinanceSource, string> = {
   avulso: 'Lançamento avulso',
   contas_pagar: 'Contas a pagar',
+  contas_receber: 'Contas a receber',
   recorrencia: 'Recorrência',
   transferencia: 'Transferência',
+}
+
+/**
+ * O nome da origem para a tela. O `check` de `finance_entries.source` vive no
+ * banco e o mapa acima vive aqui: uma origem nova pode entrar lá e faltar
+ * aqui. Quando faltar, mostrar a chave crua é feio, mas é honesto — melhor que
+ * escrever "undefined" na cara do usuário, que foi o que aconteceu quando o
+ * contas a receber estreou.
+ */
+export function financeSourceLabel(source: string): string {
+  return FINANCE_SOURCE_LABELS[source as FinanceSource] ?? source
 }
 
 /** Lado da transferência: de qual conta saiu e em qual entrou. */

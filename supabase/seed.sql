@@ -330,7 +330,7 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     -- O financeiro carrega as rotas comerciais do cenario PJ: sem
     -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
     -- (o tripe rota-permissao-RLS precisa concordar nos tres).
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -390,7 +390,15 @@ with requested_permissions(email, permission_key, scope) as (
     -- inclusive os lancamentos 'geral' (que nao pertencem a uma loja so).
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.acessar', '*'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.lancar', '*'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.estornar', '*')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.estornar', '*'),
+    -- Contas a receber: mesmo escopo do contas a pagar, porque a operacao PJ
+    -- e da JC. Sem estas seis a tela existe e a Elis nao entra.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.acessar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.lancar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.baixar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.estornar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.cancelar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.corrigir_vencimento', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
@@ -986,3 +994,70 @@ on conflict (source_item_id) do update set
   pending_quantity = excluded.pending_quantity,
   status = excluded.status,
   updated_at = now();
+
+-- Cobrancas ficticias do Contas a receber: uma atrasada e uma a vencer, para a
+-- tela nascer com os dois estados visiveis. As datas sao relativas ao dia da
+-- reconstrucao para o cenario nao envelhecer (licao rerun-navegador-exige-seed-do-dia).
+--
+-- Nao ha cobranca ja recebida de proposito: baixar uma delas e o teste que o
+-- Rodrigo executa no preview, e e ele que prova a ponte com o livro-caixa.
+with hoje as (
+  select (now() at time zone 'America/Sao_Paulo')::date as dia
+), categoria as (
+  select id from public.finance_categories where key = 'clientes_pj'
+), autor as (
+  select id from auth.users where lower(email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+), fixture (id, request_id, customer_id, dias_atras, valor, descricao) as (
+  values
+    ('90000000-0000-4000-8000-000000000001'::uuid, '90000000-0000-4000-8000-0000000000a1'::uuid,
+     '60000000-0000-4000-8000-000000000001'::uuid, 40, 1240.00, '[TESTE] Paes da semana - cobranca atrasada'),
+    ('90000000-0000-4000-8000-000000000002'::uuid, '90000000-0000-4000-8000-0000000000a2'::uuid,
+     '60000000-0000-4000-8000-000000000001'::uuid, 5, 860.50, '[TESTE] Paes da semana - cobranca a vencer')
+)
+insert into public.receivables (
+  id, request_id, customer_id, origin, finance_category_id, description,
+  invoice_date, original_due_date, due_date, amount, status, created_by
+)
+select
+  fixture.id, fixture.request_id, fixture.customer_id, 'avulso', categoria.id, fixture.descricao,
+  hoje.dia - fixture.dias_atras,
+  hoje.dia - fixture.dias_atras + customer.payment_term_days,
+  hoje.dia - fixture.dias_atras + customer.payment_term_days,
+  fixture.valor, 'aberta', autor.id
+from fixture
+cross join hoje
+cross join categoria
+cross join autor
+join public.customers customer on customer.id = fixture.customer_id
+on conflict (id) do update set
+  invoice_date = excluded.invoice_date,
+  original_due_date = excluded.original_due_date,
+  due_date = excluded.due_date,
+  amount = excluded.amount,
+  description = excluded.description,
+  status = 'aberta',
+  received_date = null,
+  received_amount = null,
+  received_method = null,
+  received_account_id = null,
+  received_by = null,
+  received_at = null,
+  cancel_reason = null,
+  cancelled_by = null,
+  cancelled_at = null;
+
+delete from public.receivable_events
+where receivable_id in (
+  '90000000-0000-4000-8000-000000000001',
+  '90000000-0000-4000-8000-000000000002'
+);
+
+insert into public.receivable_events (receivable_id, event_type, details, created_by)
+select cobranca.id, 'lancada',
+       jsonb_build_object('amount', cobranca.amount, 'due_date', cobranca.due_date, 'origin', 'avulso'),
+       cobranca.created_by
+from public.receivables cobranca
+where cobranca.id in (
+  '90000000-0000-4000-8000-000000000001',
+  '90000000-0000-4000-8000-000000000002'
+);

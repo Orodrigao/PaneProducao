@@ -12,6 +12,7 @@ import {
   emptyFinanceDraft,
   emptyFinanceTransferDraft,
   entrySignedAmount,
+  financeSourceLabel,
   formatCompetenceMonth,
   monthRange,
   summarizeEntries,
@@ -287,5 +288,19 @@ describe('diferenca entre previsto e realizado', () => {
 
   it('nao deixa sobra de arredondamento aparecer como diferenca', () => {
     expect(entryDifference({ planned_amount: 0.1 + 0.2, amount: 0.3 })).toBe(0)
+  })
+})
+
+describe('financeSourceLabel', () => {
+  it('nomeia as origens automaticas, inclusive o contas a receber', () => {
+    expect(financeSourceLabel('contas_receber')).toBe('Contas a receber')
+    expect(financeSourceLabel('contas_pagar')).toBe('Contas a pagar')
+  })
+
+  it('mostra a chave crua quando a origem e nova no banco e ainda nao tem nome', () => {
+    // O check de finance_entries.source vive no banco; o mapa de nomes vive no
+    // codigo. Quando os dois discordarem, o usuario le a chave, nunca
+    // "undefined" — que foi o defeito da estreia do contas a receber.
+    expect(financeSourceLabel('origem_que_ainda_nao_existe')).toBe('origem_que_ainda_nao_existe')
   })
 })
