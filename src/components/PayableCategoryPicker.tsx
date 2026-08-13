@@ -5,6 +5,7 @@ import { Plus, X } from 'lucide-react'
 import { formatBRL, PAYABLE_MAX_CATEGORIES, type PayableCategorySlice } from '@/lib/payables'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import type { FinanceAccountRow, FinanceCategoryRow } from '@/lib/finance'
+import type { PayableActualPaymentMethod } from '@/lib/payables'
 
 interface PayableCategoryPickerProps {
   categories: readonly FinanceCategoryRow[]
@@ -13,6 +14,7 @@ interface PayableCategoryPickerProps {
   accountKey: string
   total: number
   disabled?: boolean
+  paymentMethod?: PayableActualPaymentMethod
   onChangeSlices: (slices: PayableCategorySlice[]) => void
   onChangeAccount: (accountKey: string) => void
 }
@@ -40,6 +42,7 @@ export default function PayableCategoryPicker({
   accountKey,
   total,
   disabled = false,
+  paymentMethod,
   onChangeSlices,
   onChangeAccount,
 }: PayableCategoryPickerProps) {
@@ -76,6 +79,8 @@ export default function PayableCategoryPicker({
       : restantes)
   }
 
+  const availableAccounts = accounts.filter(account => paymentMethod === 'cartao'
+    ? account.kind === 'cartao_credito' : account.kind !== 'cartao_credito')
   return (
     <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
       <span className="ps-fieldlabel">Categoria do DRE *</span>
@@ -159,7 +164,7 @@ export default function PayableCategoryPicker({
           onChange={event => onChangeAccount(event.target.value)}
         >
           <option value="">Não informar</option>
-          {accounts.map(account => (
+          {availableAccounts.map(account => (
             <option key={account.key} value={account.key}>{account.label}</option>
           ))}
         </select>

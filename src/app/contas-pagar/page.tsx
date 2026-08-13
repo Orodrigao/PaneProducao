@@ -151,7 +151,8 @@ export default function ContasPagarPage() {
       const slices: PayableCategorySlice[] = salvas
         .map(linha => ({ categoryKey: porId.get(linha.category_id) ?? '', amount: Number(linha.amount).toFixed(2) }))
         .filter(slice => slice.categoryKey)
-      setPaymentTarget({ installment, purchase, mode, slices, accountKey: '' })
+      const accountKey = financeAccounts.find(account => account.id === purchase.finance_account_id)?.key ?? ''
+      setPaymentTarget({ installment, purchase, mode, slices, accountKey })
     } catch (loadError) {
       console.error(loadError)
       showToast('Não foi possível carregar a categoria desta conta.')
@@ -209,6 +210,8 @@ export default function ContasPagarPage() {
             <PayableForm
               suppliers={suppliers}
               products={products}
+              financeCategories={financeCategories}
+              financeAccounts={financeAccounts}
               onCancel={() => setShowForm(false)}
               onSaved={async () => { setShowForm(false); await load() }}
             />

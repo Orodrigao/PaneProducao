@@ -6,7 +6,7 @@ import { showToast, todayKey } from '@/lib/utils'
 import PayableCategoryPicker from '@/components/PayableCategoryPicker'
 import {
   actualPaymentMethodLabel,
-  correctPayableInstallmentPayment,
+  correctPayablePaymentAndClassification,
   formatBRL,
   recordPayableInstallmentPayment,
   roundMoney,
@@ -69,6 +69,7 @@ export default function PayablePaymentDialog({
 
   function validate(): string | null {
     const numericAmount = Number(paidAmount)
+    if (paidMethod === 'cartao' && !accountKey) return 'Escolha o cartao usado.'
     if (!paidDate) return 'Informe a data real do pagamento.'
     if (paidDate < purchaseDate || paidDate > todayKey()) return 'A data do pagamento precisa estar entre a compra e hoje.'
     if (!Number.isFinite(numericAmount) || numericAmount < originalAmount) return 'O valor pago não pode ser menor que o valor original.'
@@ -99,11 +100,11 @@ export default function PayablePaymentDialog({
     try {
       // A classificação vai antes: a baixa lê o rateio para repartir o valor
       // pago entre as categorias. Se ela falhar, o pagamento não acontece.
-      await setPayableFinanceClassification(purchaseId, accountKey || null, slices)
       if (mode === 'baixar') {
+        await setPayableFinanceClassification(purchaseId, accountKey || null, slices)
         await recordPayableInstallmentPayment(installment.id, details)
       } else {
-        await correctPayableInstallmentPayment(installment.id, details)
+        await correctPayablePaymentAndClassification(installment.id, details, accountKey, slices)
       }
       showToast(mode === 'baixar' ? 'Boleto baixado.' : 'Baixa corrigida e registrada no histórico.')
       await onSaved()
@@ -147,8 +148,8 @@ export default function PayablePaymentDialog({
         <div className="ps-fieldrow">
           <div className="ps-fieldgroup">
             <label className="ps-fieldlabel" htmlFor="payable-paid-method">Forma real de pagamento *</label>
-            <select id="payable-paid-method" className="ps-select" value={paidMethod} onChange={event => setPaidMethod(event.target.value as PayableActualPaymentMethod)}>
-              {(['boleto', 'pix', 'dinheiro', 'transferencia'] as PayableActualPaymentMethod[]).map(method => <option key={method} value={method}>{actualPaymentMethodLabel(method)}</option>)}
+            <select id="payable-paid-method" className="ps-select" value={paidMethod} onChange={event => { setPaidMethod(event.target.value as PayableActualPaymentMethod); setAccountKey('') }}>
+              {(['boleto', 'pix', 'dinheiro', 'transferencia', 'cartao'] as PayableActualPaymentMethod[]).map(method => <option key={method} value={method}>{actualPaymentMethodLabel(method)}</option>)}
             </select>
           </div>
           <div className="ps-fieldgroup">
@@ -167,6 +168,7 @@ export default function PayablePaymentDialog({
           disabled={saving}
           onChangeSlices={next => { setSlices(next); setError(null) }}
           onChangeAccount={next => { setAccountKey(next); setError(null) }}
+          paymentMethod={paidMethod}
         />
         <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>
           A conta entra no DRE pelo mês da compra ({purchaseDate.slice(0, 7).split('-').reverse().join('/')}),

@@ -50,7 +50,7 @@ export interface FinanceAccountRow {
   id: string
   key: string
   label: string
-  kind: 'banco' | 'caixa'
+  kind: 'banco' | 'caixa' | 'cartao_credito'
   store: string | null
   cnpj_label: string | null
   sort_order: number

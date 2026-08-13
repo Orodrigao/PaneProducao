@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { Plus, Save, Trash2, X } from 'lucide-react'
 import { showToast, todayKey } from '@/lib/utils'
+import PayableCategoryPicker from '@/components/PayableCategoryPicker'
 import {
   buildInstallments,
   createManualPayable,
@@ -10,17 +11,22 @@ import {
   actualPaymentMethodLabel,
   totalItems,
   validateDraft,
+  validateCategorySlices,
+  type PayableCategorySlice,
   type PayableActualPaymentMethod,
   type PayableDraft,
   type PayableInstallmentDraft,
   type PayableProduct,
 } from '@/lib/payables'
+import type { FinanceAccountRow, FinanceCategoryRow } from '@/lib/finance'
 
 interface SupplierOption { id: string; name: string }
 
 interface PayableFormProps {
   suppliers: SupplierOption[]
   products: PayableProduct[]
+  financeCategories: FinanceCategoryRow[]
+  financeAccounts: FinanceAccountRow[]
   onSaved: () => Promise<void> | void
   onCancel: () => void
 }
@@ -44,10 +50,12 @@ function initialDraft(): PayableDraft {
   }
 }
 
-export default function PayableForm({ suppliers, products, onSaved, onCancel }: PayableFormProps) {
+export default function PayableForm({ suppliers, products, financeCategories, financeAccounts, onSaved, onCancel }: PayableFormProps) {
   const [draft, setDraft] = useState<PayableDraft>(initialDraft)
   const [installmentCount, setInstallmentCount] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [financeAccountKey, setFinanceAccountKey] = useState('')
+  const [financeSlices, setFinanceSlices] = useState<PayableCategorySlice[]>([{ categoryKey: '', amount: '0.00' }])
   const requestIdRef = useRef<string>(crypto.randomUUID())
   const total = totalItems(draft.items)
 
@@ -128,12 +136,14 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
           installments: [{ number: 1, dueDate: draft.purchaseDate, amount: total.toFixed(2) }],
         }
       : draft
-    const validationError = validateDraft(payload)
+    const normalizedSlices = financeSlices.length === 1 ? [{ ...financeSlices[0], amount: total.toFixed(2) }] : financeSlices
+    const withFinance = { ...payload, financeAccountKey, financeCategories: normalizedSlices }
+    const validationError = validateDraft(withFinance) || (withFinance.paid ? validateCategorySlices(normalizedSlices, total) : null)
     if (validationError) { showToast(validationError); return }
 
     setSaving(true)
     try {
-      await createManualPayable(payload, requestIdRef.current)
+      await createManualPayable(withFinance, requestIdRef.current)
       showToast('Conta registrada na JC.')
       await onSaved()
     } catch (error) {
@@ -283,8 +293,8 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
             <div className="ps-fieldgroup">
               <label className="ps-fieldlabel" htmlFor="manual-paid-method">Forma real de pagamento *</label>
               <select id="manual-paid-method" className="ps-select" value={draft.paidDetails.paidMethod}
-                onChange={event => setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, paidMethod: event.target.value as PayableActualPaymentMethod } : previous.paidDetails }))}>
-                {(['dinheiro', 'pix', 'transferencia', 'boleto'] as PayableActualPaymentMethod[]).map(method => <option key={method} value={method}>{actualPaymentMethodLabel(method)}</option>)}
+                onChange={event => { setFinanceAccountKey(''); setDraft(previous => ({ ...previous, paidDetails: previous.paidDetails ? { ...previous.paidDetails, paidMethod: event.target.value as PayableActualPaymentMethod } : previous.paidDetails })) }}>
+                {(['dinheiro', 'pix', 'transferencia', 'boleto', 'cartao'] as PayableActualPaymentMethod[]).map(method => <option key={method} value={method}>{actualPaymentMethodLabel(method)}</option>)}
               </select>
             </div>
             <div className="ps-fieldgroup">
@@ -294,6 +304,17 @@ export default function PayableForm({ suppliers, products, onSaved, onCancel }: 
               <small className="ps-help">Use apenas se recebeu um boleto atualizado.</small>
             </div>
           </div>
+          <PayableCategoryPicker
+            categories={financeCategories}
+            accounts={financeAccounts}
+            slices={financeSlices}
+            accountKey={financeAccountKey}
+            total={total}
+            disabled={saving}
+            paymentMethod={draft.paidDetails.paidMethod}
+            onChangeSlices={setFinanceSlices}
+            onChangeAccount={setFinanceAccountKey}
+          />
         </div>
       )}
 
