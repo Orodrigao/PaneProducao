@@ -108,6 +108,14 @@ export interface FinanceRecurringRuleRow {
   active: boolean
 }
 
+export interface PayableDueReportStatus {
+  report_date: string
+  status: 'programado' | 'aguardando' | 'pendente' | 'enviado'
+  last_attempt_at: string | null
+  sent_at: string | null
+  last_error: string | null
+}
+
 export interface FinanceRecurringForecast {
   rule: FinanceRecurringRuleRow
   competenceMonth: string
@@ -383,6 +391,16 @@ export async function loadFinanceAccounts(): Promise<FinanceAccountRow[]> {
     .order('sort_order')
   if (error) throw error
   return (data ?? []) as FinanceAccountRow[]
+}
+
+export async function loadPayableDueReportStatus(): Promise<PayableDueReportStatus> {
+  const { data, error } = await supabase.rpc('get_payable_due_report_status')
+  if (error) throw error
+  const status = Array.isArray(data) ? data[0] : data
+  if (!status || typeof status.status !== 'string' || typeof status.report_date !== 'string') {
+    throw new Error('O banco não devolveu o estado do relatório diário.')
+  }
+  return status as PayableDueReportStatus
 }
 
 export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntryRow[]> {

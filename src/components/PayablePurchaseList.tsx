@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import PendingPayableItems from '@/components/PendingPayableItems'
 import {
   formatBRL,
   formatDate,
   actualPaymentMethodLabel,
+  effectiveDueDate,
   installmentLabel,
   isDueSoon,
   isOverdue,
@@ -28,6 +29,8 @@ interface PayablePurchaseListProps {
   nfeItemsLoading: boolean
   nfeItemsError: string | null
   busyId: string | null
+  focusedPurchaseId?: string | null
+  focusedInstallmentId?: string | null
   onOpenPending: (purchaseId: string) => void
   onRefreshPending: () => void
   onClosePending: () => void
@@ -89,6 +92,8 @@ export default function PayablePurchaseList({
   nfeItemsLoading,
   nfeItemsError,
   busyId,
+  focusedPurchaseId = null,
+  focusedInstallmentId = null,
   onOpenPending,
   onRefreshPending,
   onClosePending,
@@ -101,6 +106,17 @@ export default function PayablePurchaseList({
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todas')
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!focusedPurchaseId) return
+    setExpandedPurchaseId(focusedPurchaseId)
+  }, [focusedPurchaseId])
+
+  useEffect(() => {
+    if (!focusedInstallmentId) return
+    const target = document.getElementById(`payable-installment-${focusedInstallmentId}`)
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusedInstallmentId, expandedPurchaseId, purchases])
 
   const filteredPurchases = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
@@ -214,9 +230,14 @@ export default function PayablePurchaseList({
                     )}
                     {(pending.length > 0 || installments.some(installment => installment.status === 'paga')) && <div style={{ borderTop: purchase.classification_status === 'pendente' ? '1px solid var(--line-soft)' : undefined, paddingTop: purchase.classification_status === 'pendente' ? 4 : 0 }}>
                       {pending.map(installment => (
-                        <div key={installment.id} className="ps-list-row" style={{ gap: 8 }}>
+                        <div
+                          key={installment.id}
+                          id={`payable-installment-${installment.id}`}
+                          className="ps-list-row"
+                          style={focusedInstallmentId === installment.id ? { gap: 8, background: 'var(--honey-tint)', borderRadius: 8, padding: 8 } : { gap: 8 }}
+                        >
                           <span style={{ flex: 1 }}>
-                            Parcela {installment.installment_number} · {formatDate(installment.due_date)} · {installmentLabel(installment.status)}
+                            Parcela {installment.installment_number} · {formatDate(effectiveDueDate(installment))} · {installmentLabel(installment.status)}
                             {(isOverdue(installment) || isDueSoon(installment)) && <small style={{ display: 'block', color: isOverdue(installment) ? 'var(--berry)' : 'var(--honey-deep)' }}>{isOverdue(installment) ? 'Vencida' : 'Vence em até 7 dias'}</small>}
                           </span>
                           <b>{formatBRL(installment.amount)}</b>

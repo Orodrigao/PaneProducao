@@ -59,6 +59,7 @@ export default function ContasPagarPage() {
   } | null>(null)
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryRow[]>([])
   const [financeAccounts, setFinanceAccounts] = useState<FinanceAccountRow[]>([])
+  const [focusedPayable, setFocusedPayable] = useState<{ purchaseId: string; installmentId: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -132,6 +133,13 @@ export default function ContasPagarPage() {
   }
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search)
+    const purchaseId = search.get('purchase')
+    const installmentId = search.get('installment')
+    if (purchaseId && installmentId) setFocusedPayable({ purchaseId, installmentId })
+  }, [])
 
   const reminders = useMemo(() => {
     const installments = purchases.flatMap(purchase => purchase.payable_installments ?? [])
@@ -249,6 +257,8 @@ export default function ContasPagarPage() {
               nfeItemsLoading={nfeItemsLoading}
               nfeItemsError={nfeItemsError}
               busyId={busyId}
+              focusedPurchaseId={focusedPayable?.purchaseId}
+              focusedInstallmentId={focusedPayable?.installmentId}
               onOpenPending={purchaseId => void openPendingItems(purchaseId)}
               onRefreshPending={() => void refreshPendingItems()}
               onClosePending={() => setPendingPurchaseId(null)}
