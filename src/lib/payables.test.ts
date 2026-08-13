@@ -4,10 +4,12 @@ const supabaseMocks = vi.hoisted(() => ({ from: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { from: supabaseMocks.from } }))
 import {
   buildInstallments,
+  effectiveDueDate,
   getPayableErrorMessage,
   isDueSoon,
   isOverdue,
   loadPayablePurchaseItems,
+  payableDetailUrl,
   totalInstallments,
   totalItems,
   validateCategorySlices,
@@ -88,6 +90,17 @@ describe('contas a pagar manual', () => {
     expect(isOverdue({ id: '1', installment_number: 1, due_date: '2026-08-02', amount: 10, status: 'pendente' }, today)).toBe(true)
     expect(isDueSoon({ id: '2', installment_number: 1, due_date: '2026-08-10', amount: 10, status: 'pendente' }, today)).toBe(true)
     expect(isDueSoon({ id: '3', installment_number: 1, due_date: '2026-08-11', amount: 10, status: 'pendente' }, today)).toBe(false)
+  })
+
+  it('usa o vencimento renegociado nos alertas e no link direto da parcela', () => {
+    const today = new Date('2026-08-03T12:00:00Z')
+    const installment = {
+      id: 'installment 1', installment_number: 1, due_date: '2026-08-02', current_due_date: '2026-08-09', amount: 10, status: 'pendente' as const,
+    }
+    expect(effectiveDueDate(installment)).toBe('2026-08-09')
+    expect(isOverdue(installment, today)).toBe(false)
+    expect(isDueSoon(installment, today)).toBe(true)
+    expect(payableDetailUrl('purchase 1', installment.id)).toBe('/contas-pagar?purchase=purchase+1&installment=installment+1')
   })
 
   it('monta o relatório de compras pela data da compra e conserva as parcelas', () => {

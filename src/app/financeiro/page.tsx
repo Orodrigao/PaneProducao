@@ -18,6 +18,7 @@ import {
   loadFinanceCategories,
   loadFinanceEntries,
   loadFinanceRecurringRules,
+  loadPayableDueReportStatus,
   reverseFinanceEntry,
   reverseFinanceTransfer,
   summarizeEntries,
@@ -27,6 +28,7 @@ import {
   type FinanceCategoryRow,
   type FinanceEntryRow,
   type FinanceRecurringRuleRow,
+  type PayableDueReportStatus,
 } from '@/lib/finance'
 import { showToast } from '@/lib/utils'
 
@@ -37,6 +39,7 @@ export default function FinanceiroPage() {
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
   const [entries, setEntries] = useState<FinanceEntryRow[]>([])
   const [recurringRules, setRecurringRules] = useState<FinanceRecurringRuleRow[]>([])
+  const [payableDueReportStatus, setPayableDueReportStatus] = useState<PayableDueReportStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -53,10 +56,15 @@ export default function FinanceiroPage() {
         loadFinanceEntries(monthKey),
         loadFinanceRecurringRules(),
       ])
+      const reportStatus = await loadPayableDueReportStatus().catch(reportError => {
+        console.warn('O status do relatório diário ainda não está disponível.', reportError)
+        return null
+      })
       setCategories(categoryRows)
       setAccounts(accountRows)
       setEntries(entryRows)
       setRecurringRules(recurringRuleRows)
+      setPayableDueReportStatus(reportStatus)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar o financeiro. Confira sua permissão e tente novamente.')
@@ -144,6 +152,19 @@ export default function FinanceiroPage() {
               {' '}e aparece neste livro sozinha quando o boleto é baixado. Lançar nos dois lugares conta o gasto duas vezes.
             </small>
           </div>
+
+          {!loading && payableDueReportStatus && (
+            <div className="ps-card" style={{ marginTop: 12, borderColor: payableDueReportStatus.status === 'enviado' ? 'var(--basil)' : payableDueReportStatus.last_error ? 'var(--honey-deep)' : undefined }}>
+              <b>Relatório diário de contas a vencer</b>
+              <small style={{ display: 'block', marginTop: 4 }}>
+                {payableDueReportStatus.status === 'enviado' && 'Enviado hoje para a Suélen.'}
+                {payableDueReportStatus.status === 'programado' && 'Programado para hoje às 6h.'}
+                {payableDueReportStatus.status === 'aguardando' && 'Aguardando a próxima tentativa automática de envio.'}
+                {payableDueReportStatus.status === 'pendente' && 'Em nova tentativa automática de envio.'}
+                {payableDueReportStatus.last_error && ' A última tentativa não foi aceita; o sistema tenta de novo em até 15 minutos.'}
+              </small>
+            </div>
+          )}
 
           <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
             <label className="ps-fieldlabel" htmlFor="finance-month">Mês</label>

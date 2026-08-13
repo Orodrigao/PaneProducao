@@ -130,6 +130,16 @@ export function formatDate(value: string): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`))
 }
 
+/** A renegociação troca o vencimento que orienta a operação, nunca o original. */
+export function effectiveDueDate(installment: Pick<PayableInstallmentRow, 'due_date' | 'current_due_date'>): string {
+  return installment.current_due_date || installment.due_date
+}
+
+export function payableDetailUrl(purchaseId: string, installmentId: string): string {
+  const query = new URLSearchParams({ purchase: purchaseId, installment: installmentId })
+  return `/contas-pagar?${query.toString()}`
+}
+
 export function statusLabel(status: PayableStatus): string {
   return ({ aberta: 'Em aberto', paga: 'Paga', cancelada: 'Cancelada' } as Record<PayableStatus, string>)[status]
 }
@@ -203,7 +213,7 @@ export function validateDraft(draft: PayableDraft): string | null {
 
 export function isDueSoon(installment: PayableInstallmentRow, today = new Date()): boolean {
   if (installment.status !== 'pendente') return false
-  const due = new Date(`${installment.due_date}T12:00:00Z`).getTime()
+  const due = new Date(`${effectiveDueDate(installment)}T12:00:00Z`).getTime()
   const current = new Date(today.toISOString().slice(0, 10) + 'T12:00:00Z').getTime()
   const days = (due - current) / 86_400_000
   return days >= 0 && days <= 7
@@ -211,7 +221,7 @@ export function isDueSoon(installment: PayableInstallmentRow, today = new Date()
 
 export function isOverdue(installment: PayableInstallmentRow, today = new Date()): boolean {
   if (installment.status !== 'pendente') return false
-  const due = new Date(`${installment.due_date}T12:00:00Z`).getTime()
+  const due = new Date(`${effectiveDueDate(installment)}T12:00:00Z`).getTime()
   const current = new Date(today.toISOString().slice(0, 10) + 'T12:00:00Z').getTime()
   return due < current
 }
