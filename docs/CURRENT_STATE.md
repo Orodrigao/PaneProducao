@@ -1,8 +1,10 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-07-28
+**Data de referência:** 2026-08-13
 
-**Base observada:** `origin/main` em `0f8bdc2`, até a incorporação da PR `#182`
+**Base observada:** `origin/main` em `6f483b0`, até a incorporação da PR `#229`.
+A leitura de 2026-08-13 cobriu o módulo Financeiro e o plano do Contas a
+Receber; as demais seções vêm das revisões anteriores e mantêm suas datas.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -102,6 +104,11 @@ Riscos ainda abertos:
   caracteres exigido pelo servidor — alinhado ao `PASSWORD_MIN_LENGTH` do
   app. Isso satisfaz o item 1 do gate técnico dos planos de Contas a Receber
   e Financeiro;
+- `create_manual_payable` aceita `p_paid = true` validando apenas
+  `contas_pagar.lancar`, sem exigir `contas_pagar.baixar`. Quem lança consegue
+  criar conta já quitada. Achado do Sol em 2026-08-07; conferido em 2026-08-13
+  e **ainda aberto** — a função não foi redefinida desde então. Correção
+  prevista em tarefa própria de contas a pagar;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -153,7 +160,10 @@ tabelas.
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
   em Riscos ainda abertos);
 - estoques e fornecedores;
-- clientes, pedidos PJ e encomendas;
+- clientes, pedidos PJ e encomendas; o Banco Preview passou a ter cenário
+  comercial de PJ (clientes, tabela de preço e pedidos em aberto, por quilo,
+  enviado e cancelado), o que tornou Pedidos PJ e o relatório de Vendas PJ
+  testáveis antes de ir ao ar;
 - tabelas e opções de preço;
 - fechamento de caixa;
 - livro-caixa financeiro (fase 0 de [FINANCEIRO.md](FINANCEIRO.md)): lançamento
@@ -208,9 +218,16 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
    live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas
    (a configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
+   Este bloqueio deixou de travar funcionalidade nova — ver a decisão em
+   Fase estratégica.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
+5. O smoke de navegador falha de forma intermitente por causas de ambiente, não
+   de código: login logo após a recriação das contas fictícias, e o cenário da
+   Geolar, que ainda oscila depois do PR #199. Duas causas já foram corrigidas
+   (PRs #199 e #203). Enquanto restarem, o semáforo segura entregas sem
+   relação com a falha.
 
 ## Próximas fases aprovadas
 
