@@ -223,6 +223,7 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
   await itemNameInputs.nth(1).fill('Tomate cereja')
   await page.locator('input[type="number"]').nth(2).fill('3')
   await page.locator('input[type="number"]').nth(3).fill('50')
+  await page.getByLabel('Categoria').selectOption('cmv_materia_prima')
   await page.getByRole('button', { name: 'Registrar conta' }).click()
 
   const purchaseCard = page.locator('.ps-card', { hasText: 'R$ 250,00' }).first()
