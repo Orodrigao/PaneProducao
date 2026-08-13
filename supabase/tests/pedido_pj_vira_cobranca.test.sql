@@ -60,11 +60,11 @@ insert into public.orders (
   quantity, unit_price, pack_size, pricing_unit, customer_id, pj_client,
   order_date, delivery_date, pj_delivery_date, needs_production
 ) values
-  ('95000000-0000-4000-8000-00000000e001', 'pj', 'pj', '95000000-0000-4000-8000-0000000000g1',
+  ('95000000-0000-4000-8000-00000000e001', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 20, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
    current_date - 3, current_date - 1, current_date - 1, false),
-  ('95000000-0000-4000-8000-00000000e002', 'pj', 'pj', '95000000-0000-4000-8000-0000000000g1',
+  ('95000000-0000-4000-8000-00000000e002', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 10, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
    current_date - 3, current_date - 1, current_date - 1, false);
@@ -75,7 +75,7 @@ insert into public.orders (
   quantity, unit_price, pack_size, pricing_unit, customer_id, pj_client,
   order_date, delivery_date, pj_delivery_date, needs_production
 ) values
-  ('95000000-0000-4000-8000-00000000e003', 'pj', 'pj', '95000000-0000-4000-8000-0000000000g2',
+  ('95000000-0000-4000-8000-00000000e003', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a2',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 8, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c2', '[TESTE] Cliente Fase 3 Sem Prazo',
    current_date - 3, current_date - 1, current_date - 1, false);
@@ -86,15 +86,15 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
 select is((select amount from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g1'::uuid), 150.00,
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), 150.00,
   'a lista soma o pedido inteiro, nao uma linha so');
 
 select is((select items from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g1'::uuid), 2,
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), 2,
   'a lista mostra quantas linhas o pedido tem');
 
 select ok(exists(select 1 from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g2'::uuid),
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid),
   'pedido de cliente sem prazo tambem aparece na lista');
 
 reset role;
@@ -110,7 +110,7 @@ select ok(not exists(select 1 from public.app_user_permissions
   'a expedicao nao tem nenhuma permissao de contas a receber');
 
 select lives_ok(
-  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000g1'::uuid) $$,
+  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a1'::uuid) $$,
   'expedicao confirma o envio do pedido'
 );
 
@@ -120,27 +120,27 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
 select is((select count(*)::int from public.receivables
-    where origin = 'pedido_pj' and origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), 1,
+    where origin = 'pedido_pj' and origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), 1,
   'confirmar o envio gerou a cobranca');
 
 select is((select amount from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), 150.00,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), 150.00,
   'o valor da cobranca e a soma do pedido inteiro');
 
 select is((select due_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), current_date + 15,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date + 15,
   'o vencimento sai do prazo do cliente contado do envio');
 
 select is((select invoice_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), current_date,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date,
   'a data do faturamento e o dia do envio confirmado');
 
 select is((select status from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), 'aberta',
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), 'aberta',
   'a cobranca gerada nasce em aberto');
 
 select ok(not exists(select 1 from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g1'::uuid),
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido cobrado sai da lista de a faturar');
 
 reset role;
@@ -151,7 +151,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002', true);
 
 select lives_ok(
-  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000g1'::uuid) $$,
+  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a1'::uuid) $$,
   'confirmar o envio de novo nao estoura erro'
 );
 
@@ -161,7 +161,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
 select is((select count(*)::int from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid), 1,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), 1,
   'o toque duplo no envio nao gerou uma segunda cobranca');
 
 -- Pedido já cobrado fica travado -------------------------------------------
@@ -190,7 +190,7 @@ select throws_ok(
        quantity, unit_price, pack_size, pricing_unit, customer_id, pj_client,
        order_date, delivery_date, needs_production
      ) values (
-       'pj', 'pj', '95000000-0000-4000-8000-0000000000g1', 'teste-pao-fase3', 'bread',
+       'pj', 'pj', '95000000-0000-4000-8000-0000000000a1', 'teste-pao-fase3', 'bread',
        '[TESTE] Pao Fase 3', 5, 5.00, 1, 'un',
        '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
        current_date, current_date, false
@@ -212,7 +212,7 @@ select throws_ok(
 select lives_ok(
   $$ select public.cancel_receivable(
        '95000000-0000-4000-8000-00000000f001'::uuid,
-       (select id from public.receivables where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid),
+       (select id from public.receivables where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid),
        'Pedido precisa ser corrigido'
      ) $$,
   'financeiro cancela a cobranca do pedido'
@@ -225,25 +225,25 @@ select lives_ok(
 );
 
 select ok(exists(select 1 from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g1'::uuid),
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido com cobranca cancelada volta para a lista de a faturar');
 
 -- O caminho manual do financeiro -------------------------------------------
 
 select is((select amount from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g1'::uuid), 175.00,
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), 175.00,
   'a lista ja mostra o valor corrigido do pedido');
 
 select lives_ok(
   $$ select public.create_receivable_from_pj_order(
        '95000000-0000-4000-8000-00000000f002'::uuid,
-       '95000000-0000-4000-8000-0000000000g1'::uuid
+       '95000000-0000-4000-8000-0000000000a1'::uuid
      ) $$,
   'financeiro gera a cobranca pela lista'
 );
 
 select is((select amount from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g1'::uuid and status <> 'cancelada'), 175.00,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid and status <> 'cancelada'), 175.00,
   'a cobranca gerada pela lista usa o valor recalculado no banco');
 
 -- Cliente sem prazo: o envio acontece, a cobrança não nasce ----------------
@@ -251,7 +251,7 @@ select is((select amount from public.receivables
 select throws_ok(
   $$ select public.create_receivable_from_pj_order(
        '95000000-0000-4000-8000-00000000f003'::uuid,
-       '95000000-0000-4000-8000-0000000000g2'::uuid
+       '95000000-0000-4000-8000-0000000000a2'::uuid
      ) $$,
   '22023',
   'Este cliente ainda não tem prazo de pagamento cadastrado. Defina o prazo na tela de Clientes antes de cobrar.',
@@ -266,7 +266,7 @@ select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002
 -- A trava do financeiro nao pode parar a padaria: o envio acontece do mesmo
 -- jeito, e o pedido continua aparecendo como a faturar.
 select lives_ok(
-  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000g2'::uuid) $$,
+  $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a2'::uuid) $$,
   'cliente sem prazo nao impede a expedicao de confirmar o envio'
 );
 
@@ -276,11 +276,11 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
 select is((select count(*)::int from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000g2'::uuid), 0,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a2'::uuid), 0,
   'sem prazo cadastrado a cobranca nao nasce');
 
 select ok(exists(select 1 from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000g2'::uuid),
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid),
   'e o pedido continua na lista de a faturar, esperando o prazo');
 
 reset role;
