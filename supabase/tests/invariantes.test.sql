@@ -351,9 +351,10 @@ select is((select count(*)::int
     where grantee = 'anon'
       and table_schema = 'public'
       and table_name not in (
-        'pizza_categorias', 'pizza_despesas', 'pizza_usuarios', 'pizza_vendas'
+        'pizza_categorias', 'pizza_despesas', 'pizza_usuarios', 'pizza_vendas',
+        'site_bread_catalog'
       )), 0,
-  'anon acessa somente as tabelas legadas do ControlePizza');
+  'anon acessa somente as tabelas legadas do ControlePizza e a vitrine pública de pães');
 select is((select count(*)::int
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
