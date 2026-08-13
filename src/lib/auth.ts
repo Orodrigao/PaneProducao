@@ -9,6 +9,8 @@ export const PAYABLES_PERMISSION = 'contas_pagar.acessar'
 export const PAYABLES_ROUTE = '/contas-pagar'
 export const FINANCE_PERMISSION = 'financeiro.acessar'
 export const FINANCE_ROUTE = '/financeiro'
+export const RECEIVABLES_PERMISSION = 'contas_receber.acessar'
+export const RECEIVABLES_ROUTE = '/contas-receber'
 export interface AppUser {
   id: string
   username: string
@@ -95,9 +97,20 @@ export function resolveAllowedRoutes(
   // em que a concessão por loja não abria a tela.
   const canAccessFinance = permissions.some(permission => permission.permission_key === FINANCE_PERMISSION)
 
-  if (!canAccessFinance) return withPayablesRoute.filter(route => route !== FINANCE_ROUTE)
-  if (withPayablesRoute.includes(FINANCE_ROUTE)) return withPayablesRoute
-  return [...withPayablesRoute, FINANCE_ROUTE]
+  const withFinanceRoute = !canAccessFinance
+    ? withPayablesRoute.filter(route => route !== FINANCE_ROUTE)
+    : (withPayablesRoute.includes(FINANCE_ROUTE) ? withPayablesRoute : [...withPayablesRoute, FINANCE_ROUTE])
+
+  // Contas a receber: mesmo escopo do contas a pagar, porque a operação PJ é
+  // da JC. A função do banco confere a permissão de novo em cada ação.
+  const canAccessReceivables = permissions.some(permission =>
+    permission.permission_key === RECEIVABLES_PERMISSION
+      && (permission.scope === '*' || permission.scope === 'jc'),
+  )
+
+  if (!canAccessReceivables) return withFinanceRoute.filter(route => route !== RECEIVABLES_ROUTE)
+  if (withFinanceRoute.includes(RECEIVABLES_ROUTE)) return withFinanceRoute
+  return [...withFinanceRoute, RECEIVABLES_ROUTE]
 }
 
 export interface AuthActionResult {
