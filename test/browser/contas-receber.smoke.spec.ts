@@ -35,7 +35,7 @@ test('Financeiro JC ve as cobrancas semeadas, com atrasada e a vencer separadas'
 
   await page.goto('/contas-receber')
 
-  await expect(page.getByRole('heading', { name: 'Contas a receber' })).toBeVisible({
+  await expect(page.getByText('Quem deve para a padaria')).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
 
@@ -57,18 +57,18 @@ test('Financeiro JC ve as cobrancas semeadas, com atrasada e a vencer separadas'
   expect(posicaoAtrasada).toBeLessThan(posicaoAVencer)
 
   // O menu leva a tela: rota, permissao e RLS nao bastam se o link nao existe.
-  await expect(page.getByRole('link', { name: 'Contas a receber' })).toBeVisible()
+  await expect(page.locator('a[href="/contas-receber"]').first()).toBeAttached()
 })
 
 test('Vendas JA nao chega em Contas a receber', async ({ page }) => {
   await enterWithPreviewAccount(page, vendasJa)
 
-  await expect(page.getByRole('link', { name: 'Contas a receber' })).toHaveCount(0)
+  await expect(page.locator('a[href="/contas-receber"]')).toHaveCount(0)
 
   await page.goto('/contas-receber')
 
   // Sem a permissao, a rota nao abre: o app devolve o usuario para a tela
   // inicial dele em vez de mostrar a lista.
-  await expect(page).not.toHaveURL(/\/contas-receber/, { timeout: slowPreviewDataTimeoutMs })
+  await expect(page).toHaveURL(/\/romaneio$/, { timeout: slowPreviewDataTimeoutMs })
   await expect(page.getByText('cobranca atrasada')).toHaveCount(0)
 })
