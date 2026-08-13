@@ -221,8 +221,8 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and store = 'pj'),
-  4,
-  'seed cria pedidos PJ em aberto, por quilo, enviado e cancelado'
+  5,
+  'seed cria pedidos PJ em aberto, por quilo, enviado, cancelado e sem prazo'
 );
 
 -- Trava do valor: a linha do pedido ja guarda a quantidade final vendida, entao
@@ -234,8 +234,8 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and cancelled_at is null),
-  870.90::numeric,
-  'pedidos PJ ficticios nao cancelados somam R$ 870,90'
+  971.70::numeric,
+  'pedidos PJ ficticios nao cancelados somam R$ 971,70'
 );
 
 select is(
