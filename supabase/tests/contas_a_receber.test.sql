@@ -164,7 +164,10 @@ select is(
   'repetir o lancamento devolve a mesma cobranca'
 );
 
-select is((select count(*)::int from public.receivables), 1,
+-- Escopo do cliente deste teste: no Banco Preview o seed ja deixou cobrancas
+-- proprias, e contar a tabela inteira mediria o cenario alheio.
+select is((select count(*)::int from public.receivables
+    where customer_id = '94000000-0000-4000-8000-0000000000c1'::uuid), 1,
   'o toque duplo nao criou uma segunda cobranca');
 
 -- A cobrança existe, mas quem não tem permissão não a enxerga --------------
@@ -230,34 +233,34 @@ select ok(not exists(select 1 from public.app_user_permissions
   'quem baixou nao tem permissao de lancar no livro');
 
 select is((select count(*)::int from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1,
   'a baixa gerou um lancamento no livro');
 
 select is((select amount from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1190.00,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1190.00,
   'o valor no livro e o que entrou de verdade');
 
 select is((select planned_amount from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1200.00,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 1200.00,
   'o previsto no livro e o valor cobrado: a diferenca e o desconto');
 
 select is((select competence_month from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), date_trunc('month', current_date - 40)::date,
-  'a venda de julho recebida em agosto pesa em julho');
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), date_trunc('month', current_date - 40)::date,
+  'a venda pesa no mes do faturamento, nao no mes em que o dinheiro entrou');
 
 select is((select paid_date from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), current_date - 2,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), current_date - 2,
   'a data real do lancamento e o dia em que o dinheiro entrou');
 
 select is((select category.key from public.finance_entries entry
     join public.finance_categories category on category.id = entry.category_id
-    where entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null),
+    where entry.source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null),
   'clientes_pj',
   'a receita cai na categoria de clientes PJ');
 
 select is((select account.key from public.finance_entries entry
     join public.finance_accounts account on account.id = entry.account_id
-    where entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null),
+    where entry.source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null),
   'banco_sicredi_jc',
   'o livro sabe em qual conta o dinheiro entrou');
 
@@ -271,7 +274,7 @@ select lives_ok(
   'repetir a baixa nao estoura erro'
 );
 
-select is((select count(*)::int from public.finance_entries where source = 'contas_receber'), 1,
+select is((select count(*)::int from public.finance_entries where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid)), 1,
   'o toque duplo na baixa nao gerou um segundo lancamento');
 
 -- Cancelar cobrança recebida é proibido -------------------------------------
@@ -318,14 +321,14 @@ select is((select received_amount from public.receivables
   'a cobranca nao guarda resquicio do recebimento estornado');
 
 select is((select count(*)::int from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 0,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), 0,
   'o livro nao tem mais receita ativa desta cobranca');
 
 select is((select count(*)::int from public.finance_entries
-    where source = 'contas_receber' and entry_type = 'estorno'), 1,
+    where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'estorno'), 1,
   'o estorno nasceu como contra-lancamento em vez de apagar o original');
 
-select is((select count(*)::int from public.finance_entries where source = 'contas_receber'), 2,
+select is((select count(*)::int from public.finance_entries where source_ref = (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid)), 2,
   'a historia inteira continua no livro: o lancamento e o estorno dele');
 
 -- Depois do estorno, cancelar volta a ser possível.
