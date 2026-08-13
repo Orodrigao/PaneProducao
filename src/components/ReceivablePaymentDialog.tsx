@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import type { FinanceAccountRow } from '@/lib/finance'
+import { formatCompetenceMonth, type FinanceAccountRow } from '@/lib/finance'
 import {
   defaultPaymentDraft,
   formatReceivableMoney,
@@ -44,6 +44,8 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
     [accounts],
   )
 
+  const mesDeCompetencia = formatCompetenceMonth(receivable.invoice_date.slice(0, 7))
+
   const diferenca = useMemo(() => {
     const recebido = parseMoneyInput(draft.receivedAmount)
     if (!(recebido > 0)) return 0
@@ -60,7 +62,11 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
     setError(null)
     try {
       await recordReceivablePayment(receivable.id, draft, requestIdRef.current)
-      showToast('Recebimento registrado e lançado no livro.')
+      // Dizer em qual mês o dinheiro caiu no livro. Cliente que paga atrasado
+      // é o caso normal, então a receita quase sempre pesa num mês anterior ao
+      // de hoje — e o livro abre no mês corrente. Sem este recado, quem baixa
+      // vai procurar o valor no mês errado e achar que nada aconteceu.
+      showToast(`Recebimento registrado. Entrou no livro em ${mesDeCompetencia}.`)
       await onSaved()
     } catch (saveError) {
       console.error(saveError)
@@ -75,7 +81,10 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
       <div className="ps-card-head">
         <div>
           <b>Registrar recebimento</b>
-          <small>{receivable.customer?.name ?? 'Cliente'} · cobrado {formatReceivableMoney(receivable.amount)}</small>
+          <small>
+            {receivable.customer?.name ?? 'Cliente'} · cobrado {formatReceivableMoney(receivable.amount)}
+            {' · '}pesa em {mesDeCompetencia}
+          </small>
         </div>
         <button type="button" className="ps-iconbtn" onClick={onClose} aria-label="Fechar recebimento"><X size={16} /></button>
       </div>

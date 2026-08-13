@@ -1,5 +1,7 @@
 'use client'
 
+import { formatCompetenceMonth } from '@/lib/finance'
+import { todayKey } from '@/lib/utils'
 import {
   daysOverdue,
   formatReceivableMoney,
@@ -68,6 +70,15 @@ export default function ReceivableList({
               <span>Faturado em {formatDate(receivable.invoice_date)}</span>
               <span>·</span>
               <span>{RECEIVABLE_ORIGIN_LABELS[receivable.origin]}</span>
+              {/* O mês em que a venda pesa no resultado só é evidente quando é
+                  diferente do mês corrente — que é justamente o caso de todo
+                  cliente que paga atrasado. */}
+              {receivable.invoice_date.slice(0, 7) !== todayKey().slice(0, 7) && (
+                <>
+                  <span>·</span>
+                  <span>pesa em {formatCompetenceMonth(receivable.invoice_date.slice(0, 7))}</span>
+                </>
+              )}
             </div>
 
             {receivable.status === 'recebida' && receivable.received_date && (
