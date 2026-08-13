@@ -7,6 +7,12 @@ lacunas incorporadas por decisão do Rodrigo (decisão 9).
 Fase 0 concluída em 2026-08-11 (seed no PR #202, smoke no PR #208).
 Fase 1 concluída em 2026-08-10 (PR #206). A dependência da fase 2 sobre o
 molde corrigido de contas a pagar foi satisfeita pelo PR #209.
+
+**Revisão de 2026-08-13 — a fase 2 foi reescrita.** Entre 12 e 13 de agosto o
+módulo Financeiro foi ao ar (livro-caixa, contas a pagar alimentando o livro,
+recorrências, transferências e cartão de crédito). A fase 2 tinha sido
+planejada antes disso e não previa o livro. As mudanças estão na decisão 10 e
+na própria fase 2; o restante do plano segue valendo.
 **Nível de risco:** ALTO — dinheiro, permissões, RLS e migration.
 Aprovação é **fase a fase**, nunca do plano inteiro de uma vez.
 
@@ -81,6 +87,32 @@ Não reabrir sem evidência nova.
      avulso), com os itens.
    As lacunas eram as mesmas do contas a pagar, corrigidas lá em paralelo
    pelo Sol; a regra geral virou o roteiro de benchmark do PR #207.
+10. **A cobrança recebida entra no livro-caixa (Rodrigo, 2026-08-13).** O
+    módulo Financeiro subiu depois que este plano foi escrito, e o livro-caixa
+    já nasceu com as categorias de receita `clientes_pj` e `buck_ex` vazias,
+    esperando por este módulo. Quatro consequências, todas aprovadas:
+    - **a baixa da cobrança escreve no livro na mesma transação** — ou o
+      cliente é marcado como pago e o dinheiro entra no caixa, ou nenhuma das
+      duas coisas acontece. É como a baixa de contas a pagar já funciona;
+    - **a baixa pergunta em qual conta o dinheiro caiu**, e não só a forma
+      (Pix, boleto, dinheiro). Sem a conta, o saldo por banco não fecha.
+      Diferente do contas a pagar, onde a conta pertence à compra, aqui ela
+      pertence à baixa: o mesmo cliente paga por Pix num mês e por boleto de
+      outro banco no seguinte;
+    - **a receita pesa no mês do faturamento, não no mês em que o dinheiro
+      entrou.** Espelha a regra da despesa (decisão 6 de
+      [FINANCEIRO.md](FINANCEIRO.md)): se o pão saiu em julho, a farinha dele
+      já foi lançada como despesa em julho — a venda tem que contar em julho
+      também, senão os dois meses mentem em direções opostas. As três datas
+      ficam gravadas: faturamento manda no resultado, vencimento manda na
+      lista de atrasados, recebimento manda no saldo da conta. Custo aceito:
+      um mês já fechado pode mudar se uma cobrança antiga for lançada com
+      atraso — o livro registra a correção como linha nova, nunca apagando a
+      anterior;
+    - **a tela é própria, `/contas-receber`**, espelhando `/contas-pagar`, e
+      não uma aba de `/financeiro`. O `/financeiro` continua sendo o livro e o
+      resultado; pagar e receber são as duas telas do dia a dia da Elis, com
+      permissões separadas.
 
 ## Três origens, um único destino
 
@@ -131,9 +163,16 @@ próprio — e que "o padrão do contas a pagar parece correto" **não** serve c
 gate, porque a revisão do Sol encontrou um defeito nesse próprio padrão (ver
 achado 8 abaixo).
 
+Atualização de 2026-08-13: o módulo Financeiro cumpriu este mesmo gate nas
+fases que já foram ao ar, e o molde do livro-caixa
+(`20260812115945_financeiro_livro_caixa.sql`) satisfaz sozinho os itens 2 a 7.
+Copiar esse molde — e não mais o contas a pagar de agosto — é o caminho mais
+curto e mais seguro para a fase 2.
+
 A fase 2 só começa depois de:
 
-1. proteção contra senha vazada ligada no Auth;
+1. proteção contra senha vazada ligada no Auth — **satisfeito**, confirmado em
+   auditoria live somente leitura de 2026-08-11 (ver `CURRENT_STATE.md`);
 2. `REVOKE` explícito de `INSERT`, `UPDATE` e `DELETE` para `anon` e
    `authenticated` nas tabelas novas;
 3. `ENABLE` e `FORCE ROW LEVEL SECURITY` desde a criação;
@@ -286,69 +325,103 @@ próprio arquivo qual id foi preservado e qual foi absorvido.
 
 ## Fase 2 — A tela de Contas a receber e o lançamento avulso
 
+**Reescrita em 2026-08-13** para nascer ligada ao livro-caixa (decisão 10).
+
 **Objetivo:** existir um único lugar que responde quem deve, quanto e quando —
-e o Bling poder ser desligado.
+e o Bling poder ser desligado. Ao dar baixa, o dinheiro aparece no caixa sem
+ninguém digitar de novo.
 
 **Escopo — entra:**
 
-- tabelas de cobrança e de eventos, espelhando o padrão de contas a pagar
-  **já com as correções em andamento pelo Sol** (data e valor reais do
-  pagamento) — o molde só é copiado depois dessas correções mergeadas, nunca
-  do esquema antigo (`20260803200136_contas_a_pagar_manual.sql`);
-- permissões granulares próprias: acessar, lançar, baixar, estornar, cancelar
-  e corrigir;
-- ações protegidas no banco (`SECURITY DEFINER`, `search_path` seguro, grants
-  explícitos), com escrita **somente por elas** — nunca direto na tabela;
-- RLS em todas as tabelas novas, com policy de leitura por permissão;
+- tabelas de cobrança e de eventos, copiando o molde do **livro-caixa**
+  (`20260812115945_financeiro_livro_caixa.sql`), não o do contas a pagar de
+  agosto: portas fechadas por padrão e abertas uma a uma, permissão conferida
+  por função auxiliar em `private`, registro imutável (corrigir é estornar e
+  relançar, nunca alterar) e trava contra toque duplo por `request_id`;
+- **três datas gravadas na cobrança**: faturamento (manda no resultado do
+  mês), vencimento (manda na lista de atrasados) e recebimento (manda no saldo
+  da conta);
+- permissões granulares próprias: `contas_receber.acessar`, `.lancar`,
+  `.baixar`, `.estornar`, `.cancelar` e `.corrigir_vencimento`;
+- ações protegidas no banco (`SECURITY DEFINER`, `search_path = ''`, grants
+  explícitos por assinatura), com escrita **somente por elas** — nunca direto
+  na tabela;
+- RLS forçada em todas as tabelas novas desde a criação, com policy de leitura
+  por permissão;
+- **a baixa escreve no livro-caixa na mesma transação**, na categoria
+  `clientes_pj` (ou `buck_ex`, conforme a origem), com competência no mês do
+  faturamento e `source = 'contas_receber'` apontando para a cobrança;
+- **o estorno da baixa estorna o lançamento do livro junto**, pelo mesmo
+  caminho — sem isso a baixa errada sai da cobrança e fica no caixa para
+  sempre;
 - tela `/contas-receber`: lista de quem deve, com atrasados e a vencer em
-  destaque; lançamento avulso; baixa com data do recebimento, valor recebido
-  e forma de recebimento (padrão: hoje, valor da cobrança); estorno de baixa
-  com motivo; cancelamento com motivo; correção de vencimento; cada cobrança
-  mostra a origem que a gerou (decisão 9);
-- rota derivada da permissão granular, como já é feito em `/pedidos-pj`.
+  destaque; lançamento avulso; baixa com data do recebimento, valor recebido,
+  forma de recebimento **e conta que recebeu** (padrão: hoje, valor da
+  cobrança); estorno de baixa com motivo; cancelamento com motivo; correção de
+  vencimento; cada cobrança mostra a origem que a gerou (decisão 9);
+- rota derivada da permissão granular, como já é feito em `/pedidos-pj`, **e o
+  link no menu** — sem ele a tela existe e ninguém chega (lição
+  `tela-nova-precisa-do-menu`).
 
 **Não entra:** geração automática a partir de pedido ou romaneio (fases 3 e 4),
 extrato por cliente (fase 5), pagamento parcial.
 
-**Depende de:** fase 1 (o vencimento vem do prazo do cliente), da decisão
-sobre o bloqueio de hardening registrada acima e do merge das correções do
-contas a pagar (Sol) — o molde das tabelas vem de lá já corrigido.
+**Depende de:** fase 1 (o vencimento vem do prazo do cliente) e do módulo
+Financeiro no ar — satisfeito. A dependência antiga do molde corrigido do
+contas a pagar deixou de existir: o molde agora é o do livro-caixa.
 
 **Arquivos e tabelas prováveis:** migration nova; `src/app/contas-receber/`;
-`src/lib/receivables.ts` e testes; `src/lib/auth.ts` para a rota.
+`src/lib/receivables.ts` e testes; `src/lib/auth.ts` para a rota;
+`src/components/Nav.tsx` para o menu; testes pgTAP em `supabase/tests/`.
 
 **Riscos:**
 
-- os três planos de permissão (`DEFAULT_ROUTES_BY_ROLE`, `allowed_routes` e
-  `app_user_permissions`) precisam concordar, senão a Elis fica com o checkbox
-  marcado e sem conseguir abrir a tela;
+- **dar baixa não pode exigir duas permissões.** A Elis terá
+  `contas_receber.baixar`; se a função também exigisse `financeiro.lancar`,
+  ela travaria na hora de usar. O contas a pagar já resolveu assim: a baixa
+  confere só a permissão dela e escreve no livro por dentro
+  (`record_payable_installment_payment`);
+- os quatro planos de acesso (`DEFAULT_ROUTES_BY_ROLE`, `allowed_routes`,
+  `app_user_permissions` e o menu do `Nav`) precisam concordar, senão a Elis
+  fica com o checkbox marcado e sem conseguir abrir a tela;
 - valor é dinheiro: validar no banco, não só na tela — a lição
   `validar-tambem-na-saida` nasceu de um erro de R$ 190 mil;
 - lançar duas vezes a mesma cobrança. Toda ação de criação carrega
-  identificador próprio e repetir devolve a mesma cobrança, sem duplicar.
+  identificador próprio e repetir devolve a mesma cobrança, sem duplicar;
+- **redefinir função compartilhada do Financeiro** (por exemplo
+  `reverse_finance_entry`) apaga em silêncio melhoria recente de outro agente
+  — lição `funcao-de-banco-redefinida-perde-melhoria-recente`. Se a fase
+  precisar tocar uma função existente, partir da definição mais recente e
+  provar por diff que a única diferença é a pretendida.
 
 **Critérios de aceite:**
 
 - a Elis lança uma cobrança avulsa escolhendo cliente, valor, descrição e data
-  base; o vencimento aparece calculado do prazo do cliente;
+  de faturamento; o vencimento aparece calculado do prazo do cliente;
 - a lista mostra o que está atrasado e o que vence nos próximos dias;
 - a baixa registra quem deu, a data em que o dinheiro entrou, o valor
-  recebido e a forma de recebimento — com os padrões preenchidos, dá para
-  baixar em dois toques;
-- estornar uma baixa exige motivo, devolve a cobrança para aberta e registra
-  quem desfez;
+  recebido, a forma e a conta — com os padrões preenchidos, dá para baixar em
+  dois toques;
+- **dar baixa faz o valor aparecer no livro-caixa**, em Clientes PJ, no mês do
+  faturamento, com a mesma quantia;
+- estornar uma baixa exige motivo, devolve a cobrança para aberta, **tira o
+  valor do livro** e registra quem desfez;
 - o cancelamento exige motivo;
 - cobrança já recebida não pode ser cancelada sem estorno antes;
 - repetir a ação (toque duplo, recarregar) não duplica nem corrompe;
 - **um perfil sem a permissão é bloqueado pelo banco**, não apenas pela tela.
 
 **Testes — matriz obrigatória:** financeiro JC (deve conseguir lançar, baixar e
-cancelar) **e** vendas JA (deve ser bloqueado na tela e no banco). Estados de
+cancelar) **e** vendas JA (deve ser bloqueado na tela e no banco). Um teste de
+banco que percorre o ciclo inteiro — lançar, baixar, conferir o livro,
+estornar, conferir que o livro voltou, tentar estornar de novo. Estados de
 carregando, vazio, erro, sucesso e repetição. `CI Banco` e `Banco Preview`
 verdes.
 
 **Recuperação:** correção de banco é migration nova. A tela pode ser revertida
-sozinha sem perder cobrança já lançada.
+sozinha sem perder cobrança já lançada; o que não pode ser revertido sozinho é
+a ponte com o livro — lançamento gerado lá se corrige por estorno, nunca por
+apagamento.
 
 ## Fase 3 — Pedido PJ entregue vira cobrança
 
@@ -362,6 +435,8 @@ sozinha sem perder cobrança já lançada.
   no banco;
 - uma cobrança por pedido: confirmar o envio de novo devolve a mesma cobrança,
   nunca uma segunda;
+- **a data de faturamento da cobrança é a data do envio confirmado** — é ela
+  que decide em que mês essa venda pesa no resultado (decisão 10);
 - **lista de pedidos com entrega vencida e sem envio confirmado** — a rede de
   proteção contra o esquecimento da Expedição.
 
@@ -409,7 +484,10 @@ pacote maior que 1 confere o valor.
   BUCK — o total vindo do navegador é apenas conferido, nunca aceito;
 - as travas atuais (produto sem preço, unidade incompatível, quantidade
   suspeita) bloqueiam a geração, como já bloqueiam a impressão;
-- um período já cobrado não pode ser cobrado de novo.
+- um período já cobrado não pode ser cobrado de novo;
+- **a data de faturamento é o último dia do período faturado**, e a receita cai
+  em `buck_ex` no livro (decisão 10). Semana que atravessa a virada do mês pesa
+  no mês em que o período fecha.
 
 **Não entra:** mudar o documento impresso, o cálculo existente ou o fluxo do
 romaneio.
@@ -481,3 +559,11 @@ a informação passa a viver em um lugar só. `3` e `4` tiram trabalho manual.
 O Sol (Codex) trabalhou em contas a pagar até o PR #197, incorporado em
 2026-08-07. Áreas financeiras devem ser conferidas antes de cada fase: duas
 frentes no mesmo fluxo são proibidas, sobreposição de área e não só de arquivo.
+
+Atualização de 2026-08-13: o módulo Financeiro avançou muito entre 12 e 13 de
+agosto (PRs #222 a #229) e **encosta neste plano**. A fase 2 daqui vai tocar
+`finance_entries` e as funções do livro; a fase 4 do
+[FINANCEIRO.md](FINANCEIRO.md) (o DRE) lê as cobranças daqui. Antes de começar
+a fase 2, confirmar com Rodrigo que ninguém está mexendo no Financeiro ao
+mesmo tempo — e lembrar que PR com migration segura a fila do Banco Preview
+(lição `preview-compartilhado-nao-aceita-fila-paralela`).
