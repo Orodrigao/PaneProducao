@@ -208,6 +208,20 @@ values
    '[TESTE] pedido ja enviado pela Expedicao', false,
    now() - interval '2 hours', null, '[TESTE] Expedicao JC',
    null, null, null),
+  -- Entregue ontem, de cliente SEM prazo cadastrado: aparece na lista de a
+  -- faturar bloqueado, porque nao ha vencimento que se possa calcular. E o
+  -- caso que faz dinheiro deixar de ser cobrado em silencio.
+  ('30000000-0000-4000-8000-000000000105', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000005',
+   '60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
+   63, 1.60, 21, 'un',
+   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   (now() at time zone 'America/Sao_Paulo')::date - 1,
+   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   (now() at time zone 'America/Sao_Paulo')::date - 1,
+   '[TESTE] entregue, mas o cliente nao tem prazo combinado', false,
+   null, null, null, null, null, null),
   -- Cancelado: nao entra em nenhuma soma.
   ('30000000-0000-4000-8000-000000000104', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000004',
