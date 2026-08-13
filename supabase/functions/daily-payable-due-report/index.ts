@@ -9,7 +9,7 @@ type DueItem = {
 }
 
 type DeliveryClaim = {
-  state: 'aguardando_horario' | 'pronto_para_enviar'
+  state: 'aguardando_horario' | 'ja_enviado' | 'pronto_para_enviar'
   report_id?: string
   report_date?: string
   attempt_token?: string
@@ -63,7 +63,7 @@ function isDueItem(value: unknown): value is DueItem {
 function isDeliveryClaim(value: unknown): value is DeliveryClaim {
   if (!value || typeof value !== 'object') return false
   const claim = value as Record<string, unknown>
-  if (claim.state === 'aguardando_horario') return true
+  if (claim.state === 'aguardando_horario' || claim.state === 'ja_enviado') return true
   return claim.state === 'pronto_para_enviar'
     && typeof claim.report_id === 'string'
     && typeof claim.report_date === 'string'
@@ -84,7 +84,8 @@ async function callRpc(name: string, body: Record<string, unknown>): Promise<unk
     body: JSON.stringify(body),
   })
   if (!response.ok) throw new Error(`RPC ${name} recusou a chamada (${response.status}).`)
-  return response.json()
+  const responseBody = await response.text()
+  return responseBody ? JSON.parse(responseBody) : null
 }
 
 function reportHtml(reportDate: string, items: DueItem[]): string {
@@ -140,7 +141,7 @@ Deno.serve(async request => {
     return new Response(null, { status: 401 })
   }
   if (!isDeliveryClaim(result)) return new Response(null, { status: 500 })
-  if (result.state === 'aguardando_horario') return new Response(null, { status: 204 })
+  if (result.state === 'aguardando_horario' || result.state === 'ja_enviado') return new Response(null, { status: 204 })
 
   const claim = result as Required<DeliveryClaim>
   try {
