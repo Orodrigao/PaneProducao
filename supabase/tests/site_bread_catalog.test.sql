@@ -19,7 +19,7 @@ select ok(not has_table_privilege('anon', 'public.products', 'select'),
 select ok(not has_table_privilege('authenticated', 'public.site_bread_catalog', 'select'),
   'usuário logado não ganha acesso direto extra pela vitrine pública');
 select is((
-  select array_agg(column_name order by ordinal_position)
+  select array_agg(column_name::text order by ordinal_position)
   from information_schema.columns
   where table_schema = 'public' and table_name = 'site_bread_catalog'
 ), array['product_id', 'name', 'slug', 'production_days', 'sort_order']::text[],
