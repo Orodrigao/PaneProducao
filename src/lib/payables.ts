@@ -226,6 +226,14 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
   return due < current
 }
 
+export function prioritizeOverduePayablePurchases(purchases: PayablePurchaseRow[], today = new Date()): PayablePurchaseRow[] {
+  return [...purchases].sort((first, second) => {
+    const firstIsOverdue = first.payable_installments.some(installment => isOverdue(installment, today))
+    const secondIsOverdue = second.payable_installments.some(installment => isOverdue(installment, today))
+    return Number(secondIsOverdue) - Number(firstIsOverdue)
+  })
+}
+
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
