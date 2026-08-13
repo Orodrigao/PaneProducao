@@ -74,7 +74,7 @@ begin
   select count(*) as linhas,
          count(*) filter (where order_row.cancelled_at is not null) as canceladas,
          count(*) filter (where order_row.dispatched_at is not null) as enviadas,
-         min(order_row.customer_id) as customer_id,
+         (array_agg(order_row.customer_id order by order_row.id))[1] as customer_id,
          count(distinct order_row.customer_id) as clientes,
          max(order_row.dispatched_at)::date as data_envio,
          max(coalesce(order_row.delivery_date, order_row.order_date)) as data_entrega,
@@ -462,7 +462,7 @@ as $$
          pedido.amount
   from (
     select order_row.order_group_id,
-           min(order_row.customer_id) as customer_id,
+           (array_agg(order_row.customer_id order by order_row.id))[1] as customer_id,
            max(coalesce(order_row.delivery_date, order_row.order_date)) as delivery_date,
            max(order_row.dispatched_at) as dispatched_at,
            count(*)::int as items,
