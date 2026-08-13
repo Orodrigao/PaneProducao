@@ -104,12 +104,14 @@ select is(
   (select count(*)::integer from private.payable_due_report_runs), 1,
   'a primeira tentativa cria um único relatório diário'
 );
+select set_config('test.payable_due_report_id', (select id::text from private.payable_due_report_runs), true);
+select set_config('test.payable_due_report_attempt', (select attempt_token::text from private.payable_due_report_runs), true);
 set local role service_role;
 select lives_ok(
   $$ select public.mark_payable_due_report_sent(
     current_setting('test.payable_due_report_secret'),
-    (select id from private.payable_due_report_runs),
-    (select attempt_token from private.payable_due_report_runs),
+    current_setting('test.payable_due_report_id')::uuid,
+    current_setting('test.payable_due_report_attempt')::uuid,
     'resend-test-message'
   ) $$,
   'o serviço marca como enviado somente a tentativa que ele mesmo reservou'
