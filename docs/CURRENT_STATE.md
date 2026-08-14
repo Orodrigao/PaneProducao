@@ -180,7 +180,10 @@ tabelas.
   cobrança, cada um com data, valor, forma e conta, gerando seu próprio
   lançamento no livro), estorno por pedaço, cancelamento e correção de
   vencimento. A cobrança fica `parcial` enquanto faltar dinheiro, e quanto
-  entrou é sempre a soma dos pedaços ativos. Escrita somente pelas cinco funções
+  entrou é sempre a soma dos pedaços ativos. A fatura pode ser **dividida em
+  2x ou 3x** na hora do lançamento, ou depois pela ação de dividir — o prazo do
+  cliente é o teto e a última parcela cai nele. A cobrança que nasce de origem
+  automática nasce sempre inteira. Escrita somente pelas cinco funções
   protegidas; RLS ligada e forçada em `receivables` e `receivable_events`. A
   baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
   **com competência no mês do faturamento** — cliente que paga atrasado gera
