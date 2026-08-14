@@ -57,18 +57,23 @@ values
   ('teste-buck-sem-preco', '[TESTE] Pao Buck Sem Preco', '{0,1,2,3,4,5,6}', true, 'un', false, false)
 on conflict (id) do nothing;
 
+-- O nome da tabela e unico e o seed do Preview ja cria 'BUCK'. Reaproveita a
+-- existente quando houver, em vez de tentar criar uma segunda.
 insert into public.price_tiers (id, name, description, active)
 values ('96000000-0000-4000-8000-0000000000a1', 'BUCK', 'Tabela de teste da fase 4', true)
-on conflict (id) do nothing;
+on conflict (name) do nothing;
 
 -- Preço só para dois dos três produtos: o terceiro serve para provar a trava.
 insert into public.price_tier_items (
   id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
-) values
-  ('96000000-0000-4000-8000-0000000000a2', '96000000-0000-4000-8000-0000000000a1',
-   'teste-buck-pao', 'bread', '[TESTE] Pao Buck', 2.00, 'un', 1, true),
-  ('96000000-0000-4000-8000-0000000000a3', '96000000-0000-4000-8000-0000000000a1',
-   'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 40.00, 'kg', 1, true)
+)
+select preco.id, tabela.id, preco.product_id, preco.product_source, preco.product_name,
+       preco.unit_price, preco.pricing_unit, 1, true
+from (values
+  ('96000000-0000-4000-8000-0000000000a2'::uuid, 'teste-buck-pao', 'bread', '[TESTE] Pao Buck', 2.00, 'un'),
+  ('96000000-0000-4000-8000-0000000000a3'::uuid, 'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 40.00, 'kg')
+) as preco(id, product_id, product_source, product_name, unit_price, pricing_unit)
+cross join (select id from public.price_tiers where name = 'BUCK' limit 1) tabela
 on conflict (id) do nothing;
 
 -- No banco limpo do CI so as migrations rodam, entao a loja EX pode nao

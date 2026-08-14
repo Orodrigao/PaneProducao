@@ -194,7 +194,7 @@ select is(
   (select count(*)::int from public.customers
     where id::text like '60000000-0000-4000-8000-0000000000%'
       and payment_term_days is not null),
-  2,
+  3,
   'seed cria clientes com prazo de pagamento combinado'
 );
 
@@ -211,6 +211,10 @@ select is(
 select is(
   (select count(*)::int from public.customers
     where id::text like '60000000-0000-4000-8000-0000000000%'
+      -- A Buck e a unica excecao ao prefixo: a conta do romaneio encontra o
+      -- cliente pelo nome exato, entao o cenario precisa reproduzi-lo. Ela
+      -- entra sem documento e sem contato.
+      and name <> 'Buck'
       and (name not like '[TESTE]%' or contact not like '%@exemplo.invalid')),
   0,
   'seed nao inclui nome ou contato de cliente real'
@@ -277,7 +281,7 @@ select is(
 select is(
   (select count(*)::int from public.romaneios romaneio
      join public.destinations destino on destino.id = romaneio.destination_id
-    where destino.code = 'EX'
+    where upper(destino.code) = 'EX'
       and romaneio.id::text like '72000000-%'),
   2,
   'seed cria dois romaneios da EX para a conta da Buck'
