@@ -194,10 +194,22 @@ select throws_ok(
 
 -- As travas do documento impresso -------------------------------------------
 
+-- Os itens extras entram como dono da tabela: a RLS de romaneio_items recusa
+-- escrita direta de usuario logado, e e assim que deve ser.
+reset role;
+
 -- Produto sem preço na tabela BUCK.
 insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
 values ('96000000-0000-4000-8000-0000000000d4', '96000000-0000-4000-8000-0000000000b2',
         'teste-buck-sem-preco', 'bread', '[TESTE] Pao Buck Sem Preco', 5, null);
+
+-- Peso suspeito: 1450 no campo de kg e o erro que custou R$ 190 mil.
+insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
+values ('96000000-0000-4000-8000-0000000000d5', '96000000-0000-4000-8000-0000000000b2',
+        'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 1450, null);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
 select throws_ok(
   $$ select public.create_receivable_from_romaneio(
@@ -213,11 +225,6 @@ select ok((select 'missing_price' = any(problemas)
     from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Pao Buck Sem Preco'),
   'produto sem preco na tabela BUCK e marcado como problema');
-
--- Peso suspeito: 1450 no campo de kg e o erro que custou R$ 190 mil.
-insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
-values ('96000000-0000-4000-8000-0000000000d5', '96000000-0000-4000-8000-0000000000b2',
-        'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 1450, null);
 
 select ok((select 'suspicious_quantity' = any(problemas)
     from public.preview_receivable_from_romaneio(current_date - 7, current_date)
