@@ -71,6 +71,12 @@ insert into public.price_tier_items (
    'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 40.00, 'kg', 1, true)
 on conflict (id) do nothing;
 
+-- No banco limpo do CI so as migrations rodam, entao a loja EX pode nao
+-- existir. No Banco Preview ela ja vem do seed e o conflito nao faz nada.
+insert into public.destinations (id, name, code, type, requires_conferencia, active)
+values ('96000000-0000-4000-8000-0000000000e1', '[TESTE] Exposicao', 'EX', 'loja', true, true)
+on conflict (code) do nothing;
+
 -- Dois romaneios da EX no período: 10 + 15 unidades de pão (2,00) e 2,5 kg de
 -- ciabatta (40,00). Total esperado: 50,00 + 100,00 = 150,00.
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
