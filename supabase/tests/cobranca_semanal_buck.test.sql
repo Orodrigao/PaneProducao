@@ -117,11 +117,11 @@ select is((select sum(total) from public.preview_receivable_from_romaneio(curren
   'o banco soma 150,00: pao 25 x 2,00 mais ciabatta 2,5 kg x 40,00');
 
 select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
-    where produto = '[TESTE] Pao Buck'), 25,
+    where produto = '[TESTE] Pao Buck'), 25::numeric,
   'o mesmo produto de duas viagens vira uma linha somada');
 
 select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
-    where produto = '[TESTE] Pao Buck' and unidade = 'un'), 25,
+    where produto = '[TESTE] Pao Buck' and unidade = 'un'), 25::numeric,
   'a Buck paga o que recebeu: 10 enviados sem conferencia mais 15 aceitos de 20');
 
 select is((select unidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
