@@ -33,20 +33,34 @@ update public.customers
 set payment_terms = array[payment_term_days]
 where payment_terms is null and payment_term_days is not null;
 
+-- A regra vive numa funcao porque o Postgres nao aceita subconsulta dentro de
+-- uma trava de coluna, e conferir ordem e repeticao exige percorrer a lista.
+create or replace function private.plano_de_prazos_valido(p_prazos integer[])
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $fn$
+  select p_prazos is null
+    or (
+      array_length(p_prazos, 1) between 1 and 12
+      -- Nada repetido nem fora de ordem: duas parcelas no mesmo dia sao uma
+      -- parcela so, e a parcela 1 tem de ser a que vence antes.
+      and p_prazos = (select array_agg(distinct dia order by dia) from unnest(p_prazos) as dia)
+      -- Nenhum prazo negativo nem absurdo.
+      and (select bool_and(dia >= 0 and dia <= 180) from unnest(p_prazos) as dia)
+    );
+$fn$;
+
+revoke all on function private.plano_de_prazos_valido(integer[]) from public, anon, authenticated;
+grant execute on function private.plano_de_prazos_valido(integer[]) to authenticated;
+
 alter table public.customers
   drop constraint if exists customers_payment_terms_check;
 
 alter table public.customers
-  add constraint customers_payment_terms_check check (
-    payment_terms is null
-    or (
-      array_length(payment_terms, 1) between 1 and 12
-      -- Nenhum prazo negativo nem absurdo, e nada repetido ou fora de ordem:
-      -- duas parcelas no mesmo dia sao uma parcela so.
-      and payment_terms = (select array_agg(distinct dia order by dia) from unnest(payment_terms) as dia)
-      and (select bool_and(dia >= 0 and dia <= 180) from unnest(payment_terms) as dia)
-    )
-  );
+  add constraint customers_payment_terms_check
+  check (private.plano_de_prazos_valido(payment_terms));
 
 -- Mantem as duas colunas de acordo, nos DOIS sentidos. A migration entra
 -- enquanto a versao anterior do site ainda esta no ar, e essa versao grava
