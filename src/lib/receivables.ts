@@ -344,3 +344,26 @@ export function summarizePjOrdersToBill(orders: readonly PjOrderToBillRow[]): {
   }
   return { total, bloqueados, valorBloqueado }
 }
+
+/**
+ * Gera a conta do período da Buck a partir dos romaneios da EX.
+ *
+ * `totalNaTela` é conferência, não entrada: o banco soma de novo a partir dos
+ * itens e da tabela BUCK e recusa se os dois números discordarem. Foi a conta
+ * feita só no navegador que produziu o episódio dos R$ 190 mil.
+ */
+export async function createReceivableFromRomaneio(
+  periodStart: string,
+  periodEnd: string,
+  totalNaTela: number,
+  requestId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('create_receivable_from_romaneio', {
+    p_request_id: requestId,
+    p_de: periodStart,
+    p_ate: periodEnd,
+    p_total_conferencia: totalNaTela,
+  })
+  if (error) throw error
+  return data as string
+}

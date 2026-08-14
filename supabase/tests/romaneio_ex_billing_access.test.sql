@@ -75,6 +75,13 @@ values
   ('91000000-0000-4000-8000-000000000002', 'relatorios.acessar', '*', null),
   ('91000000-0000-4000-8000-000000000002', 'romaneio.visualizar', 'ja', null);
 
+-- O seed do Banco Preview passou a trazer a tabela BUCK (fase 4 do contas a
+-- receber) e o nome dela e unico. Este cenario monta a sua propria, entao
+-- remove a semeada antes. Tudo roda em transacao e volta atras no fim.
+delete from public.price_tier_items
+where tier_id in (select id from public.price_tiers where name = 'BUCK');
+delete from public.price_tiers where name = 'BUCK';
+
 insert into public.price_tiers (id, name, description, active)
 values
   ('91000000-0000-4000-8000-000000000010', 'BUCK', 'Tabela EX de teste', true),
