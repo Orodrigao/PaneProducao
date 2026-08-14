@@ -144,7 +144,7 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
                 type="button"
                 className={`ps-btn ${draft.parcelas === vezes ? 'primary' : 'ghost'} sm`}
                 disabled={!cabe}
-                title={cabe ? undefined : `O prazo de ${prazoBasico} dia(s) é curto demais para dividir em ${vezes}.`}
+                title={cabe ? undefined : 'Indisponível para este cliente — veja o motivo abaixo.'}
                 onClick={() => update({ parcelas: vezes })}
               >
                 {vezes === 1 ? 'À vista' : `${vezes}x`}
@@ -152,9 +152,18 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
             )
           })}
         </div>
+        {/* O motivo de nao poder dividir precisa estar na tela: tooltip nao
+            existe no celular, e botao cinza sem explicacao parece defeito. */}
         <small className="ps-hint">
-          Dividir é decisão desta fatura, não do cadastro. O prazo do cliente é o
-          último vencimento; as parcelas se distribuem até ele.
+          {!selectedCustomer
+            ? 'Escolha o cliente primeiro — é o prazo dele que define os vencimentos.'
+            : prazoBasico === null
+              ? 'Este cliente não tem prazo cadastrado, então não há como dividir.'
+              : prazoBasico === 0
+                ? 'Este cliente paga à vista, então não há prazo para distribuir parcelas.'
+                : prazoBasico < 3
+                  ? `O prazo de ${prazoBasico} dia(s) deste cliente só permite dividir em ${prazoBasico}x.`
+                  : 'Dividir é decisão desta fatura, não do cadastro. O prazo do cliente é o último vencimento; as parcelas se distribuem até ele.'}
         </small>
       </div>
 

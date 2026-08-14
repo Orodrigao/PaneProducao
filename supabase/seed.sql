@@ -143,6 +143,12 @@ values
   ('60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ', '00.000.000/0002-72',
    'contato-teste2@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 10, 24,
    0, true, 'Cliente ficticio com desconto base de 10% e pagamento a vista.'),
+  -- Prazo de 21 dias para o cenario de dividir a fatura: 3x vence em 7, 14 e 21.
+  -- Sem ele, todo cliente do Preview ou paga a vista ou tem prazo que nao
+  -- ilustra a divisao.
+  ('60000000-0000-4000-8000-000000000004', '[TESTE] Restaurante Parcela', '00.000.000/0004-34',
+   'contato-teste4@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   21, true, 'Cliente ficticio de prazo 21 dias, para testar a fatura dividida em 2x e 3x.'),
   ('60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo', '00.000.000/0003-53',
    'contato-teste3@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
    null, true, 'Cliente ficticio sem prazo combinado, para validar o aviso na tela.')
