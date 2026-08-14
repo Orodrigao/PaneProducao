@@ -109,6 +109,7 @@ select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001
 select throws_ok(
   $$ select * from private.calcular_cobranca_buck(current_date - 7, current_date) $$,
   '42501',
+  'permission denied for function calcular_cobranca_buck',
   'usuario logado nao alcanca a funcao interna que soma a conta'
 );
 
