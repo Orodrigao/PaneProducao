@@ -10,7 +10,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(19);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -99,22 +99,31 @@ values
    'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 2.5, null);
 
 -- A conta somada no banco ---------------------------------------------------
+-- Pela porta publica, que e a mesma que a tela usa: a funcao interna e fechada
+-- ate para o usuario logado, e este teste confirma isso ao nao conseguir
+-- chama-la.
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
-select is((select sum(total) from private.calcular_cobranca_buck(current_date - 7, current_date)), 150.00,
+select throws_ok(
+  $$ select * from private.calcular_cobranca_buck(current_date - 7, current_date) $$,
+  '42501',
+  'usuario logado nao alcanca a funcao interna que soma a conta'
+);
+
+select is((select sum(total) from public.preview_receivable_from_romaneio(current_date - 7, current_date)), 150.00,
   'o banco soma 150,00: pao 25 x 2,00 mais ciabatta 2,5 kg x 40,00');
 
-select is((select quantidade from private.calcular_cobranca_buck(current_date - 7, current_date)
+select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Pao Buck'), 25,
   'o mesmo produto de duas viagens vira uma linha somada');
 
-select is((select quantidade from private.calcular_cobranca_buck(current_date - 7, current_date)
+select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Pao Buck' and unidade = 'un'), 25,
   'a Buck paga o que recebeu: 10 enviados sem conferencia mais 15 aceitos de 20');
 
-select is((select unidade from private.calcular_cobranca_buck(current_date - 7, current_date)
+select is((select unidade from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Ciabatta Buck'), 'kg',
   'ciabatta e cobrada por quilo mesmo sem sufixo no nome');
 
@@ -198,7 +207,7 @@ select throws_ok(
 );
 
 select ok((select 'missing_price' = any(problemas)
-    from private.calcular_cobranca_buck(current_date - 7, current_date)
+    from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Pao Buck Sem Preco'),
   'produto sem preco na tabela BUCK e marcado como problema');
 
@@ -208,7 +217,7 @@ values ('96000000-0000-4000-8000-0000000000d5', '96000000-0000-4000-8000-0000000
         'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 1450, null);
 
 select ok((select 'suspicious_quantity' = any(problemas)
-    from private.calcular_cobranca_buck(current_date - 7, current_date)
+    from public.preview_receivable_from_romaneio(current_date - 7, current_date)
     where produto = '[TESTE] Ciabatta Buck'),
   'peso acima de 10 kg num romaneio e marcado como suspeito');
 
