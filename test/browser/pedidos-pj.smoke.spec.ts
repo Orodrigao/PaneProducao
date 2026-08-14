@@ -66,5 +66,6 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   await page.goto('/relatorios/pj')
   await expect(page.getByRole('heading', { name: /Vendas PJ/ })).toBeVisible()
   await expect(page.getByText('Vendas totais')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await expect(page.getByText(/168,00/)).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  // O total aparece no cartao, no resumo e na tabela: basta encontra-lo uma vez.
+  await expect(page.getByText(/168,00/).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })
