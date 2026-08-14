@@ -114,6 +114,26 @@ Não reabrir sem evidência nova.
       resultado; pagar e receber são as duas telas do dia a dia da Elis, com
       permissões separadas.
 
+11. **Dois caminhos para a mesma cobrança (Rodrigo, 2026-08-13).** A decisão 8
+    dizia que a cobrança nasce do envio confirmado pela Expedição. A medição em
+    produção antes de implementar a fase 3 mostrou que isso não se sustenta:
+    **116 pedidos PJ desde junho de 2026, 1 com envio confirmado** — 27 em
+    junho (nenhum), 44 em julho (um) e 45 em agosto até o dia 13 (nenhum),
+    somando R$ 47 mil. Construir só o caminho automático faria a cobrança
+    deixar de nascer para quase todos os pedidos.
+    - a cobrança continua nascendo **por dentro** da ação que confirma o
+      envio, sem nenhuma permissão financeira para a Expedição;
+    - **e** o financeiro passa a ter a lista de *entregues e ainda não
+      cobrados*, marcando vários e gerando de uma vez;
+    - os dois caminhos chamam a mesma função no banco, então valor,
+      vencimento e travas não podem divergir;
+    - **cliente sem prazo cadastrado não trava o envio.** A confirmação
+      acontece, a cobrança não nasce, e o pedido fica na lista até alguém
+      cadastrar o prazo. Travar a operação por causa de um campo do financeiro
+      é acoplamento que quebra a padaria.
+    Se o hábito da Expedição melhorar, o caminho automático assume sozinho e a
+    lista esvazia — sem mudar nada no código.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
@@ -428,6 +448,15 @@ a ponte com o livro — lançamento gerado lá se corrige por estorno, nunca por
 apagamento.
 
 ## Fase 3 — Pedido PJ entregue vira cobrança
+
+**Concluída em 2026-08-14 (PR #233),** testada por Rodrigo no preview, com a
+decisão 11 substituindo o gatilho único da decisão 8. O teste dele expôs dois
+defeitos que os automáticos não pegavam: o cenário do Preview semeado com
+"hoje", que vencia à meia-noite, e — a partir de uma pergunta dele sobre
+horário — o uso da data do servidor (UTC) em vez da data da padaria, que
+jogaria a receita de um envio noturno do dia 31 para o mês seguinte. Ver
+`lessons.md`.
+
 
 **Objetivo:** acabar com a digitação repetida do que já está no sistema.
 

@@ -287,3 +287,60 @@ export async function correctReceivableDueDate(
   })
   if (error) throw error
 }
+
+export interface PjOrderToBillRow {
+  order_group_id: string
+  customer_id: string
+  customer_name: string
+  payment_term_days: number | null
+  delivery_date: string
+  dispatched_at: string | null
+  items: number
+  amount: number
+}
+
+/**
+ * Pedidos PJ entregues e ainda não cobrados. Enquanto a Expedição não tiver o
+ * hábito de confirmar o envio, esta lista é o caminho principal da cobrança —
+ * e não a rede de proteção que o plano previa (decisão 11).
+ */
+export async function loadPjOrdersToBill(): Promise<PjOrderToBillRow[]> {
+  const { data, error } = await supabase.rpc('list_pj_orders_to_bill')
+  if (error) throw error
+  return (data ?? []) as PjOrderToBillRow[]
+}
+
+export async function createReceivableFromPjOrder(
+  orderGroupId: string,
+  requestId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('create_receivable_from_pj_order', {
+    p_request_id: requestId,
+    p_order_group_id: orderGroupId,
+  })
+  if (error) throw error
+  return data as string
+}
+
+/** Pedido cujo cliente ainda não tem prazo combinado não pode ser cobrado. */
+export function pjOrderCanBeBilled(order: Pick<PjOrderToBillRow, 'payment_term_days'>): boolean {
+  return order.payment_term_days !== null
+}
+
+export function summarizePjOrdersToBill(orders: readonly PjOrderToBillRow[]): {
+  total: number
+  bloqueados: number
+  valorBloqueado: number
+} {
+  let total = 0
+  let bloqueados = 0
+  let valorBloqueado = 0
+  for (const order of orders) {
+    total += order.amount
+    if (!pjOrderCanBeBilled(order)) {
+      bloqueados += 1
+      valorBloqueado += order.amount
+    }
+  }
+  return { total, bloqueados, valorBloqueado }
+}

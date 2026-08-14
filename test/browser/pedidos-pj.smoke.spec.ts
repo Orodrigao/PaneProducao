@@ -58,10 +58,14 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   await expect(page.getByText('ENVIADO', { exact: true })).toBeVisible()
   await expect(page.getByText('[TESTE] Brioche PJ').first()).toBeVisible()
 
-  // Relatorio de Vendas PJ: o padrao de 30 dias cobre o cenario de hoje.
-  // 403,20 + 400,50 (em aberto) + 67,20 (enviado) = 870,90; o cancelado fica fora.
+  // Relatorio de Vendas PJ: o preset padrao vai de 29 dias atras ate hoje e
+  // soma pela data de entrega. Os dois pedidos em aberto entregam AMANHA — de
+  // proposito, para nao sairem da fila da Expedicao quando o dia virar — e por
+  // isso ficam fora desta janela. Sobram o enviado (67,20) e o entregue de
+  // cliente sem prazo (100,80) = 168,00; o cancelado nunca entra.
   await page.goto('/relatorios/pj')
   await expect(page.getByRole('heading', { name: /Vendas PJ/ })).toBeVisible()
   await expect(page.getByText('Vendas totais')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await expect(page.getByText(/870,90/)).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  // O total aparece no cartao, no resumo e na tabela: basta encontra-lo uma vez.
+  await expect(page.getByText(/168,00/).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })

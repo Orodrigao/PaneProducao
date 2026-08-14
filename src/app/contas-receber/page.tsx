@@ -5,16 +5,19 @@ import { HandCoins, Plus, RefreshCw } from 'lucide-react'
 import ReceivableForm from '@/components/ReceivableForm'
 import ReceivableList from '@/components/ReceivableList'
 import ReceivablePaymentDialog from '@/components/ReceivablePaymentDialog'
+import PjOrdersToBillPanel from '@/components/PjOrdersToBillPanel'
 import { loadFinanceAccounts, type FinanceAccountRow } from '@/lib/finance'
 import {
   cancelReceivable,
   correctReceivableDueDate,
   formatReceivableMoney,
   loadReceivableCustomers,
+  loadPjOrdersToBill,
   loadReceivables,
   reverseReceivablePayment,
   sortReceivables,
   summarizeReceivables,
+  type PjOrderToBillRow,
   type ReceivableCustomerOption,
   type ReceivableRow,
 } from '@/lib/receivables'
@@ -24,6 +27,7 @@ export default function ContasReceberPage() {
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
   const [customers, setCustomers] = useState<ReceivableCustomerOption[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
+  const [pjOrdersToBill, setPjOrdersToBill] = useState<PjOrderToBillRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -34,14 +38,16 @@ export default function ContasReceberPage() {
     setLoading(true)
     setError(null)
     try {
-      const [rows, customerRows, accountRows] = await Promise.all([
+      const [rows, customerRows, accountRows, pjRows] = await Promise.all([
         loadReceivables(),
         loadReceivableCustomers(),
         loadFinanceAccounts(),
+        loadPjOrdersToBill(),
       ])
       setReceivables(rows)
       setCustomers(customerRows)
       setAccounts(accountRows)
+      setPjOrdersToBill(pjRows)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as cobranças. Confira sua permissão e tente novamente.')
@@ -136,6 +142,8 @@ export default function ContasReceberPage() {
               <b style={{ display: 'block', marginTop: 4 }}>{formatReceivableMoney(totals.recebidoNoPeriodo)}</b>
             </div>
           </div>
+
+          <PjOrdersToBillPanel orders={pjOrdersToBill} onBilled={load} />
 
           {showForm ? (
             <ReceivableForm
