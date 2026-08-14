@@ -1115,7 +1115,11 @@ insert into public.price_tier_items (
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 1.20, 'un', 1, true),
   -- Por quilo, porque o nome tem ciabatta: 3,5 kg x 38,00 = 133,00.
   ('51000000-0000-4000-8000-000000000012', '50000000-0000-4000-8000-000000000002',
-   'teste-ciabatta-buck', 'bread', '[TESTE] Ciabatta Buck', 38.00, 'kg', 1, true)
+   'teste-ciabatta-buck', 'bread', '[TESTE] Ciabatta Buck', 38.00, 'kg', 1, true),
+  -- A Baguete tambem viaja para a EX nos romaneios de outros cenarios. Sem
+  -- preco aqui, ela bloquearia a geracao e o caminho feliz nunca apareceria.
+  ('51000000-0000-4000-8000-000000000013', '50000000-0000-4000-8000-000000000002',
+   'teste-baguete', 'bread', '[TESTE] Baguete', 2.50, 'un', 1, true)
 on conflict (id) do update set
   tier_id = excluded.tier_id,
   product_id = excluded.product_id,
