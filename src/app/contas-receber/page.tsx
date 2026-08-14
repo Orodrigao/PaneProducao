@@ -14,11 +14,12 @@ import {
   loadReceivableCustomers,
   loadPjOrdersToBill,
   loadReceivables,
-  reverseReceivablePayment,
+  reverseReceivableReceipt,
   sortReceivables,
   summarizeReceivables,
   type PjOrderToBillRow,
   type ReceivableCustomerOption,
+  type ReceivableReceiptRow,
   type ReceivableRow,
 } from '@/lib/receivables'
 import { showToast } from '@/lib/utils'
@@ -61,12 +62,13 @@ export default function ContasReceberPage() {
   const totals = useMemo(() => summarizeReceivables(receivables), [receivables])
   const ordered = useMemo(() => sortReceivables(receivables), [receivables])
 
-  async function handleReverse(receivable: ReceivableRow) {
+  // O estorno e de um pedaco: os demais recebimentos da cobranca continuam.
+  async function handleReverseReceipt(receipt: ReceivableReceiptRow) {
     const reason = window.prompt('Por que este recebimento será estornado?')?.trim()
     if (!reason) return
-    setBusyId(receivable.id)
+    setBusyId(receipt.receivable_id)
     try {
-      await reverseReceivablePayment(receivable.id, reason, crypto.randomUUID())
+      await reverseReceivableReceipt(receipt.id, reason, crypto.randomUUID())
       showToast('Recebimento estornado e retirado do livro.')
       await load()
     } catch (actionError) {
@@ -179,7 +181,7 @@ export default function ContasReceberPage() {
               receivables={ordered}
               busyId={busyId}
               onPay={receivable => setPaymentTarget(receivable)}
-              onReverse={receivable => void handleReverse(receivable)}
+              onReverseReceipt={receipt => void handleReverseReceipt(receipt)}
               onCancel={receivable => void handleCancel(receivable)}
               onCorrectDueDate={receivable => void handleCorrectDueDate(receivable)}
             />
