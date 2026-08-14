@@ -1081,3 +1081,75 @@ where cobranca.id in (
   '90000000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002'
 );
+
+-- Cenario da Buck (EX) para a fase 4 do Contas a receber.
+--
+-- Sem cliente, tabela de preco e romaneios da EX, a tela de Romaneios abre
+-- vazia e nao ha o que cobrar. As datas ficam afastadas do dia da
+-- reconstrucao pelo mesmo motivo do cenario PJ (licao
+-- seed-com-hoje-vence-a-meia-noite).
+insert into public.customers (id, name, doc, payment_term_days, active, notes)
+values ('60000000-0000-4000-8000-000000000009', 'Buck', null, 15, true,
+        'Cliente ficticio da EX para validar a conta semanal.')
+on conflict (id) do update set
+  name = excluded.name,
+  payment_term_days = excluded.payment_term_days,
+  active = excluded.active,
+  notes = excluded.notes;
+
+insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
+values ('teste-ciabatta-buck', '[TESTE] Ciabatta Buck', '{0,1,2,3,4,5,6}', true, 'kg', false, false)
+on conflict (id) do update set name = excluded.name, active = excluded.active, unit = excluded.unit;
+
+insert into public.price_tiers (id, name, description, active)
+values ('50000000-0000-4000-8000-000000000002', 'BUCK',
+        'Precos ficticios da EX para validar a conta semanal da Buck.', true)
+on conflict (id) do update set
+  name = excluded.name, description = excluded.description, active = excluded.active;
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values
+  -- Por unidade: 150 un x 1,20 = 180,00.
+  ('51000000-0000-4000-8000-000000000011', '50000000-0000-4000-8000-000000000002',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 1.20, 'un', 1, true),
+  -- Por quilo, porque o nome tem ciabatta: 3,5 kg x 38,00 = 133,00.
+  ('51000000-0000-4000-8000-000000000012', '50000000-0000-4000-8000-000000000002',
+   'teste-ciabatta-buck', 'bread', '[TESTE] Ciabatta Buck', 38.00, 'kg', 1, true)
+on conflict (id) do update set
+  tier_id = excluded.tier_id,
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit_price = excluded.unit_price,
+  pricing_unit = excluded.pricing_unit,
+  active = excluded.active;
+
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select '72000000-0000-4000-8000-000000000001', d.id,
+       (now() at time zone 'America/Sao_Paulo')::date - 5, 1, 'enviado', 'Expedicao JC Teste'
+from public.destinations d where d.code = 'EX'
+on conflict (id) do update set
+  record_date = excluded.record_date, status = excluded.status;
+
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select '72000000-0000-4000-8000-000000000002', d.id,
+       (now() at time zone 'America/Sao_Paulo')::date - 3, 1, 'enviado', 'Expedicao JC Teste'
+from public.destinations d where d.code = 'EX'
+on conflict (id) do update set
+  record_date = excluded.record_date, status = excluded.status;
+
+-- Total do cenario: 180,00 + 133,00 = 313,00.
+insert into public.romaneio_items (
+  id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted
+) values
+  ('73000000-0000-4000-8000-000000000001', '72000000-0000-4000-8000-000000000001',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 100, null),
+  ('73000000-0000-4000-8000-000000000002', '72000000-0000-4000-8000-000000000002',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 60, 50),
+  ('73000000-0000-4000-8000-000000000003', '72000000-0000-4000-8000-000000000001',
+   'teste-ciabatta-buck', 'bread', '[TESTE] Ciabatta Buck', 3.5, null)
+on conflict (id) do update set
+  qty_sent = excluded.qty_sent,
+  qty_accepted = excluded.qty_accepted,
+  product_name = excluded.product_name;
