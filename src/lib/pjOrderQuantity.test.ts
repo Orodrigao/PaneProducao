@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOrderLinePacksInput, orderLinePacksFromStoredQuantity } from './pjOrderQuantity'
+import { normalizeOrderLinePacksInput, orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from './pjOrderQuantity'
 
 describe('quantidades de Pedido PJ', () => {
   it('aceita 800 g como 0,800 kg no lançamento', () => {
@@ -8,6 +8,12 @@ describe('quantidades de Pedido PJ', () => {
 
   it('preserva 800 g ao reabrir um pedido para edição', () => {
     expect(orderLinePacksFromStoredQuantity(0.8, 1, 'kg')).toBe(0.8)
+  })
+
+  it('mantém a digitação parcial do peso até existir um número válido', () => {
+    expect(parseOrderLinePacksInput('0,', 'kg')).toBeNull()
+    expect(parseOrderLinePacksInput('0.', 'kg')).toBeNull()
+    expect(parseOrderLinePacksInput('0,800', 'kg')).toBe(0.8)
   })
 
   it('continua arredondando quantidade por unidade', () => {

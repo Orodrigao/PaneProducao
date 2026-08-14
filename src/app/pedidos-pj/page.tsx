@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
-import { normalizeOrderLinePacksInput, orderLinePacksFromStoredQuantity, orderLineQuantityStep } from '@/lib/pjOrderQuantity'
+import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
 import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
@@ -148,6 +148,7 @@ export default function PedidosPJPage() {
   const [production, setProduction] = useState<string>('')
   const [obs, setObs] = useState('')
   const [lines, setLines] = useState<OrderLine[]>([])
+  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -292,7 +293,26 @@ export default function PedidosPJPage() {
   const updateLine = (key:string, patch:Partial<OrderLine>) => {
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
   }
-  const removeLine = (key:string) => setLines(prev => prev.filter(l => l.key !== key))
+  const updateQuantityInput = (line: OrderLine, rawValue: string) => {
+    setQuantityInputs(prev => ({ ...prev, [line.key]: rawValue }))
+    const quantity = parseOrderLinePacksInput(rawValue, line.pricing_unit)
+    if (quantity !== null) updateLine(line.key, { packs: quantity })
+  }
+  const resetInvalidQuantityInput = (line: OrderLine) => {
+    if (quantityInputs[line.key] !== undefined && parseOrderLinePacksInput(quantityInputs[line.key], line.pricing_unit) === null) {
+      setQuantityInputs(prev => {
+        const { [line.key]: _removed, ...rest } = prev
+        return rest
+      })
+    }
+  }
+  const removeLine = (key:string) => {
+    setLines(prev => prev.filter(l => l.key !== key))
+    setQuantityInputs(prev => {
+      const { [key]: _removed, ...rest } = prev
+      return rest
+    })
+  }
 
   const totalValue = useMemo(() => lines.reduce((sum,l) => sum + (l.unit_price * l.pack_size * l.packs), 0), [lines])
 
@@ -302,6 +322,7 @@ export default function PedidosPJPage() {
     if (!delivery) { showToast('Data de entrega obrigatória'); return }
     if (isSunday(delivery)) { showToast('Entrega não pode ser em domingo'); return }
     if (lines.length === 0) { showToast('Adicione ao menos 1 produto'); return }
+    if (lines.some(line => quantityInputs[line.key] !== undefined && parseOrderLinePacksInput(quantityInputs[line.key], line.pricing_unit) === null)) { showToast('Digite uma quantidade válida'); return }
     if (lines.some(l => l.packs <= 0)) { showToast('Quantidade inválida'); return }
 
     setSaving(true)
@@ -331,7 +352,7 @@ export default function PedidosPJPage() {
     if (editing) await supabase.from('orders').delete().in('id', editing.ids)
     setSaving(false)
     showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
-    setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setSearch(''); setEditing(null)
+    setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setQuantityInputs({}); setSearch(''); setEditing(null)
     setListStage('open'); setListSearch('')
     setTab('lista')
     loadAll()
@@ -358,6 +379,7 @@ export default function PedidosPJPage() {
         packs: orderLinePacksFromStoredQuantity(qty, pack, r.pricing_unit === 'kg' ? 'kg' : 'un'),
       }
     }))
+    setQuantityInputs({})
     setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date, order_group_id: g.order_group_id })
     setSearch('')
     setViewing(null)
@@ -704,9 +726,9 @@ export default function PedidosPJPage() {
                               </label>
                               <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
                                 Qtd:
-                                <input type="number" min={orderLineQuantityStep(l.pricing_unit)} step={orderLineQuantityStep(l.pricing_unit)} value={l.packs}
-                                  onChange={e=>updateLine(l.key, { packs: normalizeOrderLinePacksInput(e.target.value, l.pricing_unit) })}
-                                  className="ps-input" style={{width:60, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
+                                <input type="text" inputMode="decimal" value={quantityInputs[l.key] ?? String(l.packs)}
+                                  onChange={e=>updateQuantityInput(l, e.target.value)} onBlur={()=>resetInvalidQuantityInput(l)}
+                                  aria-label={`Quantidade de ${l.product_name}`} className="ps-input" style={{width:92, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
                                 pacotes
                               </label>
                               <span style={{fontSize:13, color:'var(--ps-ink)', fontWeight:700}}>
