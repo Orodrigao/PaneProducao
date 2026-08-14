@@ -130,9 +130,10 @@ select lives_ok(
   'lancar 100,00 num plano de tres'
 );
 
+-- Somar pelo request_id pegaria so a primeira parcela: as demais nascem com
+-- identificador proprio. As tres se reconhecem pela descricao.
 select is((select sum(amount) from public.receivables
-    where request_id = '98000000-0000-4000-8000-00000000a002'::uuid
-       or origin_ref = (select id from public.receivables where request_id = '98000000-0000-4000-8000-00000000a002'::uuid)), 100.00,
+    where description like '%Valor que nao divide exato%'), 100.00,
   'nenhum centavo se perde no arredondamento');
 
 select is((select amount from public.receivables
