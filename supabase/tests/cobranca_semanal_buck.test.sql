@@ -183,7 +183,9 @@ select is(
 select throws_ok(
   $$ select public.create_receivable_from_romaneio(
        '96000000-0000-4000-8000-00000000f003'::uuid,
-       current_date - 4, current_date - 1, 150.00
+       -- Sem total de conferencia: e a trava de sobreposicao que precisa
+       -- responder aqui, nao a comparacao de totais.
+       current_date - 4, current_date - 1, null
      ) $$,
   '22023',
   'Este período encosta em outro já cobrado. Confira as cobranças da Buck antes de gerar.',
