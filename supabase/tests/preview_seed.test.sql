@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(30);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -303,6 +303,20 @@ select is(
   (select payment_term_days from public.customers where lower(trim(name)) = 'buck'),
   15,
   'a Buck tem prazo cadastrado, sem o qual nao ha cobranca'
+);
+
+-- Sem estas duas a tela de Relatorios > Romaneios abre vazia para o
+-- financeiro: a RLS de destinations e romaneios exige permissao de romaneio
+-- com escopo da loja.
+select ok(
+  exists(
+    select 1 from public.app_user_permissions assignment
+    join auth.users conta on conta.id = assignment.user_id
+    where lower(conta.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+      and assignment.permission_key = 'romaneio.visualizar'
+      and assignment.scope = '*'
+  ),
+  'financeiro ficticio enxerga romaneios, como a Elis em producao'
 );
 
 select * from finish();

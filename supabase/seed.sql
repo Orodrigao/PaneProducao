@@ -418,7 +418,13 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.baixar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.estornar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.cancelar', 'jc'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.corrigir_vencimento', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.corrigir_vencimento', 'jc'),
+    -- Sem estas duas o financeiro nao enxerga a loja EX nem os romaneios dela,
+    -- e a tela de Relatorios > Romaneios abre vazia: a RLS de destinations e
+    -- romaneios exige permissao de romaneio com escopo da loja. Em producao a
+    -- Elis ja tem as duas com escopo global.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.acessar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.visualizar', '*')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
