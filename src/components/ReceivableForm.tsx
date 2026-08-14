@@ -6,7 +6,9 @@ import {
   createManualReceivable,
   emptyReceivableDraft,
   getReceivableErrorMessage,
+  podeDividirEm,
   validateReceivableDraft,
+  vencimentosDaFatura,
   type ReceivableCustomerOption,
   type ReceivableDraft,
 } from '@/lib/receivables'
@@ -18,18 +20,7 @@ interface ReceivableFormProps {
   onSaved: () => Promise<void> | void
 }
 
-/**
- * Os vencimentos não são digitados: saem do plano combinado com o cliente.
- * Plano de três prazos gera três cobranças, uma por vencimento.
- */
-function previewDueDates(invoiceDate: string, terms: number[] | null): string[] {
-  if (!invoiceDate || !terms || terms.length === 0) return []
-  return terms.map(dias => {
-    const base = new Date(`${invoiceDate}T00:00:00Z`)
-    base.setUTCDate(base.getUTCDate() + dias)
-    return base.toISOString().slice(0, 10)
-  })
-}
+
 
 function formatDate(dateKey: string): string {
   const [year, month, day] = dateKey.split('-')
@@ -54,9 +45,9 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
     [customers, draft.customerId],
   )
 
-  const dueDates = previewDueDates(draft.invoiceDate, selectedCustomer?.paymentTerms ?? null)
-  const semPrazo = selectedCustomer !== null
-    && (selectedCustomer.paymentTerms === null || selectedCustomer.paymentTerms.length === 0)
+  const prazoBasico = selectedCustomer?.paymentTermDays ?? null
+  const dueDates = vencimentosDaFatura(draft.invoiceDate, prazoBasico, draft.parcelas)
+  const semPrazo = selectedCustomer !== null && prazoBasico === null
 
   async function save() {
     const validationError = validateReceivableDraft(draft, todayKey())
@@ -140,6 +131,31 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
           value={draft.amount}
           onChange={event => update({ amount: event.target.value })}
         />
+      </div>
+
+      <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
+        <div className="ps-fieldlabel">Em quantas vezes</div>
+        <div className="ps-fieldrow">
+          {[1, 2, 3].map(vezes => {
+            const cabe = podeDividirEm(prazoBasico, vezes)
+            return (
+              <button
+                key={vezes}
+                type="button"
+                className={`ps-btn ${draft.parcelas === vezes ? 'primary' : 'ghost'} sm`}
+                disabled={!cabe}
+                title={cabe ? undefined : `O prazo de ${prazoBasico} dia(s) é curto demais para dividir em ${vezes}.`}
+                onClick={() => update({ parcelas: vezes })}
+              >
+                {vezes === 1 ? 'À vista' : `${vezes}x`}
+              </button>
+            )
+          })}
+        </div>
+        <small className="ps-hint">
+          Dividir é decisão desta fatura, não do cadastro. O prazo do cliente é o
+          último vencimento; as parcelas se distribuem até ele.
+        </small>
       </div>
 
       <div className="ps-fieldgroup" style={{ marginTop: 12 }}>

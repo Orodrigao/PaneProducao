@@ -15,6 +15,7 @@ import {
   loadPjOrdersToBill,
   loadReceivables,
   reverseReceivableReceipt,
+  splitReceivable,
   sortReceivables,
   summarizeReceivables,
   type PjOrderToBillRow,
@@ -90,6 +91,27 @@ export default function ContasReceberPage() {
     } catch (actionError) {
       console.error(actionError)
       showToast(actionError instanceof Error ? actionError.message : 'Não foi possível cancelar a cobrança.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleSplit(receivable: ReceivableRow) {
+    const resposta = window.prompt('Dividir esta cobrança em quantas vezes? (2 ou 3)', '2')?.trim()
+    if (!resposta) return
+    const parcelas = Number(resposta)
+    if (!Number.isInteger(parcelas) || parcelas < 2) {
+      showToast('Informe 2 ou mais parcelas.')
+      return
+    }
+    setBusyId(receivable.id)
+    try {
+      await splitReceivable(receivable.id, parcelas, crypto.randomUUID())
+      showToast(`Cobrança dividida em ${parcelas} parcelas.`)
+      await load()
+    } catch (actionError) {
+      console.error(actionError)
+      showToast(actionError instanceof Error ? actionError.message : 'Não foi possível dividir a cobrança.')
     } finally {
       setBusyId(null)
     }
@@ -184,6 +206,7 @@ export default function ContasReceberPage() {
               onReverseReceipt={receipt => void handleReverseReceipt(receipt)}
               onCancel={receivable => void handleCancel(receivable)}
               onCorrectDueDate={receivable => void handleCorrectDueDate(receivable)}
+              onSplit={receivable => void handleSplit(receivable)}
             />
           )}
         </div>

@@ -1,107 +1,24 @@
--- Contas a receber: o cliente passa a ter um PLANO de prazos, e cada prazo
--- vira uma cobranca propria.
+-- Contas a receber: dividir a fatura em 2x ou 3x, por decisao da cobranca.
 --
--- Motivo operacional (Rodrigo, 2026-08-14): ha clientes que pagam a fatura em
--- tres vezes — 7, 14 e 21 dias. O cadastro guardava um prazo so, entao a Elis
--- nao tinha como registrar o acordo real.
+-- Motivo operacional (Rodrigo, 2026-08-14): ha clientes que dividem a fatura
+-- quando ela sai alta e pagam de uma vez quando sai pequena. Parcelar nao e
+-- caracteristica do cliente, e decisao daquela fatura — foi o proprio Rodrigo
+-- quem corrigiu o desenho anterior, que prendia o parcelamento ao cadastro.
 --
--- Decisoes: cada parcela e uma cobranca separada, porque e assim que se cobra
--- (liga-se por causa da parcela vencida, nao da fatura inteira); e o valor
--- divide em partes iguais, com os centavos que sobram na primeira.
+-- Decisoes:
+--   * o cliente mantem UM prazo basico, como sempre teve;
+--   * o prazo basico e o TETO: dividir em N distribui os vencimentos ate ele.
+--     Cliente de 21 dias em 3 vezes vence em 7, 14 e 21; de 28 em 2 vezes,
+--     em 14 e 28;
+--   * cada parcela e uma cobranca propria, porque e assim que se cobra;
+--   * o valor divide em partes iguais, com os centavos que sobram na primeira;
+--   * a cobranca que nasce sozinha (envio confirmado pela Expedicao, romaneio
+--     da Buck) nasce INTEIRA: nao ha ninguem na tela para decidir. Para essas,
+--     existe a acao de dividir depois.
 --
--- Producao segue com zero cobrancas, entao nada a migrar do lado do dinheiro.
--- O cadastro tem 34 clientes ativos, 30 com prazo unico — todos viram um plano
--- de uma parcela so, sem mudanca de comportamento.
---
--- `payment_term_days` continua existindo e sincronizada por gatilho: a
--- migration entra enquanto a versao antiga do site ainda esta no ar e le essa
--- coluna. Remove-la e tarefa de um PR seguinte (mudanca destrutiva em duas
--- fases, regra do AGENTS.md).
+-- Producao segue com zero cobrancas: nada a migrar.
 
 begin;
-
--- ---------------------------------------------------------------------------
--- O plano de prazos do cliente.
--- ---------------------------------------------------------------------------
-alter table public.customers
-  add column if not exists payment_terms integer[];
-
-comment on column public.customers.payment_terms is
-  'Plano de prazos em dias corridos, contados da entrega. {0} = a vista; {7,14,21} = tres parcelas. NULL = ainda nao combinado.';
-
-update public.customers
-set payment_terms = array[payment_term_days]
-where payment_terms is null and payment_term_days is not null;
-
--- A regra vive numa funcao porque o Postgres nao aceita subconsulta dentro de
--- uma trava de coluna, e conferir ordem e repeticao exige percorrer a lista.
-create or replace function private.plano_de_prazos_valido(p_prazos integer[])
-returns boolean
-language sql
-immutable
-set search_path = ''
-as $fn$
-  select p_prazos is null
-    or (
-      array_length(p_prazos, 1) between 1 and 12
-      -- Nada repetido nem fora de ordem: duas parcelas no mesmo dia sao uma
-      -- parcela so, e a parcela 1 tem de ser a que vence antes.
-      and p_prazos = (select array_agg(distinct dia order by dia) from unnest(p_prazos) as dia)
-      -- Nenhum prazo negativo nem absurdo.
-      and (select bool_and(dia >= 0 and dia <= 180) from unnest(p_prazos) as dia)
-    );
-$fn$;
-
-revoke all on function private.plano_de_prazos_valido(integer[]) from public, anon, authenticated;
-grant execute on function private.plano_de_prazos_valido(integer[]) to authenticated;
-
-alter table public.customers
-  drop constraint if exists customers_payment_terms_check;
-
-alter table public.customers
-  add constraint customers_payment_terms_check
-  check (private.plano_de_prazos_valido(payment_terms));
-
--- Mantem as duas colunas de acordo, nos DOIS sentidos. A migration entra
--- enquanto a versao anterior do site ainda esta no ar, e essa versao grava
--- `payment_term_days` ao editar um cliente: sincronizar so num sentido
--- deixaria o plano desatualizado no dia seguinte, em silencio.
-create or replace function private.sincronizar_prazo_legado()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $fn$
-begin
-  if tg_op = 'INSERT' then
-    if new.payment_terms is null and new.payment_term_days is not null then
-      new.payment_terms := array[new.payment_term_days];
-    end if;
-    new.payment_term_days := new.payment_terms[1];
-    return new;
-  end if;
-
-  -- Quem mexeu manda: o plano vence quando foi ele que mudou, e a coluna
-  -- antiga vence quando a mudanca veio do site velho.
-  if new.payment_terms is distinct from old.payment_terms then
-    new.payment_term_days := new.payment_terms[1];
-  elsif new.payment_term_days is distinct from old.payment_term_days then
-    new.payment_terms := case
-      when new.payment_term_days is null then null
-      else array[new.payment_term_days]
-    end;
-  end if;
-
-  return new;
-end;
-$fn$;
-
-revoke all on function private.sincronizar_prazo_legado() from public, anon, authenticated;
-
-drop trigger if exists sincronizar_prazo_legado on public.customers;
-create trigger sincronizar_prazo_legado
-before insert or update on public.customers
-for each row execute function private.sincronizar_prazo_legado();
 
 -- ---------------------------------------------------------------------------
 -- A cobranca sabe qual parcela ela e.
@@ -120,15 +37,43 @@ alter table public.receivables
     and installment_number <= installment_count
   );
 
--- A trava de origem passa a considerar a parcela: um pedido gera N cobrancas
--- vivas, uma por prazo, e nao mais uma so.
+-- A trava de origem passa a considerar a parcela: um pedido dividido gera N
+-- cobrancas vivas, e nao mais uma so.
 drop index if exists public.receivables_origem_viva_idx;
 create unique index if not exists receivables_origem_viva_idx
   on public.receivables (origin, origin_ref, installment_number)
   where origin_ref is not null and status <> 'cancelada';
 
+alter table public.receivable_events
+  drop constraint if exists receivable_events_event_type_check;
+
+alter table public.receivable_events
+  add constraint receivable_events_event_type_check
+    check (event_type in ('lancada', 'baixada', 'estornada', 'cancelada', 'vencimento_corrigido', 'dividida'));
+
 -- ---------------------------------------------------------------------------
--- O emissor: transforma um valor no conjunto de cobrancas do plano.
+-- O teto e a distribuicao dos vencimentos.
+-- ---------------------------------------------------------------------------
+-- Parcela i de n, com prazo basico p, vence em round(p * i / n) dias. A ultima
+-- cai exatamente no prazo basico, que e o acordo que ja existia com o cliente.
+create or replace function private.vencimento_da_parcela(
+  p_prazo_basico integer,
+  p_parcela integer,
+  p_parcelas integer
+)
+returns integer
+language sql
+immutable
+set search_path = ''
+as $fn$
+  select round(p_prazo_basico::numeric * p_parcela / p_parcelas)::integer;
+$fn$;
+
+revoke all on function private.vencimento_da_parcela(integer, integer, integer) from public, anon, authenticated;
+grant execute on function private.vencimento_da_parcela(integer, integer, integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- O emissor: transforma um valor nas cobrancas da fatura.
 -- ---------------------------------------------------------------------------
 -- Devolve o id da PRIMEIRA parcela. Chamado pelas tres origens, para que o
 -- parcelamento nao dependa de por onde a cobranca nasceu.
@@ -141,6 +86,8 @@ create or replace function private.emitir_cobrancas(
   p_description text,
   p_invoice_date date,
   p_total numeric,
+  p_prazo_basico integer,
+  p_parcelas integer,
   p_user_id uuid,
   p_period_start date default null,
   p_period_end date default null,
@@ -152,8 +99,7 @@ security definer
 set search_path = ''
 as $fn$
 declare
-  v_prazos integer[];
-  v_parcelas integer;
+  v_parcelas integer := greatest(coalesce(p_parcelas, 1), 1);
   v_base numeric(12,2);
   v_resto numeric(12,2);
   v_valor numeric(12,2);
@@ -163,19 +109,25 @@ declare
   v_primeiro uuid;
   i integer;
 begin
-  select customer.payment_terms into v_prazos
-  from public.customers customer
-  where customer.id = p_customer_id;
-
-  if coalesce(array_length(v_prazos, 1), 0) = 0 then
+  if p_prazo_basico is null then
     raise exception using errcode = '22023',
       message = 'Este cliente ainda não tem prazo de pagamento cadastrado. Defina o prazo na tela de Clientes antes de cobrar.';
   end if;
 
-  v_parcelas := array_length(v_prazos, 1);
+  if v_parcelas > 12 then
+    raise exception using errcode = '22023', message = 'No máximo 12 parcelas.';
+  end if;
 
-  -- Valor pequeno demais para dividir vira parcela unica: e melhor uma
-  -- cobranca certa do que tres de um centavo.
+  -- Dividir exige prazo que caiba: em 3 vezes com prazo de 2 dias, duas
+  -- parcelas venceriam no mesmo dia e nao seriam duas parcelas.
+  if v_parcelas > 1 and p_prazo_basico < v_parcelas then
+    raise exception using errcode = '22023',
+      message = 'O prazo de ' || p_prazo_basico || ' dia(s) deste cliente é curto demais para dividir em '
+        || v_parcelas || ' vezes.';
+  end if;
+
+  -- Valor pequeno demais para dividir vira parcela unica: melhor uma cobranca
+  -- certa do que tres de um centavo.
   if p_total < v_parcelas * 0.01 then
     v_parcelas := 1;
   end if;
@@ -186,7 +138,7 @@ begin
   for i in 1 .. v_parcelas loop
     -- Os centavos que sobram vao na primeira, para as demais ficarem redondas.
     v_valor := v_base + case when i = 1 then v_resto else 0 end;
-    v_vencimento := p_invoice_date + v_prazos[i];
+    v_vencimento := p_invoice_date + private.vencimento_da_parcela(p_prazo_basico, i, v_parcelas);
     v_descricao := p_description
       || case when v_parcelas > 1 then ' · parcela ' || i || '/' || v_parcelas else '' end;
 
@@ -223,19 +175,153 @@ begin
 end;
 $fn$;
 
-revoke all on function private.emitir_cobrancas(uuid, uuid, text, uuid, uuid, text, date, numeric, uuid, date, date, jsonb) from public, anon, authenticated;
+revoke all on function private.emitir_cobrancas(uuid, uuid, text, uuid, uuid, text, date, numeric, integer, integer, uuid, date, date, jsonb) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- As tres origens passam a emitir pelo plano.
+-- Dividir uma cobranca que ja existe.
+-- ---------------------------------------------------------------------------
+-- E o caminho para a cobranca que nasceu sozinha e saiu alta. A parcela 1
+-- reaproveita a cobranca original: assim o vinculo com o pedido ou o romaneio
+-- que a gerou nao se perde, e nao ha cancelamento no meio da historia.
+create or replace function public.split_receivable(
+  p_request_id uuid,
+  p_receivable_id uuid,
+  p_parcelas integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row record;
+  v_prazo integer;
+  v_base numeric(12,2);
+  v_resto numeric(12,2);
+  v_valor numeric(12,2);
+  v_vencimento date;
+  v_descricao_base text;
+  v_user_id uuid := (select auth.uid());
+  i integer;
+begin
+  if p_request_id is null then
+    raise exception using errcode = '22023', message = 'Identificador da divisão obrigatório.';
+  end if;
+
+  if not private.current_user_can_receivables('contas_receber.lancar') then
+    raise exception using errcode = '42501', message = 'Sem permissão para dividir cobranças.';
+  end if;
+
+  if p_parcelas is null or p_parcelas < 2 or p_parcelas > 12 then
+    raise exception using errcode = '22023', message = 'Divida em 2 a 12 parcelas.';
+  end if;
+
+  select cobranca.* into v_row
+  from public.receivables cobranca
+  where cobranca.id = p_receivable_id
+  for update;
+  if v_row.id is null then
+    raise exception using errcode = 'P0002', message = 'Cobrança não encontrada.';
+  end if;
+
+  if exists (
+    select 1 from public.receivable_events evento
+    where evento.receivable_id = p_receivable_id
+      and evento.event_type = 'dividida'
+      and evento.details ->> 'request_id' = p_request_id::text
+  ) then
+    return;
+  end if;
+
+  if v_row.status <> 'aberta' then
+    raise exception using errcode = '22023',
+      message = 'Só uma cobrança em aberto pode ser dividida.';
+  end if;
+  if v_row.installment_count > 1 then
+    raise exception using errcode = '22023',
+      message = 'Esta cobrança já é uma parcela. Divida a cobrança inteira, não um pedaço dela.';
+  end if;
+  if private.receivable_recebido(p_receivable_id) > 0 then
+    raise exception using errcode = '22023',
+      message = 'Esta cobrança já recebeu dinheiro. Estorne os recebimentos antes de dividir.';
+  end if;
+
+  -- O prazo vem da propria cobranca, e nao do cadastro: se o vencimento foi
+  -- corrigido, e o combinado de verdade que manda.
+  v_prazo := v_row.due_date - v_row.invoice_date;
+  if v_prazo < p_parcelas then
+    raise exception using errcode = '22023',
+      message = 'O prazo de ' || v_prazo || ' dia(s) desta cobrança é curto demais para dividir em '
+        || p_parcelas || ' vezes.';
+  end if;
+  if v_row.amount < p_parcelas * 0.01 then
+    raise exception using errcode = '22023', message = 'Valor pequeno demais para dividir.';
+  end if;
+
+  v_descricao_base := v_row.description;
+  v_base := trunc(v_row.amount / p_parcelas, 2);
+  v_resto := round(v_row.amount - (v_base * p_parcelas), 2);
+
+  for i in 1 .. p_parcelas loop
+    v_valor := v_base + case when i = 1 then v_resto else 0 end;
+    v_vencimento := v_row.invoice_date + private.vencimento_da_parcela(v_prazo, i, p_parcelas);
+
+    if i = 1 then
+      update public.receivables
+      set amount = v_valor,
+          due_date = v_vencimento,
+          original_due_date = v_vencimento,
+          installment_number = 1,
+          installment_count = p_parcelas,
+          description = v_descricao_base || ' · parcela 1/' || p_parcelas
+      where id = p_receivable_id;
+    else
+      insert into public.receivables (
+        request_id, customer_id, origin, origin_ref, finance_category_id, description,
+        invoice_date, original_due_date, due_date, amount,
+        installment_number, installment_count, period_start, period_end, created_by
+      )
+      values (
+        gen_random_uuid(), v_row.customer_id, v_row.origin, v_row.origin_ref,
+        v_row.finance_category_id, v_descricao_base || ' · parcela ' || i || '/' || p_parcelas,
+        v_row.invoice_date, v_vencimento, v_vencimento, v_valor,
+        i, p_parcelas, v_row.period_start, v_row.period_end, v_user_id
+      );
+    end if;
+  end loop;
+
+  insert into public.receivable_events (receivable_id, event_type, details, created_by)
+  values (
+    p_receivable_id, 'dividida',
+    jsonb_build_object(
+      'request_id', p_request_id,
+      'parcelas', p_parcelas,
+      'valor_original', v_row.amount,
+      'vencimento_original', v_row.due_date
+    ),
+    v_user_id
+  );
+end;
+$$;
+
+revoke all on function public.split_receivable(uuid, uuid, integer) from public, anon;
+grant execute on function public.split_receivable(uuid, uuid, integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- As tres origens passam a emitir pelo emissor unico.
 -- ---------------------------------------------------------------------------
 -- Corpos copiados das definicoes vigentes; a unica diferenca e a emissao.
+-- A assinatura do lancamento avulso muda (ganha o numero de parcelas), entao a
+-- versao antiga sai antes.
+drop function if exists public.create_manual_receivable(uuid, uuid, date, numeric, text);
 
 create or replace function public.create_manual_receivable(
   p_request_id uuid,
   p_customer_id uuid,
   p_invoice_date date,
   p_amount numeric,
-  p_description text
+  p_description text,
+  p_parcelas integer default 1
 )
 returns uuid
 language plpgsql
@@ -266,7 +352,7 @@ begin
     raise exception using errcode = '42501', message = 'Sem permissão para lançar cobranças.';
   end if;
 
-  select customer.id, customer.name, customer.payment_terms, customer.active
+  select customer.id, customer.name, customer.payment_term_days, customer.active
     into v_customer
   from public.customers customer
   where customer.id = p_customer_id;
@@ -278,7 +364,7 @@ begin
   end if;
   -- Anunciado na migration da fase 1: sem prazo combinado, não há vencimento
   -- que se possa calcular sem inventar.
-  if coalesce(array_length(v_customer.payment_terms, 1), 0) = 0 then
+  if v_customer.payment_term_days is null then
     raise exception using errcode = '22023',
       message = 'Este cliente ainda não tem prazo de pagamento cadastrado. Defina o prazo na tela de Clientes antes de cobrar.';
   end if;
@@ -312,11 +398,12 @@ begin
     raise exception using errcode = 'P0002', message = 'Categoria de receita de clientes PJ não encontrada.';
   end if;
 
-  -- O plano do cliente decide quantas cobrancas nascem: prazo 7/14/21 vira
-  -- tres, cada uma com sua parte e seu vencimento.
+  -- Dividir e decisao da fatura, nao do cadastro: o cliente tem um prazo
+  -- basico e a Elis escolhe em quantas vezes esta cobranca especifica cai.
   return private.emitir_cobrancas(
     p_request_id, p_customer_id, 'avulso', null, v_category_id,
-    trim(p_description), p_invoice_date, v_amount, v_user_id
+    trim(p_description), p_invoice_date, v_amount, v_customer.payment_term_days,
+    coalesce(p_parcelas, 1), v_user_id
   );
 end;
 $$;
@@ -391,7 +478,7 @@ begin
       message = 'Pedido sem preço não vira cobrança. Confira a tabela de preço do cliente.';
   end if;
 
-  select customer.id, customer.name, customer.payment_terms, customer.active
+  select customer.id, customer.name, customer.payment_term_days, customer.active
     into v_customer
   from public.customers customer
   where customer.id = v_pedido.customer_id;
@@ -404,7 +491,7 @@ begin
   -- Expedição confirmando um envio, e travar a operação por causa de um campo
   -- do financeiro é acoplamento que quebra a padaria. O pedido continua
   -- aparecendo como "a faturar" até alguém cadastrar o prazo.
-  if coalesce(array_length(v_customer.payment_terms, 1), 0) = 0 then
+  if v_customer.payment_term_days is null then
     return null;
   end if;
 
@@ -424,11 +511,13 @@ begin
 
   v_descricao := 'Pedido de ' || to_char(v_pedido.data_entrega, 'DD/MM/YYYY');
 
-  -- Uma cobranca por prazo do cliente. O identificador devolvido e o da
-  -- primeira parcela, que e o que a trava de origem procura.
+  -- Nasce inteira: quem confirma o envio e a Expedicao, e nao ha ninguem na
+  -- tela para decidir parcelamento. Se a fatura sair alta, a Elis divide
+  -- depois, olhando o cliente.
   v_receivable_id := private.emitir_cobrancas(
     gen_random_uuid(), v_customer.id, 'pedido_pj', p_order_group_id, v_category_id,
-    v_descricao, v_invoice_date, round(v_pedido.valor, 2), p_user_id,
+    v_descricao, v_invoice_date, round(v_pedido.valor, 2), v_customer.payment_term_days,
+    1, p_user_id,
     null, null,
     jsonb_build_object('order_group_id', p_order_group_id, 'dispatched', v_pedido.enviadas > 0)
   );
@@ -521,7 +610,7 @@ begin
         || '. Nada foi cobrado. Atualize a tela e confira o período.';
   end if;
 
-  select customer.id, customer.name, customer.payment_terms
+  select customer.id, customer.name, customer.payment_term_days
     into v_customer
   from public.customers customer
   where lower(trim(customer.name)) = 'buck' and customer.active
@@ -529,7 +618,7 @@ begin
   if v_customer.id is null then
     raise exception using errcode = 'P0002', message = 'Cliente Buck não encontrado no cadastro.';
   end if;
-  if coalesce(array_length(v_customer.payment_terms, 1), 0) = 0 then
+  if v_customer.payment_term_days is null then
     raise exception using errcode = '22023',
       message = 'A Buck ainda não tem prazo de pagamento cadastrado. Defina o prazo na tela de Clientes antes de cobrar.';
   end if;
@@ -546,7 +635,7 @@ begin
   v_receivable_id := private.emitir_cobrancas(
     p_request_id, v_customer.id, 'romaneio_ex', null, v_category_id,
     'Romaneios de ' || to_char(p_de, 'DD/MM') || ' a ' || to_char(p_ate, 'DD/MM/YYYY'),
-    p_ate, v_total, v_user_id, p_de, p_ate,
+    p_ate, v_total, v_customer.payment_term_days, 1, v_user_id, p_de, p_ate,
     jsonb_build_object('period_start', p_de, 'period_end', p_ate, 'linhas', v_linhas)
   );
 
@@ -557,5 +646,8 @@ exception
       message = 'Este período encosta em outro já cobrado. Confira as cobranças da Buck antes de gerar.';
 end;
 $$;
+
+revoke all on function public.create_manual_receivable(uuid, uuid, date, numeric, text, integer) from public, anon;
+grant execute on function public.create_manual_receivable(uuid, uuid, date, numeric, text, integer) to authenticated;
 
 commit;

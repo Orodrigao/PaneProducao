@@ -22,6 +22,7 @@ interface ReceivableListProps {
   onReverseReceipt: (receipt: ReceivableReceiptRow) => void
   onCancel: (receivable: ReceivableRow) => void
   onCorrectDueDate: (receivable: ReceivableRow) => void
+  onSplit: (receivable: ReceivableRow) => void
 }
 
 function formatDate(dateKey: string): string {
@@ -39,7 +40,7 @@ function statusLabel(receivable: ReceivableRow): string {
 }
 
 export default function ReceivableList({
-  receivables, busyId, onPay, onReverseReceipt, onCancel, onCorrectDueDate,
+  receivables, busyId, onPay, onReverseReceipt, onCancel, onCorrectDueDate, onSplit,
 }: ReceivableListProps) {
   if (receivables.length === 0) {
     return <div className="ps-empty">Nenhuma cobrança lançada ainda.</div>
@@ -74,6 +75,12 @@ export default function ReceivableList({
               <span>Faturado em {formatDate(receivable.invoice_date)}</span>
               <span>·</span>
               <span>{RECEIVABLE_ORIGIN_LABELS[receivable.origin]}</span>
+              {receivable.installment_count > 1 && (
+                <>
+                  <span>·</span>
+                  <span>parcela {receivable.installment_number}/{receivable.installment_count}</span>
+                </>
+              )}
               {/* O mês em que a venda pesa no resultado só é evidente quando é
                   diferente do mês corrente — que é justamente o caso de todo
                   cliente que paga atrasado. */}
@@ -126,6 +133,13 @@ export default function ReceivableList({
                 <button className="ps-btn ghost sm" onClick={() => onCorrectDueDate(receivable)} disabled={ocupada}>
                   Corrigir vencimento
                 </button>
+                {/* So a cobranca inteira e sem dinheiro dentro pode ser
+                    dividida: e o caso da que nasceu sozinha e saiu alta. */}
+                {receivable.installment_count === 1 && receivedTotal(receivable) === 0 && (
+                  <button className="ps-btn ghost sm" onClick={() => onSplit(receivable)} disabled={ocupada}>
+                    Dividir em parcelas
+                  </button>
+                )}
                 {receivedTotal(receivable) === 0 && (
                   <button className="ps-btn ghost sm" onClick={() => onCancel(receivable)} disabled={ocupada}>
                     Cancelar
