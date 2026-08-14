@@ -4,12 +4,19 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(35);
+select plan(36);
 
 select is(
-  (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
+  (select count(*)::int from public.destinations where code in ('JC', 'JA', 'EX')),
   3,
-  'seed cria as tres lojas operacionais'
+  'seed cria as tres lojas operacionais com o codigo em maiusculas, como producao'
+);
+
+-- Trava a regra: nenhum destino do seed pode voltar a nascer em minusculas.
+select is(
+  (select count(*)::int from public.destinations where code <> upper(code)),
+  0,
+  'nenhum destino do seed tem codigo fora do padrao maiusculo de producao'
 );
 
 select is(
@@ -77,7 +84,7 @@ select is(
      and romaneio.record_date = (now() at time zone 'America/Sao_Paulo')::date
      and romaneio.trip_number = 4
      and romaneio.status = 'separado'
-     and destination.code = 'ex'),
+     and destination.code = 'EX'),
   1,
   'seed cria viagem EX separada para validar a entregadora'
 );
@@ -92,7 +99,7 @@ select is(
      and romaneio.status = 'enviado'
      and romaneio.sent_by = 'Expedicao JC Teste'
      and romaneio.sent_at is not null
-     and destination.code = 'ex'),
+     and destination.code = 'EX'),
   1,
   'seed cria viagem EX enviada para validar conferencia pendente'
 );
