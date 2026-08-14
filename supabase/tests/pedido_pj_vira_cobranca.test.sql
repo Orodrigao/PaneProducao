@@ -12,7 +12,16 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(29);
+
+-- A data que vale e a da padaria ----------------------------------------------
+-- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
+-- do servidor, a venda do ultimo dia do mes cairia no mes seguinte.
+select is(private.data_na_padaria(timestamptz '2026-07-31 23:30:00-03'), date '2026-07-31',
+  'o dia da padaria e o de Brasilia, nao o do servidor');
+select isnt((timestamptz '2026-07-31 23:30:00-03' at time zone 'UTC')::date, date '2026-07-31',
+  'e em UTC essa mesma hora ja seria outro dia: e o defeito que a conversao evita');
+
 
 -- Cenário ------------------------------------------------------------------
 
