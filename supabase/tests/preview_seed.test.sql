@@ -308,8 +308,14 @@ select is(
 -- Sem estas duas a tela de Relatorios > Romaneios abre vazia para o
 -- financeiro: a RLS de destinations e romaneios exige permissao de romaneio
 -- com escopo da loja.
+-- No banco limpo do CI as contas ficticias nao existem e o seed nao concede
+-- permissao nenhuma; a afirmacao so tem o que verificar no Banco Preview.
 select ok(
-  exists(
+  not exists(
+    select 1 from auth.users
+    where lower(email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  )
+  or exists(
     select 1 from public.app_user_permissions assignment
     join auth.users conta on conta.id = assignment.user_id
     where lower(conta.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
