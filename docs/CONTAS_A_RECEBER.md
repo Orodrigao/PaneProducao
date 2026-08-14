@@ -134,6 +134,23 @@ Não reabrir sem evidência nova.
     Se o hábito da Expedição melhorar, o caminho automático assume sozinho e a
     lista esvazia — sem mudar nada no código.
 
+12. **A cobrança aceita recebimento em pedaços (Rodrigo, 2026-08-14).** A Buck
+    paga um pouco em Pix e um pouco em dinheiro, em dias diferentes. O modelo
+    das fases 2 a 4 guardava um recebimento só e obrigava a Elis a registrar
+    uma mentira: o valor cheio antes de ter entrado, ou nada.
+    - vale para **qualquer cobrança**, não só a da Buck;
+    - a cobrança ganha a situação **parcial**, e quanto entrou é sempre a soma
+      dos pedaços ativos — nunca um campo que alguém escreve;
+    - **cada pedaço vira um lançamento próprio no livro**, na conta e na data
+      dele. A chave de origem aponta para o pedaço, não para a cobrança: o
+      livro tem índice de um lançamento ativo por origem, e sem isso a segunda
+      parcela não entraria no caixa;
+    - o **estorno é de um pedaço**; cancelar exige que nada tenha entrado;
+    - valor menor que o cobrado **deixou de significar desconto**: agora é
+      recebimento parcial. O "restinho que nunca vem" segue sem solução, por
+      decisão consciente — ver Fora do escopo.
+    Feito enquanto produção tinha zero cobranças: nenhum dado a migrar.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
@@ -156,9 +173,9 @@ Registrado para o plano não inchar:
   paga a mais ou a menos fica visível no valor recebido da baixa (decisão 9),
   sem cálculo;
 - cobrança automática por WhatsApp ou e-mail;
-- pagamento parcial de uma cobrança (uma cobrança é quitada inteira) — o
-  valor recebido registrado na baixa permite acrescentar isso no futuro sem
-  refazer o modelo;
+- ~~pagamento parcial de uma cobrança~~ — **entrou em 2026-08-14** (decisão
+  12), quando Rodrigo informou que a Buck paga em pedaços. O que era exclusão
+  virou funcionalidade;
 - renegociação de dívida;
 - contas a receber do varejo das lojas — isso é caixa, não fiado.
 
@@ -562,6 +579,19 @@ risco e precisa de bloqueio no banco.
 
 **Testes:** financeiro JC gera; romaneio EX não vê a ação. Um período com item
 sem preço tem que ser recusado.
+
+## Fase 4B — Recebimento em pedaços
+
+**Concluída em 2026-08-14 (PR #236),** testada por Rodrigo no preview. Nasceu
+da decisão 12, fora do plano original: a informação de que a Buck paga
+parcelado só apareceu quando a fase 4 ficou pronta.
+
+**Escopo — entrou:** tabela `receivable_receipts`; situação `parcial`; um
+lançamento no livro por pedaço; estorno por pedaço; cancelamento bloqueado com
+dinheiro dentro; correção de vencimento liberada para cobrança parcial.
+
+**Fica em aberto:** encerrar com desconto a cobrança que ficou faltando um
+restinho. Aguarda acontecer na operação antes de ser construído.
 
 ## Fase 5 — Extrato por cliente e lista de atrasados
 

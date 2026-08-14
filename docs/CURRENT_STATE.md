@@ -176,8 +176,11 @@ tabelas.
   semeadas;
 - contas a receber (fase 2 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
   cobrança de cliente PJ digitada à mão em `/contas-receber`, com vencimento
-  calculado do prazo do cliente, baixa (data, valor, forma e conta), estorno,
-  cancelamento e correção de vencimento. Escrita somente pelas cinco funções
+  calculado do prazo do cliente, **recebimento em pedaços** (vários por
+  cobrança, cada um com data, valor, forma e conta, gerando seu próprio
+  lançamento no livro), estorno por pedaço, cancelamento e correção de
+  vencimento. A cobrança fica `parcial` enquanto faltar dinheiro, e quanto
+  entrou é sempre a soma dos pedaços ativos. Escrita somente pelas cinco funções
   protegidas; RLS ligada e forçada em `receivables` e `receivable_events`. A
   baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
   **com competência no mês do faturamento** — cliente que paga atrasado gera
