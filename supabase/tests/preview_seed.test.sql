@@ -186,7 +186,7 @@ select is(
     where id::text like '60000000-0000-4000-8000-0000000000%'
       and active
       and default_tier_id = '50000000-0000-4000-8000-000000000001'),
-  3,
+  4,
   'seed cria clientes PJ ficticios ja ligados a uma tabela de preco'
 );
 
@@ -194,7 +194,7 @@ select is(
   (select count(*)::int from public.customers
     where id::text like '60000000-0000-4000-8000-0000000000%'
       and payment_term_days is not null),
-  3,
+  4,
   'seed cria clientes com prazo de pagamento combinado'
 );
 
