@@ -287,7 +287,7 @@ select throws_ok(
     'Cliente desistiu'
   ) $$,
   '22023',
-  'Cobrança já recebida não pode ser cancelada. Estorne a baixa antes.',
+  'Esta cobrança já recebeu 1200.00. Estorne os recebimentos antes de cancelar.',
   'dinheiro que entrou nao some por cancelamento'
 );
 
