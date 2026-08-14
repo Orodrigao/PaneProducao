@@ -226,20 +226,20 @@ export function formatReceivableMoney(value: number): string {
 export interface ReceivableCustomerOption {
   id: string
   name: string
-  paymentTermDays: number | null
+  paymentTerms: number[] | null
 }
 
 export async function loadReceivableCustomers(): Promise<ReceivableCustomerOption[]> {
   const { data, error } = await supabase
     .from('customers')
-    .select('id,name,payment_term_days')
+    .select('id,name,payment_terms')
     .eq('active', true)
     .order('name')
   if (error) throw error
   return (data ?? []).map(row => ({
     id: row.id as string,
     name: row.name as string,
-    paymentTermDays: (row.payment_term_days as number | null) ?? null,
+    paymentTerms: (row.payment_terms as number[] | null) ?? null,
   }))
 }
 

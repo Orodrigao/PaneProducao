@@ -18,12 +18,17 @@ interface ReceivableFormProps {
   onSaved: () => Promise<void> | void
 }
 
-/** O vencimento não é digitado: sai do prazo combinado com o cliente. */
-function previewDueDate(invoiceDate: string, termDays: number | null): string | null {
-  if (!invoiceDate || termDays === null) return null
-  const base = new Date(`${invoiceDate}T00:00:00Z`)
-  base.setUTCDate(base.getUTCDate() + termDays)
-  return base.toISOString().slice(0, 10)
+/**
+ * Os vencimentos não são digitados: saem do plano combinado com o cliente.
+ * Plano de três prazos gera três cobranças, uma por vencimento.
+ */
+function previewDueDates(invoiceDate: string, terms: number[] | null): string[] {
+  if (!invoiceDate || !terms || terms.length === 0) return []
+  return terms.map(dias => {
+    const base = new Date(`${invoiceDate}T00:00:00Z`)
+    base.setUTCDate(base.getUTCDate() + dias)
+    return base.toISOString().slice(0, 10)
+  })
 }
 
 function formatDate(dateKey: string): string {
@@ -49,8 +54,9 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
     [customers, draft.customerId],
   )
 
-  const dueDate = previewDueDate(draft.invoiceDate, selectedCustomer?.paymentTermDays ?? null)
-  const semPrazo = selectedCustomer !== null && selectedCustomer.paymentTermDays === null
+  const dueDates = previewDueDates(draft.invoiceDate, selectedCustomer?.paymentTerms ?? null)
+  const semPrazo = selectedCustomer !== null
+    && (selectedCustomer.paymentTerms === null || selectedCustomer.paymentTerms.length === 0)
 
   async function save() {
     const validationError = validateReceivableDraft(draft, todayKey())
@@ -77,7 +83,13 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
       <div className="ps-card-head">
         <div>
           <b>Nova cobrança</b>
-          <small>{dueDate ? `Vence em ${formatDate(dueDate)}` : 'O vencimento vem do prazo do cliente'}</small>
+          <small>
+            {dueDates.length === 0
+              ? 'O vencimento vem do prazo do cliente'
+              : dueDates.length === 1
+                ? `Vence em ${formatDate(dueDates[0])}`
+                : `${dueDates.length} parcelas, vencendo em ${dueDates.map(formatDate).join(', ')}`}
+          </small>
         </div>
         <button type="button" className="ps-iconbtn" onClick={onCancel} aria-label="Fechar cobrança"><X size={16} /></button>
       </div>

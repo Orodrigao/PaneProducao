@@ -7,9 +7,10 @@ import { showToast } from '@/lib/utils'
 import {
   DUPLICATE_CUSTOMER_DOC_MESSAGE,
   PAYMENT_TERM_MAX_DAYS,
-  formatPaymentTerm,
+  formatPaymentTerms,
+  paymentTermsToInput,
   isDuplicateCustomerDocError,
-  parsePaymentTermDays,
+  parsePaymentTerms,
 } from '@/lib/customers'
 
 interface PriceTier { id: string; name: string; active: boolean }
@@ -22,19 +23,19 @@ interface Customer {
   default_tier_id: string | null
   discount_pct: number
   delivery_hours: number
-  payment_term_days: number | null
+  payment_terms: number[] | null
   active: boolean
   notes: string | null
   created_at: string
 }
 
-type FormState = Omit<Customer, 'id' | 'created_at' | 'payment_term_days'> & {
-  payment_term_days: string
+type FormState = Omit<Customer, 'id' | 'created_at' | 'payment_terms'> & {
+  payment_terms: string
 }
 
 const EMPTY_FORM: FormState = {
   name: '', doc: '', contact: '', default_tier_id: null,
-  discount_pct: 0, delivery_hours: 48, payment_term_days: '', active: true, notes: ''
+  discount_pct: 0, delivery_hours: 48, payment_terms: '', active: true, notes: ''
 }
 
 export default function ClientesPage() {
@@ -87,7 +88,7 @@ export default function ClientesPage() {
       name: c.name, doc: c.doc || '', contact: c.contact || '',
       default_tier_id: c.default_tier_id, discount_pct: c.discount_pct,
       delivery_hours: c.delivery_hours,
-      payment_term_days: c.payment_term_days === null ? '' : String(c.payment_term_days),
+      payment_terms: paymentTermsToInput(c.payment_terms),
       active: c.active, notes: c.notes || '',
     })
     setCreating(true)
@@ -97,7 +98,7 @@ export default function ClientesPage() {
   const save = async () => {
     setFormError(null)
     if (!form.name.trim()) { setFormError('Informe o nome do cliente.'); return }
-    const paymentTerm = parsePaymentTermDays(form.payment_term_days)
+    const paymentTerm = parsePaymentTerms(form.payment_terms)
     if (!paymentTerm.ok) { setFormError(paymentTerm.message || 'Prazo de pagamento inválido.'); return }
     setSaving(true)
     const payload = {
@@ -107,7 +108,7 @@ export default function ClientesPage() {
       default_tier_id: form.default_tier_id || null,
       discount_pct: Number(form.discount_pct) || 0,
       delivery_hours: Number(form.delivery_hours) || 48,
-      payment_term_days: paymentTerm.days,
+      payment_terms: paymentTerm.terms,
       active: form.active,
       notes: form.notes?.trim() || null,
     }
@@ -217,14 +218,14 @@ export default function ClientesPage() {
                     </span>
                     <span
                       className="ps-store-chip"
-                      style={c.payment_term_days === null
+                      style={c.payment_terms === null
                         ? {background:'var(--berry-tint)', color:'var(--berry)'}
                         : {background:'var(--line-soft)', color:'var(--ink-soft)'}}
-                      title={c.payment_term_days === null
+                      title={c.payment_terms === null
                         ? 'Sem prazo combinado: este cliente ainda não gera cobrança automática'
                         : 'Prazo de pagamento contado da entrega'}
                     >
-                      💰 {formatPaymentTerm(c.payment_term_days)}
+                      💰 {formatPaymentTerms(c.payment_terms)}
                     </span>
                   </div>
                   {c.notes && (
@@ -282,12 +283,14 @@ export default function ClientesPage() {
 
             <div className="ps-fieldgroup" style={{marginBottom:10}}>
               <div className="ps-fieldlabel">Prazo de pagamento (dias)</div>
-              <input type="number" min={0} max={PAYMENT_TERM_MAX_DAYS} step={1}
-                value={form.payment_term_days}
-                onChange={e=>setForm({...form, payment_term_days: e.target.value})}
-                placeholder="deixe vazio se ainda não combinou" className="ps-input"/>
+              <input type="text" inputMode="numeric"
+                value={form.payment_terms}
+                onChange={e=>setForm({...form, payment_terms: e.target.value})}
+                placeholder="ex.: 7   ou   7, 14, 21" className="ps-input"/>
               <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:4}}>
-                Contado da entrega. <strong>0</strong> = à vista. Vazio = ainda não combinado —
+                Contado da entrega. <strong>0</strong> = à vista. Vários prazos separados por
+                vírgula viram parcelas: <strong>7, 14, 21</strong> divide a fatura em três
+                cobranças iguais, uma para cada vencimento. Vazio = ainda não combinado —
                 nesse caso o cliente não gera cobrança automática.
               </div>
             </div>
