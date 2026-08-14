@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
+import { normalizeOrderLinePacksInput, orderLinePacksFromStoredQuantity, orderLineQuantityStep } from '@/lib/pjOrderQuantity'
 import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
@@ -354,7 +355,7 @@ export default function PedidosPJPage() {
         pricing_unit: (r.pricing_unit === 'kg' ? 'kg' : 'un') as PricingUnit,
         pack_size: pack,
         sale_option_id: r.sale_option_id,
-        packs: Math.round(qty / pack) || 1,
+        packs: orderLinePacksFromStoredQuantity(qty, pack, r.pricing_unit === 'kg' ? 'kg' : 'un'),
       }
     }))
     setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date, order_group_id: g.order_group_id })
@@ -703,8 +704,8 @@ export default function PedidosPJPage() {
                               </label>
                               <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
                                 Qtd:
-                                <input type="number" min={1} step={1} value={l.packs}
-                                  onChange={e=>updateLine(l.key, { packs: Math.max(1, Number(e.target.value)||1) })}
+                                <input type="number" min={orderLineQuantityStep(l.pricing_unit)} step={orderLineQuantityStep(l.pricing_unit)} value={l.packs}
+                                  onChange={e=>updateLine(l.key, { packs: normalizeOrderLinePacksInput(e.target.value, l.pricing_unit) })}
                                   className="ps-input" style={{width:60, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
                                 pacotes
                               </label>
