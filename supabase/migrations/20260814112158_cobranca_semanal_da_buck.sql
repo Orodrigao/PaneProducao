@@ -150,7 +150,10 @@ as $fn$
   ),
   destino as (
     -- Sem depender da caixa: producao grava 'EX' e o Banco Preview grava 'ex'.
-    select d.id from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
+    -- Todas as lojas EX ativas, e nao uma escolhida ao acaso: se houver mais
+    -- de um cadastro com o mesmo codigo, `limit 1` faria a conta ignorar em
+    -- silencio os romaneios do outro.
+    select d.id from public.destinations d where upper(d.code) = 'EX' and d.active
   ),
   itens as (
     select item.id,
@@ -164,8 +167,7 @@ as $fn$
            greatest(coalesce(item.qty_accepted, item.qty_sent, 0), 0) as cobrado
     from public.romaneio_items item
     join public.romaneios romaneio on romaneio.id = item.romaneio_id
-    cross join destino
-    where romaneio.destination_id = destino.id
+    where romaneio.destination_id in (select id from destino)
       and romaneio.status <> 'separado'
       and romaneio.record_date between p_de and p_ate
   ),

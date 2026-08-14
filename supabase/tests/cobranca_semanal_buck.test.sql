@@ -78,9 +78,11 @@ on conflict (id) do nothing;
 
 -- No banco limpo do CI so as migrations rodam, entao a loja EX pode nao
 -- existir. No Banco Preview ela ja vem do seed e o conflito nao faz nada.
+-- Cria a loja EX so quando ela nao existe. Inserir uma segunda com outra
+-- caixa ('EX' ao lado de 'ex') criaria dois cadastros para a mesma loja.
 insert into public.destinations (id, name, code, type, requires_conferencia, active)
-values ('96000000-0000-4000-8000-0000000000e1', '[TESTE] Exposicao', 'EX', 'loja', true, true)
-on conflict (code) do nothing;
+select '96000000-0000-4000-8000-0000000000e1', '[TESTE] Exposicao', 'EX', 'loja', true, true
+where not exists (select 1 from public.destinations d where upper(d.code) = 'EX');
 
 -- O Banco Preview ja tem romaneios da EX semeados nos ultimos dias. Este
 -- cenario vive numa janela propria, ha tres meses, para as duas contas nao se
@@ -89,12 +91,12 @@ on conflict (code) do nothing;
 -- ciabatta (40,00). Total esperado: 50,00 + 100,00 = 150,00.
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
 select '96000000-0000-4000-8000-0000000000b1', d.id, current_date - 90, 1, 'enviado', 'Teste'
-from public.destinations d where d.code = 'EX'
+from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
 on conflict (id) do nothing;
 
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
 select '96000000-0000-4000-8000-0000000000b2', d.id, current_date - 88, 1, 'enviado', 'Teste'
-from public.destinations d where d.code = 'EX'
+from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
 on conflict (id) do nothing;
 
 insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
