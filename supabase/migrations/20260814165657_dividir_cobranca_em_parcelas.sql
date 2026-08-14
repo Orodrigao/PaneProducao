@@ -233,17 +233,20 @@ begin
     return;
   end if;
 
-  if v_row.status <> 'aberta' then
+  -- O dinheiro vem primeiro de proposito: cobranca que recebeu uma parte fica
+  -- 'parcial', e reclamar do estado mandaria a Elis procurar o problema errado.
+  -- O recado precisa dizer o que fazer, nao o que ela e.
+  if private.receivable_recebido(p_receivable_id) > 0 then
     raise exception using errcode = '22023',
-      message = 'Só uma cobrança em aberto pode ser dividida.';
+      message = 'Esta cobrança já recebeu dinheiro. Estorne os recebimentos antes de dividir.';
   end if;
   if v_row.installment_count > 1 then
     raise exception using errcode = '22023',
       message = 'Esta cobrança já é uma parcela. Divida a cobrança inteira, não um pedaço dela.';
   end if;
-  if private.receivable_recebido(p_receivable_id) > 0 then
+  if v_row.status <> 'aberta' then
     raise exception using errcode = '22023',
-      message = 'Esta cobrança já recebeu dinheiro. Estorne os recebimentos antes de dividir.';
+      message = 'Só uma cobrança em aberto pode ser dividida.';
   end if;
 
   -- O prazo vem da propria cobranca, e nao do cadastro: se o vencimento foi
