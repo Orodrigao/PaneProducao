@@ -193,6 +193,15 @@ tabelas.
   cobrança deixar de nascer. Pedido já cobrado fica travado para alteração,
   cancelamento e exclusão; cliente sem prazo cadastrado não impede o envio, e o
   pedido fica na lista até o prazo existir;
+- conta semanal da Buck (fase 4 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
+  na tela de Romaneios, o período faturado vira cobrança da Buck com vencimento
+  em 15 dias e receita em `buck_ex`. **O valor é somado no banco** a partir dos
+  itens do romaneio e da tabela BUCK; o total da tela vai apenas como
+  conferência e divergência recusa a geração mostrando os dois números. As três
+  travas do documento impresso (sem preço, unidade incompatível, peso acima de
+  10 kg) bloqueiam a cobrança, e período sobreposto é barrado por constraint de
+  exclusão. A mesma regra vive em `src/lib/romaneioBilling.ts` e em
+  `private.calcular_cobranca_buck` — dívida assumida, precisam mudar juntas;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;

@@ -508,6 +508,24 @@ pacote maior que 1 confere o valor.
 
 ## Fase 4 — Conta da semana da EX/Buck
 
+**Concluída em 2026-08-14 (PR #234),** testada por Rodrigo no preview. Duas
+decisões tomadas na execução: a Buck passou a ter prazo de 15 dias (o cadastro
+estava sem prazo e sem ele o sistema recusa cobrar) e o período é escolhido
+livremente, com sobreposição barrada por trava de banco.
+
+O teste dele expôs que o Banco Preview grava o código das lojas em minúsculas
+e produção em maiúsculas — a tela nunca teria encontrado a EX no ambiente de
+teste — e que o perfil financeiro fictício não tinha permissão de ver
+romaneios, embora a Elis a tenha em produção. Ao corrigir, apareceu também uma
+fragilidade real: a conta escolhia uma loja EX com `limit 1` e ignoraria em
+silêncio os romaneios de um segundo cadastro. Ver `lessons.md`.
+
+**Dívida assumida:** a conta da Buck existe em `src/lib/romaneioBilling.ts` e
+em `private.calcular_cobranca_buck`. São a mesma regra em duas linguagens e
+precisam mudar juntas; a comparação de totais na geração é o alarme que dispara
+se um lado mudar sozinho.
+
+
 **Objetivo:** a cobrança semanal da Buck deixar de sumir na impressora.
 
 **Escopo — entra:**
