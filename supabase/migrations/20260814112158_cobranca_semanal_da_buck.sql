@@ -149,7 +149,8 @@ as $fn$
     limit 1
   ),
   destino as (
-    select d.id from public.destinations d where d.code = 'EX' and d.active limit 1
+    -- Sem depender da caixa: producao grava 'EX' e o Banco Preview grava 'ex'.
+    select d.id from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
   ),
   itens as (
     select item.id,

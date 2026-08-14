@@ -1128,14 +1128,14 @@ on conflict (id) do update set
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
 select '72000000-0000-4000-8000-000000000001', d.id,
        (now() at time zone 'America/Sao_Paulo')::date - 5, 1, 'enviado', 'Expedicao JC Teste'
-from public.destinations d where d.code = 'EX'
+from public.destinations d where upper(d.code) = 'EX'
 on conflict (id) do update set
   record_date = excluded.record_date, status = excluded.status;
 
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
 select '72000000-0000-4000-8000-000000000002', d.id,
        (now() at time zone 'America/Sao_Paulo')::date - 3, 1, 'enviado', 'Expedicao JC Teste'
-from public.destinations d where d.code = 'EX'
+from public.destinations d where upper(d.code) = 'EX'
 on conflict (id) do update set
   record_date = excluded.record_date, status = excluded.status;
 

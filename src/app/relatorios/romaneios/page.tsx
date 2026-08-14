@@ -246,7 +246,8 @@ export default function RelatorioRomaneiosEX() {
     setLoadError(null)
     try {
       const [destinationRes, tiersRes] = await Promise.all([
-        supabase.from('destinations').select('id,name,code').eq('code', 'EX').eq('active', true).maybeSingle(),
+        // Sem depender da caixa: producao grava 'EX' e o Banco Preview grava 'ex'.
+        supabase.from('destinations').select('id,name,code').ilike('code', 'EX').eq('active', true).maybeSingle(),
         supabase.from('price_tiers').select('id,name').eq('active', true).order('name'),
       ])
       if (destinationRes.error) throw destinationRes.error
