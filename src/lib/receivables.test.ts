@@ -14,7 +14,9 @@ import {
   validateReceivableDraft,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
+  podeDividirEm,
   validateReceivablePaymentDraft,
+  vencimentosDaFatura,
   type PjOrderToBillRow,
   receivedTotal,
   remainingAmount,
@@ -50,6 +52,8 @@ function cobranca(overrides: Partial<ReceivableRow> = {}): ReceivableRow {
     due_date: '2026-08-19',
     amount: 1200,
     status: 'aberta',
+    installment_number: 1,
+    installment_count: 1,
     receipts: [],
     cancel_reason: null,
     created_at: '2026-07-20T10:00:00Z',
@@ -68,18 +72,18 @@ describe('validateReceivableDraft', () => {
   })
 
   it('recusa faturamento no futuro', () => {
-    const draft = { customerId: 'c1', invoiceDate: '2026-08-21', amount: '100', description: 'Pães' }
+    const draft = { customerId: 'c1', invoiceDate: '2026-08-21', amount: '100', description: 'Pães', parcelas: 1 }
     expect(validateReceivableDraft(draft, HOJE)).toBe('A data do faturamento não pode ser no futuro.')
   })
 
   it('recusa valor acima do limite, como o banco faz', () => {
-    const draft = { customerId: 'c1', invoiceDate: HOJE, amount: '1000000,01', description: 'Pães' }
+    const draft = { customerId: 'c1', invoiceDate: HOJE, amount: '1000000,01', description: 'Pães', parcelas: 1 }
     expect(validateReceivableDraft(draft, HOJE))
       .toBe('Valor acima do limite permitido. Confira o que foi digitado.')
   })
 
   it('aceita uma cobrança bem preenchida', () => {
-    const draft = { customerId: 'c1', invoiceDate: '2026-08-19', amount: '1.200,50', description: 'Pães da semana' }
+    const draft = { customerId: 'c1', invoiceDate: '2026-08-19', amount: '1.200,50', description: 'Pães da semana', parcelas: 1 }
     expect(validateReceivableDraft(draft, HOJE)).toBeNull()
   })
 })
@@ -211,5 +215,37 @@ describe('pedidos PJ a faturar', () => {
     expect(resumo.total).toBe(230)
     expect(resumo.bloqueados).toBe(1)
     expect(resumo.valorBloqueado).toBe(80)
+  })
+})
+
+describe('vencimentos da fatura dividida', () => {
+  it('o prazo do cliente e o teto: a ultima parcela cai nele', () => {
+    expect(vencimentosDaFatura('2026-08-01', 21, 3))
+      .toEqual(['2026-08-08', '2026-08-15', '2026-08-22'])
+  })
+
+  it('cliente de 28 dias em duas vezes vence no meio e no fim', () => {
+    expect(vencimentosDaFatura('2026-08-01', 28, 2)).toEqual(['2026-08-15', '2026-08-29'])
+  })
+
+  it('fatura inteira mantem o vencimento de sempre', () => {
+    expect(vencimentosDaFatura('2026-08-01', 7, 1)).toEqual(['2026-08-08'])
+  })
+
+  it('sem prazo combinado nao ha vencimento que se possa calcular', () => {
+    expect(vencimentosDaFatura('2026-08-01', null, 2)).toEqual([])
+  })
+})
+
+describe('podeDividirEm', () => {
+  it('recusa dividir em mais vezes do que o prazo tem dias', () => {
+    // Duas parcelas cairiam no mesmo dia, e ai nao sao duas parcelas.
+    expect(podeDividirEm(2, 3)).toBe(false)
+    expect(podeDividirEm(3, 3)).toBe(true)
+    expect(podeDividirEm(0, 2)).toBe(false)
+  })
+
+  it('fatura inteira cabe em qualquer prazo, inclusive a vista', () => {
+    expect(podeDividirEm(0, 1)).toBe(true)
   })
 })

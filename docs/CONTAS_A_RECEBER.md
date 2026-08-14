@@ -151,6 +151,22 @@ Não reabrir sem evidência nova.
       decisão consciente — ver Fora do escopo.
     Feito enquanto produção tinha zero cobranças: nenhum dado a migrar.
 
+13. **Dividir a fatura é decisão da cobrança, não do cliente (Rodrigo,
+    2026-08-14).** Ha clientes que dividem quando a fatura sai alta e pagam de
+    uma vez quando sai pequena. A primeira tentativa prendeu o parcelamento ao
+    cadastro — plano fixo de 7/14/21 — e Rodrigo corrigiu no teste do preview:
+    aquele mesmo cliente, num pedido pequeno, paga inteiro.
+    - o cadastro mantém **um prazo básico**, como sempre teve;
+    - o prazo básico é o **teto**: dividir em N distribui os vencimentos até
+      ele. Cliente de 21 dias em 3 vezes vence em 7, 14 e 21;
+    - o lançamento avulso escolhe à vista, 2x ou 3x;
+    - a cobrança que **nasce sozinha** (envio confirmado, romaneio da Buck)
+      nasce **inteira** — não há ninguém na tela para decidir. Para ela existe
+      a ação de dividir depois, que reaproveita a cobrança original como
+      parcela 1 e preserva o vínculo com o pedido que a gerou;
+    - dividir exige cobrança em aberto, sem dinheiro dentro, e que não seja já
+      uma parcela.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
@@ -592,6 +608,20 @@ dinheiro dentro; correção de vencimento liberada para cobrança parcial.
 
 **Fica em aberto:** encerrar com desconto a cobrança que ficou faltando um
 restinho. Aguarda acontecer na operação antes de ser construído.
+
+## Fase 4C — Fatura dividida em parcelas
+
+**Concluída em 2026-08-14 (PR #237),** testada por Rodrigo no preview. Nasceu
+da decisão 13, fora do plano original.
+
+**Escopo — entrou:** escolha de 1x/2x/3x no lançamento avulso; `split_receivable`
+para dividir cobrança já existente; `installment_number`/`installment_count` na
+cobrança; a trava de origem passou a considerar a parcela.
+
+**O que o teste do Rodrigo mudou no meio do caminho:** a primeira versão
+prendia o parcelamento ao cadastro do cliente. A migration foi **reescrita**, e
+não corrigida por cima, porque a PR ainda não tinha sido integrada — ela só
+existiu no Banco Preview, reconstruído do zero a cada envio.
 
 ## Fase 5 — Extrato por cliente e lista de atrasados
 

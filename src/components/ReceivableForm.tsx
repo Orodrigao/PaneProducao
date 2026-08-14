@@ -6,7 +6,9 @@ import {
   createManualReceivable,
   emptyReceivableDraft,
   getReceivableErrorMessage,
+  podeDividirEm,
   validateReceivableDraft,
+  vencimentosDaFatura,
   type ReceivableCustomerOption,
   type ReceivableDraft,
 } from '@/lib/receivables'
@@ -18,13 +20,7 @@ interface ReceivableFormProps {
   onSaved: () => Promise<void> | void
 }
 
-/** O vencimento não é digitado: sai do prazo combinado com o cliente. */
-function previewDueDate(invoiceDate: string, termDays: number | null): string | null {
-  if (!invoiceDate || termDays === null) return null
-  const base = new Date(`${invoiceDate}T00:00:00Z`)
-  base.setUTCDate(base.getUTCDate() + termDays)
-  return base.toISOString().slice(0, 10)
-}
+
 
 function formatDate(dateKey: string): string {
   const [year, month, day] = dateKey.split('-')
@@ -49,8 +45,9 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
     [customers, draft.customerId],
   )
 
-  const dueDate = previewDueDate(draft.invoiceDate, selectedCustomer?.paymentTermDays ?? null)
-  const semPrazo = selectedCustomer !== null && selectedCustomer.paymentTermDays === null
+  const prazoBasico = selectedCustomer?.paymentTermDays ?? null
+  const dueDates = vencimentosDaFatura(draft.invoiceDate, prazoBasico, draft.parcelas)
+  const semPrazo = selectedCustomer !== null && prazoBasico === null
 
   async function save() {
     const validationError = validateReceivableDraft(draft, todayKey())
@@ -77,7 +74,13 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
       <div className="ps-card-head">
         <div>
           <b>Nova cobrança</b>
-          <small>{dueDate ? `Vence em ${formatDate(dueDate)}` : 'O vencimento vem do prazo do cliente'}</small>
+          <small>
+            {dueDates.length === 0
+              ? 'O vencimento vem do prazo do cliente'
+              : dueDates.length === 1
+                ? `Vence em ${formatDate(dueDates[0])}`
+                : `${dueDates.length} parcelas, vencendo em ${dueDates.map(formatDate).join(', ')}`}
+          </small>
         </div>
         <button type="button" className="ps-iconbtn" onClick={onCancel} aria-label="Fechar cobrança"><X size={16} /></button>
       </div>
@@ -128,6 +131,40 @@ export default function ReceivableForm({ customers, onCancel, onSaved }: Receiva
           value={draft.amount}
           onChange={event => update({ amount: event.target.value })}
         />
+      </div>
+
+      <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
+        <div className="ps-fieldlabel">Em quantas vezes</div>
+        <div className="ps-fieldrow">
+          {[1, 2, 3].map(vezes => {
+            const cabe = podeDividirEm(prazoBasico, vezes)
+            return (
+              <button
+                key={vezes}
+                type="button"
+                className={`ps-btn ${draft.parcelas === vezes ? 'primary' : 'ghost'} sm`}
+                disabled={!cabe}
+                title={cabe ? undefined : 'Indisponível para este cliente — veja o motivo abaixo.'}
+                onClick={() => update({ parcelas: vezes })}
+              >
+                {vezes === 1 ? 'À vista' : `${vezes}x`}
+              </button>
+            )
+          })}
+        </div>
+        {/* O motivo de nao poder dividir precisa estar na tela: tooltip nao
+            existe no celular, e botao cinza sem explicacao parece defeito. */}
+        <small className="ps-hint">
+          {!selectedCustomer
+            ? 'Escolha o cliente primeiro — é o prazo dele que define os vencimentos.'
+            : prazoBasico === null
+              ? 'Este cliente não tem prazo cadastrado, então não há como dividir.'
+              : prazoBasico === 0
+                ? 'Este cliente paga à vista, então não há prazo para distribuir parcelas.'
+                : prazoBasico < 3
+                  ? `O prazo de ${prazoBasico} dia(s) deste cliente só permite dividir em ${prazoBasico}x.`
+                  : 'Dividir é decisão desta fatura, não do cadastro. O prazo do cliente é o último vencimento; as parcelas se distribuem até ele.'}
+        </small>
       </div>
 
       <div className="ps-fieldgroup" style={{ marginTop: 12 }}>

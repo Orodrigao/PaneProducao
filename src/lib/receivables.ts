@@ -38,6 +38,8 @@ export interface ReceivableRow {
   due_date: string
   amount: number
   status: ReceivableStatus
+  installment_number: number
+  installment_count: number
   cancel_reason: string | null
   created_at: string
   customer?: { name: string } | null
@@ -75,10 +77,38 @@ export interface ReceivableDraft {
   invoiceDate: string
   amount: string
   description: string
+  /** Em quantas vezes esta fatura cai. 1 = inteira. */
+  parcelas: number
 }
 
 export function emptyReceivableDraft(): ReceivableDraft {
-  return { customerId: '', invoiceDate: todayKey(), amount: '', description: '' }
+  return { customerId: '', invoiceDate: todayKey(), amount: '', description: '', parcelas: 1 }
+}
+
+/**
+ * Os vencimentos de uma fatura dividida. O prazo do cliente é o TETO: a última
+ * parcela cai nele, e as anteriores se distribuem até lá — cliente de 21 dias
+ * em 3 vezes vence em 7, 14 e 21.
+ */
+export function vencimentosDaFatura(
+  invoiceDate: string,
+  prazoBasico: number | null,
+  parcelas: number,
+): string[] {
+  if (!invoiceDate || prazoBasico === null) return []
+  const total = Math.max(1, parcelas)
+  return Array.from({ length: total }, (_, indice) => {
+    const dias = Math.round((prazoBasico * (indice + 1)) / total)
+    const base = new Date(`${invoiceDate}T00:00:00Z`)
+    base.setUTCDate(base.getUTCDate() + dias)
+    return base.toISOString().slice(0, 10)
+  })
+}
+
+/** Prazo curto demais faz duas parcelas caírem no mesmo dia. */
+export function podeDividirEm(prazoBasico: number | null, parcelas: number): boolean {
+  if (prazoBasico === null) return false
+  return parcelas === 1 || prazoBasico >= parcelas
 }
 
 export interface ReceivablePaymentDraft {
@@ -246,7 +276,7 @@ export async function loadReceivableCustomers(): Promise<ReceivableCustomerOptio
 export async function loadReceivables(): Promise<ReceivableRow[]> {
   const { data, error } = await supabase
     .from('receivables')
-    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,cancel_reason,created_at,customer:customers(name),receipts:receivable_receipts(id,receivable_id,received_date,amount,method,account_id,reversed_at,reversal_reason)')
+    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,installment_number,installment_count,cancel_reason,created_at,customer:customers(name),receipts:receivable_receipts(id,receivable_id,received_date,amount,method,account_id,reversed_at,reversal_reason)')
     .order('due_date')
   if (error) throw error
   return (data ?? []).map(row => ({
@@ -264,6 +294,7 @@ export async function createManualReceivable(draft: ReceivableDraft, requestId: 
     p_invoice_date: draft.invoiceDate,
     p_amount: parseMoneyInput(draft.amount),
     p_description: draft.description.trim(),
+    p_parcelas: draft.parcelas,
   })
   if (error) throw error
   return data as string
@@ -360,6 +391,20 @@ export async function createReceivableFromPjOrder(
   })
   if (error) throw error
   return data as string
+}
+
+/** Divide uma cobrança que já existe — o caminho da que nasceu sozinha e saiu alta. */
+export async function splitReceivable(
+  receivableId: string,
+  parcelas: number,
+  requestId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('split_receivable', {
+    p_request_id: requestId,
+    p_receivable_id: receivableId,
+    p_parcelas: parcelas,
+  })
+  if (error) throw error
 }
 
 /** Pedido cujo cliente ainda não tem prazo combinado não pode ser cobrado. */
