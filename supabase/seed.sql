@@ -90,6 +90,12 @@ on conflict (id) do update set
   is_shelf = excluded.is_shelf;
 
 -- Cenario comercial PJ: tabela de preco, clientes e pedidos.
+--
+-- As datas sao afastadas do dia da reconstrucao de proposito. Um cenario
+-- semeado com "hoje" vence a meia-noite: os pedidos em aberto saem da fila da
+-- Expedicao (que so mostra entrega ainda nao vencida) e o teste do dia
+-- seguinte encontra a tela vazia. Entrega +1 sobrevive ao virar do dia e ao
+-- fuso entre o banco (UTC) e a padaria (America/Sao_Paulo).
 -- Sem isso o Preview nao permite criar nem conferir Pedido PJ, e o relatorio de
 -- Vendas PJ fica sempre zerado.
 
@@ -178,9 +184,9 @@ values
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
    252, 1.60, 21, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
    (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
    '[TESTE] pedido com pacote de 21 para conferir o valor do relatorio', false,
    null, null, null, null, null, null),
   -- Em aberto por quilo: 4,5 kg x R$ 89,00 = R$ 400,50.
@@ -190,9 +196,9 @@ values
    'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ',
    4.5, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
    (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
    '[TESTE] pedido por quilo, sem pacote', false,
    null, null, null, null, null, null),
   -- Enviado: sai da fila e vai para o Historico. 2 pacotes de 21 = 42 un = R$ 67,20.
@@ -201,10 +207,10 @@ values
    '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
    42, 1.60, 21, 'un',
-   (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
-   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   (now() at time zone 'America/Sao_Paulo')::date - 1,
+   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   (now() at time zone 'America/Sao_Paulo')::date - 1,
    '[TESTE] pedido ja enviado pela Expedicao', false,
    now() - interval '2 hours', null, '[TESTE] Expedicao JC',
    null, null, null),
