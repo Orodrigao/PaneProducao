@@ -58,38 +58,38 @@ values
 on conflict (id) do nothing;
 
 insert into public.price_tiers (id, name, description, active)
-values ('96000000-0000-4000-8000-0000000000t1', 'BUCK', 'Tabela de teste da fase 4', true)
+values ('96000000-0000-4000-8000-0000000000a1', 'BUCK', 'Tabela de teste da fase 4', true)
 on conflict (id) do nothing;
 
 -- Preço só para dois dos três produtos: o terceiro serve para provar a trava.
 insert into public.price_tier_items (
   id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
 ) values
-  ('96000000-0000-4000-8000-0000000000p1', '96000000-0000-4000-8000-0000000000t1',
+  ('96000000-0000-4000-8000-0000000000a2', '96000000-0000-4000-8000-0000000000a1',
    'teste-buck-pao', 'bread', '[TESTE] Pao Buck', 2.00, 'un', 1, true),
-  ('96000000-0000-4000-8000-0000000000p2', '96000000-0000-4000-8000-0000000000t1',
+  ('96000000-0000-4000-8000-0000000000a3', '96000000-0000-4000-8000-0000000000a1',
    'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 40.00, 'kg', 1, true)
 on conflict (id) do nothing;
 
 -- Dois romaneios da EX no período: 10 + 15 unidades de pão (2,00) e 2,5 kg de
 -- ciabatta (40,00). Total esperado: 50,00 + 100,00 = 150,00.
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
-select '96000000-0000-4000-8000-0000000000r1', d.id, current_date - 5, 1, 'enviado', 'Teste'
+select '96000000-0000-4000-8000-0000000000b1', d.id, current_date - 5, 1, 'enviado', 'Teste'
 from public.destinations d where d.code = 'EX'
 on conflict (id) do nothing;
 
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
-select '96000000-0000-4000-8000-0000000000r2', d.id, current_date - 3, 1, 'enviado', 'Teste'
+select '96000000-0000-4000-8000-0000000000b2', d.id, current_date - 3, 1, 'enviado', 'Teste'
 from public.destinations d where d.code = 'EX'
 on conflict (id) do nothing;
 
 insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
 values
-  ('96000000-0000-4000-8000-0000000000i1', '96000000-0000-4000-8000-0000000000r1',
+  ('96000000-0000-4000-8000-0000000000d1', '96000000-0000-4000-8000-0000000000b1',
    'teste-buck-pao', 'bread', '[TESTE] Pao Buck', 10, null),
-  ('96000000-0000-4000-8000-0000000000i2', '96000000-0000-4000-8000-0000000000r2',
+  ('96000000-0000-4000-8000-0000000000d2', '96000000-0000-4000-8000-0000000000b2',
    'teste-buck-pao', 'bread', '[TESTE] Pao Buck', 20, 15),
-  ('96000000-0000-4000-8000-0000000000i3', '96000000-0000-4000-8000-0000000000r1',
+  ('96000000-0000-4000-8000-0000000000d3', '96000000-0000-4000-8000-0000000000b1',
    'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 2.5, null);
 
 -- A conta somada no banco ---------------------------------------------------
@@ -178,7 +178,7 @@ select throws_ok(
 
 -- Produto sem preço na tabela BUCK.
 insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
-values ('96000000-0000-4000-8000-0000000000i4', '96000000-0000-4000-8000-0000000000r2',
+values ('96000000-0000-4000-8000-0000000000d4', '96000000-0000-4000-8000-0000000000b2',
         'teste-buck-sem-preco', 'bread', '[TESTE] Pao Buck Sem Preco', 5, null);
 
 select throws_ok(
@@ -198,7 +198,7 @@ select ok((select 'missing_price' = any(problemas)
 
 -- Peso suspeito: 1450 no campo de kg e o erro que custou R$ 190 mil.
 insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
-values ('96000000-0000-4000-8000-0000000000i5', '96000000-0000-4000-8000-0000000000r2',
+values ('96000000-0000-4000-8000-0000000000d5', '96000000-0000-4000-8000-0000000000b2',
         'teste-buck-ciabatta', 'bread', '[TESTE] Ciabatta Buck', 1450, null);
 
 select ok((select 'suspicious_quantity' = any(problemas)
