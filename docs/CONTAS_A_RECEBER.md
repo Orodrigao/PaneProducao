@@ -449,6 +449,15 @@ apagamento.
 
 ## Fase 3 — Pedido PJ entregue vira cobrança
 
+**Concluída em 2026-08-14 (PR #233),** testada por Rodrigo no preview, com a
+decisão 11 substituindo o gatilho único da decisão 8. O teste dele expôs dois
+defeitos que os automáticos não pegavam: o cenário do Preview semeado com
+"hoje", que vencia à meia-noite, e — a partir de uma pergunta dele sobre
+horário — o uso da data do servidor (UTC) em vez da data da padaria, que
+jogaria a receita de um envio noturno do dia 31 para o mês seguinte. Ver
+`lessons.md`.
+
+
 **Objetivo:** acabar com a digitação repetida do que já está no sistema.
 
 **Escopo — entra:**

@@ -182,7 +182,17 @@ tabelas.
   baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
   **com competência no mês do faturamento** — cliente que paga atrasado gera
   receita em mês anterior ao do recebimento. Geração automática a partir de
-  pedido PJ e do romaneio da Buck ainda não existe (fases 3 e 4);
+  pedido PJ ainda não existe para o romaneio da Buck (fase 4);
+- pedido PJ entregue vira cobrança (fase 3 de
+  [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)) por dois caminhos que chamam o
+  mesmo motor: a ação que confirma o envio gera a cobrança por dentro, sem dar
+  permissão financeira à Expedição, e o financeiro tem a lista de *entregues e
+  ainda não cobrados* para gerar em lote o que o envio não gerou. A decisão de
+  ter os dois caminhos veio de medir produção: **116 pedidos PJ entre junho e
+  13/08/2026, 1 com envio confirmado** — depender só do automático faria a
+  cobrança deixar de nascer. Pedido já cobrado fica travado para alteração,
+  cancelamento e exclusão; cliente sem prazo cadastrado não impede o envio, e o
+  pedido fica na lista até o prazo existir;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
