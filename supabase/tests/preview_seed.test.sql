@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(30);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -194,7 +194,7 @@ select is(
   (select count(*)::int from public.customers
     where id::text like '60000000-0000-4000-8000-0000000000%'
       and payment_term_days is not null),
-  2,
+  3,
   'seed cria clientes com prazo de pagamento combinado'
 );
 
@@ -211,6 +211,10 @@ select is(
 select is(
   (select count(*)::int from public.customers
     where id::text like '60000000-0000-4000-8000-0000000000%'
+      -- A Buck e a unica excecao ao prefixo: a conta do romaneio encontra o
+      -- cliente pelo nome exato, entao o cenario precisa reproduzi-lo. Ela
+      -- entra sem documento e sem contato.
+      and name <> 'Buck'
       and (name not like '[TESTE]%' or contact not like '%@exemplo.invalid')),
   0,
   'seed nao inclui nome ou contato de cliente real'
@@ -271,6 +275,54 @@ select is(
     where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
   ) then 2 else 0 end,
   'NF-e fictícia tem os dois itens depois que o Auth de teste está pronto'
+);
+
+-- Cenario da Buck (EX): sem ele a fase 4 nao tem o que cobrar no Preview.
+select is(
+  (select count(*)::int from public.romaneios romaneio
+     join public.destinations destino on destino.id = romaneio.destination_id
+    where upper(destino.code) = 'EX'
+      and romaneio.id::text like '72000000-%'),
+  2,
+  'seed cria dois romaneios da EX para a conta da Buck'
+);
+
+select is(
+  (select round(sum(item.qty_sent * preco.unit_price), 2)
+     from public.romaneio_items item
+     join public.price_tier_items preco
+       on preco.product_id = item.product_id
+      and preco.product_source = item.product_source
+      and preco.tier_id = '50000000-0000-4000-8000-000000000002'
+    where item.id::text like '73000000-%'),
+  325.00::numeric,
+  'os itens semeados batem com a tabela BUCK pelo enviado'
+);
+
+select is(
+  (select payment_term_days from public.customers where lower(trim(name)) = 'buck'),
+  15,
+  'a Buck tem prazo cadastrado, sem o qual nao ha cobranca'
+);
+
+-- Sem estas duas a tela de Relatorios > Romaneios abre vazia para o
+-- financeiro: a RLS de destinations e romaneios exige permissao de romaneio
+-- com escopo da loja.
+-- No banco limpo do CI as contas ficticias nao existem e o seed nao concede
+-- permissao nenhuma; a afirmacao so tem o que verificar no Banco Preview.
+select ok(
+  not exists(
+    select 1 from auth.users
+    where lower(email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  )
+  or exists(
+    select 1 from public.app_user_permissions assignment
+    join auth.users conta on conta.id = assignment.user_id
+    where lower(conta.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+      and assignment.permission_key = 'romaneio.visualizar'
+      and assignment.scope = '*'
+  ),
+  'financeiro ficticio enxerga romaneios, como a Elis em producao'
 );
 
 select * from finish();

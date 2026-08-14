@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ChevronLeft, CircleDollarSign, PackageCheck, Printer, RotateCw } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, CircleDollarSign, HandCoins, PackageCheck, Printer, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR } from '@/lib/utils'
 import { canPerformRomaneioAction, loadCurrentRomaneioPermissions } from '@/lib/romaneioPermissions'
+import { createReceivableFromRomaneio } from '@/lib/receivables'
 import {
   calculateRomaneioBilling,
   isBuckPriceTierName,
@@ -230,6 +231,7 @@ export default function RelatorioRomaneiosEX() {
   const [savingLink, setSavingLink] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [gerando, setGerando] = useState(false)
 
   useEffect(() => {
     setUser(getCurrentUser())
@@ -244,7 +246,8 @@ export default function RelatorioRomaneiosEX() {
     setLoadError(null)
     try {
       const [destinationRes, tiersRes] = await Promise.all([
-        supabase.from('destinations').select('id,name,code').eq('code', 'EX').eq('active', true).maybeSingle(),
+        // Sem depender da caixa: producao grava 'EX' e o Banco Preview grava 'ex'.
+        supabase.from('destinations').select('id,name,code').ilike('code', 'EX').eq('active', true).maybeSingle(),
         supabase.from('price_tiers').select('id,name').eq('active', true).order('name'),
       ])
       if (destinationRes.error) throw destinationRes.error
@@ -349,6 +352,24 @@ export default function RelatorioRomaneiosEX() {
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))
   const suspiciousRows = billing.rows.filter(row => row.issues.includes('suspicious_quantity'))
   const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues
+
+  // A conta e refeita no banco; o total daqui vai junto so para ser conferido.
+  // Se os dois discordarem, o banco recusa e mostra os dois numeros.
+  async function gerarCobranca() {
+    if (!range) return
+    const de = toISODate(range.from)
+    const ate = toISODate(range.to)
+    if (!window.confirm(`Gerar a conta a receber da Buck de ${formatDateBR(de)} a ${formatDateBR(ate)}, no valor de ${formatBRL(billing.total)}?`)) return
+    setGerando(true)
+    try {
+      await createReceivableFromRomaneio(de, ate, billing.total, crypto.randomUUID())
+      setActionMessage('Conta a receber gerada. Confira em Contas a receber.')
+    } catch (error) {
+      setActionMessage(errorMessage(error))
+    } finally {
+      setGerando(false)
+    }
+  }
 
   const startLinking = (row: RomaneioBillingRow) => {
     const options = correctionOptionsForRow(row, prices)
@@ -480,6 +501,9 @@ export default function RelatorioRomaneiosEX() {
               </button>
               <button className="ps-btn primary sm" onClick={() => window.print()} disabled={!canPrint}>
                 <Printer size={14}/> Imprimir cobrança
+              </button>
+              <button className="ps-btn primary sm" onClick={() => void gerarCobranca()} disabled={!canPrint || gerando}>
+                <HandCoins size={14}/> {gerando ? 'Gerando...' : 'Gerar conta a receber'}
               </button>
             </div>
 
