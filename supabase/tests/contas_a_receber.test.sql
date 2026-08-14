@@ -188,7 +188,7 @@ select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-000000000001
 -- Baixa --------------------------------------------------------------------
 
 select throws_ok(
-  $$ select public.record_receivable_payment(
+  $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b001'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     current_date - 45, 1200.00, 'pix', 'banco_sicredi_jc'
@@ -199,7 +199,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.record_receivable_payment(
+  $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b002'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     current_date - 2, 1200.00, 'cartao', 'cartao_sicredi_jc'
@@ -211,7 +211,7 @@ select throws_ok(
 
 -- Recebeu 1.190 (10 a menos: desconto) em 18/08, no Sicredi.
 select lives_ok(
-  $$ select public.record_receivable_payment(
+  $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     current_date - 2, 1190.00, 'pix', 'banco_sicredi_jc'
@@ -266,7 +266,7 @@ select is((select account.key from public.finance_entries entry
 
 -- Repetir a baixa não duplica nada.
 select lives_ok(
-  $$ select public.record_receivable_payment(
+  $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     current_date - 2, 1190.00, 'pix', 'banco_sicredi_jc'
@@ -293,9 +293,11 @@ select throws_ok(
 -- Estorno ------------------------------------------------------------------
 
 select throws_ok(
-  $$ select public.reverse_receivable_payment(
+  $$ select public.reverse_receivable_receipt(
     '94000000-0000-4000-8000-00000000e001'::uuid,
-    (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
+    (select recibo.id from public.receivable_receipts recibo
+       join public.receivables cobranca on cobranca.id = recibo.receivable_id
+      where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     ''
   ) $$,
   '22023',
@@ -304,9 +306,11 @@ select throws_ok(
 );
 
 select lives_ok(
-  $$ select public.reverse_receivable_payment(
+  $$ select public.reverse_receivable_receipt(
     '94000000-0000-4000-8000-00000000e002'::uuid,
-    (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
+    (select recibo.id from public.receivable_receipts recibo
+       join public.receivables cobranca on cobranca.id = recibo.receivable_id
+      where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
     'Pix caiu na conta errada'
   ) $$,
   'financeiro estorna a baixa'
@@ -316,8 +320,8 @@ select is((select status from public.receivables
     where request_id = '94000000-0000-4000-8000-00000000a004'::uuid), 'aberta',
   'a cobranca volta para aberta');
 
-select is((select received_amount from public.receivables
-    where request_id = '94000000-0000-4000-8000-00000000a004'::uuid), null,
+select is((select private.receivable_recebido(id) from public.receivables
+    where request_id = '94000000-0000-4000-8000-00000000a004'::uuid), 0::numeric,
   'a cobranca nao guarda resquicio do recebimento estornado');
 
 select is((select count(*)::int from public.finance_entries

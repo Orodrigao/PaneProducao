@@ -7,7 +7,8 @@ import {
   defaultPaymentDraft,
   formatReceivableMoney,
   getReceivableErrorMessage,
-  recordReceivablePayment,
+  recordReceivableReceipt,
+  remainingAmount,
   RECEIVABLE_METHOD_LABELS,
   validateReceivablePaymentDraft,
   type ReceivableMethod,
@@ -46,11 +47,15 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
 
   const mesDeCompetencia = formatCompetenceMonth(receivable.invoice_date.slice(0, 7))
 
+  const falta = remainingAmount(receivable)
+
+  // A diferenca e medida contra o que FALTA, nao contra o valor cheio: numa
+  // cobranca que ja recebeu metade, o que interessa e se este pedaco quita.
   const diferenca = useMemo(() => {
     const recebido = parseMoneyInput(draft.receivedAmount)
     if (!(recebido > 0)) return 0
-    return Math.round((recebido - receivable.amount) * 100) / 100
-  }, [draft.receivedAmount, receivable.amount])
+    return Math.round((recebido - falta) * 100) / 100
+  }, [draft.receivedAmount, falta])
 
   async function save() {
     const validationError = validateReceivablePaymentDraft(draft, receivable, todayKey())
@@ -61,7 +66,7 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
     setSaving(true)
     setError(null)
     try {
-      await recordReceivablePayment(receivable.id, draft, requestIdRef.current)
+      await recordReceivableReceipt(receivable.id, draft, requestIdRef.current)
       // Dizer em qual mês o dinheiro caiu no livro. Cliente que paga atrasado
       // é o caso normal, então a receita quase sempre pesa num mês anterior ao
       // de hoje — e o livro abre no mês corrente. Sem este recado, quem baixa
@@ -83,6 +88,7 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
           <b>Registrar recebimento</b>
           <small>
             {receivable.customer?.name ?? 'Cliente'} · cobrado {formatReceivableMoney(receivable.amount)}
+            {falta < receivable.amount && <> · faltam {formatReceivableMoney(falta)}</>}
             {' · '}pesa em {mesDeCompetencia}
           </small>
         </div>
@@ -116,8 +122,8 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
         {diferenca !== 0 && (
           <small className="ps-hint">
             {diferenca > 0
-              ? `Entrou ${formatReceivableMoney(diferenca)} a mais que o cobrado.`
-              : `Entrou ${formatReceivableMoney(-diferenca)} a menos que o cobrado.`}
+              ? `Entrou ${formatReceivableMoney(diferenca)} a mais do que faltava. A cobrança fecha.`
+              : `Recebimento parcial: ainda faltarão ${formatReceivableMoney(-diferenca)}.`}
           </small>
         )}
       </div>

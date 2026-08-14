@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
 
-export type ReceivableStatus = 'aberta' | 'recebida' | 'cancelada'
+export type ReceivableStatus = 'aberta' | 'parcial' | 'recebida' | 'cancelada'
 export type ReceivableOrigin = 'avulso' | 'pedido_pj' | 'romaneio_ex'
 export type ReceivableMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
 
@@ -38,13 +38,36 @@ export interface ReceivableRow {
   due_date: string
   amount: number
   status: ReceivableStatus
-  received_date: string | null
-  received_amount: number | null
-  received_method: ReceivableMethod | null
-  received_account_id: string | null
   cancel_reason: string | null
   created_at: string
   customer?: { name: string } | null
+  receipts?: ReceivableReceiptRow[]
+}
+
+/** Cada entrada de dinheiro de uma cobrança. Uma cobrança pode ter várias. */
+export interface ReceivableReceiptRow {
+  id: string
+  receivable_id: string
+  received_date: string
+  amount: number
+  method: ReceivableMethod
+  account_id: string
+  reversed_at: string | null
+  reversal_reason: string | null
+}
+
+/** O que já entrou, somando só os pedaços que não foram estornados. */
+export function receivedTotal(receivable: Pick<ReceivableRow, 'receipts'>): number {
+  return (receivable.receipts ?? [])
+    .filter(receipt => receipt.reversed_at === null)
+    .reduce((sum, receipt) => sum + receipt.amount, 0)
+}
+
+/** O que falta para quitar. Nunca negativo: quem paga a mais quita e pronto. */
+export function remainingAmount(
+  receivable: Pick<ReceivableRow, 'amount' | 'receipts'>,
+): number {
+  return Math.max(0, Math.round((receivable.amount - receivedTotal(receivable)) * 100) / 100)
 }
 
 export interface ReceivableDraft {
@@ -69,10 +92,14 @@ export interface ReceivablePaymentDraft {
  * Padrões que permitem baixar em dois toques: hoje, o valor cobrado e Pix — a
  * forma mais comum na padaria. A conta continua sendo escolha consciente.
  */
-export function defaultPaymentDraft(receivable: Pick<ReceivableRow, 'amount'>): ReceivablePaymentDraft {
+export function defaultPaymentDraft(
+  receivable: Pick<ReceivableRow, 'amount' | 'receipts'>,
+): ReceivablePaymentDraft {
   return {
     receivedDate: todayKey(),
-    receivedAmount: receivable.amount.toFixed(2).replace('.', ','),
+    // O que falta, e não o valor cheio: numa cobrança que já recebeu metade,
+    // propor o total seria propor cobrar duas vezes.
+    receivedAmount: remainingAmount(receivable).toFixed(2).replace('.', ','),
     receivedMethod: 'pix',
     accountKey: '',
   }
@@ -122,6 +149,14 @@ export function validateReceivablePaymentDraft(
   return null
 }
 
+/** O rótulo da situação, já contando os pedaços. */
+export const RECEIVABLE_STATUS_LABELS: Record<ReceivableStatus, string> = {
+  aberta: 'Em aberto',
+  parcial: 'Recebida em parte',
+  recebida: 'Recebida',
+  cancelada: 'Cancelada',
+}
+
 /** Dias de atraso; zero ou negativo significa que ainda não venceu. */
 export function daysOverdue(receivable: Pick<ReceivableRow, 'due_date'>, today = todayKey()): number {
   const due = Date.parse(`${receivable.due_date}T00:00:00Z`)
@@ -130,7 +165,8 @@ export function daysOverdue(receivable: Pick<ReceivableRow, 'due_date'>, today =
 }
 
 export function isOverdue(receivable: Pick<ReceivableRow, 'due_date' | 'status'>, today = todayKey()): boolean {
-  return receivable.status === 'aberta' && receivable.due_date < today
+  return (receivable.status === 'aberta' || receivable.status === 'parcial')
+    && receivable.due_date < today
 }
 
 export interface ReceivableTotals {
@@ -151,12 +187,14 @@ export function summarizeReceivables(
   let aVencer = 0
   let recebidoNoPeriodo = 0
   for (const row of rows) {
-    if (row.status === 'aberta') {
-      if (row.due_date < today) atrasado += row.amount
-      else aVencer += row.amount
-    } else if (row.status === 'recebida') {
-      recebidoNoPeriodo += row.received_amount ?? 0
+    // Cobrança parcial conta pelo que FALTA nos totais de atrasado e a vencer:
+    // o que já entrou não é mais dívida.
+    if (row.status === 'aberta' || row.status === 'parcial') {
+      const falta = remainingAmount(row)
+      if (row.due_date < today) atrasado += falta
+      else aVencer += falta
     }
+    if (row.status !== 'cancelada') recebidoNoPeriodo += receivedTotal(row)
   }
   return { atrasado, aVencer, recebidoNoPeriodo }
 }
@@ -171,7 +209,7 @@ export function sortReceivables(
   today = todayKey(),
 ): ReceivableRow[] {
   const rank = (row: ReceivableRow): number => {
-    if (row.status === 'aberta') return row.due_date < today ? 0 : 1
+    if (row.status === 'aberta' || row.status === 'parcial') return row.due_date < today ? 0 : 1
     return row.status === 'recebida' ? 2 : 3
   }
   return [...rows].sort((left, right) => {
@@ -208,7 +246,7 @@ export async function loadReceivableCustomers(): Promise<ReceivableCustomerOptio
 export async function loadReceivables(): Promise<ReceivableRow[]> {
   const { data, error } = await supabase
     .from('receivables')
-    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,received_date,received_amount,received_method,received_account_id,cancel_reason,created_at,customer:customers(name)')
+    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,cancel_reason,created_at,customer:customers(name),receipts:receivable_receipts(id,receivable_id,received_date,amount,method,account_id,reversed_at,reversal_reason)')
     .order('due_date')
   if (error) throw error
   return (data ?? []).map(row => ({
@@ -231,30 +269,32 @@ export async function createManualReceivable(draft: ReceivableDraft, requestId: 
   return data as string
 }
 
-export async function recordReceivablePayment(
+export async function recordReceivableReceipt(
   receivableId: string,
   draft: ReceivablePaymentDraft,
   requestId: string,
-): Promise<void> {
-  const { error } = await supabase.rpc('record_receivable_payment', {
+): Promise<string> {
+  const { data, error } = await supabase.rpc('record_receivable_receipt', {
     p_request_id: requestId,
     p_receivable_id: receivableId,
     p_received_date: draft.receivedDate,
-    p_received_amount: parseMoneyInput(draft.receivedAmount),
-    p_received_method: draft.receivedMethod,
+    p_amount: parseMoneyInput(draft.receivedAmount),
+    p_method: draft.receivedMethod,
     p_account_key: draft.accountKey,
   })
   if (error) throw error
+  return data as string
 }
 
-export async function reverseReceivablePayment(
-  receivableId: string,
+/** O estorno é de UM pedaço: errar o Pix de terça não desfaz o dinheiro de quinta. */
+export async function reverseReceivableReceipt(
+  receiptId: string,
   reason: string,
   requestId: string,
 ): Promise<void> {
-  const { error } = await supabase.rpc('reverse_receivable_payment', {
+  const { error } = await supabase.rpc('reverse_receivable_receipt', {
     p_request_id: requestId,
-    p_receivable_id: receivableId,
+    p_receipt_id: receiptId,
     p_reason: reason.trim(),
   })
   if (error) throw error

@@ -16,10 +16,27 @@ import {
   summarizePjOrdersToBill,
   validateReceivablePaymentDraft,
   type PjOrderToBillRow,
+  receivedTotal,
+  remainingAmount,
+  type ReceivableReceiptRow,
   type ReceivableRow,
 } from '@/lib/receivables'
 
 const HOJE = '2026-08-20'
+
+function recibo(overrides: Partial<ReceivableReceiptRow> = {}): ReceivableReceiptRow {
+  return {
+    id: 'rec1',
+    receivable_id: 'r1',
+    received_date: '2026-08-18',
+    amount: 100,
+    method: 'pix',
+    account_id: 'acc1',
+    reversed_at: null,
+    reversal_reason: null,
+    ...overrides,
+  }
+}
 
 function cobranca(overrides: Partial<ReceivableRow> = {}): ReceivableRow {
   return {
@@ -33,10 +50,7 @@ function cobranca(overrides: Partial<ReceivableRow> = {}): ReceivableRow {
     due_date: '2026-08-19',
     amount: 1200,
     status: 'aberta',
-    received_date: null,
-    received_amount: null,
-    received_method: null,
-    received_account_id: null,
+    receipts: [],
     cancel_reason: null,
     created_at: '2026-07-20T10:00:00Z',
     ...overrides,
@@ -121,10 +135,30 @@ describe('summarizeReceivables', () => {
 
   it('soma o recebido pelo valor que entrou, não pelo cobrado', () => {
     const totais = summarizeReceivables([
-      cobranca({ id: 'c', status: 'recebida', amount: 1200, received_amount: 1190 }),
+      cobranca({ id: 'c', status: 'recebida', amount: 1200, receipts: [recibo({ amount: 1190 })] }),
     ], HOJE)
     expect(totais.recebidoNoPeriodo).toBe(1190)
     expect(totais.atrasado).toBe(0)
+  })
+
+  it('cobrança parcial deve só o que falta, não o valor cheio', () => {
+    const totais = summarizeReceivables([
+      cobranca({
+        id: 'p', status: 'parcial', amount: 1000, due_date: '2026-08-01',
+        receipts: [recibo({ amount: 400 })],
+      }),
+    ], HOJE)
+    expect(totais.atrasado).toBe(600)
+    expect(totais.recebidoNoPeriodo).toBe(400)
+  })
+
+  it('pedaço estornado deixa de contar como recebido', () => {
+    const alvo = cobranca({
+      id: 'e', status: 'aberta', amount: 1000, due_date: '2026-08-30',
+      receipts: [recibo({ amount: 400, reversed_at: '2026-08-20T10:00:00Z', reversal_reason: 'Pix errado' })],
+    })
+    expect(receivedTotal(alvo)).toBe(0)
+    expect(remainingAmount(alvo)).toBe(1000)
   })
 
   it('cobrança cancelada não entra em nenhum total', () => {

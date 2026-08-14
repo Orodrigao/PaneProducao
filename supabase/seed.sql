@@ -1062,17 +1062,20 @@ on conflict (id) do update set
   amount = excluded.amount,
   description = excluded.description,
   status = 'aberta',
-  received_date = null,
-  received_amount = null,
-  received_method = null,
-  received_account_id = null,
-  received_by = null,
-  received_at = null,
+  -- O recebimento deixou de morar na cobranca: agora sao os pedacos em
+  -- receivable_receipts, apagados logo abaixo.
   cancel_reason = null,
   cancelled_by = null,
   cancelled_at = null;
 
 delete from public.receivable_events
+where receivable_id in (
+  '90000000-0000-4000-8000-000000000001',
+  '90000000-0000-4000-8000-000000000002'
+);
+
+-- Cobranca semeada volta ao estado inicial: sem nenhum pedaco recebido.
+delete from public.receivable_receipts
 where receivable_id in (
   '90000000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002'
