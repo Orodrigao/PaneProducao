@@ -309,9 +309,9 @@ async function sbDel(table:string, match:Record<string,string>) {
   const q=Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&')
   await supabaseRestFetch(`${table}?${q}`,{method:'DELETE'})
 }
-async function loadOpenReplacementPendings(destId: string): Promise<RomaneioReplacementPendingRow[]> {
-  if (!destId) return []
-  const params = `destination_id=eq.${destId}&status=eq.aberta&product_source=eq.bread&select=product_id,pending_quantity`
+async function loadOpenReplacementPendings(destId: string, sourceRomaneioIds: string[]): Promise<RomaneioReplacementPendingRow[]> {
+  if (!destId || sourceRomaneioIds.length === 0) return []
+  const params = `destination_id=eq.${destId}&source_romaneio_id=in.(${sourceRomaneioIds.join(',')})&status=eq.aberta&product_source=eq.bread&select=product_id,pending_quantity`
   return await sbGet('romaneio_replacement_pending', params) as RomaneioReplacementPendingRow[]
 }
 
@@ -460,8 +460,10 @@ export default function RomaneioPage() {
         sbGet('romaneio_items',`romaneio_id=eq.${romId}&order=product_name.asc`)
       ])
       const rom = roms[0] as Romaneio | undefined
-      const replacementRows = rom && normalizeDestination(rom.destinations?.code) === 'EX'
-        ? await loadOpenReplacementPendings(rom.destination_id)
+      const replacementRows = rom
+        && normalizeDestination(rom.destinations?.code) === 'EX'
+        && rom.record_date === todayKey()
+        ? await loadOpenReplacementPendings(rom.destination_id, [rom.id])
         : []
       const compositions = rom ? await loadProductionCompositions(rom.record_date, rom.destinations?.code) : {}
       setDetailRom(rom ?? null)
@@ -506,17 +508,16 @@ export default function RomaneioPage() {
     const orderRequest = orderStore
       ? sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
       : Promise.resolve([])
-    const replacementRequest = destinationCode === 'EX'
-      ? loadOpenReplacementPendings(destId)
-      : Promise.resolve([])
     const compositionRequest = loadProductionCompositions(date, destinationCode)
-    const [existing, orders, replacementRows, productionCompositions] = await Promise.all([
+    const [existing, orders, productionCompositions] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
       orderRequest,
-      replacementRequest,
       compositionRequest,
     ])
     const existingRows = existing as RomaneioDraftExistingRow[]
+    const replacementRows = destinationCode === 'EX' && date === todayKey()
+      ? await loadOpenReplacementPendings(destId, existingRows.map(row => row.id))
+      : []
     const previousItemRows = existingRows.length
       ? await sbGet('romaneio_items',`romaneio_id=in.(${existingRows.map(row => row.id).join(',')})&product_source=eq.bread&select=product_id,qty_sent`)
       : []
@@ -540,7 +541,7 @@ export default function RomaneioPage() {
     return {
       destId,
       breads: bds,
-      qtys: {},
+      qtys: replacementPendingQtys,
       orderQtys: requestedQtys,
       previouslySentQtys,
       replacementPendingQtys,

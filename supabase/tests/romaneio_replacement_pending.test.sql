@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(10);
+select plan(15);
 
 insert into auth.users (
   id,
@@ -48,6 +48,11 @@ insert into public.app_user_permissions (user_id, permission_key, scope, granted
 values (
   '90000000-0000-4000-8000-000000000001',
   'romaneio.conferir_recebimento',
+  'ex',
+  null
+), (
+  '90000000-0000-4000-8000-000000000001',
+  'romaneio.confirmar_saida',
   'ex',
   null
 );
@@ -121,6 +126,22 @@ insert into public.romaneios (
     'Teste',
     'Teste',
     now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000026',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    97,
+    'separado',
+    'Teste'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000027',
+    current_date - 1,
+    '20000000-0000-4000-8000-000000000003',
+    98,
+    'com_divergencia',
+    'Teste'
   );
 
 insert into public.romaneio_items (
@@ -222,7 +243,51 @@ insert into public.romaneio_items (
     6,
     1,
     'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000039',
+    '90000000-0000-4000-8000-000000000026',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete',
+    2,
+    1,
+    'pendente'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000040',
+    '90000000-0000-4000-8000-000000000027',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete antiga',
+    7,
+    1,
+    'divergencia'
   );
+
+insert into public.romaneio_replacement_pending (
+  id,
+  destination_id,
+  source_romaneio_id,
+  source_item_id,
+  product_id,
+  product_source,
+  product_name,
+  pending_quantity,
+  status,
+  created_by
+) values (
+  '90000000-0000-4000-8000-000000000041',
+  '20000000-0000-4000-8000-000000000003',
+  '90000000-0000-4000-8000-000000000027',
+  '90000000-0000-4000-8000-000000000040',
+  'teste-baguete',
+  'bread',
+  '[TESTE] Baguete antiga',
+  7,
+  'aberta',
+  'Teste'
+);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
@@ -262,6 +327,56 @@ select is(
   ),
   'aberta',
   'pendencia nasce aberta para a proxima viagem'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '90000000-0000-4000-8000-000000000001', true);
+
+select lives_ok(
+  $$ select public.confirm_romaneio_departure('90000000-0000-4000-8000-000000000026') $$,
+  'saida seguinte da EX baixa a reposicao aberta no mesmo dia'
+);
+
+reset role;
+
+select is(
+  (
+    select pending_quantity
+    from public.romaneio_replacement_pending
+    where source_item_id = '90000000-0000-4000-8000-000000000030'
+  ),
+  0::numeric,
+  'reposicao baixada nao permanece como saldo acumulado'
+);
+
+select is(
+  (
+    select status
+    from public.romaneio_replacement_pending
+    where source_item_id = '90000000-0000-4000-8000-000000000030'
+  ),
+  'baixada',
+  'reposicao enviada fica baixada'
+);
+
+select is(
+  (
+    select pending_quantity
+    from public.romaneio_replacement_pending
+    where id = '90000000-0000-4000-8000-000000000041'
+  ),
+  0::numeric,
+  'saldo de dia anterior expira antes de uma nova saida da EX'
+);
+
+select is(
+  (
+    select status
+    from public.romaneio_replacement_pending
+    where id = '90000000-0000-4000-8000-000000000041'
+  ),
+  'cancelada',
+  'saldo de dia anterior fica encerrado'
 );
 
 set local role authenticated;

@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(117);
+select plan(118);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 45,
@@ -86,6 +86,10 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
     ilike all(array['%romaneio_replacement_pending%', '%lower(v_destination_code) = ''ex''%', '%qty_sent - item.qty_accepted%']),
   'conferencia EX cria pendencia por enviado menos aceito');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'confirm_romaneio_departure')
+    ilike all(array['%source_romaneio.record_date = v_record_date%', '%status = ''baixada''%', '%pending_quantity - v_consumed_quantity%']),
+  'saida EX baixa somente reposicoes abertas da mesma data');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
     ilike all(array['%jsonb_array_length%', '%count(distinct id)%', '%qty_accepted > qty_received%']),

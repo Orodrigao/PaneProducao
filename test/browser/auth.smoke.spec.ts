@@ -167,7 +167,7 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
   await expect(page).toHaveURL(/\/romaneio$/)
 })
 
-test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', async ({ page }) => {
+test('Romaneio EX sugere reposicao pendente da mesma data', async ({ page }) => {
   // O retry da aba tem teto próprio e precisa caber dentro do teto do caso.
   test.setTimeout(90_000)
 
@@ -181,7 +181,7 @@ test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', asy
   await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
-  await expect(bagueteCard.locator('input.ps-qty')).toHaveValue('')
+  await expect(bagueteCard.locator('input.ps-qty')).toHaveValue('2')
 
   await bagueteCard.locator('input.ps-qty').fill('3')
   await expect(
