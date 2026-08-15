@@ -8,13 +8,12 @@ alter table public.romaneio_replacement_pending
   add constraint romaneio_replacement_pending_quantity_check check (pending_quantity >= 0);
 
 comment on column public.romaneio_replacement_pending.pending_quantity is
-  'Saldo ainda pendente de reposicao no mesmo dia operacional. Zero quando a reposicao saiu ou expirou.';
+  'Saldo ainda pendente de reposicao no mesmo dia operacional. Zero quando a reposicao saiu; saldo cancelado preserva a quantidade para auditoria.';
 
 -- Nao transforma divergencia passada em divida para a proxima operacao.
 -- A divergencia continua registrada no item de origem do romaneio.
 update public.romaneio_replacement_pending pending
 set
-  pending_quantity = 0,
   status = 'cancelada',
   updated_at = now()
 from public.romaneios source_romaneio
@@ -151,7 +150,6 @@ begin
     -- Saldos de dias passados nao acompanham uma nova data de romaneio.
     update public.romaneio_replacement_pending pending
     set
-      pending_quantity = 0,
       status = 'cancelada',
       updated_at = now()
     from public.romaneios source_romaneio

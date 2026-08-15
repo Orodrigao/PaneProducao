@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(15);
+select plan(17);
 
 insert into auth.users (
   id,
@@ -142,6 +142,14 @@ insert into public.romaneios (
     98,
     'com_divergencia',
     'Teste'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000028',
+    current_date,
+    '20000000-0000-4000-8000-000000000003',
+    92,
+    'com_divergencia',
+    'Teste'
   );
 
 insert into public.romaneio_items (
@@ -250,7 +258,7 @@ insert into public.romaneio_items (
     'teste-baguete',
     'bread',
     '[TESTE] Baguete',
-    2,
+    4,
     1,
     'pendente'
   ),
@@ -261,6 +269,16 @@ insert into public.romaneio_items (
     'bread',
     '[TESTE] Baguete antiga',
     7,
+    1,
+    'divergencia'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000042',
+    '90000000-0000-4000-8000-000000000028',
+    'teste-baguete',
+    'bread',
+    '[TESTE] Baguete segunda viagem',
+    3,
     1,
     'divergencia'
   );
@@ -285,6 +303,17 @@ insert into public.romaneio_replacement_pending (
   'bread',
   '[TESTE] Baguete antiga',
   7,
+  'aberta',
+  'Teste'
+), (
+  '90000000-0000-4000-8000-000000000043',
+  '20000000-0000-4000-8000-000000000003',
+  '90000000-0000-4000-8000-000000000028',
+  '90000000-0000-4000-8000-000000000042',
+  'teste-baguete',
+  'bread',
+  '[TESTE] Baguete segunda viagem',
+  3,
   'aberta',
   'Teste'
 );
@@ -363,10 +392,30 @@ select is(
   (
     select pending_quantity
     from public.romaneio_replacement_pending
+    where id = '90000000-0000-4000-8000-000000000043'
+  ),
+  1::numeric,
+  'baixa parcial deixa somente o saldo da segunda falta'
+);
+
+select is(
+  (
+    select status
+    from public.romaneio_replacement_pending
+    where id = '90000000-0000-4000-8000-000000000043'
+  ),
+  'aberta',
+  'baixa parcial preserva aberta a falta nao reposta'
+);
+
+select is(
+  (
+    select pending_quantity
+    from public.romaneio_replacement_pending
     where id = '90000000-0000-4000-8000-000000000041'
   ),
-  0::numeric,
-  'saldo de dia anterior expira antes de uma nova saida da EX'
+  7::numeric,
+  'saldo de dia anterior preserva a quantidade para auditoria'
 );
 
 select is(
