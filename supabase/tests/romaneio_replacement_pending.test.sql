@@ -81,7 +81,7 @@ insert into public.romaneios (
     '90000000-0000-4000-8000-000000000021',
     current_date,
     '20000000-0000-4000-8000-000000000003',
-    92,
+    82,
     'enviado',
     'Teste',
     'Teste',
