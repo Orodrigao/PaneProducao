@@ -38,21 +38,24 @@ async function expectRouteVisible(page: import('@playwright/test').Page, href: s
   await expect(page.locator(`a[href="${href}"]`).first()).toBeAttached()
 }
 
-// A aba do destino aparece antes de o Romaneio terminar de carregar os dados do
-// dia. Quando a carga termina, a lista de abas e redesenhada e o clique cai num
-// elemento que ja saiu da tela ("element was detached from the DOM"). Clicar ate
-// a aba ficar selecionada absorve esse redesenho sem esconder falha real: se a
-// aba nunca selecionar, o teste falha no tempo limite.
+// A aba do destino pode ser redesenhada enquanto o Romaneio prepara o rascunho.
+// Cada tentativa encontra a aba de novo e só termina quando o card-evidência
+// montou. Assim o teste absorve o redesenho transitório, mas ainda falha se a
+// EX realmente não ficar disponível.
+const romaneioDestinationRetryTimeoutMs = 45_000
+
 async function selectRomaneioDestination(
   page: import('@playwright/test').Page,
   name: RegExp,
+  dataReadyCard: import('@playwright/test').Locator,
 ) {
-  const tab = page.getByRole('tab', { name })
-  await expect(tab).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(async () => {
+    const tab = page.getByRole('tab', { name })
+    await expect(tab).toBeVisible({ timeout: 5_000 })
     await tab.click({ timeout: 5_000 })
     await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
-  }).toPass({ timeout: slowPreviewDataTimeoutMs })
+    await expect(dataReadyCard).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: romaneioDestinationRetryTimeoutMs })
 }
 
 async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
@@ -165,14 +168,16 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
 })
 
 test('Romaneio EX mostra reposicao pendente sem alterar quantidade do card', async ({ page }) => {
+  // O retry da aba tem teto próprio e precisa caber dentro do teto do caso.
+  test.setTimeout(90_000)
+
   await enterWithPreviewAccount(page, previewAccounts.admin)
   await page.goto('/romaneio')
 
   await page.getByRole('button', { name: 'Novo Romaneio' }).click()
-  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/)
-
   const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
-  await expect(bagueteCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/, bagueteCard)
+
   await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
   })
