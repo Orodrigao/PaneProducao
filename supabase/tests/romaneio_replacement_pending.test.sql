@@ -264,7 +264,7 @@ insert into public.romaneio_items (
     'teste-baguete',
     'bread',
     '[TESTE] Baguete',
-    4,
+    6,
     1,
     'pendente'
   ),
