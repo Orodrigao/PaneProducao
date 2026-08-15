@@ -133,7 +133,9 @@ insert into public.romaneios (
     '20000000-0000-4000-8000-000000000003',
     97,
     'separado',
-    'Teste'
+    'Teste',
+    null,
+    null
   ),
   (
     '90000000-0000-4000-8000-000000000027',
@@ -141,7 +143,9 @@ insert into public.romaneios (
     '20000000-0000-4000-8000-000000000003',
     98,
     'com_divergencia',
-    'Teste'
+    'Teste',
+    null,
+    null
   ),
   (
     '90000000-0000-4000-8000-000000000028',
@@ -149,7 +153,9 @@ insert into public.romaneios (
     '20000000-0000-4000-8000-000000000003',
     92,
     'com_divergencia',
-    'Teste'
+    'Teste',
+    null,
+    null
   );
 
 insert into public.romaneio_items (

@@ -88,7 +88,7 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
   'conferencia EX cria pendencia por enviado menos aceito');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_departure')
-    ilike all(array['%source_romaneio.record_date = v_record_date%', '%status = ''baixada''%', '%pending_quantity - v_consumed_quantity%']),
+    ilike all(array['%source_romaneio.record_date = v_record_date%', '%then ''baixada''%', '%pending_quantity - v_consumed_quantity%']),
   'saida EX baixa somente reposicoes abertas da mesma data');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'confirm_romaneio_receipt')
