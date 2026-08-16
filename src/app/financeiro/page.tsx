@@ -39,7 +39,7 @@ export default function FinanceiroPage() {
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
   const [entries, setEntries] = useState<FinanceEntryRow[]>([])
   const [recurringRules, setRecurringRules] = useState<FinanceRecurringRuleRow[]>([])
-  const [payableDueReportStatus, setPayableDueReportStatus] = useState<PayableDueReportStatus | null>(null)
+  const [payableDueReportStatus, setPayableDueReportStatus] = useState<PayableDueReportStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -58,7 +58,7 @@ export default function FinanceiroPage() {
       ])
       const reportStatus = await loadPayableDueReportStatus().catch(reportError => {
         console.warn('O status do relatório diário ainda não está disponível.', reportError)
-        return null
+        return [] as PayableDueReportStatus[]
       })
       setCategories(categoryRows)
       setAccounts(accountRows)
@@ -153,16 +153,20 @@ export default function FinanceiroPage() {
             </small>
           </div>
 
-          {!loading && payableDueReportStatus && (
-            <div className="ps-card" style={{ marginTop: 12, borderColor: payableDueReportStatus.status === 'enviado' ? 'var(--basil)' : payableDueReportStatus.last_error ? 'var(--honey-deep)' : undefined }}>
-              <b>Relatório diário de contas a vencer</b>
-              <small style={{ display: 'block', marginTop: 4 }}>
-                {payableDueReportStatus.status === 'enviado' && 'Enviado hoje para a Suélen.'}
-                {payableDueReportStatus.status === 'programado' && 'Programado para hoje às 6h.'}
-                {payableDueReportStatus.status === 'aguardando' && 'Aguardando a próxima tentativa automática de envio.'}
-                {payableDueReportStatus.status === 'pendente' && 'Em nova tentativa automática de envio.'}
-                {payableDueReportStatus.last_error && ' A última tentativa não foi aceita; o sistema tenta de novo em até 15 minutos.'}
-              </small>
+          {!loading && payableDueReportStatus.length > 0 && (
+            <div className="ps-card" style={{ marginTop: 12, borderColor: payableDueReportStatus.some(report => report.last_error) ? 'var(--honey-deep)' : payableDueReportStatus.every(report => report.status === 'enviado' || report.status === 'sem_pendencias') ? 'var(--basil)' : undefined }}>
+              <b>Relatórios diários de contas a pagar</b>
+              {payableDueReportStatus.map(report => (
+                <small key={report.report_kind} style={{ display: 'block', marginTop: 4 }}>
+                  <b>{report.report_kind === 'vencida' ? 'Vencidas' : 'A vencer'}:</b>{' '}
+                  {report.status === 'enviado' && 'enviado hoje para a Suélen.'}
+                  {report.status === 'programado' && 'programado para hoje às 6h.'}
+                  {report.status === 'aguardando' && 'aguardando a próxima tentativa automática de envio.'}
+                  {report.status === 'pendente' && 'em nova tentativa automática de envio.'}
+                  {report.status === 'sem_pendencias' && 'sem contas vencidas hoje: este e-mail não é enviado.'}
+                  {report.last_error && ' A última tentativa não foi aceita; o sistema tenta de novo em até 15 minutos.'}
+                </small>
+              ))}
             </div>
           )}
 

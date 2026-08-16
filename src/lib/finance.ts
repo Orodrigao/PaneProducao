@@ -121,8 +121,9 @@ export interface FinanceRecurringRuleRow {
 }
 
 export interface PayableDueReportStatus {
+  report_kind: 'a_vencer' | 'vencida'
   report_date: string
-  status: 'programado' | 'aguardando' | 'pendente' | 'enviado'
+  status: 'programado' | 'aguardando' | 'pendente' | 'enviado' | 'sem_pendencias'
   last_attempt_at: string | null
   sent_at: string | null
   last_error: string | null
@@ -405,14 +406,19 @@ export async function loadFinanceAccounts(): Promise<FinanceAccountRow[]> {
   return (data ?? []) as FinanceAccountRow[]
 }
 
-export async function loadPayableDueReportStatus(): Promise<PayableDueReportStatus> {
+export async function loadPayableDueReportStatus(): Promise<PayableDueReportStatus[]> {
   const { data, error } = await supabase.rpc('get_payable_due_report_status')
   if (error) throw error
-  const status = Array.isArray(data) ? data[0] : data
-  if (!status || typeof status.status !== 'string' || typeof status.report_date !== 'string') {
-    throw new Error('O banco não devolveu o estado do relatório diário.')
+  const rows = Array.isArray(data) ? data : [data]
+  const valid = rows.filter((status): status is PayableDueReportStatus =>
+    Boolean(status)
+    && typeof status.status === 'string'
+    && typeof status.report_date === 'string'
+    && (status.report_kind === 'a_vencer' || status.report_kind === 'vencida'))
+  if (valid.length === 0) {
+    throw new Error('O banco não devolveu o estado dos relatórios diários.')
   }
-  return status as PayableDueReportStatus
+  return valid
 }
 
 export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntryRow[]> {
