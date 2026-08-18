@@ -249,3 +249,33 @@ describe('podeDividirEm', () => {
     expect(podeDividirEm(0, 1)).toBe(true)
   })
 })
+
+describe('parcelamento — casos de borda', () => {
+  it('prazo à vista (0 dias) com fatura inteira', () => {
+    expect(vencimentosDaFatura('2026-08-01', 0, 1)).toEqual(['2026-08-01'])
+  })
+
+  it('normaliza parcelas zero ou negativas para uma parcela única', () => {
+    expect(vencimentosDaFatura('2026-08-01', 10, 0)).toEqual(['2026-08-11'])
+    expect(vencimentosDaFatura('2026-08-01', 10, -5)).toEqual(['2026-08-11'])
+  })
+
+  it('distribuição com arredondamento não exato', () => {
+    // Prazo 20 em 3x: 20*1/3 = 6.66 -> 7; 20*2/3 = 13.33 -> 13; 20*3/3 = 20
+    expect(vencimentosDaFatura('2026-08-01', 20, 3))
+      .toEqual(['2026-08-08', '2026-08-14', '2026-08-21'])
+  })
+
+  it('fatura que cruza o fim do mês', () => {
+    expect(vencimentosDaFatura('2026-08-25', 10, 1)).toEqual(['2026-09-04'])
+  })
+
+  it('retorna lista vazia se a data do faturamento for vazia', () => {
+    expect(vencimentosDaFatura('', 10, 1)).toEqual([])
+  })
+
+  it('podeDividirEm retorna falso se o prazo for nulo, independente das parcelas', () => {
+    expect(podeDividirEm(null, 1)).toBe(false)
+    expect(podeDividirEm(null, 2)).toBe(false)
+  })
+})
