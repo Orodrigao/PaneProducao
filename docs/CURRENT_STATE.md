@@ -159,7 +159,11 @@ tabelas.
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
   em Riscos ainda abertos);
-- estoques e fornecedores;
+- estoques e fornecedores; em Contas a Pagar, o semáforo de compra responde
+  "este fornecedor está liberado para pedido?" — leitura pura das parcelas
+  vencidas em aberto por fornecedor (`summarizeSupplierPurchaseStatus`), sem
+  origem de dado nova. Depende de todo boleto ser lançado no sistema, premissa
+  confirmada pelo Rodrigo em 2026-08-19;
 - clientes, pedidos PJ e encomendas; o Banco Preview passou a ter cenário
   comercial de PJ (clientes, tabela de preço e pedidos em aberto, por quilo,
   enviado e cancelado), o que tornou Pedidos PJ e o relatório de Vendas PJ
