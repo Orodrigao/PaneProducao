@@ -9,13 +9,16 @@ import {
   isDueSoon,
   isOverdue,
   loadPayablePurchaseItems,
+  overdueDays,
   payableDetailUrl,
   prioritizeOverduePayablePurchases,
+  summarizeSupplierPurchaseStatus,
   totalInstallments,
   totalItems,
   validateCategorySlices,
   validateDraft,
   type PayableDraft,
+  type PayablePurchaseRow,
 } from './payables'
 import { buildPayablesReport, buildPayablesReportExportRows } from './payablesReport'
 
@@ -159,6 +162,104 @@ describe('contas a pagar manual', () => {
       fornecedor: 'Fornecedor Excel', documento: 'NF-e 123', data_compra: '2026-08-04', parcela: 1,
       vencimento: '2026-08-12', baixa: '', situacao: 'Pendente', valor: 80, criterio: 'Data da compra',
     }])
+  })
+})
+
+describe('semáforo de fornecedores para compra', () => {
+  const HOJE = new Date('2026-08-18T12:00:00Z')
+  const fornecedores = [
+    { id: 'aaaaaaaa-0000-0000-0000-00000000000a', name: 'Moinho Anaconda' },
+    { id: 'bbbbbbbb-0000-0000-0000-00000000000b', name: 'Frios do Vale' },
+  ]
+
+  function compra(overrides: Partial<PayablePurchaseRow> = {}): PayablePurchaseRow {
+    return {
+      id: 'compra-1', purchase_date: '2026-08-01', document_type: 'nfe', payment_method: 'boleto',
+      status: 'aberta', total_value: 100, notes: null,
+      supplier_id: 'aaaaaaaa-0000-0000-0000-00000000000a', suppliers: { name: 'Moinho Anaconda' },
+      payable_installments: [],
+      ...overrides,
+    }
+  }
+
+  it('trava o fornecedor com boleto vencido e soma parcela, total e dias de atraso', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({
+        payable_installments: [
+          { id: 'parcela-1', installment_number: 1, due_date: '2026-08-10', amount: 100.5, status: 'pendente' },
+          { id: 'parcela-2', installment_number: 2, due_date: '2026-08-15', amount: 49.5, status: 'pendente' },
+        ],
+      }),
+    ], HOJE)
+
+    expect(resultado[0]).toEqual({
+      key: 'aaaaaaaa-0000-0000-0000-00000000000a', name: 'Moinho Anaconda',
+      overdueCount: 2, overdueTotal: 150, oldestOverdueDays: 8,
+    })
+    expect(resultado[1]).toEqual({
+      key: 'bbbbbbbb-0000-0000-0000-00000000000b', name: 'Frios do Vale',
+      overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0,
+    })
+  })
+
+  it('fornecedor sem nada vencido fica liberado: parcela paga, futura ou renegociada não trava', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({
+        payable_installments: [
+          { id: 'paga', installment_number: 1, due_date: '2026-08-01', amount: 50, status: 'paga' },
+          { id: 'futura', installment_number: 2, due_date: '2026-08-25', amount: 50, status: 'pendente' },
+          { id: 'renegociada', installment_number: 3, due_date: '2026-08-10', current_due_date: '2026-08-25', amount: 50, status: 'pendente' },
+        ],
+      }),
+    ], HOJE)
+
+    expect(resultado.every(status => status.overdueCount === 0)).toBe(true)
+  })
+
+  it('compra cancelada não trava ninguém', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({
+        status: 'cancelada',
+        payable_installments: [{ id: 'velha', installment_number: 1, due_date: '2026-08-01', amount: 50, status: 'pendente' }],
+      }),
+    ], HOJE)
+
+    expect(resultado.every(status => status.overdueCount === 0)).toBe(true)
+  })
+
+  it('dívida vencida de fornecedor fora do cadastro ativo continua visível', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({
+        supplier_id: null, suppliers: { name: 'Fornecedor Desativado' },
+        payable_installments: [{ id: 'orfa', installment_number: 1, due_date: '2026-08-01', amount: 80, status: 'pendente' }],
+      }),
+    ], HOJE)
+
+    expect(resultado[0].name).toBe('Fornecedor Desativado')
+    expect(resultado[0].overdueCount).toBe(1)
+    expect(resultado).toHaveLength(3)
+  })
+
+  it('ordena travados primeiro, do atraso mais antigo para o mais novo, e liberados por nome', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({
+        supplier_id: 'bbbbbbbb-0000-0000-0000-00000000000b', suppliers: { name: 'Frios do Vale' },
+        payable_installments: [{ id: 'recente', installment_number: 1, due_date: '2026-08-17', amount: 10, status: 'pendente' }],
+      }),
+      compra({
+        id: 'compra-2',
+        payable_installments: [{ id: 'antiga', installment_number: 1, due_date: '2026-08-05', amount: 10, status: 'pendente' }],
+      }),
+    ], HOJE)
+
+    expect(resultado.map(status => status.name)).toEqual(['Moinho Anaconda', 'Frios do Vale'])
+  })
+
+  it('conta os dias de atraso pelo vencimento renegociado', () => {
+    expect(overdueDays(
+      { id: 'p', installment_number: 1, due_date: '2026-08-01', current_due_date: '2026-08-15', amount: 10, status: 'pendente' },
+      HOJE,
+    )).toBe(3)
   })
 })
 
