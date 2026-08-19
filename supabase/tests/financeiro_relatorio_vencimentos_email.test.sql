@@ -149,18 +149,39 @@ select is(
   private.payable_report_third_business_day((now() at time zone 'America/Sao_Paulo')::date),
   'a janela de a vencer fecha no terceiro dia util'
 );
+-- A fotografia cobre o banco inteiro, e o seed do Preview tem uma vencida de
+-- proposito (semaforo de fornecedores). As assercoes miram as parcelas da
+-- compra deste teste, nao a foto toda.
 select is(
-  (select pg_catalog.jsonb_array_length(snapshot) from private.payable_due_report_runs where report_kind = 'vencida'),
+  (select count(*)::integer
+   from private.payable_due_report_runs run
+   cross join lateral pg_catalog.jsonb_array_elements(run.snapshot) item
+   where run.report_kind = 'vencida'
+     and item ->> 'purchase_id' = (
+       select id::text from public.payable_purchases
+       where request_id = '98000000-0000-4000-8000-0000000000a2')),
   1,
   'parcela paga nao entra na fotografia de vencidas'
 );
 select is(
-  (select snapshot -> 0 ->> 'due_date' from private.payable_due_report_runs where report_kind = 'vencida'),
+  (select item ->> 'due_date'
+   from private.payable_due_report_runs run
+   cross join lateral pg_catalog.jsonb_array_elements(run.snapshot) item
+   where run.report_kind = 'vencida'
+     and item ->> 'purchase_id' = (
+       select id::text from public.payable_purchases
+       where request_id = '98000000-0000-4000-8000-0000000000a2')),
   ((now() at time zone 'America/Sao_Paulo')::date - 1)::text,
   'a vencida usa o vencimento renegociado como data efetiva'
 );
 select is(
-  (select (snapshot -> 0 ->> 'days_overdue')::integer from private.payable_due_report_runs where report_kind = 'vencida'),
+  (select (item ->> 'days_overdue')::integer
+   from private.payable_due_report_runs run
+   cross join lateral pg_catalog.jsonb_array_elements(run.snapshot) item
+   where run.report_kind = 'vencida'
+     and item ->> 'purchase_id' = (
+       select id::text from public.payable_purchases
+       where request_id = '98000000-0000-4000-8000-0000000000a2')),
   1,
   'o atraso fica congelado na fotografia do dia'
 );

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(31);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -275,6 +275,23 @@ select is(
     where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
   ) then 2 else 0 end,
   'NF-e fictícia tem os dois itens depois que o Auth de teste está pronto'
+);
+
+-- Semaforo de fornecedores: o cenario precisa de um boleto vencido em aberto,
+-- senao a tela mostra tudo verde e o teste de preview nao prova nada.
+select is(
+  (select count(*)::int from public.payable_installments installment
+     join public.payable_purchases purchase on purchase.id = installment.purchase_id
+   where purchase.supplier_id = '40000000-0000-4000-8000-000000000002'
+     and purchase.status = 'aberta'
+     and installment.status = 'pendente'
+     and coalesce(installment.current_due_date, installment.due_date)
+       < (now() at time zone 'America/Sao_Paulo')::date),
+  case when exists (
+    select 1 from auth.users user_account
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  ) then 1 else 0 end,
+  'seed deixa o Moinho Atrasado travado por boleto vencido'
 );
 
 -- Cenario da Buck (EX): sem ele a fase 4 nao tem o que cobrar no Preview.

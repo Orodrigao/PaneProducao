@@ -96,6 +96,7 @@ export interface PayablePurchaseRow {
   nfe_series?: string | null
   classification_status?: 'completa' | 'pendente'
   finance_account_id?: string | null
+  supplier_id?: string | null
   suppliers: PayableSupplier | PayableSupplier[] | null
   payable_installments: PayableInstallmentRow[]
 }
@@ -226,6 +227,60 @@ export function isOverdue(installment: PayableInstallmentRow, today = new Date()
   return due < current
 }
 
+export function supplierNameOf(purchase: Pick<PayablePurchaseRow, 'suppliers'>): string {
+  const supplier = Array.isArray(purchase.suppliers) ? purchase.suppliers[0] : purchase.suppliers
+  return supplier?.name ?? 'Fornecedor não identificado'
+}
+
+export function overdueDays(installment: PayableInstallmentRow, today = new Date()): number {
+  const due = new Date(`${effectiveDueDate(installment)}T12:00:00Z`).getTime()
+  const current = new Date(today.toISOString().slice(0, 10) + 'T12:00:00Z').getTime()
+  return Math.round((current - due) / 86_400_000)
+}
+
+export interface SupplierPurchaseStatus {
+  key: string
+  name: string
+  overdueCount: number
+  overdueTotal: number
+  oldestOverdueDays: number
+}
+
+/**
+ * O semáforo de compra: fornecedor com boleto vencido em aberto está travado
+ * para novos pedidos. A lista nasce do cadastro ativo e ganha qualquer
+ * fornecedor que só exista nas compras (inativo ou sem cadastro) quando ele
+ * tiver pendência — dívida vencida nunca fica invisível.
+ */
+export function summarizeSupplierPurchaseStatus(
+  suppliers: readonly Pick<PayableSupplierOption, 'id' | 'name'>[],
+  purchases: readonly PayablePurchaseRow[],
+  today = new Date(),
+): SupplierPurchaseStatus[] {
+  const byKey = new Map<string, SupplierPurchaseStatus>()
+  for (const supplier of suppliers) {
+    byKey.set(supplier.id, { key: supplier.id, name: supplier.name, overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 })
+  }
+  for (const purchase of purchases) {
+    if (purchase.status === 'cancelada') continue
+    const overdue = (purchase.payable_installments ?? []).filter(installment => isOverdue(installment, today))
+    if (overdue.length === 0) continue
+    const key = purchase.supplier_id ?? `nome:${supplierNameOf(purchase)}`
+    const status = byKey.get(key)
+      ?? { key, name: supplierNameOf(purchase), overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 }
+    for (const installment of overdue) {
+      status.overdueCount += 1
+      status.overdueTotal = roundMoney(status.overdueTotal + Number(installment.amount))
+      status.oldestOverdueDays = Math.max(status.oldestOverdueDays, overdueDays(installment, today))
+    }
+    byKey.set(key, status)
+  }
+  return [...byKey.values()].sort((first, second) =>
+    Number(second.overdueCount > 0) - Number(first.overdueCount > 0)
+    || second.oldestOverdueDays - first.oldestOverdueDays
+    || first.name.localeCompare(second.name, 'pt-BR'))
+}
+
 export function prioritizeOverduePayablePurchases(purchases: PayablePurchaseRow[], today = new Date()): PayablePurchaseRow[] {
   return [...purchases].sort((first, second) => {
     const firstIsOverdue = first.payable_installments.some(installment => isOverdue(installment, today))
@@ -237,7 +292,7 @@ export function prioritizeOverduePayablePurchases(purchases: PayablePurchaseRow[
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
   const { data, error } = await supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,finance_account_id,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,finance_account_id,supplier_id,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
     .order('purchase_date', { ascending: false })
 
   if (error) throw error
