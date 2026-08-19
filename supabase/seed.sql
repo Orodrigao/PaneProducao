@@ -531,6 +531,77 @@ on conflict (id) do update set
   due_date = excluded.due_date,
   amount = excluded.amount;
 
+-- Fornecedor travado de propósito: boleto vencido há 3 dias, para o semáforo
+-- de fornecedores ter um vermelho testável no Preview (datas afastadas do
+-- dia, nunca em "hoje" — ver lessons.md 2026-08-14).
+insert into public.suppliers (id, name, active)
+values ('40000000-0000-4000-8000-000000000002', '[TESTE] Moinho Atrasado JC', true)
+on conflict (id) do update set name = excluded.name, active = excluded.active;
+
+insert into public.payable_purchases (
+  id, request_id, store, supplier_id, purchase_date, origin, document_type,
+  payment_method, status, total_value, notes, classification_status, created_by
+)
+select
+  '80000000-0000-4000-8000-000000000003',
+  '80000000-0000-4000-8000-000000000004',
+  'jc',
+  '40000000-0000-4000-8000-000000000002',
+  (now() at time zone 'America/Sao_Paulo')::date - 10,
+  'manual', 'sem_nota', 'boleto', 'aberta', 120.00,
+  '[TESTE] Compra com boleto vencido para o semáforo de fornecedores.',
+  'completa',
+  user_account.id
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+on conflict (id) do update set
+  purchase_date = excluded.purchase_date,
+  total_value = excluded.total_value,
+  notes = excluded.notes,
+  status = excluded.status,
+  classification_status = excluded.classification_status,
+  created_by = excluded.created_by;
+
+insert into public.payable_purchase_items (
+  id, purchase_id, item_name, unit, quantity, unit_price, source_line_number, mapping_status
+)
+select
+  '81000000-0000-4000-8000-000000000003'::uuid,
+  '80000000-0000-4000-8000-000000000003'::uuid,
+  '[TESTE] Farinha especial', 'un', 1, 120.00, 1, 'mapeado'
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = '80000000-0000-4000-8000-000000000003'
+)
+on conflict (id) do update set
+  item_name = excluded.item_name,
+  unit = excluded.unit,
+  quantity = excluded.quantity,
+  unit_price = excluded.unit_price,
+  mapping_status = excluded.mapping_status;
+
+insert into public.payable_installments (id, purchase_id, installment_number, due_date, amount)
+select
+  '82000000-0000-4000-8000-000000000003'::uuid,
+  '80000000-0000-4000-8000-000000000003'::uuid,
+  1,
+  (now() at time zone 'America/Sao_Paulo')::date - 3,
+  120.00
+where exists (
+  select 1 from public.payable_purchases purchase
+  where purchase.id = '80000000-0000-4000-8000-000000000003'
+)
+on conflict (id) do update set
+  due_date = excluded.due_date,
+  current_due_date = null,
+  amount = excluded.amount,
+  status = 'pendente',
+  paid_date = null,
+  paid_amount = null,
+  paid_method = null,
+  paid_at = null,
+  paid_by = null;
+
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit,
   min_stock, active, store, visible_stores

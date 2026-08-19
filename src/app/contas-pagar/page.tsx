@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import PayableForm from '@/components/PayableForm'
 import PayablePaymentDialog from '@/components/PayablePaymentDialog'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
+import PayableSupplierStatus from '@/components/PayableSupplierStatus'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import { supabase } from '@/lib/supabase'
 import {
@@ -206,6 +207,8 @@ export default function ContasPagarPage() {
             <b>Financeiro da JC</b>
             <small>Registre compras sem nota ou importe NF-e. O financeiro fica rastreado; o estoque será integrado depois.</small>
           </div>
+
+          {!loading && !error && <PayableSupplierStatus suppliers={suppliers} purchases={purchases} />}
 
           {(reminders.overdue > 0 || reminders.dueSoon > 0) && (
             <div className="ps-card" style={{ marginTop: 12, borderColor: reminders.overdue > 0 ? 'var(--berry)' : 'var(--honey-deep)' }}>
