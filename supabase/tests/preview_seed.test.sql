@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(32);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -292,6 +292,22 @@ select is(
     where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
   ) then 1 else 0 end,
   'seed deixa o Moinho Atrasado travado por boleto vencido'
+);
+
+-- O outro lado do semaforo: um cadastro sem compra nenhuma, que nao pode ser
+-- lido como liberado. Sem ele o preview nao prova o amarelo, e foi exatamente
+-- esse caso (Bersaglio cadastrada duas vezes) que liberou compra de quem devia.
+select is(
+  (select count(*)::int from public.suppliers fornecedor
+   where fornecedor.id = '40000000-0000-4000-8000-000000000003'
+     and fornecedor.active
+     and not exists (
+       select 1 from public.payable_purchases purchase
+       where purchase.supplier_id = fornecedor.id
+         and purchase.status <> 'cancelada'
+     )),
+  1,
+  'seed deixa um fornecedor cadastrado sem compra nenhuma para o amarelo do semaforo'
 );
 
 -- Cenario da Buck (EX): sem ele a fase 4 nao tem o que cobrar no Preview.
