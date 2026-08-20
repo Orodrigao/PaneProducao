@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(26);
 
 -- Estrutura --------------------------------------------------------------
 
@@ -146,20 +146,25 @@ select lives_ok(
   'financeiro baixa a parcela'
 );
 
+-- Duas fatias de rateio mais a linha do juro, que desde 2026-08-19 nao entra
+-- mais embutida na categoria da compra.
 select is((select count(*)::int from public.finance_entries
     where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
-      and entry_type = 'lancamento' and reversed_at is null), 2,
-  'o rateio em duas categorias gera dois lancamentos');
+      and entry_type = 'lancamento' and reversed_at is null), 3,
+  'o rateio em duas categorias mais o juro gera tres lancamentos');
 
 select is((select sum(amount) from public.finance_entries
     where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 1020.00,
   'a soma dos lancamentos bate exatamente com o valor pago');
 
-select is((select distinct competence_month from public.finance_entries
-    where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
-      and entry_type = 'lancamento' and reversed_at is null), date '2026-07-01',
-  'a compra de julho paga em agosto pesa em julho');
+select is((select sum(entry.amount) from public.finance_entries entry
+    join public.finance_categories category on category.id = entry.category_id
+    where entry.source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
+      and entry.entry_type = 'lancamento' and entry.reversed_at is null
+      and category.key <> 'financeiras'
+      and entry.competence_month = date '2026-07-01'), 1000.00,
+  'o principal da compra de julho paga em agosto pesa em julho');
 
 select is((select distinct paid_date from public.finance_entries
     where source = 'contas_pagar' and source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
@@ -187,13 +192,21 @@ select lives_ok(
 );
 
 select is((select count(*)::int from public.finance_entries
-    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid and entry_type = 'estorno'), 2,
-  'a correcao estorna os lancamentos antigos em vez de apaga-los');
+    where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid and entry_type = 'estorno'), 3,
+  'a correcao estorna os lancamentos antigos, inclusive o do juro, em vez de apaga-los');
 
+-- A correcao tirou o juro (1020 -> 1000): sobram so as duas fatias do rateio.
 select is((select count(*)::int from public.finance_entries
     where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
       and entry_type = 'lancamento' and reversed_at is null), 2,
-  'a correcao deixa dois lancamentos ativos');
+  'corrigir para o valor de face deixa so os dois lancamentos do rateio');
+
+select is((select count(*)::int from public.finance_entries entry
+    join public.finance_categories category on category.id = entry.category_id
+    where entry.source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
+      and entry.entry_type = 'lancamento' and entry.reversed_at is null
+      and category.key = 'financeiras'), 0,
+  'sumindo o juro, some tambem a linha de despesa financeira');
 
 select is((select sum(amount) from public.finance_entries
     where source_ref = '93000000-0000-4000-8000-0000000000e1'::uuid
