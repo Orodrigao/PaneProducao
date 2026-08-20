@@ -178,6 +178,18 @@ tabelas.
   (PR #218) e confirmado por leitura live: RLS ligada e forçada nas três
   tabelas, sem `insert` para `authenticated`, 26 categorias e 10 contas
   semeadas;
+- ponte do Contas a Pagar com o livro-caixa
+  (`private.sync_payable_finance_entries`): a baixa da parcela lança o valor de
+  face nas categorias da compra, na competência da compra, e o que foi pago
+  acima do boleto — juros e multa — vira lançamento próprio em `financeiras`,
+  com previsto zero e competência no mês do pagamento, para não inflar o CMV do
+  insumo. A Elis informa só o valor total pago; o acréscimo sai da diferença
+  entre o valor de face e o valor pago. Pagar **menos** que o boleto segue
+  recusado: desconto por antecipação exige o motivo e ainda não tem tela.
+  Compra classificada como despesa financeira mantém principal e juro na mesma
+  linha, por causa do índice único de um lançamento ativo por origem e
+  categoria. Aplicado em produção em 2026-08-20 (PR #244) e confirmado por
+  leitura live da lista de migrations;
 - contas a receber (fase 2 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
   cobrança de cliente PJ digitada à mão em `/contas-receber`, com vencimento
   calculado do prazo do cliente, **recebimento em pedaços** (vários por
