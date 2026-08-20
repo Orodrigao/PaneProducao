@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(31);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -117,6 +117,23 @@ select ok(not exists(select 1 from public.app_user_permissions
     where user_id = '95000000-0000-4000-8000-000000000002'
       and permission_key like 'contas_receber.%'),
   'a expedicao nao tem nenhuma permissao de contas a receber');
+
+-- A fase 1 da quantidade enviada passou a exigir conferencia antes do envio.
+-- Conferir com a MESMA quantidade do pedido e o caminho sem atrito: o objetivo
+-- deste arquivo continua sendo a cobranca, nao a conferencia.
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '95000000-0000-4000-8000-00000000fc01'::uuid,
+       '95000000-0000-4000-8000-0000000000a1'::uuid,
+       (select jsonb_agg(jsonb_build_object('order_id', linha.id, 'quantity', linha.quantity))
+          from public.orders linha
+         where linha.order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid
+           and linha.order_type = 'pj'
+           and linha.cancelled_at is null),
+       null
+     ) $$,
+  'a expedicao confere o pedido antes de poder envia-lo'
+);
 
 select lives_ok(
   $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a1'::uuid) $$,
@@ -274,6 +291,23 @@ select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002
 
 -- A trava do financeiro nao pode parar a padaria: o envio acontece do mesmo
 -- jeito, e o pedido continua aparecendo como a faturar.
+-- A fase 1 da quantidade enviada passou a exigir conferencia antes do envio.
+-- Conferir com a MESMA quantidade do pedido e o caminho sem atrito: o objetivo
+-- deste arquivo continua sendo a cobranca, nao a conferencia.
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '95000000-0000-4000-8000-00000000fc02'::uuid,
+       '95000000-0000-4000-8000-0000000000a2'::uuid,
+       (select jsonb_agg(jsonb_build_object('order_id', linha.id, 'quantity', linha.quantity))
+          from public.orders linha
+         where linha.order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid
+           and linha.order_type = 'pj'
+           and linha.cancelled_at is null),
+       null
+     ) $$,
+  'a expedicao tambem confere o pedido do cliente sem prazo'
+);
+
 select lives_ok(
   $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a2'::uuid) $$,
   'cliente sem prazo nao impede a expedicao de confirmar o envio'

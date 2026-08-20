@@ -77,7 +77,9 @@ insert into public.orders (
    50, 2, 1, 'un', '96000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Conferencia',
    current_date - 1, current_date - 1, current_date - 1, false);
 
--- Um segundo pedido, para o caso "nada foi enviado".
+-- Um segundo pedido, para provar que sem conferencia nao se envia.
+-- `orders` tem unique em (store, bread_id, order_date), entao este pedido usa
+-- outra data: mesmo pao, mesma loja e mesmo dia colidiriam com o de cima.
 insert into public.orders (
   id, store, order_type, order_group_id, bread_id, product_source, product_name,
   quantity, unit_price, pack_size, pricing_unit, customer_id, pj_client,
@@ -86,7 +88,7 @@ insert into public.orders (
   ('96000000-0000-4000-8000-0000000000e3', 'jc', 'pj', '96000000-0000-4000-8000-0000000000a2',
    'teste-croissant-conf', 'bread', '[TESTE] Mini-croissant Conf',
    2, 40, 1, 'kg', '96000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Conferencia',
-   current_date - 1, current_date - 1, current_date - 1, false);
+   current_date - 3, current_date - 2, current_date - 2, false);
 
 
 -- A trava, isolada -----------------------------------------------------------
