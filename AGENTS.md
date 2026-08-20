@@ -258,6 +258,28 @@ arquivo ou fluxo. Cada agente no seu worktree e branch; ambos nascem de
 antes do próprio merge. Para o git, vocês são dois devs — se comportem como
 bons colegas.
 
+**Subagentes e operários — autorização permanente do Rodrigo (2026-08-17):**
+o agente que conduz a sessão está autorizado a despachar, por iniciativa
+própria e sem pedir de novo a cada sessão, ajudantes que trabalhem sob a
+sua revisão: subagentes da própria sessão (modelos mais leves para
+varredura, rascunho, execução de fase bem especificada e revisão), o
+operário Gemini e a consulta ao Sol (skills `operario` e `consulta`, quando
+disponíveis na máquina). Regras do mandato:
+
+- anunciar a escalação em uma linha leiga ("essa desce para o executor
+  leve porque é ajuste de tela");
+- toda entrega de ajudante passa pela revisão de quem despachou, com
+  conferência por amostragem contra a realidade — entrega de agente nunca
+  vai ao Rodrigo nem vira código sem esse filtro;
+- toda PR de código relevante recebe revisão adversarial de um segundo
+  agente (Sol, ou uma sessão limpa sem o contexto da tarefa) antes de ir
+  ao teste do Rodrigo; o resultado — incorporado ou descartado por
+  escrito — vai no corpo do PR;
+- área crítica (dinheiro, permissões, Auth, RLS, migrations) não desce
+  para ajudante: fica com o agente principal;
+- fan-out grande (mais de ~4 agentes de uma vez, ou orquestração em
+  nuvem) continua exigindo aviso prévio ao Rodrigo, pelo custo.
+
 ### 4. Verificação
 
 Toda mudança de código, antes de declarar pronto:

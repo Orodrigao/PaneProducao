@@ -17,7 +17,7 @@ import {
   type PayableInstallmentPaymentDetails,
   type PayableInstallmentRow,
 } from '@/lib/payables'
-import type { FinanceAccountRow, FinanceCategoryRow } from '@/lib/finance'
+import { formatCompetenceMonth, type FinanceAccountRow, type FinanceCategoryRow } from '@/lib/finance'
 
 interface PayablePaymentDialogProps {
   installment: PayableInstallmentRow
@@ -178,7 +178,11 @@ export default function PayablePaymentDialog({
         <div className="ps-card" style={{ marginTop: 12, padding: 10, background: 'var(--cream-raise)' }}>
           <small>Acréscimo registrado como juros/multa</small>
           <b style={{ display: 'block', marginTop: 3 }}>{formatBRL(difference)}</b>
-          <small className="ps-help">O ERP não calcula juros; apenas registra a diferença informada no pagamento.</small>
+          <small className="ps-help">
+            {difference > 0
+              ? `Entra no livro como despesa financeira, e não como custo da compra, pesando em ${formatCompetenceMonth(paidDate.slice(0, 7))}.`
+              : 'O ERP não calcula juros; apenas registra a diferença informada no pagamento.'}
+          </small>
         </div>
 
         <div className="ps-totalbar">
