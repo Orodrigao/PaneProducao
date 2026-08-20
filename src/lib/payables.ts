@@ -241,6 +241,7 @@ export function overdueDays(installment: PayableInstallmentRow, today = new Date
 export interface SupplierPurchaseStatus {
   key: string
   name: string
+  purchaseCount: number
   overdueCount: number
   overdueTotal: number
   oldestOverdueDays: number
@@ -251,6 +252,12 @@ export interface SupplierPurchaseStatus {
  * para novos pedidos. A lista nasce do cadastro ativo e ganha qualquer
  * fornecedor que só exista nas compras (inativo ou sem cadastro) quando ele
  * tiver pendência — dívida vencida nunca fica invisível.
+ *
+ * `purchaseCount` conta as compras não canceladas do fornecedor e existe para
+ * separar "conferido e sem nada vencido" de "não temos compra nenhuma deste
+ * cadastro". Quem nunca comprou não pode ser pintado de verde: cadastro novo,
+ * ou duplicado do mesmo fornecedor, ficaria eternamente liberado sem que
+ * ninguém tivesse olhado a dívida real.
  */
 export function summarizeSupplierPurchaseStatus(
   suppliers: readonly Pick<PayableSupplierOption, 'id' | 'name'>[],
@@ -259,15 +266,19 @@ export function summarizeSupplierPurchaseStatus(
 ): SupplierPurchaseStatus[] {
   const byKey = new Map<string, SupplierPurchaseStatus>()
   for (const supplier of suppliers) {
-    byKey.set(supplier.id, { key: supplier.id, name: supplier.name, overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 })
+    byKey.set(supplier.id, { key: supplier.id, name: supplier.name, purchaseCount: 0, overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 })
   }
   for (const purchase of purchases) {
     if (purchase.status === 'cancelada') continue
     const overdue = (purchase.payable_installments ?? []).filter(installment => isOverdue(installment, today))
-    if (overdue.length === 0) continue
     const key = purchase.supplier_id ?? `nome:${supplierNameOf(purchase)}`
-    const status = byKey.get(key)
-      ?? { key, name: supplierNameOf(purchase), overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 }
+    const known = byKey.get(key)
+    // Fornecedor fora do cadastro ativo só entra na lista quando deve algo; sem
+    // pendência ele não tem o que responder ao semáforo.
+    if (!known && overdue.length === 0) continue
+    const status = known
+      ?? { key, name: supplierNameOf(purchase), purchaseCount: 0, overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0 }
+    status.purchaseCount += 1
     for (const installment of overdue) {
       status.overdueCount += 1
       status.overdueTotal = roundMoney(status.overdueTotal + Number(installment.amount))
@@ -276,9 +287,15 @@ export function summarizeSupplierPurchaseStatus(
     byKey.set(key, status)
   }
   return [...byKey.values()].sort((first, second) =>
-    Number(second.overdueCount > 0) - Number(first.overdueCount > 0)
+    supplierStatusRank(first) - supplierStatusRank(second)
     || second.oldestOverdueDays - first.oldestOverdueDays
     || first.name.localeCompare(second.name, 'pt-BR'))
+}
+
+/** Travado primeiro, depois liberado, e por último quem não tem compra para provar nada. */
+function supplierStatusRank(status: SupplierPurchaseStatus): number {
+  if (status.overdueCount > 0) return 0
+  return status.purchaseCount > 0 ? 1 : 2
 }
 
 export function prioritizeOverduePayablePurchases(purchases: PayablePurchaseRow[], today = new Date()): PayablePurchaseRow[] {

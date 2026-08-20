@@ -194,11 +194,11 @@ describe('semáforo de fornecedores para compra', () => {
 
     expect(resultado[0]).toEqual({
       key: 'aaaaaaaa-0000-0000-0000-00000000000a', name: 'Moinho Anaconda',
-      overdueCount: 2, overdueTotal: 150, oldestOverdueDays: 8,
+      purchaseCount: 1, overdueCount: 2, overdueTotal: 150, oldestOverdueDays: 8,
     })
     expect(resultado[1]).toEqual({
       key: 'bbbbbbbb-0000-0000-0000-00000000000b', name: 'Frios do Vale',
-      overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0,
+      purchaseCount: 0, overdueCount: 0, overdueTotal: 0, oldestOverdueDays: 0,
     })
   })
 
@@ -238,6 +238,68 @@ describe('semáforo de fornecedores para compra', () => {
     expect(resultado[0].name).toBe('Fornecedor Desativado')
     expect(resultado[0].overdueCount).toBe(1)
     expect(resultado).toHaveLength(3)
+  })
+
+  // Verde tem de significar "olhamos e nao ha nada vencido". Cadastro sem
+  // compra nenhuma nao olhou nada: e o caso do fornecedor cadastrado duas
+  // vezes, com a divida vencida guardada sob o nome completo da empresa.
+  it('cadastro sem compra nenhuma nao conta como liberado', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [], HOJE)
+
+    expect(resultado.every(status => status.purchaseCount === 0)).toBe(true)
+  })
+
+  it('separa o duplicado sem compra do cadastro que realmente deve', () => {
+    const resultado = summarizeSupplierPurchaseStatus(
+      [
+        { id: 'aaaaaaaa-0000-0000-0000-00000000000a', name: 'Moinho' },
+        { id: 'cccccccc-0000-0000-0000-00000000000c', name: 'MOINHO ANACONDA ALIMENTOS LTDA' },
+      ],
+      [
+        compra({
+          supplier_id: 'cccccccc-0000-0000-0000-00000000000c',
+          suppliers: { name: 'MOINHO ANACONDA ALIMENTOS LTDA' },
+          payable_installments: [{ id: 'vencida', installment_number: 1, due_date: '2026-08-05', amount: 90, status: 'pendente' }],
+        }),
+      ],
+      HOJE,
+    )
+
+    expect(resultado[0]).toMatchObject({ name: 'MOINHO ANACONDA ALIMENTOS LTDA', purchaseCount: 1, overdueCount: 1 })
+    expect(resultado[1]).toMatchObject({ name: 'Moinho', purchaseCount: 0, overdueCount: 0 })
+  })
+
+  it('conta as compras nao canceladas do fornecedor liberado', () => {
+    const resultado = summarizeSupplierPurchaseStatus(fornecedores, [
+      compra({ payable_installments: [{ id: 'paga', installment_number: 1, due_date: '2026-08-01', amount: 50, status: 'paga' }] }),
+      compra({ id: 'compra-2', payable_installments: [{ id: 'futura', installment_number: 1, due_date: '2026-08-25', amount: 50, status: 'pendente' }] }),
+      compra({ id: 'compra-3', status: 'cancelada', payable_installments: [] }),
+    ], HOJE)
+
+    expect(resultado[0]).toMatchObject({ name: 'Moinho Anaconda', purchaseCount: 2, overdueCount: 0 })
+  })
+
+  it('ordena travados, depois liberados e por ultimo quem nao tem compra', () => {
+    const resultado = summarizeSupplierPurchaseStatus(
+      [
+        { id: 'aaaaaaaa-0000-0000-0000-00000000000a', name: 'Moinho Anaconda' },
+        { id: 'bbbbbbbb-0000-0000-0000-00000000000b', name: 'Frios do Vale' },
+        { id: 'cccccccc-0000-0000-0000-00000000000c', name: 'Adega sem compra' },
+      ],
+      [
+        compra({
+          supplier_id: 'bbbbbbbb-0000-0000-0000-00000000000b', suppliers: { name: 'Frios do Vale' },
+          payable_installments: [{ id: 'paga', installment_number: 1, due_date: '2026-08-01', amount: 10, status: 'paga' }],
+        }),
+        compra({
+          id: 'compra-2',
+          payable_installments: [{ id: 'antiga', installment_number: 1, due_date: '2026-08-05', amount: 10, status: 'pendente' }],
+        }),
+      ],
+      HOJE,
+    )
+
+    expect(resultado.map(status => status.name)).toEqual(['Moinho Anaconda', 'Frios do Vale', 'Adega sem compra'])
   })
 
   it('ordena travados primeiro, do atraso mais antigo para o mais novo, e liberados por nome', () => {
