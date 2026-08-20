@@ -602,6 +602,15 @@ on conflict (id) do update set
   paid_at = null,
   paid_by = null;
 
+-- Cadastro duplicado do fornecedor acima, sem compra nenhuma: e o caso real da
+-- Bersaglio na JC, onde o nome curto digitado a mao convivia com o nome
+-- completo criado pela NF-e, e a divida ficava so no segundo. Serve para o
+-- semaforo ter um amarelo testavel ("sem compra registrada"), que nunca pode
+-- ser lido como liberado.
+insert into public.suppliers (id, name, active)
+values ('40000000-0000-4000-8000-000000000003', '[TESTE] Moinho', true)
+on conflict (id) do update set name = excluded.name, active = excluded.active;
+
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit,
   min_stock, active, store, visible_stores
