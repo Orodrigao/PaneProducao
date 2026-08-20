@@ -3,10 +3,14 @@
 **Origem do pedido:** Rodrigo, 2026-08-20, com o nome "peso real em pedidos PJ".
 A descoberta mostrou que o problema é maior que peso — ver decisão 1.
 
-**Status:** descoberta concluída, plano proposto, **revisão adversarial
-recebida e incorporada** (ver seção própria no fim). O plano precisa dos
-ajustes listados lá antes de a fase 1 começar. **Aguardando aprovação do
-Rodrigo.** Nenhuma linha de código foi escrita.
+**Status:** descoberta concluída, **duas revisões adversariais independentes
+recebidas e incorporadas**, plano emendado absorvendo os bloqueadores das
+duas. **Aguardando aprovação do Rodrigo para a fase 1.** Nenhuma linha de
+código foi escrita.
+
+**Histórico:** aberto como PR #247 numa sessão de nuvem; o PR foi fechado pelo
+GitHub quando a branch foi renomeada para a convenção do `AGENTS.md`. Continua
+em PR #248, mesmo conteúdo e mesmo commit de origem.
 
 **Risco:** ALTO. O número digitado pela Expedição vira, na mesma transação, o
 valor da cobrança do cliente. Aprovação fase a fase.
@@ -99,11 +103,39 @@ Dois fatos que sustentam o plano:
 4. **Quem corrige depois do envio:** apenas `financeiro`/`admin`. A Expedição
    avisa. Antes do envio, a Expedição corrige à vontade.
 5. **Pode sair menos, e pode um item não ir nenhum.** A tela aceita os dois.
-6. **Trava dos 20%:** diferença acima de 20% para cima ou para baixo em relação
-   à estimativa pára a tela e exige confirmação escrita antes de salvar.
+6. **Duas travas, não uma** (emendada em 2026-08-20 pelas revisões):
+   diferença acima de **20%** para cima ou para baixo pára a tela e exige
+   confirmação escrita **com motivo gravado**; acima de **3x para cima ou 1/3
+   para baixo** é **bloqueio duro por item, que ninguém ultrapassa**, checado
+   também no motor da cobrança e não só na tela. A primeira é conferência; a
+   segunda existe porque trava vencível por confirmação também deixa passar
+   3.000 kg no lugar de 3 kg. Ver decisão 10 e bloqueador 5.
 7. **Relatório estimado × real:** sim, mas em fase separada, depois de haver
    dado real acumulado.
 8. **Sem retroatividade:** pedidos já enviados não recebem quantidade real.
+
+### Decisões acrescentadas em 2026-08-20, depois das revisões
+
+9. **A correção fica pronta antes de o dinheiro depender do número.** Na ordem
+   original havia um intervalo em que a cobrança já usava o real e ainda não
+   existia tela para corrigir: o erro de tara que motivou a decisão 3 viraria
+   fatura sem caminho de volta. Consequência aceita conscientemente: **a
+   virada e a correção viram uma fase só**, maior que as outras. Separá-las só
+   produz ou a janela sem conserto, ou um mecanismo de cancelar-e-regerar
+   construído antes de existir o que corrigir, que o `AGENTS.md` proíbe ("não
+   criar abstração sem consumidor real"). É uma unidade de risco indivisível.
+
+10. **Teto duro de 3x para cima e 1/3 para baixo**, por item. Rodrigo, sobre a
+    diferença real: "se o pedido é 3000 g, deve sair 3067 g ou 2995 g". 3x é
+    folga enorme para a operação e ainda barra o erro de grama-por-quilo, que
+    é 1000x.
+
+11. **Item não enviado não impede a cobrança dos demais.** O item que não saiu
+    sai da conta, o resto do pedido é faturado, e o motivo da falta fica
+    registrado para a Elis. O cliente paga pelo que recebeu. Atenção de
+    implementação: isso **não** é o caminho do item cancelado, que hoje
+    derruba a cobrança do pedido inteiro; e o caso de **nada** enviado é o
+    bloqueador 4, que não pode abortar o envio.
 
 ### Caso que originou a decisão 3
 
@@ -112,17 +144,20 @@ Anota 2,5 kg em vez de 3,0 kg, salva e confirma o envio. Percebe o erro logo
 depois. Sem janela de correção, a única saída seria criar um pedido novo do
 zero. Foi pedido explícito da Elis que exista edição.
 
-## Plano — 4 fases
+## Plano — 3 fases
 
 A ordem é deliberada: **a fase que liga o dinheiro vem depois da fase que
 coleta o dado.**
 
+Ordem emendada em 2026-08-20 (decisão 9): eram 4 fases, são 3. A antiga fase 3
+(correção) foi fundida com a antiga fase 2 (a virada), porque a correção
+precisa existir no dia em que a cobrança passa a depender do número.
+
 | Fase | O que muda na padaria | Mexe em dinheiro? | Quem executa |
 |---|---|---|---|
-| 1 | Expedição confere e digita a quantidade enviada de cada item; salva e corrige à vontade. "Marcar como enviado" exige tudo conferido. **A cobrança continua saindo pela estimativa.** | Não | agente principal (migration, RPC) + operário (tela) |
-| 2 | A cobrança passa a usar a quantidade enviada. | Sim | agente principal, sozinho |
-| 3 | Financeiro ganha "Corrigir quantidade enviada" no pedido já enviado. | Sim | agente principal, sozinho |
-| 4 | Relatório pedido × enviado por produto e mês. | Não | operário, sob revisão |
+| 1 | Expedição confere e digita a quantidade enviada de cada item; salva e corrige à vontade. "Marcar como enviado" exige tudo conferido. **A cobrança continua saindo pela estimativa**, com aviso fixo na tela dizendo isso. | Não | agente principal (migration, RPC) + operário (tela, sob revisão) |
+| 2 | A cobrança passa a usar a quantidade enviada **e**, no mesmo pacote, o financeiro ganha "Corrigir quantidade enviada" no pedido já enviado. | Sim | agente principal, sozinho |
+| 3 | Relatório pedido × enviado por produto e mês. | Não | operário, sob revisão |
 
 Entre a fase 1 e a fase 2 fica um intervalo de uso real. Nele se mede, com
 número, o quanto a estimativa erra e se a Expedição adotou a conferência —
@@ -131,43 +166,136 @@ antes de a cobrança depender dela. Justificativa nas lições
 
 ### Fase 1 — conferência da quantidade enviada
 
+Emendada em 2026-08-20 absorvendo os bloqueadores 3, 5 e 8 e os riscos 11 a
+14, 16 e 17 da seção de revisões. Itens marcados **(R)** nasceram das revisões.
+
 - Coluna nova em `public.orders` para a quantidade enviada, mais autoria e
-  carimbo de tempo. A estimativa em `quantity` fica intacta.
+  carimbo de tempo **por linha**, não por grupo (risco 14).
+- **(R) Três estados, sem ambiguidade:** `null` = ainda não conferido; `0` =
+  conferido e não enviado, **com motivo obrigatório**; positivo = enviado. O
+  botão "não enviei este item" grava **zero**, nunca ausência — se gravasse
+  `null`, o `coalesce(enviado, estimado)` da fase 2 cobraria do cliente
+  justamente o item que não saiu. `numeric(12,3)` com `check (>= 0)`.
+- **(R) A conferência acontece na mesma unidade em que o pedido foi digitado**
+  (bloqueador 8, o erro mais provável de todos): quem separa conta caixas, o
+  banco guarda unidades. A tela mostra "12 cx × 21 = 252 un" com o equivalente
+  ao lado, e trata `pack_size`/`pricing_unit` nulos do legado.
 - RPC nova para a Expedição JC gravar, com a mesma permissão
-  `pedidos_pj.confirmar_envio`, validando a trava dos 20%.
-- Botão explícito "não enviei este item" em vez de digitar zero.
-- `list_pj_orders_for_dispatch` passa a devolver os dois números.
+  `pedidos_pj.confirmar_envio`, validando as **duas** travas da decisão 6: a
+  dos 20% com confirmação e motivo, e o teto duro de 3x / um terço, por linha
+  e nos dois sentidos (bloqueador 5).
+- **(R) Validação estrutural:** item por unidade só aceita inteiro; item por
+  quilo respeita a precisão de `numeric(12,3)`; a unidade do pedido não muda
+  durante a expedição.
+- **(R) Acrescentar a coluna nova e o carimbo à lista de colunas do gatilho**
+  `guard_billed_pj_order_changes`, na mesma migration que cria a coluna
+  (bloqueador 3). O gatilho tem lista fixa e não cobriria a coluna nova.
+- **(R) Concorrência e repetição:** salvar e confirmar travam as mesmas linhas
+  na mesma ordem e revalidam depois da trava; o salvamento leva a versão que a
+  tela abriu e recusa se alguém mudou no meio, em vez de deixar vencer quem
+  salvou por último; toda ação leva `p_request_id` e deduplica, como as demais
+  funções de Contas a Receber já fazem (risco 17).
+- **(R) Histórico das alterações**, não só a última digitação. Numa contestação
+  é preciso provar quem digitou 3,067 e quem trocou por 3,670, com o motivo.
+- **(R) Enquanto houver conferência pendente, o pedido não sai da fila** da
+  Expedição à meia-noite: fica em "Em aberto" com marca de atrasado (risco 13).
+- **(R) Contador de adoção por etapa** — conferido / enviado / cobrado — desde
+  o primeiro dia, porque adoção se mede por etapa do ciclo, nunca por total
+  agregado (risco 11).
+- `list_pj_orders_for_dispatch` passa a devolver os dois números. **Mudar o
+  tipo de retorno exige `drop` + `create`, e o `drop` perde os grants**:
+  reconceder explicitamente e revogar de `public, anon` na mesma migration
+  (risco 16, lição `grants-implicitos-variam-por-ambiente`).
 - Tela: bloco de conferência item a item, salvável e corrigível quantas vezes
   quiser enquanto o pedido não foi enviado.
 - "Marcar como enviado" bloqueia enquanto houver item não conferido, **com o
   motivo escrito na tela, ao lado do botão** — nunca em `title`/tooltip (lição
   `botao-desabilitado-sem-motivo-na-tela`).
+- **(R) Aviso fixo na tela** dizendo que a conferência ainda não altera a
+  cobrança, com o prazo escrito da fase 1 (risco 12). Sem isso, as duas
+  pessoas descobrem sozinhas que o sistema cobra errado e abandonam a
+  conferência antes de a fase 2 existir.
 - Aceite: expedição JC consegue; vendas JA é bloqueada. Matriz nos dois
-  sentidos, no navegador.
+  sentidos, no navegador. A matriz inclui os casos do bloqueador 4 (nada
+  enviado) e do bloqueador 8 (item com `pack_size > 1`).
 
-### Fase 2 — a cobrança passa a usar o real
+### Fase 2 — a cobrança passa a usar o real, com a correção junto
 
-- `private.build_receivable_from_pj_order` passa a somar
-  `coalesce(enviado, estimado) * unit_price`.
-- **Trava de saída:** recusa a cobrança se o valor real passar do dobro do
-  valor estimado do pedido. É a lição `validar-tambem-na-saida`, que nasceu de
-  um erro de R$ 190 mil causado por gramas digitadas em campo de quilo. Trava
-  só na entrada é mitigação, não garantia.
-- Redefinir a função exige partir da **versão vigente**, não da que a criou
-  (lição `funcao-de-banco-redefinida-perde-melhoria-recente`).
+As duas metades vão no mesmo pacote (decisão 9). A correção precisa estar
+testada e no ar no mesmo dia em que a cobrança passa a depender do número.
 
-### Fase 3 — correção depois do envio
+**Metade A — a virada:**
 
-- Função nova, `SECURITY DEFINER`, só para `financeiro`/`admin`: numa transação
-  só, cancela a cobrança existente com motivo, atualiza a quantidade enviada e
-  regera a cobrança pelo mesmo motor.
-- Bloqueada se houver qualquer recebimento registrado na cobrança.
-- A cobrança cancelada permanece no histórico. O rastro é a razão de não
+- **cinco pontos calculam esse valor hoje, não um.** Todos mudam no mesmo
+  commit, com teste que compara os números para o mesmo grupo:
+  `private.build_receivable_from_pj_order` (o motor),
+  `public.list_pj_orders_to_bill` (a lista "a faturar" da Elis),
+  `src/lib/pjSalesReport.ts` com `src/app/relatorios/pj/page.tsx` (o relatório
+  de Vendas PJ, risco 6) e as duas somas da tela em
+  `src/app/pedidos-pj/page.tsx` (linhas 415 e 811). Mudar só o motor faz a
+  tela e o relatório mostrarem um número e a cobrança gerar outro;
+- **fechar o caminho que fatura antes da conferência** (bloqueador 1):
+  `list_pj_orders_to_bill` trata como entregue também quem só tem
+  `delivery_date` vencida, sem envio confirmado. Passa a excluir, ou marcar
+  como "aguardando conferência", pedido com item não conferido; e
+  `create_receivable_from_pj_order` recusa esse caso com mensagem clara;
+- **nada enviado não aborta o envio** (bloqueador 4): o motor separa "sem
+  preço cadastrado" (erro) de "nada foi enviado" (fato legítimo, cliente
+  recusou na porta). Grava o envio, não gera cobrança, e o pedido aparece numa
+  lista de enviados sem cobrança — lição `sobras-pendentes-sem-saida`;
+- a base do valor (`estimado` ou `real_enviado`) fica gravada no evento
+  `lancada` da cobrança. Sem isso a coorte da fase 1 é irreconciliável depois;
+- para pedido posterior à virada, **ausência do real bloqueia a cobrança**. O
+  `coalesce(enviado, estimado)` fica restrito ao legado identificado, senão
+  esconde justamente o dado que faltou;
+- **trava de saída por linha e absoluta**, com o teto duro da decisão 10
+  revalidado aqui, espelhando as três travas da cobrança da Buck: teto de kg
+  por linha, teto de fator por linha (recusa, não confirmação) e piso
+  simétrico. A trava do dobro sobre o total do pedido, do plano original, não
+  serve: num pedido de R$ 5.000, digitar 30 kg em vez de 3,067 kg dá fator
+  1,48 e passaria (bloqueador 5);
+- arredondar **cada linha** a centavos e somar as linhas, mesmo critério nos
+  cinco pontos;
+- redefinir `private.build_receivable_from_pj_order` partindo da **versão
+  vigente**, que está em
+  `supabase/migrations/20260814165657_dividir_cobranca_em_parcelas.sql:451`.
+
+**Metade B — a correção depois do envio:**
+
+- função nova, `SECURITY DEFINER`, só para `financeiro`/`admin`: numa transação
+  só, cancela **todas as cobranças vivas do grupo** com motivo, atualiza a
+  quantidade enviada e regera pelo mesmo motor. São várias porque
+  `split_receivable` copia `origin_ref` para cada parcela, com índice único por
+  `(origin, origin_ref, installment_number)` (risco 7). Preserva o
+  parcelamento e o prazo efetivo, e mostra na tela o que vai mudar antes do
+  clique;
+- bloqueada se **qualquer parcela** tiver recebimento ativo; recebimento
+  estornado não fecha a janela, que é o critério que `split_receivable` já usa;
+- precisa de `perform set_config('pane.pj_dispatch_rpc','on',true)`, senão o
+  gatilho `guard_dispatched_pj_order_changes` recusa o `UPDATE` em pedido
+  enviado. **Cuidado: esse GUC é chave-mestra** e também desliga a proteção de
+  `dispatched_at/by/by_name` — atualizar só as colunas pretendidas e provar em
+  pgTAP que `dispatched_at` não mudou (risco 9);
+- **não reaproveitar o fluxo de edição comercial**:
+  `orderLinePacksFromStoredQuantity` arredonda, e 55 com `pack_size` 21 vira
+  63 ao reabrir e salvar (risco 18);
+- `p_request_id` para repetição segura: chamar duas vezes não pode cancelar a
+  cobrança recém-gerada e criar histórico falso;
+- **decidir antes de começar onde a tela mora** (risco 10): `admin` não alcança
+  `/contas-receber` hoje, então ou a correção mora em `/pedidos-pj`, ou
+  `/contas-receber` entra nas rotas do admin. Sem isso o Rodrigo não consegue
+  testar a própria fase no preview. Conferir as quatro listas da lição
+  `tela-nova-precisa-do-menu`;
+- a cobrança cancelada permanece no histórico. O rastro é a razão de não
   sobrescrever valor.
 
-### Fase 4 — estimado × real
+### Fase 3 — estimado × real
 
-Relatório por produto e por mês. Só depois de haver dado acumulado.
+Relatório por produto e por mês. Só depois de haver dado acumulado. Precisa
+separar legado, sombra e real e mostrar a cobertura da medição: `null` antigo
+significa "não medido", nunca "igual ao estimado" nem "não enviado". A base de
+data (entrega ou envio) é a mesma escolhida na fase 2, e passa por
+`private.data_na_padaria(...)`.
 
 ## Fora de escopo
 
@@ -257,7 +385,7 @@ do Rodrigo.
    `unit_price × quantity` direto de `orders`. Com 30% do valor vindo de
    linhas por kg, Relatórios e Contas a Receber passariam a dar números
    diferentes para a mesma pergunta. **Ajustar o relatório existente na fase
-   2 — não esperar a fase 4, que é o relatório novo.**
+   2 — não esperar a fase do relatório novo (fase 3 na numeração emendada).**
 
 7. **A fase 3 ignorava que uma cobrança de pedido pode ser várias.** —
    [apontado] `public.split_receivable` cria N parcelas vivas com o mesmo
@@ -325,7 +453,7 @@ do Rodrigo.
 15. **Fuso e base de data.** Toda data derivada passa por
     `private.data_na_padaria(...)`, nunca `now()::date`. E o relatório atual
     agrupa por `delivery_date` enquanto a cobrança usa a data do envio —
-    escolher uma base e usar a mesma nos dois. Fase 4, decidido na fase 2.
+    escolher uma base e usar a mesma nos dois. Fase 3, decidido na fase 2.
 16. **Mudar o retorno de `list_pj_orders_for_dispatch` exige `drop`.**
     `create or replace` não altera tipo de retorno, e o `drop` **perde os
     grants**. Reconceder explicitamente e revogar de `public, anon` na mesma
@@ -362,6 +490,54 @@ do Rodrigo.
 3. **Pedidos sem `order_group_id`** (legado) não podem ser despachados nem
    cobrados pelas RPCs. Confirmar se ainda entram pedidos assim.
 
+## Segunda revisão adversarial — Sol (Codex/GPT), sessão local, 2026-08-20
+
+A revisão acima foi feita por um agente limpo dentro do ambiente de nuvem,
+onde os CLIs do Sol e do operário não existem. Numa sessão local seguinte, a
+mesma pergunta foi feita ao **Sol (Codex/GPT)**, em modo somente leitura e sem
+o contexto da conversa, e o agente que conduzia a tarefa auditou o código em
+paralelo. Veredito do Sol: **não começar a fase 1 como estava**, pelo mesmo
+motivo de fundo — travas que faltam.
+
+**Convergência (o que dá confiança):** três revisores independentes chegaram
+sozinhos aos mesmos dois achados mais graves — a migration vigente errada e o
+parcelamento tratado no singular. O que dois ou mais confirmam não é opinião.
+
+**O que a segunda rodada acrescentou, e já está incorporado às fases acima:**
+
+- **o botão "não enviei este item" não dizia o que gravava.** Gravando `null`,
+  o `coalesce(enviado, estimado)` cobraria do cliente o item que não saiu. Os
+  três estados (`null` / `0` com motivo / positivo) nasceram daqui;
+- **validação estrutural da unidade**: inteiro para item por unidade, precisão
+  definida para quilo, unidade imutável durante a expedição;
+- **controle de tela desatualizada**: sem a versão que a tela abriu, vence quem
+  salvar por último, não quem está certo;
+- **histórico das alterações**, porque autoria e carimbo únicos guardam só a
+  última digitação;
+- **arredondamento decidido**: cada linha a centavos, depois somar, com o mesmo
+  critério em todos os pontos de cálculo;
+- **a trava do recebimento fica no saldo ativo**, não em qualquer passagem de
+  dinheiro já estornada, para não criar dois critérios diferentes;
+- **a ordem das fases**: a correção precisa existir no dia da virada. Virou a
+  decisão 9 do Rodrigo;
+- **auditoria local**: os pontos de cálculo na tela de Pedidos PJ (linhas 415 e
+  811) e o GUC `pane.pj_dispatch_rpc`, que já constavam da primeira revisão em
+  outra forma.
+
+**Descartado, com motivo verificado no código:** o Sol levantou que a cobrança
+pode já ter virado boleto, nota fiscal ou e-mail ao cliente, e que cancelá-la
+internamente deixaria um documento externo válido na mão do cliente. **Não se
+aplica hoje:** o ERP não emite boleto nem documento fiscal e não manda cobrança
+ao cliente. `boleto` aparece apenas como *método pelo qual o dinheiro entrou*,
+e a única Edge Function de e-mail é a de contas a pagar. A cobrança é registro
+interno. Se um dia o ERP emitir documento externo, esta condição volta à mesa.
+
+Também descartados, por estarem fora do escopo já fechado com o Rodrigo: peso
+bruto, tara, integração com balança, lote e validade; e entrega parcial com
+saldo pendente, devolução e reposição. Fica registrado que "não enviado" **não**
+gera saldo a entregar automaticamente: é falta declarada com motivo, e a
+providência é humana.
+
 ### Risco fora do escopo — reportado, não corrigir aqui
 
 `orders_select_authenticated_profiles` (baseline `:3616`) permite que qualquer
@@ -372,16 +548,19 @@ mas a coluna nova entra nessa mesma leitura ampla.
 
 ## Pendências antes de começar a fase 1
 
-1. **Revisão adversarial** — feita e incorporada (seção acima). Não foi
-   possível consultar o Sol a partir do ambiente de nuvem; foi usado um
-   revisor limpo, saída que o próprio `AGENTS.md` prevê. Se o Rodrigo quiser a
-   opinião do Sol de verdade numa sessão local, vale rodar `/consulta` com a
-   mesma pergunta — os achados acima já dão o contraditório inicial.
-2. **Rever o plano das fases 1 a 3 absorvendo os bloqueadores 1 a 5.** O plano
-   como está escrito na seção "Plano — 4 fases" ainda não os contempla.
-3. **Responder a pergunta 1 das perguntas abertas** (o que o cliente recebe
-   junto com a entrega) antes da fase 2.
-4. **Aprovação explícita do Rodrigo para a fase 1.**
+1. ~~Revisão adversarial~~ — **feita duas vezes**, por revisores
+   independentes: um agente limpo na sessão de nuvem e o Sol (Codex/GPT) numa
+   sessão local. Ambas incorporadas acima, com o que foi aceito e o que foi
+   descartado por escrito.
+2. ~~Rever o plano das fases absorvendo os bloqueadores~~ — **feito**. As
+   fases 1 e 2 acima foram reescritas item a item contra os bloqueadores 1 a 5
+   e os riscos 6 a 18. Cada emenda aponta o achado que a originou.
+3. **Responder a pergunta 1 das perguntas abertas** (o que o cliente recebe em
+   papel junto com a entrega) — **antes da fase 2, não antes da fase 1**. A
+   fase 1 só coleta dado e não muda nenhuma cobrança, então não depende dessa
+   resposta.
+4. **Aprovação explícita do Rodrigo para a fase 1.** — única pendência que
+   bloqueia o começo.
 
 ## Nota sobre ambiente de nuvem (2026-08-20)
 
@@ -412,7 +591,6 @@ entendimento está fechado e as decisões acima não devem ser reabertas sem
 evidência nova. Se o código contradisser este documento, **o código vence** —
 pare e reporte.
 
-Observação sobre a branch: o nome `claude/...` foi imposto pelo ambiente de
-nuvem e contraria a convenção do `AGENTS.md`, que exige `tipo/<descricao>` e
-proíbe prefixo de agente. Numa sessão local, renomeie para
-`feat/quantidade-enviada-pedidos-pj` antes de seguir.
+Observação sobre a branch: resolvida em 2026-08-20. A branch chama-se
+`feat/quantidade-enviada-pedidos-pj`. O rename fechou o PR #247 (o GitHub não
+migra o PR quando a branch de origem some) e o trabalho seguiu em PR #248.
