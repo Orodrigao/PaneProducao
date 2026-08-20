@@ -3,8 +3,10 @@
 **Origem do pedido:** Rodrigo, 2026-08-20, com o nome "peso real em pedidos PJ".
 A descoberta mostrou que o problema é maior que peso — ver decisão 1.
 
-**Status:** descoberta concluída, plano proposto, **aguardando aprovação da
-fase 1**. Nenhuma linha de código foi escrita.
+**Status:** descoberta concluída, plano proposto, **revisão adversarial
+recebida e incorporada** (ver seção própria no fim). O plano precisa dos
+ajustes listados lá antes de a fase 1 começar. **Aguardando aprovação do
+Rodrigo.** Nenhuma linha de código foi escrita.
 
 **Risco:** ALTO. O número digitado pela Expedição vira, na mesma transação, o
 valor da cobrança do cliente. Aprovação fase a fase.
@@ -65,10 +67,17 @@ Dois fatos que sustentam o plano:
   `pack_size`, `pricing_unit ('un'|'kg')`, `dispatched_at/by/by_name`,
   `cancelled_at`.
 - Confirmar o envio gera a cobrança **na mesma transação**, por
-  `private.build_receivable_from_pj_order`
-  (`supabase/migrations/20260813215830_pedido_pj_vira_cobranca.sql`), que soma
+  `private.build_receivable_from_pj_order`, que soma
   `sum(quantity * coalesce(unit_price, 0))`. **É esta linha que precisa mudar
   na fase 2.**
+- **Atenção — a versão vigente dessa função NÃO é a que a criou.** Ela foi
+  redefinida três vezes: `20260813215830` (criação), `20260814091757`
+  (fuso da padaria) e **`20260814165657_dividir_cobranca_em_parcelas.sql:451`,
+  que é a vigente** e já usa `private.emitir_cobrancas`,
+  `private.data_na_padaria()` e `p_extra_details`. Partir de qualquer arquivo
+  anterior apaga essas melhorias em silêncio — lição
+  `funcao-de-banco-redefinida-perde-melhoria-recente`. Confirmado por
+  `grep -l` nas migrations em 2026-08-20.
 - Travas existentes: `private.guard_dispatched_pj_order_changes` (pedido
   enviado não muda), `private.guard_billed_pj_order_changes` e
   `..._delete` (pedido cobrado não muda nem some).
@@ -167,14 +176,212 @@ Relatório por produto e por mês. Só depois de haver dado acumulado.
 - Qualquer mudança no romaneio ou na produção.
 - Diferença cobrada depois de o cliente já ter pago (decisão 3 fecha a janela).
 
+## Revisão adversarial (2026-08-20)
+
+Exigida pelo `AGENTS.md` para plano com dado financeiro. Executada por um
+agente limpo, sem o contexto da conversa de descoberta, com a pergunta única
+"o que falta neste plano que qualquer sistema desse tipo tem?".
+
+Duas ressalvas de honestidade sobre esta revisão:
+
+- as consultas dele ao banco de produção foram **negadas**, então nenhum
+  achado abaixo se apoia em dado live — só em código e migrations;
+- eu conferi pessoalmente no código os itens marcados **[conferido]**. Os
+  marcados **[apontado]** são do revisor e ainda não foram verificados por
+  mim; verifique antes de agir.
+
+### Erro de premissa do plano original — [conferido]
+
+O plano indicava a migration errada para a fase 2. Ver a correção já aplicada
+na seção "O que a auditoria do código encontrou". Foi erro meu, não do plano
+do Rodrigo.
+
+### Bloqueadores — resolver antes de escrever a fase 1
+
+1. **A cobrança pode nascer ANTES da conferência, e a fase 2 não fechava esse
+   caminho.** — [conferido] `public.list_pj_orders_to_bill`
+   (`20260814091757:520-540`) trata como entregue também
+   `delivery_date <= private.data_na_padaria()`, **sem exigir envio
+   confirmado**. Se a Elis faturar de manhã e a Expedição conferir de tarde, o
+   motor encontra a cobrança viva pelo dedupe e a devolve — o valor real nunca
+   entra. Hoje esse é o caminho principal de faturamento.
+   **Correção:** a lista passa a excluir (ou marcar como "aguardando
+   conferência") pedido PJ com itens não conferidos e entrega recente; e
+   `create_receivable_from_pj_order` recusa esse caso com mensagem clara.
+   **Entra na fase 2, com o gancho previsto já na fase 1.**
+
+2. **A mesma conta vive em dois lugares e o plano só citava um.** —
+   [conferido] `sum(quantity * coalesce(unit_price,0))` aparece no motor
+   (`20260814165657:451`) **e** em `list_pj_orders_to_bill`
+   (`20260814091757:520`). Trocar só o motor faria o painel mostrar um valor e
+   o clique gerar outro. É a mesma dívida de `romaneioBilling.ts` ×
+   `private.calcular_cobranca_buck` já registrada no `CURRENT_STATE.md` — não
+   replicar de propósito. **Mudam no mesmo commit, com teste pgTAP que compara
+   os dois números para o mesmo grupo. Fase 2.**
+
+3. **A trava de "pedido já cobrado" não cobriria a coluna nova.** —
+   [conferido] O gatilho é
+   `before update of quantity, unit_price, pack_size, customer_id,
+   delivery_date, cancelled_at` (`20260813215830:422`). Coluna nova não está
+   na lista, e `orders_update_authenticated_profiles` (baseline `:3622`)
+   permite `UPDATE` em qualquer linha PJ para `admin` e `financeiro`.
+   **Acrescentar a coluna nova e o carimbo de conferência à lista do gatilho,
+   na mesma migration que cria a coluna. Fase 1, não fase 2.**
+
+4. **Pedido em que nada foi enviado travaria o envio inteiro.** — [conferido]
+   O motor levanta exceção quando o valor é zero, com a mensagem "Pedido sem
+   preço não vira cobrança. Confira a tabela de preço do cliente"; e
+   `list_pj_orders_to_bill` filtra `amount > 0`. Como
+   `confirm_pj_order_dispatch` chama o motor com `perform` na mesma transação,
+   a exceção aborta o envio. Cenário real: cliente recusa a entrega na porta,
+   a Expedição marca os 3 itens como "não enviei" e não consegue mais fechar o
+   pedido — lição `sobras-pendentes-sem-saida`.
+   **O motor precisa separar "sem preço cadastrado" (erro) de "nada foi
+   enviado" (fato legítimo): grava o envio, não gera cobrança, e o pedido
+   aparece numa lista de enviados sem cobrança. Fase 2, com o caso já na
+   matriz de teste da fase 1.**
+
+5. **A trava de saída da fase 2 tinha a forma errada.** — [apontado] "Dobro do
+   valor estimado do pedido" é agregada e só olha para cima. Num pedido de
+   R$ 5.000, digitar 30 kg em vez de 3,067 kg dá fator 1,48 e **passa**; e
+   0,3 kg em vez de 3 kg não dispara nada.
+   **Trocar por trava por linha e absoluta, espelhando as três travas da
+   cobrança da Buck: teto de kg por linha, teto de fator por linha (recusa,
+   não confirmação) e piso simétrico. Confirmação escrita é para a faixa
+   cinzenta; para o absurdo, recusa. Fases 1 (entrada) e 2 (saída).**
+
+### Riscos altos
+
+6. **O relatório de Vendas PJ passa a mentir depois da fase 2.** — [apontado]
+   `src/app/relatorios/pj/page.tsx` e `src/lib/pjSalesReport.ts` somam
+   `unit_price × quantity` direto de `orders`. Com 30% do valor vindo de
+   linhas por kg, Relatórios e Contas a Receber passariam a dar números
+   diferentes para a mesma pergunta. **Ajustar o relatório existente na fase
+   2 — não esperar a fase 4, que é o relatório novo.**
+
+7. **A fase 3 ignorava que uma cobrança de pedido pode ser várias.** —
+   [apontado] `public.split_receivable` cria N parcelas vivas com o mesmo
+   `origin_ref`, e o índice único é por `(origin, origin_ref,
+   installment_number)`. Cancelar "a cobrança" no singular quebra ou duplica.
+   **A correção varre todas as cobranças vivas do `origin_ref`, recusa se
+   qualquer uma tiver recebimento, preserva o parcelamento e o prazo efetivo,
+   e mostra na tela o que vai mudar antes do clique. Fase 3.**
+
+8. **`pack_size` torna a conferência ambígua — o erro mais provável de
+   todos.** — [conferido] A linha grava `quantity = packs × pack_size`
+   (`src/app/pedidos-pj/page.tsx:334`) e `unit_price` é por unidade. O plano
+   não dizia em que unidade a Expedição digita. Quem separa conta caixas; o
+   banco guarda unidades. Digitar 12 onde o pedido diz 252 dá −95%, a trava
+   dos 20% pede confirmação, a pessoa confirma por hábito, e a cobrança sai
+   por uma fração do valor.
+   **A conferência acontece na MESMA unidade em que o pedido foi digitado,
+   com a tela mostrando "12 cx × 21 = 252 un" e o equivalente ao lado. Tratar
+   `pack_size` e `pricing_unit` nulos (existem linhas legadas assim).
+   Fase 1.**
+
+9. **A fase 3 esbarra num gatilho que o plano não mencionava.** — [conferido]
+   `guard_dispatched_pj_order_changes` é `BEFORE DELETE OR UPDATE ... FOR EACH
+   ROW` **sem lista de colunas** (baseline `:3062`): qualquer `UPDATE` em
+   linha PJ já enviada é recusado sem o GUC `pane.pj_dispatch_rpc`.
+   **A função de correção precisa de
+   `perform set_config('pane.pj_dispatch_rpc','on',true)`. Cuidado: esse GUC é
+   chave-mestra e também desliga a proteção de `dispatched_at/by/by_name` —
+   atualizar só as colunas pretendidas e provar em pgTAP que `dispatched_at`
+   não mudou. Fase 3.**
+
+10. **`admin` não alcança `/contas-receber` — a fase 3 nasceria inutilizável
+    para o Rodrigo.** — [apontado, mas coerente com o `CURRENT_STATE.md`, que
+    já registra o mesmo] Na prática só a Elis corrigiria, e o Rodrigo não
+    conseguiria testar a fase 3 no preview.
+    **Decidir antes da fase 3: ou a tela de correção mora em `/pedidos-pj`
+    (que o admin alcança), ou `/contas-receber` entra nas rotas do admin.
+    Conferir as quatro listas da lição `tela-nova-precisa-do-menu`.**
+
+11. **"A Expedição avisa" não é mecanismo.** — [apontado] Não existe lugar
+    onde a Elis veja que um pedido saiu diferente do combinado.
+    **Criar uma lista de "pedidos enviados com diferença" na tela do
+    financeiro (fase 3) e um contador de adoção por etapa — conferido /
+    enviado / cobrado — já na fase 1, porque adoção se mede por etapa do
+    ciclo, nunca por total agregado.**
+
+12. **A fase 1 cria um número certo que o sistema ignora de propósito.** —
+    [apontado] Defensável, mas precisa de prazo e de aviso na tela, senão as
+    duas pessoas descobrem que o sistema cobra errado sem saída e abandonam a
+    conferência antes da fase 2 existir.
+    **A fase 1 ganha prazo escrito e critério numérico de adoção para liberar
+    a fase 2, e a tela mostra um banner fixo dizendo que a conferência ainda
+    não altera a cobrança.**
+
+### Riscos médios — [todos apontados, não verificados por mim]
+
+13. **O pedido sai da fila da Expedição à meia-noite.** `organizePjOrders`
+    (`src/lib/pjOrderList.ts:60-70`) manda para o Histórico tudo com entrega
+    anterior a hoje, mesmo sem envio confirmado. Pedido entregue no sábado e
+    conferido na segunda vira órfão. **Enquanto houver conferência pendente,
+    o pedido fica em "Em aberto" com marca de atrasado. Fase 1.**
+14. **`NULL`, zero e "nunca conferido" são três coisas distintas.** O carimbo
+    de conferência precisa ser **por linha**, não por grupo, com
+    `numeric(12,3)` e `check (>= 0)`. Fase 1.
+15. **Fuso e base de data.** Toda data derivada passa por
+    `private.data_na_padaria(...)`, nunca `now()::date`. E o relatório atual
+    agrupa por `delivery_date` enquanto a cobrança usa a data do envio —
+    escolher uma base e usar a mesma nos dois. Fase 4, decidido na fase 2.
+16. **Mudar o retorno de `list_pj_orders_for_dispatch` exige `drop`.**
+    `create or replace` não altera tipo de retorno, e o `drop` **perde os
+    grants**. Reconceder explicitamente e revogar de `public, anon` na mesma
+    migration — lição `grants-implicitos-variam-por-ambiente`. Fase 1.
+17. **Idempotência.** Todas as funções de escrita de Contas a Receber recebem
+    `p_request_id` e deduplicam. As duas RPCs novas seguem a convenção.
+    Fases 1 e 3.
+18. **Editar pelo fluxo comercial arredonda a quantidade.**
+    `orderLinePacksFromStoredQuantity` (`src/lib/pjOrderQuantity.ts:24-27`)
+    faz `Math.round` para `un`: 55 com `pack_size` 21 vira 63 ao reabrir e
+    salvar. A tela de correção **não pode** reaproveitar o fluxo de edição
+    comercial. Fase 3.
+19. **A trilha da correção nasce invisível.** `receivable_events.event_type`
+    tem `check` fechado, e nenhuma tela lê `receivable_events` hoje. Ou a tela
+    passa a mostrar o histórico, ou registrar por escrito que a auditoria é só
+    para consulta técnica. Fase 3.
+20. **Teste, seed e matriz.** `supabase/tests/pedido_pj_vira_cobranca.test.sql`
+    precisa crescer (conferido < estimado; tudo zero; conferido e não enviado;
+    cobrado antes de conferir; correção com 3 parcelas; correção bloqueada por
+    recebimento). O seed do Preview precisa de pedido em conferência parcial e
+    de enviado+cobrado sem recebimento, **com entrega em `hoje+1` / `hoje−2`,
+    nunca em "hoje"** — lição `seed-com-hoje-vence-a-meia-noite`, que já
+    quebrou o roteiro de teste do Rodrigo neste mesmo módulo.
+
+### Perguntas que a descoberta não fechou
+
+1. **O que o cliente recebe junto com a entrega?** Não existe impressão de
+   pedido PJ. Se o motorista entrega um papel dizendo 3 kg e a fatura vem com
+   3,067 kg, o cliente contesta e a Elis não tem como provar. **Sem essa
+   resposta, cobrar o real pode criar disputa comercial em vez de resolver.**
+   Perguntar ao Rodrigo antes da fase 2.
+2. **A Elis pode conferir quando a Expedição não conferiu?** A decisão 4 só
+   trata do pós-envio; falta a regra do pré-envio.
+3. **Pedidos sem `order_group_id`** (legado) não podem ser despachados nem
+   cobrados pelas RPCs. Confirmar se ainda entram pedidos assim.
+
+### Risco fora do escopo — reportado, não corrigir aqui
+
+`orders_select_authenticated_profiles` (baseline `:3616`) permite que qualquer
+perfil ativo diferente de `expedicao` leia todas as linhas PJ, `unit_price`
+incluso. É o padrão que a lição `leitura-operacional-sem-preco` mandou não
+repetir. Não tem relação com este plano e **não deve ser corrigido junto** —
+mas a coluna nova entra nessa mesma leitura ampla.
+
 ## Pendências antes de começar a fase 1
 
-1. **Revisão adversarial** — exigida pelo `AGENTS.md` para plano com dado
-   financeiro. Não foi possível consultar o Sol a partir do ambiente de nuvem
-   (ver seção seguinte). Foi despachado um revisor limpo, sem o contexto da
-   conversa, com a pergunta "o que falta neste plano que qualquer sistema desse
-   tipo tem?". **O resultado ainda não foi incorporado a este documento.**
-2. **Aprovação explícita do Rodrigo para a fase 1.**
+1. **Revisão adversarial** — feita e incorporada (seção acima). Não foi
+   possível consultar o Sol a partir do ambiente de nuvem; foi usado um
+   revisor limpo, saída que o próprio `AGENTS.md` prevê. Se o Rodrigo quiser a
+   opinião do Sol de verdade numa sessão local, vale rodar `/consulta` com a
+   mesma pergunta — os achados acima já dão o contraditório inicial.
+2. **Rever o plano das fases 1 a 3 absorvendo os bloqueadores 1 a 5.** O plano
+   como está escrito na seção "Plano — 4 fases" ainda não os contempla.
+3. **Responder a pergunta 1 das perguntas abertas** (o que o cliente recebe
+   junto com a entrega) antes da fase 2.
+4. **Aprovação explícita do Rodrigo para a fase 1.**
 
 ## Nota sobre ambiente de nuvem (2026-08-20)
 
