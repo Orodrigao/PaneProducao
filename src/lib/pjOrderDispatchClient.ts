@@ -20,6 +20,32 @@ export interface PjDispatchOrderRow {
   dispatched_at: string | null
   dispatched_by: string | null
   dispatched_by_name: string | null
+  dispatched_quantity: number | null
+  dispatched_quantity_reason: string | null
+  dispatched_quantity_at: string | null
+  dispatched_quantity_by_name: string | null
+}
+
+/** Um item indo para a conferência. `quantity` null limpa o que estava lá. */
+export interface PjDispatchQuantityInput {
+  order_id: string
+  quantity: number | null
+  reason: string | null
+}
+
+export interface PjDispatchCheckSummary {
+  linhas: number
+  conferidas: number
+  pendentes: number
+  nao_enviadas: number
+  version: string | null
+  itens: Array<{
+    order_id: string
+    quantity: number | null
+    reason: string | null
+    checked_at: string | null
+    checked_by_name: string | null
+  }>
 }
 
 export interface PjOrderDispatchResult {
@@ -36,6 +62,10 @@ type LoadDispatchOrdersResult =
 type ConfirmDispatchResult =
   | { ok: true; dispatch: PjOrderDispatchResult }
   | { ok: false; message: string }
+
+type SaveCheckResult =
+  | { ok: true; summary: PjDispatchCheckSummary }
+  | { ok: false; message: string; stale?: boolean }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -55,6 +85,48 @@ export async function loadPjOrdersForDispatch(): Promise<LoadDispatchOrdersResul
   }
 
   return { ok: true, orders: data as PjDispatchOrderRow[] }
+}
+
+/**
+ * Grava a conferência do pedido inteiro numa transação só.
+ *
+ * `expectedVersion` é o carimbo de conferência mais recente que a tela viu ao
+ * abrir. Se alguém gravou no meio, o banco recusa e a tela recarrega: sem
+ * isso, vence quem salvar por último, não quem está certo.
+ */
+export async function savePjOrderDispatchQuantities(
+  orderGroupId: string,
+  items: PjDispatchQuantityInput[],
+  expectedVersion: string | null,
+  requestId: string,
+): Promise<SaveCheckResult> {
+  if (!orderGroupId) return { ok: false, message: 'Pedido sem identificação para conferir.' }
+  if (items.length === 0) return { ok: false, message: 'Nenhum item para conferir.' }
+
+  const { data, error } = await supabase.rpc('save_pj_order_dispatch_quantities', {
+    p_request_id: requestId,
+    p_order_group_id: orderGroupId,
+    p_items: items,
+    p_expected_version: expectedVersion,
+  })
+
+  if (error) {
+    // 40001 é a recusa por tela desatualizada: a saída é recarregar, não
+    // tentar de novo com os mesmos números.
+    const stale = error.code === '40001'
+    return {
+      ok: false,
+      stale,
+      message: stale
+        ? 'Outra pessoa conferiu este pedido enquanto você preenchia. Recarregue para ver o que já foi gravado.'
+        : `Não foi possível salvar a conferência: ${error.message}`,
+    }
+  }
+  if (!isRecord(data) || typeof data.linhas !== 'number') {
+    return { ok: false, message: 'O banco não confirmou a conferência.' }
+  }
+
+  return { ok: true, summary: data as unknown as PjDispatchCheckSummary }
 }
 
 export async function confirmPjOrderDispatch(orderGroupId: string): Promise<ConfirmDispatchResult> {

@@ -180,7 +180,9 @@ insert into public.orders (
   order_date, delivery_date, production_date, pj_delivery_date,
   obs, needs_production,
   dispatched_at, dispatched_by, dispatched_by_name,
-  cancelled_at, cancelled_by, cancel_reason
+  cancelled_at, cancelled_by, cancel_reason,
+  dispatched_quantity, dispatched_quantity_reason,
+  dispatched_quantity_at, dispatched_quantity_by_name
 )
 values
   -- Em aberto: 12 pacotes de 21 = 252 un x R$ 1,60 = R$ 403,20.
@@ -194,7 +196,8 @@ values
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 1,
    '[TESTE] pedido com pacote de 21 para conferir o valor do relatorio', false,
-   null, null, null, null, null, null),
+   null, null, null, null, null, null,
+   null, null, null, null),
   -- Em aberto por quilo: 4,5 kg x R$ 89,00 = R$ 400,50.
   ('30000000-0000-4000-8000-000000000102', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000002',
@@ -206,7 +209,8 @@ values
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 1,
    '[TESTE] pedido por quilo, sem pacote', false,
-   null, null, null, null, null, null),
+   null, null, null, null, null, null,
+   null, null, null, null),
   -- Enviado: sai da fila e vai para o Historico. 2 pacotes de 21 = 42 un = R$ 67,20.
   ('30000000-0000-4000-8000-000000000103', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000003',
@@ -219,7 +223,10 @@ values
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    '[TESTE] pedido ja enviado pela Expedicao', false,
    now() - interval '2 hours', null, '[TESTE] Expedicao JC',
-   null, null, null),
+   null, null, null,
+   -- Enviado ANTES da conferencia existir: fica com o campo vazio de
+   -- proposito, porque a fase 1 nao retroage (decisao 8 do plano).
+   null, null, null, null),
   -- Entregue ontem, de cliente SEM prazo cadastrado: aparece na lista de a
   -- faturar bloqueado, porque nao ha vencimento que se possa calcular. E o
   -- caso que faz dinheiro deixar de ser cobrado em silencio.
@@ -233,7 +240,8 @@ values
    (now() at time zone 'America/Sao_Paulo')::date - 2,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    '[TESTE] entregue, mas o cliente nao tem prazo combinado', false,
-   null, null, null, null, null, null),
+   null, null, null, null, null, null,
+   null, null, null, null),
   -- Cancelado: nao entra em nenhuma soma.
   ('30000000-0000-4000-8000-000000000104', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000004',
@@ -247,7 +255,37 @@ values
    '[TESTE] pedido cancelado, fora de qualquer soma', false,
    null, null, null,
    now() - interval '1 hour', '[TESTE] Financeiro JC',
-   'Cenario de teste do cancelamento')
+   'Cenario de teste do cancelamento',
+   null, null, null, null),
+  -- CONFERENCIA PARCIAL, em duas linhas: a primeira ja conferida com o peso
+  -- real, a segunda ainda nao. E o cenario que mostra o bloqueio do "Marcar
+  -- como enviado" com o motivo escrito na tela.
+  -- Entrega em hoje+2: dado preso ao dia exato so funciona no minuto em que
+  -- foi criado (licao `seed-com-hoje-vence-a-meia-noite`).
+  ('30000000-0000-4000-8000-000000000106', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000006',
+   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ',
+   3, 89.00, 1, 'kg',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   '[TESTE] conferencia pela metade: esta linha ja foi conferida', false,
+   null, null, null, null, null, null,
+   3.067, null, now() - interval '30 minutes', '[TESTE] Expedicao JC'),
+  ('30000000-0000-4000-8000-000000000107', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000006',
+   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
+   42, 1.60, 21, 'un',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   '[TESTE] esta linha ainda NAO foi conferida, e e ela que segura o envio', false,
+   null, null, null, null, null, null,
+   null, null, null, null)
 on conflict (id) do update set
   store = excluded.store,
   order_type = excluded.order_type,
@@ -272,7 +310,11 @@ on conflict (id) do update set
   dispatched_by_name = excluded.dispatched_by_name,
   cancelled_at = excluded.cancelled_at,
   cancelled_by = excluded.cancelled_by,
-  cancel_reason = excluded.cancel_reason;
+  cancel_reason = excluded.cancel_reason,
+  dispatched_quantity = excluded.dispatched_quantity,
+  dispatched_quantity_reason = excluded.dispatched_quantity_reason,
+  dispatched_quantity_at = excluded.dispatched_quantity_at,
+  dispatched_quantity_by_name = excluded.dispatched_quantity_by_name;
 
 -- Fecha a chave: a partir daqui a confirmacao de envio volta a exigir a acao
 -- protegida, inclusive para o restante deste seed.

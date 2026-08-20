@@ -20,8 +20,11 @@ import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import {
   confirmPjOrderDispatch,
   loadPjOrdersForDispatch,
+  savePjOrderDispatchQuantities,
   type PjDispatchOrderRow,
 } from '@/lib/pjOrderDispatchClient'
+import { PjDispatchCheckPanel, type DispatchCheckLine } from '@/components/PjDispatchCheckPanel'
+import { dispatchReadiness, versionOf } from '@/lib/pjDispatchCheck'
 
 // ===== Tipos =====
 interface Customer {
@@ -60,6 +63,8 @@ interface OrderRow {
   obs:string|null
   cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
   dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
+  dispatched_quantity:number|null; dispatched_quantity_reason:string|null
+  dispatched_quantity_at:string|null; dispatched_quantity_by_name:string|null
 }
 interface PedidoGroup {
   key:string
@@ -126,6 +131,10 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
     dispatched_at: row.dispatched_at,
     dispatched_by: row.dispatched_by,
     dispatched_by_name: row.dispatched_by_name,
+    dispatched_quantity: row.dispatched_quantity,
+    dispatched_quantity_reason: row.dispatched_quantity_reason,
+    dispatched_quantity_at: row.dispatched_quantity_at,
+    dispatched_quantity_by_name: row.dispatched_quantity_by_name,
   }
 }
 
@@ -159,6 +168,8 @@ export default function PedidosPJPage() {
   const cancellingRef = useRef(false)
   const [dispatching, setDispatching] = useState(false)
   const dispatchingRef = useRef(false)
+  const [savingCheck, setSavingCheck] = useState(false)
+  const savingCheckRef = useRef(false)
 
   const access = resolvePjOrderAccess(user)
 
@@ -497,6 +508,59 @@ export default function PedidosPJPage() {
     }
   }
 
+  const salvarConferencia = async (
+    g: PedidoGroup,
+    items: Array<{ order_id: string; quantity: number | null; reason: string | null }>,
+  ) => {
+    if (savingCheckRef.current) return
+    if (!g.order_group_id) {
+      showToast('Pedido antigo sem identificação. Fale com o Rodrigo.')
+      return
+    }
+
+    const version = versionOf(g.rows.map(row => ({ checkedAt: row.dispatched_quantity_at })))
+    savingCheckRef.current = true
+    setSavingCheck(true)
+    try {
+      const result = await savePjOrderDispatchQuantities(
+        g.order_group_id, items, version, crypto.randomUUID(),
+      )
+      if (!result.ok) {
+        showToast(result.message)
+        // Tela desatualizada nao se resolve tentando de novo com os mesmos
+        // numeros: recarrega para a pessoa ver o que ja foi gravado.
+        if (result.stale) { setViewing(null); loadAll() }
+        return
+      }
+
+      const porLinha = new Map(result.summary.itens.map(item => [item.order_id, item]))
+      const aplica = (row: OrderRow): OrderRow => {
+        const item = porLinha.get(row.id)
+        if (!item) return row
+        return {
+          ...row,
+          dispatched_quantity: item.quantity,
+          dispatched_quantity_reason: item.reason,
+          dispatched_quantity_at: item.checked_at,
+          dispatched_quantity_by_name: item.checked_by_name,
+        }
+      }
+      setOrders(previous => previous.map(aplica))
+      setViewing(previous => previous
+        ? { ...previous, rows: previous.rows.map(aplica) }
+        : previous)
+
+      showToast(result.summary.pendentes > 0
+        ? `✅ Conferência salva · ainda faltam ${result.summary.pendentes} item(ns)`
+        : '✅ Conferência salva · o pedido já pode ser marcado como enviado')
+    } catch {
+      showToast('Erro inesperado ao salvar a conferência. Recarregue a página e tente novamente.')
+    } finally {
+      savingCheckRef.current = false
+      setSavingCheck(false)
+    }
+  }
+
   const dispatchPedido = async (g: PedidoGroup) => {
     if (dispatchingRef.current) return
     if (!access.canDispatch) {
@@ -550,6 +614,22 @@ export default function PedidosPJPage() {
       })
     : null
 
+  const viewingCheckLines: DispatchCheckLine[] = viewing
+    ? viewing.rows.map(row => ({
+        orderId: row.id,
+        productLabel: row.product_name || row.bread_id,
+        estimated: Number(row.quantity) || 0,
+        pricingUnit: row.pricing_unit,
+        packSize: row.pack_size,
+        sent: row.dispatched_quantity,
+        reason: row.dispatched_quantity_reason,
+        checkedAt: row.dispatched_quantity_at,
+        checkedByName: row.dispatched_quantity_by_name,
+      }))
+    : []
+  const viewingCheckVersion = versionOf(viewingCheckLines)
+  const viewingReadiness = dispatchReadiness(viewingCheckLines.map(line => ({ sent: line.sent })))
+
   const listOrders: PjOrderListDisplayItem[] = pedidosGrouped.map(group => {
     const status = groupStatus(group)
     return {
@@ -560,6 +640,12 @@ export default function PedidosPJPage() {
       deliveryDate: group.delivery_date,
       cancelledAt: group.cancelled_at,
       dispatchedAt: group.dispatched_at,
+      // Enquanto faltar conferir, o pedido nao cai no Historico pela virada do
+      // dia: sem isso, entrega de sabado conferida na segunda vira orfa.
+      hasPendingCheck: access.mode === 'dispatch'
+        && !group.cancelled_at
+        && !group.dispatched_at
+        && group.rows.some(row => row.dispatched_quantity === null),
       itemCount: group.rows.length,
       total: group.total,
       statusLabel: status.label,
@@ -810,6 +896,18 @@ export default function PedidosPJPage() {
                     {access.showCommercialValues && (
                       <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
                     )}
+                    {/* O que a expedicao conferiu. Aparece so quando difere do
+                        pedido: numero igual repetido vira ruido. A cobranca
+                        ainda sai pelo pedido — a virada e a fase 2. */}
+                    {r.dispatched_quantity !== null && r.dispatched_quantity !== undefined
+                      && Number(r.dispatched_quantity) !== Number(r.quantity) && (
+                      <span style={{display:'block', fontSize:11.5, color:'var(--tomato, #A93A2E)', marginTop:2}}>
+                        {Number(r.dispatched_quantity) === 0
+                          ? 'não enviado'
+                          : `saiu ${r.dispatched_quantity} ${r.pricing_unit || 'un'}`}
+                        {r.dispatched_quantity_reason ? ` · ${r.dispatched_quantity_reason}` : ''}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -857,15 +955,33 @@ export default function PedidosPJPage() {
             )}
 
             {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && (
-              <button
-                type="button"
-                className="ps-btn primary"
-                style={{width:'100%', justifyContent:'center', marginBottom:14}}
-                disabled={dispatching}
-                onClick={() => dispatchPedido(viewing)}
-              >
-                <Truck size={15}/> {dispatching ? 'Confirmando envio…' : 'Marcar como enviado'}
-              </button>
+              <PjDispatchCheckPanel
+                key={`${viewing.key}:${viewingCheckVersion ?? 'novo'}`}
+                lines={viewingCheckLines}
+                saving={savingCheck}
+                onSave={items => salvarConferencia(viewing, items)}
+              />
+            )}
+
+            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && (
+              <div style={{marginBottom:14, display:'grid', gap:6}}>
+                <button
+                  type="button"
+                  className="ps-btn primary"
+                  style={{width:'100%', justifyContent:'center'}}
+                  disabled={dispatching || savingCheck || !viewingReadiness.ready}
+                  onClick={() => dispatchPedido(viewing)}
+                >
+                  <Truck size={15}/> {dispatching ? 'Confirmando envio…' : 'Marcar como enviado'}
+                </button>
+                {/* O motivo do bloqueio vai escrito na tela, ao lado do botao:
+                    tooltip nao existe no celular da expedicao. */}
+                {!viewingReadiness.ready && (
+                  <span style={{fontSize:12.5, color:'var(--ink-soft)', textAlign:'center'}}>
+                    {viewingReadiness.reason}
+                  </span>
+                )}
+              </div>
             )}
 
             <div className="actions">

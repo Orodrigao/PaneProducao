@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(32);
+select plan(34);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -225,8 +225,25 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and store = 'pj'),
-  5,
-  'seed cria pedidos PJ em aberto, por quilo, enviado, cancelado e sem prazo'
+  7,
+  'seed cria pedidos PJ em aberto, por quilo, enviado, cancelado, sem prazo e em conferencia parcial'
+);
+
+-- O cenario da fase 1: um pedido com uma linha ja conferida e outra pendente.
+-- E o que faz o bloqueio do "Marcar como enviado" aparecer no roteiro de teste.
+select is(
+  (select count(*)::int from public.orders
+    where order_group_id = '70000000-0000-4000-8000-000000000006'
+      and dispatched_quantity is null),
+  1,
+  'o pedido em conferencia parcial tem exatamente uma linha ainda por conferir'
+);
+
+select is(
+  (select dispatched_quantity from public.orders
+    where id = '30000000-0000-4000-8000-000000000106'),
+  3.067::numeric,
+  'e a outra linha ja traz o peso real, diferente da estimativa de 3 kg'
 );
 
 -- Trava do valor: a linha do pedido ja guarda a quantidade final vendida, entao
