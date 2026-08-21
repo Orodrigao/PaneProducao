@@ -448,6 +448,12 @@ begin
     raise exception using errcode = '22023', message = 'Nenhum item para conferir.';
   end if;
 
+  -- Fecha a porta ao sair. `set_config(..., true)` vale ate o fim da
+  -- transacao: via PostgREST cada chamada e uma transacao propria, mas deixar
+  -- aberta emprestaria a chave a qualquer escrita que viesse depois na mesma
+  -- transacao — inclusive num teste, que roda tudo numa so.
+  perform set_config('pane.pj_check_rpc', '', true);
+
   return private.resumo_conferencia_pj(p_order_group_id);
 end;
 $$;
