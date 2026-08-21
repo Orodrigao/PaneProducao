@@ -163,20 +163,23 @@ const CASH_PAYMENT_METHODS: readonly NfePaymentMethod[] = ['dinheiro', 'pix']
  * e não o escreve no XML. Antes, a falta virava silenciosamente a data de emissão,
  * o que adianta o boleto sem ninguém perceber. Agora só assumimos a emissão quando
  * o pagamento é à vista; a prazo, a data fica vazia para ser digitada.
+ *
+ * A NF-e aceita vários `detPag`. Basta um deles ser a prazo para a nota deixar de
+ * ser à vista — por isso a decisão olha todos, e não apenas o primeiro.
  */
 export function resolveInstallments(
   duplicates: readonly NfeInstallmentDraft[],
-  paymentMethod: NfePaymentMethod,
+  paymentMethods: readonly NfePaymentMethod[],
   issueDate: string,
   totalValue: number,
 ): { installments: NfeInstallmentDraft[]; dueDateSource: NfeDueDateSource } {
   if (duplicates.length > 0) {
     return {
-      installments: duplicates.map(item => ({ ...item })),
+      installments: duplicates.map((item, index) => ({ ...item, number: index + 1 })),
       dueDateSource: duplicates.every(item => Boolean(item.dueDate)) ? 'xml' : 'ausente',
     }
   }
-  const cash = CASH_PAYMENT_METHODS.includes(paymentMethod)
+  const cash = paymentMethods.length > 0 && paymentMethods.every(method => CASH_PAYMENT_METHODS.includes(method))
   return {
     installments: [{ number: 1, dueDate: cash ? issueDate : '', amount: totalValue }],
     dueDateSource: cash ? 'a-vista' : 'ausente',
@@ -238,17 +241,19 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     }
   })
 
+  // `nDup` é rótulo do emissor e pode repetir ou vir vazio; a posição é a única
+  // identidade confiável, e é ela que o banco exige única dentro da compra.
   const duplicates = allElements(document, 'dup').map((duplicate, index) => ({
-    number: numberValue(childText(duplicate, 'nDup')) || index + 1,
+    number: index + 1,
     dueDate: childText(duplicate, 'dVenc'),
     amount: numberValue(childText(duplicate, 'vDup')),
   }))
   const totalValue = numberValue(childText(total, 'vNF'))
   const payments = allElements(document, 'detPag')
-  const paymentCode = payments.length > 0 ? childText(payments[0], 'tPag') : ''
-  const method = paymentMethod(paymentCode)
+  const methods = payments.map(payment => paymentMethod(childText(payment, 'tPag')))
+  const method = methods[0] ?? 'outro'
   const issueDay = issueDate.slice(0, 10)
-  const { installments, dueDateSource } = resolveInstallments(duplicates, method, issueDay, totalValue)
+  const { installments, dueDateSource } = resolveInstallments(duplicates, methods, issueDay, totalValue)
 
   return {
     accessKey,

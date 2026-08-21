@@ -87,7 +87,7 @@ describe('vencimento das parcelas importadas da NF-e', () => {
   it('usa as duplicatas quando a NF-e informa as datas', () => {
     expect(resolveInstallments(
       [{ number: 1, dueDate: '2026-09-09', amount: 510.97 }],
-      'boleto',
+      ['boleto'],
       '2026-08-21',
       510.97,
     )).toEqual({
@@ -97,28 +97,54 @@ describe('vencimento das parcelas importadas da NF-e', () => {
   })
 
   it('deixa a data vazia quando a NF-e a prazo nao traz duplicata', () => {
-    expect(resolveInstallments([], 'boleto', '2026-08-21', 510.97)).toEqual({
+    expect(resolveInstallments([], ['boleto'], '2026-08-21', 510.97)).toEqual({
       installments: [{ number: 1, dueDate: '', amount: 510.97 }],
       dueDateSource: 'ausente',
     })
   })
 
   it('assume a emissao somente quando o pagamento e a vista', () => {
-    expect(resolveInstallments([], 'dinheiro', '2026-08-21', 150.80)).toEqual({
+    expect(resolveInstallments([], ['dinheiro'], '2026-08-21', 150.80)).toEqual({
       installments: [{ number: 1, dueDate: '2026-08-21', amount: 150.80 }],
       dueDateSource: 'a-vista',
     })
-    expect(resolveInstallments([], 'pix', '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
-    expect(resolveInstallments([], 'cartao', '2026-08-21', 11.90).dueDateSource).toBe('ausente')
-    expect(resolveInstallments([], 'outro', '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], ['pix'], '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], ['cartao'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], ['outro'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
   })
 
   it('cobra a data tambem quando so uma das duplicatas veio sem vencimento', () => {
     expect(resolveInstallments(
       [{ number: 1, dueDate: '2026-09-09', amount: 250 }, { number: 2, dueDate: '', amount: 260.97 }],
-      'boleto',
+      ['boleto'],
       '2026-08-21',
       510.97,
     ).dueDateSource).toBe('ausente')
+  })
+})
+
+describe('casos de borda apontados na revisao adversarial', () => {
+  it('nao trata como a vista a nota com dinheiro e boleto no mesmo pagamento', () => {
+    expect(resolveInstallments([], ['dinheiro', 'boleto'], '2026-08-21', 510.97)).toEqual({
+      installments: [{ number: 1, dueDate: '', amount: 510.97 }],
+      dueDateSource: 'ausente',
+    })
+  })
+
+  it('exige a data quando a NF-e nao declara forma de pagamento', () => {
+    expect(resolveInstallments([], [], '2026-08-21', 510.97).dueDateSource).toBe('ausente')
+  })
+
+  it('mantem a vista somente quando todos os pagamentos sao a vista', () => {
+    expect(resolveInstallments([], ['dinheiro', 'pix'], '2026-08-21', 510.97).dueDateSource).toBe('a-vista')
+  })
+
+  it('numera as parcelas pela posicao, mesmo com nDup repetido no XML', () => {
+    expect(resolveInstallments(
+      [{ number: 1, dueDate: '2026-09-09', amount: 250 }, { number: 1, dueDate: '2026-10-09', amount: 260.97 }],
+      ['boleto'],
+      '2026-08-21',
+      510.97,
+    ).installments.map(item => item.number)).toEqual([1, 2])
   })
 })
