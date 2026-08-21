@@ -186,6 +186,22 @@ describe('romaneioDraft', () => {
     ])
   })
 
+  // Cenario da EX no Banco Preview: o pedido do dia e de 8 baguetes e as viagens
+  // anteriores ja levaram 18. A unica coisa que mantem a baguete na tela de
+  // criacao e a reposicao aberta; quando ela e baixada, a lista fica VAZIA.
+  // O smoke do navegador depende desse fio de cabelo, e a tela nao distingue
+  // lista vazia de lista ainda carregando (ver lessons.md 2026-08-21).
+  it('esvazia a lista quando a reposicao da EX e baixada e o pedido ja foi superado', () => {
+    const breads = [{ id: 'teste-baguete', name: '[TESTE] Baguete' }]
+    const pedidoDoDia = { 'teste-baguete': 8 }
+    const jaEnviado = { 'teste-baguete': 18 }
+
+    expect(filterPendingRomaneioBreads(breads, pedidoDoDia, jaEnviado, { 'teste-baguete': 2 }))
+      .toEqual(breads)
+    expect(filterPendingRomaneioBreads(breads, pedidoDoDia, jaEnviado, {}))
+      .toEqual([])
+  })
+
   it('soma reposicoes abertas por produto e ignora linhas invalidas', () => {
     expect(pendingReplacementQuantitiesByProductId([
       { product_id: 'baguete', pending_quantity: 2 },

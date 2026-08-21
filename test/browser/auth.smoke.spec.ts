@@ -38,24 +38,34 @@ async function expectRouteVisible(page: import('@playwright/test').Page, href: s
   await expect(page.locator(`a[href="${href}"]`).first()).toBeAttached()
 }
 
-// A aba do destino pode ser redesenhada enquanto o Romaneio prepara o rascunho.
-// Cada tentativa encontra a aba de novo e só termina quando o card-evidência
-// montou. Assim o teste absorve o redesenho transitório, mas ainda falha se a
-// EX realmente não ficar disponível.
-const romaneioDestinationRetryTimeoutMs = 45_000
+// A repetição cobre SOMENTE o clique. A lista de abas já está pronta quando a
+// tela de criação monta (lojas e permissões chegam antes de o botão "Novo
+// Romaneio" existir), então o clique perdido é hipótese remota; o que demora é
+// o rascunho do destino, montado por várias consultas em sequência.
+//
+// A espera pelo rascunho fica FORA da repetição, e mira o aviso da entrega —
+// o único elemento que aparece exatamente quando o rascunho terminou de montar.
+// Esperar por um card de produto no lugar dele confundiria "ainda carregando"
+// com "o cenário do Preview mudou", e repetir o clique jamais conserta o
+// segundo caso: a tela guarda o rascunho já montado e ignora novo clique na
+// mesma aba (ver lessons.md 2026-08-21).
+const romaneioDestinationRetryTimeoutMs = 20_000
 
 async function selectRomaneioDestination(
   page: import('@playwright/test').Page,
-  name: RegExp,
-  dataReadyCard: import('@playwright/test').Locator,
+  destinationName: string,
 ) {
   await expect(async () => {
-    const tab = page.getByRole('tab', { name })
+    const tab = page.getByRole('tab', { name: destinationName })
     await expect(tab).toBeVisible({ timeout: 5_000 })
     await tab.click({ timeout: 5_000 })
     await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
-    await expect(dataReadyCard).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: romaneioDestinationRetryTimeoutMs })
+
+  await expect(
+    page.locator('.ps-banner.honey', { hasText: `para ${destinationName}` }),
+    `O rascunho de ${destinationName} não terminou de montar.`,
+  ).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 }
 
 async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
@@ -168,15 +178,24 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
 })
 
 test('Romaneio EX sugere reposicao pendente da mesma data', async ({ page }) => {
-  // O retry da aba tem teto próprio e precisa caber dentro do teto do caso.
-  test.setTimeout(90_000)
+  // Login lento do Preview + montagem do rascunho cabem folgados aqui.
+  test.setTimeout(60_000)
 
   await enterWithPreviewAccount(page, previewAccounts.admin)
   await page.goto('/romaneio')
 
   await page.getByRole('button', { name: 'Novo Romaneio' }).click()
+  await selectRomaneioDestination(page, '[TESTE] Exposicao')
+
+  // Daqui em diante o rascunho JÁ está montado: card ausente é dado ausente,
+  // nunca lentidão. A EX pediu 8 baguetes e as viagens anteriores já levaram
+  // 18, então a única coisa que mantém o produto na tela é a reposição aberta
+  // do seed (src/lib/romaneioDraft.test.ts fixa essa conta).
   const bagueteCard = page.locator('.ps-card', { hasText: '[TESTE] Baguete' }).first()
-  await selectRomaneioDestination(page, /\[TESTE\] Exposicao/, bagueteCard)
+  await expect(
+    bagueteCard,
+    'O cenário de reposição da EX não está aberto no Banco Preview: os dados fictícios foram consumidos ou são de outro dia. Rode de novo o workflow "Banco Preview" desta PR antes de investigar o código.',
+  ).toBeVisible({ timeout: 5_000 })
 
   await expect(bagueteCard.getByText('Reposição pendente: +2 un')).toBeVisible({
     timeout: slowPreviewDataTimeoutMs,
