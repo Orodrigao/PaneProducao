@@ -156,7 +156,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '97000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '97000000-0000-4000-8000-00000000a001'::uuid),
-    current_date, 650.00, 'transferencia', 'banco_sicoob_jc'
+    private.data_na_padaria(), 650.00, 'transferencia', 'banco_sicoob_jc'
   ) $$,
   'terceiro pedaco fecha o que faltava'
 );
@@ -169,7 +169,7 @@ select throws_ok(
   $$ select public.record_receivable_receipt(
     '97000000-0000-4000-8000-00000000b004'::uuid,
     (select id from public.receivables where request_id = '97000000-0000-4000-8000-00000000a001'::uuid),
-    current_date, 10.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria(), 10.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   '22023',
   'Esta cobrança já está quitada. Estorne um recebimento antes de registrar outro.',
@@ -180,7 +180,7 @@ select is(
   (select public.record_receivable_receipt(
     '97000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '97000000-0000-4000-8000-00000000a001'::uuid),
-    current_date, 650.00, 'transferencia', 'banco_sicoob_jc')),
+    private.data_na_padaria(), 650.00, 'transferencia', 'banco_sicoob_jc')),
   (select id from public.receivable_receipts where request_id = '97000000-0000-4000-8000-00000000b003'::uuid),
   'repetir o mesmo recebimento devolve o mesmo pedaco, sem duplicar'
 );

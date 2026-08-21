@@ -151,11 +151,11 @@ select is((select amount from public.receivables
   'o valor da cobranca e a soma do pedido inteiro');
 
 select is((select due_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date + 15,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), private.data_na_padaria() + 15,
   'o vencimento sai do prazo do cliente contado do envio');
 
 select is((select invoice_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), private.data_na_padaria(),
   'a data do faturamento e o dia do envio confirmado');
 
 select is((select status from public.receivables
