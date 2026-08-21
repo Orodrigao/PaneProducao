@@ -71,11 +71,11 @@ insert into public.orders (
   ('96000000-0000-4000-8000-0000000000e1', 'jc', 'pj', '96000000-0000-4000-8000-0000000000a1',
    'teste-croissant-conf', 'bread', '[TESTE] Mini-croissant Conf',
    3, 40, 1, 'kg', '96000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Conferencia',
-   current_date - 1, current_date - 1, current_date - 1, false),
+   private.data_na_padaria() - 1, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false),
   ('96000000-0000-4000-8000-0000000000e2', 'jc', 'pj', '96000000-0000-4000-8000-0000000000a1',
    'teste-cachorro-conf', 'bread', '[TESTE] Pao Cachorro Conf',
    50, 2, 1, 'un', '96000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Conferencia',
-   current_date - 1, current_date - 1, current_date - 1, false);
+   private.data_na_padaria() - 1, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- Um segundo pedido, para provar que sem conferencia nao se envia.
 -- `orders` tem unique em (store, bread_id, order_date), entao este pedido usa
@@ -88,7 +88,7 @@ insert into public.orders (
   ('96000000-0000-4000-8000-0000000000e3', 'jc', 'pj', '96000000-0000-4000-8000-0000000000a2',
    'teste-croissant-conf', 'bread', '[TESTE] Mini-croissant Conf',
    2, 40, 1, 'kg', '96000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Conferencia',
-   current_date - 3, current_date - 2, current_date - 2, false);
+   private.data_na_padaria() - 3, private.data_na_padaria() - 2, private.data_na_padaria() - 2, false);
 
 
 -- A trava, isolada -----------------------------------------------------------
@@ -278,7 +278,7 @@ select is(
 
 select ok(
   exists(
-    select 1 from public.pj_dispatch_adoption_stats(current_date - 30)
+    select 1 from public.pj_dispatch_adoption_stats(private.data_na_padaria() - 30)
     where totalmente_conferidos >= 1 and com_diferenca >= 1
   ),
   'o contador de adocao enxerga o pedido conferido e sinaliza que houve diferenca'

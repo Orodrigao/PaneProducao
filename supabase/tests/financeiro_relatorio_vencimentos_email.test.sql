@@ -64,7 +64,7 @@ insert into public.payable_purchases (
   request_id, store, purchase_date, origin, document_type, payment_method,
   status, total_value, created_by
 ) values (
-  '98000000-0000-4000-8000-0000000000a1', 'jc', current_date, 'manual',
+  '98000000-0000-4000-8000-0000000000a1', 'jc', private.data_na_padaria(), 'manual',
   'sem_nota', 'boleto', 'aberta', 125.50, '98000000-0000-4000-8000-000000000001'
 );
 
@@ -85,7 +85,7 @@ insert into public.payable_purchases (
   request_id, store, purchase_date, origin, document_type, payment_method,
   status, total_value, created_by
 ) values (
-  '98000000-0000-4000-8000-0000000000a2', 'jc', current_date - 10, 'manual',
+  '98000000-0000-4000-8000-0000000000a2', 'jc', private.data_na_padaria() - 10, 'manual',
   'sem_nota', 'boleto', 'aberta', 160.00, '98000000-0000-4000-8000-000000000001'
 );
 

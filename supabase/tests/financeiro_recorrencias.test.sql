@@ -68,7 +68,7 @@ select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-000000000001
 select lives_ok(
   $$ select public.create_finance_recurring_rule(
     'Aluguel da JC', 'ocupacao', 'jc', 2000, 31,
-    date_trunc('month', current_date)::date, null, 'banco_sicredi_jc', 'boleto'
+    date_trunc('month', private.data_na_padaria())::date, null, 'banco_sicredi_jc', 'boleto'
   ) $$,
   'financeiro autorizado cria uma regra recorrente'
 );
@@ -86,7 +86,7 @@ select lives_ok(
   $$ select public.confirm_finance_recurring_rule(
     '94000000-0000-4000-8000-0000000000a1'::uuid,
     (select id from public.finance_recurring_rules where name = 'Aluguel da JC'),
-    date_trunc('month', current_date)::date, current_date, 2050, 'pix', 'banco_sicredi_jc'
+    date_trunc('month', private.data_na_padaria())::date, private.data_na_padaria(), 2050, 'pix', 'banco_sicredi_jc'
   ) $$,
   'confirmar materializa o pagamento no livro'
 );
@@ -97,15 +97,15 @@ select ok((select planned_amount = 2000 and amount = 2050 and payment_method = '
   from public.finance_entries where source = 'recorrencia'),
   'o livro preserva previsto e realizado, incluindo a forma real');
 select is((select due_date from public.finance_entries where source = 'recorrencia'),
-  make_date(extract(year from current_date)::integer, extract(month from current_date)::integer,
-    extract(day from (date_trunc('month', current_date) + interval '1 month - 1 day'))::integer),
+  make_date(extract(year from private.data_na_padaria())::integer, extract(month from private.data_na_padaria())::integer,
+    extract(day from (date_trunc('month', private.data_na_padaria()) + interval '1 month - 1 day'))::integer),
   'dia 31 cai no último dia do mês quando necessário');
 
 select is(
   (select public.confirm_finance_recurring_rule(
     '94000000-0000-4000-8000-0000000000a1'::uuid,
     (select id from public.finance_recurring_rules where name = 'Aluguel da JC'),
-    date_trunc('month', current_date)::date, current_date, 2050, 'pix', 'banco_sicredi_jc'
+    date_trunc('month', private.data_na_padaria())::date, private.data_na_padaria(), 2050, 'pix', 'banco_sicredi_jc'
   )),
   (select id from public.finance_entries where source = 'recorrencia'),
   'repetir a mesma requisição devolve o lançamento existente'
@@ -114,7 +114,7 @@ select is(
   (select public.confirm_finance_recurring_rule(
     '94000000-0000-4000-8000-0000000000a2'::uuid,
     (select id from public.finance_recurring_rules where name = 'Aluguel da JC'),
-    date_trunc('month', current_date)::date, current_date, 2050, 'pix', 'banco_sicredi_jc'
+    date_trunc('month', private.data_na_padaria())::date, private.data_na_padaria(), 2050, 'pix', 'banco_sicredi_jc'
   )),
   (select id from public.finance_entries where source = 'recorrencia'),
   'uma segunda confirmação da mesma regra e mês não duplica'
@@ -130,25 +130,25 @@ select lives_ok(
   ) $$,
   'a confirmação recorrente pode ser estornada sem apagar o histórico'
 );
-select ok((select source_ref is not null and recurrence_month = date_trunc('month', current_date)::date
+select ok((select source_ref is not null and recurrence_month = date_trunc('month', private.data_na_padaria())::date
   from public.finance_entries where source = 'recorrencia' and entry_type = 'estorno'),
   'o estorno mantém a origem e o mês da recorrência');
 select lives_ok(
   $$ select public.confirm_finance_recurring_rule(
     '94000000-0000-4000-8000-0000000000a4'::uuid,
     (select id from public.finance_recurring_rules where name = 'Aluguel da JC'),
-    date_trunc('month', current_date)::date, current_date, 2000, 'boleto', 'banco_sicredi_jc'
+    date_trunc('month', private.data_na_padaria())::date, private.data_na_padaria(), 2000, 'boleto', 'banco_sicredi_jc'
   ) $$,
   'depois do estorno a mesma recorrência pode ser confirmada de novo'
 );
 
 select lives_ok(
   $$ select public.end_finance_recurring_rule(
-    (select id from public.finance_recurring_rules where name = 'Aluguel da JC'), date_trunc('month', current_date)::date
+    (select id from public.finance_recurring_rules where name = 'Aluguel da JC'), date_trunc('month', private.data_na_padaria())::date
   ) $$,
   'encerrar a regra mantém o mês atual como último mês válido'
 );
-select is((select end_month from public.finance_recurring_rules where name = 'Aluguel da JC'), date_trunc('month', current_date)::date,
+select is((select end_month from public.finance_recurring_rules where name = 'Aluguel da JC'), date_trunc('month', private.data_na_padaria())::date,
   'o encerramento só muda a vigência da regra, não o lançamento passado');
 select is((select count(*)::int from public.finance_entries where source = 'recorrencia'), 3,
   'encerrar não apaga o pagamento já confirmado');
@@ -160,7 +160,7 @@ select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-000000000003
 select throws_ok(
   $$ select public.create_finance_recurring_rule(
     'Aluguel geral', 'ocupacao', 'geral', 2000, 10,
-    date_trunc('month', current_date)::date, null, 'banco_sicredi_jc', 'boleto'
+    date_trunc('month', private.data_na_padaria())::date, null, 'banco_sicredi_jc', 'boleto'
   ) $$,
   '42501', 'Sem permissão para gerenciar recorrências desta loja.',
   'escopo da JC não cria recorrência geral'
@@ -172,7 +172,7 @@ select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-000000000002
 select throws_ok(
   $$ select public.create_finance_recurring_rule(
     'Aluguel bloqueado', 'ocupacao', 'jc', 2000, 10,
-    date_trunc('month', current_date)::date, null, 'banco_sicredi_jc', 'boleto'
+    date_trunc('month', private.data_na_padaria())::date, null, 'banco_sicredi_jc', 'boleto'
   ) $$,
   '42501', 'Sem permissão para gerenciar recorrências desta loja.',
   'vendas não cria recorrência mesmo logada'
@@ -185,7 +185,7 @@ select throws_ok(
     default_account_id, default_payment_method, created_by
   ) values (
     'Tentando burlar', (select id from public.finance_categories where key = 'ocupacao'), 'jc', 2000, 10,
-    date_trunc('month', current_date)::date, (select id from public.finance_accounts where key = 'banco_sicredi_jc'),
+    date_trunc('month', private.data_na_padaria())::date, (select id from public.finance_accounts where key = 'banco_sicredi_jc'),
     'boleto', '94000000-0000-4000-8000-000000000002'::uuid
   ) $$,
   '42501', null::text,

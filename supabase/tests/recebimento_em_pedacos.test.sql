@@ -50,7 +50,7 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '97000000-0000-4000-8000-00000000a001'::uuid,
     '97000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 20, 1000.00, 'Paes do mes'
+    private.data_na_padaria() - 20, 1000.00, 'Paes do mes'
   ) $$,
   'financeiro lanca a cobranca de 1.000,00'
 );
@@ -61,7 +61,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '97000000-0000-4000-8000-00000000b001'::uuid,
     (select id from public.receivables where request_id = '97000000-0000-4000-8000-00000000a001'::uuid),
-    current_date - 5, 400.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria() - 5, 400.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   'primeiro pedaco: 400 em Pix'
 );
@@ -84,7 +84,7 @@ select is((select amount from public.finance_entries
 
 select is((select competence_month from public.finance_entries
     where source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null),
-  date_trunc('month', current_date - 20)::date,
+  date_trunc('month', private.data_na_padaria() - 20)::date,
   'o pedaco pesa no mes do faturamento, nao no mes em que entrou');
 
 -- Cobrança com dinheiro dentro não pode ser cancelada ----------------------
@@ -106,7 +106,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '97000000-0000-4000-8000-00000000b002'::uuid,
     (select id from public.receivables where request_id = '97000000-0000-4000-8000-00000000a001'::uuid),
-    current_date - 2, 350.00, 'dinheiro', 'caixa_fisico_jc'
+    private.data_na_padaria() - 2, 350.00, 'dinheiro', 'caixa_fisico_jc'
   ) $$,
   'segundo pedaco: 350 em dinheiro, dois dias depois'
 );

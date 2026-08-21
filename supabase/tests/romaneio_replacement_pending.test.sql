@@ -69,7 +69,7 @@ insert into public.romaneios (
 ) values
   (
     '90000000-0000-4000-8000-000000000020',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     91,
     'enviado',
@@ -79,7 +79,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000021',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     82,
     'enviado',
@@ -89,7 +89,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000022',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     93,
     'enviado',
@@ -99,7 +99,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000023',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     94,
     'enviado',
@@ -109,7 +109,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000024',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     95,
     'enviado',
@@ -119,7 +119,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000025',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     96,
     'enviado',
@@ -129,7 +129,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000026',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     97,
     'separado',
@@ -139,7 +139,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000027',
-    current_date - 1,
+    private.data_na_padaria() - 1,
     '20000000-0000-4000-8000-000000000003',
     98,
     'com_divergencia',
@@ -149,7 +149,7 @@ insert into public.romaneios (
   ),
   (
     '90000000-0000-4000-8000-000000000028',
-    current_date,
+    private.data_na_padaria(),
     '20000000-0000-4000-8000-000000000003',
     92,
     'com_divergencia',

@@ -102,7 +102,7 @@ select lives_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000a1'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    800, current_date, 'sangria do turno da tarde'
+    800, private.data_na_padaria(), 'sangria do turno da tarde'
   ) $$,
   'financeiro autorizado registra a sangria do caixa da JC para o banco'
 );
@@ -131,7 +131,7 @@ select is(
   (select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000a1'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    800, current_date, 'sangria do turno da tarde'
+    800, private.data_na_padaria(), 'sangria do turno da tarde'
   )),
   (select id from public.finance_transfers where request_id = '93000000-0000-4000-8000-0000000000a1'::uuid),
   'repetir o mesmo pedido devolve a transferencia existente'
@@ -147,7 +147,7 @@ select throws_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000a2'::uuid,
     'caixa_fisico_jc', 'caixa_fisico_jc',
-    100, current_date, null
+    100, private.data_na_padaria(), null
   ) $$,
   '22023',
   'A conta de origem e a de destino precisam ser diferentes.',
@@ -158,7 +158,7 @@ select throws_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000a3'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    2000000, current_date, null
+    2000000, private.data_na_padaria(), null
   ) $$,
   '22023',
   'Valor acima do limite permitido. Confira o que foi digitado.',
@@ -169,7 +169,7 @@ select throws_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000a4'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    100, current_date + 30, null
+    100, private.data_na_padaria() + 30, null
   ) $$,
   '22023',
   'A data da transferência não pode ser no futuro.',
@@ -231,7 +231,7 @@ select throws_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000e1'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    100, current_date, null
+    100, private.data_na_padaria(), null
   ) $$,
   '42501',
   'Sem permissão para transferir a partir desta conta.',
@@ -246,7 +246,7 @@ select throws_ok(
   $$ select public.create_finance_transfer(
     '93000000-0000-4000-8000-0000000000e2'::uuid,
     'caixa_fisico_jc', 'banco_sicredi_jc',
-    100, current_date, null
+    100, private.data_na_padaria(), null
   ) $$,
   '42501',
   'Sem permissão para transferir a partir desta conta.',

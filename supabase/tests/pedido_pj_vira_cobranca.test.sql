@@ -72,11 +72,11 @@ insert into public.orders (
   ('95000000-0000-4000-8000-00000000e001', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 20, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-   current_date - 3, current_date - 1, current_date - 1, false),
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false),
   ('95000000-0000-4000-8000-00000000e002', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 10, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-   current_date - 3, current_date - 1, current_date - 1, false);
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- Pedido de cliente sem prazo, também entregue ontem.
 insert into public.orders (
@@ -87,7 +87,7 @@ insert into public.orders (
   ('95000000-0000-4000-8000-00000000e003', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a2',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 8, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c2', '[TESTE] Cliente Fase 3 Sem Prazo',
-   current_date - 3, current_date - 1, current_date - 1, false);
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- A lista de pedidos a faturar --------------------------------------------
 
@@ -216,7 +216,7 @@ select throws_ok(
        'pj', 'pj', '95000000-0000-4000-8000-0000000000a1', 'teste-pao-fase3', 'bread',
        '[TESTE] Pao Fase 3', 5, 5.00, 1, 'un',
        '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-       current_date, current_date, false
+       private.data_na_padaria(), private.data_na_padaria(), false
      ) $$,
   '22023',
   'Este pedido já virou cobrança. Cancele a cobrança em Contas a receber antes de alterá-lo.',

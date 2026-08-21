@@ -97,7 +97,7 @@ select lives_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b1'::uuid,
     'mao_obra_diarias', 'caixa_fisico_jc', 'jc',
-    150, current_date, 'dinheiro', 'diaria do Marcelo'
+    150, private.data_na_padaria(), 'dinheiro', 'diaria do Marcelo'
   ) $$,
   'financeiro autorizado lanca a diaria paga em dinheiro'
 );
@@ -107,7 +107,7 @@ select is(
   (select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b1'::uuid,
     'mao_obra_diarias', 'caixa_fisico_jc', 'jc',
-    150, current_date, 'dinheiro', 'diaria do Marcelo'
+    150, private.data_na_padaria(), 'dinheiro', 'diaria do Marcelo'
   )),
   (select id from public.finance_entries where request_id = '92000000-0000-4000-8000-0000000000b1'::uuid),
   'repetir o mesmo pedido devolve o lancamento existente, sem duplicar'
@@ -123,7 +123,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b2'::uuid,
     'mao_obra_diarias', 'caixa_fisico_jc', 'jc',
-    2000000, current_date, 'dinheiro', 'valor absurdo'
+    2000000, private.data_na_padaria(), 'dinheiro', 'valor absurdo'
   ) $$,
   '22023',
   'Valor acima do limite permitido. Confira o que foi digitado.',
@@ -134,7 +134,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b3'::uuid,
     'mao_obra_diarias', 'caixa_fisico_jc', 'jc',
-    150, current_date + 30, 'dinheiro', 'lancamento do futuro'
+    150, private.data_na_padaria() + 30, 'dinheiro', 'lancamento do futuro'
   ) $$,
   '22023',
   'A data do lançamento não pode ser no futuro.',
@@ -145,7 +145,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b4'::uuid,
     'transferencia', 'caixa_fisico_jc', 'jc',
-    150, current_date, 'dinheiro', 'sangria do caixa'
+    150, private.data_na_padaria(), 'dinheiro', 'sangria do caixa'
   ) $$,
   '22023',
   'Transferência entre contas ainda não é lançada por aqui.',
@@ -156,7 +156,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000b5'::uuid,
     'mao_obra_diarias', 'caixa_fisico_ja', 'jc',
-    150, current_date, 'dinheiro', 'caixa da outra loja'
+    150, private.data_na_padaria(), 'dinheiro', 'caixa da outra loja'
   ) $$,
   '22023',
   'O caixa físico escolhido é de outra loja.',
@@ -216,7 +216,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000a3'::uuid,
     'ocupacao', 'banco_sicredi_jc', 'geral',
-    2000, current_date, 'boleto', 'aluguel da empresa'
+    2000, private.data_na_padaria(), 'boleto', 'aluguel da empresa'
   ) $$,
   '42501',
   'Sem permissão para lançar no financeiro desta loja.',
@@ -227,7 +227,7 @@ select lives_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000a4'::uuid,
     'ocupacao', 'banco_sicredi_jc', 'jc',
-    2000, current_date, 'boleto', 'aluguel da JC'
+    2000, private.data_na_padaria(), 'boleto', 'aluguel da JC'
   ) $$,
   'escopo da JC lanca despesa da JC'
 );
@@ -243,7 +243,7 @@ select throws_ok(
   $$ select public.create_finance_entry(
     '92000000-0000-4000-8000-0000000000a1'::uuid,
     'mao_obra_diarias', 'caixa_fisico_jc', 'jc',
-    150, current_date, 'dinheiro', 'diaria de teste'
+    150, private.data_na_padaria(), 'dinheiro', 'diaria de teste'
   ) $$,
   '42501',
   'Sem permissão para lançar no financeiro desta loja.',
@@ -262,8 +262,8 @@ select throws_ok(
     '92000000-0000-4000-8000-0000000000a2'::uuid,
     (select id from public.finance_categories where key = 'mao_obra_diarias'),
     (select id from public.finance_accounts where key = 'caixa_fisico_jc'),
-    'jc', date_trunc('month', current_date)::date,
-    current_date, 100, current_date, 100, 'dinheiro', 'burlando a funcao',
+    'jc', date_trunc('month', private.data_na_padaria())::date,
+    private.data_na_padaria(), 100, private.data_na_padaria(), 100, 'dinheiro', 'burlando a funcao',
     '92000000-0000-4000-8000-000000000002'::uuid
   ) $$,
   '42501',

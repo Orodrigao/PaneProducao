@@ -60,7 +60,7 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '98000000-0000-4000-8000-00000000a001'::uuid,
     '98000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 1, 300.00, 'Pedido pequeno'
+    private.data_na_padaria() - 1, 300.00, 'Pedido pequeno'
   ) $$,
   'fatura pequena nasce inteira, sem escolher parcelas'
 );
@@ -73,7 +73,7 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '98000000-0000-4000-8000-00000000a002'::uuid,
     '98000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 1, 900.00, 'Pedido grande', 3
+    private.data_na_padaria() - 1, 900.00, 'Pedido grande', 3
   ) $$,
   'a mesma cliente divide a fatura alta em tres'
 );
@@ -90,7 +90,7 @@ select results_eq(
   $$ select due_date from public.receivables
      where description like 'Pedido grande%' order by installment_number $$,
   format($$ values (date '%s'), (date '%s'), (date '%s') $$,
-    current_date - 1 + 7, current_date - 1 + 14, current_date - 1 + 21),
+    private.data_na_padaria() - 1 + 7, private.data_na_padaria() - 1 + 14, private.data_na_padaria() - 1 + 21),
   'as parcelas se distribuem ate o prazo do cliente, que e o teto'
 );
 
@@ -100,7 +100,7 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '98000000-0000-4000-8000-00000000a003'::uuid,
     '98000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 1, 100.00, 'Valor quebrado', 3
+    private.data_na_padaria() - 1, 100.00, 'Valor quebrado', 3
   ) $$,
   'dividir 100,00 em tres'
 );
@@ -119,7 +119,7 @@ select throws_ok(
   $$ select public.create_manual_receivable(
     '98000000-0000-4000-8000-00000000a004'::uuid,
     '98000000-0000-4000-8000-0000000000c2'::uuid,
-    current_date - 1, 300.00, 'Prazo curto', 3
+    private.data_na_padaria() - 1, 300.00, 'Prazo curto', 3
   ) $$,
   '22023',
   'O prazo de 2 dia(s) deste cliente é curto demais para dividir em 3 vezes.',
@@ -132,7 +132,7 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '98000000-0000-4000-8000-00000000a005'::uuid,
     '98000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 1, 600.00, 'Nasceu inteira'
+    private.data_na_padaria() - 1, 600.00, 'Nasceu inteira'
   ) $$,
   'cobranca nasce inteira, como a que vem do envio confirmado'
 );
@@ -174,7 +174,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '98000000-0000-4000-8000-00000000b001'::uuid,
     (select id from public.receivables where request_id = '98000000-0000-4000-8000-00000000a001'::uuid),
-    current_date, 100.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria(), 100.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   'recebe uma parte da cobranca inteira'
 );
