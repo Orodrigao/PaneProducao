@@ -103,3 +103,48 @@ describe('organização da lista de Pedidos PJ', () => {
     expect(result.history.map(item => item.key)).toEqual(['enviado'])
   })
 })
+
+describe('pedido com conferência pendente', () => {
+  const base = {
+    key: 'g1',
+    customerName: 'Buck',
+    orderDate: '2026-08-15',
+    productionDate: null,
+    deliveryDate: '2026-08-15',
+    cancelledAt: null,
+    dispatchedAt: null,
+  }
+
+  it('fica na fila mesmo com a entrega vencida, para não virar órfão', () => {
+    // Entregue no sábado, conferido na segunda: sem isto, some da tela da
+    // Expedição à meia-noite e não há onde terminar a conferência.
+    const { open, history, openSections } = organizePjOrders(
+      [{ ...base, hasPendingCheck: true }],
+      { today: '2026-08-17', query: '' },
+    )
+    expect(open).toHaveLength(1)
+    expect(history).toHaveLength(0)
+    expect(openSections[0].id).toBe('overdue')
+  })
+
+  it('vai para o Histórico assim que a conferência termina', () => {
+    const { open, history } = organizePjOrders(
+      [{ ...base, hasPendingCheck: false }],
+      { today: '2026-08-17', query: '' },
+    )
+    expect(open).toHaveLength(0)
+    expect(history).toHaveLength(1)
+  })
+
+  it('não segura pedido já enviado nem cancelado', () => {
+    const { open, history } = organizePjOrders(
+      [
+        { ...base, key: 'a', hasPendingCheck: true, dispatchedAt: '2026-08-16T10:00:00Z' },
+        { ...base, key: 'b', hasPendingCheck: true, cancelledAt: '2026-08-16T10:00:00Z' },
+      ],
+      { today: '2026-08-17', query: '' },
+    )
+    expect(open).toHaveLength(0)
+    expect(history).toHaveLength(2)
+  })
+})

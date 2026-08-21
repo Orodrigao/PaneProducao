@@ -112,7 +112,7 @@ insert into public.romaneios (
   id, record_date, destination_id, trip_number, status, created_by, sent_by, sent_at
 ) values (
   '94000000-0000-4000-8000-000000000030',
-  current_date,
+  private.data_na_padaria(),
   '20000000-0000-4000-8000-000000000003',
   940,
   'enviado',

@@ -6,6 +6,12 @@ export interface PjOrderListItem {
   deliveryDate: string | null
   cancelledAt: string | null
   dispatchedAt: string | null
+  /**
+   * Há item ainda não conferido pela Expedição. Enquanto houver, o pedido não
+   * cai no Histórico pela virada do dia: pedido entregue no sábado e conferido
+   * na segunda viraria órfão, sem fila em que aparecer.
+   */
+  hasPendingCheck?: boolean
 }
 
 export interface PjOrderListSection<T extends PjOrderListItem> {
@@ -59,15 +65,20 @@ export function organizePjOrders<T extends PjOrderListItem>(
   options: OrganizePjOrdersOptions,
 ) {
   const tomorrow = addDays(options.today, 1)
+  const stillOpen = (order: T) => (
+    !order.cancelledAt
+    && !order.dispatchedAt
+    && (!order.deliveryDate || order.deliveryDate >= options.today || order.hasPendingCheck === true)
+  )
   const open = orders
-    .filter(order => !order.cancelledAt && !order.dispatchedAt && (!order.deliveryDate || order.deliveryDate >= options.today))
+    .filter(stillOpen)
     .sort((a, b) => {
       const byDate = priorityDate(a).localeCompare(priorityDate(b))
       if (byDate !== 0) return byDate
       return a.customerName.localeCompare(b.customerName, 'pt-BR', { sensitivity: 'base' })
     })
   const history = orders
-    .filter(order => Boolean(order.cancelledAt) || Boolean(order.dispatchedAt) || Boolean(order.deliveryDate && order.deliveryDate < options.today))
+    .filter(order => !stillOpen(order))
     .sort((a, b) => (b.deliveryDate || b.orderDate).localeCompare(a.deliveryDate || a.orderDate))
 
   const sections = new Map<PjOrderListSection<T>['id'], PjOrderListSection<T>>()

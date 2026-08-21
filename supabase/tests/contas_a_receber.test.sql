@@ -98,7 +98,7 @@ select throws_ok(
   $$ select public.create_manual_receivable(
     '94000000-0000-4000-8000-00000000a001'::uuid,
     '94000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 40, 500.00, 'Tentativa sem permissao'
+    private.data_na_padaria() - 40, 500.00, 'Tentativa sem permissao'
   ) $$,
   '42501',
   'Sem permissão para lançar cobranças.',
@@ -116,7 +116,7 @@ select throws_ok(
   $$ select public.create_manual_receivable(
     '94000000-0000-4000-8000-00000000a002'::uuid,
     '94000000-0000-4000-8000-0000000000c2'::uuid,
-    current_date - 40, 500.00, 'Cliente sem prazo combinado'
+    private.data_na_padaria() - 40, 500.00, 'Cliente sem prazo combinado'
   ) $$,
   '22023',
   'Este cliente ainda não tem prazo de pagamento cadastrado. Defina o prazo na tela de Clientes antes de cobrar.',
@@ -127,7 +127,7 @@ select throws_ok(
   $$ select public.create_manual_receivable(
     '94000000-0000-4000-8000-00000000a003'::uuid,
     '94000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date + 1, 500.00, 'Faturamento no futuro'
+    private.data_na_padaria() + 1, 500.00, 'Faturamento no futuro'
   ) $$,
   '22023',
   'A data do faturamento não pode ser no futuro.',
@@ -141,13 +141,13 @@ select lives_ok(
   $$ select public.create_manual_receivable(
     '94000000-0000-4000-8000-00000000a004'::uuid,
     '94000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 40, 1200.00, 'Paes da semana'
+    private.data_na_padaria() - 40, 1200.00, 'Paes da semana'
   ) $$,
   'financeiro lanca a cobranca avulsa'
 );
 
 select is((select due_date from public.receivables
-    where request_id = '94000000-0000-4000-8000-00000000a004'::uuid), current_date - 10,
+    where request_id = '94000000-0000-4000-8000-00000000a004'::uuid), private.data_na_padaria() - 10,
   'o vencimento sai do prazo cadastrado no cliente');
 
 select is((select status from public.receivables
@@ -159,7 +159,7 @@ select is(
   (select public.create_manual_receivable(
     '94000000-0000-4000-8000-00000000a004'::uuid,
     '94000000-0000-4000-8000-0000000000c1'::uuid,
-    current_date - 40, 1200.00, 'Paes da semana')),
+    private.data_na_padaria() - 40, 1200.00, 'Paes da semana')),
   (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
   'repetir o lancamento devolve a mesma cobranca'
 );
@@ -191,7 +191,7 @@ select throws_ok(
   $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b001'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
-    current_date - 45, 1200.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria() - 45, 1200.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   '22023',
   'O recebimento não pode ser anterior ao faturamento.',
@@ -202,7 +202,7 @@ select throws_ok(
   $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b002'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
-    current_date - 2, 1200.00, 'cartao', 'cartao_sicredi_jc'
+    private.data_na_padaria() - 2, 1200.00, 'cartao', 'cartao_sicredi_jc'
   ) $$,
   '22023',
   'Cartão de crédito é conta de pagamento, não de recebimento.',
@@ -215,7 +215,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
-    current_date - 2, 1200.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria() - 2, 1200.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   'financeiro baixa a cobranca'
 );
@@ -246,11 +246,11 @@ select is((select planned_amount from public.finance_entries
   'previsto e realizado do pedaco sao iguais: a diferenca vive na cobranca');
 
 select is((select competence_month from public.finance_entries
-    where source_ref in (select recibo.id from public.receivable_receipts recibo join public.receivables cobranca on cobranca.id = recibo.receivable_id where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), date_trunc('month', current_date - 40)::date,
+    where source_ref in (select recibo.id from public.receivable_receipts recibo join public.receivables cobranca on cobranca.id = recibo.receivable_id where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), date_trunc('month', private.data_na_padaria() - 40)::date,
   'a venda pesa no mes do faturamento, nao no mes em que o dinheiro entrou');
 
 select is((select paid_date from public.finance_entries
-    where source_ref in (select recibo.id from public.receivable_receipts recibo join public.receivables cobranca on cobranca.id = recibo.receivable_id where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), current_date - 2,
+    where source_ref in (select recibo.id from public.receivable_receipts recibo join public.receivables cobranca on cobranca.id = recibo.receivable_id where cobranca.request_id = '94000000-0000-4000-8000-00000000a004'::uuid) and source = 'contas_receber' and entry_type = 'lancamento' and reversed_at is null), private.data_na_padaria() - 2,
   'a data real do lancamento e o dia em que o dinheiro entrou');
 
 select is((select category.key from public.finance_entries entry
@@ -270,7 +270,7 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     '94000000-0000-4000-8000-00000000b003'::uuid,
     (select id from public.receivables where request_id = '94000000-0000-4000-8000-00000000a004'::uuid),
-    current_date - 2, 1200.00, 'pix', 'banco_sicredi_jc'
+    private.data_na_padaria() - 2, 1200.00, 'pix', 'banco_sicredi_jc'
   ) $$,
   'repetir a baixa nao estoura erro'
 );

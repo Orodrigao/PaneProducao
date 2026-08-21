@@ -103,13 +103,9 @@ Dois fatos que sustentam o plano:
 4. **Quem corrige depois do envio:** apenas `financeiro`/`admin`. A Expedição
    avisa. Antes do envio, a Expedição corrige à vontade.
 5. **Pode sair menos, e pode um item não ir nenhum.** A tela aceita os dois.
-6. **Duas travas, não uma** (emendada em 2026-08-20 pelas revisões):
-   diferença acima de **20%** para cima ou para baixo pára a tela e exige
-   confirmação escrita **com motivo gravado**; acima de **3x para cima ou 1/3
-   para baixo** é **bloqueio duro por item, que ninguém ultrapassa**, checado
-   também no motor da cobrança e não só na tela. A primeira é conferência; a
-   segunda existe porque trava vencível por confirmação também deixa passar
-   3.000 kg no lugar de 3 kg. Ver decisão 10 e bloqueador 5.
+6. ~~Duas travas, não uma~~ — **substituída pela decisão 12**, depois do teste
+   do Rodrigo no preview em 2026-08-21. O bloqueio duro por proporção saiu; o
+   que ficou é uma pergunta bem feita. Ver decisão 12.
 7. **Relatório estimado × real:** sim, mas em fase separada, depois de haver
    dado real acumulado.
 8. **Sem retroatividade:** pedidos já enviados não recebem quantidade real.
@@ -125,10 +121,9 @@ Dois fatos que sustentam o plano:
    construído antes de existir o que corrigir, que o `AGENTS.md` proíbe ("não
    criar abstração sem consumidor real"). É uma unidade de risco indivisível.
 
-10. **Teto duro de 3x para cima e 1/3 para baixo**, por item. Rodrigo, sobre a
-    diferença real: "se o pedido é 3000 g, deve sair 3067 g ou 2995 g". 3x é
-    folga enorme para a operação e ainda barra o erro de grama-por-quilo, que
-    é 1000x.
+10. ~~Teto duro de 3x para cima e 1/3 para baixo~~ — **revogada pela decisão
+    12**, em 2026-08-21, depois do Rodrigo testar no preview e a trava barrar
+    um número plausível.
 
 11. **Item não enviado não impede a cobrança dos demais.** O item que não saiu
     sai da conta, o resto do pedido é faturado, e o motivo da falta fica
@@ -136,6 +131,33 @@ Dois fatos que sustentam o plano:
     implementação: isso **não** é o caminho do item cancelado, que hoje
     derruba a cobrança do pedido inteiro; e o caso de **nada** enviado é o
     bloqueador 4, que não pode abortar o envio.
+
+### Decisão tomada em 2026-08-21, depois do teste no preview
+
+12. **A trava é uma pergunta, não uma barreira.** A tela pára quando a
+    diferença passa de **10% no quilo** ou **20% na unidade**, mostra o pedido
+    e o digitado lado a lado — "O pedido é de 42 un e você digitou 80 un.
+    Confirma?" — e exige o motivo escrito. **Não existe recusa por
+    quantidade.**
+
+    O argumento do Rodrigo, que derrubou o desenho anterior: barreira por
+    tamanho pega 420 no lugar de 42, mas **não pega 80 no lugar de 42** — e 80
+    é o engano que realmente acontece. Uma trava que só pega o absurdo dá
+    sensação de proteção sem proteger do caso comum. O que protege é a pessoa
+    ver os dois números juntos.
+
+    O quilo pergunta antes da unidade porque peso erra por tara, por balança
+    desregulada, por unidade trocada; contagem erra menos.
+
+    Continua sendo recusa o que não é questão de quantidade: número negativo e
+    fração em item vendido por unidade.
+
+    **Risco residual, aceito conscientemente:** quem confirmar por hábito grava
+    o número errado, inclusive gramas num campo de quilo. Na fase 1 isso é
+    inofensivo, porque nada aqui vira dinheiro. **Na fase 2 a trava de saída
+    por linha deixa de ser desejável e passa a ser obrigatória** — é a lição
+    `validar-tambem-na-saida`, que nasceu de um erro de R$ 190 mil causado
+    exatamente por dado envenenado antes de o bloqueio existir.
 
 ### Caso que originou a decisão 3
 
@@ -181,9 +203,9 @@ Emendada em 2026-08-20 absorvendo os bloqueadores 3, 5 e 8 e os riscos 11 a
   banco guarda unidades. A tela mostra "12 cx × 21 = 252 un" com o equivalente
   ao lado, e trata `pack_size`/`pricing_unit` nulos do legado.
 - RPC nova para a Expedição JC gravar, com a mesma permissão
-  `pedidos_pj.confirmar_envio`, validando as **duas** travas da decisão 6: a
-  dos 20% com confirmação e motivo, e o teto duro de 3x / um terço, por linha
-  e nos dois sentidos (bloqueador 5).
+  `pedidos_pj.confirmar_envio`, aplicando a regra da decisão 12: pergunta
+  acima de 10% no quilo e 20% na unidade, com motivo obrigatório, e recusa
+  apenas o que não é questão de quantidade.
 - **(R) Validação estrutural:** item por unidade só aceita inteiro; item por
   quilo respeita a precisão de `numeric(12,3)`; a unidade do pedido não muda
   durante a expedição.
@@ -248,12 +270,14 @@ testada e no ar no mesmo dia em que a cobrança passa a depender do número.
 - para pedido posterior à virada, **ausência do real bloqueia a cobrança**. O
   `coalesce(enviado, estimado)` fica restrito ao legado identificado, senão
   esconde justamente o dado que faltou;
-- **trava de saída por linha e absoluta**, com o teto duro da decisão 10
-  revalidado aqui, espelhando as três travas da cobrança da Buck: teto de kg
-  por linha, teto de fator por linha (recusa, não confirmação) e piso
-  simétrico. A trava do dobro sobre o total do pedido, do plano original, não
-  serve: num pedido de R$ 5.000, digitar 30 kg em vez de 3,067 kg dá fator
-  1,48 e passaria (bloqueador 5);
+- **trava de saída por linha e absoluta, agora OBRIGATÓRIA** e não mais
+  desejável. A decisão 12 tirou a recusa da entrada, então esta é a única porta
+  que sobra entre um número confirmado por hábito e a fatura do cliente.
+  Espelha as três travas da cobrança da Buck: teto de kg por linha, teto de
+  fator por linha (recusa, não confirmação) e piso simétrico. A trava do dobro
+  sobre o total do pedido, do plano original, não serve: num pedido de
+  R$ 5.000, digitar 30 kg em vez de 3,067 kg dá fator 1,48 e passaria
+  (bloqueador 5);
 - arredondar **cada linha** a centavos e somar as linhas, mesmo critério nos
   cinco pontos;
 - redefinir `private.build_receivable_from_pj_order` partindo da **versão

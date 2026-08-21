@@ -55,7 +55,7 @@ insert into public.production_plans (
 )
 values (
   '74000000-0000-4000-8000-000000000001',
-  current_date + 61,
+  private.data_na_padaria() + 61,
   'aguardando_geolar',
   '94000000-0000-4000-8000-000000000001',
   'Planejamento Admin'
@@ -78,9 +78,9 @@ insert into public.sobras (
 )
 values (
   '74200000-0000-4000-8000-000000000001',
-  current_date + 2,
+  private.data_na_padaria() + 2,
   'Teste sobras', 'teste-baguete', 2, 'Teste reaproveitamento',
-  'bread', 'jc', 'L' || to_char(current_date + 2, 'MMDD'), 2, 'pending',
+  'bread', 'jc', 'L' || to_char(private.data_na_padaria() + 2, 'MMDD'), 2, 'pending',
   'mesa_separacao', 'not_required'
 );
 
@@ -102,7 +102,7 @@ select is(
 select ok(
   not exists (
     select 1 from public.orders
-    where store = 'jc' and order_date = current_date + 61
+    where store = 'jc' and order_date = private.data_na_padaria() + 61
       and bread_id = 'teste-baguete' and order_type = 'producao'
   ),
   'Importacao nao deixa pedido residual inexistente como linha fantasma'
@@ -110,7 +110,7 @@ select ok(
 
 select is(
   (select proposed_quantity from public.bread_reuse_plans
-   where target_production_date = current_date + 61
+   where target_production_date = private.data_na_padaria() + 61
      and store = 'jc' and bread_id = 'teste-baguete'),
   2,
   'Importacao salva a proposta mesmo sem pedido novo'
@@ -125,7 +125,7 @@ select ok(
 select is(
   (select (public.confirm_bread_reuse_plan(
     (select id from public.bread_reuse_plans
-     where target_production_date = current_date + 61
+     where target_production_date = private.data_na_padaria() + 61
        and store = 'jc' and bread_id = 'teste-baguete'),
     1
   )->>'confirmed_quantity')::integer),
@@ -135,7 +135,7 @@ select is(
 
 select is(
   (select quantity from public.orders
-   where store = 'jc' and order_date = current_date + 61
+   where store = 'jc' and order_date = private.data_na_padaria() + 61
      and bread_id = 'teste-baguete' and order_type = 'producao'),
   1::numeric,
   'Confirmacao parcial cria a producao nova residual'
@@ -144,7 +144,7 @@ select is(
 select is(
   (select (public.confirm_bread_reuse_plan(
     (select id from public.bread_reuse_plans
-     where target_production_date = current_date + 61
+     where target_production_date = private.data_na_padaria() + 61
        and store = 'jc' and bread_id = 'teste-baguete'),
     2
   )->>'confirmed_quantity')::integer),
@@ -155,7 +155,7 @@ select is(
 select ok(
   not exists (
     select 1 from public.orders
-    where store = 'jc' and order_date = current_date + 61
+    where store = 'jc' and order_date = private.data_na_padaria() + 61
       and bread_id = 'teste-baguete' and order_type = 'producao'
   ),
   'Quando a sobra cobre o restante, o pedido residual e removido'

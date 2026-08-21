@@ -90,12 +90,12 @@ where not exists (select 1 from public.destinations d where upper(d.code) = 'EX'
 -- Dois romaneios da EX no período: 10 + 15 unidades de pão (2,00) e 2,5 kg de
 -- ciabatta (40,00). Total esperado: 50,00 + 100,00 = 150,00.
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
-select '96000000-0000-4000-8000-0000000000b1', d.id, current_date - 90, 1, 'enviado', 'Teste'
+select '96000000-0000-4000-8000-0000000000b1', d.id, private.data_na_padaria() - 90, 1, 'enviado', 'Teste'
 from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
 on conflict (id) do nothing;
 
 insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
-select '96000000-0000-4000-8000-0000000000b2', d.id, current_date - 88, 1, 'enviado', 'Teste'
+select '96000000-0000-4000-8000-0000000000b2', d.id, private.data_na_padaria() - 88, 1, 'enviado', 'Teste'
 from public.destinations d where upper(d.code) = 'EX' and d.active limit 1
 on conflict (id) do nothing;
 
@@ -117,24 +117,24 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
 select throws_ok(
-  $$ select * from private.calcular_cobranca_buck(current_date - 95, current_date - 85) $$,
+  $$ select * from private.calcular_cobranca_buck(private.data_na_padaria() - 95, private.data_na_padaria() - 85) $$,
   '42501',
   'permission denied for function calcular_cobranca_buck',
   'usuario logado nao alcanca a funcao interna que soma a conta'
 );
 
-select is((select sum(total) from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)), 150.00,
+select is((select sum(total) from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)), 150.00,
   'o banco soma 150,00: pao 25 x 2,00 mais ciabatta 2,5 kg x 40,00');
 
-select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)
+select is((select quantidade from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)
     where produto = '[TESTE] Pao Buck'), 25::numeric,
   'o mesmo produto de duas viagens vira uma linha somada');
 
-select is((select quantidade from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)
+select is((select quantidade from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)
     where produto = '[TESTE] Pao Buck' and unidade = 'un'), 25::numeric,
   'a Buck paga o que recebeu: 10 enviados sem conferencia mais 15 aceitos de 20');
 
-select is((select unidade from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)
+select is((select unidade from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)
     where produto = '[TESTE] Ciabatta Buck'), 'kg',
   'ciabatta e cobrada por quilo mesmo sem sufixo no nome');
 
@@ -143,7 +143,7 @@ select is((select unidade from public.preview_receivable_from_romaneio(current_d
 select throws_ok(
   $$ select public.create_receivable_from_romaneio(
        '96000000-0000-4000-8000-00000000f001'::uuid,
-       current_date - 95, current_date - 85, 190000.00
+       private.data_na_padaria() - 95, private.data_na_padaria() - 85, 190000.00
      ) $$,
   '22023',
   'A tela mostrou 190000.00 e o banco calculou 150.00. Nada foi cobrado. Atualize a tela e confira o período.',
@@ -158,7 +158,7 @@ select is((select count(*)::int from public.receivables where origin = 'romaneio
 select lives_ok(
   $$ select public.create_receivable_from_romaneio(
        '96000000-0000-4000-8000-00000000f002'::uuid,
-       current_date - 95, current_date - 85, 150.00
+       private.data_na_padaria() - 95, private.data_na_padaria() - 85, 150.00
      ) $$,
   'financeiro gera a conta da semana com o total conferido'
 );
@@ -166,10 +166,10 @@ select lives_ok(
 select is((select amount from public.receivables where origin = 'romaneio_ex'), 150.00,
   'o valor cobrado e o somado no banco');
 
-select is((select invoice_date from public.receivables where origin = 'romaneio_ex'), current_date - 85,
+select is((select invoice_date from public.receivables where origin = 'romaneio_ex'), private.data_na_padaria() - 85,
   'a data do faturamento e o ultimo dia do periodo');
 
-select is((select due_date from public.receivables where origin = 'romaneio_ex'), current_date - 70,
+select is((select due_date from public.receivables where origin = 'romaneio_ex'), private.data_na_padaria() - 70,
   'o vencimento sai do prazo de 15 dias da Buck');
 
 select is((select category.key from public.receivables cobranca
@@ -177,7 +177,7 @@ select is((select category.key from public.receivables cobranca
     where cobranca.origin = 'romaneio_ex'), 'buck_ex',
   'a receita da Buck cai na categoria dela, nao em clientes PJ');
 
-select is((select period_start from public.receivables where origin = 'romaneio_ex'), current_date - 95,
+select is((select period_start from public.receivables where origin = 'romaneio_ex'), private.data_na_padaria() - 95,
   'a cobranca guarda o periodo que a gerou');
 
 -- Repetir e sobrepor --------------------------------------------------------
@@ -185,7 +185,7 @@ select is((select period_start from public.receivables where origin = 'romaneio_
 select is(
   (select public.create_receivable_from_romaneio(
      '96000000-0000-4000-8000-00000000f002'::uuid,
-     current_date - 95, current_date - 85, 150.00)),
+     private.data_na_padaria() - 95, private.data_na_padaria() - 85, 150.00)),
   (select id from public.receivables where origin = 'romaneio_ex'),
   'repetir a mesma geracao devolve a mesma cobranca'
 );
@@ -195,7 +195,7 @@ select throws_ok(
        '96000000-0000-4000-8000-00000000f003'::uuid,
        -- Sem total de conferencia: e a trava de sobreposicao que precisa
        -- responder aqui, nao a comparacao de totais.
-       current_date - 92, current_date - 88, null
+       private.data_na_padaria() - 92, private.data_na_padaria() - 88, null
      ) $$,
   '22023',
   'Este período encosta em outro já cobrado. Confira as cobranças da Buck antes de gerar.',
@@ -224,7 +224,7 @@ select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001
 select throws_ok(
   $$ select public.create_receivable_from_romaneio(
        '96000000-0000-4000-8000-00000000f004'::uuid,
-       current_date - 300, current_date - 290, null
+       private.data_na_padaria() - 300, private.data_na_padaria() - 290, null
      ) $$,
   '22023',
   'Nenhum romaneio da EX neste período.',
@@ -232,12 +232,12 @@ select throws_ok(
 );
 
 select ok((select 'missing_price' = any(problemas)
-    from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)
+    from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)
     where produto = '[TESTE] Pao Buck Sem Preco'),
   'produto sem preco na tabela BUCK e marcado como problema');
 
 select ok((select 'suspicious_quantity' = any(problemas)
-    from public.preview_receivable_from_romaneio(current_date - 95, current_date - 85)
+    from public.preview_receivable_from_romaneio(private.data_na_padaria() - 95, private.data_na_padaria() - 85)
     where produto = '[TESTE] Ciabatta Buck'),
   'peso acima de 10 kg num romaneio e marcado como suspeito');
 
@@ -251,7 +251,7 @@ select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000002
 select throws_ok(
   $$ select public.create_receivable_from_romaneio(
        '96000000-0000-4000-8000-00000000f005'::uuid,
-       current_date - 400, current_date - 390, null
+       private.data_na_padaria() - 400, private.data_na_padaria() - 390, null
      ) $$,
   '42501',
   'Sem permissão para lançar cobranças.',

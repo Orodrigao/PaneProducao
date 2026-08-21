@@ -63,7 +63,9 @@ function cobranca(overrides: Partial<ReceivableRow> = {}): ReceivableRow {
 
 describe('validateReceivableDraft', () => {
   it('exige cliente, valor, data e descrição', () => {
-    const vazio = emptyReceivableDraft()
+    // O rascunho nasce com a data real de hoje; fixa-la no HOJE do teste evita
+    // que a virada do dia quebre assercoes que nada tem a ver com data.
+    const vazio = { ...emptyReceivableDraft(), invoiceDate: HOJE }
     expect(validateReceivableDraft(vazio, HOJE)).toBe('Escolha o cliente que vai pagar.')
     expect(validateReceivableDraft({ ...vazio, customerId: 'c1' }, HOJE))
       .toBe('Informe um valor maior que zero.')
@@ -98,13 +100,13 @@ describe('validateReceivablePaymentDraft', () => {
   })
 
   it('exige a conta em que o dinheiro entrou', () => {
-    const draft = defaultPaymentDraft(alvo)
+    const draft = { ...defaultPaymentDraft(alvo), receivedDate: HOJE }
     expect(validateReceivablePaymentDraft(draft, alvo, HOJE))
       .toBe('Escolha a conta em que o dinheiro entrou.')
   })
 
   it('aceita o padrão de dois toques quando a conta é escolhida', () => {
-    const draft = { ...defaultPaymentDraft(alvo), accountKey: 'banco_sicredi_jc' }
+    const draft = { ...defaultPaymentDraft(alvo), receivedDate: HOJE, accountKey: 'banco_sicredi_jc' }
     expect(validateReceivablePaymentDraft(draft, alvo, HOJE)).toBeNull()
   })
 

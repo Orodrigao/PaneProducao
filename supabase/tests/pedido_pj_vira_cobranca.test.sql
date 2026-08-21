@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(31);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -72,11 +72,11 @@ insert into public.orders (
   ('95000000-0000-4000-8000-00000000e001', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 20, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-   current_date - 3, current_date - 1, current_date - 1, false),
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false),
   ('95000000-0000-4000-8000-00000000e002', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a1',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 10, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-   current_date - 3, current_date - 1, current_date - 1, false);
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- Pedido de cliente sem prazo, também entregue ontem.
 insert into public.orders (
@@ -87,7 +87,7 @@ insert into public.orders (
   ('95000000-0000-4000-8000-00000000e003', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a2',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 8, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c2', '[TESTE] Cliente Fase 3 Sem Prazo',
-   current_date - 3, current_date - 1, current_date - 1, false);
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- A lista de pedidos a faturar --------------------------------------------
 
@@ -118,6 +118,20 @@ select ok(not exists(select 1 from public.app_user_permissions
       and permission_key like 'contas_receber.%'),
   'a expedicao nao tem nenhuma permissao de contas a receber');
 
+-- A fase 1 da quantidade enviada passou a exigir conferencia antes do envio.
+-- Conferir com a MESMA quantidade do pedido e o caminho sem atrito: o objetivo
+-- deste arquivo continua sendo a cobranca, nao a conferencia.
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '95000000-0000-4000-8000-00000000fc01'::uuid,
+       '95000000-0000-4000-8000-0000000000a1'::uuid,
+       '[{"order_id":"95000000-0000-4000-8000-00000000e001","quantity":20},
+         {"order_id":"95000000-0000-4000-8000-00000000e002","quantity":10}]'::jsonb,
+       null
+     ) $$,
+  'a expedicao confere o pedido antes de poder envia-lo'
+);
+
 select lives_ok(
   $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a1'::uuid) $$,
   'expedicao confirma o envio do pedido'
@@ -137,11 +151,11 @@ select is((select amount from public.receivables
   'o valor da cobranca e a soma do pedido inteiro');
 
 select is((select due_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date + 15,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), private.data_na_padaria() + 15,
   'o vencimento sai do prazo do cliente contado do envio');
 
 select is((select invoice_date from public.receivables
-    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), current_date,
+    where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid), private.data_na_padaria(),
   'a data do faturamento e o dia do envio confirmado');
 
 select is((select status from public.receivables
@@ -202,7 +216,7 @@ select throws_ok(
        'pj', 'pj', '95000000-0000-4000-8000-0000000000a1', 'teste-pao-fase3', 'bread',
        '[TESTE] Pao Fase 3', 5, 5.00, 1, 'un',
        '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
-       current_date, current_date, false
+       private.data_na_padaria(), private.data_na_padaria(), false
      ) $$,
   '22023',
   'Este pedido já virou cobrança. Cancele a cobrança em Contas a receber antes de alterá-lo.',
@@ -274,6 +288,19 @@ select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002
 
 -- A trava do financeiro nao pode parar a padaria: o envio acontece do mesmo
 -- jeito, e o pedido continua aparecendo como a faturar.
+-- A fase 1 da quantidade enviada passou a exigir conferencia antes do envio.
+-- Conferir com a MESMA quantidade do pedido e o caminho sem atrito: o objetivo
+-- deste arquivo continua sendo a cobranca, nao a conferencia.
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '95000000-0000-4000-8000-00000000fc02'::uuid,
+       '95000000-0000-4000-8000-0000000000a2'::uuid,
+       '[{"order_id":"95000000-0000-4000-8000-00000000e003","quantity":8}]'::jsonb,
+       null
+     ) $$,
+  'a expedicao tambem confere o pedido do cliente sem prazo'
+);
+
 select lives_ok(
   $$ select public.confirm_pj_order_dispatch('95000000-0000-4000-8000-0000000000a2'::uuid) $$,
   'cliente sem prazo nao impede a expedicao de confirmar o envio'

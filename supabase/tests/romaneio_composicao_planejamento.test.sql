@@ -77,7 +77,7 @@ insert into public.production_plans (
 )
 select
   '70000000-0000-4000-8000-000000000001',
-  current_date + 60,
+  private.data_na_padaria() + 60,
   'aguardando_geolar',
   current_setting('test.admin_id')::uuid,
   'Teste composicao'
@@ -104,7 +104,7 @@ insert into public.bread_reuse_plans (
 )
 select
   '72000000-0000-4000-8000-000000000001',
-  current_date + 60,
+  private.data_na_padaria() + 60,
   'jc',
   'teste-baguete',
   2,
@@ -122,22 +122,22 @@ select set_config(
 );
 
 select is(
-  (select planned_quantity from public.get_romaneio_production_composition(current_date + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select planned_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
   10::numeric,
   'Expedicao recebe o total planejado'
 );
 select is(
-  (select frozen_quantity from public.get_romaneio_production_composition(current_date + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select frozen_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
   5::numeric,
   'Expedicao recebe a quantidade congelada'
 );
 select is(
-  (select leftover_quantity from public.get_romaneio_production_composition(current_date + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select leftover_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
   2::numeric,
   'Expedicao recebe a sobra confirmada'
 );
 select is(
-  (select new_quantity from public.get_romaneio_production_composition(current_date + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
   3::numeric,
   'Expedicao recebe a producao nova residual'
 );
@@ -148,14 +148,14 @@ select set_config(
   true
 );
 select throws_ok(
-  $$ select * from public.get_romaneio_production_composition(current_date + 60, 'jc') $$,
+  $$ select * from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') $$,
   '42501',
   'Sem permissão para consultar a composição desta loja.',
   'Expedicao EX nao consulta a composicao de JC'
 );
 
 select throws_ok(
-  $$ select * from public.get_romaneio_production_composition(current_date + 60, 'ex') $$,
+  $$ select * from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'ex') $$,
   '22023',
   'Data ou loja inválida para a composição do Romaneio.',
   'EX nao usa o planejamento de JC e JA'
@@ -167,7 +167,7 @@ select set_config(
   true
 );
 select is(
-  (select new_quantity from public.get_romaneio_production_composition(current_date + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
   3::numeric,
   'Admin tambem recebe a composicao residual'
 );
