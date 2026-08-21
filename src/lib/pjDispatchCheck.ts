@@ -10,17 +10,29 @@
  * `enviado ?? estimado`, então "não enviei este item" gravado como ausência
  * cobraria do cliente justamente o item que não saiu.
  *
- * As duas travas abaixo espelham `private.veredito_quantidade_enviada` no
- * banco. O banco é quem decide de verdade — isto aqui existe para a pessoa
- * saber antes de salvar, nunca para substituir a validação de lá.
+ * A regra abaixo espelha `private.veredito_quantidade_enviada` no banco. O
+ * banco é quem decide de verdade — isto aqui existe para a pessoa saber antes
+ * de salvar, nunca para substituir a validação de lá.
+ *
+ * A trava é uma PERGUNTA, não uma barreira: mostra o pedido e o digitado lado
+ * a lado e exige o motivo. Barreira por tamanho pega 420 no lugar de 42, mas
+ * não pega 80 no lugar de 42 — e 80 é o engano que realmente acontece.
  */
 
 export type PricingUnit = 'un' | 'kg'
 
-/** Acima disso a pessoa confirma por escrito. */
-export const LIMITE_CONFIRMACAO = 0.2
-/** Acima disso ninguém passa, nem confirmando. */
-export const FATOR_MAXIMO = 3
+/**
+ * Acima disso a tela pergunta e exige motivo escrito.
+ *
+ * Peso é mais sensível que contagem: quem pesa erra por tara, por balança
+ * desregulada, por unidade trocada. Por isso o quilo pergunta antes.
+ */
+export const LIMITE_CONFIRMACAO_KG = 0.10
+export const LIMITE_CONFIRMACAO_UN = 0.20
+
+export function limiteDeConfirmacao(pricingUnit: string | null): number {
+  return (pricingUnit || 'un') === 'kg' ? LIMITE_CONFIRMACAO_KG : LIMITE_CONFIRMACAO_UN
+}
 
 export type CheckVerdict = 'ok' | 'exige_motivo' | 'recusado'
 
@@ -47,14 +59,12 @@ export function verdictForLine({ estimated, sent, pricingUnit }: CheckLineInput)
   // aplica, mas o motivo é obrigatório.
   if (sent === 0) return 'exige_motivo'
 
-  // Sem estimativa nao ha proporcao a comparar, e sem proporcao o teto duro
-  // deixa de existir: uma linha estimada em zero aceitaria qualquer numero com
-  // um texto qualquer. Enviar o que nao foi pedido e recusa.
-  if (!Number.isFinite(estimated) || estimated <= 0) return 'recusado'
+  // Sem estimativa não há proporção a comparar: pergunta.
+  if (!Number.isFinite(estimated) || estimated <= 0) return 'exige_motivo'
 
+  const limite = limiteDeConfirmacao(pricingUnit)
   const fator = sent / estimated
-  if (fator > FATOR_MAXIMO || fator < 1 / FATOR_MAXIMO) return 'recusado'
-  if (fator > 1 + LIMITE_CONFIRMACAO || fator < 1 - LIMITE_CONFIRMACAO) return 'exige_motivo'
+  if (fator > 1 + limite || fator < 1 - limite) return 'exige_motivo'
   return 'ok'
 }
 
@@ -101,7 +111,7 @@ export function problemsBeforeSaving(lines: CheckLineState[]): CheckLineProblem[
         verdict,
         message: naoInteiro
           ? `${line.productLabel} é vendido por unidade e não aceita fração. Digite um número inteiro.`
-          : `${line.productLabel}: o pedido é de ${formatQuantity(line.estimated, line.pricingUnit)} e você digitou um número muito distante disso. Confira a unidade antes de salvar.`,
+          : `${line.productLabel}: quantidade inválida. Digite um número igual ou maior que zero.`,
       })
       return
     }
@@ -114,12 +124,23 @@ export function problemsBeforeSaving(lines: CheckLineState[]): CheckLineProblem[
         verdict,
         message: naoEnviado
           ? `${line.productLabel}: escreva por que este item não foi enviado.`
-          : `${line.productLabel}: a quantidade difere bastante do pedido. Escreva o motivo para salvar.`,
+          : confirmationQuestion(line),
       })
     }
   })
 
   return problemas
+}
+
+/**
+ * A pergunta que a pessoa precisa ler antes de confirmar, com os dois números
+ * lado a lado. É ela que protege de verdade: "80 no lugar de 42" só é pego por
+ * alguém que veja os dois juntos, nunca por um limite de tamanho.
+ */
+export function confirmationQuestion(line: CheckLineState): string {
+  const pedido = formatQuantity(line.estimated, line.pricingUnit)
+  const digitado = line.sent === null ? '—' : formatQuantity(line.sent, line.pricingUnit)
+  return `O pedido é de ${pedido} e você digitou ${digitado}. Confirma? Escreva o motivo para salvar.`
 }
 
 export interface DispatchReadiness {

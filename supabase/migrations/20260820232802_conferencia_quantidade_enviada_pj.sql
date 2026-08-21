@@ -16,11 +16,25 @@
 -- `coalesce(enviado, estimado)`: se "não enviei este item" gravasse null, o
 -- cliente seria cobrado justamente pelo item que não saiu.
 --
--- Duas travas, não uma (decisão 6 do plano, emendada pelas revisões):
---   * 20% de diferença para cima ou para baixo exige motivo escrito;
---   * 3x para cima ou 1/3 para baixo é recusa, que ninguém ultrapassa.
--- Trava vencível por confirmação também deixaria passar 3.000 kg no lugar de
--- 3 kg — lição `validar-tambem-na-saida`, que nasceu de um erro de R$ 190 mil.
+-- A trava é uma pergunta bem feita, não uma barreira (decisão 12, do Rodrigo,
+-- em 2026-08-21, depois de ele testar no preview):
+--   * item por quilo: diferença acima de 10% pára e pergunta;
+--   * item por unidade: acima de 20% pára e pergunta;
+--   * a pergunta mostra o pedido e o digitado lado a lado, e exige motivo.
+--
+-- Não há recusa por quantidade, e o motivo é bom: barreira por tamanho pega
+-- 420 no lugar de 42, mas NÃO pega 80 no lugar de 42 — e 80 é o engano que
+-- realmente acontece. O que protege é a pessoa ver os dois números juntos.
+--
+-- Continua sendo recusa o que não é questão de quantidade: número negativo e
+-- fração em item vendido por unidade (não existe 1,5 pão).
+--
+-- Risco residual aceito conscientemente: quem confirmar por hábito grava o
+-- número errado. Na fase 1 ele é inofensivo, porque nada aqui vira dinheiro.
+-- Na fase 2, que liga a cobrança, a trava de saída por linha deixa de ser
+-- desejável e passa a ser obrigatória — lição `validar-tambem-na-saida`, que
+-- nasceu de um erro de R$ 190 mil causado por dado envenenado antes do
+-- bloqueio existir.
 
 begin;
 
@@ -136,9 +150,10 @@ grant select on table public.pj_order_quantity_checks to authenticated;
 -- função, para que entrada e saída nunca divirjam.
 --
 -- Devolve:
---   'ok'             — dentro dos 20%, pode gravar sem motivo;
---   'exige_motivo'   — passou dos 20%, grava com motivo escrito;
---   'recusado'       — passou de 3x ou ficou abaixo de 1/3: ninguém ultrapassa.
+--   'ok'             — dentro da faixa normal, grava sem perguntar nada;
+--   'exige_motivo'   — passou da faixa, pergunta e grava com motivo escrito;
+--   'recusado'       — não é questão de quantidade: negativo, ou fração em
+--                      item vendido por unidade.
 create or replace function private.veredito_quantidade_enviada(
   p_estimada numeric,
   p_enviada numeric,
@@ -151,6 +166,7 @@ set search_path = ''
 as $$
 declare
   v_fator numeric;
+  v_limite numeric;
 begin
   if p_enviada is null then
     return 'ok';
@@ -174,19 +190,17 @@ begin
   end if;
 
   if p_estimada is null or p_estimada <= 0 then
-    -- Sem estimativa nao ha proporcao a comparar, e sem proporcao o teto duro
-    -- nao existe: uma linha estimada em zero aceitaria 999.999 com um texto
-    -- qualquer. Enviar o que nao foi pedido e recusa, nao confirmacao.
-    return 'recusado';
+    -- Sem estimativa não há proporção a comparar: pergunta.
+    return 'exige_motivo';
   end if;
 
   v_fator := p_enviada / p_estimada;
 
-  if v_fator > 3 or v_fator < (1.0 / 3.0) then
-    return 'recusado';
-  end if;
+  -- Peso é mais sensível que contagem: quem pesa erra por tara, por balança
+  -- desregulada, por unidade trocada. Por isso o quilo pergunta antes.
+  v_limite := case when coalesce(p_pricing_unit, 'un') = 'kg' then 0.10 else 0.20 end;
 
-  if v_fator > 1.2 or v_fator < 0.8 then
+  if v_fator > (1 + v_limite) or v_fator < (1 - v_limite) then
     return 'exige_motivo';
   end if;
 

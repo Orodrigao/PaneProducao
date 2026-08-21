@@ -31,24 +31,30 @@ describe('veredito da quantidade enviada', () => {
     expect(verdictForLine({ estimated: 3, sent: null, pricingUnit: 'kg' })).toBe('ok')
   })
 
-  it('pede motivo acima de 20% para cima e para baixo', () => {
+  it('pergunta acima de 20% em item por unidade, para cima e para baixo', () => {
     expect(verdictForLine({ estimated: 100, sent: 121, pricingUnit: 'un' })).toBe('exige_motivo')
     expect(verdictForLine({ estimated: 100, sent: 79, pricingUnit: 'un' })).toBe('exige_motivo')
     expect(verdictForLine({ estimated: 100, sent: 120, pricingUnit: 'un' })).toBe('ok')
     expect(verdictForLine({ estimated: 100, sent: 80, pricingUnit: 'un' })).toBe('ok')
   })
 
-  it('recusa o erro de grama por quilo, que ninguém confirma', () => {
-    // 3 kg digitados como 3000 (gramas no campo de quilo) foi o erro que
-    // custou R$ 190 mil na EX.
-    expect(verdictForLine({ estimated: 3, sent: 3000, pricingUnit: 'kg' })).toBe('recusado')
+  it('pergunta mais cedo no quilo, que erra por tara e balanca', () => {
+    expect(verdictForLine({ estimated: 3, sent: 3.31, pricingUnit: 'kg' })).toBe('exige_motivo')
+    expect(verdictForLine({ estimated: 3, sent: 2.69, pricingUnit: 'kg' })).toBe('exige_motivo')
+    expect(verdictForLine({ estimated: 3, sent: 3.3, pricingUnit: 'kg' })).toBe('ok')
   })
 
-  it('recusa fora do teto de 3x e do piso de um terço, nos dois sentidos', () => {
-    expect(verdictForLine({ estimated: 3, sent: 9, pricingUnit: 'kg' })).toBe('exige_motivo')
-    expect(verdictForLine({ estimated: 3, sent: 9.001, pricingUnit: 'kg' })).toBe('recusado')
-    expect(verdictForLine({ estimated: 3, sent: 1, pricingUnit: 'kg' })).toBe('exige_motivo')
-    expect(verdictForLine({ estimated: 3, sent: 0.999, pricingUnit: 'kg' })).toBe('recusado')
+  it('pergunta, e nao barra, o engano que realmente acontece', () => {
+    // 80 no lugar de 42 e o erro comum, e nenhuma barreira por tamanho o pega:
+    // quem protege e a pergunta com os dois numeros lado a lado.
+    expect(verdictForLine({ estimated: 42, sent: 80, pricingUnit: 'un' })).toBe('exige_motivo')
+    // 420 no lugar de 42 tambem passa a ser pergunta, por decisao do Rodrigo
+    // em 2026-08-21: 420 e um numero que a padaria realmente manda.
+    expect(verdictForLine({ estimated: 42, sent: 420, pricingUnit: 'un' })).toBe('exige_motivo')
+    // E ate o erro de grama por quilo vira pergunta. O risco de alguem
+    // confirmar sem ler e aceito na fase 1, onde nada vira dinheiro; a trava
+    // de saida da fase 2 e que o fecha.
+    expect(verdictForLine({ estimated: 3, sent: 3000, pricingUnit: 'kg' })).toBe('exige_motivo')
   })
 
   it('recusa fração em item vendido por unidade', () => {
@@ -62,11 +68,14 @@ describe('veredito da quantidade enviada', () => {
     expect(verdictForLine({ estimated: 50, sent: 0, pricingUnit: 'un' })).toBe('exige_motivo')
   })
 
-  it('recusa envio positivo quando não há estimativa com que comparar', () => {
-    // Estimativa zero desligava o teto duro: com um texto qualquer, a linha
-    // aceitaria qualquer numero. Enviar o que nao foi pedido e recusa.
-    expect(verdictForLine({ estimated: 0, sent: 5, pricingUnit: 'un' })).toBe('recusado')
-    expect(verdictForLine({ estimated: -3, sent: 5, pricingUnit: 'kg' })).toBe('recusado')
+  it('pergunta quando não há estimativa com que comparar', () => {
+    expect(verdictForLine({ estimated: 0, sent: 5, pricingUnit: 'un' })).toBe('exige_motivo')
+    expect(verdictForLine({ estimated: -3, sent: 5, pricingUnit: 'kg' })).toBe('exige_motivo')
+  })
+
+  it('recusa somente o que não é questão de quantidade', () => {
+    expect(verdictForLine({ estimated: 42, sent: -1, pricingUnit: 'un' })).toBe('recusado')
+    expect(verdictForLine({ estimated: 42, sent: 55.5, pricingUnit: 'un' })).toBe('recusado')
   })
 
   it('ainda deixa declarar que nada saiu de uma linha sem estimativa', () => {
@@ -76,6 +85,7 @@ describe('veredito da quantidade enviada', () => {
 
 describe('o que impede o salvamento', () => {
   it('libera quando tudo está dentro da faixa normal', () => {
+    // 3,067 contra 3 kg da 2,2%: e a diferenca real do dia a dia.
     expect(problemsBeforeSaving([linha({ sent: 3.067 })])).toEqual([])
   })
 
@@ -109,6 +119,16 @@ describe('o que impede o salvamento', () => {
       linha({ orderId: 'c', estimated: 3, sent: 3000 }),
     ])
     expect(problemas.map(p => p.orderId)).toEqual(['a', 'c'])
+  })
+
+  it('a pergunta mostra o pedido e o digitado lado a lado', () => {
+    const [problema] = problemsBeforeSaving([
+      linha({ productLabel: 'Brioche', estimated: 42, sent: 80, pricingUnit: 'un' }),
+    ])
+    // Sem os dois numeros juntos, confirmar vira habito e o erro passa.
+    expect(problema.message).toContain('42 un')
+    expect(problema.message).toContain('80 un')
+    expect(problema.message).toContain('Confirma?')
   })
 })
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ClipboardCheck, Ban, RotateCcw } from 'lucide-react'
 import {
+  confirmationQuestion,
   problemsBeforeSaving,
   verdictForLine,
   type CheckLineState,
@@ -212,14 +213,28 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
               </div>
 
               {precisaMotivo && (
-                <input
-                  type="text"
-                  className="ps-input"
-                  placeholder={draft?.notSent ? 'Por que não foi enviado?' : 'Por que a quantidade mudou?'}
-                  value={draft?.reason ?? ''}
-                  disabled={saving}
-                  onChange={e => atualiza(line.orderId, { reason: e.target.value })}
-                />
+                <>
+                  {!draft?.notSent && estado && (
+                    <span style={{
+                      fontSize: 12.5,
+                      color: 'var(--crust)',
+                      fontWeight: 600,
+                      background: 'var(--honey-soft, #F5ECD2)',
+                      padding: '6px 8px',
+                      borderRadius: 'var(--r-ctrl)',
+                    }}>
+                      {confirmationQuestion(estado)}
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    className="ps-input"
+                    placeholder={draft?.notSent ? 'Por que não foi enviado?' : 'Por que a quantidade mudou?'}
+                    value={draft?.reason ?? ''}
+                    disabled={saving}
+                    onChange={e => atualiza(line.orderId, { reason: e.target.value })}
+                  />
+                </>
               )}
 
               {problema && (

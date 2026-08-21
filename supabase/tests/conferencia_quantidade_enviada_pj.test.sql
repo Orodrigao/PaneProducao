@@ -15,7 +15,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(34);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -97,14 +97,20 @@ insert into public.orders (
 
 select is(private.veredito_quantidade_enviada(3, 3.067, 'kg'), 'ok',
   'a diferenca real do dia a dia passa sem pedir nada');
-select is(private.veredito_quantidade_enviada(3, 3.7, 'kg'), 'exige_motivo',
-  'acima de 20% pede motivo escrito');
-select is(private.veredito_quantidade_enviada(3, 3000, 'kg'), 'recusado',
-  'gramas digitadas no campo de quilo sao recusadas, nao confirmadas');
-select is(private.veredito_quantidade_enviada(3, 0.5, 'kg'), 'recusado',
-  'abaixo de um terco tambem e recusa: a trava vale nos dois sentidos');
+select is(private.veredito_quantidade_enviada(3, 3.31, 'kg'), 'exige_motivo',
+  'no quilo a pergunta comeca em 10%, porque peso erra por tara e balanca');
+select is(private.veredito_quantidade_enviada(3, 3.3, 'kg'), 'ok',
+  'e dentro dos 10% grava sem perguntar nada');
+select is(private.veredito_quantidade_enviada(42, 80, 'un'), 'exige_motivo',
+  '80 no lugar de 42 e o engano que realmente acontece: pergunta, com os dois numeros');
+select is(private.veredito_quantidade_enviada(42, 420, 'un'), 'exige_motivo',
+  '420 no lugar de 42 tambem e pergunta: 420 e numero que a padaria manda de verdade');
+select is(private.veredito_quantidade_enviada(3, 3000, 'kg'), 'exige_motivo',
+  'ate o erro de grama por quilo vira pergunta na fase 1 — quem fecha essa porta e a trava de saida da fase 2');
 select is(private.veredito_quantidade_enviada(50, 55.5, 'un'), 'recusado',
   'nao existe meio pao: item por unidade recusa fracao');
+select is(private.veredito_quantidade_enviada(50, -1, 'un'), 'recusado',
+  'quantidade negativa e recusa, e nao pergunta');
 select is(private.veredito_quantidade_enviada(50, 0, 'un'), 'exige_motivo',
   'zero e decisao declarada, nao desvio: pede motivo, mas nao e recusa');
 
@@ -136,19 +142,23 @@ select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001
 
 -- Fora do teto: recusado mesmo com motivo escrito. E a diferenca entre a trava
 -- que se vence por confirmacao e a que ninguem vence.
+-- Decisao do Rodrigo em 2026-08-21, depois de testar no preview: a trava e uma
+-- pergunta, nao uma barreira. Barreira por tamanho pega 420 no lugar de 42, mas
+-- nao pega 80 no lugar de 42 — e 80 e o erro que acontece de verdade.
 select throws_ok(
   $$ select public.save_pj_order_dispatch_quantities(
        '96000000-0000-4000-8000-00000000f002'::uuid,
        '96000000-0000-4000-8000-0000000000a1'::uuid,
-       '[{"order_id":"96000000-0000-4000-8000-0000000000e1","quantity":3000,"reason":"tenho certeza"}]'::jsonb,
+       '[{"order_id":"96000000-0000-4000-8000-0000000000e2","quantity":55.5}]'::jsonb,
        null
      ) $$,
   '22023',
   null,
-  'motivo escrito nao compra passagem para 3000 kg no lugar de 3 kg'
+  'fracao em item por unidade continua sendo recusa, e nenhum motivo compra passagem'
 );
 
--- Acima de 20% sem motivo: recusado.
+-- Fora da faixa e sem motivo: nao grava. 2 kg contra 3 kg da 33%, e no quilo
+-- a pergunta comeca em 10%.
 select throws_ok(
   $$ select public.save_pj_order_dispatch_quantities(
        '96000000-0000-4000-8000-00000000f003'::uuid,
@@ -179,7 +189,8 @@ select is((select count(*)::int from public.pj_order_quantity_checks
     where order_group_id = '96000000-0000-4000-8000-0000000000a1'::uuid), 0,
   'tentativa recusada nao deixa historico');
 
--- Agora a conferencia valida: 3,067 kg (dentro da faixa) e 55 un (com motivo).
+-- A conferencia normal do dia a dia: 3,067 kg contra 3 kg da 2,2%, e 55 un
+-- contra 50 da 10% — as duas dentro da faixa de cada unidade.
 select lives_ok(
   $$ select public.save_pj_order_dispatch_quantities(
        '96000000-0000-4000-8000-00000000f005'::uuid,

@@ -916,7 +916,7 @@ export default function PedidosPJPage() {
                       <span style={{display:'block', fontSize:11.5, color:'var(--tomato, #A93A2E)', marginTop:2}}>
                         {Number(r.dispatched_quantity) === 0
                           ? 'não enviado'
-                          : `saiu ${r.dispatched_quantity} ${r.pricing_unit || 'un'}`}
+                          : `saiu ${String(r.dispatched_quantity).replace('.', ',')} ${r.pricing_unit || 'un'}`}
                         {r.dispatched_quantity_reason ? ` · ${r.dispatched_quantity_reason}` : ''}
                       </span>
                     )}
