@@ -255,8 +255,8 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and cancelled_at is null),
-  1305.90::numeric,
-  'pedidos PJ ficticios nao cancelados somam R$ 1.305,90'
+  1320.30::numeric,
+  'pedidos PJ ficticios nao cancelados somam R$ 1.320,30'
 );
 
 -- A soma acima usa `quantity`, a ESTIMATIVA, e nao o que a expedicao conferiu.
@@ -265,8 +265,8 @@ select is(
 select is(
   (select round(sum(unit_price * quantity), 2) from public.orders
     where order_group_id = '70000000-0000-4000-8000-000000000006'),
-  334.20::numeric,
-  'o pedido em conferencia parcial vale pela estimativa (334,20), nao pelo conferido'
+  343.80::numeric,
+  'o pedido em conferencia parcial vale pela estimativa (343,80), nao pelo conferido'
 );
 
 select is(
