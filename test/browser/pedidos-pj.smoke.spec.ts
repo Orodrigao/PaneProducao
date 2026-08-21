@@ -46,7 +46,7 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
 
   const enviado = page.locator('.pj-order-row.is-dispatched', { hasText: '[TESTE] Bistro Cliente PJ' })
   await expect(enviado).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await expect(enviado).toContainText('R$ 67.20')
+  await expect(enviado).toContainText('R$ 76.80')
 
   await expect(
     page.locator('.pj-order-row.is-cancelled', { hasText: '[TESTE] Cafe Cliente PJ' }),
@@ -63,11 +63,11 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   // de proposito, e nao amanha: a janela deste relatorio nasce do relogio do
   // NAVEGADOR, que no CI conta em UTC, enquanto o seed conta na hora da
   // padaria. Depois das 21h os dois discordam por um dia, e um pedido de
-  // "amanha" cairia dentro da janela (licao seed-com-hoje-vence-a-meia-noite). Sobram o enviado (67,20) e o entregue de
-  // cliente sem prazo (100,80) = 168,00; o cancelado nunca entra.
+  // "amanha" cairia dentro da janela (licao seed-com-hoje-vence-a-meia-noite). Sobram o enviado (76,80) e o entregue de
+  // cliente sem prazo (96,00) = 172,80; o cancelado nunca entra.
   await page.goto('/relatorios/pj')
   await expect(page.getByRole('heading', { name: /Vendas PJ/ })).toBeVisible()
   await expect(page.getByText('Vendas totais')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   // O total aparece no cartao, no resumo e na tabela: basta encontra-lo uma vez.
-  await expect(page.getByText(/168,00/).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.getByText(/172,80/).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })
