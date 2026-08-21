@@ -15,7 +15,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(31);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -191,9 +191,12 @@ select lives_ok(
   'a conferencia normal do dia a dia grava sem atrito'
 );
 
+reset role;
 select is((select dispatched_quantity from public.orders
     where id = '96000000-0000-4000-8000-0000000000e1'), 3.067::numeric,
   'o peso real fica gravado na linha');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
 select is((select count(*)::int from public.pj_order_quantity_checks
     where order_group_id = '96000000-0000-4000-8000-0000000000a1'::uuid), 2,
@@ -211,9 +214,12 @@ select lives_ok(
   'repetir a mesma requisicao devolve o estado atual em vez de falhar'
 );
 
+reset role;
 select is((select dispatched_quantity from public.orders
     where id = '96000000-0000-4000-8000-0000000000e1'), 3.067::numeric,
   'e o toque duplo nao sobrescreve o que ja estava gravado');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
 select is((select count(*)::int from public.pj_order_quantity_checks
     where order_group_id = '96000000-0000-4000-8000-0000000000a1'::uuid), 2,
@@ -297,6 +303,81 @@ select throws_ok(
   null,
   'pedido ja enviado recusa conferencia nova, em vez de reescrever o que saiu'
 );
+
+-- Buracos fechados depois da revisao adversarial do codigo ------------------
+
+reset role;
+
+-- Escrita direta pela Data API: `admin` e `financeiro` tem UPDATE em orders
+-- pela RLS. Sem a porta protegida, forjariam quantidade, autor e horario sem
+-- deixar historico. O gatilho recusa.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000003', true);
+
+select throws_ok(
+  $$ update public.orders set dispatched_quantity = 99
+      where id = '96000000-0000-4000-8000-0000000000e3' $$,
+  '42501',
+  'A conferência da quantidade enviada exige a ação protegida.',
+  'o financeiro nao forja conferencia escrevendo direto na tabela'
+);
+
+select throws_ok(
+  $$ update public.orders set dispatched_quantity_by_name = 'Fulano'
+      where id = '96000000-0000-4000-8000-0000000000e3' $$,
+  '42501',
+  'A conferência da quantidade enviada exige a ação protegida.',
+  'nem forja a autoria da conferencia'
+);
+
+reset role;
+
+-- Mudou o pedido, a conferencia perde a validade em vez de virar ruido.
+select lives_ok(
+  $$ update public.orders set quantity = 10
+      where id = '96000000-0000-4000-8000-0000000000e3' $$,
+  'alterar a estimativa do pedido continua permitido a quem pode edita-lo'
+);
+
+-- Conferencia parcial: uma linha conferida, outra ainda em branco, numa
+-- gravacao so. Era o caminho normal da operacao e quebrava a transacao inteira.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
+
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '96000000-0000-4000-8000-00000000f008'::uuid,
+       '96000000-0000-4000-8000-0000000000a2'::uuid,
+       '[{"order_id":"96000000-0000-4000-8000-0000000000e3","quantity":10}]'::jsonb,
+       null
+     ) $$,
+  'conferir uma linha e deixar outra em branco nao derruba a gravacao'
+);
+
+-- Limpar a conferencia (voltar para "nao conferido") tambem e um evento.
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '96000000-0000-4000-8000-00000000f009'::uuid,
+       '96000000-0000-4000-8000-0000000000a2'::uuid,
+       '[{"order_id":"96000000-0000-4000-8000-0000000000e3","quantity":null}]'::jsonb,
+       (select max(dispatched_quantity_at) from public.list_pj_orders_for_dispatch()
+         where order_group_id = '96000000-0000-4000-8000-0000000000a2'::uuid)
+     ) $$,
+  'desconferir uma linha e possivel, e fica registrado'
+);
+
+reset role;
+
+select is((select dispatched_quantity from public.orders
+    where id = '96000000-0000-4000-8000-0000000000e3'), null::numeric,
+  'a linha volta ao estado de nao conferida');
+
+select is((select count(*)::int from public.pj_order_quantity_checks
+    where order_group_id = '96000000-0000-4000-8000-0000000000a2'::uuid), 2,
+  'e os dois eventos ficam no historico: o que gravou e o que limpou');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000001', true);
 
 -- A fila da expedicao devolve os dois numeros.
 select ok(

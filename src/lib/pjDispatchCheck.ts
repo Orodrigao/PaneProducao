@@ -47,7 +47,10 @@ export function verdictForLine({ estimated, sent, pricingUnit }: CheckLineInput)
   // aplica, mas o motivo é obrigatório.
   if (sent === 0) return 'exige_motivo'
 
-  if (!Number.isFinite(estimated) || estimated <= 0) return 'exige_motivo'
+  // Sem estimativa nao ha proporcao a comparar, e sem proporcao o teto duro
+  // deixa de existir: uma linha estimada em zero aceitaria qualquer numero com
+  // um texto qualquer. Enviar o que nao foi pedido e recusa.
+  if (!Number.isFinite(estimated) || estimated <= 0) return 'recusado'
 
   const fator = sent / estimated
   if (fator > FATOR_MAXIMO || fator < 1 / FATOR_MAXIMO) return 'recusado'

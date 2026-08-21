@@ -45,13 +45,19 @@ function formatStored(value: number | null, pricingUnit: string | null): string 
     : String(value)
 }
 
-/** Aceita vírgula como o teclado do celular manda. */
-function parseTyped(raw: string, pricingUnit: string | null): number | null {
+/**
+ * Aceita vírgula como o teclado do celular manda, e devolve exatamente o que
+ * foi digitado.
+ *
+ * Nada de arredondar item por unidade aqui: truncar 1,9 para 1 gravaria um
+ * número diferente do que a pessoa viu, em silêncio. Quem recusa fração em
+ * item por unidade é o veredito, com mensagem escrita na tela.
+ */
+function parseTyped(raw: string): number | null {
   const limpo = raw.trim().replace(',', '.')
   if (!limpo) return null
   const numero = Number(limpo)
-  if (!Number.isFinite(numero)) return null
-  return unitLabel(pricingUnit) === 'kg' ? numero : Math.trunc(numero)
+  return Number.isFinite(numero) ? numero : null
 }
 
 /**
@@ -77,7 +83,7 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
 
   const estados = useMemo<CheckLineState[]>(() => lines.map(line => {
     const draft = drafts[line.orderId]
-    const sent = draft?.notSent ? 0 : parseTyped(draft?.value ?? '', line.pricingUnit)
+    const sent = draft?.notSent ? 0 : parseTyped(draft?.value ?? '')
     return {
       orderId: line.orderId,
       productLabel: line.productLabel,
@@ -88,18 +94,31 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
     }
   }), [lines, drafts])
 
-  const problemas = useMemo(() => problemsBeforeSaving(estados), [estados])
+  // Linha ainda em branco não é problema: é linha que a pessoa não mexeu.
+  const problemas = useMemo(
+    () => problemsBeforeSaving(estados.filter(estado => estado.sent !== null)),
+    [estados],
+  )
   const problemaPorLinha = useMemo(() => {
     const mapa: Record<string, string> = {}
     problemas.forEach(p => { mapa[p.orderId] = p.message })
     return mapa
   }, [problemas])
 
-  const alterou = useMemo(() => estados.some((estado, i) => {
+  /**
+   * Só as linhas realmente alteradas viajam para o banco.
+   *
+   * Mandar todas faria duas coisas erradas: linha ainda em branco iria como
+   * "sem valor" e desfaria a transação inteira, impedindo conferir um item por
+   * vez; e cada gravação carimbaria de novo TODAS as linhas com o autor da
+   * última correção, apagando quem realmente conferiu cada uma.
+   */
+  const alteradas = useMemo(() => estados.filter((estado, i) => {
     const original = lines[i]
     const motivoOriginal = original.reason || ''
     return estado.sent !== original.sent || estado.reason.trim() !== motivoOriginal.trim()
   }), [estados, lines])
+  const alterou = alteradas.length > 0
 
   const atualiza = (orderId: string, patch: Partial<Draft>) => {
     setDrafts(anterior => ({
@@ -110,7 +129,7 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
 
   const salvar = () => {
     if (problemas.length > 0 || saving) return
-    onSave(estados.map(estado => ({
+    onSave(alteradas.map(estado => ({
       order_id: estado.orderId,
       quantity: estado.sent,
       reason: estado.reason.trim() || null,
@@ -211,7 +230,10 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
 
               {line.checkedAt && (
                 <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-                  Já conferido por {line.checkedByName || 'expedição'}
+                  Já conferido por {line.checkedByName || 'expedição'} às{' '}
+                  {new Date(line.checkedAt).toLocaleString('pt-BR', {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                  })}
                 </span>
               )}
             </div>

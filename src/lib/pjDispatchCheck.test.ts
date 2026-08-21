@@ -62,8 +62,15 @@ describe('veredito da quantidade enviada', () => {
     expect(verdictForLine({ estimated: 50, sent: 0, pricingUnit: 'un' })).toBe('exige_motivo')
   })
 
-  it('pede motivo quando não há estimativa com que comparar', () => {
-    expect(verdictForLine({ estimated: 0, sent: 5, pricingUnit: 'un' })).toBe('exige_motivo')
+  it('recusa envio positivo quando não há estimativa com que comparar', () => {
+    // Estimativa zero desligava o teto duro: com um texto qualquer, a linha
+    // aceitaria qualquer numero. Enviar o que nao foi pedido e recusa.
+    expect(verdictForLine({ estimated: 0, sent: 5, pricingUnit: 'un' })).toBe('recusado')
+    expect(verdictForLine({ estimated: -3, sent: 5, pricingUnit: 'kg' })).toBe('recusado')
+  })
+
+  it('ainda deixa declarar que nada saiu de uma linha sem estimativa', () => {
+    expect(verdictForLine({ estimated: 0, sent: 0, pricingUnit: 'un' })).toBe('exige_motivo')
   })
 })
 

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(34);
+select plan(35);
 
 select is(
   (select count(*)::int from public.destinations where code in ('jc', 'ja', 'ex')),
@@ -255,8 +255,18 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and cancelled_at is null),
-  971.70::numeric,
-  'pedidos PJ ficticios nao cancelados somam R$ 971,70'
+  1305.90::numeric,
+  'pedidos PJ ficticios nao cancelados somam R$ 1.305,90'
+);
+
+-- A soma acima usa `quantity`, a ESTIMATIVA, e nao o que a expedicao conferiu.
+-- Enquanto a fase 2 nao chegar, e assim que tem de ser: o pedido 106 tem 3 kg
+-- estimados e 3,067 kg conferidos, e quem manda no dinheiro ainda e o pedido.
+select is(
+  (select round(sum(unit_price * quantity), 2) from public.orders
+    where order_group_id = '70000000-0000-4000-8000-000000000006'),
+  334.20::numeric,
+  'o pedido em conferencia parcial vale pela estimativa (334,20), nao pelo conferido'
 );
 
 select is(

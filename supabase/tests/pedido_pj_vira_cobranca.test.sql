@@ -125,11 +125,8 @@ select lives_ok(
   $$ select public.save_pj_order_dispatch_quantities(
        '95000000-0000-4000-8000-00000000fc01'::uuid,
        '95000000-0000-4000-8000-0000000000a1'::uuid,
-       (select jsonb_agg(jsonb_build_object('order_id', linha.id, 'quantity', linha.quantity))
-          from public.orders linha
-         where linha.order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid
-           and linha.order_type = 'pj'
-           and linha.cancelled_at is null),
+       '[{"order_id":"95000000-0000-4000-8000-00000000e001","quantity":20},
+         {"order_id":"95000000-0000-4000-8000-00000000e002","quantity":10}]'::jsonb,
        null
      ) $$,
   'a expedicao confere o pedido antes de poder envia-lo'
@@ -298,11 +295,7 @@ select lives_ok(
   $$ select public.save_pj_order_dispatch_quantities(
        '95000000-0000-4000-8000-00000000fc02'::uuid,
        '95000000-0000-4000-8000-0000000000a2'::uuid,
-       (select jsonb_agg(jsonb_build_object('order_id', linha.id, 'quantity', linha.quantity))
-          from public.orders linha
-         where linha.order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid
-           and linha.order_type = 'pj'
-           and linha.cancelled_at is null),
+       '[{"order_id":"95000000-0000-4000-8000-00000000e003","quantity":8}]'::jsonb,
        null
      ) $$,
   'a expedicao tambem confere o pedido do cliente sem prazo'

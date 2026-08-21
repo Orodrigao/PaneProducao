@@ -170,6 +170,11 @@ export default function PedidosPJPage() {
   const dispatchingRef = useRef(false)
   const [savingCheck, setSavingCheck] = useState(false)
   const savingCheckRef = useRef(false)
+  // O identificador da tentativa sobrevive a uma falha de rede: repetir com o
+  // MESMO id faz o banco devolver o resultado anterior em vez de gravar duas
+  // vezes. Gerar um novo a cada toque transformaria "a resposta se perdeu" em
+  // historico duplicado.
+  const checkRequestIdRef = useRef<string | null>(null)
 
   const access = resolvePjOrderAccess(user)
 
@@ -522,14 +527,19 @@ export default function PedidosPJPage() {
     savingCheckRef.current = true
     setSavingCheck(true)
     try {
+      if (!checkRequestIdRef.current) checkRequestIdRef.current = crypto.randomUUID()
       const result = await savePjOrderDispatchQuantities(
-        g.order_group_id, items, version, crypto.randomUUID(),
+        g.order_group_id, items, version, checkRequestIdRef.current,
       )
       if (!result.ok) {
         showToast(result.message)
         // Tela desatualizada nao se resolve tentando de novo com os mesmos
         // numeros: recarrega para a pessoa ver o que ja foi gravado.
-        if (result.stale) { setViewing(null); loadAll() }
+        if (result.stale) {
+          checkRequestIdRef.current = null
+          setViewing(null)
+          loadAll()
+        }
         return
       }
 
@@ -550,6 +560,8 @@ export default function PedidosPJPage() {
         ? { ...previous, rows: previous.rows.map(aplica) }
         : previous)
 
+      // Gravou: a próxima conferência é outra tentativa, com outro id.
+      checkRequestIdRef.current = null
       showToast(result.summary.pendentes > 0
         ? `✅ Conferência salva · ainda faltam ${result.summary.pendentes} item(ns)`
         : '✅ Conferência salva · o pedido já pode ser marcado como enviado')

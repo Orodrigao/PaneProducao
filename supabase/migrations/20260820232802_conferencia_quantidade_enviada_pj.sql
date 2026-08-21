@@ -67,11 +67,16 @@ comment on column public.orders.dispatched_quantity_reason is
 create table if not exists public.pj_order_quantity_checks (
   id uuid primary key default gen_random_uuid(),
   request_id uuid not null,
-  order_id uuid not null references public.orders(id) on delete cascade,
+  -- `set null` e nao `cascade`: a edicao comercial apaga e recria as linhas do
+  -- pedido, e o historico da conferencia e prova numa contestacao de cliente.
+  -- Perder a prova junto com a linha esvazia o proposito desta tabela.
+  order_id uuid references public.orders(id) on delete set null,
   order_group_id uuid not null,
   estimated_quantity numeric(12,3) not null,
   quantity_before numeric(12,3),
-  quantity_after numeric(12,3) not null,
+  -- Aceita null: limpar uma conferencia (voltar a "nao conferido") tambem e um
+  -- evento que precisa ficar registrado.
+  quantity_after numeric(12,3),
   reason text,
   created_at timestamptz not null default now(),
   created_by uuid references auth.users(id),
@@ -81,7 +86,8 @@ create table if not exists public.pj_order_quantity_checks (
 -- Repetir a mesma requisição não pode gerar histórico novo. É a convenção que
 -- as funções de Contas a Receber já seguem.
 create unique index if not exists pj_order_quantity_checks_request_line_unico
-  on public.pj_order_quantity_checks (request_id, order_id);
+  on public.pj_order_quantity_checks (request_id, order_id)
+  where order_id is not null;
 
 create index if not exists pj_order_quantity_checks_por_grupo
   on public.pj_order_quantity_checks (order_group_id, created_at desc);
@@ -104,7 +110,17 @@ using (
       and profile.active
       and (
         profile.role in ('admin', 'financeiro')
-        or (profile.role = 'expedicao' and profile.store = 'jc')
+        or (
+          profile.role = 'expedicao'
+          and profile.store = 'jc'
+          and exists (
+            select 1
+            from public.app_user_permissions assignment
+            where assignment.user_id = profile.user_id
+              and assignment.permission_key = 'pedidos_pj.acessar'
+              and assignment.scope in ('*', 'jc')
+          )
+        )
       )
   )
 );
@@ -158,9 +174,10 @@ begin
   end if;
 
   if p_estimada is null or p_estimada <= 0 then
-    -- Sem estimativa não há proporção a comparar. Pedir o motivo é o
-    -- comportamento conservador.
-    return 'exige_motivo';
+    -- Sem estimativa nao ha proporcao a comparar, e sem proporcao o teto duro
+    -- nao existe: uma linha estimada em zero aceitaria 999.999 com um texto
+    -- qualquer. Enviar o que nao foi pedido e recusa, nao confirmacao.
+    return 'recusado';
   end if;
 
   v_fator := p_enviada / p_estimada;
@@ -284,20 +301,24 @@ begin
     raise exception using errcode = '42501', message = 'Sem permissão para conferir este pedido.';
   end if;
 
+  perform 1
+  from public.orders order_row
+  where order_row.order_group_id = p_order_group_id
+    and order_row.order_type = 'pj'
+  for update;
+
   -- Já gravado com esta mesma requisição: devolve o estado atual sem escrever
   -- de novo e sem criar histórico duplicado.
+  --
+  -- A checagem vem DEPOIS do `for update`, e não antes: duas chamadas iguais
+  -- simultâneas passariam as duas pela consulta e a segunda terminaria em
+  -- colisão de chave em vez de devolver o mesmo sucesso.
   if exists (
     select 1 from public.pj_order_quantity_checks registro
     where registro.request_id = p_request_id
   ) then
     return private.resumo_conferencia_pj(p_order_group_id);
   end if;
-
-  perform 1
-  from public.orders order_row
-  where order_row.order_group_id = p_order_group_id
-    and order_row.order_type = 'pj'
-  for update;
 
   select count(*),
          count(*) filter (where order_row.dispatched_at is not null),
@@ -338,6 +359,12 @@ begin
     raise exception using errcode = '40001',
       message = 'Outra pessoa conferiu este pedido enquanto você preenchia. Recarregue para ver o que já foi gravado.';
   end if;
+
+  -- Abre a porta protegida da conferência para esta transação. O gatilho lá
+  -- embaixo recusa qualquer escrita nas colunas de conferência sem ela, para
+  -- que autoria e horário não possam ser forjados pela Data API por um perfil
+  -- com UPDATE em `orders`.
+  perform set_config('pane.pj_check_rpc', 'on', true);
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
@@ -406,7 +433,7 @@ begin
       v_linha.dispatched_quantity, v_quantidade, v_motivo, v_user_id, v_user_name
     );
 
-    update public.orders
+      update public.orders
     set dispatched_quantity = v_quantidade,
         dispatched_quantity_reason = v_motivo,
         dispatched_quantity_at = case when v_quantidade is null then null else v_agora end,
@@ -708,15 +735,30 @@ set search_path = ''
 as $$
 declare
   v_veredito text;
+  v_mudou boolean;
 begin
-  if new.dispatched_quantity is null then
+  v_mudou := tg_op = 'INSERT' or (
+    new.dispatched_quantity is distinct from old.dispatched_quantity
+    or new.dispatched_quantity_reason is distinct from old.dispatched_quantity_reason
+    or new.dispatched_quantity_at is distinct from old.dispatched_quantity_at
+    or new.dispatched_quantity_by is distinct from old.dispatched_quantity_by
+    or new.dispatched_quantity_by_name is distinct from old.dispatched_quantity_by_name
+  );
+
+  if not v_mudou then
     return new;
   end if;
 
-  if tg_op = 'UPDATE'
-     and new.dispatched_quantity is not distinct from old.dispatched_quantity
-     and new.dispatched_quantity_reason is not distinct from old.dispatched_quantity_reason
-  then
+  -- Porta única: quem escreve conferência é a RPC, que abre esta chave. Sem
+  -- ela, `admin` e `financeiro` poderiam preencher quantidade, autor e horário
+  -- direto pela Data API, deixando o histórico vazio e liberando o envio.
+  -- Mesmo desenho de `guard_pj_dispatch_write`, que protege a confirmação.
+  if coalesce(current_setting('pane.pj_check_rpc', true), '') <> 'on' then
+    raise exception using errcode = '42501',
+      message = 'A conferência da quantidade enviada exige a ação protegida.';
+  end if;
+
+  if new.dispatched_quantity is null then
     return new;
   end if;
 
@@ -750,16 +792,60 @@ when (new.order_type = 'pj' and new.dispatched_quantity is not null)
 execute function private.guard_dispatched_quantity();
 
 drop trigger if exists guard_dispatched_quantity_update on public.orders;
--- Só as colunas da conferência. `quantity` fica de fora de propósito: se a
--- estimativa mudar depois de conferido, quem deve ceder é a conferência, não a
--- edição do pedido — e na prática a tela comercial apaga e recria as linhas,
--- então a conferência da linha antiga vai junto.
 create trigger guard_dispatched_quantity_update
-before update of dispatched_quantity, dispatched_quantity_reason
+before update of dispatched_quantity, dispatched_quantity_reason,
+                 dispatched_quantity_at, dispatched_quantity_by, dispatched_quantity_by_name
 on public.orders
 for each row
 when (new.order_type = 'pj')
 execute function private.guard_dispatched_quantity();
+
+-- ---------------------------------------------------------------------------
+-- Mudou o pedido, a conferência perde a validade.
+-- ---------------------------------------------------------------------------
+-- Se a estimativa ou a unidade mudarem depois de conferido, o número conferido
+-- passa a descrever outra coisa: 3,067 kg conferidos contra um pedido que
+-- virou 10 kg não é mais uma conferência, é ruído.
+--
+-- Limpar é melhor que bloquear: o pedido é do comercial, e travar a edição da
+-- Elis por causa de uma conferência antiga inverteria quem manda. A Expedição
+-- confere de novo, que é o certo quando o pedido mudou.
+create or replace function private.limpar_conferencia_ao_mudar_pedido()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.dispatched_quantity is null then
+    return new;
+  end if;
+
+  if new.quantity is distinct from old.quantity
+     or new.pricing_unit is distinct from old.pricing_unit
+  then
+    new.dispatched_quantity := null;
+    new.dispatched_quantity_reason := null;
+    new.dispatched_quantity_at := null;
+    new.dispatched_quantity_by := null;
+    new.dispatched_quantity_by_name := null;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.limpar_conferencia_ao_mudar_pedido() from public, anon, authenticated;
+
+-- Roda ANTES do gatilho de plausibilidade (ordem alfabética do nome), para que
+-- a limpeza não seja barrada pela porta protegida.
+drop trigger if exists a_limpar_conferencia_ao_mudar_pedido on public.orders;
+create trigger a_limpar_conferencia_ao_mudar_pedido
+before update of quantity, pricing_unit
+on public.orders
+for each row
+when (new.order_type = 'pj')
+execute function private.limpar_conferencia_ao_mudar_pedido();
 
 -- ---------------------------------------------------------------------------
 -- O contador de adoção.

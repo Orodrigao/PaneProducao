@@ -172,6 +172,10 @@ on conflict (id) do update set
 -- e fechada logo abaixo. Sem isso o cenario nao consegue representar um pedido
 -- no Historico, e reaplicar o seed falharia ao tocar essa linha.
 select set_config('pane.pj_dispatch_rpc', 'on', false);
+-- Mesma ideia para a conferencia da quantidade enviada: o gatilho
+-- `guard_dispatched_quantity` reserva essas colunas a acao protegida, e o seed
+-- precisa semear o cenario de conferencia parcial. A chave fecha logo abaixo.
+select set_config('pane.pj_check_rpc', 'on', false);
 
 insert into public.orders (
   id, store, order_type, order_group_id, customer_id, pj_client,
@@ -319,6 +323,7 @@ on conflict (id) do update set
 -- Fecha a chave: a partir daqui a confirmacao de envio volta a exigir a acao
 -- protegida, inclusive para o restante deste seed.
 select set_config('pane.pj_dispatch_rpc', '', false);
+select set_config('pane.pj_check_rpc', '', false);
 
 insert into public.orders (
   id, store, bread_id, quantity, order_date, obs,
