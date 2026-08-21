@@ -2,6 +2,14 @@ export type NfePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' |
 export type NfeMappingStatus = 'pendente' | 'mapeado'
 export type NfeConversionBasis = 'simple' | 'package' | 'usable'
 
+/**
+ * De onde veio o vencimento das parcelas:
+ * - `xml`: a NF-e informou as duplicatas com data.
+ * - `a-vista`: a NF-e não informou, mas o pagamento é dinheiro ou pix; vale a emissão.
+ * - `ausente`: a NF-e não informou e o pagamento é a prazo; alguém precisa digitar.
+ */
+export type NfeDueDateSource = 'xml' | 'a-vista' | 'ausente'
+
 export interface NfeItemDraft {
   lineNumber: number
   supplierCode: string | null
@@ -42,6 +50,7 @@ export interface NfeDraft {
   supplierCnpj: string
   total: number
   paymentMethod: NfePaymentMethod
+  dueDateSource: NfeDueDateSource
   items: NfeItemDraft[]
   installments: NfeInstallmentDraft[]
 }
@@ -147,6 +156,36 @@ function paymentMethod(code: string): NfePaymentMethod {
   } as Record<string, NfePaymentMethod>)[code] ?? 'outro'
 }
 
+const CASH_PAYMENT_METHODS: readonly NfePaymentMethod[] = ['dinheiro', 'pix']
+
+/**
+ * O bloco `dup` da NF-e é opcional: há emissor que imprime o vencimento na DANFE
+ * e não o escreve no XML. Antes, a falta virava silenciosamente a data de emissão,
+ * o que adianta o boleto sem ninguém perceber. Agora só assumimos a emissão quando
+ * o pagamento é à vista; a prazo, a data fica vazia para ser digitada.
+ *
+ * A NF-e aceita vários `detPag`. Basta um deles ser a prazo para a nota deixar de
+ * ser à vista — por isso a decisão olha todos, e não apenas o primeiro.
+ */
+export function resolveInstallments(
+  duplicates: readonly NfeInstallmentDraft[],
+  paymentMethods: readonly NfePaymentMethod[],
+  issueDate: string,
+  totalValue: number,
+): { installments: NfeInstallmentDraft[]; dueDateSource: NfeDueDateSource } {
+  if (duplicates.length > 0) {
+    return {
+      installments: duplicates.map((item, index) => ({ ...item, number: index + 1 })),
+      dueDateSource: duplicates.every(item => Boolean(item.dueDate)) ? 'xml' : 'ausente',
+    }
+  }
+  const cash = paymentMethods.length > 0 && paymentMethods.every(method => CASH_PAYMENT_METHODS.includes(method))
+  return {
+    installments: [{ number: 1, dueDate: cash ? issueDate : '', amount: totalValue }],
+    dueDateSource: cash ? 'a-vista' : 'ausente',
+  }
+}
+
 function conversionBasis(unit: string): NfeConversionBasis {
   return ['PACOTE', 'PCT', 'FD', 'FARDO', 'CX', 'CAIXA'].includes(unit.toUpperCase()) ? 'package' : 'simple'
 }
@@ -202,27 +241,30 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     }
   })
 
+  // `nDup` é rótulo do emissor e pode repetir ou vir vazio; a posição é a única
+  // identidade confiável, e é ela que o banco exige única dentro da compra.
   const duplicates = allElements(document, 'dup').map((duplicate, index) => ({
-    number: numberValue(childText(duplicate, 'nDup')) || index + 1,
+    number: index + 1,
     dueDate: childText(duplicate, 'dVenc'),
     amount: numberValue(childText(duplicate, 'vDup')),
   }))
   const totalValue = numberValue(childText(total, 'vNF'))
   const payments = allElements(document, 'detPag')
-  const paymentCode = payments.length > 0 ? childText(payments[0], 'tPag') : ''
-  const installments = duplicates.length > 0
-    ? duplicates
-    : [{ number: 1, dueDate: issueDate.slice(0, 10), amount: totalValue }]
+  const methods = payments.map(payment => paymentMethod(childText(payment, 'tPag')))
+  const method = methods[0] ?? 'outro'
+  const issueDay = issueDate.slice(0, 10)
+  const { installments, dueDateSource } = resolveInstallments(duplicates, methods, issueDay, totalValue)
 
   return {
     accessKey,
     number: childText(ide, 'nNF'),
     series: childText(ide, 'serie'),
-    issueDate: issueDate.slice(0, 10),
+    issueDate: issueDay,
     supplierName: childText(emit, 'xNome'),
     supplierCnpj,
     total: totalValue,
-    paymentMethod: paymentMethod(paymentCode),
+    paymentMethod: method,
+    dueDateSource,
     items,
     installments,
   }
