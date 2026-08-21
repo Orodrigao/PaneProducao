@@ -7,6 +7,7 @@ import {
   getConversionUnitWarning,
   formatConversionExplanation,
   isClassificationComplete,
+  resolveInstallments,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
 
@@ -79,5 +80,45 @@ describe('conversão de itens importados da NF-e', () => {
   it('não considera a NF classificada enquanto houver linha pendente', () => {
     expect(isClassificationComplete([item({ mappingStatus: 'mapeado', baseProductId: 'product-1', usableQuantity: 100 })])).toBe(true)
     expect(isClassificationComplete([item(), item({ lineNumber: 2, mappingStatus: 'mapeado', baseProductId: 'product-2', usableQuantity: 1 })])).toBe(false)
+  })
+})
+
+describe('vencimento das parcelas importadas da NF-e', () => {
+  it('usa as duplicatas quando a NF-e informa as datas', () => {
+    expect(resolveInstallments(
+      [{ number: 1, dueDate: '2026-09-09', amount: 510.97 }],
+      'boleto',
+      '2026-08-21',
+      510.97,
+    )).toEqual({
+      installments: [{ number: 1, dueDate: '2026-09-09', amount: 510.97 }],
+      dueDateSource: 'xml',
+    })
+  })
+
+  it('deixa a data vazia quando a NF-e a prazo nao traz duplicata', () => {
+    expect(resolveInstallments([], 'boleto', '2026-08-21', 510.97)).toEqual({
+      installments: [{ number: 1, dueDate: '', amount: 510.97 }],
+      dueDateSource: 'ausente',
+    })
+  })
+
+  it('assume a emissao somente quando o pagamento e a vista', () => {
+    expect(resolveInstallments([], 'dinheiro', '2026-08-21', 150.80)).toEqual({
+      installments: [{ number: 1, dueDate: '2026-08-21', amount: 150.80 }],
+      dueDateSource: 'a-vista',
+    })
+    expect(resolveInstallments([], 'pix', '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], 'cartao', '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], 'outro', '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+  })
+
+  it('cobra a data tambem quando so uma das duplicatas veio sem vencimento', () => {
+    expect(resolveInstallments(
+      [{ number: 1, dueDate: '2026-09-09', amount: 250 }, { number: 2, dueDate: '', amount: 260.97 }],
+      'boleto',
+      '2026-08-21',
+      510.97,
+    ).dueDateSource).toBe('ausente')
   })
 })

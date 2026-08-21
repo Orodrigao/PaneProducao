@@ -150,6 +150,12 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     setDraft(previous => previous ? { ...previous, items: previous.items.map((item, itemIndex) => itemIndex === index ? next : item) } : previous)
   }
 
+  function updateInstallmentDueDate(index: number, dueDate: string) {
+    setDraft(previous => previous
+      ? { ...previous, installments: previous.installments.map((item, itemIndex) => itemIndex === index ? { ...item, dueDate } : item) }
+      : previous)
+  }
+
   function selectProduct(index: number, productId: string) {
     const product = catalog.find(candidate => candidate.id === productId)
     if (!product) {
@@ -202,7 +208,8 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     if (!draft) return
     if (duplicateNfe) { showToast('Esta NF-e já foi importada. Não é necessário cadastrá-la novamente.'); return }
     if (!supplierId) { showToast('Selecione o fornecedor desta NF-e.'); return }
-    if (draft.installments.some(item => !item.dueDate || item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
+    if (draft.installments.some(item => !item.dueDate)) { showToast('Informe o vencimento de cada parcela antes de confirmar.'); return }
+    if (draft.installments.some(item => item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
     setSaving(true)
     try {
       await createXmlPayable(draft, supplierId, requestIdRef.current)
@@ -214,6 +221,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   }
 
   const mappedCount = draft?.items.filter(item => item.mappingStatus === 'mapeado').length ?? 0
+  const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
 
   return (
     <div className="ps-card" style={{ marginTop: 14 }}>
@@ -292,11 +300,41 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
           ))}
           <div className="ps-banner" style={{ marginTop: 10 }}>
             <b>Parcelas do financeiro</b>
-            {draft.installments.map(installment => <small key={installment.number} style={{ display: 'block' }}>Parcela {installment.number} · vence em {installment.dueDate} · {formatBRL(installment.amount)}</small>)}
+            {draft.dueDateSource === 'ausente' && (
+              <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
+                <b>Esta NF-e não informou o vencimento</b>
+                <small style={{ display: 'block', marginTop: 4 }}>
+                  O XML traz o valor, mas não a data. Confira o vencimento no papel da nota, no campo Fatura/Duplicatas, e digite abaixo.
+                </small>
+              </div>
+            )}
+            {draft.dueDateSource === 'a-vista' && (
+              <small style={{ display: 'block', marginTop: 4 }}>
+                O XML não informou vencimento e o pagamento é em {draft.paymentMethod === 'pix' ? 'pix' : 'dinheiro'}. Lançamos como à vista, na data de emissão. Corrija abaixo se não for isso.
+              </small>
+            )}
+            {draft.installments.map((installment, index) => (
+              <div className="ps-fieldgroup" key={installment.number} style={{ marginTop: 8 }}>
+                <label className="ps-fieldlabel" htmlFor={`xml-due-date-${installment.number}`}>Parcela {installment.number} · {formatBRL(installment.amount)} · vence em</label>
+                <input
+                  id={`xml-due-date-${installment.number}`}
+                  className="ps-input"
+                  type="date"
+                  min={draft.issueDate}
+                  value={installment.dueDate}
+                  onChange={event => updateInstallmentDueDate(index, event.target.value)}
+                />
+              </div>
+            ))}
           </div>
+          {missingDueDate && (
+            <small style={{ display: 'block', marginTop: 10, color: 'var(--berry)' }}>
+              Falta o vencimento. Preencha a data acima para liberar a confirmação.
+            </small>
+          )}
           <div className="ps-totalbar">
             <div className="ps-total-num"><b>{formatBRL(draft.total)}</b><span>{mappedCount === draft.items.length ? 'itens classificados' : `${draft.items.length - mappedCount} item(ns) pendente(s)`}</span></div>
-            <button className="ps-save" disabled={saving || !supplierId || duplicateNfe} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>
+            <button className="ps-save" disabled={saving || !supplierId || duplicateNfe || missingDueDate} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>
           </div>
         </>
       )}
