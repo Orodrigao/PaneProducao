@@ -59,9 +59,11 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   await expect(page.getByText('[TESTE] Brioche PJ').first()).toBeVisible()
 
   // Relatorio de Vendas PJ: o preset padrao vai de 29 dias atras ate hoje e
-  // soma pela data de entrega. Os dois pedidos em aberto entregam AMANHA — de
-  // proposito, para nao sairem da fila da Expedicao quando o dia virar — e por
-  // isso ficam fora desta janela. Sobram o enviado (67,20) e o entregue de
+  // soma pela data de entrega. Os pedidos em aberto entregam DEPOIS DE AMANHA —
+  // de proposito, e nao amanha: a janela deste relatorio nasce do relogio do
+  // NAVEGADOR, que no CI conta em UTC, enquanto o seed conta na hora da
+  // padaria. Depois das 21h os dois discordam por um dia, e um pedido de
+  // "amanha" cairia dentro da janela (licao seed-com-hoje-vence-a-meia-noite). Sobram o enviado (67,20) e o entregue de
   // cliente sem prazo (100,80) = 168,00; o cancelado nunca entra.
   await page.goto('/relatorios/pj')
   await expect(page.getByRole('heading', { name: /Vendas PJ/ })).toBeVisible()
