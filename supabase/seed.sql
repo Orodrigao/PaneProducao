@@ -111,9 +111,10 @@ insert into public.price_tier_items (
   unit_price, pricing_unit, pack_size, active
 )
 values
-  -- Pacote de 21: reproduz o caso real que inflava o relatorio de Vendas PJ.
+  -- Pacote de 12, como o brioche real da padaria. O que o cenario reproduz e
+  -- o caso de pacote maior que 1, que ja inflou o relatorio de Vendas PJ.
   ('51000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001',
-   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 1.60, 'un', 21, true),
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 1.60, 'un', 12, true),
   -- Preco por quilo: o outro caminho da conta, que nunca usou pacote.
   ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001',
    'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ', 89.00, 'kg', 1, true),
@@ -196,17 +197,17 @@ insert into public.orders (
   dispatched_quantity_at, dispatched_quantity_by_name
 )
 values
-  -- Em aberto: 12 pacotes de 21 = 252 un x R$ 1,60 = R$ 403,20.
+  -- Em aberto: 21 pacotes de 12 = 252 un x R$ 1,60 = R$ 403,20.
   ('30000000-0000-4000-8000-000000000101', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000001',
    '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
-   252, 1.60, 21, 'un',
+   252, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
    (now() at time zone 'America/Sao_Paulo')::date + 1,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
-   '[TESTE] pedido com pacote de 21 para conferir o valor do relatorio', false,
+   '[TESTE] pedido com pacote de 12 para conferir o valor do relatorio', false,
    null, null, null, null, null, null,
    null, null, null, null),
   -- Em aberto por quilo: 4,5 kg x R$ 89,00 = R$ 400,50.
@@ -222,12 +223,12 @@ values
    '[TESTE] pedido por quilo, sem pacote', false,
    null, null, null, null, null, null,
    null, null, null, null),
-  -- Enviado: sai da fila e vai para o Historico. 2 pacotes de 21 = 42 un = R$ 67,20.
+  -- Enviado: sai da fila e vai para o Historico. 4 pacotes de 12 = 48 un = R$ 76,80.
   ('30000000-0000-4000-8000-000000000103', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000003',
    '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
-   42, 1.60, 21, 'un',
+   48, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date - 2,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    (now() at time zone 'America/Sao_Paulo')::date - 2,
@@ -245,7 +246,7 @@ values
    '70000000-0000-4000-8000-000000000005',
    '60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
-   63, 1.60, 21, 'un',
+   60, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date - 2,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    (now() at time zone 'America/Sao_Paulo')::date - 2,
@@ -258,7 +259,7 @@ values
    '70000000-0000-4000-8000-000000000004',
    '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
-   21, 1.60, 21, 'un',
+   24, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date,
@@ -289,7 +290,7 @@ values
    '70000000-0000-4000-8000-000000000006',
    '60000000-0000-4000-8000-000000000005', '[TESTE] Deli Conferencia PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
-   42, 1.60, 21, 'un',
+   48, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
