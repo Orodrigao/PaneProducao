@@ -129,5 +129,65 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      # O cenario da EX vive de um fio: o pedido do dia e de 8 baguetes e as
+      # viagens anteriores ja levaram 18, entao o produto so aparece na tela
+      # enquanto a reposicao ficticia estiver aberta. Qualquer coisa que consuma
+      # essa linha (uso do preview da Vercel, reconstrucao pela metade, seed de
+      # ontem) faz o smoke reprovar sem defeito no codigo. Conferir aqui troca um
+      # vermelho misterioso por uma instrucao.
+      - name: Confirmar que o cenario ficticio do dia esta intacto
+        run: |
+          set -a
+          source .env.example
+          set +a
+          HOJE="$(TZ=America/Sao_Paulo date +%F)"
+          CORPO="$(jq -n --arg password "$SUPABASE_TEST_USER_PASSWORD" '{email: "rodrigao+teste@gmail.com", password: $password}')"
+
+          entrar() {
+            curl --silent --show-error --write-out '\n%{http_code}' \
+              --header "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+              --header "Authorization: Bearer $NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+              --header 'Content-Type: application/json' \
+              --data "$CORPO" \
+              "$PREVIEW_SUPABASE_URL/auth/v1/token?grant_type=password"
+          }
+
+          TOKEN=""
+          RESPOSTA=""
+          for tentativa in 1 2 3; do
+            RESPOSTA="$(entrar)"
+            TOKEN="$(sed '$d' <<<"$RESPOSTA" | jq -r '.access_token // empty' 2>/dev/null || true)"
+            if [[ -n "$TOKEN" ]]; then break; fi
+            echo "Tentativa $tentativa de entrar no Banco Preview devolveu HTTP $(tail -n1 <<<"$RESPOSTA")."
+            sleep 5
+          done
+
+          if [[ -z "$TOKEN" ]]; then
+            echo "Nao foi possivel entrar no Banco Preview com a conta ficticia de administrador."
+            echo "Resposta do Auth: $(sed '$d' <<<"$RESPOSTA")"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+
+          consultar() {
+            curl --fail --silent --show-error \
+              --header "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+              --header "Authorization: Bearer $TOKEN" \
+              "$PREVIEW_SUPABASE_URL/rest/v1/$1"
+          }
+
+          VIAGEM="$(consultar "romaneios?id=eq.40000000-0000-4000-8000-000000000002&record_date=eq.$HOJE&select=id")"
+          REPOSICAO="$(consultar "romaneio_replacement_pending?id=eq.42000000-0000-4000-8000-000000000002&status=eq.aberta&pending_quantity=eq.2&select=id")"
+
+          if [[ "$(jq 'length' <<<"$VIAGEM")" -ne 1 || "$(jq 'length' <<<"$REPOSICAO")" -ne 1 ]]; then
+            echo "O cenario de reposicao da EX nao esta no estado esperado para $HOJE."
+            echo "Viagem de origem com a data de hoje: $VIAGEM"
+            echo "Reposicao aberta de 2 un: $REPOSICAO"
+            echo "Isto NAO e defeito do diff: os dados ficticios foram consumidos ou sao de outro dia."
+            echo "Rode de novo o workflow 'Banco Preview' desta PR e so depois este job."
+            exit 1
+          fi
+          echo "Cenario de reposicao da EX intacto para $HOJE."
+
       - name: Smoke tests no navegador
         run: npm run test:browser
