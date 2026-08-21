@@ -151,7 +151,14 @@ values
    21, true, 'Cliente ficticio de prazo 21 dias, para testar a fatura dividida em 2x e 3x.'),
   ('60000000-0000-4000-8000-000000000003', '[TESTE] Padaria Sem Prazo', '00.000.000/0003-53',
    'contato-teste3@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
-   null, true, 'Cliente ficticio sem prazo combinado, para validar o aviso na tela.')
+   null, true, 'Cliente ficticio sem prazo combinado, para validar o aviso na tela.'),
+  -- Cliente exclusivo do cenario de conferencia da quantidade enviada. Cada
+  -- cenario com o seu cliente: reaproveitar um cliente que ja aparece em
+  -- assercao por nome faz o smoke do navegador achar dois pedidos onde
+  -- esperava um.
+  ('60000000-0000-4000-8000-000000000005', '[TESTE] Deli Conferencia PJ', '00.000.000/0005-15',
+   'contato-teste5@exemplo.invalid', '50000000-0000-4000-8000-000000000001', 0, 48,
+   15, true, 'Cliente ficticio do cenario de conferencia da quantidade enviada.')
 on conflict (id) do update set
   name = excluded.name,
   doc = excluded.doc,
@@ -268,7 +275,7 @@ values
   -- foi criado (licao `seed-com-hoje-vence-a-meia-noite`).
   ('30000000-0000-4000-8000-000000000106', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000006',
-   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   '60000000-0000-4000-8000-000000000005', '[TESTE] Deli Conferencia PJ',
    'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ',
    3, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
@@ -280,7 +287,7 @@ values
    3.067, null, now() - interval '30 minutes', '[TESTE] Expedicao JC'),
   ('30000000-0000-4000-8000-000000000107', 'pj', 'pj',
    '70000000-0000-4000-8000-000000000006',
-   '60000000-0000-4000-8000-000000000002', '[TESTE] Cafe Cliente PJ',
+   '60000000-0000-4000-8000-000000000005', '[TESTE] Deli Conferencia PJ',
    'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ',
    42, 1.60, 21, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
