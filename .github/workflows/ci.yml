@@ -41,6 +41,15 @@ jobs:
     needs: verificacao
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Mesmo grupo do workflow Banco Preview: o smoke le o banco compartilhado e
+    # a reconstrucao o APAGA (db reset derruba schema, dados e contas do Auth).
+    # Sem isto, um smoke que caia dentro da janela de reset falha com
+    # "invalid_credentials" sem ter defeito nenhum — foi medido na PR 259, com
+    # o reset de outra PR entre 22:03:45 e 22:04:24 e as tres tentativas de
+    # login as 22:04:03, 22:04:08 e 22:04:14. Espera em fila, nunca cancela.
+    concurrency:
+      group: banco-preview-compartilhado
+      cancel-in-progress: false
     env:
       PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
