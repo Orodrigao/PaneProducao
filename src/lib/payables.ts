@@ -433,6 +433,8 @@ export async function createXmlPayable(draft: NfeDraft, supplierId: string, requ
       usable_quantity: item.usableQuantity,
       unit_price: item.unitPrice,
       line_total: item.lineTotal,
+      discount_value: item.discountValue,
+      factor_confirmed: item.factorConfirmed,
       remember_conversion: item.rememberConversion,
     })),
     p_installments: draft.installments.map(item => ({

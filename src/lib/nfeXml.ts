@@ -268,6 +268,13 @@ function paymentMethod(code: string): NfePaymentMethod {
   } as Record<string, NfePaymentMethod>)[code] ?? 'outro'
 }
 
+/** tPag 90 é "sem pagamento": bonificação, brinde, remessa, amostra. */
+const NO_PAYMENT_CODE = '90'
+
+export function declaresNoPayment(codes: readonly string[]): boolean {
+  return codes.length > 0 && codes.every(code => code.trim() === NO_PAYMENT_CODE)
+}
+
 const CASH_PAYMENT_METHODS: readonly NfePaymentMethod[] = ['dinheiro', 'pix']
 
 /**
@@ -364,7 +371,11 @@ export function parseNfeXml(xmlText: string): NfeDraft {
   }))
   const totalValue = numberValue(childText(total, 'vNF'))
   const payments = allElements(document, 'detPag')
-  const methods = payments.map(payment => paymentMethod(childText(payment, 'tPag')))
+  const paymentCodes = payments.map(payment => childText(payment, 'tPag'))
+  if (declaresNoPayment(paymentCodes)) {
+    throw new Error('Esta NF-e declara "sem pagamento" (bonificação, brinde ou remessa). Ela não gera conta a pagar.')
+  }
+  const methods = paymentCodes.map(code => paymentMethod(code))
   const method = methods[0] ?? 'outro'
   const issueDay = issueDate.slice(0, 10)
   const { installments, dueDateSource } = resolveInstallments(duplicates, methods, issueDay, totalValue)
