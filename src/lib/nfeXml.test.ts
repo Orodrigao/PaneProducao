@@ -8,6 +8,8 @@ import {
   formatConversionExplanation,
   isClassificationComplete,
   resolveInstallments,
+  suggestConversionFactor,
+  unitFamily,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
 
@@ -35,6 +37,8 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
     usableQuantity: null,
     mappingStatus: 'pendente',
     rememberConversion: true,
+    factorConfirmed: false,
+    recognized: false,
     ...overrides,
   }
 }
@@ -146,5 +150,60 @@ describe('casos de borda apontados na revisao adversarial', () => {
       '2026-08-21',
       510.97,
     ).installments.map(item => item.number)).toEqual([1, 2])
+  })
+})
+
+describe('sugestao de fator lida da descricao da NF-e', () => {
+  const fator = (descricao: string, unidadeReceita: string) =>
+    suggestConversionFactor(descricao, unidadeReceita)?.factor ?? null
+
+  it('le o tamanho da embalagem quando a receita cobra por peso', () => {
+    expect(fator('FARINHA DE TRIGO TIPO 1 NORDESTE 25KG PAPEL', 'kg')).toBe(25)
+    expect(fator('CREME CONFEITEIRO CPT FINESSE 0,8 KG PURATOS', 'kg')).toBe(0.8)
+    expect(fator('DOCE DE LEITE PARA CONFEITARIA 4,75KG MUMU', 'KG')).toBe(4.75)
+    expect(fator('FERM. INST. PARALEVA M DOCE 500 G', 'KG')).toBe(0.5)
+    expect(fator('CHIPS 2,5KG AO LEITE CHIPSHOW', 'kg')).toBe(2.5)
+  })
+
+  it('le o volume quando a receita cobra por litro', () => {
+    expect(fator('ALCOOL LIQUIDO 70 INPM 5L VALE VERDE', 'litro')).toBe(5)
+    expect(fator('AGUA SEM GAS 500 ML', 'litro')).toBe(0.5)
+  })
+
+  it('le quantas pecas vem na embalagem quando a receita cobra por unidade', () => {
+    expect(fator('ACUCAR SACHE 4G C/1000 BOM SABOR', 'un')).toBe(1000)
+    expect(fator('BANDEJA ALUMINIO RETANGULAR S/T 750ML  C/100 WYDA', 'un')).toBe(100)
+    expect(fator('76025 - MUFFIN CHOCOLATE GOTAS MB 15 X 80G', 'un')).toBe(15)
+    expect(fator('3L COOL WHITE TUTTI FRESH 15X8,5GR', 'un')).toBe(15)
+  })
+
+  it('multiplica contagem por tamanho quando a receita cobra por peso', () => {
+    expect(fator('MUFFIN CHOCOLATE GOTAS MB 15 X 80G', 'kg')).toBe(1.2)
+  })
+
+  it('nao confunde medida da embalagem com contagem', () => {
+    // 40x60 e a medida do saco em cm, nao a quantidade; o C/500 e que conta.
+    expect(fator('BOBINA PICOTADA FINA 40X60 12KG C/500 EMBALAGIO', 'un')).toBe(500)
+    expect(fator('SACO LIXO IND PRETO 59X62 M5 30L C/100', 'un')).toBe(100)
+  })
+
+  it('nao chuta quando a descricao nao diz o tamanho', () => {
+    expect(fator('QUEIJO GORGONZOLA', 'kg')).toBeNull()
+    expect(fator('CAPPUCCINO DOPPIO TRADICIONAL 1KG', 'un')).toBeNull()
+    expect(fator('ACUCAR SACHE 4G C/1000 BOM SABOR', 'kg')).toBeNull()
+    expect(fator('BOMBOM OURO BRANCO 1KG', 'caixa')).toBeNull()
+  })
+
+  it('mostra o trecho que originou a sugestao, para a pessoa conferir', () => {
+    expect(suggestConversionFactor('FARINHA DE TRIGO TIPO 1 NORDESTE 25KG PAPEL', 'kg')?.evidence).toBe('25KG')
+    expect(suggestConversionFactor('ACUCAR SACHE 4G C/1000 BOM SABOR', 'un')?.evidence).toBe('C/1000')
+  })
+
+  it('reconhece as familias de unidade usadas no cadastro', () => {
+    expect(unitFamily('kg')).toBe('peso')
+    expect(unitFamily('KG')).toBe('peso')
+    expect(unitFamily('litro')).toBe('volume')
+    expect(unitFamily('un')).toBe('unidade')
+    expect(unitFamily('caixa')).toBe('desconhecida')
   })
 })

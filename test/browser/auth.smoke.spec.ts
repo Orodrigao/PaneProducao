@@ -357,3 +357,45 @@ test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', asy
   await expect(cartoes.last()).toContainText(`Estornado · motivo: ${motivo}`)
   await expect(cartoes.last().getByRole('button', { name: 'Estornar' })).toHaveCount(0)
 })
+
+test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  // Caixa de 2 kg comprada em CX, insumo cobrado em kg: e o formato que fez
+  // farinha de saco de 25 kg virar R$ 74,00 o quilo em producao.
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260807999999999999550010000000091000000091" versao="4.00">
+    <ide><nNF>999992</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>99000000000191</CNPJ><xNome>[TESTE] Fornecedor conversao</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-CONV</cProd><xProd>MANJERICAO DESIDRATADO CAIXA 2KG TESTE</xProd><NCM>17019900</NCM><qCom>3.0000</qCom><uCom>CX</uCom><vUnCom>60.00</vUnCom><vProd>180.00</vProd></prod></det>
+    <total><ICMSTot><vNF>180.00</vNF></ICMSTot></total>
+    <pag><detPag><tPag>01</tPag><vPag>180.00</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'conversao-inline.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+
+  const cartao = page.locator('.ps-card').filter({ hasText: 'MANJERICAO DESIDRATADO CAIXA 2KG TESTE' }).first()
+  await expect(cartao.getByText('item novo', { exact: true })).toBeVisible()
+
+  // A busca ja abre na primeira palavra util da descricao da NF-e.
+  const busca = page.getByLabel('Procurar item-base para MANJERICAO DESIDRATADO CAIXA 2KG TESTE')
+  await expect(busca).toHaveValue('MANJERICAO')
+
+  await page.getByRole('button', { name: '[TESTE] Manjericão · kg' }).click()
+  await expect(cartao.getByText('confira a embalagem', { exact: true })).toBeVisible()
+
+  // O tamanho estava escrito na propria nota; o sistema le e propoe.
+  await expect(page.getByText('A nota diz "2KG"')).toBeVisible()
+  await page.getByRole('button', { name: 'Usar 2 kg' }).click()
+
+  await expect(cartao.getByText('confira a embalagem', { exact: true })).toHaveCount(0)
+  await expect(cartao.getByText('vinculado agora', { exact: true })).toBeVisible()
+})

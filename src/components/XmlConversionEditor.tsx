@@ -1,16 +1,22 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Plus, Search, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
   formatConversionExplanation,
   getConversionUnitWarning,
+  initialSearchFromDescription,
+  matchesProductSearch,
+  suggestConversionFactor,
+  unitFamily,
   type NfeConversionBasis,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
 import type { PayableProduct } from '@/lib/payables'
+
+const MAX_RESULTS = 8
 
 export function ProductSelector({
   item,
@@ -23,20 +29,103 @@ export function ProductSelector({
   onChange: (productId: string) => void
   onCreate: () => void
 }) {
+  const [query, setQuery] = useState(() => initialSearchFromDescription(item.description))
+  const selected = products.find(product => product.id === item.baseProductId)
+
+  const results = useMemo(
+    () => (query.trim() ? products.filter(product => matchesProductSearch(product.name, query)).slice(0, MAX_RESULTS) : []),
+    [products, query],
+  )
+  const total = useMemo(
+    () => (query.trim() ? products.filter(product => matchesProductSearch(product.name, query)).length : 0),
+    [products, query],
+  )
+
+  if (selected) {
+    return (
+      <div className="ps-fieldgroup">
+        <div className="ps-fieldlabel">Item-base da receita</div>
+        <div
+          className="ps-card"
+          style={{ padding: 10, borderColor: 'var(--teal-border)', background: 'var(--teal-bg)', display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Check size={16} color="var(--teal)" aria-hidden />
+          <b style={{ flex: 1 }}>{selected.name}{selected.unit ? ` · ${selected.unit}` : ''}</b>
+          <button className="ps-btn ghost sm" onClick={() => onChange('')}>Trocar</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="ps-fieldgroup">
-      <div className="ps-fieldlabel">Item-base da receita</div>
-      <select className="ps-select" value={item.baseProductId ?? ''} onChange={event => onChange(event.target.value)}>
-        <option value="">Pendente — escolher depois</option>
-        {products.map(product => <option key={product.id} value={product.id}>{product.name}{product.unit ? ` · ${product.unit}` : ''}</option>)}
-      </select>
-      <button className="ps-btn ghost sm" style={{ marginTop: 6, alignSelf: 'start' }} onClick={onCreate}><Plus size={14} /> Cadastrar item novo aqui</button>
+      <div className="ps-fieldlabel">Item-base da receita *</div>
+      <div
+        role="alert"
+        className="ps-card"
+        style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)', marginBottom: 8 }}
+      >
+        <b style={{ color: 'var(--red)' }}>Item ainda não vinculado</b>
+        <small style={{ display: 'block', marginTop: 3 }}>
+          Procure o insumo que já existe antes de cadastrar um novo. Cadastrar de novo cria item repetido e o custo se perde entre os dois.
+        </small>
+      </div>
+      <div style={{ position: 'relative' }}>
+        <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} aria-hidden />
+        <input
+          className="ps-input"
+          style={{ paddingLeft: 30 }}
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder="Procure pelo nome do insumo"
+          aria-label={`Procurar item-base para ${item.description}`}
+        />
+        {query && (
+          <button
+            className="ps-iconbtn"
+            style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
+            onClick={() => setQuery('')}
+            aria-label="Limpar busca"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {!query.trim() && <small className="ps-help">Digite parte do nome. Ex.: &quot;acucar&quot; acha &quot;AÇÚCAR INSUMO PRODUÇÃO&quot;.</small>}
+
+      {query.trim() && results.length > 0 && (
+        <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+          {results.map(product => (
+            <button key={product.id} className="ps-btn ghost sm" style={{ justifyContent: 'flex-start', textAlign: 'left' }} onClick={() => onChange(product.id)}>
+              {product.name}{product.unit ? ` · ${product.unit}` : ''}
+            </button>
+          ))}
+          {total > results.length && <small className="ps-help">Mais {total - results.length} resultado(s). Escreva mais para estreitar.</small>}
+        </div>
+      )}
+
+      {query.trim() && results.length === 0 && (
+        <div className="ps-banner" style={{ marginTop: 8 }}>
+          <b>Nenhum insumo com esse nome</b>
+          <small style={{ display: 'block', marginTop: 3 }}>
+            Tente outra palavra antes de criar. Só cadastre item novo se tiver certeza de que a padaria não usa nada parecido.
+          </small>
+          <button className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={onCreate}><Plus size={14} /> Cadastrar item novo</button>
+        </div>
+      )}
     </div>
   )
 }
 
 export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onChange: (next: NfeItemDraft) => void }) {
-  const [open, setOpen] = useState(false)
+  const suggestion = useMemo(
+    () => (item.baseUnit ? suggestConversionFactor(item.description, item.baseUnit) : null),
+    [item.description, item.baseUnit],
+  )
+  const needsAttention = conversionNeedsAttention(item)
+  const [open, setOpen] = useState(needsAttention)
+
   if (!item.baseProductId) return <small style={{ color: 'var(--honey-deep)' }}>Classifique o item para liberar o custo normalizado.</small>
 
   const explanation = formatConversionExplanation(item)
@@ -47,16 +136,35 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
 
   function updateFactor(value: number) {
     const safe = value > 0 ? value : 0
-    onChange({ ...item, conversionFactor: safe, usableQuantity: calculateUsableQuantity(item.quantity, safe) })
+    onChange({ ...item, conversionFactor: safe, usableQuantity: calculateUsableQuantity(item.quantity, safe), factorConfirmed: true })
   }
 
   function updateUsable(value: number) {
     const safe = value > 0 ? value : 0
-    onChange({ ...item, usableQuantity: safe, conversionFactor: conversionFactorFromUsableQuantity(item.quantity, safe) })
+    onChange({ ...item, usableQuantity: safe, conversionFactor: conversionFactorFromUsableQuantity(item.quantity, safe), factorConfirmed: true })
   }
 
   return (
     <div style={{ marginTop: 8 }}>
+      {needsAttention && (
+        <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)', marginBottom: 8 }}>
+          <b style={{ color: 'var(--red)' }}>Confira quanto vem na embalagem</b>
+          <small style={{ display: 'block', marginTop: 3 }}>
+            A NF-e cobra em {item.purchaseUnit} e a receita usa {item.baseUnit}. Sem o fator certo, um saco inteiro entra como se fosse uma unidade.
+          </small>
+        </div>
+      )}
+      {suggestion && !item.factorConfirmed && (
+        <div className="ps-banner honey" style={{ marginBottom: 8 }}>
+          <b>A nota diz &quot;{suggestion.evidence}&quot;</b>
+          <small style={{ display: 'block', marginTop: 3 }}>
+            Sugestão: cada {item.purchaseUnit} vale {suggestion.factor} {item.baseUnit}. Confira e aplique, ou digite outro valor abaixo.
+          </small>
+          <button className="ps-btn primary sm" style={{ marginTop: 8 }} onClick={() => updateFactor(suggestion.factor)}>
+            <Check size={14} /> Usar {suggestion.factor} {item.baseUnit}
+          </button>
+        </div>
+      )}
       <button className="ps-btn ghost sm" onClick={() => setOpen(value => !value)} aria-expanded={open}>{open ? 'Fechar fator de conversão' : 'Fator de conversão'}</button>
       {open && (
         <div className="ps-banner honey" style={{ marginTop: 8 }}>
@@ -72,4 +180,18 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
       )}
     </div>
   )
+}
+
+/**
+ * Item classificado cuja unidade de compra é de outra família que a da receita
+ * (caixa contra quilo, por exemplo) não pode passar com o fator 1 automático:
+ * foi assim que farinha em saco de 25 kg virou R$ 74,00 o quilo.
+ */
+export function conversionNeedsAttention(item: NfeItemDraft): boolean {
+  if (!item.baseProductId || !item.baseUnit) return false
+  if (item.factorConfirmed) return false
+  const purchase = unitFamily(item.purchaseUnit)
+  const base = unitFamily(item.baseUnit)
+  if (base === 'desconhecida') return false
+  return purchase !== base
 }

@@ -18,7 +18,7 @@ import {
   type PayableProduct,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
-import { ConversionEditor, ProductSelector } from '@/components/XmlConversionEditor'
+import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
 
 export interface XmlSupplierOption { id: string; name: string; cnpj: string | null }
 
@@ -48,9 +48,13 @@ function initialFactor(item: NfeItemDraft): number {
   return item.conversionBasis === 'simple' ? 1 : 1
 }
 
-function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initialFactor(item)): NfeItemDraft {
+function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initialFactor(item), recognized = false): NfeItemDraft {
   return {
     ...item,
+    // Fator 1 é o valor que o sistema assume sozinho; só conta como conferido
+    // quando alguém escolheu outro número.
+    factorConfirmed: factor !== 1,
+    recognized,
     baseProductId: product.id,
     baseProductName: product.name,
     baseUnit: product.unit ?? 'un',
@@ -71,7 +75,16 @@ function clearProduct(item: NfeItemDraft): NfeItemDraft {
     conversionFactor: null,
     usableQuantity: null,
     mappingStatus: 'pendente',
+    factorConfirmed: false,
+    recognized: false,
   }
+}
+
+function itemStatus(item: NfeItemDraft): { label: string; color: string } {
+  if (!item.baseProductId) return { label: 'item novo', color: 'var(--red)' }
+  if (conversionNeedsAttention(item)) return { label: 'confira a embalagem', color: 'var(--red)' }
+  if (item.recognized) return { label: 'reconhecido', color: 'var(--teal)' }
+  return { label: 'vinculado agora', color: 'var(--teal)' }
 }
 
 function findMapping(item: NfeItemDraft, mappings: ProductMapping[]): ProductMapping | undefined {
@@ -140,7 +153,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
       if (!product) return item
       appliedCount += 1
-      return withProduct(item, product, Number(mapping?.conversion_factor) || 1)
+      return withProduct(item, product, Number(mapping?.conversion_factor) || 1, true)
     })
     setAutoMappedCount(appliedCount)
     setDraft({ ...nextDraft, items: mappedItems })
@@ -211,6 +224,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     if (draft.installments.some(item => !item.dueDate)) { showToast('Informe o vencimento de cada parcela antes de confirmar.'); return }
     if (draft.installments.some(item => item.dueDate < draft.issueDate)) { showToast('Há vencimento anterior à emissão da nota. Confira a data digitada.'); return }
     if (draft.installments.some(item => item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
+    if (draft.items.some(conversionNeedsAttention)) { showToast('Confira quanto vem na embalagem dos itens marcados em vermelho.'); return }
     setSaving(true)
     try {
       await createXmlPayable(draft, supplierId, requestIdRef.current)
@@ -225,6 +239,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
+  const unconfirmedFactors = draft?.items.filter(conversionNeedsAttention).length ?? 0
   const dueDateBeforeIssue = draft?.installments.some(item => item.dueDate && item.dueDate < draft.issueDate) ?? false
   const filledByHand = draft?.dueDateSource === 'ausente' && !missingDueDate
   const assumedOnIssueDate = draft?.dueDateSource === 'a-vista'
@@ -233,7 +248,9 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
     : dueDateBeforeIssue
       ? 'Há vencimento anterior à emissão da nota. Confira a data digitada.'
-      : ''
+      : unconfirmedFactors > 0
+        ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
+        : ''
 
   return (
     <div className="ps-card" style={{ marginTop: 14 }}>
@@ -293,8 +310,20 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
 
           <div className="ps-label" style={{ marginTop: 14 }}>Itens da NF-e · {mappedCount}/{draft.items.length} classificados</div>
           {draft.items.map((item, index) => (
-            <div className="ps-card" key={`${item.lineNumber}-${item.description}`} style={{ marginBottom: 8, padding: 10, background: 'var(--cream-raise)' }}>
-              <b>{item.lineNumber}. {item.description}</b>
+            <div
+              className="ps-card"
+              key={`${item.lineNumber}-${item.description}`}
+              style={{
+                marginBottom: 8,
+                padding: 10,
+                background: 'var(--cream-raise)',
+                borderLeft: `4px solid ${itemStatus(item).color}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                <b style={{ flex: 1 }}>{item.lineNumber}. {item.description}</b>
+                <small style={{ color: itemStatus(item).color, fontWeight: 650 }}>{itemStatus(item).label}</small>
+              </div>
               <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
               <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => setCreatingLine(index)} />
               {creatingLine === index && (
