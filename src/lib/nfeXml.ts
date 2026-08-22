@@ -33,6 +33,10 @@ export interface NfeItemDraft {
   usableQuantity: number | null
   mappingStatus: NfeMappingStatus
   rememberConversion: boolean
+  /** Alguém já olhou o fator deste item nesta importação. */
+  factorConfirmed: boolean
+  /** O histórico do fornecedor reconheceu o item sozinho. */
+  recognized: boolean
 }
 
 export interface NfeInstallmentDraft {
@@ -95,6 +99,114 @@ export function calculateNormalizedUnitCost(lineTotal: number, usableQuantity: n
 
 function normalizeUnit(value: string): string {
   return value.trim().toLocaleUpperCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+function searchKey(value: string): string {
+  return value.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu, '')
+}
+
+/** Busca sem acento e por pedaços soltos: "acucar prod" acha "AÇÚCAR INSUMO PRODUÇÃO". */
+export function matchesProductSearch(name: string, query: string): boolean {
+  const terms = searchKey(query).split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return false
+  const target = searchKey(name)
+  return terms.every(term => target.includes(term))
+}
+
+const NOISE_WORDS = new Set(['de', 'da', 'do', 'com', 'sem', 'para', 'p', 'e'])
+
+/**
+ * Primeira palavra útil da descrição da NF-e, para já abrir a busca em cima do
+ * provável insumo. Foi a lista de 337 itens sem busca que fez açúcar mascavo
+ * ser vinculado a damasco.
+ */
+export function initialSearchFromDescription(description: string): string {
+  const words = description.split(/[^\p{L}]+/u).filter(Boolean)
+  const word = words.find(candidate => candidate.length >= 3 && !NOISE_WORDS.has(candidate.toLocaleLowerCase('pt-BR')))
+  return word ?? ''
+}
+
+export type UnitFamily = 'peso' | 'volume' | 'unidade' | 'desconhecida'
+
+export function unitFamily(unit: string): UnitFamily {
+  const normalized = normalizeUnit(unit)
+  if (['KG', 'QUILO', 'QUILOS', 'K'].includes(normalized)) return 'peso'
+  if (['G', 'GR', 'GRAMA', 'GRAMAS'].includes(normalized)) return 'peso'
+  if (['L', 'LT', 'LITRO', 'LITROS'].includes(normalized)) return 'volume'
+  if (['ML', 'MILILITRO'].includes(normalized)) return 'volume'
+  if (['UN', 'UND', 'UNID', 'UNIDADE', 'UNIDADES', 'PC', 'PCT', 'PECA'].includes(normalized)) return 'unidade'
+  return 'desconhecida'
+}
+
+function decimal(raw: string): number {
+  return Number(raw.replace(/\./g, '').replace(',', '.'))
+}
+
+/** Converte "500" + "G" para 0,5 quando a receita cobra em kg. */
+function inBaseUnit(amount: number, unitText: string, family: UnitFamily): number | null {
+  const normalized = normalizeUnit(unitText)
+  if (family === 'peso') {
+    if (['KG'].includes(normalized)) return amount
+    if (['G', 'GR'].includes(normalized)) return amount / 1000
+    return null
+  }
+  if (family === 'volume') {
+    if (['L', 'LT'].includes(normalized)) return amount
+    if (['ML'].includes(normalized)) return amount / 1000
+    return null
+  }
+  return null
+}
+
+export interface FactorSuggestion {
+  factor: number
+  /** Trecho da descrição que originou a sugestão, para a pessoa conferir. */
+  evidence: string
+}
+
+/**
+ * A embalagem quase sempre está escrita na própria descrição da NF-e
+ * ("25KG", "C/100", "15 X 80G"). Ler dali evita o fator 1 silencioso, que já
+ * gravou farinha a R$ 74,00/kg. É SUGESTÃO: quem confirma é a pessoa.
+ */
+export function suggestConversionFactor(description: string, baseUnit: string): FactorSuggestion | null {
+  const text = description.replace(/\s+/g, ' ').trim()
+  if (!text) return null
+  const family = unitFamily(baseUnit)
+  if (family === 'desconhecida') return null
+
+  // "15 X 80G": contagem vezes tamanho. Só vale com unidade depois do segundo
+  // número, senão "40X60" (medida da bobina) viraria fator 40.
+  const multiple = text.match(/(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(KG|G|GR|ML|LT|L)\b/i)
+  if (multiple) {
+    const count = decimal(multiple[1])
+    const size = inBaseUnit(decimal(multiple[2]), multiple[3], family)
+    if (family === 'unidade' && count > 0) return { factor: count, evidence: multiple[0].trim() }
+    if (size !== null && count > 0) return { factor: round(count * size, 6), evidence: multiple[0].trim() }
+  }
+
+  // "C/100": quantas unidades vêm na embalagem. Só responde quando a receita
+  // cobra por unidade; em kg não dá para saber quanto pesa cada uma.
+  const perPack = text.match(/C\s*\/\s*(\d+)/i)
+  if (perPack && family === 'unidade') {
+    const count = decimal(perPack[1])
+    if (count > 0) return { factor: count, evidence: perPack[0].trim() }
+  }
+
+  // "25KG", "0,8 KG", "5L": tamanho da embalagem.
+  // Com "C/N" no texto o tamanho passa a ser de CADA peça, e juntar os dois é
+  // chute: em "ACUCAR SACHE 4G C/1000" daria 4 kg (certo), mas em
+  // "BOBINA 40X60 12KG C/500" o 12KG é a capacidade do saco, não o peso dele.
+  // Preferimos não sugerir a sugerir errado.
+  if ((family === 'peso' || family === 'volume') && !perPack) {
+    const sizes = [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*(KG|GR|G|ML|LT|L)\b/gi)]
+    for (const match of sizes.reverse()) {
+      const size = inBaseUnit(decimal(match[1]), match[2], family)
+      if (size !== null && size > 0) return { factor: round(size, 6), evidence: match[0].trim() }
+    }
+  }
+
+  return null
 }
 
 export function getConversionUnitWarning(purchaseUnit: string, baseUnit: string, factor: number): string | null {
@@ -238,6 +350,8 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       usableQuantity: null,
       mappingStatus: 'pendente' as const,
       rememberConversion: true,
+      factorConfirmed: false,
+      recognized: false,
     }
   })
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { FileUp, Plus, Save, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
@@ -18,7 +18,7 @@ import {
   type PayableProduct,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
-import { ConversionEditor, ProductSelector } from '@/components/XmlConversionEditor'
+import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
 
 export interface XmlSupplierOption { id: string; name: string; cnpj: string | null }
 
@@ -48,9 +48,13 @@ function initialFactor(item: NfeItemDraft): number {
   return item.conversionBasis === 'simple' ? 1 : 1
 }
 
-function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initialFactor(item)): NfeItemDraft {
+function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initialFactor(item), recognized = false): NfeItemDraft {
   return {
     ...item,
+    // Fator 1 é o valor que o sistema assume sozinho; só conta como conferido
+    // quando alguém escolheu outro número.
+    factorConfirmed: factor !== 1,
+    recognized,
     baseProductId: product.id,
     baseProductName: product.name,
     baseUnit: product.unit ?? 'un',
@@ -71,7 +75,16 @@ function clearProduct(item: NfeItemDraft): NfeItemDraft {
     conversionFactor: null,
     usableQuantity: null,
     mappingStatus: 'pendente',
+    factorConfirmed: false,
+    recognized: false,
   }
+}
+
+function itemStatus(item: NfeItemDraft): { label: string; color: string } {
+  if (!item.baseProductId) return { label: 'item novo', color: 'var(--red)' }
+  if (conversionNeedsAttention(item)) return { label: 'confira a embalagem', color: 'var(--red)' }
+  if (item.recognized) return { label: 'reconhecido', color: 'var(--teal)' }
+  return { label: 'vinculado agora', color: 'var(--teal)' }
 }
 
 function findMapping(item: NfeItemDraft, mappings: ProductMapping[]): ProductMapping | undefined {
@@ -88,14 +101,26 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const requestIdRef = useRef(crypto.randomUUID())
   const [draft, setDraft] = useState<NfeDraft | null>(null)
   const [supplierId, setSupplierId] = useState('')
-  const [availableSuppliers, setAvailableSuppliers] = useState(suppliers)
-  const [catalog, setCatalog] = useState(products)
+  // As listas vêm da página e continuam chegando depois da montagem. Guardá-las
+  // em useState congelava a versão vazia: quem abria a importação antes de o
+  // cadastro carregar ficava sem nenhum insumo para escolher e ia criar um novo.
+  const [createdSuppliers, setCreatedSuppliers] = useState<XmlSupplierOption[]>([])
+  const [createdProducts, setCreatedProducts] = useState<PayableProduct[]>([])
+  const availableSuppliers = useMemo(
+    () => [...suppliers, ...createdSuppliers.filter(extra => !suppliers.some(known => known.id === extra.id))]
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    [suppliers, createdSuppliers],
+  )
+  const catalog = useMemo(
+    () => [...products, ...createdProducts.filter(extra => !products.some(known => known.id === extra.id))],
+    [products, createdProducts],
+  )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
   const [creatingSupplier, setCreatingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
-  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
+  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
   const [autoMappedCount, setAutoMappedCount] = useState(0)
   const [duplicateNfe, setDuplicateNfe] = useState(false)
 
@@ -140,7 +165,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
       if (!product) return item
       appliedCount += 1
-      return withProduct(item, product, Number(mapping?.conversion_factor) || 1)
+      return withProduct(item, product, Number(mapping?.conversion_factor) || 1, true)
     })
     setAutoMappedCount(appliedCount)
     setDraft({ ...nextDraft, items: mappedItems })
@@ -148,6 +173,12 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
 
   function updateItem(index: number, next: NfeItemDraft) {
     setDraft(previous => previous ? { ...previous, items: previous.items.map((item, itemIndex) => itemIndex === index ? next : item) } : previous)
+  }
+
+  function openProductForm(index: number) {
+    if (!draft) return
+    setNewProduct({ name: draft.items[index].description, category: 'Insumos', unit: 'un', useNfeName: true })
+    setCreatingLine(index)
   }
 
   function updateInstallmentDueDate(index: number, dueDate: string) {
@@ -171,10 +202,10 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     try {
       const id = await createPayableCatalogProduct(newProduct.name, newProduct.category, newProduct.unit)
       const product: PayableProduct = { id, name: newProduct.name.trim(), category: newProduct.category, unit: newProduct.unit.trim() }
-      setCatalog(previous => [...previous, product])
+      setCreatedProducts(previous => [...previous, product])
       if (draft) updateItem(index, withProduct(draft.items[index], product))
       setCreatingLine(null)
-      setNewProduct({ name: '', category: 'Insumos', unit: 'un' })
+      setNewProduct({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
       showToast('Item criado e vinculado à NF-e.')
     } catch (saveError) {
       showToast(saveError instanceof Error ? saveError.message : 'Não foi possível criar o item.')
@@ -192,9 +223,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     setSaving(true)
     try {
       const supplier = await createPayableSupplier(newSupplier.name, newSupplier.cnpj)
-      setAvailableSuppliers(previous => previous.some(item => item.id === supplier.id)
-        ? previous
-        : [...previous, supplier].sort((left, right) => left.name.localeCompare(right.name)))
+      setCreatedSuppliers(previous => previous.some(item => item.id === supplier.id) ? previous : [...previous, supplier])
       setSupplierId(supplier.id)
       setCreatingSupplier(false)
       await loadMappings(supplier.id)
@@ -211,6 +240,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     if (draft.installments.some(item => !item.dueDate)) { showToast('Informe o vencimento de cada parcela antes de confirmar.'); return }
     if (draft.installments.some(item => item.dueDate < draft.issueDate)) { showToast('Há vencimento anterior à emissão da nota. Confira a data digitada.'); return }
     if (draft.installments.some(item => item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
+    if (draft.items.some(conversionNeedsAttention)) { showToast('Confira quanto vem na embalagem dos itens marcados em vermelho.'); return }
     setSaving(true)
     try {
       await createXmlPayable(draft, supplierId, requestIdRef.current)
@@ -225,6 +255,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
+  const unconfirmedFactors = draft?.items.filter(conversionNeedsAttention).length ?? 0
   const dueDateBeforeIssue = draft?.installments.some(item => item.dueDate && item.dueDate < draft.issueDate) ?? false
   const filledByHand = draft?.dueDateSource === 'ausente' && !missingDueDate
   const assumedOnIssueDate = draft?.dueDateSource === 'a-vista'
@@ -233,7 +264,9 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
     : dueDateBeforeIssue
       ? 'Há vencimento anterior à emissão da nota. Confira a data digitada.'
-      : ''
+      : unconfirmedFactors > 0
+        ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
+        : ''
 
   return (
     <div className="ps-card" style={{ marginTop: 14 }}>
@@ -293,13 +326,49 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
 
           <div className="ps-label" style={{ marginTop: 14 }}>Itens da NF-e · {mappedCount}/{draft.items.length} classificados</div>
           {draft.items.map((item, index) => (
-            <div className="ps-card" key={`${item.lineNumber}-${item.description}`} style={{ marginBottom: 8, padding: 10, background: 'var(--cream-raise)' }}>
-              <b>{item.lineNumber}. {item.description}</b>
+            <div
+              className="ps-card"
+              key={`${item.lineNumber}-${item.description}`}
+              style={{
+                marginBottom: 8,
+                padding: 10,
+                background: 'var(--cream-raise)',
+                borderLeft: `4px solid ${itemStatus(item).color}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                <b style={{ flex: 1 }}>{item.lineNumber}. {item.description}</b>
+                <small style={{ color: itemStatus(item).color, fontWeight: 650 }}>{itemStatus(item).label}</small>
+              </div>
               <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
-              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => setCreatingLine(index)} />
+              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
-                  <div className="ps-fieldgroup"><div className="ps-fieldlabel">Nome do novo item-base</div><input className="ps-input" value={newProduct.name} onChange={event => setNewProduct(previous => ({ ...previous, name: event.target.value }))} placeholder="Ex.: Saco de papel 2 kg" /></div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Nome do novo item-base</div>
+                    <input
+                      className="ps-input"
+                      value={newProduct.name}
+                      disabled={newProduct.useNfeName}
+                      onChange={event => setNewProduct(previous => ({ ...previous, name: event.target.value }))}
+                      placeholder="Ex.: Creme de confeiteiro insumo"
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={newProduct.useNfeName}
+                        onChange={event => setNewProduct(previous => ({
+                          ...previous,
+                          useNfeName: event.target.checked,
+                          name: event.target.checked ? item.description : previous.name,
+                        }))}
+                      />
+                      <small>Usar o mesmo nome da NF-e</small>
+                    </label>
+                    <small className="ps-help">
+                      Desmarque quando o insumo for genérico e puder vir de outra marca — a receita pede &quot;creme de confeiteiro&quot;, não a marca da nota.
+                    </small>
+                  </div>
                   <div className="ps-fieldrow" style={{ marginTop: 8 }}>
                     <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><input className="ps-input" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} /></div>
                     <div className="ps-fieldgroup"><div className="ps-fieldlabel">Unidade da receita</div><input className="ps-input" value={newProduct.unit} onChange={event => setNewProduct(previous => ({ ...previous, unit: event.target.value }))} /></div>
