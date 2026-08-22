@@ -21,6 +21,14 @@ on:
 concurrency:
   group: banco-preview-compartilhado
   cancel-in-progress: false
+  # `queue: single` (o padrao) NAO e fila: guarda uma unica vaga de espera e a
+  # execucao que chega EXPULSA quem estava esperando, em silencio. Foi medido
+  # em 2026-08-22: o push da branch chore/banco-preview-sob-demanda expulsou a
+  # reconstrucao de fix/unidade-dos-insumos-de-receita, ninguem reconstruiu, e
+  # o smoke daquela PR ficou 10 minutos esperando um check que nunca viria.
+  # `queue: max` deixa ate 100 execucoes esperarem em ordem. Nao pode ser
+  # combinado com cancel-in-progress: true.
+  queue: max
 
 permissions:
   contents: read

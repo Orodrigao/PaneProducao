@@ -41,15 +41,6 @@ jobs:
     needs: verificacao
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Mesmo grupo do workflow Banco Preview: o smoke le o banco compartilhado e
-    # a reconstrucao o APAGA (db reset derruba schema, dados e contas do Auth).
-    # Sem isto, um smoke que caia dentro da janela de reset falha com
-    # "invalid_credentials" sem ter defeito nenhum — foi medido na PR 259, com
-    # o reset de outra PR entre 22:03:45 e 22:04:24 e as tres tentativas de
-    # login as 22:04:03, 22:04:08 e 22:04:14. Espera em fila, nunca cancela.
-    concurrency:
-      group: banco-preview-compartilhado
-      cancel-in-progress: false
     env:
       PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
@@ -120,22 +111,63 @@ jobs:
             exit 1
           fi
 
+          # Quem esta segurando o banco compartilhado agora. Sem isto, descobrir
+          # quem atropelou exige listar execucoes e comparar horarios na mao.
+          quem_ocupa_o_banco() {
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow=banco-preview.yml \
+              --limit 10 --json databaseId,status,headBranch \
+              --jq '[.[] | select(.status == "in_progress" or .status == "queued")]
+                    | if length == 0 then "  (nenhuma execucao ativa; o banco esta livre agora)"
+                      else .[] | "  run \(.databaseId) da branch \(.headBranch) (\(.status))" end'
+          }
+
           echo "Aguardando o Banco Preview reconstruir os dados ficticios desta PR."
+          SEM_CHECK=0
           for attempt in {1..60}; do
             BUCKET="$(gh pr checks "$PR_NUMBER" --json name,bucket --jq '.[] | select(.name == "Reconstruir Preview desta PR") | .bucket' | tail -n 1)"
+
             if [[ "$BUCKET" == "pass" ]]; then
               echo "Banco Preview pronto."
               exit 0
             fi
+
             if [[ "$BUCKET" == "fail" || "$BUCKET" == "cancel" ]]; then
-              echo "Banco Preview terminou com estado: $BUCKET"
+              echo "A reconstrucao do Banco Preview desta PR terminou como '$BUCKET'."
+              if [[ "$BUCKET" == "cancel" ]]; then
+                echo "Cancelada quase sempre significa EXPULSA DA FILA por outra execucao."
+              fi
+              echo "Quem esta com o banco agora:"
+              quem_ocupa_o_banco
+              echo "Reexecute o workflow 'Banco Preview' desta PR e so depois este job."
               exit 1
             fi
+
+            # Check ausente por tempo demais: a execucao foi expulsa antes mesmo
+            # de comecar, entao nao existe check nenhum para reportar estado.
+            # Falhar aqui em 90s, com o motivo escrito, em vez de contar ate 60
+            # e morrer por tempo — tempo esgotado ensina a mandar rodar de novo
+            # sem investigar (ver lessons.md, smoke do Romaneio EX).
+            if [[ -z "$BUCKET" ]]; then
+              SEM_CHECK=$((SEM_CHECK + 1))
+              if [[ "$SEM_CHECK" -ge 9 ]]; then
+                echo "Passaram 90 segundos e o check 'Reconstruir Preview desta PR' nunca apareceu."
+                echo "A reconstrucao desta PR foi expulsa da fila antes de comecar."
+                echo "Quem esta com o banco agora:"
+                quem_ocupa_o_banco
+                echo "Reexecute o workflow 'Banco Preview' desta PR e so depois este job."
+                exit 1
+              fi
+            else
+              SEM_CHECK=0
+            fi
+
             echo "Banco Preview ainda em andamento (${BUCKET:-sem check}); tentativa $attempt/60."
             sleep 10
           done
 
           echo "Banco Preview nao ficou pronto dentro do tempo esperado."
+          echo "Quem esta com o banco agora:"
+          quem_ocupa_o_banco
           exit 1
 
       - name: Preparar ambiente local seguro
