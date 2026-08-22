@@ -273,11 +273,17 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
-5. O smoke de navegador falha de forma intermitente por causas de ambiente, não
-   de código: login logo após a recriação das contas fictícias, e o cenário da
-   Geolar, que ainda oscila depois do PR #199. Duas causas já foram corrigidas
-   (PRs #199 e #203). Enquanto restarem, o semáforo segura entregas sem
-   relação com a falha.
+5. O smoke de navegador ainda falha de forma intermitente por causa de
+   ambiente: login logo após a recriação das contas fictícias, e o cenário da
+   Geolar, que oscila desde o PR #199. Enquanto restarem, o semáforo segura
+   entregas sem relação com a falha.
+   O caso do Romaneio EX saiu dessa lista no PR #250: a causa não era ambiente
+   nem tempo, e sim o teste esperar pelo próprio dado que ia conferir, o que
+   transformava cenário consumido em tempo esgotado. A espera passou a mirar
+   um sinal de prontidão, e o job confere o cenário fictício antes de rodar.
+   Diagnóstico de falha de smoke deve separar as duas famílias antes de
+   aumentar qualquer tempo limite (ver `lessons.md`,
+   `tela-vazia-nao-e-tela-carregando`).
 
 ## Próximas fases aprovadas
 
