@@ -59,7 +59,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.109.1
 
@@ -133,7 +133,7 @@ jobs:
         with:
           ref: main
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.109.1
 
