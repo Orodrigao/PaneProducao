@@ -3,11 +3,20 @@
 -- Contas com senha sao criadas pelo Supabase Auth na etapa de infraestrutura;
 -- este seed apenas liga perfis/permissoes quando os e-mails ja existem.
 
+-- Producao grava o codigo do destino em MAIUSCULAS ('JC', 'JA', 'EX'). O seed
+-- precisa reproduzir isso: quem compara o codigo sem normalizar passava em
+-- producao e falhava no Preview. Atencao: `code` e o codigo do destino, e nao
+-- se confunde com `app_user_permissions.scope`, `app_profiles.store` nem
+-- `bread_movements.location` -- esses o banco guarda em minusculas de verdade.
+-- O update abaixo deixa o seed idempotente num banco que ainda tenha a grafia
+-- antiga; em banco novo nao faz nada.
+update public.destinations set code = upper(code) where code <> upper(code);
+
 insert into public.destinations (id, name, code, type, requires_conferencia, active)
 values
-  ('20000000-0000-4000-8000-000000000001', '[TESTE] Julio de Castilhos', 'jc', 'loja', false, true),
-  ('20000000-0000-4000-8000-000000000002', '[TESTE] Jardim America', 'ja', 'loja', false, true),
-  ('20000000-0000-4000-8000-000000000003', '[TESTE] Exposicao', 'ex', 'loja', true, true)
+  ('20000000-0000-4000-8000-000000000001', '[TESTE] Julio de Castilhos', 'JC', 'loja', false, true),
+  ('20000000-0000-4000-8000-000000000002', '[TESTE] Jardim America', 'JA', 'loja', false, true),
+  ('20000000-0000-4000-8000-000000000003', '[TESTE] Exposicao', 'EX', 'loja', true, true)
 on conflict (code) do update set
   name = excluded.name,
   type = excluded.type,
