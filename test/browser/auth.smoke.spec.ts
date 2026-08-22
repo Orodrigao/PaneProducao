@@ -399,3 +399,39 @@ test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar',
   await expect(cartao.getByText('confira a embalagem', { exact: true })).toHaveCount(0)
   await expect(cartao.getByText('vinculado agora', { exact: true })).toBeVisible()
 })
+
+test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  // "MANJERICAO" acha o insumo semeado, mas nao e ele que serve aqui: esconder
+  // o cadastro quando ha QUALQUER resultado deixava a pessoa sem saida.
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260807999999999999550010000000092000000092" versao="4.00">
+    <ide><nNF>999993</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>99000000000192</CNPJ><xNome>[TESTE] Fornecedor parente</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-PAR</cProd><xProd>MANJERICAO FRESCO MACO TESTE</xProd><NCM>17019900</NCM><qCom>2.0000</qCom><uCom>UN</uCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det>
+    <total><ICMSTot><vNF>10.00</vNF></ICMSTot></total>
+    <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'parente-inline.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+
+  await expect(page.getByRole('button', { name: '[TESTE] Manjericão · kg' })).toBeVisible()
+  await expect(page.getByText('Nenhum desses serve?')).toBeVisible()
+  await page.getByRole('button', { name: 'Cadastrar item novo' }).click()
+
+  // O nome ja vem da NF-e, e a opcao de marcar deixa trocar por um nome generico.
+  const nome = page.locator('input[placeholder="Ex.: Creme de confeiteiro insumo"]')
+  await expect(page.getByText('Usar o mesmo nome da NF-e')).toBeVisible()
+  await expect(nome).toHaveValue('MANJERICAO FRESCO MACO TESTE')
+  await page.getByText('Usar o mesmo nome da NF-e').click()
+  await expect(nome).toBeEnabled()
+})

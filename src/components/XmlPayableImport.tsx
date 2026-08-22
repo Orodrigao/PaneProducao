@@ -120,7 +120,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
   const [creatingSupplier, setCreatingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
-  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
+  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
   const [autoMappedCount, setAutoMappedCount] = useState(0)
   const [duplicateNfe, setDuplicateNfe] = useState(false)
 
@@ -175,6 +175,12 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     setDraft(previous => previous ? { ...previous, items: previous.items.map((item, itemIndex) => itemIndex === index ? next : item) } : previous)
   }
 
+  function openProductForm(index: number) {
+    if (!draft) return
+    setNewProduct({ name: draft.items[index].description, category: 'Insumos', unit: 'un', useNfeName: true })
+    setCreatingLine(index)
+  }
+
   function updateInstallmentDueDate(index: number, dueDate: string) {
     setDraft(previous => previous
       ? { ...previous, installments: previous.installments.map((item, itemIndex) => itemIndex === index ? { ...item, dueDate } : item) }
@@ -199,7 +205,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       setCreatedProducts(previous => [...previous, product])
       if (draft) updateItem(index, withProduct(draft.items[index], product))
       setCreatingLine(null)
-      setNewProduct({ name: '', category: 'Insumos', unit: 'un' })
+      setNewProduct({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
       showToast('Item criado e vinculado à NF-e.')
     } catch (saveError) {
       showToast(saveError instanceof Error ? saveError.message : 'Não foi possível criar o item.')
@@ -335,10 +341,34 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
                 <small style={{ color: itemStatus(item).color, fontWeight: 650 }}>{itemStatus(item).label}</small>
               </div>
               <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
-              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => setCreatingLine(index)} />
+              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
-                  <div className="ps-fieldgroup"><div className="ps-fieldlabel">Nome do novo item-base</div><input className="ps-input" value={newProduct.name} onChange={event => setNewProduct(previous => ({ ...previous, name: event.target.value }))} placeholder="Ex.: Saco de papel 2 kg" /></div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Nome do novo item-base</div>
+                    <input
+                      className="ps-input"
+                      value={newProduct.name}
+                      disabled={newProduct.useNfeName}
+                      onChange={event => setNewProduct(previous => ({ ...previous, name: event.target.value }))}
+                      placeholder="Ex.: Creme de confeiteiro insumo"
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={newProduct.useNfeName}
+                        onChange={event => setNewProduct(previous => ({
+                          ...previous,
+                          useNfeName: event.target.checked,
+                          name: event.target.checked ? item.description : previous.name,
+                        }))}
+                      />
+                      <small>Usar o mesmo nome da NF-e</small>
+                    </label>
+                    <small className="ps-help">
+                      Desmarque quando o insumo for genérico e puder vir de outra marca — a receita pede &quot;creme de confeiteiro&quot;, não a marca da nota.
+                    </small>
+                  </div>
                   <div className="ps-fieldrow" style={{ marginTop: 8 }}>
                     <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><input className="ps-input" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} /></div>
                     <div className="ps-fieldgroup"><div className="ps-fieldlabel">Unidade da receita</div><input className="ps-input" value={newProduct.unit} onChange={event => setNewProduct(previous => ({ ...previous, unit: event.target.value }))} /></div>

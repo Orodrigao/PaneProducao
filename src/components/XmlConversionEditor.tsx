@@ -102,6 +102,11 @@ export function ProductSelector({
             </button>
           ))}
           {total > results.length && <small className="ps-help">Mais {total - results.length} resultado(s). Escreva mais para estreitar.</small>}
+          {/* A busca pode achar parente sem ser o certo: "CREME" acha o creme de
+              bolo quando se procura o de confeiteiro. Esconder o cadastro aqui
+              deixava a pessoa sem saída. */}
+          <small className="ps-help" style={{ marginTop: 4 }}>Nenhum desses serve?</small>
+          <button className="ps-btn ghost sm" style={{ alignSelf: 'start' }} onClick={onCreate}><Plus size={14} /> Cadastrar item novo</button>
         </div>
       )}
 
