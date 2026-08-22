@@ -75,7 +75,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Espelha a condicao do job "Reconstruir Preview desta PR" em
+          # banco-preview.yml. Sem a etiqueta aquele job nem roda, e esperar por
+          # um check que nunca reporta estouraria o tempo em toda PR.
+          PR_TEM_ETIQUETA: ${{ contains(github.event.pull_request.labels.*.name, 'precisa-banco-preview') }}
         run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$PR_TEM_ETIQUETA" != "true" ]]; then
+            echo "PR sem a etiqueta precisa-banco-preview: o banco de teste nao e reconstruido para ela."
+            echo "O smoke roda contra o Banco Preview como esta, restaurado a partir da main."
+            echo "A migration desta PR, se houver, e provada pelo ensaio descartavel do CI Banco."
+            exit 0
+          fi
+
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
             for attempt in {1..60}; do
