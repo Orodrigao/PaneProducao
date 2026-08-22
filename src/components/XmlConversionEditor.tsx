@@ -92,7 +92,7 @@ export function ProductSelector({
         )}
       </div>
 
-      {!query.trim() && <small className="ps-help">Digite parte do nome. Ex.: &quot;acucar&quot; acha &quot;AÇÚCAR INSUMO PRODUÇÃO&quot;.</small>}
+      {!query.trim() && products.length > 0 && <small className="ps-help">Digite parte do nome. Ex.: &quot;acucar&quot; acha &quot;AÇÚCAR INSUMO PRODUÇÃO&quot;.</small>}
 
       {query.trim() && results.length > 0 && (
         <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
@@ -105,7 +105,11 @@ export function ProductSelector({
         </div>
       )}
 
-      {query.trim() && results.length === 0 && (
+      {products.length === 0 && (
+        <small className="ps-help">Carregando o cadastro de insumos...</small>
+      )}
+
+      {query.trim() && products.length > 0 && results.length === 0 && (
         <div className="ps-banner" style={{ marginTop: 8 }}>
           <b>Nenhum insumo com esse nome</b>
           <small style={{ display: 'block', marginTop: 3 }}>

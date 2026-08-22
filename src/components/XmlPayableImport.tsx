@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { FileUp, Plus, Save, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
@@ -101,8 +101,20 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const requestIdRef = useRef(crypto.randomUUID())
   const [draft, setDraft] = useState<NfeDraft | null>(null)
   const [supplierId, setSupplierId] = useState('')
-  const [availableSuppliers, setAvailableSuppliers] = useState(suppliers)
-  const [catalog, setCatalog] = useState(products)
+  // As listas vêm da página e continuam chegando depois da montagem. Guardá-las
+  // em useState congelava a versão vazia: quem abria a importação antes de o
+  // cadastro carregar ficava sem nenhum insumo para escolher e ia criar um novo.
+  const [createdSuppliers, setCreatedSuppliers] = useState<XmlSupplierOption[]>([])
+  const [createdProducts, setCreatedProducts] = useState<PayableProduct[]>([])
+  const availableSuppliers = useMemo(
+    () => [...suppliers, ...createdSuppliers.filter(extra => !suppliers.some(known => known.id === extra.id))]
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    [suppliers, createdSuppliers],
+  )
+  const catalog = useMemo(
+    () => [...products, ...createdProducts.filter(extra => !products.some(known => known.id === extra.id))],
+    [products, createdProducts],
+  )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
@@ -184,7 +196,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     try {
       const id = await createPayableCatalogProduct(newProduct.name, newProduct.category, newProduct.unit)
       const product: PayableProduct = { id, name: newProduct.name.trim(), category: newProduct.category, unit: newProduct.unit.trim() }
-      setCatalog(previous => [...previous, product])
+      setCreatedProducts(previous => [...previous, product])
       if (draft) updateItem(index, withProduct(draft.items[index], product))
       setCreatingLine(null)
       setNewProduct({ name: '', category: 'Insumos', unit: 'un' })
@@ -205,9 +217,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     setSaving(true)
     try {
       const supplier = await createPayableSupplier(newSupplier.name, newSupplier.cnpj)
-      setAvailableSuppliers(previous => previous.some(item => item.id === supplier.id)
-        ? previous
-        : [...previous, supplier].sort((left, right) => left.name.localeCompare(right.name)))
+      setCreatedSuppliers(previous => previous.some(item => item.id === supplier.id) ? previous : [...previous, supplier])
       setSupplierId(supplier.id)
       setCreatingSupplier(false)
       await loadMappings(supplier.id)
