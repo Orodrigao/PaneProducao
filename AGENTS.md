@@ -174,9 +174,13 @@ máquina — nem site, nem banco.
 - Fechar ou integrar a PR reconstrói o Banco Preview a partir da `main`.
   Esse reset é obrigatório: remove migration de PR descartada e devolve os
   dados fictícios conhecidos. Nunca copie dados reais de produção para lá.
-- O plano gratuito fornece um único Banco Preview compartilhado: somente
-  uma PR com migration pode ficar ativa por vez. A automação deve bloquear
-  a segunda, nunca alternar silenciosamente o schema entre duas PRs.
+- Enquanto existir um único `PaneERP Preview` compartilhado, somente uma PR
+  com migration pode ficar ativa por vez: a automação deve bloquear a
+  segunda, nunca alternar silenciosamente o schema entre duas PRs. Esse
+  limite vem da configuração atual do Supabase, não deste arquivo. Antes de
+  serializar trabalho, mandar outra sessão esperar ou declarar que "não dá",
+  confira a capacidade real da conta; se passar a existir banco por PR, a
+  fila deixa de valer e este trecho é corrigido no mesmo PR.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
   migration precisa conviver tanto com a versão do site que está no ar
   quanto com a que está entrando. Mudança destrutiva (remover ou renomear
@@ -199,8 +203,8 @@ máquina — nem site, nem banco.
 PR com migration ou seed também exige `CI Banco` e `Banco Preview` verdes.
 Merge exige todos os checks aplicáveis verdes + teste do Rodrigo no preview.
 CI vermelho = não mergeia, sem exceção. Se o Preview inteiro falhar depois
-de um período sem uso, confira primeiro se o projeto gratuito `PaneERP
-Preview` foi pausado antes de investigar a funcionalidade.
+de um período sem uso, confira primeiro se o projeto `PaneERP Preview` foi
+pausado antes de investigar a funcionalidade.
 
 ## Fluxo para nova funcionalidade
 
