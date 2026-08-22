@@ -7,6 +7,7 @@ import {
   getConversionUnitWarning,
   formatConversionExplanation,
   isClassificationComplete,
+  declaresNoPayment,
   resolveInstallments,
   suggestConversionFactor,
   unitFamily,
@@ -205,5 +206,22 @@ describe('sugestao de fator lida da descricao da NF-e', () => {
     expect(unitFamily('litro')).toBe('volume')
     expect(unitFamily('un')).toBe('unidade')
     expect(unitFamily('caixa')).toBe('desconhecida')
+  })
+})
+
+describe('NF-e que declara sem pagamento', () => {
+  it('reconhece a nota de bonificacao, brinde ou remessa', () => {
+    expect(declaresNoPayment(['90'])).toBe(true)
+    expect(declaresNoPayment([' 90 '])).toBe(true)
+  })
+
+  it('nao confunde com nota que tem pagamento de verdade', () => {
+    expect(declaresNoPayment(['01'])).toBe(false)
+    expect(declaresNoPayment(['15'])).toBe(false)
+    expect(declaresNoPayment([])).toBe(false)
+  })
+
+  it('nota mista com uma parte paga continua sendo conta a pagar', () => {
+    expect(declaresNoPayment(['90', '15'])).toBe(false)
   })
 })
