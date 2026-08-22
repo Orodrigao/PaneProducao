@@ -20,6 +20,7 @@ import {
   pendingReplacementQuantitiesByProductId,
   parseRomaneioQty,
   romaneioCandidateBreadIds,
+  romaneioEmptyDraftReason,
   romaneioExcessOverRequestedQty,
   romaneioOrderProgressLabel,
   ROMANEIO_WEIGHT_LIMIT_KG,
@@ -362,6 +363,8 @@ export default function RomaneioPage() {
   const [criarDate, setCriarDate] = useState(todayKey())
   const [criarDestId, setCriarDestId] = useState('')
   const [criarDrafts, setCriarDrafts] = useState<Record<string,CriarDraft>>({})
+  // por destino, nunca global: trocar de aba nao pode herdar o erro da loja anterior
+  const [criarDraftErrors, setCriarDraftErrors] = useState<Record<string,string>>({})
   const [catalogSearch, setCatalogSearch] = useState('')
   const [extraUnit, setExtraUnit] = useState<RomaneioUnit>('un')
   // conferencia
@@ -553,17 +556,30 @@ export default function RomaneioPage() {
     }
   }
 
+  const loadDraftForDest = async (destId: string) => {
+    setCriarDraftErrors(prev => {
+      if (!(destId in prev)) return prev
+      const next = { ...prev }
+      delete next[destId]
+      return next
+    })
+    showLoad('Verificando viagens...')
+    try {
+      const draft = await buildDraftForDest(destId)
+      setCriarDrafts(prev => ({ ...prev, [destId]: draft }))
+    } catch(e) {
+      setCriarDraftErrors(prev => ({ ...prev, [destId]: 'Não foi possível abrir o romaneio desta loja.' }))
+      showToastPS('Erro')
+    }
+    finally { hideLoad() }
+  }
+
   const onDestChange = async (destId: string) => {
     setCriarDestId(destId)
     setCatalogSearch('')
     setExtraUnit('un')
     if (!destId || criarDrafts[destId]) return
-    showLoad('Verificando viagens...')
-    try {
-      const draft = await buildDraftForDest(destId)
-      setCriarDrafts(prev => ({ ...prev, [destId]: draft }))
-    } catch(e) { showToastPS('Erro') }
-    finally { hideLoad() }
+    await loadDraftForDest(destId)
   }
 
   const onCriarDateChange = (date: string) => {
@@ -902,6 +918,12 @@ export default function RomaneioPage() {
   const criarTotalItems = activeDraft ? Object.values(activeDraft.qtys).filter(v=>v>0).length : 0
   const criarTotalQtyLabel = activeDraft ? formatDraftTotal(activeDraft.qtys, activeOptions) : '0 un'
   const criarDraftCount = Object.keys(criarDrafts).length
+  const activeEmptyDraftReason = activeDraft ? romaneioEmptyDraftReason({
+    productCount: activeOptions.length,
+    extraCount: Object.keys(activeDraft.extras).length,
+    orderQuantities: activeDraft.orderQtys,
+  }) : null
+  const activeDestError = criarDestId ? criarDraftErrors[criarDestId] : undefined
   const userDisplay = getCurrentUser()?.displayName || 'Usuário'
   const userColor = canPerformRomaneioAction(permissions, 'manage') ? '#2A2018' : '#8E4E22'
   const canAny = (action: RomaneioAction) =>
@@ -1155,7 +1177,16 @@ export default function RomaneioPage() {
                 })}
               </div>
 
-              {!activeDraft && (
+              {!activeDraft && activeDestError && (
+                <div className="ps-empty" style={{marginTop:14}}>
+                  <AlertTriangle size={30} style={{display:'block',margin:'0 auto 8px'}}/>
+                  <p>{activeDestError}</p>
+                  <p>Verifique a internet e toque em Tentar de novo. Nada do que você já digitou em outras lojas foi perdido.</p>
+                  <button className="ps-btn primary" onClick={() => loadDraftForDest(criarDestId)}>Tentar de novo</button>
+                </div>
+              )}
+
+              {!activeDraft && !activeDestError && (
                 <div className="ps-empty" style={{marginTop:14}}>
                   Selecione uma loja para abrir o romaneio.
                 </div>
@@ -1273,6 +1304,27 @@ export default function RomaneioPage() {
                       )
                     })}
                   </div>
+
+                  {/* Hoje só 'tudo-enviado' aparece de verdade: quando a loja não
+                      pediu nada, buildDraftForDest cai no catálogo inteiro e a lista
+                      nunca fica vazia (lessons.md 2026-07-20). O outro texto fica de
+                      guarda para o dia em que esse atalho mudar — melhor um ramo sem
+                      uso que uma mensagem mentindo para quem está separando. */}
+                  {activeEmptyDraftReason && (
+                    <div className="ps-empty" style={{marginTop:10}}>
+                      {activeEmptyDraftReason === 'sem-pedido' ? (
+                        <>
+                          <p><b>Esta loja não tem pedido para hoje.</b></p>
+                          <p>Nada a separar por enquanto. Se precisar mandar algo mesmo assim, use a busca do catálogo logo abaixo.</p>
+                        </>
+                      ) : (
+                        <>
+                          <p><b>Tudo que esta loja pediu hoje já saiu nas viagens anteriores.</b></p>
+                          <p>Não há saldo pendente. Se precisar mandar algo a mais, use a busca do catálogo logo abaixo.</p>
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Buscar produto no catálogo */}
                   <div style={{marginTop:18,paddingTop:14,borderTop:'1px dashed var(--ps-line)'}}>

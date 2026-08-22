@@ -11,6 +11,7 @@ import {
   orderQuantitiesByBreadId,
   pendingReplacementQuantitiesByProductId,
   romaneioCandidateBreadIds,
+  romaneioEmptyDraftReason,
   romaneioExcessOverRequestedQty,
   parseRomaneioQty,
   romaneioOrderProgressLabel,
@@ -237,5 +238,28 @@ describe('romaneioDraft', () => {
 
   it('explica quanto ja saiu e quanto ainda falta separar', () => {
     expect(romaneioOrderProgressLabel(20, 12)).toBe('12 de 20 (faltam 8)')
+  })
+
+  it('nao explica rascunho vazio quando ha produto ou extra na lista', () => {
+    expect(romaneioEmptyDraftReason({ productCount: 1, extraCount: 0, orderQuantities: {} })).toBeNull()
+    expect(romaneioEmptyDraftReason({ productCount: 0, extraCount: 1, orderQuantities: {} })).toBeNull()
+  })
+
+  it('diz que a loja nao tem pedido quando o rascunho esta vazio e ninguem pediu nada', () => {
+    expect(romaneioEmptyDraftReason({ productCount: 0, extraCount: 0, orderQuantities: {} }))
+      .toBe('sem-pedido')
+    expect(romaneioEmptyDraftReason({
+      productCount: 0,
+      extraCount: 0,
+      orderQuantities: { baguete: 0, ciabatta: -5, focaccia: NaN },
+    })).toBe('sem-pedido')
+  })
+
+  it('diz que ja saiu tudo quando havia pedido mas o rascunho ficou vazio', () => {
+    expect(romaneioEmptyDraftReason({
+      productCount: 0,
+      extraCount: 0,
+      orderQuantities: { baguete: 20 },
+    })).toBe('tudo-enviado')
   })
 })

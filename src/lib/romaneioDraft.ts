@@ -258,3 +258,26 @@ export function formatRomaneioQty(value: number): string {
 export function formatRomaneioWeightInGrams(valueKg: number): string {
   return Math.round(valueKg * 1000).toLocaleString('pt-BR')
 }
+
+export type RomaneioEmptyDraftReason = 'sem-pedido' | 'tudo-enviado'
+
+/**
+ * Explica por que o rascunho do romaneio carregou sem nenhum produto para
+ * separar, distinguindo "a loja não pediu nada hoje" de "já saiu tudo nas
+ * viagens anteriores" — a pessoa da expedição precisa saber qual é o caso.
+ */
+export function romaneioEmptyDraftReason(input: {
+  productCount: number
+  extraCount: number
+  orderQuantities: Record<string, number>
+}): RomaneioEmptyDraftReason | null {
+  if (input.productCount > 0 || input.extraCount > 0) return null
+
+  const totalOrdered = Object.values(input.orderQuantities).reduce((sum, qty) => {
+    const quantity = Number(qty)
+    if (!Number.isFinite(quantity) || quantity <= 0) return sum
+    return sum + quantity
+  }, 0)
+
+  return totalOrdered <= 0 ? 'sem-pedido' : 'tudo-enviado'
+}
