@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -12,7 +12,15 @@ import {
   Search,
   Snowflake,
 } from 'lucide-react'
+import {
+  BreadDemandHistoryBlock,
+  type BreadDemandHistoryLoadState,
+} from '@/components/BreadDemandHistoryBlock'
 import { getCurrentUser, getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
+import {
+  type BreadDemandSummary,
+} from '@/lib/breadDemandHistory'
+import { fetchBreadDemandHistory } from '@/lib/breadDemandHistoryClient'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
@@ -85,6 +93,7 @@ interface ProductionPlanSummary {
 
 interface BreadRow extends PlanningBreadLite {
   days: number[]
+  unit: string | null
 }
 
 type QuantityInputs = Record<string, number>
@@ -133,6 +142,9 @@ export default function ProductionPlanningPage() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [demandHistoryState, setDemandHistoryState] = useState<BreadDemandHistoryLoadState>('loading')
+  const [demandHistory, setDemandHistory] = useState<Record<string, BreadDemandSummary>>({})
+  const demandHistoryRequestId = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -148,13 +160,37 @@ export default function ProductionPlanningPage() {
   const loadBreads = useCallback(async () => {
     const { data, error: breadError } = await supabase
       .from('breads')
-      .select('id,name,days,active,is_pj')
+      .select('id,name,days,active,is_pj,unit')
       .eq('active', true)
       .eq('is_pj', false)
       .order('name', { ascending: true })
 
     if (breadError) throw breadError
-    setBreads((data ?? []) as BreadRow[])
+    const loadedBreads = (data ?? []) as BreadRow[]
+    setBreads(loadedBreads)
+    return loadedBreads
+  }, [])
+
+  const loadDemandHistory = useCallback(async (
+    targetDate: string,
+    targetBreads: BreadRow[],
+  ) => {
+    const requestId = demandHistoryRequestId.current + 1
+    demandHistoryRequestId.current = requestId
+    setDemandHistoryState('loading')
+    setDemandHistory({})
+
+    try {
+      const summaries = await fetchBreadDemandHistory(targetDate, targetBreads)
+
+      if (demandHistoryRequestId.current !== requestId) return
+      setDemandHistory(summaries)
+      setDemandHistoryState('ready')
+    } catch {
+      if (demandHistoryRequestId.current !== requestId) return
+      setDemandHistory({})
+      setDemandHistoryState('error')
+    }
   }, [])
 
   const loadOpenPlans = useCallback(async () => {
@@ -342,15 +378,31 @@ export default function ProductionPlanningPage() {
     if (!ready || user?.role !== 'admin') return
     let alive = true
     setLoading(true)
-    Promise.all([loadBreads(), loadOpenPlans(), loadAvailability(date), loadPlan(date)])
+    demandHistoryRequestId.current += 1
+    setDemandHistoryState('loading')
+    setDemandHistory({})
+
+    const breadsRequest = loadBreads()
+    void breadsRequest
+      .then(loadedBreads => {
+        if (alive) void loadDemandHistory(date, loadedBreads)
+      })
+      .catch(() => {
+        if (alive) setDemandHistoryState('error')
+      })
+
+    Promise.all([breadsRequest, loadOpenPlans(), loadAvailability(date), loadPlan(date)])
       .catch(() => {
         if (alive) setError('Não foi possível carregar o planejamento agora.')
       })
       .finally(() => {
         if (alive) setLoading(false)
       })
-    return () => { alive = false }
-  }, [date, loadAvailability, loadBreads, loadOpenPlans, loadPlan, ready, user?.role])
+    return () => {
+      alive = false
+      demandHistoryRequestId.current += 1
+    }
+  }, [date, loadAvailability, loadBreads, loadDemandHistory, loadOpenPlans, loadPlan, ready, user?.role])
 
   const expectedBreads = useMemo(() => plannedBreadsForDate(breads, date), [breads, date])
   const itemsByBread = useMemo(() => {
@@ -555,7 +607,12 @@ export default function ProductionPlanningPage() {
   async function refreshPlanning() {
     setError('')
     try {
-      await Promise.all([loadOpenPlans(), loadAvailability(date), loadPlan(date)])
+      await Promise.all([
+        loadOpenPlans(),
+        loadAvailability(date),
+        loadPlan(date),
+        loadDemandHistory(date, breads),
+      ])
     } catch {
       setError('Não foi possível carregar os planejamentos agora.')
     }
@@ -755,6 +812,12 @@ export default function ProductionPlanningPage() {
                       <span className="ps-store-chip">Total {breadTotal}</span>
                     </span>
                   </div>
+
+                  <BreadDemandHistoryBlock
+                    state={demandHistoryState}
+                    summary={demandHistory[bread.id]}
+                    onRetry={() => void loadDemandHistory(date, breads)}
+                  />
 
                   <div className="ps-grid" style={{ marginTop: 8 }}>
                     {PRODUCTION_PLAN_STORES.map(store => {
