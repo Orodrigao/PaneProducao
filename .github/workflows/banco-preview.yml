@@ -44,68 +44,6 @@ env:
   PREVIEW_LABEL: precisa-banco-preview
 
 jobs:
-  # Guarda separado do job de reconstruir, e de proposito: reconstruir agora
-  # depende da etiqueta, mas serializar migrations NAO pode depender de alguem
-  # lembrar de colar adesivo. Sem este job, duas PRs com migration esquecidas da
-  # etiqueta iriam verdes ate a main e so colidiriam la — inclusive na ordem de
-  # timestamp, que o `supabase db push` aplica e nao negocia.
-  # Note a diferenca para a regra antiga: ela recusava QUALQUER PR quando outra
-  # tinha migration (foi o que deixou a PR 225 vermelha sem defeito proprio).
-  # Esta recusa so a PR que ELA MESMA tem migration.
-  guarda-migrations:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
-    name: Uma migration por vez
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Recusar duas PRs com migration abertas ao mesmo tempo
-        env:
-          CURRENT_PR: ${{ github.event.pull_request.number }}
-          # Uma consulta so: `gh pr view` por PR gastaria N+1 chamadas e bate no
-          # limite de requisicoes num dia movimentado.
-          LIMITE_PRS: 200
-        run: |
-          PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$LIMITE_PRS" --json number,files)"
-
-          # Lista truncada = trava que nao enxerga tudo. Uma trava de
-          # serializacao tem de falhar FECHADA: deixar passar uma migration que
-          # existe e pior que barrar uma que nao existe.
-          if [[ "$(jq 'length' <<<"$PRS")" -ge "$LIMITE_PRS" ]]; then
-            echo "Ha $LIMITE_PRS ou mais PRs abertas e a lista veio cortada."
-            echo "Nao da para garantir a serializacao, entao estou barrando por seguranca."
-            echo "O que fazer: aumente LIMITE_PRS neste workflow."
-            exit 1
-          fi
-
-          if [[ "$(jq --argjson atual "$CURRENT_PR" '[.[] | select(.number == $atual)] | length' <<<"$PRS")" -eq 0 ]]; then
-            echo "Esta PR (#$CURRENT_PR) nao apareceu na lista de PRs abertas."
-            echo "Sem conseguir ler o proprio estado, barro por seguranca."
-            exit 1
-          fi
-
-          com_migration() {
-            jq -r --argjson atual "$CURRENT_PR" "$1" <<<"$PRS"
-          }
-
-          if [[ "$(com_migration '[.[] | select(.number == $atual) | .files[]? | select(.path | startswith("supabase/migrations/"))] | length')" -eq 0 ]]; then
-            echo "Esta PR nao tem migration: nada a serializar, siga em frente."
-            exit 0
-          fi
-
-          OUTRAS="$(com_migration '[.[] | select(.number != $atual) | select([.files[]? | select(.path | startswith("supabase/migrations/"))] | length > 0) | "#\(.number)"] | join(", ")')"
-
-          if [[ -n "$OUTRAS" ]]; then
-            echo "Outra PR com migration esta aberta: $OUTRAS"
-            echo "Duas migrations abertas ao mesmo tempo colidem na ordem de aplicacao:"
-            echo "o supabase db push aplica por timestamp e nao negocia."
-            echo "O que fazer: feche ou integre a outra PR antes desta, ou espere o aviso"
-            echo "de quem estiver com ela. Depois reexecute este job."
-            exit 1
-          fi
-
-          echo "Esta PR tem migration e e a unica aberta. Pode seguir."
-
   reconstruir-pr:
     # Remendo temporario: enquanto o Banco Preview for um so, compartilhado por
     # todas as PRs, reconstruir a cada PR criava fila e bloqueava PRs que nem
