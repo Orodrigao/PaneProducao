@@ -188,6 +188,10 @@ jobs:
       # ontem) faz o smoke reprovar sem defeito no codigo. Conferir aqui troca um
       # vermelho misterioso por uma instrucao.
       - name: Confirmar que o cenario ficticio do dia esta intacto
+        env:
+          # Necessario para o diagnostico de corrida na mensagem de falha
+          # listar as execucoes recentes do Banco Preview.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -a
           source .env.example
@@ -226,6 +230,21 @@ jobs:
           if [[ -z "$TOKEN" ]]; then
             echo "Nao foi possivel entrar no Banco Preview com a conta ficticia de administrador."
             echo "Esperei 2 minutos: nao e demora na criacao das contas, e outra coisa."
+            echo ""
+            echo "O que fazer, nesta ordem:"
+            echo "  1. Confira se o projeto PaneERP Preview esta ACTIVE_HEALTHY no Supabase;"
+            echo "     projeto pausado devolve exatamente este erro."
+            echo "  2. Veja se outra PR reconstruiu o banco no meio deste job:"
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow=banco-preview.yml \
+              --limit 5 --json databaseId,status,conclusion,headBranch,createdAt \
+              --jq '.[] | "     \(.createdAt)  \(.headBranch)  \(.status)/\(.conclusion // "-")  run \(.databaseId)"' || true
+            echo "  3. Se alguma acima cruzou com o horario deste job, e corrida de"
+            echo "     infraestrutura: rode de novo o 'Banco Preview' DESTA branch e"
+            echo "     so depois este job."
+            echo "  4. Se nada cruzou e o projeto esta no ar, ai sim e defeito de verdade:"
+            echo "     o seed ou o provision-preview-users.mjs falhou. Leia o log da"
+            echo "     ultima reconstrucao antes de mexer no diff."
+            echo ""
             echo "Resposta do Auth: $(sed '$d' <<<"$RESPOSTA")"
             exit 1
           fi
