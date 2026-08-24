@@ -146,6 +146,20 @@ describe('summarizeBreadDemandHistory', () => {
     expect(summary.confidence).toBe('insufficient')
   })
 
+  it('mantém a loja íntegra quando a outra não está disponível', () => {
+    const dates = TUESDAYS.slice(0, 4)
+    const result = summarizeBreadDemandHistory(input({
+      // A JA sumiu de destinations (inativa, ou escondida pela RLS).
+      destinations: [{ id: 'jc', code: 'jc', name: 'Júlio de Castilhos' }],
+      romaneios: dates.map((date, index) => romaneio(date, 'jc', index)),
+      romaneioItems: dates.map((_, index) => sent(`jc-${index}`, 12)),
+      leftovers: dates.map(date => closing(date, 'jc', 2)),
+    })).integral.stores
+
+    expect(result.jc.average).toBe(10)
+    expect(result.ja.confidence).toBe('insufficient')
+  })
+
   it('bloqueia números quando encontra lançamentos em unidade e em quilo', () => {
     const dates = TUESDAYS.slice(0, 4)
     const result = summarizeBreadDemandHistory(input({

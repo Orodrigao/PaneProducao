@@ -181,7 +181,11 @@ export default function ProductionPlanningPage() {
     setDemandHistory({})
 
     try {
-      const summaries = await fetchBreadDemandHistory(targetDate, targetBreads)
+      // Quando a falha anterior foi no próprio carregamento dos pães, repetir a
+      // consulta com a lista vazia devolveria "sem histórico" para tudo e
+      // esconderia o erro. Recarrega os pães antes de tentar de novo.
+      const resolvedBreads = targetBreads.length > 0 ? targetBreads : await loadBreads()
+      const summaries = await fetchBreadDemandHistory(targetDate, resolvedBreads)
 
       if (demandHistoryRequestId.current !== requestId) return
       setDemandHistory(summaries)
@@ -191,7 +195,7 @@ export default function ProductionPlanningPage() {
       setDemandHistory({})
       setDemandHistoryState('error')
     }
-  }, [])
+  }, [loadBreads])
 
   const loadOpenPlans = useCallback(async () => {
     const { data: planRows, error: planError } = await supabase

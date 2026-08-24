@@ -59,10 +59,10 @@ export async function fetchBreadDemandHistory(
     const code = destinationCode(destination).toLowerCase()
     return code === 'jc' || code === 'ja'
   })
-  const destinationCodes = new Set(managedDestinations.map(destination =>
-    destinationCode(destination).toLowerCase(),
-  ))
-  if (!destinationCodes.has('jc') || !destinationCodes.has('ja')) {
+  // Uma loja ausente, inativa ou escondida pela RLS não pode derrubar o bloco
+  // dos outros pães nem o da loja que está íntegra: a que faltar simplesmente
+  // não terá dias válidos e o card dirá "sem histórico" só para ela.
+  if (managedDestinations.length === 0) {
     throw new Error('managed destinations unavailable')
   }
 
