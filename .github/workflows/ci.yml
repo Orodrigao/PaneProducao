@@ -204,18 +204,28 @@ jobs:
               "$PREVIEW_SUPABASE_URL/auth/v1/token?grant_type=password"
           }
 
+          # "Banco reconstruido" nao e a mesma coisa que "da para entrar": em
+          # banco-preview.yml o db reset vem primeiro e as contas do Auth so
+          # nascem dois passos depois (provision-preview-users.mjs), com o seed
+          # rodando de novo em seguida para ligar perfis as contas novas.
+          # Medido por outra sessao em 2026-08-22: 19 segundos entre o fim da
+          # reconstrucao e um login ainda com invalid_credentials, e a main
+          # vermelha duas vezes na mesma noite pelo mesmo motivo, passando verde
+          # na reexecucao sem mudar uma linha. Tres tentativas com 5s cobriam
+          # ~15s, menos que a janela real. Agora sao 12 tentativas com 10s.
           TOKEN=""
           RESPOSTA=""
-          for tentativa in 1 2 3; do
+          for tentativa in $(seq 1 12); do
             RESPOSTA="$(entrar)"
             TOKEN="$(sed '$d' <<<"$RESPOSTA" | jq -r '.access_token // empty' 2>/dev/null || true)"
             if [[ -n "$TOKEN" ]]; then break; fi
-            echo "Tentativa $tentativa de entrar no Banco Preview devolveu HTTP $(tail -n1 <<<"$RESPOSTA")."
-            sleep 5
+            echo "Tentativa $tentativa/12 de entrar no Banco Preview devolveu HTTP $(tail -n1 <<<"$RESPOSTA"); as contas podem ainda estar sendo criadas."
+            sleep 10
           done
 
           if [[ -z "$TOKEN" ]]; then
             echo "Nao foi possivel entrar no Banco Preview com a conta ficticia de administrador."
+            echo "Esperei 2 minutos: nao e demora na criacao das contas, e outra coisa."
             echo "Resposta do Auth: $(sed '$d' <<<"$RESPOSTA")"
             exit 1
           fi
