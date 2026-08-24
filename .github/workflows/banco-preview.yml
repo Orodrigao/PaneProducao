@@ -49,10 +49,18 @@ jobs:
     # todas as PRs, reconstruir a cada PR criava fila e bloqueava PRs que nem
     # tocam no banco. Agora so reconstroi quem pede pela etiqueta. Quando
     # existir banco por pull request, esta condicao e a etiqueta somem juntas.
+    # O ultimo termo existe porque `labeled`/`unlabeled` dispara para QUALQUER
+    # etiqueta: colar um adesivo qualquer numa PR que ja tem a nossa refaria o
+    # cenario do zero, possivelmente no meio de um teste do Rodrigo. Em evento de
+    # etiqueta, so segue se a etiqueta mexida for a nossa.
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
-      contains(github.event.pull_request.labels.*.name, 'precisa-banco-preview')
+      contains(github.event.pull_request.labels.*.name, 'precisa-banco-preview') &&
+      (
+        (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+        github.event.label.name == 'precisa-banco-preview'
+      )
     name: Reconstruir Preview desta PR
     runs-on: ubuntu-latest
     env:
@@ -66,6 +74,20 @@ jobs:
           CURRENT_PR: ${{ github.event.pull_request.number }}
           LIMITE_PRS: 200
         run: |
+          # O `if` do job crava o nome da etiqueta porque condicao de job nao le
+          # env. Se alguem renomear a etiqueta e trocar so PREVIEW_LABEL, o job
+          # nunca mais roda, sem uma linha de log — falha muda, a pior. Como este
+          # passo so executa quando o nome cravado esta presente, a recusa abaixo
+          # so dispara se os dois tiverem divergido.
+          if ! gh pr view "$CURRENT_PR" --repo "$GITHUB_REPOSITORY" --json labels \
+               --jq '[.labels[].name]' | grep -q "$PREVIEW_LABEL"; then
+            echo "A etiqueta configurada em PREVIEW_LABEL ($PREVIEW_LABEL) nao esta nesta PR,"
+            echo "mas o job rodou — ou seja, o nome cravado no 'if' e o do env divergiram."
+            echo "O que fazer: alinhe os dois em .github/workflows/banco-preview.yml"
+            echo "(condicao do job reconstruir-pr e a variavel PREVIEW_LABEL) e no AGENTS.md."
+            exit 1
+          fi
+
           # A ETIQUETA E A UNICA RESERVA, e isso e decisao, nao esquecimento.
           #
           # Tentei tambem barrar quem tem migration sem etiqueta, para proteger o

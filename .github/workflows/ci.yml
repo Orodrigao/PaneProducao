@@ -143,8 +143,24 @@ jobs:
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$PR_TEM_ETIQUETA" != "true" ]]; then
             echo "PR sem a etiqueta precisa-banco-preview: o banco de teste nao e reconstruido para ela."
-            echo "O smoke roda contra o Banco Preview como esta, restaurado a partir da main."
             echo "A migration desta PR, se houver, e provada pelo ensaio descartavel do CI Banco."
+            echo ""
+            # NAO afirme "restaurado a partir da main": so e verdade logo apos um
+            # merge. Entre merges o Preview esta no estado da ultima PR
+            # etiquetada, e mentir aqui manda o proximo investigar o proprio diff.
+            echo "Contra o que este smoke vai rodar, de fato:"
+            ULTIMA="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=banco-preview.yml \
+              --limit 20 --json headBranch,conclusion,createdAt,event \
+              --jq '[.[] | select(.conclusion == "success")][0] | "  ultima reconstrucao: \(.createdAt) pela branch \(.headBranch) (\(.event))"' 2>/dev/null || true)"
+            if [[ -n "$ULTIMA" ]]; then
+              echo "$ULTIMA"
+              echo "  Se a branch acima nao for main nem esta PR, o Preview esta com o"
+              echo "  schema e os dados de outra branch. Falha por dado aqui NAO e defeito"
+              echo "  do seu diff: etiquete esta PR para ter o cenario dela, ou espere a"
+              echo "  outra fechar."
+            else
+              echo "  nao consegui descobrir; veja o workflow Banco Preview."
+            fi
             exit 0
           fi
 
@@ -208,10 +224,16 @@ jobs:
             # Falhar aqui em 90s, com o motivo escrito, em vez de contar ate 60
             # e morrer por tempo — tempo esgotado ensina a mandar rodar de novo
             # sem investigar (ver lessons.md, smoke do Romaneio EX).
+            # Raciocinio, nao medicao: execucao retida por concorrencia publica
+            # check em estado "queued", entao BUCKET vem "pending" e o contador
+            # zera — a espera de fila NAO cai aqui. Nao consegui provar isso na
+            # pratica, so por leitura da documentacao, entao a margem e generosa:
+            # 180s. Se algum dia este abandono disparar com a fila cheia e uma
+            # reconstrucao legitima a caminho, o numero errado e este.
             if [[ -z "$BUCKET" ]]; then
               SEM_CHECK=$((SEM_CHECK + 1))
-              if [[ "$SEM_CHECK" -ge 9 ]]; then
-                echo "Passaram 90 segundos e o check 'Reconstruir Preview desta PR' nunca apareceu."
+              if [[ "$SEM_CHECK" -ge 18 ]]; then
+                echo "Passaram 180 segundos e o check 'Reconstruir Preview desta PR' nunca apareceu."
                 echo "A reconstrucao desta PR foi expulsa da fila antes de comecar."
                 echo "Quem esta com o banco agora:"
                 quem_ocupa_o_banco
