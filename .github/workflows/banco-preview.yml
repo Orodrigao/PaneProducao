@@ -128,16 +128,25 @@ jobs:
           CURRENT_PR: ${{ github.event.pull_request.number }}
           LIMITE_PRS: 200
         run: |
-          # Quem tem direito adquirido sobre o banco compartilhado: PR etiquetada
-          # (esta pedindo o banco agora) e PR com migration (pode estar esperando
-          # o teste do Rodrigo em cima do cenario dela). Reconstruir por cima de
-          # qualquer uma das duas apaga trabalho alheio.
+          # A ETIQUETA E A UNICA RESERVA, e isso e decisao, nao esquecimento.
           #
-          # Repare na diferenca para a regra antiga, que recusava QUALQUER PR
-          # quando outra tinha migration e por isso matou a PR 225: este passo so
-          # roda dentro do job de reconstruir, que agora exige etiqueta. PR sem
-          # etiqueta nem chega aqui, entao nunca e bloqueada por trabalho alheio.
-          PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$LIMITE_PRS" --json number,files,labels)"
+          # Tentei tambem barrar quem tem migration sem etiqueta, para proteger o
+          # cenario de quem espera o teste do Rodrigo. Estava errado, e do jeito
+          # pior: sob este desenho, PR sem etiqueta NUNCA reconstroi, logo nao
+          # tem cenario nenhum no banco para ser apagado. Eu estaria protegendo o
+          # que nao existe e, em troca, qualquer PR com migration esquecida
+          # aberta bloquearia todo mundo por tempo indeterminado — que e
+          # exatamente a dor que matou a PR 225 por dez dias e que esta PR
+          # existe para curar.
+          #
+          # Quem esta testando de verdade tem etiqueta, porque foi a etiqueta que
+          # colocou o cenario dele ali. Entao reservar = estar etiquetado.
+          #
+          # Ressalva de transicao, valida so nos primeiros dias: PRs abertas
+          # ANTES desta mudanca reconstruiram sem etiqueta e podem ter cenario no
+          # banco. A primeira reconstrucao etiquetada apaga. Some sozinho quando
+          # essas PRs fecharem.
+          PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$LIMITE_PRS" --json number,labels)"
 
           if [[ "$(jq 'length' <<<"$PRS")" -ge "$LIMITE_PRS" ]]; then
             echo "Ha $LIMITE_PRS ou mais PRs abertas e a lista veio cortada."
@@ -147,21 +156,18 @@ jobs:
           fi
 
           OCUPANTES="$(jq -r --argjson atual "$CURRENT_PR" --arg etiqueta "$PREVIEW_LABEL" '
-            .[]
-            | select(.number != $atual)
-            | . as $pr
-            | [ (if ([$pr.labels[]?.name] | index($etiqueta)) then "etiquetada" else empty end),
-                (if ([$pr.files[]? | select(.path | startswith("supabase/migrations/"))] | length > 0) then "com migration" else empty end) ]
-            | select(length > 0)
-            | "  PR #\($pr.number) (\(join(" e ")))"
+            [ .[]
+              | select(.number != $atual)
+              | select([.labels[]?.name] | index($etiqueta))
+              | "#\(.number)" ]
+            | join(", ")
           ' <<<"$PRS")"
           if [[ -n "$OCUPANTES" ]]; then
-            echo "O Banco Preview esta em uso por outra PR:"
-            echo "$OCUPANTES"
-            echo ""
-            echo "Reconstruir agora apagaria o cenario dela, inclusive um teste em curso."
-            echo "O que fazer: espere a outra PR fechar, ou peca para removerem a etiqueta"
-            echo "dela, e reexecute este job. Se a pressa for sua, fale com quem abriu."
+            echo "O Banco Preview esta reservado por outra PR etiquetada: $OCUPANTES"
+            echo "Reconstruir agora apagaria o cenario que ela colocou la, e pode haver"
+            echo "teste em curso em cima dele."
+            echo "O que fazer: espere a outra PR fechar, ou peca para removerem a"
+            echo "etiqueta dela, e reexecute este job."
             exit 1
           fi
 
