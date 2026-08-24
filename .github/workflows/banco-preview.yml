@@ -62,26 +62,43 @@ jobs:
       - name: Recusar duas PRs com migration abertas ao mesmo tempo
         env:
           CURRENT_PR: ${{ github.event.pull_request.number }}
+          # Uma consulta so: `gh pr view` por PR gastaria N+1 chamadas e bate no
+          # limite de requisicoes num dia movimentado.
+          LIMITE_PRS: 200
         run: |
-          tem_migration() {
-            gh pr view "$1" --repo "$GITHUB_REPOSITORY" --json files \
-              --jq '[.files[] | select(.path | startswith("supabase/migrations/"))] | length'
+          PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$LIMITE_PRS" --json number,files)"
+
+          # Lista truncada = trava que nao enxerga tudo. Uma trava de
+          # serializacao tem de falhar FECHADA: deixar passar uma migration que
+          # existe e pior que barrar uma que nao existe.
+          if [[ "$(jq 'length' <<<"$PRS")" -ge "$LIMITE_PRS" ]]; then
+            echo "Ha $LIMITE_PRS ou mais PRs abertas e a lista veio cortada."
+            echo "Nao da para garantir a serializacao, entao estou barrando por seguranca."
+            echo "O que fazer: aumente LIMITE_PRS neste workflow."
+            exit 1
+          fi
+
+          if [[ "$(jq --argjson atual "$CURRENT_PR" '[.[] | select(.number == $atual)] | length' <<<"$PRS")" -eq 0 ]]; then
+            echo "Esta PR (#$CURRENT_PR) nao apareceu na lista de PRs abertas."
+            echo "Sem conseguir ler o proprio estado, barro por seguranca."
+            exit 1
+          fi
+
+          com_migration() {
+            jq -r --argjson atual "$CURRENT_PR" "$1" <<<"$PRS"
           }
 
-          if [[ "$(tem_migration "$CURRENT_PR")" -eq 0 ]]; then
+          if [[ "$(com_migration '[.[] | select(.number == $atual) | .files[]? | select(.path | startswith("supabase/migrations/"))] | length')" -eq 0 ]]; then
             echo "Esta PR nao tem migration: nada a serializar, siga em frente."
             exit 0
           fi
 
-          OUTRAS=""
-          for numero in $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number --jq '.[].number'); do
-            if [[ "$numero" == "$CURRENT_PR" ]]; then continue; fi
-            if [[ "$(tem_migration "$numero")" -gt 0 ]]; then OUTRAS="$OUTRAS $numero"; fi
-          done
+          OUTRAS="$(com_migration '[.[] | select(.number != $atual) | select([.files[]? | select(.path | startswith("supabase/migrations/"))] | length > 0) | "#\(.number)"] | join(", ")')"
 
           if [[ -n "$OUTRAS" ]]; then
-            echo "Outra PR com migration esta aberta:$OUTRAS"
-            echo "Duas migrations abertas ao mesmo tempo colidem na ordem de aplicacao."
+            echo "Outra PR com migration esta aberta: $OUTRAS"
+            echo "Duas migrations abertas ao mesmo tempo colidem na ordem de aplicacao:"
+            echo "o supabase db push aplica por timestamp e nao negocia."
             echo "O que fazer: feche ou integre a outra PR antes desta, ou espere o aviso"
             echo "de quem estiver com ela. Depois reexecute este job."
             exit 1
@@ -109,6 +126,7 @@ jobs:
       - name: Nao reconstruir por cima de quem esta usando o banco
         env:
           CURRENT_PR: ${{ github.event.pull_request.number }}
+          LIMITE_PRS: 200
         run: |
           # Quem tem direito adquirido sobre o banco compartilhado: PR etiquetada
           # (esta pedindo o banco agora) e PR com migration (pode estar esperando
@@ -119,22 +137,24 @@ jobs:
           # quando outra tinha migration e por isso matou a PR 225: este passo so
           # roda dentro do job de reconstruir, que agora exige etiqueta. PR sem
           # etiqueta nem chega aqui, entao nunca e bloqueada por trabalho alheio.
-          ocupantes() {
-            for numero in $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number --jq '.[].number'); do
-              if [[ "$numero" == "$CURRENT_PR" ]]; then continue; fi
-              MOTIVO=""
-              if gh pr view "$numero" --repo "$GITHUB_REPOSITORY" --json labels \
-                   --jq '[.labels[].name]' | grep -q "$PREVIEW_LABEL"; then
-                MOTIVO="etiquetada"
-              fi
-              if [[ "$(gh pr view "$numero" --repo "$GITHUB_REPOSITORY" --json files --jq '[.files[] | select(.path | startswith("supabase/migrations/"))] | length')" -gt 0 ]]; then
-                MOTIVO="${MOTIVO:+$MOTIVO e }com migration"
-              fi
-              if [[ -n "$MOTIVO" ]]; then echo "  PR #$numero ($MOTIVO)"; fi
-            done
-          }
+          PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$LIMITE_PRS" --json number,files,labels)"
 
-          OCUPANTES="$(ocupantes)"
+          if [[ "$(jq 'length' <<<"$PRS")" -ge "$LIMITE_PRS" ]]; then
+            echo "Ha $LIMITE_PRS ou mais PRs abertas e a lista veio cortada."
+            echo "Nao consigo garantir que ninguem esta usando o banco, entao barro."
+            echo "O que fazer: aumente LIMITE_PRS neste workflow."
+            exit 1
+          fi
+
+          OCUPANTES="$(jq -r --argjson atual "$CURRENT_PR" --arg etiqueta "$PREVIEW_LABEL" '
+            .[]
+            | select(.number != $atual)
+            | . as $pr
+            | [ (if ([$pr.labels[]?.name] | index($etiqueta)) then "etiquetada" else empty end),
+                (if ([$pr.files[]? | select(.path | startswith("supabase/migrations/"))] | length > 0) then "com migration" else empty end) ]
+            | select(length > 0)
+            | "  PR #\($pr.number) (\(join(" e ")))"
+          ' <<<"$PRS")"
           if [[ -n "$OCUPANTES" ]]; then
             echo "O Banco Preview esta em uso por outra PR:"
             echo "$OCUPANTES"
