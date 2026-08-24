@@ -148,20 +148,43 @@ jobs:
             # NAO afirme "restaurado a partir da main": so e verdade logo apos um
             # merge. Entre merges o Preview esta no estado da ultima PR
             # etiquetada, e mentir aqui manda o proximo investigar o proprio diff.
-            echo "Contra o que este smoke vai rodar, de fato:"
-            ULTIMA="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=banco-preview.yml \
-              --limit 20 --json headBranch,conclusion,createdAt,event \
-              --jq '[.[] | select(.conclusion == "success")][0] | "  ultima reconstrucao: \(.createdAt) pela branch \(.headBranch) (\(.event))"' 2>/dev/null || true)"
-            if [[ -n "$ULTIMA" ]]; then
-              echo "$ULTIMA"
-              echo "  Se a branch acima nao for main nem esta PR, o Preview esta com o"
-              echo "  schema e os dados de outra branch. Falha por dado aqui NAO e defeito"
-              echo "  do seu diff: etiquete esta PR para ter o cenario dela, ou espere a"
-              echo "  outra fechar."
-            else
-              echo "  nao consegui descobrir; veja o workflow Banco Preview."
+            # O codigo do app vem SEMPRE da branch desta PR; so o banco e
+            # compartilhado. Entao o smoke significa alguma coisa enquanto o
+            # banco for equivalente a main ou for desta propria PR. Quando for de
+            # uma TERCEIRA branch, rodar nao prova nada — e o risco nao e o
+            # vermelho, e o VERDE: schema alheio pode esconder uma regressao
+            # desta PR e ninguem fica sabendo. Vermelho custa uma investigacao;
+            # verde falso custa defeito em producao.
+            #
+            # Por isso a consulta abaixo DECIDE, nao so narra. Verde tem de
+            # significar verificado.
+            DONO="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=banco-preview.yml \
+              --limit 20 --json headBranch,conclusion \
+              --jq '[.[] | select(.conclusion == "success")][0].headBranch' 2>/dev/null || true)"
+
+            if [[ -z "$DONO" ]]; then
+              echo "Nao consegui descobrir qual branch reconstruiu o Preview por ultimo."
+              echo "Seguindo mesmo assim: sem essa informacao, barrar seria pior."
+              exit 0
             fi
-            exit 0
+
+            if [[ "$DONO" == "main" || "$DONO" == "$GITHUB_HEAD_REF" ]]; then
+              echo "Ultima reconstrucao foi da branch '$DONO': o banco serve para este smoke."
+              exit 0
+            fi
+
+            echo "PARADO, e nao e defeito do seu diff."
+            echo "O Banco Preview esta com o schema e os dados da branch '$DONO'."
+            echo "Rodar o smoke contra banco de terceiro nao prova nada, e um VERDE aqui"
+            echo "poderia esconder uma regressao desta PR."
+            echo ""
+            echo "O que fazer, escolha um:"
+            echo "  1. Se a PR daquela branch ja terminou o teste, peca para removerem a"
+            echo "     etiqueta precisa-banco-preview dela. O banco volta a ser reconstruido"
+            echo "     a partir da main no proximo merge."
+            echo "  2. Se voce precisa do cenario DESTA PR, etiquete esta PR."
+            echo "  3. Se so quer o smoke contra a main, espere a outra fechar e reexecute."
+            exit 1
           fi
 
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
