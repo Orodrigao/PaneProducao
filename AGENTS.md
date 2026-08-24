@@ -320,6 +320,19 @@ Além disso:
 Mudança somente de documentação dispensa os comandos acima; exige no mínimo
 `git diff --check`.
 
+**Lógica de workflow se testa na máquina, não empurrando.** Passo de
+workflow que decide alguma coisa (um guarda que barra, um filtro que escolhe
+o que roda) só era exercitado abrindo PR e esperando o semáforo — caro,
+lento e, quando o passo disputa o Banco Preview, impossível de repetir à
+vontade. O que esses passos decidem depende só dos dados que chegam, então
+copie o trecho do workflow ao pé da letra para um script de teste e troque
+apenas a fonte dos dados por casos fabricados. Cubra sempre os três que a
+realidade não oferece: lista vazia, campo ausente e lista truncada no
+limite de paginação. Trava de serialização falha FECHADA — na dúvida barra,
+porque deixar passar o que ela existe para impedir é pior que barrar à toa.
+Isso testa a regra, não a sintaxe: continue dizendo, ao declarar pronto,
+que o trecho real não foi executado.
+
 ### 5. Entrega
 
 - Commits pequenos e em português.
