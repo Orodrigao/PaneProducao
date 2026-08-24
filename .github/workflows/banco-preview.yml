@@ -106,19 +106,42 @@ jobs:
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Impedir duas PRs etiquetadas no mesmo banco
+      - name: Nao reconstruir por cima de quem esta usando o banco
         env:
           CURRENT_PR: ${{ github.event.pull_request.number }}
         run: |
-          # A reserva agora vale so entre PRs que pediram o banco pela etiqueta.
-          # Antes ela olhava qualquer PR aberta com migration, entao uma PR que
-          # nem tocava no banco era bloqueada por migration alheia.
-          OTHER_LABELED_PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --label "$PREVIEW_LABEL" --json number | jq --argjson current "$CURRENT_PR" '[.[] | select(.number != $current) | .number]')"
-          OTHER_LABELED_COUNT="$(jq 'length' <<<"$OTHER_LABELED_PRS")"
+          # Quem tem direito adquirido sobre o banco compartilhado: PR etiquetada
+          # (esta pedindo o banco agora) e PR com migration (pode estar esperando
+          # o teste do Rodrigo em cima do cenario dela). Reconstruir por cima de
+          # qualquer uma das duas apaga trabalho alheio.
+          #
+          # Repare na diferenca para a regra antiga, que recusava QUALQUER PR
+          # quando outra tinha migration e por isso matou a PR 225: este passo so
+          # roda dentro do job de reconstruir, que agora exige etiqueta. PR sem
+          # etiqueta nem chega aqui, entao nunca e bloqueada por trabalho alheio.
+          ocupantes() {
+            for numero in $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number --jq '.[].number'); do
+              if [[ "$numero" == "$CURRENT_PR" ]]; then continue; fi
+              MOTIVO=""
+              if gh pr view "$numero" --repo "$GITHUB_REPOSITORY" --json labels \
+                   --jq '[.labels[].name]' | grep -q "$PREVIEW_LABEL"; then
+                MOTIVO="etiquetada"
+              fi
+              if [[ "$(gh pr view "$numero" --repo "$GITHUB_REPOSITORY" --json files --jq '[.files[] | select(.path | startswith("supabase/migrations/"))] | length')" -gt 0 ]]; then
+                MOTIVO="${MOTIVO:+$MOTIVO e }com migration"
+              fi
+              if [[ -n "$MOTIVO" ]]; then echo "  PR #$numero ($MOTIVO)"; fi
+            done
+          }
 
-          if [[ "$OTHER_LABELED_COUNT" -gt 0 ]]; then
-            echo "O Banco Preview esta reservado por outra PR com a etiqueta $PREVIEW_LABEL: $OTHER_LABELED_PRS"
-            echo "Finalize essa PR, ou remova a etiqueta dela, antes de reconstruir o banco para a PR atual."
+          OCUPANTES="$(ocupantes)"
+          if [[ -n "$OCUPANTES" ]]; then
+            echo "O Banco Preview esta em uso por outra PR:"
+            echo "$OCUPANTES"
+            echo ""
+            echo "Reconstruir agora apagaria o cenario dela, inclusive um teste em curso."
+            echo "O que fazer: espere a outra PR fechar, ou peca para removerem a etiqueta"
+            echo "dela, e reexecute este job. Se a pressa for sua, fale com quem abriu."
             exit 1
           fi
 
