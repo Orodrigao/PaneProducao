@@ -417,6 +417,13 @@ export function summarizeBreadDemandHistory(
         const key = quantityKey(bread.id, store, candidateDate)
         const sent = sentByBreadStoreDate.get(key) ?? 0
         const leftover = leftoverByBreadStoreDate.get(key) ?? 0
+
+        // A loja fechou o dia, mas este pão não esteve lá: não chegou romaneio
+        // e não havia estoque do dia anterior. Contar saída zero mediria
+        // ausência de oferta, não falta de procura, e puxaria a média para
+        // baixo justamente nos pães que não são feitos todo dia.
+        if (sent === 0 && leftover === 0) continue
+
         const output = sent - leftover
         if (output < 0) continue
 

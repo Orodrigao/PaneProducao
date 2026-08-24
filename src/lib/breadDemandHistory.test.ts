@@ -100,6 +100,52 @@ describe('summarizeBreadDemandHistory', () => {
     expect(summary.confidence).toBe('insufficient')
   })
 
+  it('descarta dia em que o pão não esteve na loja em vez de contar saída zero', () => {
+    const dates = TUESDAYS.slice(0, 4)
+    const summary = summarizeBreadDemandHistory(input({
+      // A loja fechou os quatro dias, mas o pão só chegou em dois deles.
+      romaneios: [romaneio(dates[0], 'jc', 0), romaneio(dates[1], 'jc', 1)],
+      romaneioItems: [sent('jc-0', 30), sent('jc-1', 30)],
+      leftovers: dates.map(date => closing(date, 'jc', 0, 'outro-pao')),
+    })).integral.stores.jc
+
+    // Contando os dois dias vazios a média cairia para 15.
+    expect(summary.validDays).toBe(2)
+    expect(summary.average).toBeNull()
+    expect(summary.confidence).toBe('insufficient')
+  })
+
+  it('mede a procura pelos dias em que o pão esteve na loja, ignorando os vazios', () => {
+    const dates = TUESDAYS.slice(0, 8)
+    const withBread = dates.slice(0, 4)
+    const summary = summarizeBreadDemandHistory(input({
+      romaneios: withBread.map((date, index) => romaneio(date, 'jc', index)),
+      romaneioItems: withBread.map((_, index) => sent(`jc-${index}`, 30)),
+      leftovers: [
+        ...dates.map(date => closing(date, 'jc', 0, 'outro-pao')),
+        ...withBread.map(date => closing(date, 'jc', 0)),
+      ],
+    })).integral.stores.jc
+
+    expect(summary.validDays).toBe(4)
+    expect(summary.average).toBe(30)
+    expect(summary.noLeftoverDays).toBe(4)
+  })
+
+  it('sobra do dia anterior mantém o dia na conta mesmo sem romaneio novo', () => {
+    const dates = TUESDAYS.slice(0, 4)
+    const summary = summarizeBreadDemandHistory(input({
+      romaneios: dates.slice(0, 3).map((date, index) => romaneio(date, 'jc', index)),
+      romaneioItems: dates.slice(0, 3).map((_, index) => sent(`jc-${index}`, 10)),
+      // No quarto dia não houve envio, mas havia estoque: o pão estava à venda.
+      leftovers: [...dates.slice(0, 3).map(date => closing(date, 'jc', 2)), closing(dates[3], 'jc', 3)],
+    })).integral.stores.jc
+
+    // Os três dias com envio dão 8; o quarto é negativo (0 − 3) e cai fora.
+    expect(summary.validDays).toBe(3)
+    expect(summary.confidence).toBe('insufficient')
+  })
+
   it('bloqueia números quando encontra lançamentos em unidade e em quilo', () => {
     const dates = TUESDAYS.slice(0, 4)
     const result = summarizeBreadDemandHistory(input({
