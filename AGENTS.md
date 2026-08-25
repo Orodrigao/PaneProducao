@@ -277,7 +277,7 @@ o agente que conduz a sessão está autorizado a despachar, por iniciativa
 própria e sem pedir de novo a cada sessão, ajudantes que trabalhem sob a
 sua revisão: subagentes da própria sessão (modelos mais leves para
 varredura, rascunho, execução de fase bem especificada e revisão), o
-operário Gemini e a consulta ao Sol (skills `operario` e `consulta`, quando
+operário Gemini e o Sol (skills `operario`, `consulta` e `despacho`, quando
 disponíveis na máquina). Regras do mandato:
 
 - anunciar a escalação em uma linha leiga ("essa desce para o executor
@@ -293,6 +293,29 @@ disponíveis na máquina). Regras do mandato:
   para ajudante: fica com o agente principal;
 - fan-out grande (mais de ~4 agentes de uma vez, ou orquestração em
   nuvem) continua exigindo aviso prévio ao Rodrigo, pelo custo.
+
+**Frente inteira para o Sol — ponte de escrita (autorização permanente do
+Rodrigo, 2026-08-25):** o Sol (Codex/GPT) não é ajudante leve, é o dev
+sênior da equipe, e pode receber uma frente inteira para implementar — não
+só opinião. O agente que conduz a sessão despacha por iniciativa própria,
+pela skill `despacho`, sem pedir permissão de novo a cada vez. A
+autorização se sustenta porque a cerca é técnica, não confiança:
+
+- o Sol escreve somente dentro do worktree daquela tarefa (`codex exec
+  --sandbox workspace-write`); tentativa de escrever fora volta com
+  "acesso negado", verificado nesta máquina em 2026-08-25;
+- o despacho roda sem internet: ele não faz push, não abre PR, não fala
+  com Supabase, GitHub ou Vercel e não instala dependência. Quem prepara o
+  ambiente e quem publica é o agente principal;
+- git, commit, PR e limpeza continuam sendo do agente principal, que só
+  commita depois de ler o diff inteiro e rodar as quatro verificações na
+  própria máquina;
+- área crítica (dinheiro, permissões, Auth, RLS, migrations) continua fora
+  do despacho automático: pode ir ao Sol, mas só com plano aprovado pelo
+  Rodrigo para aquela frente;
+- entrega sem relatório, com verificação vermelha ou com arquivo tocado
+  fora do escopo do briefing não vira commit: volta para o Sol ou fica com
+  o agente principal.
 
 ### 4. Verificação
 
