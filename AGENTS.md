@@ -308,8 +308,17 @@ autorização se sustenta porque a cerca é técnica, não confiança:
   com Supabase, GitHub ou Vercel e não instala dependência. Quem prepara o
   ambiente e quem publica é o agente principal;
 - git, commit, PR e limpeza continuam sendo do agente principal, que só
-  commita depois de ler o diff inteiro e rodar as quatro verificações na
-  própria máquina;
+  commita depois de conferir a lista de arquivos contra o briefing, ler o
+  conteúdo inteiro de cada arquivo novo e rodar as quatro verificações na
+  própria máquina. A cerca é de arquivo e de rede, não do Windows inteiro,
+  e a leitura dele é irrestrita: essa revisão é a segunda metade dela.
+  Arquivo tocado fora do briefing — em especial `.github/`, scripts do
+  `package.json`, `supabase/` e configuração de publicação — para a
+  entrega, porque é por aí que um despacho contaminado alcançaria a
+  produção;
+- continuar uma sessão do Sol (`codex exec resume`) é proibido: essa
+  chamada não aceita as opções da cerca e já abriu escrita sobre o
+  repositório principal num teste. Correção se manda como despacho novo;
 - área crítica (dinheiro, permissões, Auth, RLS, migrations) continua fora
   do despacho automático: pode ir ao Sol, mas só com plano aprovado pelo
   Rodrigo para aquela frente;
