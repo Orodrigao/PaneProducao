@@ -11,6 +11,7 @@ import {
   Save,
   Search,
   Snowflake,
+  Trash2,
 } from 'lucide-react'
 import {
   BreadDemandHistoryBlock,
@@ -29,7 +30,10 @@ import {
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
+  nextProductionPlanDate,
   normalizePlannedQuantity,
+  planCanBeDiscarded,
+  planDateIsExpiredForOrders,
   planHasOrderConversion,
   planIsFullyConvertedToOrders,
   planNeedsOrderConversion,
@@ -125,7 +129,7 @@ export default function ProductionPlanningPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [ready, setReady] = useState(false)
-  const [date, setDate] = useState(todayKey())
+  const [date, setDate] = useState(() => nextProductionPlanDate(todayKey()))
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
@@ -140,6 +144,7 @@ export default function ProductionPlanningPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [demandHistoryState, setDemandHistoryState] = useState<BreadDemandHistoryLoadState>('loading')
@@ -452,6 +457,9 @@ export default function ProductionPlanningPage() {
   const planningHasOrderConversion = planHasOrderConversion(items)
   const planningFullyConvertedToOrder = planIsFullyConvertedToOrders(items)
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status) && !planningHasOrderConversion)
+  const todayDate = todayKey()
+  const planDateExpired = Boolean(plan && planDateIsExpiredForOrders(plan.production_date, todayDate))
+  const canDiscard = Boolean(plan && planCanBeDiscarded(plan.status, items))
   const searchQuery = search.trim()
   const searchIsActive = searchQuery.length >= 2
   const matchingCatalogBreads = searchIsActive
@@ -608,6 +616,39 @@ export default function ProductionPlanningPage() {
     }
   }
 
+  async function discardPlan() {
+    if (!plan || !canDiscard || discarding) return
+    const confirmed = window.confirm(
+      `Descartar o planejamento de ${dateLabel(plan.production_date)}?\n\n`
+      + `${totalPlanned} pães planejados serão apagados. Não dá para desfazer.`,
+    )
+    if (!confirmed) return
+
+    setDiscarding(true)
+    setError('')
+    try {
+      // Os itens saem junto pelo ON DELETE CASCADE — apagar só o pai mantém a
+      // operação atômica. O select confirma que a policy deixou apagar de fato,
+      // porque RLS bloqueada devolve zero linhas sem erro.
+      const { data: deletedRows, error: deleteError } = await supabase
+        .from('production_plans')
+        .delete()
+        .eq('id', plan.id)
+        .select('id')
+
+      if (deleteError) throw deleteError
+      if ((deletedRows ?? []).length === 0) throw new Error('plan not deleted')
+
+      showToastPS('Planejamento descartado.')
+      await loadPlan(date)
+      void loadOpenPlans().catch(() => undefined)
+    } catch {
+      setError('Não foi possível descartar este planejamento.')
+    } finally {
+      setDiscarding(false)
+    }
+  }
+
   async function refreshPlanning() {
     setError('')
     try {
@@ -678,31 +719,37 @@ export default function ProductionPlanningPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-            {openPlans.map(openPlan => (
-              <button
-                key={openPlan.id}
-                type="button"
-                className="ps-btn ghost"
-                onClick={() => openPlanDate(openPlan.production_date)}
-                style={{
-                  justifyContent: 'space-between',
-                  borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
-                  background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
-                }}
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <b>{dateLabel(openPlan.production_date)}</b>
-                  <small style={{ color: 'var(--ink-soft)', fontWeight: 700 }}>
-                    {PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
-                  </small>
-                </span>
-                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <span className="ps-store-chip">Total {openPlan.total}</span>
-                  <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
-                  <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
-                </span>
-              </button>
-            ))}
+            {openPlans.map(openPlan => {
+              const expired = planDateIsExpiredForOrders(openPlan.production_date, todayDate)
+
+              return (
+                <button
+                  key={openPlan.id}
+                  type="button"
+                  className="ps-btn ghost"
+                  onClick={() => openPlanDate(openPlan.production_date)}
+                  style={{
+                    justifyContent: 'space-between',
+                    borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
+                    background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
+                  }}
+                >
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                    <b>{dateLabel(openPlan.production_date)}</b>
+                    <small style={{ color: expired ? 'var(--berry)' : 'var(--ink-soft)', fontWeight: 700 }}>
+                      {expired
+                        ? 'Data já passou — não vira mais pedido'
+                        : PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
+                    </small>
+                  </span>
+                  <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span className="ps-store-chip">Total {openPlan.total}</span>
+                    <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
+                    <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
       </section>
@@ -740,6 +787,12 @@ export default function ProductionPlanningPage() {
               </p>
             </div>
           </div>
+          {planDateIsExpiredForOrders(date, todayDate) && (
+            <p style={{ margin: '0 0 10px', color: 'var(--berry)', fontSize: 13, fontWeight: 700 }}>
+              <AlertTriangle size={14} /> A Produção só oferece de amanhã em diante. Planejamento
+              criado nesta data não vira pedido.
+            </p>
+          )}
           <button type="button" className="ps-btn primary block" onClick={createPlan} disabled={creating}>
             <Plus size={17} /> {creating ? 'Criando...' : 'Criar rascunho'}
           </button>
@@ -770,13 +823,27 @@ export default function ProductionPlanningPage() {
                   </span>
                 </div>
               </div>
-              {canEdit && (
-                <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
-                  <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
-                </button>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                {canEdit && (
+                  <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
+                    <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                )}
+                {canDiscard && (
+                  <button type="button" className="ps-btn danger" onClick={discardPlan} disabled={discarding}>
+                    <Trash2 size={17} /> {discarding ? 'Descartando...' : 'Descartar'}
+                  </button>
+                )}
+              </div>
             </div>
           </section>
+
+          {planDateExpired && (
+            <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC', color: 'var(--berry)' }}>
+              <AlertTriangle size={16} /> Essa data já passou. A Produção só oferece de amanhã em diante,
+              então este planejamento não vira mais pedido — descarte e crie um na data certa.
+            </div>
+          )}
 
           {!canEdit && (
             <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC' }}>
