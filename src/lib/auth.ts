@@ -11,6 +11,10 @@ export const FINANCE_PERMISSION = 'financeiro.acessar'
 export const FINANCE_ROUTE = '/financeiro'
 export const RECEIVABLES_PERMISSION = 'contas_receber.acessar'
 export const RECEIVABLES_ROUTE = '/contas-receber'
+// A tela de gestao de usuarios se protege sozinha por `role !== 'admin'`, e nao
+// pela lista de rotas — por isso ela abria digitando o endereco e nunca
+// aparecia no menu de ninguem.
+export const ADMIN_USERS_ROUTE = '/admin/usuarios'
 export interface AppUser {
   id: string
   username: string
@@ -29,7 +33,7 @@ const AUTH_PROFILE_RETRY_DELAYS_MS = [100, 300] as const
 const ROLES: readonly Role[] = ['admin', 'producao', 'vendas', 'estoque', 'compras', 'romaneio', 'financeiro', 'expedicao']
 
 export const DEFAULT_ROUTES_BY_ROLE: Record<Role, string[]> = {
-  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes', PAYABLES_ROUTE, FINANCE_ROUTE],
+  admin:      ['/', PRODUCTION_PLANNING_ROUTE, '/sobras', '/fechamento-caixa', '/romaneio', '/producao-cozinha', '/estoque-congelado', '/estoque-paes', '/compras', '/cotacoes', '/fornecedores', '/estoque', '/produtos', '/clientes', '/tabelas-preco', '/pedidos-pj', '/encomendas', '/simulador-desconto', '/relatorios', '/relatorios/sobras-descartes', PAYABLES_ROUTE, FINANCE_ROUTE, RECEIVABLES_ROUTE, ADMIN_USERS_ROUTE],
   producao:   ['/', '/sobras', '/forno', '/estoque-paes'],
   vendas:     ['/', '/sobras', '/fechamento-caixa', '/romaneio'],
   estoque:    ['/', '/estoque-congelado', '/estoque'],
@@ -59,7 +63,20 @@ export function resolveAllowedRoutes(
   baseRoutes: string[],
   permissions: readonly AppPermissionRow[],
 ): string[] {
-  if (role === 'admin') return baseRoutes
+  // Admin recebe a UNIAO entre o padrao do codigo e a lista gravada, e nunca a
+  // lista gravada sozinha. Motivo, medido em 2026-08-24: `allowed_routes` e uma
+  // foto do dia em que a lista foi montada, e para admin as permissoes sao
+  // ignoradas (este `if` corta antes de qualquer uma delas). Resultado: tela
+  // criada depois da foto nunca aparecia para o dono, e permissao concedida a
+  // ele nao adiantava nada — o Rodrigo tinha `producao_cozinha.lancar` nos
+  // quatro escopos e mesmo assim nao abria a tela, que ficou com zero uso e
+  // parecia modulo abandonado.
+  //
+  // Uniao, e nao substituicao, para esta mudanca so poder ACRESCENTAR rota a
+  // admin e nunca remover: nao destrutiva por construcao.
+  if (role === 'admin') {
+    return Array.from(new Set([...DEFAULT_ROUTES_BY_ROLE.admin, ...baseRoutes]))
+  }
 
   const canAccessPjOrders = permissions.some(permission =>
     permission.permission_key === 'pedidos_pj.acessar'

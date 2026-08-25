@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PRODUCTION_PLANNING_ROUTE } from '@/lib/productionPlanning'
 import {
+  ADMIN_USERS_ROUTE,
+  DEFAULT_ROUTES_BY_ROLE,
+  RECEIVABLES_ROUTE,
   buildAppUser,
   canAccess,
   fetchCurrentAuthUser,
@@ -47,9 +51,54 @@ describe('resolveAllowedRoutes', () => {
   })
 
   it('preserva o acesso total do Administrador sem depender do checkbox', () => {
+    // Este caso afirmava o contrário do próprio nome: comparava com a lista
+    // gravada e, com isso, cristalizava o defeito de 2026-08-24 — os dois
+    // admins tinham uma foto de 20 rotas e não enxergavam contas a receber,
+    // planejamento de produção nem produção da cozinha.
     const routes = resolveAllowedRoutes('admin', null, ['/', '/pedidos-pj'], [])
 
-    expect(routes).toEqual(['/', '/pedidos-pj'])
+    expect(routes).toEqual(expect.arrayContaining(DEFAULT_ROUTES_BY_ROLE.admin))
+    expect(routes).toContain('/pedidos-pj')
+  })
+
+  it('mostra ao Administrador tela que nasceu depois da lista gravada dele', () => {
+    const fotoAntiga = ['/', '/romaneio', '/sobras']
+
+    const routes = resolveAllowedRoutes('admin', null, fotoAntiga, [])
+
+    expect(routes).toContain(RECEIVABLES_ROUTE)
+    expect(routes).toContain(ADMIN_USERS_ROUTE)
+    expect(routes).toContain(PRODUCTION_PLANNING_ROUTE)
+    expect(routes).toContain('/producao-cozinha')
+  })
+
+  it('nunca tira do Administrador uma rota que estava na lista gravada', () => {
+    const routes = resolveAllowedRoutes('admin', null, ['/', '/rota-so-dele'], [])
+
+    expect(routes).toContain('/rota-so-dele')
+  })
+
+  it('não repete rota quando ela está no padrão e na lista gravada', () => {
+    const routes = resolveAllowedRoutes('admin', null, ['/', RECEIVABLES_ROUTE], [])
+
+    expect(routes.filter(route => route === RECEIVABLES_ROUTE)).toHaveLength(1)
+  })
+
+  it('não dá ao perfil de vendas as telas exclusivas do Administrador', () => {
+    const routes = resolveAllowedRoutes('vendas', 'jc', ['/', '/romaneio'], [])
+
+    expect(routes).not.toContain(RECEIVABLES_ROUTE)
+    expect(routes).not.toContain(ADMIN_USERS_ROUTE)
+  })
+
+  it('mantém o perfil financeiro dependendo da permissão, não do padrão do admin', () => {
+    const semPermissao = resolveAllowedRoutes('financeiro', null, ['/'], [])
+    const comPermissao = resolveAllowedRoutes('financeiro', null, ['/'], [
+      { permission_key: 'contas_receber.acessar', scope: '*' },
+    ])
+
+    expect(semPermissao).not.toContain(RECEIVABLES_ROUTE)
+    expect(comPermissao).toContain(RECEIVABLES_ROUTE)
   })
 
   it('abre a Produção da Cozinha com a permissão concedida só para uma loja', () => {
