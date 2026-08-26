@@ -167,17 +167,27 @@ máquina — nem site, nem banco.
   ensaia a história completa do schema num banco local descartável (workflow
   `CI Banco`); só depois do merge a Action aplica em produção com
   `supabase db push`.
-- PR aberta com migration também reconstrói automaticamente o projeto
-  `PaneERP Preview` usando a história e o seed daquela branch (workflow
-  `Banco Preview`). O link da Vercel só vale para teste depois que os três
-  checks, Vercel, CI Banco e Banco Preview, estiverem verdes.
+- PR que precisa do banco de teste com o schema dela pede pela etiqueta
+  `precisa-banco-preview`: só então o projeto `PaneERP Preview` é
+  reconstruído com a história e o seed daquela branch (workflow
+  `Banco Preview`). **Etiquete quando a mudança de banco tiver tela para o
+  Rodrigo testar no celular.** Migration sem tela dispensa a etiqueta: quem
+  prova que ela funciona é o ensaio descartável do `CI Banco`, que roda
+  sempre e não disputa nada com ninguém. Sem etiqueta, o smoke de navegador
+  roda contra o Banco Preview como está, restaurado a partir da `main`.
+- O link da Vercel só vale para teste depois que Vercel e CI Banco estiverem
+  verdes, mais o Banco Preview quando a PR for etiquetada.
 - Fechar ou integrar a PR reconstrói o Banco Preview a partir da `main`.
   Esse reset é obrigatório: remove migration de PR descartada e devolve os
   dados fictícios conhecidos. Nunca copie dados reais de produção para lá.
 - Enquanto existir um único `PaneERP Preview` compartilhado, somente uma PR
-  com migration pode ficar ativa por vez: a automação deve bloquear a
-  segunda, nunca alternar silenciosamente o schema entre duas PRs. Esse
-  limite vem da configuração atual do Supabase, não deste arquivo. Antes de
+  **etiquetada** pode ficar ativa por vez: a automação deve bloquear a
+  segunda, nunca alternar silenciosamente o schema entre duas PRs. PR sem
+  etiqueta não reconstrói nada e por isso nunca é bloqueada por migration
+  alheia — antes era, e foi o que fez a PR 225 ficar vermelha sem defeito
+  próprio. A etiqueta é remendo com data para morrer: quando existir banco
+  por pull request, ela e a fila somem juntas. Esse limite vem da
+  configuração atual do Supabase, não deste arquivo. Antes de
   serializar trabalho, mandar outra sessão esperar ou declarar que "não dá",
   confira a capacidade real da conta; se passar a existir banco por PR, a
   fila deixa de valer e este trecho é corrigido no mesmo PR.

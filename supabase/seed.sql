@@ -1316,3 +1316,124 @@ on conflict (id) do update set
   qty_sent = excluded.qty_sent,
   qty_accepted = excluded.qty_accepted,
   product_name = excluded.product_name;
+
+-- ---------------------------------------------------------------------------
+-- Cenario de historico para a media de saida no planejamento de producao.
+--
+-- O card de cada pao mostra quanto saiu de JC e JA no MESMO dia da semana da
+-- data planejada, usando ate 8 ocorrencias validas em 12 semanas. Sem um
+-- historico assim, o Banco Preview so consegue exibir "sem historico
+-- suficiente" e o teste humano nao prova numero nenhum.
+--
+-- O pao abaixo existe so para isso e nao entra em nenhum outro cenario: as
+-- datas ficam semanas atras, longe do "hoje menos 3/5" usado pelos demais.
+--
+-- Numeros escolhidos para que o teste tenha o que conferir:
+--   JC envia 20 e sobram 4  -> saiu 16 em todas as semanas
+--   JA envia 10 e sobram 2  -> saiu 8, MENOS na 3a e na 7a semana, em que a
+--                              JA nao registra fechamento (dia descartado)
+-- Esperado na tela: JC 16, JA 8, total 24, com a contagem de dias validos
+-- diferente entre as duas lojas.
+-- ---------------------------------------------------------------------------
+
+insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
+values ('teste-historico', '[TESTE] Pao com Historico', '{0,1,2,3,4,5,6}', true, 'un', false, false)
+on conflict (id) do update set
+  name = excluded.name, active = excluded.active, unit = excluded.unit, days = excluded.days;
+
+with semanas as (
+  select generate_series(1, 12) as n
+), alvos as (
+  -- Cobre o dia de hoje e o de amanha: o planejamento costuma ser montado
+  -- para o dia seguinte, mas o teste pode abrir qualquer um dos dois.
+  select n, offset_dia,
+         ((now() at time zone 'America/Sao_Paulo')::date + offset_dia - (n * 7)) as record_date
+  from semanas cross join (values (0), (1)) as dias(offset_dia)
+), destinos as (
+  select id, lower(code) as loja from public.destinations where lower(code) in ('jc', 'ja')
+), planejado as (
+  select a.n, a.offset_dia, a.record_date, d.id as destination_id, d.loja,
+         -- uuid so aceita 0-9 e a-f: n vai ate 12 e offset ate 1, ambos em hex.
+         ('7f' || case when d.loja = 'jc' then 'c' else 'a' end
+            || '00000-0000-4000-8000-0000000000'
+            || lpad(to_hex(a.n * 2 + a.offset_dia), 2, '0'))::uuid as romaneio_id,
+         case when d.loja = 'jc' then 20 else 10 end as qty_sent,
+         case when d.loja = 'jc' then 4 else 2 end as qty_leftover,
+         -- A JA nao registra fechamento na 3a e na 7a semana: e o buraco que
+         -- o card precisa mostrar como dia descartado, e nao como sobra zero.
+         (d.loja = 'jc' or a.n not in (3, 7)) as registra_fechamento
+  from alvos a cross join destinos d
+)
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select romaneio_id, destination_id, record_date, 1, 'enviado', 'Expedicao JC Teste'
+from planejado
+on conflict (id) do update set
+  destination_id = excluded.destination_id,
+  record_date = excluded.record_date,
+  status = excluded.status;
+
+with semanas as (
+  select generate_series(1, 12) as n
+), alvos as (
+  select n, offset_dia,
+         ((now() at time zone 'America/Sao_Paulo')::date + offset_dia - (n * 7)) as record_date
+  from semanas cross join (values (0), (1)) as dias(offset_dia)
+), destinos as (
+  select id, lower(code) as loja from public.destinations where lower(code) in ('jc', 'ja')
+), planejado as (
+  select a.n, a.offset_dia, a.record_date, d.loja,
+         ('7f' || case when d.loja = 'jc' then 'c' else 'a' end
+            || '00000-0000-4000-8000-0000000000'
+            || lpad(to_hex(a.n * 2 + a.offset_dia), 2, '0'))::uuid as romaneio_id,
+         ('7e' || case when d.loja = 'jc' then 'c' else 'a' end
+            || '00000-0000-4000-8000-0000000000'
+            || lpad(to_hex(a.n * 2 + a.offset_dia), 2, '0'))::uuid as item_id,
+         case when d.loja = 'jc' then 20 else 10 end as qty_sent
+  from alvos a cross join destinos d
+)
+insert into public.romaneio_items (
+  id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted
+)
+select item_id, romaneio_id, 'teste-historico', 'bread', '[TESTE] Pao com Historico', qty_sent, null
+from planejado
+on conflict (id) do update set
+  qty_sent = excluded.qty_sent,
+  product_name = excluded.product_name;
+
+with semanas as (
+  select generate_series(1, 12) as n
+), alvos as (
+  select n, offset_dia,
+         ((now() at time zone 'America/Sao_Paulo')::date + offset_dia - (n * 7)) as record_date
+  from semanas cross join (values (0), (1)) as dias(offset_dia)
+), lojas as (
+  select unnest(array['jc', 'ja']) as loja
+), planejado as (
+  select a.n, a.offset_dia, a.record_date, l.loja,
+         ('7d' || case when l.loja = 'jc' then 'c' else 'a' end
+            || '00000-0000-4000-8000-0000000000'
+            || lpad(to_hex(a.n * 2 + a.offset_dia), 2, '0'))::uuid as sobra_id,
+         case when l.loja = 'jc' then 4 else 2 end as quantidade
+  from alvos a cross join lojas l
+  where l.loja = 'jc' or a.n not in (3, 7)
+)
+insert into public.sobras (
+  id, record_date, responsible, product_id, quantity, obs,
+  product_source, store, lot_code, pending_quantity, status,
+  physical_location, reconciliation_status, updated_at
+)
+select
+  sobra_id, record_date, 'Fechamento Teste', 'teste-historico', quantidade,
+  '[TESTE] fechamento historico para a media de saida no planejamento',
+  'bread', loja, 'L' || to_char(record_date, 'MMDD'), 0, 'resolved',
+  'balcao_fechamento', 'not_required', now()
+from planejado
+on conflict (id) do update set
+  record_date = excluded.record_date,
+  quantity = excluded.quantity,
+  store = excluded.store,
+  lot_code = excluded.lot_code,
+  pending_quantity = excluded.pending_quantity,
+  status = excluded.status,
+  reconciliation_status = excluded.reconciliation_status,
+  updated_at = excluded.updated_at;

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -11,8 +11,17 @@ import {
   Save,
   Search,
   Snowflake,
+  Trash2,
 } from 'lucide-react'
+import {
+  BreadDemandHistoryBlock,
+  type BreadDemandHistoryLoadState,
+} from '@/components/BreadDemandHistoryBlock'
 import { getCurrentUser, getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
+import {
+  type BreadDemandSummary,
+} from '@/lib/breadDemandHistory'
+import { fetchBreadDemandHistory } from '@/lib/breadDemandHistoryClient'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
@@ -21,7 +30,10 @@ import {
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
   matchesPlanningBreadSearch,
+  nextProductionPlanDate,
   normalizePlannedQuantity,
+  planCanBeDiscarded,
+  planDateIsExpiredForOrders,
   planHasOrderConversion,
   planIsFullyConvertedToOrders,
   planNeedsOrderConversion,
@@ -85,6 +97,7 @@ interface ProductionPlanSummary {
 
 interface BreadRow extends PlanningBreadLite {
   days: number[]
+  unit: string | null
 }
 
 type QuantityInputs = Record<string, number>
@@ -116,7 +129,7 @@ export default function ProductionPlanningPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [ready, setReady] = useState(false)
-  const [date, setDate] = useState(todayKey())
+  const [date, setDate] = useState(() => nextProductionPlanDate(todayKey()))
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
@@ -131,8 +144,12 @@ export default function ProductionPlanningPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [demandHistoryState, setDemandHistoryState] = useState<BreadDemandHistoryLoadState>('loading')
+  const [demandHistory, setDemandHistory] = useState<Record<string, BreadDemandSummary>>({})
+  const demandHistoryRequestId = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -148,14 +165,42 @@ export default function ProductionPlanningPage() {
   const loadBreads = useCallback(async () => {
     const { data, error: breadError } = await supabase
       .from('breads')
-      .select('id,name,days,active,is_pj')
+      .select('id,name,days,active,is_pj,unit')
       .eq('active', true)
       .eq('is_pj', false)
       .order('name', { ascending: true })
 
     if (breadError) throw breadError
-    setBreads((data ?? []) as BreadRow[])
+    const loadedBreads = (data ?? []) as BreadRow[]
+    setBreads(loadedBreads)
+    return loadedBreads
   }, [])
+
+  const loadDemandHistory = useCallback(async (
+    targetDate: string,
+    targetBreads: BreadRow[],
+  ) => {
+    const requestId = demandHistoryRequestId.current + 1
+    demandHistoryRequestId.current = requestId
+    setDemandHistoryState('loading')
+    setDemandHistory({})
+
+    try {
+      // Quando a falha anterior foi no próprio carregamento dos pães, repetir a
+      // consulta com a lista vazia devolveria "sem histórico" para tudo e
+      // esconderia o erro. Recarrega os pães antes de tentar de novo.
+      const resolvedBreads = targetBreads.length > 0 ? targetBreads : await loadBreads()
+      const summaries = await fetchBreadDemandHistory(targetDate, resolvedBreads)
+
+      if (demandHistoryRequestId.current !== requestId) return
+      setDemandHistory(summaries)
+      setDemandHistoryState('ready')
+    } catch {
+      if (demandHistoryRequestId.current !== requestId) return
+      setDemandHistory({})
+      setDemandHistoryState('error')
+    }
+  }, [loadBreads])
 
   const loadOpenPlans = useCallback(async () => {
     const { data: planRows, error: planError } = await supabase
@@ -342,15 +387,31 @@ export default function ProductionPlanningPage() {
     if (!ready || user?.role !== 'admin') return
     let alive = true
     setLoading(true)
-    Promise.all([loadBreads(), loadOpenPlans(), loadAvailability(date), loadPlan(date)])
+    demandHistoryRequestId.current += 1
+    setDemandHistoryState('loading')
+    setDemandHistory({})
+
+    const breadsRequest = loadBreads()
+    void breadsRequest
+      .then(loadedBreads => {
+        if (alive) void loadDemandHistory(date, loadedBreads)
+      })
+      .catch(() => {
+        if (alive) setDemandHistoryState('error')
+      })
+
+    Promise.all([breadsRequest, loadOpenPlans(), loadAvailability(date), loadPlan(date)])
       .catch(() => {
         if (alive) setError('Não foi possível carregar o planejamento agora.')
       })
       .finally(() => {
         if (alive) setLoading(false)
       })
-    return () => { alive = false }
-  }, [date, loadAvailability, loadBreads, loadOpenPlans, loadPlan, ready, user?.role])
+    return () => {
+      alive = false
+      demandHistoryRequestId.current += 1
+    }
+  }, [date, loadAvailability, loadBreads, loadDemandHistory, loadOpenPlans, loadPlan, ready, user?.role])
 
   const expectedBreads = useMemo(() => plannedBreadsForDate(breads, date), [breads, date])
   const itemsByBread = useMemo(() => {
@@ -396,6 +457,9 @@ export default function ProductionPlanningPage() {
   const planningHasOrderConversion = planHasOrderConversion(items)
   const planningFullyConvertedToOrder = planIsFullyConvertedToOrders(items)
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status) && !planningHasOrderConversion)
+  const todayDate = todayKey()
+  const planDateExpired = Boolean(plan && planDateIsExpiredForOrders(plan.production_date, todayDate))
+  const canDiscard = Boolean(plan && planCanBeDiscarded(plan.status, items))
   const searchQuery = search.trim()
   const searchIsActive = searchQuery.length >= 2
   const matchingCatalogBreads = searchIsActive
@@ -552,10 +616,48 @@ export default function ProductionPlanningPage() {
     }
   }
 
+  async function discardPlan() {
+    if (!plan || !canDiscard || discarding) return
+    const confirmed = window.confirm(
+      `Descartar o planejamento de ${dateLabel(plan.production_date)}?\n\n`
+      + `${totalPlanned} pães planejados serão apagados. Não dá para desfazer.`,
+    )
+    if (!confirmed) return
+
+    setDiscarding(true)
+    setError('')
+    try {
+      // Os itens saem junto pelo ON DELETE CASCADE — apagar só o pai mantém a
+      // operação atômica. O select confirma que a policy deixou apagar de fato,
+      // porque RLS bloqueada devolve zero linhas sem erro.
+      const { data: deletedRows, error: deleteError } = await supabase
+        .from('production_plans')
+        .delete()
+        .eq('id', plan.id)
+        .select('id')
+
+      if (deleteError) throw deleteError
+      if ((deletedRows ?? []).length === 0) throw new Error('plan not deleted')
+
+      showToastPS('Planejamento descartado.')
+      await loadPlan(date)
+      void loadOpenPlans().catch(() => undefined)
+    } catch {
+      setError('Não foi possível descartar este planejamento.')
+    } finally {
+      setDiscarding(false)
+    }
+  }
+
   async function refreshPlanning() {
     setError('')
     try {
-      await Promise.all([loadOpenPlans(), loadAvailability(date), loadPlan(date)])
+      await Promise.all([
+        loadOpenPlans(),
+        loadAvailability(date),
+        loadPlan(date),
+        loadDemandHistory(date, breads),
+      ])
     } catch {
       setError('Não foi possível carregar os planejamentos agora.')
     }
@@ -617,31 +719,37 @@ export default function ProductionPlanningPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-            {openPlans.map(openPlan => (
-              <button
-                key={openPlan.id}
-                type="button"
-                className="ps-btn ghost"
-                onClick={() => openPlanDate(openPlan.production_date)}
-                style={{
-                  justifyContent: 'space-between',
-                  borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
-                  background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
-                }}
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <b>{dateLabel(openPlan.production_date)}</b>
-                  <small style={{ color: 'var(--ink-soft)', fontWeight: 700 }}>
-                    {PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
-                  </small>
-                </span>
-                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <span className="ps-store-chip">Total {openPlan.total}</span>
-                  <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
-                  <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
-                </span>
-              </button>
-            ))}
+            {openPlans.map(openPlan => {
+              const expired = planDateIsExpiredForOrders(openPlan.production_date, todayDate)
+
+              return (
+                <button
+                  key={openPlan.id}
+                  type="button"
+                  className="ps-btn ghost"
+                  onClick={() => openPlanDate(openPlan.production_date)}
+                  style={{
+                    justifyContent: 'space-between',
+                    borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
+                    background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
+                  }}
+                >
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                    <b>{dateLabel(openPlan.production_date)}</b>
+                    <small style={{ color: expired ? 'var(--berry)' : 'var(--ink-soft)', fontWeight: 700 }}>
+                      {expired
+                        ? 'Data já passou — não vira mais pedido'
+                        : PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
+                    </small>
+                  </span>
+                  <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span className="ps-store-chip">Total {openPlan.total}</span>
+                    <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
+                    <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
       </section>
@@ -679,6 +787,12 @@ export default function ProductionPlanningPage() {
               </p>
             </div>
           </div>
+          {planDateIsExpiredForOrders(date, todayDate) && (
+            <p style={{ margin: '0 0 10px', color: 'var(--berry)', fontSize: 13, fontWeight: 700 }}>
+              <AlertTriangle size={14} /> A Produção só oferece de amanhã em diante. Planejamento
+              criado nesta data não vira pedido.
+            </p>
+          )}
           <button type="button" className="ps-btn primary block" onClick={createPlan} disabled={creating}>
             <Plus size={17} /> {creating ? 'Criando...' : 'Criar rascunho'}
           </button>
@@ -709,13 +823,27 @@ export default function ProductionPlanningPage() {
                   </span>
                 </div>
               </div>
-              {canEdit && (
-                <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
-                  <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
-                </button>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                {canEdit && (
+                  <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
+                    <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                )}
+                {canDiscard && (
+                  <button type="button" className="ps-btn danger" onClick={discardPlan} disabled={discarding}>
+                    <Trash2 size={17} /> {discarding ? 'Descartando...' : 'Descartar'}
+                  </button>
+                )}
+              </div>
             </div>
           </section>
+
+          {planDateExpired && (
+            <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC', color: 'var(--berry)' }}>
+              <AlertTriangle size={16} /> Essa data já passou. A Produção só oferece de amanhã em diante,
+              então este planejamento não vira mais pedido — descarte e crie um na data certa.
+            </div>
+          )}
 
           {!canEdit && (
             <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC' }}>
@@ -755,6 +883,12 @@ export default function ProductionPlanningPage() {
                       <span className="ps-store-chip">Total {breadTotal}</span>
                     </span>
                   </div>
+
+                  <BreadDemandHistoryBlock
+                    state={demandHistoryState}
+                    summary={demandHistory[bread.id]}
+                    onRetry={() => void loadDemandHistory(date, breads)}
+                  />
 
                   <div className="ps-grid" style={{ marginTop: 8 }}>
                     {PRODUCTION_PLAN_STORES.map(store => {
