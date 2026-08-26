@@ -190,8 +190,36 @@ begin
     return v_receivable_id;
   end if;
 
+
+  if v_pedido.valor is null or v_pedido.valor <= 0 then
+    raise exception using errcode = '22023',
+      message = 'Pedido sem preço não vira cobrança. Confira a tabela de preço do cliente.';
+  end if;
+
+  select customer.id, customer.name, customer.payment_term_days, customer.active
+    into v_customer
+  from public.customers customer
+  where customer.id = v_pedido.customer_id;
+  if v_customer.id is null then
+    raise exception using errcode = 'P0002', message = 'Cliente do pedido não encontrado.';
+  end if;
+
+  -- Sem prazo combinado não há vencimento que se possa calcular sem inventar.
+  -- Devolver null em vez de falhar é deliberado: quem chama pode ser a
+  -- Expedição confirmando um envio, e travar a operação por causa de um campo
+  -- do financeiro é acoplamento que quebra a padaria. O pedido continua
+  -- aparecendo como "a faturar" até alguém cadastrar o prazo.
+  if v_customer.payment_term_days is null then
+    return null;
+  end if;
+
   -- A trava nova: sem envio confirmado e com linha sem conferência, o pedido
   -- não vira cobrança.
+  --
+  -- Vem DEPOIS da checagem de prazo de propósito: cliente sem prazo é
+  -- bloqueio do cadastro, que a Elis resolve sozinha, e trava tudo daquele
+  -- cliente. Deixar a conferência passar na frente trocaria um recado que
+  -- ela resolve por um que depende de outra pessoa.
   --
   -- POR QUE NÃO É MAIS FORTE QUE ISSO, e é decisão consciente. A revisão
   -- adversarial apontou, com razão, que existe um segundo caminho para cobrar
@@ -217,28 +245,6 @@ begin
   if v_pedido.enviadas = 0 and v_pedido.sem_conferencia > 0 then
     raise exception using errcode = '22023',
       message = 'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.';
-  end if;
-
-  if v_pedido.valor is null or v_pedido.valor <= 0 then
-    raise exception using errcode = '22023',
-      message = 'Pedido sem preço não vira cobrança. Confira a tabela de preço do cliente.';
-  end if;
-
-  select customer.id, customer.name, customer.payment_term_days, customer.active
-    into v_customer
-  from public.customers customer
-  where customer.id = v_pedido.customer_id;
-  if v_customer.id is null then
-    raise exception using errcode = 'P0002', message = 'Cliente do pedido não encontrado.';
-  end if;
-
-  -- Sem prazo combinado não há vencimento que se possa calcular sem inventar.
-  -- Devolver null em vez de falhar é deliberado: quem chama pode ser a
-  -- Expedição confirmando um envio, e travar a operação por causa de um campo
-  -- do financeiro é acoplamento que quebra a padaria. O pedido continua
-  -- aparecendo como "a faturar" até alguém cadastrar o prazo.
-  if v_customer.payment_term_days is null then
-    return null;
   end if;
 
   -- A data do faturamento é o dia em que o pão saiu: o envio confirmado
