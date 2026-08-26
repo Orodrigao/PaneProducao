@@ -36,6 +36,7 @@ import {
   formatRomaneioTime as fmtTime,
 } from '@/lib/romaneioDateTime'
 import { canSeeRomaneio } from '@/lib/romaneioAccess'
+import { validateRomaneioConference } from '@/lib/romaneioConference'
 import {
   canPerformRomaneioAction,
   loadCurrentRomaneioPermissions,
@@ -808,27 +809,24 @@ export default function RomaneioPage() {
       showToastPS('Carregue os itens do romaneio antes de salvar a conferência.')
       return
     }
-    const incompleteItem = confItems.find(item => {
+    // A regra mora em src/lib/romaneioConference.ts para poder ser exercitada
+    // sem navegador. Chamar de la e o que faz o teste valer: copia da regra em
+    // dois lugares e teste que prova a copia.
+    const veredito = validateRomaneioConference(confItems.map(item => {
       const conference = confData[item.id]
-      return !conference
-        || !Number.isFinite(conference.rec)
-        || !Number.isFinite(conference.acc)
-        || conference.rec < 0
-        || conference.acc < 0
-        || conference.acc > conference.rec
-    })
-    if (incompleteItem) {
-      showToastPS(`Confira recebido e aceito de ${incompleteItem.product_name} antes de fechar.`)
-      return
-    }
-    const overweightItem = confItems.find(item => {
-      const conference = confData[item.id]
-      return conference
-        && isWeightControlledRomaneioProduct(item.product_name)
-        && (conference.rec > ROMANEIO_WEIGHT_LIMIT_KG || conference.acc > ROMANEIO_WEIGHT_LIMIT_KG)
-    })
-    if (overweightItem) {
-      showToastPS(`Quantidade de ${overweightItem.product_name} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`)
+      return {
+        productName: item.product_name,
+        received: conference ? conference.rec : Number.NaN,
+        accepted: conference ? conference.acc : Number.NaN,
+        weightControlled: isWeightControlledRomaneioProduct(item.product_name),
+      }
+    }))
+    if (!veredito.ok) {
+      showToastPS(
+        veredito.problem === 'acima-do-limite-de-peso'
+          ? `Quantidade de ${veredito.productName} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`
+          : `Confira recebido e aceito de ${veredito.productName} antes de fechar.`,
+      )
       return
     }
     showLoad('Salvando conferência...')
