@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(40);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -88,20 +88,6 @@ insert into public.orders (
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 8, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c2', '[TESTE] Cliente Fase 3 Sem Prazo',
    private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
-
--- A conferencia da Expedicao, que a partir do passo 1 da fase 2 e pre-requisito
--- da cobranca. Os pedidos acima nasceram sem ela porque o recurso nao existia
--- quando este teste foi escrito. A porta protegida precisa ser aberta a mao
--- aqui: o gatilho `guard_dispatched_quantity` so aceita escrita vinda da RPC.
-select set_config('pane.pj_check_rpc', 'on', true);
-update public.orders
-set dispatched_quantity = quantity,
-    dispatched_quantity_at = now()
-where order_group_id in (
-  '95000000-0000-4000-8000-0000000000a1'::uuid,
-  '95000000-0000-4000-8000-0000000000a2'::uuid
-);
-select set_config('pane.pj_check_rpc', '', true);
 
 -- Um terceiro pedido, entregue ontem e SEM conferencia nenhuma: e o caso da
 -- Ines Vizioli, 25/08, que virou fatura por deducao de calendario.
@@ -277,6 +263,44 @@ select ok(exists(select 1 from public.list_pj_orders_to_bill()
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido com cobranca cancelada volta para a lista de a faturar');
 
+-- Corrigir o pedido apaga a conferencia, e a cobranca volta a esperar --------
+-- `private.limpar_conferencia_ao_mudar_pedido` zera `dispatched_quantity` da
+-- linha corrigida, mas NAO zera `dispatched_at`. Antes do passo 1 isso deixava
+-- a cobranca sair por um numero que ninguem conferiu; e o caminho que a revisao
+-- adversarial apontou como o mais provavel depois de fechado o de calendario.
+
+select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), false,
+  'o pedido corrigido segue marcado como enviado, entao a lista nao o mostra pendente');
+
+select throws_ok(
+  $$ select public.create_receivable_from_pj_order(
+       '95000000-0000-4000-8000-00000000f00a'::uuid,
+       '95000000-0000-4000-8000-0000000000a1'::uuid) $$,
+  '22023',
+  'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.',
+  'mas o motor recusa, porque a linha corrigida perdeu o numero conferido'
+);
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002', true);
+
+select lives_ok(
+  $$ select public.save_pj_order_dispatch_quantities(
+       '95000000-0000-4000-8000-00000000f00b'::uuid,
+       '95000000-0000-4000-8000-0000000000a1'::uuid,
+       '[{"order_id":"95000000-0000-4000-8000-00000000e001","quantity":25}]'::jsonb,
+       (select max(dispatched_quantity_at) from public.orders
+         where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid)
+     ) $$,
+  'a Expedicao confere de novo a linha corrigida'
+);
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
+
 -- O caminho manual do financeiro -------------------------------------------
 
 select is((select amount from public.list_pj_orders_to_bill()
@@ -357,7 +381,7 @@ select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
   'pedido sem conferencia aparece marcado como aguardando conferencia');
 
 select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), false,
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid), false,
   'pedido ja conferido nao fica marcado');
 
 -- Continuar na lista e deliberado: sumir faria a Elis perder de vista um

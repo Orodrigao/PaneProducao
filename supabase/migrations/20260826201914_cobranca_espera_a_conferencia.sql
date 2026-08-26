@@ -76,9 +76,13 @@ as $$
            max(order_row.dispatched_at) as dispatched_at,
            count(*)::int as items,
            round(sum(order_row.quantity * coalesce(order_row.unit_price, 0)), 2) as amount,
-           -- Envio confirmado implica tudo conferido, porque
-           -- `confirm_pj_order_dispatch` exige. Entao esperar conferencia e
-           -- exatamente: nao foi enviado E falta numero em alguma linha viva.
+           -- Vale para pedido enviado a partir de 21/08, quando a
+           -- conferencia nasceu: `confirm_pj_order_dispatch` passou a exigir
+           -- tudo conferido. NAO vale para o legado — medi 74 grupos enviados
+           -- com linha sem conferencia em 26/08. Por isso a lista olha o
+           -- envio: legado enviado nao deve aparecer como pendente da
+           -- Expedicao, ja que a cobranca dele existe e o retorno da cobranca
+           -- existente resolve antes de qualquer trava.
            (max(order_row.dispatched_at) is null
             and count(*) filter (
               where order_row.dispatched_quantity is null
@@ -186,10 +190,24 @@ begin
     return v_receivable_id;
   end if;
 
-  -- A trava nova: sem envio confirmado e com linha sem conferência, o pedido
-  -- não vira cobrança. Quem chama confirmando o envio já gravou
-  -- `dispatched_at` antes desta chamada, então nunca cai aqui.
-  if v_pedido.enviadas = 0 and v_pedido.sem_conferencia > 0 then
+  -- A trava nova: linha sem conferência não vira cobrança. Ponto.
+  --
+  -- Sem olhar `dispatched_at` de propósito. A revisão adversarial mostrou que
+  -- condicionar a "não enviado" deixava um buraco maior que o fechado: quando
+  -- a Elis cancela a cobrança e corrige a quantidade,
+  -- `private.limpar_conferencia_ao_mudar_pedido` apaga `dispatched_quantity`
+  -- mas NÃO apaga `dispatched_at`. O pedido ficava "enviado" com número que
+  -- ninguém conferiu, e a cobrança saía por ele. Fechado o caminho de
+  -- calendário, esse viraria a porta mais provável.
+  --
+  -- Quem confirma o envio não cai aqui: `confirm_pj_order_dispatch` exige tudo
+  -- conferido antes de gravar `dispatched_at`, então nesse instante
+  -- `sem_conferencia` já é zero.
+  --
+  -- Legado conferido: medido em produção em 26/08, existem 74 grupos enviados
+  -- com linha sem conferência, e ZERO deles sem cobrança viva. Todos param no
+  -- retorno da cobrança existente, logo acima, e nunca alcançam esta trava.
+  if v_pedido.sem_conferencia > 0 then
     raise exception using errcode = '22023',
       message = 'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.';
   end if;
