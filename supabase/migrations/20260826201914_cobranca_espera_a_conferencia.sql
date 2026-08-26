@@ -190,24 +190,31 @@ begin
     return v_receivable_id;
   end if;
 
-  -- A trava nova: linha sem conferência não vira cobrança. Ponto.
+  -- A trava nova: sem envio confirmado e com linha sem conferência, o pedido
+  -- não vira cobrança.
   --
-  -- Sem olhar `dispatched_at` de propósito. A revisão adversarial mostrou que
-  -- condicionar a "não enviado" deixava um buraco maior que o fechado: quando
-  -- a Elis cancela a cobrança e corrige a quantidade,
+  -- POR QUE NÃO É MAIS FORTE QUE ISSO, e é decisão consciente. A revisão
+  -- adversarial apontou, com razão, que existe um segundo caminho para cobrar
+  -- sem conferência: quando a Elis cancela a cobrança e corrige a quantidade,
   -- `private.limpar_conferencia_ao_mudar_pedido` apaga `dispatched_quantity`
-  -- mas NÃO apaga `dispatched_at`. O pedido ficava "enviado" com número que
-  -- ninguém conferiu, e a cobrança saía por ele. Fechado o caminho de
-  -- calendário, esse viraria a porta mais provável.
+  -- mas NÃO apaga `dispatched_at`, então o pedido segue "enviado" com número
+  -- que ninguém conferiu.
   --
-  -- Quem confirma o envio não cai aqui: `confirm_pj_order_dispatch` exige tudo
-  -- conferido antes de gravar `dispatched_at`, então nesse instante
-  -- `sem_conferencia` já é zero.
+  -- Tentei fechar olhando só `sem_conferencia`. Vira BECO SEM SAÍDA, provado
+  -- pelo CI: `save_pj_order_dispatch_quantities` recusa reconferir pedido já
+  -- marcado como enviado ("A conferência não pode mais ser alterada aqui",
+  -- 20260820232802:352). O pedido corrigido ficaria sem poder ser conferido E
+  -- sem poder ser cobrado — a mesma armadilha de três portas que prendeu 65
+  -- pedidos da Expedição em 26/08. Trocar um buraco por uma armadilha é pior.
   --
-  -- Legado conferido: medido em produção em 26/08, existem 74 grupos enviados
-  -- com linha sem conferência, e ZERO deles sem cobrança viva. Todos param no
-  -- retorno da cobrança existente, logo acima, e nunca alcançam esta trava.
-  if v_pedido.sem_conferencia > 0 then
+  -- Fica declarado como buraco conhecido, com tripwire em
+  -- `supabase/tests/pedido_pj_vira_cobranca.test.sql`. Quem fecha é a metade B
+  -- do passo 2, que existe exatamente para isso: cancelar as cobranças vivas,
+  -- atualizar a quantidade e regerar pelo mesmo motor, numa transação só.
+  --
+  -- Quem confirma o envio não cai aqui: `confirm_pj_order_dispatch` grava
+  -- `dispatched_at` antes desta chamada.
+  if v_pedido.enviadas = 0 and v_pedido.sem_conferencia > 0 then
     raise exception using errcode = '22023',
       message = 'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.';
   end if;

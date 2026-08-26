@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(40);
+select plan(39);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -263,43 +263,24 @@ select ok(exists(select 1 from public.list_pj_orders_to_bill()
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido com cobranca cancelada volta para a lista de a faturar');
 
--- Corrigir o pedido apaga a conferencia, e a cobranca volta a esperar --------
--- `private.limpar_conferencia_ao_mudar_pedido` zera `dispatched_quantity` da
--- linha corrigida, mas NAO zera `dispatched_at`. Antes do passo 1 isso deixava
--- a cobranca sair por um numero que ninguem conferiu; e o caminho que a revisao
--- adversarial apontou como o mais provavel depois de fechado o de calendario.
+-- TRIPWIRE de buraco conhecido ----------------------------------------------
+-- Corrigir a quantidade de um pedido ja conferido apaga `dispatched_quantity`
+-- da linha corrigida, mas nao apaga `dispatched_at`. Entao a cobranca ainda
+-- sai por um numero que ninguem conferiu. A trava do passo 1 NAO fecha isso de
+-- proposito: fechar aqui criaria pedido sem saida, porque
+-- `save_pj_order_dispatch_quantities` recusa reconferir pedido ja enviado.
+--
+-- Este teste afirma o buraco. Quando a metade B do passo 2 entrar, ele vai
+-- falhar — e e para falhar: e o lembrete de vir aqui e trocar por
+-- `throws_ok`.
+select is((select count(*)::int from public.orders
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid
+      and cancelled_at is null and dispatched_quantity is null), 1,
+  'BURACO CONHECIDO: corrigir o pedido apaga a conferencia da linha corrigida');
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), false,
-  'o pedido corrigido segue marcado como enviado, entao a lista nao o mostra pendente');
-
-select throws_ok(
-  $$ select public.create_receivable_from_pj_order(
-       '95000000-0000-4000-8000-00000000f00a'::uuid,
-       '95000000-0000-4000-8000-0000000000a1'::uuid) $$,
-  '22023',
-  'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.',
-  'mas o motor recusa, porque a linha corrigida perdeu o numero conferido'
-);
-
-reset role;
-set local role authenticated;
-select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000002', true);
-
-select lives_ok(
-  $$ select public.save_pj_order_dispatch_quantities(
-       '95000000-0000-4000-8000-00000000f00b'::uuid,
-       '95000000-0000-4000-8000-0000000000a1'::uuid,
-       '[{"order_id":"95000000-0000-4000-8000-00000000e001","quantity":25}]'::jsonb,
-       (select max(dispatched_quantity_at) from public.orders
-         where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid)
-     ) $$,
-  'a Expedicao confere de novo a linha corrigida'
-);
-
-reset role;
-set local role authenticated;
-select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
+select is((select bool_or(dispatched_at is not null) from public.orders
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), true,
+  'BURACO CONHECIDO: mas o pedido continua marcado como enviado, e por isso a cobranca passa');
 
 -- O caminho manual do financeiro -------------------------------------------
 
