@@ -1,116 +1,64 @@
 -- A fila da Expedicao acumulava pedido que ela nao tinha como resolver.
 --
--- Em 2026-08-26 a Rafaela via 74 pedidos em "Em aberto" e o Rodrigo via 9, na
--- mesma tela. A diferenca eram 65 pedidos, o mais antigo entregue em 04/06.
+-- Em 2026-08-26 a Rafaela via 69 pedidos em "Em aberto" e o Rodrigo via 4, na
+-- mesma tela. A diferenca eram 65 pedidos, o mais antigo entregue em 04/06:
+-- 26 de junho, 38 de julho e 1 de agosto.
 --
--- A armadilha tinha tres lados, e cada trava sozinha esta certa:
+-- A armadilha tinha quatro lados, e cada trava sozinha esta certa:
 --
---   1. `hasPendingCheck` (src/lib/pjOrderList.ts) segura na fila o pedido com
---      item por conferir, para que entrega de sabado conferida na segunda nao
---      vire orfa. Vale so para o perfil da Expedicao, por isso a tela do admin
---      ficava limpa.
---   2. Conferir era recusado: 64 dos 65 ja tinham virado cobranca, e
---      `save_pj_order_dispatch_quantities` protege valor ja faturado.
---   3. "Marcar como enviado" era recusado por `confirm_pj_order_dispatch`,
---      que exige tudo conferido.
+--   1. `hasPendingDispatchCheck` (src/lib/pjOrderList.ts) segura na fila o
+--      pedido com item por conferir, para que entrega de sabado conferida na
+--      segunda nao vire orfa. Vale so para o perfil da Expedicao, por isso a
+--      tela do admin ficava limpa.
+--   2. Conferir e recusado por `save_pj_order_dispatch_quantities`: 64 dos 65
+--      ja tinham virado cobranca, e a funcao protege valor ja faturado.
+--   3. "Marcar como enviado" e recusado por `confirm_pj_order_dispatch`, que
+--      exige tudo conferido.
+--   4. E o gatilho `private.guard_billed_pj_order_changes` congela QUALQUER
+--      alteracao em pedido PJ ja faturado, e a lista de colunas congeladas
+--      inclui `dispatched_quantity` e `dispatched_quantity_reason`.
 --
--- Ninguem errou. O que ninguem previu foi o encontro das duas protecoes sobre
+-- Ninguem errou. O que ninguem previu foi o encontro dessas protecoes sobre
 -- pedido nascido ANTES de a conferencia existir, em 2026-08-21. O comentario da
 -- migration 20260820232802 chegou a declarar a hipotese errada: "Pedido
 -- anterior a esta migration tem tudo em null, entao a Expedicao confere antes
 -- de enviar". Ela nao consegue: a cobranca ja fechou a porta.
 --
--- Esta migration faz duas coisas.
+-- ---------------------------------------------------------------------------
+-- POR QUE ESTE ARQUIVO FOI EDITADO DEPOIS DE MERGEADO
+-- ---------------------------------------------------------------------------
+-- A regra da casa e que migration e so ida, e correcao de migration mergeada e
+-- migration nova. Ela vale para migration que APLICOU. Esta nunca aplicou.
 --
--- PARTE A, dado: preenche a conferencia que ficou para tras, assumindo que saiu
--- a quantidade pedida. Decisao do Rodrigo em 2026-08-26, com a ressalva dita e
--- aceita: ninguem lembra o que saiu em junho, entao o numero e ASSUMIDO, nao
--- observado. Por isso a linha nasce marcada como ajuste retroativo, sem pessoa
--- no campo de autor, para que qualquer medicao futura do vazamento entre
--- pedido e envio consiga separar o que foi visto do que foi presumido. Sem essa
--- marca, 167 acertos perfeitos que ninguem conferiu fariam o vazamento parecer
--- menor do que e, que e o erro que a fase 1 existe para nao cometer.
+-- A primeira versao deste arquivo tambem preenchia a conferencia dos 65 com a
+-- quantidade pedida. Em producao isso bateu no gatilho do item 4 e a transacao
+-- inteira voltou atras: `supabase_migrations.schema_migrations` nao registrou
+-- esta versao, nenhuma linha mudou, e a `Banco (migrations)` de 2026-08-26
+-- 19:03 falhou com "Este pedido ja virou cobranca". Enquanto o arquivo ficasse
+-- como estava, ele seria retentado a cada publicacao e travaria toda mudanca de
+-- banco seguinte. Adicionar uma migration nova nao resolveria: a que falha vem
+-- antes na ordem.
 --
--- NENHUM VALOR MUDA. `private.build_receivable_from_pj_order` calcula a
--- cobranca por `orders.quantity`, nunca por `dispatched_quantity` (conferido no
--- banco de producao em 2026-08-26). As 64 cobrancas que ja existem ficam
--- exatamente como estao.
+-- O ensaio do `CI Banco` nao pegou o defeito porque roda num banco limpo, onde
+-- o alvo do preenchimento e vazio: uma migration de dado cujo conjunto alvo nao
+-- existe no banco de teste nao esta testada, so executada.
 --
--- PARTE B, regra: a fila passa a saber se o pedido ja virou cobranca, para
--- soltar o que nao tem mais como ser conferido. Sem isso o caso volta: basta um
--- pedido faturado antes de alguem conferir.
+-- ---------------------------------------------------------------------------
+-- O QUE ESTA VERSAO FAZ, E O QUE DEIXOU DE FAZER
+-- ---------------------------------------------------------------------------
+-- Decisao do Rodrigo em 2026-08-26, depois de ver a trava do item 4: "o que
+-- ficou para tras, ficou para tras". O preenchimento retroativo foi ABANDONADO.
+-- Os 65 pedidos ficam sem conferencia para sempre, e isso e melhor do que
+-- afrouxar uma protecao de dinheiro por um numero que ninguem observou.
+--
+-- Sobra a regra, que resolve a dor sem escrever em dado nenhum: a fila passa a
+-- saber se o pedido ja virou cobranca, e o cliente solta o que nao tem mais
+-- como ser conferido. Some 64 dos 65 da tela da Expedicao. O 65o segue la de
+-- proposito: e o unico que nunca virou cobranca, entao e o unico que ela ainda
+-- consegue conferir e fechar.
 
 begin;
 
--- ---------------------------------------------------------------------------
--- PARTE A: a conferencia que ficou para tras
--- ---------------------------------------------------------------------------
--- A porta protegida de `private.guard_dispatched_quantity`. Sem ela o gatilho
--- recusa qualquer escrita nas colunas de conferencia, inclusive esta. Vale ate
--- o fim da transacao e e fechada no fim do bloco.
-select set_config('pane.pj_check_rpc', 'on', true);
-
-with alvo as (
-  select
-    order_row.id,
-    order_row.order_group_id,
-    order_row.quantity
-  from public.orders order_row
-  where order_row.order_type = 'pj'
-    and order_row.cancelled_at is null
-    and order_row.dispatched_at is null
-    and order_row.dispatched_quantity is null
-    and order_row.order_group_id is not null
-    and order_row.quantity > 0
-    -- Corte fixo, nao `current_date`: migration precisa produzir o mesmo
-    -- resultado hoje e daqui a um mes. 2026-08-21 e a data em que a
-    -- conferencia subiu (PR 251). Pedido entregue ate ali nasceu sem ter como
-    -- ser conferido.
-    and order_row.delivery_date is not null
-    and order_row.delivery_date <= date '2026-08-21'
-), historico as (
-  -- O registro de que este numero foi assumido, e nao observado. `created_by`
-  -- fica nulo de proposito: nao houve pessoa.
-  insert into public.pj_order_quantity_checks (
-    request_id,
-    order_id,
-    order_group_id,
-    estimated_quantity,
-    quantity_before,
-    quantity_after,
-    reason,
-    created_by,
-    created_by_name
-  )
-  select
-    '5f3a9c22-1d4e-4a7b-9c68-0e2b7d5a4f10'::uuid,
-    alvo.id,
-    alvo.order_group_id,
-    alvo.quantity,
-    null,
-    alvo.quantity,
-    'Ajuste retroativo de 2026-08-26: assumida a quantidade do pedido. Entrega anterior a existir a conferencia, nao houve observacao real.',
-    null,
-    'Ajuste retroativo'
-  from alvo
-  returning order_id
-)
-update public.orders order_row
-set
-  dispatched_quantity = alvo.quantity,
-  dispatched_quantity_reason = 'Ajuste retroativo de 2026-08-26: assumida a quantidade do pedido. Entrega anterior a existir a conferencia, nao houve observacao real.',
-  dispatched_quantity_at = now(),
-  dispatched_quantity_by = null,
-  dispatched_quantity_by_name = 'Ajuste retroativo'
-from alvo
-where order_row.id = alvo.id;
-
--- Fecha a porta antes de qualquer outra escrita nesta transacao.
-select set_config('pane.pj_check_rpc', '', true);
-
--- ---------------------------------------------------------------------------
--- PARTE B: a fila passa a saber o que ja virou cobranca
--- ---------------------------------------------------------------------------
 -- `create or replace` nao altera tipo de retorno, entao e `drop` + `create`. E
 -- o `drop` PERDE os grants: reconceder explicitamente logo abaixo, porque
 -- objetos novos deste projeto nascem sem privilegio nenhum
