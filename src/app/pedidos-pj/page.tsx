@@ -17,6 +17,7 @@ import {
 } from '@/lib/orderCancellation'
 import { cancelOrderRows } from '@/lib/orderCancellationClient'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
+import { hasPendingDispatchCheck } from '@/lib/pjOrderList'
 import {
   confirmPjOrderDispatch,
   loadPjOrdersForDispatch,
@@ -65,6 +66,9 @@ interface OrderRow {
   dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
   dispatched_quantity:number|null; dispatched_quantity_reason:string|null
   dispatched_quantity_at:string|null; dispatched_quantity_by_name:string|null
+  // So a fila da Expedicao recebe este campo: e ela que precisa saber se a
+  // porta da conferencia ja fechou. O caminho comercial nao consulta.
+  already_billed?:boolean
 }
 interface PedidoGroup {
   key:string
@@ -135,6 +139,7 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
     dispatched_quantity_reason: row.dispatched_quantity_reason,
     dispatched_quantity_at: row.dispatched_quantity_at,
     dispatched_quantity_by_name: row.dispatched_quantity_by_name,
+    already_billed: row.ja_virou_cobranca,
   }
 }
 
@@ -641,6 +646,9 @@ export default function PedidosPJPage() {
     : []
   const viewingCheckVersion = versionOf(viewingCheckLines)
   const viewingReadiness = dispatchReadiness(viewingCheckLines.map(line => ({ sent: line.sent })))
+  // O banco recusa conferencia em pedido ja faturado. Sem esta leitura, a tela
+  // deixa a pessoa preencher os numeros e so avisa no "Salvar".
+  const viewingAlreadyBilled = viewing?.rows.some(row => row.already_billed === true) === true
 
   const listOrders: PjOrderListDisplayItem[] = pedidosGrouped.map(group => {
     const status = groupStatus(group)
@@ -654,10 +662,17 @@ export default function PedidosPJPage() {
       dispatchedAt: group.dispatched_at,
       // Enquanto faltar conferir, o pedido nao cai no Historico pela virada do
       // dia: sem isso, entrega de sabado conferida na segunda vira orfa.
-      hasPendingCheck: access.mode === 'dispatch'
-        && !group.cancelled_at
-        && !group.dispatched_at
-        && group.rows.some(row => row.dispatched_quantity === null),
+      //
+      // Mas so enquanto conferir ainda for POSSIVEL: a regra inteira, com o
+      // porque de cada porta, esta em `hasPendingDispatchCheck`.
+      hasPendingCheck: access.mode === 'dispatch' && hasPendingDispatchCheck({
+        cancelledAt: group.cancelled_at,
+        dispatchedAt: group.dispatched_at,
+        rows: group.rows.map(row => ({
+          dispatchedQuantity: row.dispatched_quantity,
+          alreadyBilled: row.already_billed,
+        })),
+      }),
       itemCount: group.rows.length,
       total: group.total,
       statusLabel: status.label,
@@ -966,7 +981,20 @@ export default function PedidosPJPage() {
               />
             )}
 
-            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && (
+            {/* Pedido ja faturado: o banco recusa conferencia nele. Dizer isso
+                aqui, antes de a pessoa digitar, em vez de deixar o "Salvar"
+                falhar com uma mensagem que ela nao esperava. */}
+            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && viewingAlreadyBilled && (
+              <div className="ps-warning" style={{marginBottom:14, display:'grid', gap:4}}>
+                <strong>Conferência encerrada para este pedido</strong>
+                <span style={{fontSize:12.5}}>
+                  Ele já virou cobrança, então a quantidade enviada não pode mais ser alterada por aqui.
+                  Se algo saiu diferente do pedido, avise o financeiro.
+                </span>
+              </div>
+            )}
+
+            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && !viewingAlreadyBilled && (
               <PjDispatchCheckPanel
                 key={`${viewing.key}:${viewingCheckVersion ?? 'novo'}`}
                 lines={viewingCheckLines}
@@ -975,7 +1003,7 @@ export default function PedidosPJPage() {
               />
             )}
 
-            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && (
+            {access.canDispatch && !viewing.cancelled_at && !viewing.dispatched_at && !viewingAlreadyBilled && (
               <div style={{marginBottom:14, display:'grid', gap:6}}>
                 <button
                   type="button"

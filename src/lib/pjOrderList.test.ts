@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { organizePjOrders, type PjOrderListItem } from './pjOrderList'
+import { hasPendingDispatchCheck, organizePjOrders, type PjOrderListItem } from './pjOrderList'
 
 function order(
   key: string,
@@ -146,5 +146,68 @@ describe('pedido com conferência pendente', () => {
     )
     expect(open).toHaveLength(0)
     expect(history).toHaveLength(2)
+  })
+})
+
+describe('quando o pedido ainda segura a fila da Expedição', () => {
+  const linhaPorConferir = { dispatchedQuantity: null }
+  const linhaConferida = { dispatchedQuantity: 48 }
+
+  it('segura enquanto houver item por conferir', () => {
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: null,
+      rows: [linhaConferida, linhaPorConferir],
+    })).toBe(true)
+  })
+
+  it('solta assim que tudo foi conferido', () => {
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: null,
+      rows: [linhaConferida, linhaConferida],
+    })).toBe(false)
+  })
+
+  it('solta pedido que já virou cobrança, mesmo faltando conferir', () => {
+    // A armadilha de 2026-08-26: o banco recusa conferência em pedido
+    // faturado e "Marcar como enviado" exige tudo conferido. Segurar aqui
+    // deixaria a Expedição com um item sem saída por porta nenhuma. Foram 65
+    // pedidos presos, o mais antigo entregue em 04/06.
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: null,
+      rows: [{ ...linhaPorConferir, alreadyBilled: true }],
+    })).toBe(false)
+  })
+
+  it('basta uma linha faturada para o pedido inteiro sair da fila', () => {
+    // A cobrança nasce do grupo, não da linha: se uma diz que existe, existe.
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: null,
+      rows: [linhaPorConferir, { ...linhaPorConferir, alreadyBilled: true }],
+    })).toBe(false)
+  })
+
+  it('não segura pedido cancelado nem já enviado', () => {
+    expect(hasPendingDispatchCheck({
+      cancelledAt: '2026-08-16T10:00:00Z',
+      dispatchedAt: null,
+      rows: [linhaPorConferir],
+    })).toBe(false)
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: '2026-08-16T10:00:00Z',
+      rows: [linhaPorConferir],
+    })).toBe(false)
+  })
+
+  it('pedido sem linha nenhuma não segura a fila', () => {
+    expect(hasPendingDispatchCheck({
+      cancelledAt: null,
+      dispatchedAt: null,
+      rows: [],
+    })).toBe(false)
   })
 })

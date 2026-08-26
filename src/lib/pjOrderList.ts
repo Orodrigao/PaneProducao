@@ -7,11 +7,45 @@ export interface PjOrderListItem {
   cancelledAt: string | null
   dispatchedAt: string | null
   /**
-   * Há item ainda não conferido pela Expedição. Enquanto houver, o pedido não
-   * cai no Histórico pela virada do dia: pedido entregue no sábado e conferido
-   * na segunda viraria órfão, sem fila em que aparecer.
+   * Há item ainda não conferido pela Expedição **e a conferência ainda é
+   * possível**. Enquanto houver, o pedido não cai no Histórico pela virada do
+   * dia: pedido entregue no sábado e conferido na segunda viraria órfão, sem
+   * fila em que aparecer.
+   *
+   * Quem monta este campo precisa excluir o pedido que já virou cobrança: o
+   * banco recusa conferência nele, e "Marcar como enviado" exige tudo
+   * conferido. Sem essa exclusão o pedido fica preso na fila para sempre, sem
+   * saída por nenhuma das duas portas.
    */
   hasPendingCheck?: boolean
+}
+
+export interface PjPendingCheckOrder {
+  cancelledAt: string | null
+  dispatchedAt: string | null
+  rows: Array<{
+    dispatchedQuantity: number | null
+    /** O pedido já virou cobrança, então o banco recusa conferência nele. */
+    alreadyBilled?: boolean
+  }>
+}
+
+/**
+ * Decide se o pedido ainda segura a fila da Expedição.
+ *
+ * Segura só quando conferir é possível E necessário. As três portas que
+ * prenderam 65 pedidos até 2026-08-26:
+ *
+ * - cancelado ou já enviado: não há o que conferir;
+ * - já virou cobrança: `save_pj_order_dispatch_quantities` recusa, e
+ *   `confirm_pj_order_dispatch` exige tudo conferido, então o pedido não sai
+ *   por porta nenhuma e a fila só cresce;
+ * - nada pendente: já foi conferido.
+ */
+export function hasPendingDispatchCheck(order: PjPendingCheckOrder): boolean {
+  if (order.cancelledAt || order.dispatchedAt) return false
+  if (order.rows.some(row => row.alreadyBilled === true)) return false
+  return order.rows.some(row => row.dispatchedQuantity === null)
 }
 
 export interface PjOrderListSection<T extends PjOrderListItem> {

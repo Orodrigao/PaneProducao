@@ -24,6 +24,12 @@ export interface PjDispatchOrderRow {
   dispatched_quantity_reason: string | null
   dispatched_quantity_at: string | null
   dispatched_quantity_by_name: string | null
+  /**
+   * O pedido já virou cobrança, então `save_pj_order_dispatch_quantities` não
+   * aceita mais conferência nele. É sim ou não, sem valor: a fila da Expedição
+   * continua sem cifra.
+   */
+  ja_virou_cobranca: boolean
 }
 
 /** Um item indo para a conferência. `quantity` null limpa o que estava lá. */
