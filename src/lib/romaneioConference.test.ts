@@ -31,6 +31,8 @@ describe('conferência de recebimento do Romaneio', () => {
           ok: false,
           problem: 'aceito-maior-que-recebido',
           productName: '[TESTE] Baguete',
+          received: 10,
+          accepted: 11,
         })
     })
 
@@ -83,6 +85,8 @@ describe('conferência de recebimento do Romaneio', () => {
       ok: false,
       problem: 'aceito-maior-que-recebido',
       productName: 'Integral',
+      received: 10,
+      accepted: 12,
     })
   })
 })

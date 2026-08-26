@@ -32,6 +32,9 @@ export interface RomaneioConferenceVerdict {
   ok: boolean
   problem?: RomaneioConferenceProblem
   productName?: string
+  /** Os dois numeros do item recusado, para a tela poder dizer o que houve. */
+  received?: number
+  accepted?: number
 }
 
 /**
@@ -53,7 +56,13 @@ export function validateRomaneioConference(
       return { ok: false, problem: 'numero-negativo', productName: line.productName }
     }
     if (line.accepted > line.received) {
-      return { ok: false, problem: 'aceito-maior-que-recebido', productName: line.productName }
+      return {
+        ok: false,
+        problem: 'aceito-maior-que-recebido',
+        productName: line.productName,
+        received: line.received,
+        accepted: line.accepted,
+      }
     }
   }
 

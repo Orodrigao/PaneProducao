@@ -36,7 +36,7 @@ import {
   formatRomaneioTime as fmtTime,
 } from '@/lib/romaneioDateTime'
 import { canSeeRomaneio } from '@/lib/romaneioAccess'
-import { validateRomaneioConference } from '@/lib/romaneioConference'
+import { validateRomaneioConference, type RomaneioConferenceVerdict } from '@/lib/romaneioConference'
 import {
   canPerformRomaneioAction,
   loadCurrentRomaneioPermissions,
@@ -804,6 +804,24 @@ export default function RomaneioPage() {
     setConfData(prev => ({ ...prev, [id]: {...prev[id],refused:false,rec:qtySent,acc:qtySent,refuseReason:''} }))
   }
 
+  // "Confira recebido e aceito" servia para seis causas diferentes, entao quem
+  // digitava o numero no campo de baixo nao tinha como saber o que a tela
+  // queria. Foi a queixa da Marselle em 26/08: romaneio de 10, chegaram 11.
+  const mensagemDaConferencia = (v: RomaneioConferenceVerdict) => {
+    if (v.problem === 'acima-do-limite-de-peso') {
+      return `Quantidade de ${v.productName} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`
+    }
+    if (v.problem === 'aceito-maior-que-recebido') {
+      return `Em ${v.productName} voce aceitou ${formatRomaneioQty(Number(v.accepted))} mas recebeu `
+        + `${formatRomaneioQty(Number(v.received))}. Se chegou mais do que o romaneio pedia, `
+        + `corrija primeiro o campo Recebido.`
+    }
+    if (v.problem === 'numero-negativo') {
+      return `Quantidade negativa em ${v.productName}. Use zero e o motivo para item nao recebido.`
+    }
+    return `Falta digitar recebido e aceito de ${v.productName} antes de fechar.`
+  }
+
   const saveConferencia = async () => {
     if (!confRomId || confItems.length === 0) {
       showToastPS('Carregue os itens do romaneio antes de salvar a conferência.')
@@ -822,11 +840,7 @@ export default function RomaneioPage() {
       }
     }))
     if (!veredito.ok) {
-      showToastPS(
-        veredito.problem === 'acima-do-limite-de-peso'
-          ? `Quantidade de ${veredito.productName} acima do limite de 10 kg. Para 1.450 g, digite 1,450.`
-          : `Confira recebido e aceito de ${veredito.productName} antes de fechar.`,
-      )
+      showToastPS(mensagemDaConferencia(veredito))
       return
     }
     showLoad('Salvando conferência...')
