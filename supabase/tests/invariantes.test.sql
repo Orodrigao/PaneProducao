@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(119);
+select plan(121);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 45,
@@ -198,6 +198,19 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
     where n.nspname = 'public' and p.proname = 'confirm_pj_order_dispatch')
     ilike all(array['%pedidos_pj.confirmar_envio%', '%for update%', '%set_config%']),
   'confirmação de envio exige permissão, trava a linha e marca o RPC');
+
+-- A fila precisa saber se o pedido já virou cobrança, senão prende para sempre
+-- o que o banco não deixa mais conferir. Mas ela é "sem valores": pode saber
+-- que a cobrança existe, nunca quanto ela vale.
+select ok((select pg_get_function_result(p.oid) from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'list_pj_orders_for_dispatch')
+    ilike '%ja_virou_cobranca boolean%',
+  'fila de envio informa se o pedido já virou cobrança');
+select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'list_pj_orders_for_dispatch')
+    not ilike all(array['%amount%', '%received_amount%']),
+  'fila de envio não expõe valor de cobrança');
 select ok(has_function_privilege('authenticated',
     'public.confirm_pj_order_dispatch(uuid)', 'execute'),
   'confirmação de envio executável por authenticated');
