@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(118);
+select plan(119);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 45,
@@ -445,6 +445,26 @@ select ok(has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
     'public.confirm_finance_recurring_rule(uuid, uuid, date, date, numeric, text, text)', 'execute'),
   'anon nao confirma pagamento recorrente');
+
+-- Unidade do insumo x quantidade usada na ficha tecnica
+-- Regra de dominio do Rodrigo (2026-08-22): na padaria tudo e por kg. Cadastro
+-- em unidade contavel usado em receita com quantidade fracionaria e rotulo
+-- mentindo — e rotulo mentindo cega a trava de conversao da importacao de NF-e,
+-- porque private.unidade_familia compara familia com familia. Num banco limpo
+-- esta assercao passa por vacuidade; em producao ela prende a correcao.
+select is(
+  (select count(*)::int
+   from public.products produto
+   join public.product_components componente
+     on componente.component_id = produto.id::text
+    and componente.component_source = 'product'
+   where produto.kind = 'insumo'
+     and lower(coalesce(produto.unit, '')) in ('un', 'und', 'unidade')
+   group by produto.id
+   having max(componente.quantity) < 1
+   limit 1),
+  null::int,
+  'nenhum insumo de receita com quantidade fracionaria fica em unidade contavel');
 
 select * from finish();
 rollback;
