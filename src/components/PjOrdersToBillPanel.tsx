@@ -6,6 +6,7 @@ import {
   createReceivableFromPjOrder,
   formatReceivableMoney,
   getReceivableErrorMessage,
+  pjOrderBillingBlock,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
   type PjOrderToBillRow,
@@ -77,9 +78,20 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
         <Truck size={18} />
       </div>
 
-      {resumo.bloqueados > 0 && (
+      {/* Um aviso por motivo: juntar os dois numa frase só devolveria a
+          mensagem genérica que já custou tempo da Marselle no Romaneio. */}
+      {resumo.aguardandoConferencia > 0 && (
         <div className="ps-alert error" role="alert" style={{ marginTop: 10 }}>
-          {resumo.bloqueados} pedido(s), somando {formatReceivableMoney(resumo.valorBloqueado)},
+          {resumo.aguardandoConferencia} pedido(s), somando{' '}
+          {formatReceivableMoney(resumo.valorAguardandoConferencia)}, ainda não foram conferidos
+          pela Expedição. Peça a conferência do que saiu em Pedidos PJ; a cobrança libera sozinha
+          depois disso.
+        </div>
+      )}
+
+      {resumo.semPrazo > 0 && (
+        <div className="ps-alert error" role="alert" style={{ marginTop: 10 }}>
+          {resumo.semPrazo} pedido(s), somando {formatReceivableMoney(resumo.valorSemPrazo)},
           são de cliente sem prazo de pagamento cadastrado e não podem ser cobrados.
           Defina o prazo na tela de Clientes.
         </div>
@@ -87,7 +99,8 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
 
       <div className="ps-list" style={{ marginTop: 10 }}>
         {orders.map(order => {
-          const podeCobrar = pjOrderCanBeBilled(order)
+          const motivo = pjOrderBillingBlock(order)
+          const podeCobrar = motivo === null
           return (
             <label
               key={order.order_group_id}
@@ -108,7 +121,8 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
                 <small style={{ display: 'block' }}>
                   Entrega {formatDate(order.delivery_date)} · {order.items} item(ns)
                   {order.dispatched_at ? ' · envio confirmado' : ' · sem confirmação de envio'}
-                  {podeCobrar ? '' : ' · sem prazo cadastrado'}
+                  {motivo === 'aguardando-conferencia' ? ' · aguardando conferência' : ''}
+                  {motivo === 'sem-prazo' ? ' · sem prazo cadastrado' : ''}
                 </small>
               </span>
               <b>{formatReceivableMoney(order.amount)}</b>

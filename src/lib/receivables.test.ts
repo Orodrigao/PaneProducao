@@ -12,6 +12,7 @@ import {
   sortReceivables,
   summarizeReceivables,
   validateReceivableDraft,
+  pjOrderBillingBlock,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
   podeDividirEm,
@@ -199,6 +200,7 @@ describe('pedidos PJ a faturar', () => {
     dispatched_at: null,
     items: 2,
     amount: 150,
+    aguardando_conferencia: false,
     ...overrides,
   })
 
@@ -207,6 +209,47 @@ describe('pedidos PJ a faturar', () => {
     expect(pjOrderCanBeBilled(pedido({ payment_term_days: null }))).toBe(false)
     // Zero é à vista, não é ausência de prazo.
     expect(pjOrderCanBeBilled(pedido({ payment_term_days: 0 }))).toBe(true)
+  })
+
+  it('pedido esperando conferencia da Expedicao nao pode ser cobrado', () => {
+    // O caso da Ines Vizioli, 25/08: entrega vencida, ninguem conferiu, e a
+    // fatura saiu por deducao de calendario. Depois nem podia mais ser
+    // conferida, porque pedido faturado fica congelado.
+    expect(pjOrderCanBeBilled(pedido({ aguardando_conferencia: true }))).toBe(false)
+    expect(pjOrderBillingBlock(pedido({ aguardando_conferencia: true })))
+      .toBe('aguardando-conferencia')
+  })
+
+  it('a conferencia pesa mais que o prazo quando faltam os dois', () => {
+    // Sem prazo a cobranca espera um cadastro; sem conferencia ela sairia com
+    // o numero errado. Quem le precisa ouvir o mais grave primeiro.
+    expect(pjOrderBillingBlock(pedido({
+      aguardando_conferencia: true,
+      payment_term_days: null,
+    }))).toBe('aguardando-conferencia')
+  })
+
+  it('pedido com envio confirmado nao espera conferencia', () => {
+    // Confirmar o envio exige tudo conferido, entao os dois nunca se cruzam.
+    expect(pjOrderBillingBlock(pedido({
+      dispatched_at: '2026-08-26T10:00:00Z',
+      aguardando_conferencia: false,
+    }))).toBeNull()
+  })
+
+  it('separa no resumo o que espera conferencia do que espera prazo', () => {
+    const resumo = summarizePjOrdersToBill([
+      pedido({ order_group_id: 'a', amount: 150 }),
+      pedido({ order_group_id: 'b', amount: 80, payment_term_days: null }),
+      pedido({ order_group_id: 'c', amount: 388, aguardando_conferencia: true }),
+    ])
+    expect(resumo.total).toBe(618)
+    expect(resumo.bloqueados).toBe(2)
+    expect(resumo.valorBloqueado).toBe(468)
+    expect(resumo.semPrazo).toBe(1)
+    expect(resumo.valorSemPrazo).toBe(80)
+    expect(resumo.aguardandoConferencia).toBe(1)
+    expect(resumo.valorAguardandoConferencia).toBe(388)
   })
 
   it('separa o quanto esta travado por falta de prazo do cliente', () => {
