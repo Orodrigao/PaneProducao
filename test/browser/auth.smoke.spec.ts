@@ -14,7 +14,13 @@ const previewAccounts = {
   financeiroJc: 'rodrigao+teste-financeiro-jc@gmail.com',
 } as const
 
+// Montar o rascunho do romaneio faz QUATRO rodadas de consultas em sequencia, e
+// o proprio aplicativo admite ate DEFAULT_REQUEST_TIMEOUT_MS (15s) por chamada.
+// Dar 15s ao conjunto inteiro era dar as quatro o mesmo que o sistema da a uma:
+// so passava com tudo rapido, e a primeira execucao depois de reconstruir o
+// Banco Preview pega o banco frio. Este e o orcamento do conjunto.
 const slowPreviewDataTimeoutMs = 15_000
+const romaneioDraftTimeoutMs = 60_000
 
 function romaneioCardByObs(page: import('@playwright/test').Page, obs: string) {
   return page.locator('.ps-card', { hasText: obs }).first()
@@ -62,10 +68,22 @@ async function selectRomaneioDestination(
     await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
   }).toPass({ timeout: romaneioDestinationRetryTimeoutMs })
 
-  await expect(
-    page.locator('.ps-banner.honey', { hasText: `para ${destinationName}` }),
-    `O rascunho de ${destinationName} não terminou de montar.`,
-  ).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  const rascunho = page.locator('.ps-banner.honey', { hasText: `para ${destinationName}` })
+  const falhaDeCarga = page.getByRole('button', { name: 'Tentar de novo' })
+
+  // A tela distingue "carregando" de "falhou" desde a PR 253. Esperar so pelo
+  // rascunho fazia uma falha de carga virar tempo esgotado, sem dizer o motivo
+  // — e uma falha passageira no banco frio matava o teste. Aqui a corrida e
+  // entre os dois: se a tela avisou que falhou, usamos o botao que ela oferece.
+  await expect(async () => {
+    if (await falhaDeCarga.isVisible().catch(() => false)) {
+      await falhaDeCarga.click()
+    }
+    await expect(
+      rascunho,
+      `O rascunho de ${destinationName} não terminou de montar.`,
+    ).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  }).toPass({ timeout: romaneioDraftTimeoutMs })
 }
 
 async function expectRouteHidden(page: import('@playwright/test').Page, href: string) {
