@@ -8,7 +8,10 @@ import {
   calculatePlannedTotalQuantity,
   frozenLocationPlanningStore,
   matchesPlanningBreadSearch,
+  nextProductionPlanDate,
   normalizePlannedQuantity,
+  planCanBeDiscarded,
+  planDateIsExpiredForOrders,
   normalizePlanningStores,
   plannedBreadsForDate,
   planningAvailabilityKey,
@@ -217,5 +220,41 @@ describe('productionPlanning', () => {
     expect(planIsFullyConvertedToOrders(emptyDraft)).toBe(false)
     expect(planHasOrderConversion(fullyConverted)).toBe(true)
     expect(planIsFullyConvertedToOrders(fullyConverted)).toBe(true)
+  })
+
+  it('trata hoje e datas passadas como fora do alcance da Producao', () => {
+    // A Producao so oferece de amanha em diante, entao planejamento de hoje
+    // nasce orfao — foi o que prendeu os rascunhos de 03/08 e 25/08.
+    expect(planDateIsExpiredForOrders('2026-08-25', '2026-08-25')).toBe(true)
+    expect(planDateIsExpiredForOrders('2026-08-03', '2026-08-25')).toBe(true)
+    expect(planDateIsExpiredForOrders('2026-08-26', '2026-08-25')).toBe(false)
+  })
+
+  it('sugere a proxima data de producao pulando domingo', () => {
+    expect(nextProductionPlanDate('2026-08-25')).toBe('2026-08-26')
+    expect(nextProductionPlanDate('2026-08-22')).toBe('2026-08-24')
+    expect(nextProductionPlanDate('2026-08-23')).toBe('2026-08-24')
+    expect(nextProductionPlanDate('2026-08-31')).toBe('2026-09-01')
+    expect(nextProductionPlanDate('2026-12-31')).toBe('2027-01-01')
+    expect(nextProductionPlanDate('')).toBe('')
+  })
+
+  it('so libera o descarte enquanto nenhuma loja virou pedido', () => {
+    const draft = [
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 5, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+    ]
+    // Item zerado convertido nao conta em planHasOrderConversion, mas ainda
+    // marca que uma loja passou pela conversao — descartar apagaria o rastro.
+    const zeroedConversion = [
+      { store: 'jc', bread_id: 'baguete', planned_quantity: 0, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: '2026-08-24T01:00:00Z' },
+      { store: 'ja', bread_id: 'baguete', planned_quantity: 3, frozen_quantity: 0, leftover_proposed_quantity: 0, order_created_at: null },
+    ]
+
+    expect(planCanBeDiscarded('rascunho', draft)).toBe(true)
+    expect(planCanBeDiscarded('reaberto', draft)).toBe(true)
+    expect(planCanBeDiscarded('fechado', draft)).toBe(false)
+    expect(planCanBeDiscarded('aguardando_geolar', draft)).toBe(false)
+    expect(planCanBeDiscarded('rascunho', zeroedConversion)).toBe(false)
   })
 })

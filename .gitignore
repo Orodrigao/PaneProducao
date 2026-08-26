@@ -8,6 +8,11 @@ tsconfig.tsbuildinfo
 supabase/.temp/
 _GUIA_INFRA.md
 
+# Anexos das sessões de IA (prints e fotos coladas no chat).
+# Podem conter segredo, dado real de cliente ou documento fiscal:
+# nunca entram num commit.
+.codex-remote-attachments/
+
 # Configuração local do Claude Code (por máquina, não versionar)
 .claude/*
 # Exceção: skills compartilhadas viajam no repositório (ver AGENTS.md)

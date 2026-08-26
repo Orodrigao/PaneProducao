@@ -318,3 +318,35 @@ export function subtractPlanningReuseProposals(
 
   return adjusted
 }
+
+// A Produção só oferece datas de amanhã em diante: `deliveryDateKey` transforma
+// "hoje" em "daqui a 7 dias". Planejamento datado de hoje ou de trás nunca
+// encontra uma aba onde virar pedido — fica órfão na lista de abertos.
+export function planDateIsExpiredForOrders(planDate: string, todayDate: string): boolean {
+  return planDate <= todayDate
+}
+
+// Próxima data que a Produção alcança e que tem cardápio: amanhã, pulando
+// domingo. É o dia que o Rodrigo planeja na prática — sempre na véspera.
+export function nextProductionPlanDate(todayDate: string): string {
+  const parsed = new Date(`${todayDate}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return todayDate
+
+  parsed.setDate(parsed.getDate() + 1)
+  if (parsed.getDay() === 0) parsed.setDate(parsed.getDate() + 1)
+
+  return [
+    parsed.getFullYear(),
+    String(parsed.getMonth() + 1).padStart(2, '0'),
+    String(parsed.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+// Descartar é irreversível: só libera enquanto nenhuma loja tiver virado
+// pedido, mesmo que o item convertido esteja zerado.
+export function planCanBeDiscarded(
+  status: ProductionPlanStatus,
+  items: readonly ProductionPlanOrderItemInput[],
+): boolean {
+  return statusAllowsDraftEditing(status) && items.every(item => !item.order_created_at)
+}
