@@ -98,7 +98,7 @@ export default function SobrasPage() {
 
       // Quem pode fechar a contagem, e em quais lojas. A pergunta é feita ao
       // banco porque a permissão é por loja e não cabe no perfil em cache.
-      const { data: grants } = await supabase
+      const { data: grants, error: grantsError } = await supabase
         .from('app_user_permissions')
         .select('permission_key,scope')
         .eq('user_id', u.id)
@@ -108,6 +108,12 @@ export default function SobrasPage() {
         (grants ?? []) as LeftoverPermissionRow[], u.role, u.store,
       )
       setRegisterStores(allowedStores)
+      // Falha de leitura esconde o fechamento (falha fechada), mas em silêncio
+      // ela vira o mesmo defeito que esta tela conserta: a pessoa sem saber por
+      // que a opção sumiu. Quem passa pelo cargo não depende desta consulta.
+      if (grantsError && allowedStores.length === 0) {
+        showToast('Não consegui conferir suas permissões. Recarregue a tela.')
+      }
 
       // Volta da Central depois de resolver o que travava o fechamento.
       const params = new URLSearchParams(window.location.search)

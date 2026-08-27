@@ -85,7 +85,11 @@ begin
   -- A loja precisa ser valida ANTES da autorizacao: e ela que define o escopo
   -- consultado. Autorizar sobre entrada nao validada e como conferir a chave
   -- antes de saber qual porta a pessoa quer abrir.
-  if p_record_date is null or p_store not in ('jc', 'ja') then
+  --
+  -- O `p_store is null` explicito nao e redundante: em SQL `null not in (...)`
+  -- devolve null, e `if null then` nao entra. Sem essa linha, loja nula
+  -- atravessa a validacao inteira e chega ao insert, criando sobra sem loja.
+  if p_record_date is null or p_store is null or p_store not in ('jc', 'ja') then
     raise exception using errcode = '22023', message = 'Informe data e loja JC ou JA.';
   end if;
 
