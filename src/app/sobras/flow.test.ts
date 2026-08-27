@@ -29,6 +29,18 @@ describe('trajetória do fechamento de sobras', () => {
     expect(registerSource).not.toContain('Abrindo a Central de Pendências')
   })
 
+  // 2026-08-26, JC: a contagem entrou e, segundos depois, os 58 pães foram
+  // mandados de volta à vitrine. A Central só listava o que continuava sem
+  // destino, ficou com 1 lote na tela e passou a impressão de que o
+  // lançamento tinha se perdido.
+  it('a Central mostra o dia inteiro, não só o que continua sem destino', () => {
+    expect(pendingSource).toContain('summarizeLeftoverDay(')
+    expect(pendingSource).toContain("from('bread_leftover_events')")
+    expect(pendingSource).toContain(".eq('record_date', targetDate)")
+    expect(pendingSource).toContain('Sobras lançadas em ')
+    expect(pendingSource).toContain('DAY_DESTINATION_LABELS[destination.action]')
+  })
+
   it('a Central aponta o lote que trava e devolve a pessoa ao fechamento', () => {
     expect(pendingSource).toContain('blocksClosing(')
     expect(pendingSource).toContain('está preso')
