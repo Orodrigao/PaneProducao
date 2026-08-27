@@ -1,5 +1,18 @@
 export type ManagedStore = 'jc' | 'ja'
 
+export const MANAGED_LEFTOVER_STORES: readonly ManagedStore[] = ['jc', 'ja']
+
+/** Fechar a contagem do dia. Trava o fechamento seguinte, por isso é separada. */
+export const LEFTOVER_REGISTER_PERMISSION = 'sobras.registrar'
+
+/** Resolver um lote já lançado: vitrine, consumo, doação, descarte, congelar. */
+export const LEFTOVER_DESTINATION_PERMISSION = 'sobras.dar_destino'
+
+export interface LeftoverPermissionRow {
+  permission_key: string
+  scope: string
+}
+
 export type LeftoverDestination =
   | 'display'
   | 'internal_use'
@@ -122,6 +135,36 @@ export function validateDestinationQuantity(
   const quantity = Number(normalized)
   if (!Number.isFinite(quantity) || quantity <= 0 || quantity > pendingQuantity) return null
   return quantity
+}
+
+/**
+ * Lojas em que a pessoa pode fechar a contagem do dia.
+ *
+ * Espelha `register_bread_leftovers` de propósito, inclusive na ordem das
+ * condições: quem decide de verdade é o banco, e tela que promete o que o banco
+ * recusa produz exatamente o defeito que esta mudança conserta. Atendente segue
+ * presa à própria loja mesmo com a permissão concedida para outra, porque a
+ * função barra `vendas` fora da própria loja depois de autorizar.
+ */
+export function leftoverRegisterStores(
+  permissions: readonly LeftoverPermissionRow[],
+  role: string | null | undefined,
+  userStore: string | null | undefined,
+): ManagedStore[] {
+  if (role === 'admin' || role === 'producao') return [...MANAGED_LEFTOVER_STORES]
+
+  if (role === 'vendas') {
+    return MANAGED_LEFTOVER_STORES.filter(store => store === userStore)
+  }
+
+  const granted = new Set<ManagedStore>()
+  for (const permission of permissions) {
+    if (permission.permission_key !== LEFTOVER_REGISTER_PERMISSION) continue
+    if (permission.scope === '*') return [...MANAGED_LEFTOVER_STORES]
+    const store = MANAGED_LEFTOVER_STORES.find(candidate => candidate === permission.scope)
+    if (store) granted.add(store)
+  }
+  return MANAGED_LEFTOVER_STORES.filter(store => granted.has(store))
 }
 
 export function leftoverAgeDays(recordDate: string, referenceDate: string): number {

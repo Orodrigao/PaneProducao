@@ -4,6 +4,7 @@ import {
   aggregateWholePending,
   clampReuseProposal,
   leftoverAgeDays,
+  leftoverRegisterStores,
   subtractActiveReuseProposals,
   subtractConfirmedReuse,
   validateDestinationQuantity,
@@ -76,5 +77,41 @@ describe('validações operacionais', () => {
   it('calcula a idade por data operacional', () => {
     expect(leftoverAgeDays('2026-07-10', '2026-07-11')).toBe(1)
     expect(leftoverAgeDays('2026-07-12', '2026-07-11')).toBe(0)
+  })
+})
+
+describe('quem pode fechar a contagem de sobras', () => {
+  const registerJc = [{ permission_key: 'sobras.registrar', scope: 'jc' }]
+
+  it('libera a loja concedida e só ela', () => {
+    expect(leftoverRegisterStores(registerJc, 'expedicao', 'jc')).toEqual(['jc'])
+  })
+
+  it('não confunde dar destino com fechar a contagem', () => {
+    const onlyDestination = [{ permission_key: 'sobras.dar_destino', scope: 'jc' }]
+    expect(leftoverRegisterStores(onlyDestination, 'expedicao', 'jc')).toEqual([])
+  })
+
+  it('barra quem não tem permissão nenhuma', () => {
+    expect(leftoverRegisterStores([], 'expedicao', 'jc')).toEqual([])
+    expect(leftoverRegisterStores([], 'romaneio', 'jc')).toEqual([])
+  })
+
+  it('trata escopo geral como as duas lojas', () => {
+    const everywhere = [{ permission_key: 'sobras.registrar', scope: '*' }]
+    expect(leftoverRegisterStores(everywhere, 'expedicao', 'jc')).toEqual(['jc', 'ja'])
+  })
+
+  it('mantém admin e produção com as duas lojas, como o banco', () => {
+    expect(leftoverRegisterStores([], 'admin', null)).toEqual(['jc', 'ja'])
+    expect(leftoverRegisterStores([], 'producao', null)).toEqual(['jc', 'ja'])
+  })
+
+  it('prende a atendente na própria loja mesmo com permissão para a outra', () => {
+    // O banco barra `vendas` fora da própria loja depois de autorizar; a tela
+    // precisa contar a mesma história, senão oferece um salvar que será negado.
+    const registerBoth = [{ permission_key: 'sobras.registrar', scope: '*' }]
+    expect(leftoverRegisterStores(registerBoth, 'vendas', 'ja')).toEqual(['ja'])
+    expect(leftoverRegisterStores([], 'vendas', 'ex')).toEqual([])
   })
 })
