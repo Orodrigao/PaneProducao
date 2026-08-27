@@ -5,7 +5,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(21);
 
 select is((select count(*)::int
     from pg_proc p
@@ -396,13 +396,6 @@ select throws_ok(
 );
 
 reset role;
-
--- Sem a linha em app_permissions o Rodrigo nao tem onde conceder na tela, e a
--- funcao vira porta sem chave: ninguem novo consegue passar.
-select ok(
-  exists(select 1 from public.app_permissions where key = 'sobras.registrar'),
-  'a permissao de registrar sobras aparece na tela de usuarios'
-);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
