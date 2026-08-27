@@ -15,6 +15,12 @@ import {
   leftoverPendingPath,
 } from '@/lib/breadLeftoverClosing'
 import {
+  leftoverRegisterStores,
+  LEFTOVER_REGISTER_PERMISSION,
+  type LeftoverPermissionRow,
+  type ManagedStore,
+} from '@/lib/breadLeftovers'
+import {
   applyLeftoverDraft,
   browserDraftStorage,
   buildLeftoverDraft,
@@ -32,7 +38,6 @@ interface RegisterLeftoversResult { saved_items: number; awaiting_oven_items: nu
 
 type Mode = 'sobra' | 'descarte' | 'prateleira' | null
 const STORES = ['jc', 'ja', 'ex'] as const
-const MANAGED_STORES = ['jc', 'ja'] as const
 const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Jardim América', ex: 'EX — Exposição' }
 
 function yesterdayKey(): string {
@@ -78,20 +83,38 @@ export default function SobrasPage() {
   const [closingBlocked, setClosingBlocked] = useState(false)
   // Horário do rascunho recuperado, quando a contagem voltou do bloqueio.
   const [draftRecoveredAt, setDraftRecoveredAt] = useState<string | null>(null)
+  // Lojas em que esta pessoa pode fechar a contagem. Vazio = a tela não oferece
+  // o fechamento. Antes disso a tela deixava qualquer um com acesso ao módulo
+  // digitar a contagem inteira para só então o banco recusar no salvar.
+  const [registerStores, setRegisterStores] = useState<ManagedStore[]>([])
 
   useEffect(() => {
     let active = true
-    void getCurrentUserAsync().then(u => {
+    void getCurrentUserAsync().then(async u => {
       if (!active) return
       if (!u) { router.replace('/login'); return }
       setUser(u)
       if (u.store && (STORES as readonly string[]).includes(u.store)) setSelectedStore(u.store)
+
+      // Quem pode fechar a contagem, e em quais lojas. A pergunta é feita ao
+      // banco porque a permissão é por loja e não cabe no perfil em cache.
+      const { data: grants } = await supabase
+        .from('app_user_permissions')
+        .select('permission_key,scope')
+        .eq('user_id', u.id)
+        .eq('permission_key', LEFTOVER_REGISTER_PERMISSION)
+      if (!active) return
+      const allowedStores = leftoverRegisterStores(
+        (grants ?? []) as LeftoverPermissionRow[], u.role, u.store,
+      )
+      setRegisterStores(allowedStores)
 
       // Volta da Central depois de resolver o que travava o fechamento.
       const params = new URLSearchParams(window.location.search)
       const resumeStore = params.get('resume')
       const resumeDate = params.get('date')
       if (resumeStore !== 'jc' && resumeStore !== 'ja') return
+      if (!allowedStores.includes(resumeStore)) return
 
       const ownStoreOnly = u.role === 'vendas' && !!u.store
       if (!ownStoreOnly) setSelectedStore(resumeStore)
@@ -234,7 +257,14 @@ export default function SobrasPage() {
       showToast('A produção da EX é venda por romaneio e não entra no fluxo de sobras.')
       return
     }
-    if (selectedStore === 'ex') setSelectedStore('jc')
+    if (registerStores.length === 0) {
+      showToast('Você não tem permissão para fechar a contagem de sobras.')
+      return
+    }
+    // A loja em que a pessoa já está pode não ser uma das liberadas para ela.
+    if (!registerStores.includes(selectedStore as ManagedStore)) {
+      setSelectedStore(registerStores[0])
+    }
     setClosingDate(todayKey())
     setOvenBreadIds(new Set())
     setPhysicalLocation('balcao_fechamento')
@@ -310,6 +340,10 @@ export default function SobrasPage() {
       if (mode === 'sobra') {
         if (selectedStore !== 'jc' && selectedStore !== 'ja') {
           showToast('A loja EX não participa do fluxo de sobras de produção.')
+          return
+        }
+        if (!registerStores.includes(selectedStore)) {
+          showToast(`Você não tem permissão para fechar a contagem da ${selectedStore.toUpperCase()}.`)
           return
         }
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
@@ -508,11 +542,13 @@ export default function SobrasPage() {
               <h3>Central de Pendências</h3>
               <p>Veja o que ainda está sem destino e registre vitrine, consumo interno, doação, descarte ou congelamento.</p>
             </button>
-            <button onClick={openLeftoverMode} className="ps-report-card" style={{textAlign:'left'}}>
-              <div className="icon"><Package size={28}/></div>
-              <h3>Registrar Sobras</h3>
-              <p>Pão fresco de JC ou JA que sobrou no fechamento. Fica pendente por lote até receber um destino.</p>
-            </button>
+            {registerStores.length > 0 && (
+              <button onClick={openLeftoverMode} className="ps-report-card" style={{textAlign:'left'}}>
+                <div className="icon"><Package size={28}/></div>
+                <h3>Registrar Sobras</h3>
+                <p>Pão fresco de JC ou JA que sobrou no fechamento. Fica pendente por lote até receber um destino.</p>
+              </button>
+            )}
             <button onClick={()=>setMode('prateleira')} className="ps-report-card" style={{textAlign:'left'}}>
               <div className="icon"><Layers size={28}/></div>
               <h3>Prateleira (fim do dia)</h3>
@@ -564,7 +600,7 @@ export default function SobrasPage() {
             const locked = user.role === 'vendas'
               && !!user.store
               && (STORES as readonly string[]).includes(user.store)
-            const availableStores = mode === 'sobra' ? MANAGED_STORES : STORES
+            const availableStores = mode === 'sobra' ? registerStores : STORES
             return (
               <div className="ps-card" style={{padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}}>
                 <div style={{fontSize:13, color:'var(--ink-soft)', fontWeight:600}}>Loja:</div>
