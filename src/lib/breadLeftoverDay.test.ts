@@ -85,6 +85,54 @@ describe('retrato do dia na Central de sobras', () => {
     expect(summary.lots[0].destinations).toEqual([{ action: 'reuse_confirmed', quantity: 2 }])
   })
 
+  // O banco não promete ordem nenhuma na leitura dos eventos. Achado do Codex
+  // na PR 277: aparar o saldo no meio do laço fazia o retrato mudar conforme o
+  // plano de consulta, e devolução que chegasse primeiro sumia sem deixar
+  // rastro. Estes três casos são a mesma história em ordens diferentes e
+  // precisam dar o mesmo número.
+  it('devolução não depende da ordem em que os eventos chegam', () => {
+    const cronologica: DayLeftoverEventRow[] = [
+      { sobra_id: 'a', action: 'reuse_confirmed', quantity: 6 },
+      { sobra_id: 'a', action: 'reuse_reversed', quantity: 6 },
+      { sobra_id: 'a', action: 'reuse_confirmed', quantity: 4 },
+    ]
+    const invertida = [...cronologica].reverse()
+    const devolucaoPrimeiro = [cronologica[1], cronologica[0], cronologica[2]]
+
+    for (const ordem of [cronologica, invertida, devolucaoPrimeiro]) {
+      const summary = summarizeLeftoverDay(
+        [lot({ id: 'a', quantity: 10, pending_quantity: 6 })],
+        ordem,
+      )
+      expect(summary.lots[0].destinations).toEqual([{ action: 'reuse_confirmed', quantity: 4 }])
+    }
+  })
+
+  it('devolução que chega antes da confirmação não é engolida', () => {
+    const summary = summarizeLeftoverDay(
+      [lot({ id: 'a', quantity: 10, pending_quantity: 8 })],
+      [
+        { sobra_id: 'a', action: 'reuse_reversed', quantity: 5 },
+        { sobra_id: 'a', action: 'reuse_confirmed', quantity: 7 },
+      ],
+    )
+
+    expect(summary.lots[0].destinations).toEqual([{ action: 'reuse_confirmed', quantity: 2 }])
+  })
+
+  it('devolução integral zera o destino em vez de deixar resto', () => {
+    const summary = summarizeLeftoverDay(
+      [lot({ id: 'a', quantity: 6, pending_quantity: 6 })],
+      [
+        { sobra_id: 'a', action: 'reuse_reversed', quantity: 6 },
+        { sobra_id: 'a', action: 'reuse_confirmed', quantity: 6 },
+      ],
+    )
+
+    expect(summary.lots[0].destinations).toEqual([])
+    expect(summary.destinations).toEqual([])
+  })
+
   it('agrega o dia inteiro por destino, somando lotes diferentes', () => {
     const summary = summarizeLeftoverDay(
       [

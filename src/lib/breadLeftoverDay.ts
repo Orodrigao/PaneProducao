@@ -105,27 +105,34 @@ export function summarizeLeftoverDay(
 ): DaySummary {
   const byLot = new Map<string, Map<DayDestinationAction, number>>()
 
+  // Soma com sinal, sem aparar no meio do caminho: o banco não promete ordem
+  // nenhuma para os eventos, e uma devolução que chegasse antes da confirmação
+  // ou seria descartada, ou zeraria um total que ainda ia crescer. O saldo só
+  // é aparado no fim, em sortedTotals, onde a ordem já não importa.
   for (const event of events) {
     if (!event.sobra_id) continue
 
     const quantity = toQuantity(event.quantity)
     if (quantity <= 0) continue
 
+    let action: DayDestinationAction
+    let delta: number
     if (event.action === REVERSING_ACTION) {
-      const totals = byLot.get(event.sobra_id)
-      const current = totals?.get('reuse_confirmed') ?? 0
-      totals?.set('reuse_confirmed', Math.max(0, current - quantity))
+      action = 'reuse_confirmed'
+      delta = -quantity
+    } else if (isConsumingAction(event.action)) {
+      action = event.action
+      delta = quantity
+    } else {
       continue
     }
-
-    if (!isConsumingAction(event.action)) continue
 
     let totals = byLot.get(event.sobra_id)
     if (!totals) {
       totals = new Map<DayDestinationAction, number>()
       byLot.set(event.sobra_id, totals)
     }
-    totals.set(event.action, (totals.get(event.action) ?? 0) + quantity)
+    totals.set(action, (totals.get(action) ?? 0) + delta)
   }
 
   const dayTotals = new Map<DayDestinationAction, number>()
