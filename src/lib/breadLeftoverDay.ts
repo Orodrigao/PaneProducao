@@ -23,6 +23,9 @@ export interface DayLeftoverEventRow {
   sobra_id: string
   action: string
   quantity: number | string | null
+  // Só o desfazer usa: guarda o destino que foi desfeito ('vitrine',
+  // 'descarte', o freezer...), do mesmo jeito que a ida grava para onde foi.
+  from_location?: string | null
 }
 
 export interface DayDestinationTotal {
@@ -72,6 +75,28 @@ const CONSUMING_ACTIONS: DayDestinationAction[] = [
 // vezes o mesmo pão.
 const REVERSING_ACTION = 'reuse_reversed'
 
+// Destino desfeito. Existe desde a correção de 2026-08-27, quando 58 pães da JC
+// tiveram de voltar para a Central porque "volta à vitrine" foi registrada por
+// engano. O evento guarda em from_location o destino que desfez, e é ele que
+// diz qual fichinha encolhe — senão o lote apareceria com destino E pendente ao
+// mesmo tempo, somando mais pão do que existe.
+const DESTINATION_REVERSAL_ACTION = 'destination_reversed'
+
+// Inverso do mapa que resolve_bread_leftover grava na ida. Qualquer outro lugar
+// é freezer, que é o único destino com mais de um endereço possível.
+const REVERSED_FROM_LOCATION: Record<string, DayDestinationAction> = {
+  vitrine: 'display',
+  consumo_interno: 'internal_use',
+  doacao: 'donation',
+  descarte: 'discard',
+}
+
+function reversedDestination(fromLocation: string | null | undefined): DayDestinationAction | null {
+  const location = (fromLocation ?? '').trim().toLowerCase()
+  if (!location) return null
+  return REVERSED_FROM_LOCATION[location] ?? 'freeze'
+}
+
 export const DAY_DESTINATION_LABELS: Record<DayDestinationAction, string> = {
   display: 'Voltou à vitrine',
   internal_use: 'Consumo interno',
@@ -119,6 +144,13 @@ export function summarizeLeftoverDay(
     let delta: number
     if (event.action === REVERSING_ACTION) {
       action = 'reuse_confirmed'
+      delta = -quantity
+    } else if (event.action === DESTINATION_REVERSAL_ACTION) {
+      // Sem saber qual destino foi desfeito não dá para descontar de lugar
+      // nenhum; ignorar é melhor que abater da fichinha errada.
+      const undone = reversedDestination(event.from_location)
+      if (!undone) continue
+      action = undone
       delta = -quantity
     } else if (isConsumingAction(event.action)) {
       action = event.action

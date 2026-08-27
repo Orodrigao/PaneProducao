@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(121);
+select plan(122);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 45,
@@ -478,6 +478,31 @@ select is(
    limit 1),
   null::int,
   'nenhum insumo de receita com quantidade fracionaria fica em unidade contavel');
+
+-- Saldo do lote de sobra x historico de destinos
+-- Correcao de 2026-08-27: 58 paes da JC tiveram "volta a vitrine" desfeita.
+-- Devolver o saldo pendente SEM gravar o contra-lancamento deixaria o lote
+-- contando o mesmo pao duas vezes — uma na fichinha do destino, outra no
+-- pendente. Esta e a regra que as RPCs ja mantem e que a correcao precisa
+-- preservar: o que saiu do pendente esta explicado por evento, e o que voltou
+-- para o pendente foi desfeito por evento.
+select is(
+  (select count(*)::int
+   from public.sobras lote
+   left join lateral (
+     select coalesce(sum(case
+       when evento.action in ('display','internal_use','donation','discard','freeze','reuse_confirmed')
+         then evento.quantity
+       when evento.action in ('reuse_reversed','destination_reversed')
+         then -evento.quantity
+       else 0 end), 0) as liquido
+     from public.bread_leftover_events evento
+     where evento.sobra_id = lote.id
+   ) destinos on true
+   where lote.store is not null
+     and lote.pending_quantity + destinos.liquido <> lote.quantity),
+  0,
+  'todo lote de sobra fecha: pendente + destinos liquidos = quantidade');
 
 select * from finish();
 rollback;

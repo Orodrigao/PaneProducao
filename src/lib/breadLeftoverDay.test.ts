@@ -133,6 +133,72 @@ describe('retrato do dia na Central de sobras', () => {
     expect(summary.destinations).toEqual([])
   })
 
+  // Correção de 2026-08-27: os 58 pães da JC voltaram para a Central porque
+  // "volta à vitrine" foi registrada por engano. Sem descontar o desfeito, o
+  // lote apareceria com destino E pendente ao mesmo tempo — mais pão do que
+  // existe na tela que existe justamente para o número ser confiável.
+  it('destino desfeito some da fichinha e o lote volta a aparecer sem destino', () => {
+    const summary = summarizeLeftoverDay(
+      [lot({ id: 'a', product_id: 'croissant', quantity: 23, pending_quantity: 23 })],
+      [
+        { sobra_id: 'a', action: 'registered', quantity: 23 },
+        { sobra_id: 'a', action: 'display', quantity: 23 },
+        { sobra_id: 'a', action: 'destination_reversed', quantity: 23, from_location: 'vitrine' },
+      ],
+    )
+
+    expect(summary.lots[0].destinations).toEqual([])
+    expect(summary.lots[0].pending).toBe(23)
+    expect(summary.totalPending).toBe(23)
+    expect(summary.destinations).toEqual([])
+  })
+
+  it('desfazer parcial encolhe a fichinha em vez de apagar', () => {
+    const summary = summarizeLeftoverDay(
+      [lot({ id: 'a', quantity: 10, pending_quantity: 4 })],
+      [
+        { sobra_id: 'a', action: 'discard', quantity: 10 },
+        { sobra_id: 'a', action: 'destination_reversed', quantity: 4, from_location: 'descarte' },
+      ],
+    )
+
+    expect(summary.lots[0].destinations).toEqual([{ action: 'discard', quantity: 6 }])
+  })
+
+  it('desfazer acha o destino certo em cada endereço, e freezer é o resto', () => {
+    const casos: { from: string; esperado: string }[] = [
+      { from: 'vitrine', esperado: 'display' },
+      { from: 'consumo_interno', esperado: 'internal_use' },
+      { from: 'doacao', esperado: 'donation' },
+      { from: 'descarte', esperado: 'discard' },
+      { from: 'jc-camara', esperado: 'freeze' },
+      { from: 'ja-freezer', esperado: 'freeze' },
+    ]
+
+    for (const caso of casos) {
+      const summary = summarizeLeftoverDay(
+        [lot({ id: 'a', quantity: 5, pending_quantity: 5 })],
+        [
+          { sobra_id: 'a', action: caso.esperado, quantity: 5 },
+          { sobra_id: 'a', action: 'destination_reversed', quantity: 5, from_location: caso.from },
+        ],
+      )
+      expect(summary.lots[0].destinations, `desfazer de ${caso.from}`).toEqual([])
+    }
+  })
+
+  it('desfazer sem endereço não abate fichinha nenhuma', () => {
+    const summary = summarizeLeftoverDay(
+      [lot({ id: 'a', quantity: 5, pending_quantity: 0 })],
+      [
+        { sobra_id: 'a', action: 'display', quantity: 5 },
+        { sobra_id: 'a', action: 'destination_reversed', quantity: 5, from_location: null },
+      ],
+    )
+
+    expect(summary.lots[0].destinations).toEqual([{ action: 'display', quantity: 5 }])
+  })
+
   it('agrega o dia inteiro por destino, somando lotes diferentes', () => {
     const summary = summarizeLeftoverDay(
       [

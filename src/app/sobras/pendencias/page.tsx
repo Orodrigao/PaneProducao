@@ -221,7 +221,7 @@ export default function BreadLeftoverPendingPage() {
       if (loadedDay.length > 0) {
         const eventsResult = await supabase
           .from('bread_leftover_events')
-          .select('sobra_id, action, quantity')
+          .select('sobra_id, action, quantity, from_location')
           .in('sobra_id', loadedDay.map(row => row.id))
         if (eventsResult.error) throw eventsResult.error
         loadedDayEvents = (eventsResult.data ?? []) as DayLeftoverEventRow[]
