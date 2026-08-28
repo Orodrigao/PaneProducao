@@ -462,6 +462,7 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.criar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.confirmar_saida', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'sobras.dar_destino', 'jc'),
+    ('rodrigao+teste-expedicao-jc@gmail.com', 'sobras.registrar', 'jc'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'pedidos_pj.acessar', 'jc'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'pedidos_pj.confirmar_envio', 'jc'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.acessar', 'ex'),

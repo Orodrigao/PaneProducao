@@ -5,7 +5,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(21);
 
 select is((select count(*)::int
     from pg_proc p
@@ -104,6 +104,34 @@ insert into auth.users (
     '{"provider":"email","providers":["email"]}'::jsonb,
     '{}'::jsonb,
     false
+  ),
+  (
+    '91000000-0000-4000-8000-000000000003',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated',
+    'authenticated',
+    'sobras-expedicao-registra-test@example.com',
+    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+    now(),
+    now(),
+    now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb,
+    false
+  ),
+  (
+    '91000000-0000-4000-8000-000000000004',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated',
+    'authenticated',
+    'sobras-expedicao-geral-test@example.com',
+    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+    now(),
+    now(),
+    now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{}'::jsonb,
+    false
   );
 
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
@@ -123,6 +151,22 @@ values
     'jc',
     true,
     '["/romaneio"]'::jsonb
+  ),
+  (
+    '91000000-0000-4000-8000-000000000003',
+    'Teste Expedicao Fecha JC',
+    'expedicao',
+    'jc',
+    true,
+    '["/sobras"]'::jsonb
+  ),
+  (
+    '91000000-0000-4000-8000-000000000004',
+    'Teste Expedicao Escopo Geral',
+    'expedicao',
+    'jc',
+    true,
+    '["/sobras"]'::jsonb
   );
 
 insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
@@ -130,6 +174,21 @@ values (
   '91000000-0000-4000-8000-000000000001',
   'sobras.acessar',
   'ja',
+  null
+), (
+  '91000000-0000-4000-8000-000000000001',
+  'sobras.registrar',
+  'jc',
+  null
+), (
+  '91000000-0000-4000-8000-000000000003',
+  'sobras.registrar',
+  'jc',
+  null
+), (
+  '91000000-0000-4000-8000-000000000004',
+  'sobras.registrar',
+  '*',
   null
 ), (
   '91000000-0000-4000-8000-000000000002',
@@ -219,7 +278,7 @@ select throws_ok(
   ) $$,
   '42501',
   'A atendente so pode registrar a propria loja.',
-  'vendas nao registra fechamento de outra loja'
+  'a trava da propria loja vence a permissao concedida para a outra'
 );
 
 select is(
@@ -334,6 +393,64 @@ select throws_ok(
   '42501',
   'Usuario sem permissao para alterar o local.',
   'expedicao nao altera local fora do escopo JC'
+);
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
+
+select is(
+  (public.register_bread_leftovers(
+    ((now() at time zone 'America/Sao_Paulo')::date - 1),
+    'jc',
+    '[{"bread_id":"teste-sobras-rpc","quantity":3}]'::jsonb,
+    'balcao_fechamento'
+  ) ->> 'saved_items')::int,
+  1,
+  'expedicao com sobras.registrar fecha a contagem da loja concedida'
+);
+
+select throws_ok(
+  $$ select public.register_bread_leftovers(
+    ((now() at time zone 'America/Sao_Paulo')::date - 1),
+    'ja',
+    '[{"bread_id":"teste-sobras-rpc","quantity":1}]'::jsonb,
+    'balcao_fechamento'
+  ) $$,
+  '42501',
+  'Usuario sem permissao para registrar sobras.',
+  'expedicao nao fecha a contagem de loja fora do escopo concedido'
+);
+
+reset role;
+
+-- Loja nula com escopo geral. `null not in ('jc','ja')` devolve null em SQL, e
+-- `if null then` nao entra: sem a checagem explicita de nulo, a autorizacao por
+-- escopo `*` passava e o insert criava sobra sem loja, invisivel para as telas
+-- que filtram por loja.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000004', true);
+
+select throws_ok(
+  $$ select public.register_bread_leftovers(
+    ((now() at time zone 'America/Sao_Paulo')::date - 1),
+    null,
+    '[{"bread_id":"teste-sobras-rpc","quantity":1}]'::jsonb,
+    'balcao_fechamento'
+  ) $$,
+  '22023',
+  'Informe data e loja JC ou JA.',
+  'escopo geral nao registra fechamento com loja nula'
+);
+
+reset role;
+
+select is(
+  (select count(*)::int from public.sobras
+    where product_id = 'teste-sobras-rpc' and store is null),
+  0,
+  'nenhuma sobra orfa foi criada pela tentativa com loja nula'
 );
 
 select * from finish();

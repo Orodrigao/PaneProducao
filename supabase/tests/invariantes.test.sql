@@ -7,17 +7,19 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(122);
+select plan(123);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 45,
-  'catálogo completo com 45 permissões');
+select is((select count(*)::int from public.app_permissions), 46,
+  'catálogo completo com 46 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
   'permissão de envio PJ presente');
 select ok(exists(select 1 from public.app_permissions where key = 'sobras.dar_destino'),
   'permissao de destino de sobras presente');
+select ok(exists(select 1 from public.app_permissions where key = 'sobras.registrar'),
+  'permissao de registrar sobras presente');
 select is((select count(distinct module)::int from public.app_permissions), 6,
   'módulos do catálogo');
 
