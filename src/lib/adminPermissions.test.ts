@@ -68,6 +68,8 @@ describe('permissões com escopo por loja', () => {
     expect(permissionStoreScopes('producao_cozinha.lancar')).toEqual(['jc', 'ja', 'ex'])
     expect(permissionStoreScopes('romaneio.confirmar_saida')).toEqual(['jc', 'ja', 'ex'])
     expect(permissionStoreScopes('sobras.dar_destino')).toEqual(['jc', 'ja'])
+    // Sobras existem só onde há fechamento de balcão. A EX vende por romaneio.
+    expect(permissionStoreScopes('sobras.registrar')).toEqual(['jc', 'ja'])
     expect(permissionStoreScopes('romaneio.acessar')).toEqual([])
     expect(permissionStoreScopes('pedidos_pj.acessar')).toEqual([])
   })

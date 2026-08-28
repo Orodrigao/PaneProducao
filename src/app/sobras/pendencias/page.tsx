@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Check,
   Clock3,
+  History,
   LoaderCircle,
   Lock,
   MapPin,
@@ -23,6 +24,12 @@ import {
   type LeftoverDestination,
   type ManagedStore,
 } from '@/lib/breadLeftovers'
+import {
+  DAY_DESTINATION_LABELS,
+  summarizeLeftoverDay,
+  type DayLeftoverEventRow,
+  type DayLeftoverRow,
+} from '@/lib/breadLeftoverDay'
 import {
   blocksClosing,
   closingResumePath,
@@ -113,6 +120,11 @@ export default function BreadLeftoverPendingPage() {
   const [blockedClosingDate, setBlockedClosingDate] = useState('')
   const [breads, setBreads] = useState<Record<string, BreadRow>>({})
   const [leftovers, setLeftovers] = useState<LeftoverRow[]>([])
+  // Retrato do dia escolhido: todo lote lançado naquela data, com ou sem
+  // destino. Separado de `leftovers` de propósito — aquele é a lista de
+  // tarefas (qualquer data) e este é o extrato de um dia só.
+  const [dayLeftovers, setDayLeftovers] = useState<DayLeftoverRow[]>([])
+  const [dayEvents, setDayEvents] = useState<DayLeftoverEventRow[]>([])
   const [plans, setPlans] = useState<ReusePlanRow[]>([])
   const [orders, setOrders] = useState<Record<string, number>>({})
   const [confirmedInputs, setConfirmedInputs] = useState<Record<string, string>>({})
@@ -153,12 +165,14 @@ export default function BreadLeftoverPendingPage() {
       if (!sessionResult.data.session) {
         setEmailRequired(true)
         setLeftovers([])
+        setDayLeftovers([])
+        setDayEvents([])
         setPlans([])
         return
       }
       setEmailRequired(false)
 
-      const [leftoversResult, plansResult, ordersResult] = await Promise.all([
+      const [leftoversResult, dayResult, plansResult, ordersResult] = await Promise.all([
         supabase
           .from('sobras')
           .select('id, store, product_id, quantity, pending_quantity, record_date, lot_code, physical_location, reconciliation_status')
@@ -166,6 +180,13 @@ export default function BreadLeftoverPendingPage() {
           .eq('product_source', 'bread')
           .or('pending_quantity.gt.0,reconciliation_status.eq.awaiting_oven')
           .order('record_date', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('sobras')
+          .select('id, product_id, quantity, pending_quantity, lot_code, record_date, reconciliation_status')
+          .eq('store', store)
+          .eq('product_source', 'bread')
+          .eq('record_date', targetDate)
           .order('created_at', { ascending: true }),
         supabase
           .from('bread_reuse_plans')
@@ -182,16 +203,29 @@ export default function BreadLeftoverPendingPage() {
           .eq('store', store),
       ])
 
-      const firstError = leftoversResult.error ?? plansResult.error ?? ordersResult.error
+      const firstError = leftoversResult.error ?? dayResult.error ?? plansResult.error ?? ordersResult.error
       if (firstError) throw firstError
 
       const loadedLeftovers = (leftoversResult.data ?? []) as LeftoverRow[]
+      const loadedDay = (dayResult.data ?? []) as DayLeftoverRow[]
       const loadedPlans = (plansResult.data ?? []) as ReusePlanRow[]
       const loadedOrders = (ordersResult.data ?? []) as OrderRow[]
       const breadIds = Array.from(new Set([
         ...loadedLeftovers.map(row => row.product_id),
+        ...loadedDay.map(row => row.product_id),
         ...loadedPlans.map(row => row.bread_id),
       ]))
+
+      // Histórico dos lotes do dia: é ele que diz para onde cada pão foi.
+      let loadedDayEvents: DayLeftoverEventRow[] = []
+      if (loadedDay.length > 0) {
+        const eventsResult = await supabase
+          .from('bread_leftover_events')
+          .select('sobra_id, action, quantity, from_location')
+          .in('sobra_id', loadedDay.map(row => row.id))
+        if (eventsResult.error) throw eventsResult.error
+        loadedDayEvents = (eventsResult.data ?? []) as DayLeftoverEventRow[]
+      }
 
       const breadMap: Record<string, BreadRow> = {}
       if (breadIds.length > 0) {
@@ -210,6 +244,8 @@ export default function BreadLeftoverPendingPage() {
 
       setBreads(breadMap)
       setLeftovers(loadedLeftovers)
+      setDayLeftovers(loadedDay)
+      setDayEvents(loadedDayEvents)
       setPlans(loadedPlans)
       setOrders(orderMap)
       setConfirmedInputs(Object.fromEntries(
@@ -246,6 +282,10 @@ export default function BreadLeftoverPendingPage() {
   const awaitingOven = useMemo(
     () => leftovers.filter(leftover => leftover.reconciliation_status === 'awaiting_oven'),
     [leftovers],
+  )
+  const daySummary = useMemo(
+    () => summarizeLeftoverDay(dayLeftovers, dayEvents),
+    [dayLeftovers, dayEvents],
   )
   const closingBlockers = useMemo(
     () => (blockedClosingDate
@@ -369,7 +409,8 @@ export default function BreadLeftoverPendingPage() {
 
         <main className="ps-pad ps-leftover-page">
           <p className="ps-leftover-intro">
-            Tudo que ainda está esperando uso, congelamento, doação ou descarte.
+            O que foi lançado no dia escolhido, para onde cada lote foi e o que
+            ainda espera uso, congelamento, doação ou descarte.
           </p>
 
           {notApplicable ? (
@@ -405,7 +446,7 @@ export default function BreadLeftoverPendingPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="ps-label" htmlFor="reuse-date">Produção planejada</label>
+                  <label className="ps-label" htmlFor="reuse-date">Dia</label>
                   <input
                     id="reuse-date"
                     className="ps-input"
@@ -414,6 +455,29 @@ export default function BreadLeftoverPendingPage() {
                     onChange={event => setTargetDate(event.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="ps-leftover-daystrip">
+                <b>{formatDateBR(targetDate)}</b>
+                {daySummary.lots.length === 0 ? (
+                  <span className="ps-leftover-daychip empty">Nenhuma sobra lançada</span>
+                ) : (
+                  <>
+                    <span className="ps-leftover-daychip total">
+                      {formatQuantity(daySummary.totalQuantity)} lançadas
+                    </span>
+                    {daySummary.destinations.map(destination => (
+                      <span key={destination.action} className="ps-leftover-daychip">
+                        {DAY_DESTINATION_LABELS[destination.action]} {formatQuantity(destination.quantity)}
+                      </span>
+                    ))}
+                    {daySummary.totalPending > 0 && (
+                      <span className="ps-leftover-daychip pending">
+                        Sem destino {formatQuantity(daySummary.totalPending)}
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
 
               {blockedClosingDate && (
@@ -540,7 +604,14 @@ export default function BreadLeftoverPendingPage() {
                 </div>
 
                 {pendingLeftovers.length === 0 ? (
-                  <div className="ps-empty ps-leftover-empty"><PackageOpen size={30} /><span>Nenhuma sobra pendente nesta loja.</span></div>
+                  <div className="ps-empty ps-leftover-empty">
+                    <PackageOpen size={30} />
+                    <span>
+                      Nenhuma sobra pendente nesta loja.
+                      {daySummary.lots.length > 0
+                        && ` O que foi lançado em ${formatDateBR(targetDate)} já recebeu destino — confira abaixo.`}
+                    </span>
+                  </div>
                 ) : (
                   <div className="ps-grid">
                     {pendingLeftovers.map(leftover => {
@@ -629,6 +700,55 @@ export default function BreadLeftoverPendingPage() {
                             Registrar destino
                           </button>
                         </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <div className="ps-section">
+                  <div className="bar" />
+                  <b>Sobras lançadas em {formatDateBR(targetDate)}</b>
+                  <span className="meta">
+                    {daySummary.lots.length} {daySummary.lots.length === 1 ? 'lote' : 'lotes'}
+                  </span>
+                </div>
+
+                {daySummary.lots.length === 0 ? (
+                  <div className="ps-empty ps-leftover-empty">
+                    <History size={30} />
+                    <span>Nenhuma sobra foi lançada nesta loja em {formatDateBR(targetDate)}.</span>
+                  </div>
+                ) : (
+                  <div className="ps-card ps-leftover-daylist">
+                    {daySummary.lots.map(lot => {
+                      const bread = breads[lot.breadId]
+                      return (
+                        <div key={lot.sobraId} className="ps-leftover-dayrow">
+                          <div>
+                            <div className="ps-pname">{bread?.name ?? lot.breadId}</div>
+                            <div className="ps-leftover-daytags">
+                              {lot.destinations.map(destination => (
+                                <span key={destination.action} className="ps-leftover-daychip">
+                                  {DAY_DESTINATION_LABELS[destination.action]} {formatQuantity(destination.quantity)}
+                                </span>
+                              ))}
+                              {lot.pending > 0 && (
+                                <span className="ps-leftover-daychip pending">
+                                  Sem destino {formatQuantity(lot.pending)}
+                                </span>
+                              )}
+                              {lot.awaitingOven && (
+                                <span className="ps-leftover-daychip">Aguardando Forno</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ps-leftover-daytotal">
+                            <b>{formatQuantity(lot.quantity)}</b>
+                            <small>{bread?.unit ?? 'un'}</small>
+                          </div>
+                        </div>
                       )
                     })}
                   </div>

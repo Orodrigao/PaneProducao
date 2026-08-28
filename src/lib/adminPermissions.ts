@@ -1,5 +1,9 @@
 import { supabaseRestFetch } from '@/lib/supabaseRest'
 import { KITCHEN_PRODUCTION_PERMISSION } from '@/lib/kitchenProduction'
+import {
+  LEFTOVER_DESTINATION_PERMISSION,
+  LEFTOVER_REGISTER_PERMISSION,
+} from '@/lib/breadLeftovers'
 
 export interface AccessProfile {
   user_id: string
@@ -99,8 +103,10 @@ export function permissionStoreScopes(permissionKey: string): readonly StorePerm
   const isScopedRomaneioPermission = permissionKey.startsWith('romaneio.')
     && permissionKey !== 'romaneio.acessar'
   const isScopedPayablesPermission = permissionKey.startsWith('contas_pagar.')
-  const isScopedLeftoverPermission = permissionKey === 'sobras.dar_destino'
+  const isScopedLeftoverPermission = permissionKey === LEFTOVER_DESTINATION_PERMISSION
+    || permissionKey === LEFTOVER_REGISTER_PERMISSION
 
+  // Sobras existem só em JC e JA. A EX vende por romaneio e não fecha contagem.
   if (isScopedLeftoverPermission) return ['jc', 'ja']
 
   return permissionKey === KITCHEN_PRODUCTION_PERMISSION

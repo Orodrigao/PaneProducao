@@ -7,17 +7,19 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(121);
+select plan(123);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 45,
-  'catálogo completo com 45 permissões');
+select is((select count(*)::int from public.app_permissions), 46,
+  'catálogo completo com 46 permissões');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
   'ações granulares do romaneio presentes');
 select ok(exists(select 1 from public.app_permissions where key = 'pedidos_pj.confirmar_envio'),
   'permissão de envio PJ presente');
 select ok(exists(select 1 from public.app_permissions where key = 'sobras.dar_destino'),
   'permissao de destino de sobras presente');
+select ok(exists(select 1 from public.app_permissions where key = 'sobras.registrar'),
+  'permissao de registrar sobras presente');
 select is((select count(distinct module)::int from public.app_permissions), 6,
   'módulos do catálogo');
 
@@ -478,6 +480,40 @@ select is(
    limit 1),
   null::int,
   'nenhum insumo de receita com quantidade fracionaria fica em unidade contavel');
+
+-- Saldo do lote de sobra x historico de destinos
+-- Correcao de 2026-08-27: 58 paes da JC tiveram "volta a vitrine" desfeita.
+-- Devolver o saldo pendente SEM gravar o contra-lancamento deixaria o lote
+-- contando o mesmo pao duas vezes — uma na fichinha do destino, outra no
+-- pendente. Esta e a regra que as RPCs ja mantem e que a correcao precisa
+-- preservar: o que saiu do pendente esta explicado por evento, e o que voltou
+-- para o pendente foi desfeito por evento.
+--
+-- O alcance e "lote com historico": register_bread_leftovers grava evento em
+-- toda entrada, entao lote nascido pelo fluxo real SEMPRE tem pelo menos um —
+-- medido em producao (2026-08-27): 380 de 380. Lote sem evento nenhum e linha
+-- plantada direto no seed, que nunca passou pela RPC e por isso nao tem o que
+-- conciliar. Incluir essas linhas nao tornaria a regra mais forte, so a faria
+-- reprovar no banco limpo por um motivo que nao e defeito.
+select is(
+  (select count(*)::int
+   from public.sobras lote
+   join lateral (
+     select
+       count(*) as eventos,
+       coalesce(sum(case
+         when evento.action in ('display','internal_use','donation','discard','freeze','reuse_confirmed')
+           then evento.quantity
+         when evento.action in ('reuse_reversed','destination_reversed')
+           then -evento.quantity
+         else 0 end), 0) as liquido
+     from public.bread_leftover_events evento
+     where evento.sobra_id = lote.id
+   ) destinos on destinos.eventos > 0
+   where lote.store is not null
+     and lote.pending_quantity + destinos.liquido <> lote.quantity),
+  0,
+  'lote de sobra com historico fecha: pendente + destinos liquidos = quantidade');
 
 select * from finish();
 rollback;

@@ -747,6 +747,21 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-leftover-destination-row{ display:grid; grid-template-columns:minmax(0,1fr) 104px; gap:8px; }
 .ps-leftover-destination-row .ps-input{ width:100%; min-height:43px; }
 .ps-leftover-empty{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:26px 0; }
+/* Retrato do dia: extrato do que foi lançado e para onde foi. */
+.ps-leftover-daystrip{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:12px 0 0; }
+.ps-leftover-daystrip>b{ color:var(--crust); font-size:13px; font-weight:800; }
+.ps-leftover-daychip{ display:inline-flex; align-items:center; padding:3px 10px; border-radius:var(--r-pill); border:1px solid var(--ps-line); background:var(--cream); color:var(--ink-soft); font-size:12px; font-weight:700; white-space:nowrap; }
+.ps-leftover-daychip.total{ border-color:var(--honey-line); background:var(--honey-tint); color:var(--crust); }
+.ps-leftover-daychip.pending{ border-color:#E6B5AC; background:var(--berry-tint); color:var(--berry); }
+.ps-leftover-daychip.empty{ color:var(--ink-faint); }
+.ps-leftover-daylist{ display:flex; flex-direction:column; gap:0; }
+.ps-leftover-dayrow{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:11px 0; border-top:1px solid var(--ps-line); }
+.ps-leftover-dayrow:first-child{ border-top:0; padding-top:2px; }
+.ps-leftover-dayrow>div:first-child{ min-width:0; }
+.ps-leftover-daytags{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+.ps-leftover-daytotal{ flex:0 0 auto; text-align:right; }
+.ps-leftover-daytotal b{ color:var(--crust); font-family:var(--font-display); font-size:22px; line-height:1; }
+.ps-leftover-daytotal small{ margin-left:3px; color:var(--ink-faint); font-weight:700; }
 .ps-reuse-card.confirmed{ border-color:#C5D5BA; background:#E3F0E0; }
 .ps-reuse-card.confirmed::before{ background:var(--sage); }
 .ps-reuse-confirmed{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:2px 7px; color:#586543; }
