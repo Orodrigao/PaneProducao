@@ -15,8 +15,9 @@ ou documentos de produção.
 
 ## Ciclo de uma PR
 
-1. Abrir ou atualizar qualquer PR dispara `Banco Preview`.
-2. Quando a PR tem migration, `CI Banco` também ensaia migrations e seed num
+1. Uma PR com a etiqueta `precisa-banco-preview` dispara `Banco Preview`; sem a
+   etiqueta, o smoke usa o ambiente compartilhado restaurado a partir da `main`.
+2. Quando a PR tem migration ou seed, `CI Banco` também ensaia a história num
    banco local descartável.
 3. `Banco Preview` apaga o ambiente remoto de teste, reaplica a história
    completa da branch, carrega o seed e roda os pgTAP.
@@ -33,14 +34,36 @@ migration que criar tabela, sequência ou função deve conceder explicitamente
 somente os acessos necessários. Isso mantém produção, CI e Preview com a mesma
 regra, independentemente dos padrões do projeto hospedado.
 
-## Banco compartilhado no plano gratuito
+## Banco compartilhado durante a transição
 
-Existe um único Banco Preview. Duas PRs com migrations abertas poderiam
-trocar o schema uma da outra; por isso a automação bloqueia a segunda. Como
-qualquer PR agora reconstrói os dados fictícios antes do smoke de navegador,
-uma PR sem migration também não pode validar enquanto outra PR com migration
-estiver usando o banco. O bloqueio evita que um teste converse com o schema ou
-com os dados de outra tarefa.
+Hoje ainda existe um único Banco Preview. Duas PRs etiquetadas poderiam trocar
+o schema uma da outra; por isso a automação bloqueia a segunda. PR sem etiqueta
+não reconstrói o banco e roda contra o estado restaurado da `main`.
+
+Em 2026-08-28, Rodrigo aprovou o custo baixo do Supabase Feature Branching para
+substituir esse compartilhamento por um ambiente isolado por PR. A auditoria
+somente leitura encontrou a branch `main` cadastrada no Supabase, mas nenhuma
+branch de preview por PR. Isso significa que a funcionalidade está habilitada
+na conta, porém o encadeamento automático GitHub → Supabase → Vercel ainda não
+está comprovado neste repositório.
+
+Até uma fase própria alterar e testar os workflows e as variáveis da Vercel,
+a etiqueta, a fila e o reset do projeto `PaneERP Preview` continuam sendo a
+regra operacional. Não se remove a trava antes de uma PR real provar que recebeu
+credenciais próprias, migrations e seed fictício e que seu ambiente foi apagado
+ao fechar ou integrar.
+
+Quando estiver operacional, cada branch de preview será isolada e sem dados de
+produção. O Supabase cobra o compute usado por branch; na tabela consultada em
+2026-08-28, o tamanho Micro começa em US$ 0,01344 por hora, exige plano Pro e
+esse consumo não é coberto pelo Spend Cap. Rodrigo aceitou esse custo. Consulte
+sempre a [documentação de Branching](https://supabase.com/docs/guides/deployment/branching)
+e a [página de cobrança vigente](https://supabase.com/docs/guides/platform/manage-your-usage/branching)
+antes de mudar a configuração.
+
+Feature Branching resolve o isolamento remoto entre PRs. Ele não elimina por si
+só o Docker usado pelo ensaio descartável de `CI Banco`; trocar esse ensaio é
+outra decisão e exige evidência equivalente da história completa de migrations.
 
 ## Dados e contas fictícias
 
