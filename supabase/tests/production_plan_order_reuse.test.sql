@@ -61,6 +61,16 @@ values (
   'Planejamento Admin'
 );
 
+-- O seed traz 5 baguetes congeladas. Este cenario precisa de mais 3 para
+-- provar a composicao de 8 congeladas sem violar o saldo fisico compartilhado.
+insert into public.frozen_stock (id, frozen_product_id, location, quantity)
+values (
+  '74300000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  'jc-freezer-reuse-test',
+  3
+);
+
 insert into public.production_plan_items (
   id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
   leftover_proposed_quantity, leftover_confirmed_quantity
