@@ -1,0 +1,83 @@
+name: Banco por PR
+
+# Avisa a Vercel qual banco de teste cada pull request deve usar.
+#
+# O Supabase ja cria um banco proprio para toda PR que mexe em arquivos do
+# Supabase. Faltava a outra ponta: sem isto, o preview da PR continua falando
+# com o Banco Preview compartilhado, e duas PRs se atropelam.
+#
+# PR sem migration nao ganha banco proprio e nao precisa: ela segue nas
+# variaveis genericas de Preview, que apontam para o compartilhado. Como
+# nenhuma PR reescreve mais aquele banco, ele espelha a main, que e exatamente
+# o certo para quem nao mexe em schema.
+#
+# A regra de decisao vive em scripts/preview-branch-env.mjs e e testada por
+# scripts/preview-branch-env.test.mjs, que roda no `npm test` de toda PR.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: banco-por-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_PROJECT: pane-producao
+
+jobs:
+  apontar:
+    # PR vinda de fork nao recebe segredo do repositorio, entao o trabalho
+    # falharia sem motivo aparente. Melhor nem comecar.
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Apontar o preview para o banco desta PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apontar
+        env:
+          ACAO: apontar
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  limpar:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Devolver o preview ao banco compartilhado
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # O Supabase apaga o banco da PR sozinho quando ela fecha. Sobraria a
+      # variavel apontando para um endereco morto, que envenenaria qualquer
+      # preview futuro que reaproveitasse o mesmo nome de branch.
+      - name: Limpar
+        env:
+          ACAO: limpar
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
