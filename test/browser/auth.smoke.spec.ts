@@ -44,40 +44,56 @@ async function expectRouteVisible(page: import('@playwright/test').Page, href: s
   await expect(page.locator(`a[href="${href}"]`).first()).toBeAttached()
 }
 
-// A repetição cobre SOMENTE o clique. A lista de abas já está pronta quando a
-// tela de criação monta (lojas e permissões chegam antes de o botão "Novo
-// Romaneio" existir), então o clique perdido é hipótese remota; o que demora é
-// o rascunho do destino, montado por várias consultas em sequência.
+// A carga inicial do Romaneio termina em setScreen('admin'), e o smoke roda
+// contra `next dev`, onde o React invoca esse efeito DUAS vezes (Strict Mode é
+// o padrão do App Router quando next.config não diz o contrário). Quando a
+// segunda passada chega DEPOIS de o teste já ter aberto "Novo Romaneio", ela
+// devolve a tela ao painel admin e leva junto a lista de lojas: a aba do
+// destino some do DOM, e nenhuma repetição de clique NA ABA a traz de volta.
+// Foi assim que este teste derrubou a main em 27/08 e 28/08; os dois modos de
+// falha do log (a aba que "não existe" e o rascunho que nunca monta) saem da
+// mesma corrida, e ambos foram reproduzidos em laboratório.
 //
-// A espera pelo rascunho fica FORA da repetição, e mira o aviso da entrega —
-// o único elemento que aparece exatamente quando o rascunho terminou de montar.
-// Esperar por um card de produto no lugar dele confundiria "ainda carregando"
-// com "o cenário do Preview mudou", e repetir o clique jamais conserta o
-// segundo caso: a tela guarda o rascunho já montado e ignora novo clique na
-// mesma aba (ver lessons.md 2026-08-21).
-const romaneioDestinationRetryTimeoutMs = 20_000
-
+// Por isso a repetição daqui REENTRA na tela de criação, em vez de insistir na
+// aba. A espera mira o aviso da entrega, o único elemento que aparece
+// exatamente quando o rascunho terminou de montar, nunca o dado que o teste
+// vai conferir (ver lessons.md 2026-08-21).
 async function selectRomaneioDestination(
   page: import('@playwright/test').Page,
   destinationName: string,
 ) {
-  await expect(async () => {
-    const tab = page.getByRole('tab', { name: destinationName })
-    await expect(tab).toBeVisible({ timeout: 5_000 })
-    await tab.click({ timeout: 5_000 })
-    await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 })
-  }).toPass({ timeout: romaneioDestinationRetryTimeoutMs })
-
+  const novoRomaneio = page.getByRole('button', { name: 'Novo Romaneio' })
+  // A aba ganha um marcador ("•") assim que o rascunho traz quantidade, e a
+  // reposição pendente da EX já nasce preenchida. getByRole({ name }) compara o
+  // nome INTEIRO (operador "=" de matchesAttributePart, só ignorando a caixa),
+  // então "[TESTE] Exposicao" deixaria de casar com "[TESTE] Exposicao •" no
+  // meio do caminho. Filtrar por trecho de texto sobrevive aos dois estados.
+  const abaDoDestino = page.getByRole('tab').filter({ hasText: destinationName })
+  const abaEscolhida = abaDoDestino.and(page.locator('[aria-selected="true"]'))
   const rascunho = page.locator('.ps-banner.honey', { hasText: `para ${destinationName}` })
   const falhaDeCarga = page.getByRole('button', { name: 'Tentar de novo' })
 
-  // A tela distingue "carregando" de "falhou" desde a PR 253. Esperar so pelo
-  // rascunho fazia uma falha de carga virar tempo esgotado, sem dizer o motivo
-  // — e uma falha passageira no banco frio matava o teste. Aqui a corrida e
-  // entre os dois: se a tela avisou que falhou, usamos o botao que ela oferece.
+  // Entrar antes de a tela terminar de carregar custaria uma volta inteira do
+  // laço à toa; este é o sinal de que o painel do Romaneio ficou pronto.
+  await expect(
+    novoRomaneio,
+    'O painel do Romaneio não terminou de carregar.',
+  ).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
   await expect(async () => {
+    // Botão visível significa que a tela está no painel admin (primeira
+    // entrada, ou reset causado pela segunda carga). Reentrar é a única saída.
+    if (await novoRomaneio.isVisible().catch(() => false)) {
+      await novoRomaneio.click({ timeout: 5_000 })
+    }
+    // A tela distingue "carregando" de "falhou" desde a PR 253: se ela avisou
+    // que falhou, usamos o botao que ela mesma oferece.
     if (await falhaDeCarga.isVisible().catch(() => false)) {
-      await falhaDeCarga.click()
+      await falhaDeCarga.click({ timeout: 5_000 })
+    } else if ((await abaEscolhida.count()) === 0) {
+      // count() e isVisible() respondem na hora; getAttribute() ESPERA pelo
+      // elemento e travaria o laço inteiro quando a tela tivesse sido resetada.
+      await abaDoDestino.click({ timeout: 5_000 })
     }
     await expect(
       rascunho,
@@ -196,13 +212,17 @@ test('Vendas JA entra no Romaneio e ve somente as rotas aprovadas', async ({ pag
 })
 
 test('Romaneio EX sugere reposicao pendente da mesma data', async ({ page }) => {
-  // Login lento do Preview + montagem do rascunho cabem folgados aqui.
-  test.setTimeout(60_000)
+  // O recipiente tem de caber o que as esperas de dentro declaram, senão o
+  // orçamento delas é ficção: eram 60s com 15s de login + 15s de painel + 60s
+  // de rascunho dentro, então o rascunho nunca chegava a gastar o próprio
+  // limite e a falha saía como "Test timeout of 60000ms exceeded" (medido na
+  // main em 28/08). 15 + 15 + 60 = 90s, mais a navegação: 120s.
+  test.setTimeout(120_000)
 
   await enterWithPreviewAccount(page, previewAccounts.admin)
   await page.goto('/romaneio')
 
-  await page.getByRole('button', { name: 'Novo Romaneio' }).click()
+  // O helper entra pelo "Novo Romaneio" e reentra se a tela for resetada.
   await selectRomaneioDestination(page, '[TESTE] Exposicao')
 
   // Daqui em diante o rascunho JÁ está montado: card ausente é dado ausente,
