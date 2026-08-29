@@ -11,3 +11,5 @@
 --
 -- A PR desta migration e descartavel e vai ser fechada, nunca integrada.
 select 1 as prova_do_banco_por_pr;
+
+-- Toque real em arquivo do supabase/, para a integracao reagir.
