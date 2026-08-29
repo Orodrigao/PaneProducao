@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(39);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -87,6 +87,18 @@ insert into public.orders (
   ('95000000-0000-4000-8000-00000000e003', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a2',
    'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 8, 5.00, 1, 'un',
    '95000000-0000-4000-8000-0000000000c2', '[TESTE] Cliente Fase 3 Sem Prazo',
+   private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
+
+-- Um terceiro pedido, entregue ontem e SEM conferencia nenhuma: e o caso da
+-- Ines Vizioli, 25/08, que virou fatura por deducao de calendario.
+insert into public.orders (
+  id, store, order_type, order_group_id, bread_id, product_source, product_name,
+  quantity, unit_price, pack_size, pricing_unit, customer_id, pj_client,
+  order_date, delivery_date, pj_delivery_date, needs_production
+) values
+  ('95000000-0000-4000-8000-00000000e004', 'pj', 'pj', '95000000-0000-4000-8000-0000000000a3',
+   'teste-pao-fase3', 'bread', '[TESTE] Pao Fase 3', 12, 5.00, 1, 'un',
+   '95000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Fase 3 Prazo 15',
    private.data_na_padaria() - 3, private.data_na_padaria() - 1, private.data_na_padaria() - 1, false);
 
 -- A lista de pedidos a faturar --------------------------------------------
@@ -251,6 +263,25 @@ select ok(exists(select 1 from public.list_pj_orders_to_bill()
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido com cobranca cancelada volta para a lista de a faturar');
 
+-- TRIPWIRE de buraco conhecido ----------------------------------------------
+-- Corrigir a quantidade de um pedido ja conferido apaga `dispatched_quantity`
+-- da linha corrigida, mas nao apaga `dispatched_at`. Entao a cobranca ainda
+-- sai por um numero que ninguem conferiu. A trava do passo 1 NAO fecha isso de
+-- proposito: fechar aqui criaria pedido sem saida, porque
+-- `save_pj_order_dispatch_quantities` recusa reconferir pedido ja enviado.
+--
+-- Este teste afirma o buraco. Quando a metade B do passo 2 entrar, ele vai
+-- falhar — e e para falhar: e o lembrete de vir aqui e trocar por
+-- `throws_ok`.
+select is((select count(*)::int from public.orders
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid
+      and cancelled_at is null and dispatched_quantity is null), 1,
+  'BURACO CONHECIDO: corrigir o pedido apaga a conferencia da linha corrigida');
+
+select is((select bool_or(dispatched_at is not null) from public.orders
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), true,
+  'BURACO CONHECIDO: mas o pedido continua marcado como enviado, e por isso a cobranca passa');
+
 -- O caminho manual do financeiro -------------------------------------------
 
 select is((select amount from public.list_pj_orders_to_bill()
@@ -318,6 +349,61 @@ select is((select count(*)::int from public.receivables
 select ok(exists(select 1 from public.list_pj_orders_to_bill()
     where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid),
   'e o pedido continua na lista de a faturar, esperando o prazo');
+
+reset role;
+
+-- A trava do passo 1: cobranca espera a conferencia -------------------------
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
+
+select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), true,
+  'pedido sem conferencia aparece marcado como aguardando conferencia');
+
+select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid), false,
+  'pedido ja conferido nao fica marcado');
+
+-- Continuar na lista e deliberado: sumir faria a Elis perder de vista um
+-- pedido entregue e nao cobrado, que foi o estrago que a fila da Expedicao
+-- causou com a Rafaela.
+select ok(exists(select 1 from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid),
+  'e continua visivel na lista, marcado, em vez de sumir');
+
+select throws_ok(
+  $$ select public.create_receivable_from_pj_order(
+       '95000000-0000-4000-8000-00000000f004'::uuid,
+       '95000000-0000-4000-8000-0000000000a3'::uuid) $$,
+  '22023',
+  'Este pedido ainda não foi conferido pela Expedição. Peça a conferência do que saiu antes de cobrar.',
+  'e a funcao recusa cobrar por fora da tela, com a mensagem que diz o que fazer'
+);
+
+reset role;
+
+-- Conferido, a porta abre sozinha: e o que garante que o pedido bloqueado nao
+-- fica sem saida.
+select set_config('pane.pj_check_rpc', 'on', true);
+update public.orders
+set dispatched_quantity = quantity, dispatched_quantity_at = now()
+where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid;
+select set_config('pane.pj_check_rpc', '', true);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
+
+select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), false,
+  'depois da conferencia o pedido deixa de estar aguardando');
+
+select lives_ok(
+  $$ select public.create_receivable_from_pj_order(
+       '95000000-0000-4000-8000-00000000f005'::uuid,
+       '95000000-0000-4000-8000-0000000000a3'::uuid) $$,
+  'e a cobranca passa a ser gerada normalmente'
+);
 
 reset role;
 

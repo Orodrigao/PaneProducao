@@ -368,12 +368,22 @@ export interface PjOrderToBillRow {
   dispatched_at: string | null
   items: number
   amount: number
+  /**
+   * Entregue mas sem envio confirmado e com item sem número da Expedição.
+   * Cobrar assim foi o que fez o pedido da Ines virar fatura sem conferência
+   * em 25/08, e depois nem poder mais ser conferido.
+   */
+  aguardando_conferencia: boolean
 }
 
 /**
- * Pedidos PJ entregues e ainda não cobrados. Enquanto a Expedição não tiver o
- * hábito de confirmar o envio, esta lista é o caminho principal da cobrança —
- * e não a rede de proteção que o plano previa (decisão 11).
+ * Pedidos PJ entregues e ainda não cobrados.
+ *
+ * O comentário anterior dizia que esta lista era "o caminho principal da
+ * cobrança" porque a Expedição não tinha o hábito de confirmar o envio. Isso
+ * descrevia julho. Medido em produção em 26/08: na semana de 20 a 26/08 foram
+ * 24 cobranças com envio confirmado contra 1 sem. Ela voltou a ser a rede de
+ * proteção que a decisão 11 previa.
  */
 export async function loadPjOrdersToBill(): Promise<PjOrderToBillRow[]> {
   const { data, error } = await supabase.rpc('list_pj_orders_to_bill')
@@ -408,26 +418,69 @@ export async function splitReceivable(
 }
 
 /** Pedido cujo cliente ainda não tem prazo combinado não pode ser cobrado. */
-export function pjOrderCanBeBilled(order: Pick<PjOrderToBillRow, 'payment_term_days'>): boolean {
-  return order.payment_term_days !== null
+export type PjOrderBillingBlock = 'aguardando-conferencia' | 'sem-prazo'
+
+/**
+ * Por que este pedido ainda não pode virar cobrança, ou `null` se pode.
+ *
+ * Devolve o MOTIVO e não um sim/não: uma mensagem só para causas diferentes é
+ * o defeito que a conferência do Romaneio ensinou em 26/08 — quem lê não
+ * descobre o que fazer.
+ *
+ * A conferência vem antes do prazo porque é a mais grave: sem prazo a cobrança
+ * espera um cadastro; sem conferência ela sairia com o número errado.
+ */
+export function pjOrderBillingBlock(
+  order: Pick<PjOrderToBillRow, 'payment_term_days' | 'aguardando_conferencia'>,
+): PjOrderBillingBlock | null {
+  if (order.aguardando_conferencia) return 'aguardando-conferencia'
+  if (order.payment_term_days === null) return 'sem-prazo'
+  return null
 }
 
-export function summarizePjOrdersToBill(orders: readonly PjOrderToBillRow[]): {
+export function pjOrderCanBeBilled(
+  order: Pick<PjOrderToBillRow, 'payment_term_days' | 'aguardando_conferencia'>,
+): boolean {
+  return pjOrderBillingBlock(order) === null
+}
+
+export interface PjOrdersToBillSummary {
   total: number
   bloqueados: number
   valorBloqueado: number
-} {
-  let total = 0
-  let bloqueados = 0
-  let valorBloqueado = 0
+  semPrazo: number
+  valorSemPrazo: number
+  aguardandoConferencia: number
+  valorAguardandoConferencia: number
+}
+
+export function summarizePjOrdersToBill(
+  orders: readonly PjOrderToBillRow[],
+): PjOrdersToBillSummary {
+  const resumo: PjOrdersToBillSummary = {
+    total: 0,
+    bloqueados: 0,
+    valorBloqueado: 0,
+    semPrazo: 0,
+    valorSemPrazo: 0,
+    aguardandoConferencia: 0,
+    valorAguardandoConferencia: 0,
+  }
   for (const order of orders) {
-    total += order.amount
-    if (!pjOrderCanBeBilled(order)) {
-      bloqueados += 1
-      valorBloqueado += order.amount
+    resumo.total += order.amount
+    const motivo = pjOrderBillingBlock(order)
+    if (motivo === null) continue
+    resumo.bloqueados += 1
+    resumo.valorBloqueado += order.amount
+    if (motivo === 'aguardando-conferencia') {
+      resumo.aguardandoConferencia += 1
+      resumo.valorAguardandoConferencia += order.amount
+    } else {
+      resumo.semPrazo += 1
+      resumo.valorSemPrazo += order.amount
     }
   }
-  return { total, bloqueados, valorBloqueado }
+  return resumo
 }
 
 /**
