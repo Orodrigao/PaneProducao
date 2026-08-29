@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(38);
 
 select is(
   (select count(*)::int from public.destinations where code in ('JC', 'JA', 'EX')),
@@ -234,6 +234,25 @@ select is(
       and store = 'pj'),
   7,
   'seed cria pedidos PJ em aberto, por quilo, enviado, cancelado, sem prazo e em conferencia parcial'
+);
+
+select is(
+  (select count(*)::int from public.orders
+   where id::text like '30000000-0000-4000-8000-0000000001%'
+     and order_type = 'pj'
+     and cancelled_at is null
+     and dispatched_at is null
+     and production_date is null),
+  5,
+  'pedido PJ aberto nasce sem data de producao escolhida pelo Comercial'
+);
+
+select is(
+  (select stock.quantity from public.frozen_stock stock
+   join public.frozen_products product on product.id = stock.frozen_product_id
+   where product.product_id = 'teste-brioche-pj' and stock.location = 'jc-freezer'),
+  30,
+  'seed prepara congelado PJ ficticio para Geolar testar a reserva manual'
 );
 
 -- O cenario da fase 1: um pedido com uma linha ja conferida e outra pendente.

@@ -50,6 +50,11 @@ describe('parseOvenQuantity', () => {
     expect(parseOvenQuantity('-1')).toBeNull()
     expect(parseOvenQuantity('abc')).toBeNull()
   })
+
+  it('aceita até três casas para pão vendido por quilo', () => {
+    expect(parseOvenQuantity('4,125', 'kg')).toBe(4.125)
+    expect(parseOvenQuantity('4.1250', 'kg')).toBeNull()
+  })
 })
 
 describe('validateOvenConfirmation', () => {
@@ -65,5 +70,19 @@ describe('validateOvenConfirmation', () => {
       quantityLoss: '1',
       lossReason: '',
     })).toBe('Escolha o motivo da perda.')
+  })
+
+  it('valida peso fracionado sem liberar meio pão', () => {
+    expect(validateOvenConfirmation({
+      quantityGood: '4,5',
+      quantityLoss: '0,125',
+      lossReason: 'Queimou',
+    }, 'kg')).toBeNull()
+
+    expect(validateOvenConfirmation({
+      quantityGood: '4,5',
+      quantityLoss: '0',
+      lossReason: '',
+    }, 'un')).toBe('Informe a saída boa em unidades inteiras.')
   })
 })

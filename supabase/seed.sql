@@ -214,7 +214,7 @@ values
    252, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
-   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
    '[TESTE] pedido com pacote de 12 para conferir o valor do relatorio', false,
    null, null, null, null, null, null,
@@ -227,7 +227,7 @@ values
    4.5, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
-   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
    '[TESTE] pedido por quilo, sem pacote', false,
    null, null, null, null, null, null,
@@ -258,7 +258,7 @@ values
    60, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date - 2,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
-   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    '[TESTE] entregue, mas o cliente nao tem prazo combinado', false,
    null, null, null, null, null, null,
@@ -290,7 +290,7 @@ values
    3, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
-   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    '[TESTE] conferencia pela metade: esta linha ja foi conferida', false,
    null, null, null, null, null, null,
@@ -302,7 +302,7 @@ values
    48, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
-   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    '[TESTE] esta linha ainda NAO foi conferida, e e ela que segura o envio', false,
    null, null, null, null, null, null,
@@ -707,6 +707,46 @@ values (
   '50000000-0000-4000-8000-000000000001',
   'jc-freezer',
   5,
+  now()
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  quantity = excluded.quantity,
+  updated_at = excluded.updated_at;
+
+-- Saldo ficticio para Geolar testar o uso manual de congelado em um pedido PJ.
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit,
+  min_stock, active, store, visible_stores
+)
+values (
+  '50000000-0000-4000-8000-000000000003',
+  'teste-brioche-pj',
+  'bread',
+  '[TESTE] Brioche PJ',
+  'un',
+  0,
+  true,
+  'jc',
+  array['jc']::text[]
+)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit = excluded.unit,
+  min_stock = excluded.min_stock,
+  active = excluded.active,
+  store = excluded.store,
+  visible_stores = excluded.visible_stores;
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity, updated_at)
+values (
+  '51000000-0000-4000-8000-000000000003',
+  '50000000-0000-4000-8000-000000000003',
+  'jc-freezer',
+  30,
   now()
 )
 on conflict (id) do update set

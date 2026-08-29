@@ -152,6 +152,17 @@ tabelas.
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes, com contexto por loja;
+- programação diária de pedidos PJ pela Produção: Geolar escolhe por cliente,
+  item e quantidade o que entra hoje, pode dividir a linha entre dias e indicar
+  uso manual de congelados da Central. A quantidade programada sai da pendência
+  imediatamente; sobras das lojas nunca atendem PJ. O saldo de congelados é
+  reservado em conjunto com o planejamento de JC/JA para não prometer o mesmo
+  pão duas vezes. O Forno continua agregado por pão e soma lojas, encomendas e
+  somente o PJ explicitamente programado, inclusive itens do catálogo novo
+  ligados por `products.legacy_bread_id` e quantidades vendidas por kg. O
+  Comercial informa apenas a entrega obrigatória. Agrupamento de pedidos na
+  Expedição, adiantamento de entrega e cobrança pela quantidade enviada
+  permanecem em fases posteriores;
 - produção da Cozinha registrada em lotes conforme a demanda e resumo diário
   por produto; o banco já possui ações protegidas de correção e cancelamento,
   mas a interface dessas ações ainda não foi implementada;

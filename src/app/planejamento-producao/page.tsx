@@ -25,7 +25,6 @@ import { fetchBreadDemandHistory } from '@/lib/breadDemandHistoryClient'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
   PRODUCTION_PLAN_STORES,
-  aggregateFrozenBreadAvailability,
   aggregatePlanningLeftoverAvailability,
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
@@ -41,8 +40,6 @@ import {
   plannedBreadsForDate,
   statusAllowsDraftEditing,
   subtractPlanningReuseProposals,
-  type PlanningFrozenProductRow,
-  type PlanningFrozenStockRow,
   type PlanningPendingLeftoverRow,
   type PlanningReuseProposalRow,
   type PlanningBreadLite,
@@ -98,6 +95,12 @@ interface ProductionPlanSummary {
 interface BreadRow extends PlanningBreadLite {
   days: number[]
   unit: string | null
+}
+
+interface FrozenProductionAvailabilityRow {
+  store: ProductionPlanStore
+  bread_id: string
+  available_quantity: number | string
 }
 
 type QuantityInputs = Record<string, number>
@@ -260,15 +263,10 @@ export default function ProductionPlanningPage() {
 
   const loadAvailability = useCallback(async (targetDate: string) => {
     try {
-      const [frozenProductsResult, frozenStockResult, leftoversResult, reusePlansResult] = await Promise.all([
-        supabase
-          .from('frozen_products')
-          .select('id,product_id,product_source,visible_stores,store')
-          .eq('active', true)
-          .eq('product_source', 'bread'),
-        supabase
-          .from('frozen_stock')
-          .select('frozen_product_id,location,quantity'),
+      const [frozenResult, leftoversResult, reusePlansResult] = await Promise.all([
+        supabase.rpc('list_frozen_production_availability', {
+          p_target_plan_date: targetDate,
+        }),
         supabase
           .from('sobras')
           .select('store,product_id,pending_quantity')
@@ -282,15 +280,16 @@ export default function ProductionPlanningPage() {
           .eq('status', 'proposed'),
       ])
 
-      if (frozenProductsResult.error) throw frozenProductsResult.error
-      if (frozenStockResult.error) throw frozenStockResult.error
+      if (frozenResult.error) throw frozenResult.error
       if (leftoversResult.error) throw leftoversResult.error
       if (reusePlansResult.error) throw reusePlansResult.error
 
-      setFrozenAvailability(Object.fromEntries(aggregateFrozenBreadAvailability(
-        (frozenProductsResult.data ?? []) as PlanningFrozenProductRow[],
-        (frozenStockResult.data ?? []) as PlanningFrozenStockRow[],
-      )))
+      setFrozenAvailability(Object.fromEntries(
+        ((frozenResult.data ?? []) as FrozenProductionAvailabilityRow[]).map(row => [
+          planningAvailabilityKey(row.store, row.bread_id),
+          normalizePlannedQuantity(row.available_quantity),
+        ]),
+      ))
       const rawLeftovers = aggregatePlanningLeftoverAvailability(
         (leftoversResult.data ?? []) as PlanningPendingLeftoverRow[],
       )
