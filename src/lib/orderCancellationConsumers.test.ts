@@ -6,14 +6,16 @@ function read(relativePath: string): string {
 }
 
 describe('pedidos cancelados fora da operação', () => {
-  it('filtra as três fontes do Forno', () => {
+  it('filtra as fontes diretas e delega o PJ para a ação protegida do Forno', () => {
     const source = read('../app/forno/page.tsx')
-    expect(source.match(/\.is\('cancelled_at', null\)/g)).toHaveLength(3)
+    expect(source.match(/\.is\('cancelled_at', null\)/g)).toHaveLength(2)
+    expect(source).toContain("supabase.rpc('list_pj_production_for_oven'")
   })
 
-  it('filtra as três leituras REST da tela raiz', () => {
+  it('filtra as leituras REST restantes e usa o painel protegido para PJ', () => {
     const source = read('../app/page.tsx')
-    expect(source.match(/sbGet\('orders', ?`cancelled_at=is\.null&/g)).toHaveLength(3)
+    expect(source.match(/sbGet\('orders', ?`cancelled_at=is\.null&/g)).toHaveLength(2)
+    expect(source).toContain('<PjProductionPlanningPanel />')
   })
 
   it('filtra Romaneio, Sobras e Relatório PJ', () => {

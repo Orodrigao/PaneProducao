@@ -23,9 +23,11 @@ interface OrderRow {
   id: string
   bread_id: string
   quantity: number | null
-  production_date: string | null
-  pj_delivery_date: string | null
-  product_source: string | null
+}
+
+interface PjOvenPlanRow {
+  bread_id: string
+  quantity: number | null
 }
 
 interface ProductionActualRow {
@@ -111,21 +113,18 @@ export default function FornoPage() {
       const [regularResult, pjResult, customResult, actualsResult, reuseResult] = await Promise.all([
         supabase
           .from('orders')
-          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .select('id, bread_id, quantity')
           .is('cancelled_at', null)
           .in('store', ['jc', 'ja', 'ex'])
+          .eq('order_type', 'producao')
           .eq('order_date', date)
           .gt('quantity', 0),
+        supabase.rpc('list_pj_production_for_oven', {
+          p_production_date: date,
+        }),
         supabase
           .from('orders')
-          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
-          .is('cancelled_at', null)
-          .eq('store', 'pj')
-          .or(`production_date.eq.${date},and(production_date.is.null,pj_delivery_date.eq.${date})`)
-          .gt('quantity', 0),
-        supabase
-          .from('orders')
-          .select('id, bread_id, quantity, production_date, pj_delivery_date, product_source')
+          .select('id, bread_id, quantity')
           .is('cancelled_at', null)
           .eq('order_type', 'encomenda')
           .eq('production_date', date)
@@ -150,8 +149,7 @@ export default function FornoPage() {
       if (firstError) throw firstError
 
       const regularRows = (regularResult.data ?? []) as OrderRow[]
-      const pjRows = ((pjResult.data ?? []) as OrderRow[])
-        .filter(row => row.product_source !== 'product')
+      const pjRows = (pjResult.data ?? []) as PjOvenPlanRow[]
       const customRows = (customResult.data ?? []) as OrderRow[]
       const actualRows = (actualsResult.data ?? []) as ProductionActualRow[]
       const originalPlan = aggregateOvenPlan([...regularRows, ...pjRows, ...customRows])
@@ -224,8 +222,12 @@ export default function FornoPage() {
     field: 'quantityGood' | 'quantityLoss',
     delta: number,
   ) {
-    const current = parseOvenQuantity(forms[breadId]?.[field] ?? '0') ?? 0
-    updateForm(breadId, { [field]: String(Math.max(0, current + delta)) })
+    const bread = breads.find(item => item.id === breadId)
+    const unit = bread?.unit === 'kg' ? 'kg' : 'un'
+    const current = parseOvenQuantity(forms[breadId]?.[field] ?? '0', unit) ?? 0
+    updateForm(breadId, {
+      [field]: String(Math.max(0, Math.round((current + delta) * 1000) / 1000)),
+    })
   }
 
   function startEditing(breadId: string) {
@@ -257,14 +259,15 @@ export default function FornoPage() {
       : forms[bread.id]
 
     if (!form) return
-    const validationError = validateOvenConfirmation(form)
+    const unit = bread.unit === 'kg' ? 'kg' : 'un'
+    const validationError = validateOvenConfirmation(form, unit)
     if (validationError) {
       showToast(validationError)
       return
     }
 
-    const quantityGood = parseOvenQuantity(form.quantityGood)
-    const quantityLoss = parseOvenQuantity(form.quantityLoss)
+    const quantityGood = parseOvenQuantity(form.quantityGood, unit)
+    const quantityLoss = parseOvenQuantity(form.quantityLoss, unit)
     if (quantityGood === null || quantityLoss === null) return
 
     setSaving(current => ({ ...current, [bread.id]: true }))
@@ -393,8 +396,10 @@ export default function FornoPage() {
                   const form = forms[bread.id]
                   const isEditing = Boolean(editing[bread.id])
                   const isSaving = Boolean(saving[bread.id])
-                  const quantityGood = parseOvenQuantity(form?.quantityGood ?? '0') ?? 0
-                  const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0') ?? 0
+                  const unit = bread.unit === 'kg' ? 'kg' : 'un'
+                  const step = unit === 'kg' ? 0.1 : 1
+                  const quantityGood = parseOvenQuantity(form?.quantityGood ?? '0', unit) ?? 0
+                  const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0', unit) ?? 0
                   const lotCode = actual?.lot_code ?? ovenLotCode(date)
 
                   return (
@@ -468,7 +473,7 @@ export default function FornoPage() {
                                 type="button"
                                 className="ps-step"
                                 disabled={quantityGood <= 0 || isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityGood', -1)}
+                                onClick={() => adjustQuantity(bread.id, 'quantityGood', -step)}
                                 aria-label={`Diminuir saída boa de ${bread.name}`}
                               >
                                 <Minus size={21} />
@@ -477,9 +482,9 @@ export default function FornoPage() {
                                 id={`good-${bread.id}`}
                                 className="ps-qty"
                                 type="number"
-                                inputMode="numeric"
+                                inputMode={unit === 'kg' ? 'decimal' : 'numeric'}
                                 min={0}
-                                step={1}
+                                step={step}
                                 disabled={isSaving}
                                 value={form.quantityGood}
                                 onChange={event => updateForm(bread.id, { quantityGood: event.target.value })}
@@ -488,7 +493,7 @@ export default function FornoPage() {
                                 type="button"
                                 className="ps-step"
                                 disabled={isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityGood', 1)}
+                                onClick={() => adjustQuantity(bread.id, 'quantityGood', step)}
                                 aria-label={`Aumentar saída boa de ${bread.name}`}
                               >
                                 <Plus size={21} />
@@ -503,7 +508,7 @@ export default function FornoPage() {
                                 type="button"
                                 className="ps-step"
                                 disabled={quantityLoss <= 0 || isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', -1)}
+                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', -step)}
                                 aria-label={`Diminuir perda de ${bread.name}`}
                               >
                                 <Minus size={21} />
@@ -512,9 +517,9 @@ export default function FornoPage() {
                                 id={`loss-${bread.id}`}
                                 className={`ps-qty${quantityLoss === 0 ? ' zero' : ''}`}
                                 type="number"
-                                inputMode="numeric"
+                                inputMode={unit === 'kg' ? 'decimal' : 'numeric'}
                                 min={0}
-                                step={1}
+                                step={step}
                                 disabled={isSaving}
                                 value={form.quantityLoss}
                                 onChange={event => updateForm(bread.id, { quantityLoss: event.target.value })}
@@ -523,7 +528,7 @@ export default function FornoPage() {
                                 type="button"
                                 className="ps-step"
                                 disabled={isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', 1)}
+                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', step)}
                                 aria-label={`Aumentar perda de ${bread.name}`}
                               >
                                 <Plus size={21} />

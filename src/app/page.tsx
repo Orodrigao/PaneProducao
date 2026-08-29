@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
+import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
 
 const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
 const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
@@ -180,7 +181,6 @@ export default function ProducaoPage() {
   const [geolarReuseGate, setGeolarReuseGate] = useState<GeolarReuseGateState>({ status: 'loading', hasPendingProposal: false })
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
   const [geolarEnc, setGeolarEnc] = useState<{client:string;name:string;qty:number}[]>([])
-  const [geolarPj, setGeolarPj]   = useState<{client:string;name:string;qty:number}[]>([])
   // Itens JC (producao de nao-paes — bolos, salgados, doces, etc)
   const [prodItems, setProdItems] = useState<ProdItem[]>([])
   const [prodQtys, setProdQtys]   = useState<Record<string,number>>({})
@@ -330,18 +330,13 @@ export default function ProducaoPage() {
     }
   }, [])
 
-  // Geolar: encomendas marcadas "produção" + pedidos PJ que produzem nesta data.
-  // Mesma lógica de data do /forno: encomenda/PJ por production_date (PJ legado cai no pj_delivery_date).
+  // Geolar: encomendas marcadas para esta data. A programacao PJ deixou de ser
+  // inferida pela entrega e vive no painel proprio, logo abaixo das lojas.
   const loadGeolarExtras = useCallback(async (dateKey: string) => {
     try {
-      const [encRows, pjRaw] = await Promise.all([
-        sbGet('orders', `cancelled_at=is.null&order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`),
-        sbGet('orders', `cancelled_at=is.null&store=eq.pj&quantity=gt.0&or=(production_date.eq.${dateKey},pj_delivery_date.eq.${dateKey})&select=product_name,bread_id,quantity,pj_client,production_date,pj_delivery_date`),
-      ])
+      const encRows = await sbGet('orders', `cancelled_at=is.null&order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`)
       setGeolarEnc((encRows as any[]).map(r => ({ client: r.pj_client || 'Encomenda', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
-      const pjFiltered = (pjRaw as any[]).filter(o => o.production_date ? o.production_date === dateKey : o.pj_delivery_date === dateKey)
-      setGeolarPj(pjFiltered.map(r => ({ client: r.pj_client || 'PJ', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
-    } catch { setGeolarEnc([]); setGeolarPj([]) }
+    } catch { setGeolarEnc([]) }
   }, [])
 
   // Itens JC — carregar produtos elegiveis (uma vez) + producao do dia
@@ -885,7 +880,7 @@ export default function ProducaoPage() {
   if (screen === 'geolar') return (
     <GeolarScreen
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
-      enc={geolarEnc} pj={geolarPj}
+      enc={geolarEnc}
       delivIdx={delivIdx}
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       reuseGate={geolarReuseGate}
@@ -1573,14 +1568,14 @@ function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQ
 
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
-  enc:{client:string;name:string;qty:number}[]; pj:{client:string;name:string;qty:number}[]
+  enc:{client:string;name:string;qty:number}[]
   prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
   reuseGate:GeolarReuseGateState
   onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onOpenPending:()=>void; onRefreshReuse:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems, prodQtys, prodObs, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, prodQtys, prodObs, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   let grand = 0
@@ -1698,23 +1693,7 @@ function GeolarScreen({ breads, orders, enc, pj, geolarDate, delivIdx, prodItems
           </div>
         )}
 
-        {/* Pedidos PJ que produzem neste dia */}
-        {pj.length > 0 && (
-          <div className="print-card print-breads" style={{marginTop:16}}>
-            <h3>🏢 Pedidos PJ a produzir</h3>
-            <div className="pmeta">Para {dLabel}</div>
-            {Array.from(new Set(pj.map(e=>e.client))).map(client => (
-              <div key={client} style={{marginTop:8}}>
-                <div style={{fontSize:12,fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em'}}>{client}</div>
-                {pj.filter(e=>e.client===client).map((e,i)=>(
-                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:13}}>
-                    <span>{e.name}</span><strong>{e.qty}</strong>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
+        <PjProductionPlanningPanel />
 
         {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
         {(() => {
