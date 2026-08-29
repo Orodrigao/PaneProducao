@@ -13,3 +13,4 @@
 select 1 as prova_do_banco_por_pr;
 
 -- Toque real em arquivo do supabase/, para a integracao reagir.
+-- Segundo toque, agora com a PR fora do rascunho.
