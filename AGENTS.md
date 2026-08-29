@@ -191,6 +191,21 @@ máquina — nem site, nem banco.
   serializar trabalho, mandar outra sessão esperar ou declarar que "não dá",
   confira a capacidade real da conta; se passar a existir banco por PR, a
   fila deixa de valer e este trecho é corrigido no mesmo PR.
+- **Transição aprovada para Supabase Branching (2026-08-28):** Rodrigo aprovou
+  o custo baixo da funcionalidade para substituir o Banco Preview compartilhado
+  por um banco isolado por PR. A auditoria somente leitura confirmou a branch
+  `main` cadastrada, mas ainda não encontrou branches de preview por PR; portanto
+  a integração GitHub/Supabase/Vercel e a troca dos workflows ainda não estão
+  comprovadas. Até essa ativação ser implementada e testada em fase própria,
+  continuam valendo a etiqueta, a fila e o projeto `PaneERP Preview` descritos
+  acima. Não declare a fila extinta só porque a opção aparece habilitada no
+  painel.
+- Quando a transição estiver operacional, cada PR receberá ambiente Supabase
+  isolado, sem dados de produção, reconstruído pelas migrations e pelo seed
+  fictício e removido ao fechar ou integrar a PR. A mudança dos workflows,
+  secrets e variáveis da Vercel é governança protegida e exige tarefa própria.
+  Feature Branching não elimina por si só o Docker usado pelo ensaio local do
+  `CI Banco`; qualquer substituição desse ensaio também precisa de prova própria.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
   migration precisa conviver tanto com a versão do site que está no ar
   quanto com a que está entrando. Mudança destrutiva (remover ou renomear
@@ -254,12 +269,12 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
 - Um worktree, uma tarefa e um escopo. O worktree nasce com a tarefa e
   morre com ela: mergeou ou fechou o PR → deletar branch (local e remota) e
   worktree no mesmo dia. Worktree sem tarefa ativa é entulho.
-- Nascimento de um worktree (vale para qualquer agente, em qualquer
-  sistema): criar fora da pasta do repositório principal → copiar
-  `.env.example` para `.env.local` → `npm ci`. Sem esses dois passos o
-  ambiente local não funciona — `.env.local` e `node_modules` não
-  acompanham o worktree. `.env.example` sempre aponta ao Banco Preview;
-  banco de produção em arquivo local é falha de segurança.
+- Nascimento de um worktree (vale para qualquer agente, em qualquer sistema):
+  a portaria cria fora da pasta do repositório principal e materializa
+  `.env.local` a partir do `.env.example` antes de selar a integridade; depois o
+  executor roda `npm ci`. O agente nunca recria, recalibra nem substitui esse
+  `.env.local` manualmente. `.env.example` sempre aponta ao ambiente de teste
+  vigente; banco de produção em arquivo local é falha de segurança.
 - Se houver alteração local não relacionada, parar e isolar o trabalho.
 - Implementar somente a fase aprovada.
 - Não refatorar módulos vizinhos por iniciativa própria.
