@@ -26,18 +26,33 @@ export const VARIAVEIS_DO_BANCO = [
 ]
 
 /**
- * Quantas ramificacoes a listagem do Supabase devolve antes de truncar. O
- * endpoint nao documenta paginacao, entao tratamos uma lista cheia como
- * "pode estar truncada" e nao como "nao existe ramificacao".
+ * A partir de quantas ramificacoes a listagem do Supabase passa a ser suspeita
+ * de truncamento.
+ *
+ * O endpoint nao documenta paginacao e este numero E UM CHUTE, deliberadamente
+ * baixo: chutar alto seria chutar para o lado inseguro, porque uma lista
+ * truncada pareceria completa e uma PR com migration acabaria testando no banco
+ * compartilhado sem ninguem perceber. O limite de ramificacoes configurado no
+ * projeto e 3, entao na pratica uma lista com 20 ja e anomala por si so.
+ *
+ * Para trocar por um numero verificado: contar quantos itens a API devolve com
+ * mais ramificacoes abertas do que este limite. Enquanto isso, o total vem
+ * sempre no log justamente para tornar o chute investigavel.
  */
-export const LIMITE_PAGINA_RAMIFICACOES = 100
+export const LIMITE_PAGINA_RAMIFICACOES = 20
 
-/** Estados em que a ramificacao ainda nao serve para o site conversar. */
+/**
+ * Estados em que a ramificacao ainda nao serve.
+ *
+ * `MIGRATIONS_PASSED` e `FUNCTIONS_DEPLOYING` NAO entram aqui de proposito:
+ * este script so escreve o endereco e a chave do BANCO, e nesses dois estados o
+ * banco ja esta de pe com o schema aplicado. Esperar as edge functions travaria
+ * toda PR cuja ramificacao nao tenha function para publicar, e travar tudo e
+ * pior que aceitar uma function ainda subindo.
+ */
 const ESTADOS_EM_CRIACAO = new Set([
   'CREATING_PROJECT',
   'RUNNING_MIGRATIONS',
-  'MIGRATIONS_PASSED',
-  'FUNCTIONS_DEPLOYING',
 ])
 
 const ESTADOS_DE_FALHA = new Set([
@@ -188,6 +203,9 @@ export async function apontarPreviewParaRamificacao({
   vercelProject,
   vercelTeamId,
   esperarSegundos = 300,
+  // Espera propria: o banco nascer no Supabase e o preview aparecer na Vercel
+  // sao duas demoras diferentes, com causas diferentes.
+  esperarPreviewSegundos = 180,
   intervaloSegundos = 10,
   dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   registrar = console.log,
@@ -208,7 +226,12 @@ export async function apontarPreviewParaRamificacao({
     return Array.isArray(corpo) ? corpo : corpo?.branches
   }
 
-  let escolha = escolherRamificacao(await listar(), { prNumber, gitBranch })
+  const primeiraLista = await listar()
+  // O total sempre no log: e o que transforma o chute de LIMITE_PAGINA_RAMIFICACOES
+  // em algo investigavel em vez de uma suposicao silenciosa.
+  registrar(`O Supabase devolveu ${primeiraLista?.length ?? 0} ramificacao(oes).`)
+
+  let escolha = escolherRamificacao(primeiraLista, { prNumber, gitBranch })
   if (escolha.situacao === 'sem-ramificacao') {
     registrar(
       'Esta PR nao tem banco proprio, o que e o normal para quem nao mexe em migration. '
@@ -263,6 +286,9 @@ export async function apontarPreviewParaRamificacao({
     vercelToken,
     vercelProject,
     vercelTeamId,
+    esperarSegundos: esperarPreviewSegundos,
+    intervaloSegundos,
+    dormir,
     registrar,
     fetchImpl,
   })
@@ -282,24 +308,49 @@ export async function reconstruirPreview({
   vercelToken,
   vercelProject,
   vercelTeamId,
+  esperarSegundos = 180,
+  intervaloSegundos = 10,
+  dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   registrar = console.log,
   fetchImpl = fetch,
 }) {
-  const lista = await pedir(
-    comEscopo(
-      `https://api.vercel.com/v6/deployments?app=${encodeURIComponent(vercelProject)}&target=preview&limit=20`,
-      vercelTeamId,
-    ),
-    { token: vercelToken, fetchImpl },
-  )
+  // O filtro `branch` e feito pelo SERVIDOR (documentado em
+  // /v7/deployments). Isso importa: filtrar no cliente uma pagina dos deploys
+  // mais recentes do projeto inteiro confundiria "nao esta nesta pagina" com
+  // "nao existe", e sobraria um preview verde apontando para o banco errado.
+  const procurar = async () => {
+    const lista = await pedir(
+      comEscopo(
+        'https://api.vercel.com/v7/deployments'
+        + `?projectId=${encodeURIComponent(vercelProject)}`
+        + `&branch=${encodeURIComponent(gitBranch)}`
+        + '&limit=1',
+        vercelTeamId,
+      ),
+      { token: vercelToken, fetchImpl },
+    )
+    return (lista?.deployments ?? [])[0]
+  }
 
-  const daBranch = (lista?.deployments ?? []).find(
-    (deployment) => deployment?.meta?.githubCommitRef === gitBranch,
-  )
-
-  if (!daBranch) {
-    registrar('Nenhum preview desta branch existe ainda; o proximo ja nasce com o banco certo.')
-    return { situacao: 'nada-a-refazer' }
+  // O outro jeito de confundir ausencia com invisibilidade: a Vercel comeca o
+  // deploy no mesmo push que dispara este workflow, entao o deploy pode existir
+  // e ainda nao aparecer na API. Esperar e a diferenca entre refazer o deploy
+  // que ficou com as variaveis velhas e deixa-lo verde apontando para o banco
+  // compartilhado.
+  const limite = Date.now() + esperarSegundos * 1000
+  let daBranch = await procurar()
+  while (!daBranch) {
+    if (Date.now() >= limite) {
+      throw new Error(
+        `Nenhum preview da branch ${gitBranch} apareceu na Vercel em ${esperarSegundos}s. `
+        + 'As variaveis ja foram gravadas, mas nao deu para provar que nenhum deploy antigo '
+        + 'ficou com a configuracao velha. Confira se a Vercel esta construindo esta branch '
+        + 'e rode este workflow de novo.',
+      )
+    }
+    registrar('Preview da branch ainda nao aparece na Vercel; esperando.')
+    await dormir(intervaloSegundos * 1000)
+    daBranch = await procurar()
   }
 
   await pedir(
@@ -330,6 +381,10 @@ export async function limparVariaveisDaBranch({
   registrar = console.log,
   fetchImpl = fetch,
 }) {
+  // Mesma exigencia do outro caminho: sem isto a falta de token so aparecia
+  // como um 401 no meio do log, em vez de uma frase dizendo o que falta.
+  if (!vercelToken) throw new Error('VERCEL_TOKEN ausente.')
+  if (!vercelProject) throw new Error('Projeto da Vercel ausente.')
   if (!gitBranch) throw new Error('Nome da branch ausente ao limpar as variaveis.')
 
   const lista = await pedir(

@@ -118,6 +118,16 @@ describe('ramificacaoEstaPronta', () => {
     assert.equal(ramificacaoEstaPronta(RAMIFICACAO_DA_PR), true)
   })
 
+  it('nao espera as edge functions, porque so o banco importa aqui', () => {
+    // Uma ramificacao sem function para publicar pode parar em
+    // MIGRATIONS_PASSED e nunca chegar a FUNCTIONS_DEPLOYED. Exigir o estado
+    // final travaria TODA PR. Como este script so escreve endereco e chave do
+    // banco, schema aplicado ja basta.
+    for (const status of ['MIGRATIONS_PASSED', 'FUNCTIONS_DEPLOYING']) {
+      assert.equal(ramificacaoEstaPronta({ ...RAMIFICACAO_DA_PR, status }), true, status)
+    }
+  })
+
   it('interrompe quando a migration da PR quebrou no banco dela', () => {
     assert.throws(() => ramificacaoEstaPronta({
       ...RAMIFICACAO_DA_PR,
@@ -213,12 +223,8 @@ describe('apontarPreviewParaRamificacao', () => {
       }),
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_URL
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_ANON_KEY
-      resposta({
-        deployments: [
-          { uid: 'dpl_de_outra_branch', meta: { githubCommitRef: 'main' } },
-          { uid: 'dpl_desta_branch', meta: { githubCommitRef: BRANCH } },
-        ],
-      }),
+      // Ja filtrado pelo servidor: o endpoint aceita `branch`.
+      resposta({ deployments: [{ uid: 'dpl_desta_branch' }] }),
       resposta({ id: 'dpl_novo' }), // redeploy
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
@@ -251,15 +257,28 @@ describe('apontarPreviewParaRamificacao', () => {
     const redeploy = fetchImpl.mock.calls.at(-1)
     assert.match(redeploy.arguments[0], /v13\/deployments/)
     assert.equal(JSON.parse(redeploy.arguments[1].body).deploymentId, 'dpl_desta_branch')
+
+    // O filtro por branch precisa acontecer no SERVIDOR. Filtrar no cliente uma
+    // pagina dos deploys mais recentes do projeto inteiro confundiria "nao esta
+    // nesta pagina" com "nao existe".
+    const busca = fetchImpl.mock.calls.at(-2).arguments[0]
+    assert.match(busca, /v7\/deployments/)
+    assert.ok(busca.includes('branch=' + encodeURIComponent(BRANCH)), busca)
   })
 
-  it('nao manda refazer quando ainda nao existe preview da branch', async () => {
+  it('espera o preview aparecer na Vercel antes de desistir', async () => {
+    // A Vercel comeca o deploy no mesmo push que dispara este workflow, entao o
+    // deploy pode existir e ainda nao aparecer na API. Concluir "nao existe" na
+    // primeira tentativa deixaria vivo justamente o deploy com a configuracao
+    // velha, verde e apontando para o banco compartilhado.
     const respostas = [
       resposta([RAMIFICACAO_DA_PR]),
       resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
       resposta({}),
       resposta({}),
-      resposta({ deployments: [{ uid: 'dpl_outra', meta: { githubCommitRef: 'outra-branch' } }] }),
+      resposta({ deployments: [] }),
+      resposta({ deployments: [{ uid: 'dpl_que_demorou' }] }),
+      resposta({ id: 'dpl_novo' }),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
 
@@ -267,11 +286,32 @@ describe('apontarPreviewParaRamificacao', () => {
       ...CREDENCIAIS,
       ...alvo,
       fetchImpl,
+      dormir: async () => {},
       registrar: () => {},
     })
 
-    assert.equal(resultado.redeploy.situacao, 'nada-a-refazer')
+    assert.equal(resultado.redeploy.situacao, 'refeito')
+    assert.equal(resultado.redeploy.deploymentId, 'dpl_que_demorou')
     assert.equal(respostas.length, 0)
+  })
+
+  it('falha fechado quando nenhum preview da branch aparece a tempo', async () => {
+    const respostas = [
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
+      resposta({}),
+      resposta({}),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift() ?? resposta({ deployments: [] }))
+
+    await assert.rejects(apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      fetchImpl,
+      esperarPreviewSegundos: 0,
+      dormir: async () => {},
+      registrar: () => {},
+    }), /Nenhum preview da branch/i)
   })
 
   it('desiste com mensagem clara se o banco nao ficar pronto a tempo', async () => {
@@ -321,12 +361,19 @@ describe('limparVariaveisDaBranch', () => {
           { id: 'env_key', key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', gitBranch: BRANCH },
           { id: 'env_telegram', key: 'NEXT_PUBLIC_TELEGRAM_BOT_TOKEN', gitBranch: BRANCH },
           { id: 'env_outra_branch', key: 'NEXT_PUBLIC_SUPABASE_URL', gitBranch: 'outra' },
+          // A listagem filtrada por branch devolve TAMBEM as genericas de
+          // Preview, que sao as que o Rodrigo recriou a mao. Apagar uma delas
+          // deixaria todo preview sem banco. E a comparacao de gitBranch no
+          // codigo que impede isso, e e este fixture que prende a regra.
+          { id: 'env_generica_url', key: 'NEXT_PUBLIC_SUPABASE_URL', gitBranch: null },
+          { id: 'env_generica_chave', key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY' },
         ],
       }),
       new Response(null, { status: 204 }),
       new Response(null, { status: 204 }),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
+    const intocaveis = ['env_generica_url', 'env_generica_chave', 'env_outra_branch', 'env_telegram']
 
     const resultado = await limparVariaveisDaBranch({
       ...CREDENCIAIS,
@@ -340,6 +387,21 @@ describe('limparVariaveisDaBranch', () => {
       .filter((chamada) => chamada.arguments[1]?.method === 'DELETE')
       .map((chamada) => chamada.arguments[0].split('/env/')[1])
     assert.deepEqual(apagadas, ['env_url', 'env_key'])
+    for (const intocavel of intocaveis) {
+      assert.ok(!apagadas.includes(intocavel), 'apagou ' + intocavel + ', que nao e desta branch')
+    }
+  })
+
+  it('exige as credenciais antes de apagar qualquer coisa', async () => {
+    await assert.rejects(limparVariaveisDaBranch({
+      gitBranch: BRANCH,
+      vercelProject: 'pane-producao',
+    }), /VERCEL_TOKEN/)
+
+    await assert.rejects(limparVariaveisDaBranch({
+      gitBranch: BRANCH,
+      vercelToken: 'v',
+    }), /Projeto da Vercel/)
   })
 
   it('nao apaga nada quando a PR nunca teve banco proprio', async () => {
