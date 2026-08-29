@@ -211,3 +211,24 @@ jobs:
 
       - name: Smoke tests no navegador
         run: npm run test:browser
+
+      # Quando o smoke reprova, o Playwright grava em test-results a foto da
+      # tela no momento exato da falha (error-context.md, a arvore de
+      # acessibilidade da pagina). O job jogava esse arquivo fora, entao a
+      # investigacao seguinte comecava do zero, com o log dizendo apenas
+      # "element(s) not found". Foi exatamente o que custou horas no smoke do
+      # Romaneio EX em 27 e 28/08.
+      #
+      # Roda SO quando alguma etapa falhou, entao nao custa nada nas execucoes
+      # verdes. O nome inclui a tentativa porque reexecutar o job cria outra, e
+      # dois artefatos de mesmo nome colidem. if-no-files-found: ignore existe
+      # porque a falha pode acontecer ANTES do smoke (na conferencia do cenario
+      # ficticio, por exemplo), e ai a pasta nem chega a existir.
+      - name: Guardar a foto da tela quando o navegador falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-falha-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
