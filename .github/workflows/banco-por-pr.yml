@@ -58,6 +58,11 @@ jobs:
     # falsa e o trabalho nao rodaria, sem dizer por que. Disparo manual so
     # existe para quem ja tem acesso de escrita ao repositorio, entao aceitar
     # esse caso nao abre porta nova.
+    #
+    # Os parenteses sao obrigatorios, nao estilo: a documentacao de expressoes
+    # do GitHub NAO declara precedencia entre `&&` e `||`. Sem eles, o sentido
+    # da guarda contra fork passaria a depender de comportamento nao
+    # documentado. NAO REMOVA os parenteses achando que sao redundancia.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.action != 'closed' &&
