@@ -149,6 +149,30 @@ desativação, os grants legados `anon` em `pizza_*` são risco aceito: não mex
 neles sem nova decisão explícita e não criar dependência nova do ERP sobre essas
 tabelas.
 
+## Ambiente de teste
+
+**Atualizado em 2026-08-30** (PRs #287 a #291). Antes disso, todas as PRs
+disputavam um único banco de teste compartilhado.
+
+- PR que mexe em `supabase/` recebe do Supabase um banco isolado, construído
+  com as migrations e o seed fictício da própria branch. O workflow
+  `Banco por PR` aponta o preview da Vercel para esse banco e manda refazer o
+  deploy; `Usuarios do Banco por PR` cria nele as contas fictícias. Fechar a PR
+  apaga o banco e as variáveis daquela branch.
+- PR sem migration continua no `PaneERP Preview` compartilhado, que espelha a
+  `main`. O job `Restaurar Banco Preview para a main` reconstrói esse espelho a
+  cada push na `main` e ao fechar PR sem merge.
+- A etiqueta `precisa-banco-preview` e a trava de uma PR etiquetada por vez
+  saíram do caminho normal, mas continuam no código (`banco-preview.yml` e o
+  passo de espera do `ci.yml`). São remendo obsoleto à espera de PR própria.
+- Conferido ao vivo em 2026-08-30, leitura somente leitura da API do Supabase:
+  as PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e
+  saudáveis (`unnlpxjuxikreramqlwz` e `zexjyzvcpxpmzjlwjffe`), ambos criados
+  sem dados de produção. É a prova de que a fila acabou; a leitura anterior,
+  de 2026-08-28, ainda não achava banco por PR.
+- Não verificado: se o banco isolado reduz a falha intermitente do smoke
+  descrita no bloqueio 5. Nada foi medido depois da mudança.
+
 ## Capacidades já presentes
 
 - produção, forno e confirmação por lotes, com contexto por loja;
