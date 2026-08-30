@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  buildSessionPoolerUrl,
   parseBranchEnvironment,
   provisionPreviewBranchUsers,
   redactSecrets,
@@ -15,6 +16,7 @@ const BRANCH_REF = 'unnlpxjuxikreramqlwz'
 const WORKFLOW_PATH = fileURLToPath(new URL('../.github/workflows/usuarios-banco-por-pr.yml', import.meta.url))
 const INTERNAL_OR_MANUAL_CONDITION = "github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository"
 const BRANCH_ENV = [
+  `POSTGRES_URL=postgresql://postgres.${BRANCH_REF}:senha@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?connect_timeout=10`,
   `POSTGRES_URL_NON_POOLING=postgresql://postgres:senha@db.${BRANCH_REF}.supabase.co:5432/postgres`,
   'SUPABASE_SERVICE_ROLE_KEY=service-role-teste',
   `SUPABASE_URL=https://${BRANCH_REF}.supabase.co`,
@@ -40,6 +42,15 @@ describe('credenciais do banco isolado', () => {
     assert.equal(parsed.SUPABASE_SERVICE_ROLE_KEY, 'service-role-teste')
   })
 
+  it('transforma o pooler de transacao no pooler de sessao IPv4 da mesma branch', () => {
+    const sessionUrl = new URL(buildSessionPoolerUrl(parseBranchEnvironment(BRANCH_ENV), BRANCH_REF))
+    assert.equal(sessionUrl.hostname, 'aws-0-sa-east-1.pooler.supabase.com')
+    assert.equal(sessionUrl.port, '5432')
+    assert.equal(decodeURIComponent(sessionUrl.username), `postgres.${BRANCH_REF}`)
+    assert.equal(sessionUrl.pathname, '/postgres')
+    assert.equal(sessionUrl.searchParams.get('connect_timeout'), '10')
+  })
+
   it('recusa producao, banco compartilhado e URL de outra branch', () => {
     const parsed = parseBranchEnvironment(BRANCH_ENV)
     assert.throws(() => validateBranchEnvironment(parsed, 'gohluceldchoitihrimw'), /producao/i)
@@ -47,14 +58,14 @@ describe('credenciais do banco isolado', () => {
     assert.throws(() => validateBranchEnvironment(parsed, 'aaaaaaaaaaaaaaaaaaaa'), /nao pertencem/i)
   })
 
-  it('recusa conexao Postgres de producao, compartilhada ou host arbitrario', () => {
-    for (const host of [
-      'db.gohluceldchoitihrimw.supabase.co',
-      'db.tuqzhjsbodoycjbmwuqm.supabase.co',
-      'localhost',
+  it('recusa pooler de outra branch, host arbitrario ou porta inesperada', () => {
+    for (const [from, to] of [
+      [`postgres.${BRANCH_REF}`, 'postgres.gohluceldchoitihrimw'],
+      ['aws-0-sa-east-1.pooler.supabase.com', 'localhost'],
+      [':6543/postgres', ':5432/postgres'],
     ]) {
       const parsed = parseBranchEnvironment(
-        BRANCH_ENV.replace(`db.${BRANCH_REF}.supabase.co`, host),
+        BRANCH_ENV.replace(from, to),
       )
       assert.throws(() => validateBranchEnvironment(parsed, BRANCH_REF), /conexao Postgres/i)
     }
@@ -212,6 +223,11 @@ describe('provisionPreviewBranchUsers', () => {
       runCommand.mock.calls.slice(1).map((call) => call.arguments[1].at(-1)),
       ['supabase/seed.sql', 'supabase/verification/preview_users.sql'],
     )
+    const databaseUrls = runCommand.mock.calls.slice(1)
+      .map((call) => call.arguments[1][call.arguments[1].indexOf('--db-url') + 1])
+      .map((value) => new URL(value))
+    assert.ok(databaseUrls.every((url) => url.port === '5432'))
+    assert.ok(databaseUrls.every((url) => decodeURIComponent(url.username) === `postgres.${BRANCH_REF}`))
   })
 
   it('oculta a conexao do banco se a reaplicacao do seed falhar', async () => {
@@ -225,7 +241,7 @@ describe('provisionPreviewBranchUsers', () => {
     ]
     const runCommand = mock.fn(async (_command, args) => {
       if (args.includes('branches')) return { stdout: BRANCH_ENV, stderr: '' }
-      throw new Error(`falha ao conectar em ${parseBranchEnvironment(BRANCH_ENV).POSTGRES_URL_NON_POOLING}`)
+      throw new Error(`falha ao conectar em ${parseBranchEnvironment(BRANCH_ENV).POSTGRES_URL}`)
     })
 
     await assert.rejects(
