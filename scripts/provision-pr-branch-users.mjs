@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { pathToFileURL } from 'node:url'
 import {
@@ -98,6 +100,39 @@ export function buildSessionPoolerUrl(branchEnvironment, expectedProjectRef) {
   return sessionUrl.toString()
 }
 
+export function buildPsqlConnection(branchEnvironment, expectedProjectRef) {
+  const sessionUrl = new URL(buildSessionPoolerUrl(branchEnvironment, expectedProjectRef))
+  const password = decodeURIComponent(sessionUrl.password)
+  const connectTimeout = sessionUrl.searchParams.get('connect_timeout')
+
+  return {
+    args: [
+      '--host', sessionUrl.hostname,
+      '--port', sessionUrl.port,
+      '--username', decodeURIComponent(sessionUrl.username),
+      '--dbname', sessionUrl.pathname.slice(1),
+      '--no-password',
+      '--set', 'ON_ERROR_STOP=1',
+    ],
+    env: {
+      PGPASSWORD: password,
+      PGSSLMODE: 'require',
+      ...(connectTimeout ? { PGCONNECT_TIMEOUT: connectTimeout } : {}),
+    },
+    secrets: [sessionUrl.toString(), password],
+  }
+}
+
+export function buildPsqlServerCommand(sql) {
+  const source = String(sql ?? '')
+  if (/^[\t ]*\\/m.test(source)) {
+    throw new Error('O arquivo SQL contem comando local do psql e foi recusado.')
+  }
+  return `begin;
+${source}
+commit;`
+}
+
 async function fetchBranchList({ supabaseToken, fetchImpl }) {
   const response = await fetchImpl(
     `https://api.supabase.com/v1/projects/${PRODUCTION_PROJECT_REF}/branches`,
@@ -189,10 +224,12 @@ export async function waitForSupabasePreviewCheck({
   }
 }
 
-async function defaultRunCommand(command, args, options = {}) {
+export async function defaultRunCommand(command, args, options = {}) {
   return execFileAsync(command, args, {
     cwd: options.cwd,
-    env: { ...process.env, ...options.env },
+    env: options.inheritEnvironment === false
+      ? { ...options.env }
+      : { ...process.env, ...options.env },
     maxBuffer: 4 * 1024 * 1024,
     windowsHide: true,
   })
@@ -258,7 +295,7 @@ export async function provisionPreviewBranchUsers({
     'env',
   ], { cwd: workdir, env: { SUPABASE_ACCESS_TOKEN: supabaseToken } })
   const branchEnvironment = parseBranchEnvironment(environmentResult.stdout)
-  const sessionPoolerUrl = buildSessionPoolerUrl(branchEnvironment, branch.project_ref)
+  const psqlConnection = buildPsqlConnection(branchEnvironment, branch.project_ref)
 
   await ensurePreviewUsers({
     previewProjectRef: branch.project_ref,
@@ -271,14 +308,20 @@ export async function provisionPreviewBranchUsers({
 
   try {
     for (const file of ['supabase/seed.sql', 'supabase/verification/preview_users.sql']) {
-      await runCommand('supabase', [
-        'db',
-        'query',
-        '--db-url',
-        sessionPoolerUrl,
-        '--file',
-        file,
-      ], { cwd: workdir, env: { SUPABASE_ACCESS_TOKEN: supabaseToken } })
+      const sql = await readFile(resolve(workdir, file), 'utf8')
+      await runCommand('psql', [
+        ...psqlConnection.args,
+        '--command',
+        buildPsqlServerCommand(sql),
+      ], {
+        cwd: workdir,
+        inheritEnvironment: false,
+        env: {
+          PATH: process.env.PATH,
+          LANG: process.env.LANG || 'C.UTF-8',
+          ...psqlConnection.env,
+        },
+      })
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao ligar os perfis ficticios.'
@@ -287,7 +330,7 @@ export async function provisionPreviewBranchUsers({
       testUserPassword,
       branchEnvironment.SUPABASE_SERVICE_ROLE_KEY,
       branchEnvironment.POSTGRES_URL,
-      sessionPoolerUrl,
+      ...psqlConnection.secrets,
     ]))
   }
 

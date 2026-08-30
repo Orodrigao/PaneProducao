@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { describe, it, mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  buildPsqlConnection,
+  buildPsqlServerCommand,
   buildSessionPoolerUrl,
   parseBranchEnvironment,
   provisionPreviewBranchUsers,
@@ -16,8 +18,8 @@ const BRANCH_REF = 'unnlpxjuxikreramqlwz'
 const WORKFLOW_PATH = fileURLToPath(new URL('../.github/workflows/usuarios-banco-por-pr.yml', import.meta.url))
 const INTERNAL_OR_MANUAL_CONDITION = "github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository"
 const BRANCH_ENV = [
-  `POSTGRES_URL=postgresql://postgres.${BRANCH_REF}:senha@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?connect_timeout=10`,
-  `POSTGRES_URL_NON_POOLING=postgresql://postgres:senha@db.${BRANCH_REF}.supabase.co:5432/postgres`,
+  `POSTGRES_URL=postgresql://postgres.${BRANCH_REF}:senha-url-teste-9z8y7x@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?connect_timeout=10`,
+  `POSTGRES_URL_NON_POOLING=postgresql://postgres:senha-url-teste-9z8y7x@db.${BRANCH_REF}.supabase.co:5432/postgres`,
   'SUPABASE_SERVICE_ROLE_KEY=service-role-teste',
   `SUPABASE_URL=https://${BRANCH_REF}.supabase.co`,
 ].join('\n')
@@ -49,6 +51,37 @@ describe('credenciais do banco isolado', () => {
     assert.equal(decodeURIComponent(sessionUrl.username), `postgres.${BRANCH_REF}`)
     assert.equal(sessionUrl.pathname, '/postgres')
     assert.equal(sessionUrl.searchParams.get('connect_timeout'), '10')
+  })
+
+  it('monta o psql sem colocar senha nos argumentos', () => {
+    const connection = buildPsqlConnection(parseBranchEnvironment(BRANCH_ENV), BRANCH_REF)
+    assert.deepEqual(connection.args, [
+      '--host', 'aws-0-sa-east-1.pooler.supabase.com',
+      '--port', '5432',
+      '--username', `postgres.${BRANCH_REF}`,
+      '--dbname', 'postgres',
+      '--no-password',
+      '--set', 'ON_ERROR_STOP=1',
+    ])
+    assert.deepEqual(connection.env, {
+      PGPASSWORD: 'senha-url-teste-9z8y7x',
+      PGSSLMODE: 'require',
+      PGCONNECT_TIMEOUT: '10',
+    })
+    assert.ok(connection.args.every((argument) => !argument.includes('senha-url-teste-9z8y7x')))
+  })
+
+  it('envia somente SQL ao servidor e recusa comandos locais do psql', () => {
+    assert.equal(
+      buildPsqlServerCommand('select 1;'),
+      'begin;\nselect 1;\ncommit;',
+    )
+    for (const maliciousSql of [
+      'select 1;\n\\! env',
+      '  \\getenv token GITHUB_TOKEN',
+    ]) {
+      assert.throws(() => buildPsqlServerCommand(maliciousSql), /comando local/i)
+    }
   })
 
   it('recusa producao, banco compartilhado e URL de outra branch', () => {
@@ -220,14 +253,32 @@ describe('provisionPreviewBranchUsers', () => {
     assert.deepEqual(result, { projectRef: BRANCH_REF, users: 7 })
     assert.equal(runCommand.mock.callCount(), 3)
     assert.deepEqual(
-      runCommand.mock.calls.slice(1).map((call) => call.arguments[1].at(-1)),
-      ['supabase/seed.sql', 'supabase/verification/preview_users.sql'],
+      runCommand.mock.calls.slice(1).map((call) => call.arguments[0]),
+      ['psql', 'psql'],
     )
-    const databaseUrls = runCommand.mock.calls.slice(1)
-      .map((call) => call.arguments[1][call.arguments[1].indexOf('--db-url') + 1])
-      .map((value) => new URL(value))
-    assert.ok(databaseUrls.every((url) => url.port === '5432'))
-    assert.ok(databaseUrls.every((url) => decodeURIComponent(url.username) === `postgres.${BRANCH_REF}`))
+    assert.deepEqual(
+      runCommand.mock.calls.slice(1).map((call) => call.arguments[1].at(-2)),
+      ['--command', '--command'],
+    )
+    for (const call of runCommand.mock.calls.slice(1)) {
+      const [command, args, options] = call.arguments
+      assert.equal(command, 'psql')
+      assert.equal(args[args.indexOf('--host') + 1], 'aws-0-sa-east-1.pooler.supabase.com')
+      assert.equal(args[args.indexOf('--port') + 1], '5432')
+      assert.equal(args[args.indexOf('--username') + 1], `postgres.${BRANCH_REF}`)
+      assert.equal(args[args.indexOf('--dbname') + 1], 'postgres')
+      assert.ok(args[args.indexOf('--command') + 1].startsWith('begin;\n'))
+      assert.ok(args[args.indexOf('--command') + 1].endsWith('\ncommit;'))
+      assert.ok(!args.includes('--file'))
+      assert.equal(options.inheritEnvironment, false)
+      assert.equal(options.env.PGPASSWORD, 'senha-url-teste-9z8y7x')
+      assert.equal(options.env.PGSSLMODE, 'require')
+      assert.deepEqual(
+        Object.keys(options.env).sort(),
+        ['LANG', 'PATH', 'PGCONNECT_TIMEOUT', 'PGPASSWORD', 'PGSSLMODE'].sort(),
+      )
+      assert.ok(args.every((argument) => !argument.includes('senha-url-teste-9z8y7x')))
+    }
   })
 
   it('oculta a conexao do banco se a reaplicacao do seed falhar', async () => {
