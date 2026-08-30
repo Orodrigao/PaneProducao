@@ -28,15 +28,10 @@ versionado:
 ```text
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
-NEXT_PUBLIC_TELEGRAM_CHAT_ID
 ```
 
 Valores `NEXT_PUBLIC_*` entram no bundle do navegador. Nunca use esse prefixo
 para service role, senha, token administrativo ou qualquer segredo.
-
-O código legado ainda usa `NEXT_PUBLIC_TELEGRAM_BOT_TOKEN`. Como token de bot
-não é público, isso permanece como risco a ser removido em tarefa própria; não
-replique esse padrão.
 
 ## Deploy
 

@@ -121,8 +121,6 @@ Riscos ainda abertos:
   descompasso entre os planos de permissão. Só a Elis (`financeiro`, escopo
   `*`) enxerga as duas telas hoje. Corrigir exige decisão do Rodrigo sobre
   quem deve ver o quê;
-- o token do bot Telegram ainda é usado no frontend com prefixo
-  `NEXT_PUBLIC_`;
 - o `npm audit --omit=dev` ainda sinaliza o PostCSS e o Sharp transitivos do
   Next.js 15.5.21. O app estático não processa CSS nem imagens enviados por
   usuários, portanto os caminhos descritos pelos avisos não são alcançáveis
