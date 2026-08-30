@@ -1,0 +1,76 @@
+name: Usuarios do Banco por PR
+
+# Cada banco isolado nasce sem dados de producao, inclusive sem usuarios.
+# Este workflow cria apenas as sete contas ficticias, reaplica o seed para
+# ligar seus perfis/permissoes e confirma a matriz antes de liberar o teste.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+    paths:
+      - 'supabase/**'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Numero da PR que ja possui banco isolado
+        required: true
+        type: string
+      git_branch:
+        description: Nome exato da branch Git da PR
+        required: true
+        type: string
+
+concurrency:
+  group: usuarios-banco-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  provisionar:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Criar contas ficticias e conferir perfis
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
+      PROVISION_WORKDIR: ${{ github.workspace }}/_pr-source
+      GITHUB_TOKEN: ${{ github.token }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
+    steps:
+      # A automacao vem sempre da main. Assim uma PR nao pode alterar o script
+      # que recebe os segredos e executa sua propria versao maliciosa.
+      - name: Buscar a automacao confiavel
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # Somente migrations e seed da PR entram no banco isolado dela. Nenhum
+      # JavaScript dessa segunda copia e executado pelo workflow.
+      - name: Buscar migrations e seed da PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.git_branch }}
+          path: _pr-source
+
+      - name: Prender a espera ao commit exato da PR
+        run: echo "PR_HEAD_SHA=$(git -C "$PROVISION_WORKDIR" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preparar a CLI do Supabase
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.109.1
+
+      - name: Criar contas, ligar perfis e verificar o banco isolado
+        run: node scripts/provision-pr-branch-users.mjs

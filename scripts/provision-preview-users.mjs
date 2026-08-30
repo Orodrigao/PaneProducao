@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 
 export const PREVIEW_PROJECT_REF = 'tuqzhjsbodoycjbmwuqm'
+export const PRODUCTION_PROJECT_REF = 'gohluceldchoitihrimw'
 
 export const PREVIEW_USERS = [
   { email: 'rodrigao+teste@gmail.com', displayName: 'Rodrigo Teste' },
@@ -46,9 +47,24 @@ export function validatePreviewUserEnvironment({
   supabaseUrl,
   serviceRoleKey,
   testUserPassword,
+  environmentKind = 'shared-preview',
 }) {
-  if (previewProjectRef !== PREVIEW_PROJECT_REF) {
-    throw new Error('Provisionamento bloqueado: nao e o projeto Preview esperado.')
+  if (environmentKind === 'shared-preview') {
+    if (previewProjectRef !== PREVIEW_PROJECT_REF) {
+      throw new Error('Provisionamento bloqueado: nao e o projeto Preview esperado.')
+    }
+  } else if (environmentKind === 'preview-branch') {
+    if (previewProjectRef === PRODUCTION_PROJECT_REF) {
+      throw new Error('Provisionamento bloqueado: o alvo e o projeto de producao.')
+    }
+    if (previewProjectRef === PREVIEW_PROJECT_REF) {
+      throw new Error('Provisionamento bloqueado: o alvo e o Banco Preview compartilhado.')
+    }
+    if (!/^[a-z]{20}$/.test(previewProjectRef)) {
+      throw new Error('Provisionamento bloqueado: project_ref da ramificacao e invalido.')
+    }
+  } else {
+    throw new Error('Provisionamento bloqueado: tipo de ambiente desconhecido.')
   }
 
   let projectRef
@@ -61,8 +77,8 @@ export function validatePreviewUserEnvironment({
     projectRef = null
   }
 
-  if (projectRef !== PREVIEW_PROJECT_REF) {
-    throw new Error('Provisionamento bloqueado: URL nao pertence ao projeto Preview esperado.')
+  if (projectRef !== previewProjectRef) {
+    throw new Error('Provisionamento bloqueado: URL nao pertence ao projeto de teste esperado.')
   }
 
   if (!serviceRoleKey) {
@@ -109,6 +125,7 @@ export async function ensurePreviewUsers({
   supabaseUrl,
   serviceRoleKey,
   testUserPassword,
+  environmentKind = 'shared-preview',
   fetchImpl = fetch,
 }) {
   validatePreviewUserEnvironment({
@@ -116,6 +133,7 @@ export async function ensurePreviewUsers({
     supabaseUrl,
     serviceRoleKey,
     testUserPassword,
+    environmentKind,
   })
 
   const headers = {

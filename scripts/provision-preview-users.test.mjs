@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import {
   PREVIEW_PROJECT_REF,
+  PRODUCTION_PROJECT_REF,
   ensurePreviewUsers,
   validatePreviewUserEnvironment,
 } from './provision-preview-users.mjs'
@@ -32,6 +33,22 @@ describe('validatePreviewUserEnvironment', () => {
       ...SAFE_ENVIRONMENT,
       testUserPassword: 'PaneTeste1!',
     }), /politica/i)
+  })
+
+  it('aceita branch isolada e recusa producao mesmo no modo de branch', () => {
+    assert.doesNotThrow(() => validatePreviewUserEnvironment({
+      ...SAFE_ENVIRONMENT,
+      previewProjectRef: 'unnlpxjuxikreramqlwz',
+      supabaseUrl: 'https://unnlpxjuxikreramqlwz.supabase.co',
+      environmentKind: 'preview-branch',
+    }))
+
+    assert.throws(() => validatePreviewUserEnvironment({
+      ...SAFE_ENVIRONMENT,
+      previewProjectRef: PRODUCTION_PROJECT_REF,
+      supabaseUrl: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
+      environmentKind: 'preview-branch',
+    }), /producao/i)
   })
 })
 
