@@ -351,6 +351,13 @@ que o trecho real não foi executado.
 
 - Commits pequenos e em português.
 - Push somente da branch da tarefa.
+- **A sessão se identifica pela tarefa, e pela PR assim que ela existir.**
+  Renomeie a própria sessão para o assunto ao começar (`banco de teste por PR`)
+  e para `#<numero> <assunto curto>` logo depois de abrir a PR
+  (`#296 manual do banco por PR`). O Rodrigo acompanha várias frentes ao mesmo
+  tempo e a lista de sessões é o índice dele; sessão com nome genérico o obriga
+  a abrir uma por uma para achar a que ele quer. Vale para qualquer agente cuja
+  ferramenta permita renomear a sessão.
 - Pull request sempre draft, salvo pedido explícito em contrário.
 - Nunca fazer push direto na `main`.
 - Preencher todas as seções aplicáveis do template de PR; seção não
