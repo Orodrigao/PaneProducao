@@ -15,7 +15,7 @@ import {
 const execFileAsync = promisify(execFile)
 
 const REQUIRED_BRANCH_ENV = [
-  'POSTGRES_URL_NON_POOLING',
+  'POSTGRES_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_URL',
 ]
@@ -75,21 +75,27 @@ export function validateBranchEnvironment(branchEnvironment, expectedProjectRef)
 
   let postgresUrl
   try {
-    postgresUrl = new URL(branchEnvironment.POSTGRES_URL_NON_POOLING)
+    postgresUrl = new URL(branchEnvironment.POSTGRES_URL)
   } catch {
     postgresUrl = null
   }
-  const expectedHost = `db.${expectedProjectRef}.supabase.co`
   const postgresIsExpected = postgresUrl
     && ['postgres:', 'postgresql:'].includes(postgresUrl.protocol)
-    && postgresUrl.hostname.toLowerCase() === expectedHost
-    && decodeURIComponent(postgresUrl.username) === 'postgres'
-    && postgresUrl.port === '5432'
+    && /^[a-z0-9-]+\.pooler\.supabase\.com$/.test(postgresUrl.hostname.toLowerCase())
+    && decodeURIComponent(postgresUrl.username) === `postgres.${expectedProjectRef}`
+    && postgresUrl.port === '6543'
     && postgresUrl.pathname === '/postgres'
 
   if (!postgresIsExpected) {
     throw new Error('A conexao Postgres nao pertence a ramificacao esperada.')
   }
+}
+
+export function buildSessionPoolerUrl(branchEnvironment, expectedProjectRef) {
+  validateBranchEnvironment(branchEnvironment, expectedProjectRef)
+  const sessionUrl = new URL(branchEnvironment.POSTGRES_URL)
+  sessionUrl.port = '5432'
+  return sessionUrl.toString()
 }
 
 async function fetchBranchList({ supabaseToken, fetchImpl }) {
@@ -252,7 +258,7 @@ export async function provisionPreviewBranchUsers({
     'env',
   ], { cwd: workdir, env: { SUPABASE_ACCESS_TOKEN: supabaseToken } })
   const branchEnvironment = parseBranchEnvironment(environmentResult.stdout)
-  validateBranchEnvironment(branchEnvironment, branch.project_ref)
+  const sessionPoolerUrl = buildSessionPoolerUrl(branchEnvironment, branch.project_ref)
 
   await ensurePreviewUsers({
     previewProjectRef: branch.project_ref,
@@ -269,7 +275,7 @@ export async function provisionPreviewBranchUsers({
         'db',
         'query',
         '--db-url',
-        branchEnvironment.POSTGRES_URL_NON_POOLING,
+        sessionPoolerUrl,
         '--file',
         file,
       ], { cwd: workdir, env: { SUPABASE_ACCESS_TOKEN: supabaseToken } })
@@ -280,7 +286,8 @@ export async function provisionPreviewBranchUsers({
       supabaseToken,
       testUserPassword,
       branchEnvironment.SUPABASE_SERVICE_ROLE_KEY,
-      branchEnvironment.POSTGRES_URL_NON_POOLING,
+      branchEnvironment.POSTGRES_URL,
+      sessionPoolerUrl,
     ]))
   }
 
