@@ -159,13 +159,15 @@ disputavam um único banco de teste compartilhado.
   `Banco por PR` aponta o preview da Vercel para esse banco e manda refazer o
   deploy; `Usuarios do Banco por PR` cria nele as contas fictícias. Fechar a PR
   apaga o banco e as variáveis daquela branch.
-- PR sem migration continua no `PaneERP Preview` compartilhado, que espelha a
-  `main`. O job `Restaurar Banco Preview para a main` reconstrói esse espelho a
-  cada push na `main` e ao fechar PR sem merge.
+- PR que não mexe em `supabase/` continua no `PaneERP Preview` compartilhado,
+  que espelha a `main`. O critério é a pasta inteira, não só migration: mudança
+  em seed, teste de banco, function ou `config.toml` também dá banco próprio. O
+  job `Restaurar Banco Preview para a main` reconstrói esse espelho a cada push
+  na `main` e ao fechar PR sem merge.
 - A etiqueta `precisa-banco-preview` e a trava de uma PR etiquetada por vez
   saíram do caminho normal, mas continuam no código (`banco-preview.yml` e o
   passo de espera do `ci.yml`). São remendo obsoleto à espera de PR própria.
-- Conferido ao vivo em 2026-08-30, leitura somente leitura da API do Supabase:
+- Conferido em 2026-08-30 por leitura direta da API do Supabase, sem escrita:
   as PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e
   saudáveis (`unnlpxjuxikreramqlwz` e `zexjyzvcpxpmzjlwjffe`), ambos criados
   sem dados de produção. É a prova de que a fila acabou; a leitura anterior,

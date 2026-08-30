@@ -184,12 +184,17 @@ máquina — nem site, nem banco.
   job `Reconstruir Preview desta PR` e o passo de espera do `ci.yml` continuam
   no código como remendo obsoleto. Não etiquete nada. Retirá-los muda
   comportamento de CI e pede PR própria.
-- O link da Vercel só vale para teste depois que Vercel e `CI Banco` estiverem
-  verdes, mais o `Banco por PR` quando a PR tiver migration.
-- O ensaio descartável do `CI Banco` continua rodando em toda PR e continua
-  sendo quem prova a história completa do schema. O banco por PR não o
-  substitui, e o Docker que ele usa segue de pé; trocar esse ensaio precisa de
-  prova própria.
+- O link da Vercel só vale para teste depois que a Vercel estiver verde. PR que
+  mexe em `supabase/` espera também `Banco por PR` **e** `Usuarios do Banco por
+  PR`: o primeiro aponta o preview para o banco certo, o segundo cria as contas
+  fictícias lá dentro. Sem o segundo, o link abre num banco sem ninguém para
+  logar.
+- O ensaio descartável do `CI Banco` prova a história completa do schema, mas
+  **não roda em toda PR**: ele só dispara quando a PR toca
+  `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
+  `supabase/config.toml`. Quando dispara, é ele quem precisa estar verde. O
+  banco por PR não o substitui, e o Docker que ele usa segue de pé; trocar esse
+  ensaio precisa de prova própria.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
   migration precisa conviver tanto com a versão do site que está no ar
   quanto com a que está entrando. Mudança destrutiva (remover ou renomear
