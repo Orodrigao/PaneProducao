@@ -79,59 +79,35 @@ jobs:
             exit 1
           fi
 
-      - name: Esperar Banco Preview quando necessario
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+      # Push na main reconstroi o Banco Preview compartilhado, e este smoke le
+      # esse banco: rodar dentro da janela de reset falha com credencial
+      # invalida sem defeito nenhum. Por isso a espera existe.
+      #
+      # Em pull request nao ha o que esperar. PR que mexe em `supabase/` testa
+      # no banco proprio dela, e PR que nao mexe usa o compartilhado como ele
+      # esta, espelhando a main. A espera por etiqueta que existia aqui morreu
+      # junto com a fila, nos PRs #287 a #291.
+      - name: Esperar a restauracao do Banco Preview na main
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          # Espelha a condicao do job "Reconstruir Preview desta PR" em
-          # banco-preview.yml. Sem a etiqueta aquele job nem roda, e esperar por
-          # um check que nunca reporta estouraria o tempo em toda PR.
-          PR_TEM_ETIQUETA: ${{ contains(github.event.pull_request.labels.*.name, 'precisa-banco-preview') }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" && "$PR_TEM_ETIQUETA" != "true" ]]; then
-            echo "PR sem a etiqueta precisa-banco-preview: o banco de teste nao e reconstruido para ela."
-            echo "O smoke roda contra o Banco Preview como esta, restaurado a partir da main."
-            echo "A migration desta PR, se houver, e provada pelo ensaio descartavel do CI Banco."
-            exit 0
-          fi
-
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
-            for attempt in {1..60}; do
-              CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
-              CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
-              CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
-
-              if [[ "$CHECK_STATUS" == "completed" && "$CHECK_CONCLUSION" == "success" ]]; then
-                echo "Banco Preview pronto."
-                exit 0
-              fi
-              if [[ "$CHECK_STATUS" == "completed" ]]; then
-                echo "Banco Preview terminou com estado: ${CHECK_CONCLUSION:-desconhecido}"
-                exit 1
-              fi
-
-              echo "Banco Preview ainda em andamento (${CHECK_STATUS:-sem check}); tentativa $attempt/60."
-              sleep 10
-            done
-
-            echo "Banco Preview nao ficou pronto dentro do tempo esperado."
-            exit 1
-          fi
-
-          echo "Aguardando o Banco Preview reconstruir os dados ficticios desta PR."
+          echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
           for attempt in {1..60}; do
-            BUCKET="$(gh pr checks "$PR_NUMBER" --json name,bucket --jq '.[] | select(.name == "Reconstruir Preview desta PR") | .bucket' | tail -n 1)"
-            if [[ "$BUCKET" == "pass" ]]; then
+            CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
+            CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
+            CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
+
+            if [[ "$CHECK_STATUS" == "completed" && "$CHECK_CONCLUSION" == "success" ]]; then
               echo "Banco Preview pronto."
               exit 0
             fi
-            if [[ "$BUCKET" == "fail" || "$BUCKET" == "cancel" ]]; then
-              echo "Banco Preview terminou com estado: $BUCKET"
+            if [[ "$CHECK_STATUS" == "completed" ]]; then
+              echo "Banco Preview terminou com estado: ${CHECK_CONCLUSION:-desconhecido}"
               exit 1
             fi
-            echo "Banco Preview ainda em andamento (${BUCKET:-sem check}); tentativa $attempt/60."
+
+            echo "Banco Preview ainda em andamento (${CHECK_STATUS:-sem check}); tentativa $attempt/60."
             sleep 10
           done
 
