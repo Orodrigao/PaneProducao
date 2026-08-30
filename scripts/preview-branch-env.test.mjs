@@ -540,3 +540,62 @@ describe('condicoes do workflow Banco por PR', () => {
     )
   })
 })
+
+// O disparo manual recebe numero da PR e nome da branch em campos separados, e
+// nada garante que combinem. Como o casamento da ramificacao aceita numero OU
+// branch, uma branch errada sem ramificacao propria deixaria uma candidata so,
+// pelo numero, e o preview de uma PR receberia o banco de outra: verde,
+// silencioso e no banco errado. O workflow confere antes, e a regra e esta.
+const REGRA_DA_CONFERENCIA = 'if [ "$BRANCH_DA_PR" != "$BRANCH_INFORMADA" ]; then'
+
+function branchConfere(branchDaPr, branchInformada) {
+  if (branchDaPr === null || branchDaPr === undefined) return { ok: false, motivo: 'leitura-falhou' }
+  if (branchDaPr === '') return { ok: false, motivo: 'sem-branch' }
+  if (branchDaPr !== branchInformada) return { ok: false, motivo: 'nao-bate' }
+  return { ok: true, motivo: null }
+}
+
+describe('conferencia da branch no disparo manual', () => {
+  it('aceita quando a branch informada e mesmo a da PR', () => {
+    assert.deepEqual(branchConfere(BRANCH, BRANCH), { ok: true, motivo: null })
+  })
+
+  it('recusa quando o numero e de uma PR e a branch e de outra', () => {
+    // O caso perigoso de verdade: a branch digitada nao tem ramificacao
+    // propria, entao o script acharia uma candidata so, pelo numero, e
+    // seguiria feliz gravando o banco errado.
+    assert.deepEqual(
+      branchConfere(BRANCH, 'chore/outra-coisa-qualquer'),
+      { ok: false, motivo: 'nao-bate' },
+    )
+  })
+
+  it('recusa diferenca de caixa, porque nome de branch diferencia maiuscula', () => {
+    assert.equal(branchConfere(BRANCH, BRANCH.toUpperCase()).ok, false)
+  })
+
+  // Os dois casos que a realidade nao oferece de bandeja.
+  it('recusa quando a leitura da PR falha', () => {
+    assert.deepEqual(branchConfere(null, BRANCH), { ok: false, motivo: 'leitura-falhou' })
+    assert.deepEqual(branchConfere(undefined, BRANCH), { ok: false, motivo: 'leitura-falhou' })
+  })
+
+  it('recusa quando a PR nao devolve nome de branch', () => {
+    assert.deepEqual(branchConfere('', BRANCH), { ok: false, motivo: 'sem-branch' })
+  })
+
+  it('a regra acima continua igual ao workflow de verdade', () => {
+    const workflow = readFileSync(
+      new URL('../.github/workflows/banco-por-pr.yml', import.meta.url),
+      'utf8',
+    )
+    assert.ok(
+      workflow.includes(REGRA_DA_CONFERENCIA),
+      'A conferencia da branch mudou no workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes('pull-requests: read'),
+      'Sem permissao de leitura de PR a conferencia nao consegue rodar.',
+    )
+  })
+})
