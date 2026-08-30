@@ -956,7 +956,8 @@ select
   now()
 from test_schedule
 cross join test_admin
-on conflict (production_date) do update set
+on conflict (id) do update set
+  production_date = excluded.production_date,
   status = excluded.status,
   created_by = excluded.created_by,
   created_by_name = excluded.created_by_name,
@@ -1003,7 +1004,8 @@ values (
   'Rodrigo Teste',
   now()
 )
-on conflict (production_date) do update set
+on conflict (id) do update set
+  production_date = excluded.production_date,
   status = excluded.status,
   created_by = excluded.created_by,
   created_by_name = excluded.created_by_name,
