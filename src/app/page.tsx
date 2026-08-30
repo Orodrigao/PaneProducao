@@ -20,8 +20,6 @@ import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 
-const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
-const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:'Quinta',5:'Sexta',6:'Sábado'}
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
@@ -574,9 +572,6 @@ export default function ProducaoPage() {
       setOrders(newMap)
       setSyncState('')
       showToast(hasReuseContext ? 'Pedido e reaproveitamento salvos!' : 'Pedido salvo!')
-      if (currentUser !== 'rodrigo') {
-        sendTelegram(store, rows, storeBreads)
-      }
     } catch(e) {
       setSyncState('error')
       showToast(operationalErrorMessage(e, 'Erro ao salvar. Tente novamente.'))
@@ -626,27 +621,6 @@ export default function ProducaoPage() {
     } finally {
       setPlanningImportSaving(false)
     }
-  }
-
-  const sendTelegram = async (store: Store, rows: any[], storeBreads: Bread[]) => {
-    const storeLabel: Record<string,string> = { jc:'JC', ja:'JA', ex:'EX', pj:'PJ' }
-    const userLabel: Record<string,string> = { gustavo:'Gustavo', marselle:'Marselle', elis:'Elis', rodrigo:'Rodrigo' }
-    const items = rows.filter((r:any) => r.quantity > 0)
-    if (!items.length) return
-    let msg = `🍞 *Pane & Salute — Novo pedido*\n`
-    msg += `👤 ${userLabel[currentUser!]||currentUser} · Loja ${storeLabel[store]||store.toUpperCase()}\n`
-    msg += `📅 Pães de ${DAYS_PT[delivIdx]}\n\n`
-    items.forEach((r:any) => {
-      const b = storeBreads.find(x=>x.id===r.bread_id)
-      if (b) msg += `• ${b.name}: *${r.quantity}*\n`
-    })
-    if (obsMap[store]) msg += `\n📝 Obs: ${obsMap[store]}`
-    try {
-      await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' })
-      })
-    } catch(e) { console.error('Telegram error:', e) }
   }
 
   // ── report ──────────────────────────────────────────────────────
