@@ -3,11 +3,13 @@
 ## Objetivo
 
 Todo código ainda não integrado à `main` deve ser testado sem ler ou alterar
-o banco real da padaria. O mesmo projeto da Vercel mantém dois destinos:
+o banco real da padaria. Os destinos são:
 
 - Production → `PanePedidosLojas` (`gohluceldchoitihrimw`);
-- Preview e desenvolvimento local → `PaneERP Preview`
-  (`tuqzhjsbodoycjbmwuqm`).
+- preview de PR que mexe em `supabase/` → o banco isolado daquela PR, criado
+  e apagado pelo Supabase;
+- demais previews e desenvolvimento local → `PaneERP Preview`
+  (`tuqzhjsbodoycjbmwuqm`), que espelha a `main`.
 
 O Banco Preview contém apenas dados fictícios gerados por
 `supabase/seed.sql`. Nunca recebe cópia de clientes, vendas, preços, usuários
@@ -15,48 +17,64 @@ ou documentos de produção.
 
 ## Ciclo de uma PR
 
-1. Uma PR com a etiqueta `precisa-banco-preview` dispara `Banco Preview`; sem a
-   etiqueta, o smoke usa o ambiente compartilhado restaurado a partir da `main`.
-2. Quando a PR tem migration ou seed, `CI Banco` também ensaia a história num
-   banco local descartável.
-3. `Banco Preview` apaga o ambiente remoto de teste, reaplica a história
-   completa da branch, carrega o seed e roda os pgTAP.
-4. O preview só está liberado quando Vercel e os checks de banco aplicáveis
-   (`CI Banco`, quando há migration, e `Banco Preview`) estão verdes.
-5. Fechar ou integrar a PR reconstrói o Banco Preview usando a `main`.
+1. PR que mexe em `supabase/` recebe do Supabase um banco isolado, nascido das
+   migrations e do seed daquela branch. O workflow `Banco por PR` grava na
+   Vercel as variáveis daquela branch e manda refazer o preview; o workflow
+   `Usuarios do Banco por PR` cria as contas fictícias e reaplica o seed lá
+   dentro.
+2. PR que não mexe em `supabase/` não ganha banco próprio e não precisa: o
+   preview dela usa o `PaneERP Preview` compartilhado, que espelha a `main`.
+3. `CI Banco` ensaia a história completa do schema num banco local descartável.
+   Ele **não roda em toda PR**: só dispara quando a PR toca
+   `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
+   `supabase/config.toml`.
+4. O preview só está liberado quando a Vercel está verde, mais `Banco por PR`
+   **e** `Usuarios do Banco por PR` quando a PR mexe em `supabase/`, mais
+   `CI Banco` quando ele dispara. Sem o de usuários, o link abre num banco sem
+   nenhuma conta para entrar.
+5. Fechar a PR apaga o banco isolado dela e as variáveis daquela branch. Push na
+   `main`, e PR fechada sem merge, reconstroem o `PaneERP Preview` compartilhado
+   a partir da `main`.
 
-O passo 5 não é limpeza opcional. Ele remove migrations de uma PR descartada,
-impedindo que o próximo preview converse com um schema que nunca existiu em
-produção.
+O reset do passo 5 não é limpeza opcional. Ele remove migrations de uma PR
+descartada, impedindo que o próximo preview converse com um schema que nunca
+existiu em produção.
 
 Os objetos novos do banco nascem sem acesso automático para a API. Toda
 migration que criar tabela, sequência ou função deve conceder explicitamente
 somente os acessos necessários. Isso mantém produção, CI e Preview com a mesma
 regra, independentemente dos padrões do projeto hospedado.
 
-## Banco compartilhado durante a transição
+## Estado da transição
 
-Hoje ainda existe um único Banco Preview. Duas PRs etiquetadas poderiam trocar
-o schema uma da outra; por isso a automação bloqueia a segunda. PR sem etiqueta
-não reconstrói o banco e roda contra o estado restaurado da `main`.
+**Concluída em 2026-08-30.** Até 29/08 existia um único Banco Preview, e a
+etiqueta `precisa-banco-preview` reservava esse banco para uma PR de cada vez.
+Os PRs #287 a #291 puseram no ar o encadeamento GitHub, Supabase e Vercel, e
+agora cada PR que mexe em `supabase/` recebe ambiente próprio. Não há mais fila.
 
-Em 2026-08-28, Rodrigo aprovou o custo baixo do Supabase Feature Branching para
-substituir esse compartilhamento por um ambiente isolado por PR. A auditoria
-somente leitura encontrou a branch `main` cadastrada no Supabase, mas nenhuma
-branch de preview por PR. Isso significa que a funcionalidade está habilitada
-na conta, porém o encadeamento automático GitHub → Supabase → Vercel ainda não
-está comprovado neste repositório.
+Conferido em 2026-08-30 por leitura direta da API do Supabase, sem escrita: as
+PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e saudáveis,
+ambos criados sem dados de produção.
 
-Até uma fase própria alterar e testar os workflows e as variáveis da Vercel,
-a etiqueta, a fila e o reset do projeto `PaneERP Preview` continuam sendo a
-regra operacional. Não se remove a trava antes de uma PR real provar que recebeu
-credenciais próprias, migrations e seed fictício e que seu ambiente foi apagado
-ao fechar ou integrar.
+**Restos do arranjo antigo continuam no código e não devem ser usados:** a
+etiqueta `precisa-banco-preview`, o job `Reconstruir Preview desta PR` em
+`banco-preview.yml` e o passo de espera por etiqueta no `ci.yml`. Não etiquete
+nada. Retirá-los muda comportamento de CI e pede PR própria. O job
+`Restaurar Banco Preview para a main`, no mesmo arquivo, **continua
+necessário**: é ele que mantém o banco compartilhado usado por toda PR que não
+mexe em `supabase/`.
 
-Quando estiver operacional, cada branch de preview será isolada e sem dados de
-produção. O Supabase cobra o compute usado por branch; na tabela consultada em
-2026-08-28, o tamanho Micro começa em US$ 0,01344 por hora, exige plano Pro e
-esse consumo não é coberto pelo Spend Cap. Rodrigo aceitou esse custo. Consulte
+**Limitação conhecida, ainda sem correção.** O `Banco por PR` consulta a lista
+de ramificações uma vez e, se a da PR ainda não tiver nascido, encerra tratando
+a PR como se não tivesse banco próprio. GitHub e Supabase não garantem ordem
+entre si, então uma PR com migration pode acabar apontada para o banco
+compartilhado sem aviso. Apontado na revisão de 2026-08-30; corrigir exige
+distinguir "não mexe em `supabase/`" de "a ramificação ainda não apareceu" e
+esperar nesse segundo caso.
+
+O Supabase cobra o compute usado por branch; na tabela consultada em 2026-08-28,
+o tamanho Micro começa em US$ 0,01344 por hora, exige plano Pro e esse consumo
+não é coberto pelo Spend Cap. Rodrigo aceitou esse custo em 2026-08-28. Consulte
 sempre a [documentação de Branching](https://supabase.com/docs/guides/deployment/branching)
 e a [página de cobrança vigente](https://supabase.com/docs/guides/platform/manage-your-usage/branching)
 antes de mudar a configuração.
