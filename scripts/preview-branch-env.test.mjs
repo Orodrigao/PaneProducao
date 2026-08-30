@@ -359,7 +359,7 @@ describe('limparVariaveisDaBranch', () => {
         envs: [
           { id: 'env_url', key: 'NEXT_PUBLIC_SUPABASE_URL', gitBranch: BRANCH },
           { id: 'env_key', key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', gitBranch: BRANCH },
-          { id: 'env_telegram', key: 'NEXT_PUBLIC_TELEGRAM_BOT_TOKEN', gitBranch: BRANCH },
+          { id: 'env_alheia', key: 'NEXT_PUBLIC_OUTRA_COISA', gitBranch: BRANCH },
           { id: 'env_outra_branch', key: 'NEXT_PUBLIC_SUPABASE_URL', gitBranch: 'outra' },
           // A listagem filtrada por branch devolve TAMBEM as genericas de
           // Preview, que sao as que o Rodrigo recriou a mao. Apagar uma delas
@@ -373,7 +373,7 @@ describe('limparVariaveisDaBranch', () => {
       new Response(null, { status: 204 }),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
-    const intocaveis = ['env_generica_url', 'env_generica_chave', 'env_outra_branch', 'env_telegram']
+    const intocaveis = ['env_generica_url', 'env_generica_chave', 'env_outra_branch', 'env_alheia']
 
     const resultado = await limparVariaveisDaBranch({
       ...CREDENCIAIS,
