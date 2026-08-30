@@ -116,6 +116,12 @@ Antes de propor uma mudança:
 
 Não carregue todo o diretório `docs/` por padrão.
 
+Diagnóstico de 2026-08-30 sobre por que as sessões de agente gastam tempo
+apagando incêndio em vez de entregar: [docs/auditoria-agentes.md](docs/auditoria-agentes.md).
+Não é regra e não substitui este arquivo nem o `CURRENT_STATE.md`. Serve
+para a próxima correção de docs, Preview ou smoke — não para abrir
+refactor de produto.
+
 ## Stack e limites arquiteturais
 
 - Next.js 15 App Router.
