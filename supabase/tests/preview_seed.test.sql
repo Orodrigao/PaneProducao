@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(38);
+select plan(41);
 
 select is(
   (select count(*)::int from public.destinations where code in ('JC', 'JA', 'EX')),
@@ -409,6 +409,30 @@ select ok(
       and assignment.scope = '*'
   ),
   'financeiro ficticio enxerga romaneios, como a Elis em producao'
+);
+
+select is(
+  (select production_date
+   from public.production_plans
+   where id = '54000000-0000-4000-8000-000000000002'),
+  (now() at time zone 'America/Sao_Paulo')::date,
+  'seed reaproveita o plano ficticio quando o dia muda'
+);
+
+select is(
+  (select count(*)::int
+   from public.production_plans
+   where production_date = (now() at time zone 'America/Sao_Paulo')::date),
+  1,
+  'reaplicar o plano ficticio mantem somente um planejamento no dia'
+);
+
+select is(
+  (select plan_id
+   from public.production_plan_items
+   where id = '55000000-0000-4000-8000-000000000002'),
+  '54000000-0000-4000-8000-000000000002'::uuid,
+  'reaplicar o seed preserva os itens ligados ao mesmo plano ficticio'
 );
 
 select * from finish();
