@@ -40,7 +40,7 @@ describe('verifyPreviewSeedRepeatability', () => {
     })
 
     assert.equal(readFileImpl.mock.callCount(), 2)
-    assert.equal(runProcess.mock.callCount(), 5)
+    assert.equal(runProcess.mock.callCount(), 6)
     for (const call of runProcess.mock.calls) {
       const [command, args] = call.arguments
       assert.equal(command, 'docker')
@@ -48,10 +48,14 @@ describe('verifyPreviewSeedRepeatability', () => {
       assert.equal(args.at(-1), '-')
     }
     assert.match(runProcess.mock.calls[0].arguments[2].input, /rodrigao\+teste@gmail\.com/)
+    assert.match(runProcess.mock.calls[0].arguments[2].input, /fixture Auth da prova ja existe/)
+    assert.doesNotMatch(runProcess.mock.calls[0].arguments[2].input, /on conflict/i)
     assert.match(runProcess.mock.calls[1].arguments[2].input, /select 42;/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /2000-01-01/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /2000-01-02/)
     assert.match(runProcess.mock.calls[3].arguments[2].input, /select 42;/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /A reaplicacao perdeu o vinculo/)
+    assert.match(runProcess.mock.calls[5].arguments[2].input, /delete from auth\.users/)
+    assert.match(runProcess.mock.calls[5].arguments[2].input, /A fixture Auth nao foi removida/)
   })
 })

@@ -8,6 +8,17 @@ const AUTH_PLAN_ID = '54000000-0000-4000-8000-000000000001'
 const TEST_ADMIN_ID = '94000000-0000-4000-8000-000000000001'
 
 const AUTH_FIXTURE_SQL = `
+do $proof$
+begin
+  if exists (
+    select 1 from auth.users
+    where id = '${TEST_ADMIN_ID}' or lower(email) = 'rodrigao+teste@gmail.com'
+  ) then
+    raise exception 'A fixture Auth da prova ja existe no banco local.';
+  end if;
+end
+$proof$;
+
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at,
@@ -18,10 +29,7 @@ insert into auth.users (
   '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
   now(), now(), now(),
   '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false
-)
-on conflict (id) do update set
-  email = excluded.email,
-  updated_at = excluded.updated_at;
+);
 `
 
 export function readProjectId(config) {
@@ -137,6 +145,32 @@ begin
     where id = '55000000-0000-4000-8000-000000000002' and plan_id = '${FIXED_PLAN_ID}'
   ) then
     raise exception 'A reaplicacao perdeu o vinculo entre item e plano.';
+  end if;
+end
+$proof$;
+`,
+    runProcess,
+  })
+  await runLocalPsql({
+    containerName,
+    sql: `
+delete from public.production_plan_items where plan_id = '${AUTH_PLAN_ID}';
+delete from public.production_plans where id = '${AUTH_PLAN_ID}';
+delete from public.bread_reuse_plans where id = '56000000-0000-4000-8000-000000000001';
+delete from public.app_user_permissions where user_id = '${TEST_ADMIN_ID}';
+delete from public.app_profiles where user_id = '${TEST_ADMIN_ID}';
+delete from auth.users
+where id = '${TEST_ADMIN_ID}' and lower(email) = 'rodrigao+teste@gmail.com';
+
+do $proof$
+begin
+  if exists (select 1 from auth.users where id = '${TEST_ADMIN_ID}')
+    or exists (select 1 from public.production_plans where id = '${AUTH_PLAN_ID}')
+    or exists (select 1 from public.production_plan_items where plan_id = '${AUTH_PLAN_ID}')
+    or exists (select 1 from public.bread_reuse_plans where id = '56000000-0000-4000-8000-000000000001')
+    or exists (select 1 from public.app_profiles where user_id = '${TEST_ADMIN_ID}')
+    or exists (select 1 from public.app_user_permissions where user_id = '${TEST_ADMIN_ID}') then
+    raise exception 'A fixture Auth nao foi removida depois da prova.';
   end if;
 end
 $proof$;
