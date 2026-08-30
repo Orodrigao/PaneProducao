@@ -423,12 +423,22 @@ describe('limparVariaveisDaBranch', () => {
 // esperando o semaforo. As duas condicoes abaixo sao transcricao ao pe da letra
 // do que esta em .github/workflows/banco-por-pr.yml; so a fonte dos dados muda.
 // O teste final confere que a transcricao nao envelheceu em silencio.
-const CONDICAO_APONTAR = "github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
+const CONDICAO_APONTAR = "github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)"
 const CONDICAO_LIMPAR = "github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
+const GRUPO = "banco-por-pr-${{ github.event.pull_request.number || inputs.pr_number }}"
+const AMBIENTE_PR = "${{ github.event.pull_request.number || inputs.pr_number }}"
+const AMBIENTE_BRANCH = "${{ github.event.pull_request.head.ref || inputs.git_branch }}"
 
-const apontarRoda = (evento, repositorio) =>
-  evento.action !== 'closed'
-  && evento.pull_request?.head?.repo?.full_name === repositorio
+const apontarRoda = (evento, repositorio, nomeDoEvento) =>
+  nomeDoEvento === 'workflow_dispatch'
+  || (evento.action !== 'closed'
+    && evento.pull_request?.head?.repo?.full_name === repositorio)
+
+// O `||` do GitHub devolve o primeiro operando verdadeiro, igual ao do
+// JavaScript para o que interessa aqui: numero ausente e texto vazio sao falsos.
+const numeroDaPr = (evento, inputs) => evento.pull_request?.number || inputs?.pr_number
+const branchDaPr = (evento, inputs) => evento.pull_request?.head?.ref || inputs?.git_branch
+const grupoDeConcorrencia = (evento, inputs) => `banco-por-pr-${numeroDaPr(evento, inputs) ?? ''}`
 
 const limparRoda = (evento, repositorio) =>
   evento.action === 'closed'
@@ -443,12 +453,21 @@ const daCasa = (action) => ({
 describe('condicoes do workflow Banco por PR', () => {
   it('aponta ao abrir, reabrir e a cada envio, e nunca ao fechar', () => {
     for (const action of ['opened', 'reopened', 'synchronize']) {
-      assert.equal(apontarRoda(daCasa(action), REPO), true, action)
+      assert.equal(apontarRoda(daCasa(action), REPO, 'pull_request'), true, action)
       assert.equal(limparRoda(daCasa(action), REPO), false, action)
     }
 
-    assert.equal(apontarRoda(daCasa('closed'), REPO), false)
+    assert.equal(apontarRoda(daCasa('closed'), REPO, 'pull_request'), false)
     assert.equal(limparRoda(daCasa('closed'), REPO), true)
+  })
+
+  // A armadilha que quase passou: em disparo manual nao existe
+  // `github.event.pull_request`, entao a guarda contra fork viraria falsa e o
+  // trabalho simplesmente nao rodaria, sem dizer por que.
+  it('o disparo manual roda, mesmo sem existir pull_request no evento', () => {
+    const manual = {}
+    assert.equal(apontarRoda(manual, REPO, 'workflow_dispatch'), true)
+    assert.equal(limparRoda(manual, REPO), false)
   })
 
   it('nao roda em PR de fork, que nao recebe segredo e falharia sem explicacao', () => {
@@ -456,15 +475,45 @@ describe('condicoes do workflow Banco por PR', () => {
       action: 'opened',
       pull_request: { head: { repo: { full_name: 'estranho/PaneProducao' } } },
     }
-    assert.equal(apontarRoda(deFora, REPO), false)
+    assert.equal(apontarRoda(deFora, REPO, 'pull_request'), false)
     assert.equal(limparRoda({ ...deFora, action: 'closed' }, REPO), false)
   })
 
   it('campo ausente no evento nao liga nenhum dos dois trabalhos', () => {
     // Payload capado: se o caminho ate full_name sumir, a comparacao vira
     // undefined e os dois lados ficam desligados. Falha fechado.
-    assert.equal(apontarRoda({ action: 'opened' }, REPO), false)
+    assert.equal(apontarRoda({ action: 'opened' }, REPO, 'pull_request'), false)
     assert.equal(limparRoda({ action: 'closed', pull_request: {} }, REPO), false)
+  })
+
+  it('em disparo manual, numero e branch vem dos campos preenchidos a mao', () => {
+    const manual = {}
+    const inputs = { pr_number: '286', git_branch: 'fix/programacao-producao-pj-preview' }
+
+    assert.equal(numeroDaPr(manual, inputs), '286')
+    assert.equal(branchDaPr(manual, inputs), 'fix/programacao-producao-pj-preview')
+  })
+
+  it('em evento de PR, o evento manda e os campos manuais nao atrapalham', () => {
+    const evento = {
+      action: 'synchronize',
+      pull_request: { number: 999, head: { ref: BRANCH, repo: { full_name: REPO } } },
+    }
+    const inputs = { pr_number: '286', git_branch: 'outra' }
+
+    assert.equal(numeroDaPr(evento, inputs), 999)
+    assert.equal(branchDaPr(evento, inputs), BRANCH)
+  })
+
+  it('dois disparos manuais de PRs diferentes nao caem no mesmo grupo', () => {
+    // Sem o `|| inputs.pr_number` os dois virariam `banco-por-pr-` e, com
+    // cancel-in-progress, um cancelaria o outro em silencio.
+    const manual = {}
+    const grupo286 = grupoDeConcorrencia(manual, { pr_number: '286' })
+    const grupo287 = grupoDeConcorrencia(manual, { pr_number: '287' })
+
+    assert.notEqual(grupo286, grupo287)
+    assert.equal(grupo286, 'banco-por-pr-286')
   })
 
   it('a transcricao acima continua igual ao workflow de verdade', () => {
@@ -480,6 +529,14 @@ describe('condicoes do workflow Banco por PR', () => {
     assert.ok(
       workflow.includes(CONDICAO_LIMPAR),
       'A condicao do trabalho "limpar" mudou no workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes(GRUPO),
+      'O grupo de concorrencia mudou no workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes(AMBIENTE_PR) && workflow.includes(AMBIENTE_BRANCH),
+      'A origem do numero da PR ou da branch mudou no workflow e este teste ficou para tras.',
     )
   })
 })
