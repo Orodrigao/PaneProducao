@@ -320,6 +320,29 @@ describe('apontarPreviewParaRamificacao', () => {
     assert.equal(respostas.length, 0)
   })
 
+  it('nunca refaz um deployment de producao mesmo que a busca da branch o devolva', async () => {
+    const respostas = [
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
+      resposta({}),
+      resposta({}),
+      resposta({ deployments: [{ uid: 'dpl_producao', target: 'production' }] }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    await assert.rejects(() => apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      fetchImpl,
+      registrar: () => {},
+    }), /deployment.*producao.*recusado/i)
+
+    assert.equal(
+      fetchImpl.mock.calls.some((chamada) => /v13\/deployments/.test(chamada.arguments[0])),
+      false,
+    )
+  })
+
   it('falha fechado quando nenhum preview da branch aparece a tempo', async () => {
     const respostas = [
       resposta([RAMIFICACAO_DA_PR]),

@@ -378,6 +378,12 @@ export async function reconstruirPreview({
     daBranch = await procurar()
   }
 
+  if (daBranch.target === 'production') {
+    throw new Error(
+      `O deployment encontrado para a branch ${gitBranch} e de producao; recusado por seguranca.`,
+    )
+  }
+
   await pedir(
     comEscopo('https://api.vercel.com/v13/deployments?forceNew=1', vercelTeamId),
     {
