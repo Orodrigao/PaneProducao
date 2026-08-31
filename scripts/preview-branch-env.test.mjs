@@ -26,6 +26,12 @@ const RAMIFICACAO_DA_PR = {
   preview_project_status: 'ACTIVE_HEALTHY',
 }
 
+function jwtComPapel(role) {
+  const cabecalho = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ role })).toString('base64url')
+  return `${cabecalho}.${payload}.assinatura`
+}
+
 const RAMIFICACAO_MAIN = {
   id: 'cb50ec07-5702-49f5-b610-f35e707a9ebb',
   name: 'main',
@@ -138,20 +144,37 @@ describe('ramificacaoEstaPronta', () => {
 
 describe('escolherChavePublica', () => {
   it('prefere a chave nova e aceita a legada como reserva', () => {
+    const anonLegada = jwtComPapel('anon')
     assert.equal(escolherChavePublica([
-      { name: 'anon', type: 'legacy', api_key: 'jwt-legado' },
+      { name: 'anon', type: 'legacy', api_key: anonLegada },
       { name: 'default', type: 'publishable', api_key: 'sb_publishable_abc' },
     ]), 'sb_publishable_abc')
 
     assert.equal(escolherChavePublica([
-      { name: 'anon', type: 'legacy', api_key: 'jwt-legado' },
-    ]), 'jwt-legado')
+      { name: 'anon', type: 'legacy', api_key: anonLegada },
+    ]), anonLegada)
   })
 
-  it('falha quando nao ha chave publica utilizavel', () => {
+  it('falha fechado para formato desconhecido, chave secreta ou papel privilegiado', () => {
     assert.throws(() => escolherChavePublica([]), /nenhuma chave publica/i)
-    assert.throws(() => escolherChavePublica([{ name: 'service_role', type: 'secret' }]), /nenhuma chave publica/i)
+    assert.throws(
+      () => escolherChavePublica([{ name: 'service_role', type: 'secret', api_key: jwtComPapel('service_role') }]),
+      /nenhuma chave publica/i,
+    )
+    assert.throws(
+      () => escolherChavePublica([{
+        name: 'default',
+        type: 'publishable',
+        api_key: jwtComPapel('service_role'),
+      }]),
+      /nenhuma chave publica/i,
+    )
+    assert.throws(
+      () => escolherChavePublica([{ name: 'anon', type: 'legacy', api_key: jwtComPapel('service_role') }]),
+      /nenhuma chave publica/i,
+    )
     assert.throws(() => escolherChavePublica(undefined), /lista/i)
+    assert.throws(() => escolherChavePublica(null), /lista/i)
   })
 })
 
@@ -218,9 +241,9 @@ describe('apontarPreviewParaRamificacao', () => {
       // 2a consulta: pronto.
       resposta([RAMIFICACAO_DA_PR]),
       // chaves do banco da PR
-      resposta({
-        keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }],
-      }),
+      // A Management API devolve a lista crua. Antes, `chaves?.keys` pegava o
+      // metodo Array.prototype.keys e passava uma funcao no lugar desta lista.
+      resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_URL
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_ANON_KEY
       // Ja filtrado pelo servidor: o endpoint aceita `branch`.
@@ -256,7 +279,9 @@ describe('apontarPreviewParaRamificacao', () => {
     // preview continuaria falando com o banco errado mesmo estando verde.
     const redeploy = fetchImpl.mock.calls.at(-1)
     assert.match(redeploy.arguments[0], /v13\/deployments/)
-    assert.equal(JSON.parse(redeploy.arguments[1].body).deploymentId, 'dpl_desta_branch')
+    const corpoDoRedeploy = JSON.parse(redeploy.arguments[1].body)
+    assert.equal(corpoDoRedeploy.deploymentId, 'dpl_desta_branch')
+    assert.equal(Object.hasOwn(corpoDoRedeploy, 'target'), false)
 
     // O filtro por branch precisa acontecer no SERVIDOR. Filtrar no cliente uma
     // pagina dos deploys mais recentes do projeto inteiro confundiria "nao esta
@@ -293,6 +318,29 @@ describe('apontarPreviewParaRamificacao', () => {
     assert.equal(resultado.redeploy.situacao, 'refeito')
     assert.equal(resultado.redeploy.deploymentId, 'dpl_que_demorou')
     assert.equal(respostas.length, 0)
+  })
+
+  it('nunca refaz um deployment de producao mesmo que a busca da branch o devolva', async () => {
+    const respostas = [
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
+      resposta({}),
+      resposta({}),
+      resposta({ deployments: [{ uid: 'dpl_producao', target: 'production' }] }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    await assert.rejects(() => apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      fetchImpl,
+      registrar: () => {},
+    }), /deployment.*producao.*recusado/i)
+
+    assert.equal(
+      fetchImpl.mock.calls.some((chamada) => /v13\/deployments/.test(chamada.arguments[0])),
+      false,
+    )
   })
 
   it('falha fechado quando nenhum preview da branch aparece a tempo', async () => {

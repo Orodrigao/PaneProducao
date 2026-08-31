@@ -136,13 +136,35 @@ export function escolherChavePublica(chaves) {
     throw new Error('A listagem de chaves do Supabase nao veio como lista.')
   }
 
-  const publicavel = chaves.find((chave) => chave?.type === 'publishable' && chave.api_key)
+  const publicavel = chaves.find(
+    (chave) => chave?.type === 'publishable'
+      && typeof chave.api_key === 'string'
+      && /^sb_publishable_[A-Za-z0-9._-]+$/.test(chave.api_key),
+  )
   if (publicavel) return publicavel.api_key
 
-  const legada = chaves.find((chave) => chave?.name === 'anon' && chave.api_key)
+  const legada = chaves.find(
+    (chave) => chave?.name === 'anon'
+      && typeof chave.api_key === 'string'
+      && papelDoJwt(chave.api_key) === 'anon',
+  )
   if (legada) return legada.api_key
 
   throw new Error('O banco desta PR nao expos nenhuma chave publica utilizavel.')
+}
+
+function papelDoJwt(valor) {
+  const partes = valor.split('.')
+  if (partes.length !== 3) return null
+
+  try {
+    // A origem e a Management API autenticada. O papel nao autentica a chave;
+    // ele impede publicar uma service_role que venha rotulada como `anon`.
+    const payload = JSON.parse(Buffer.from(partes[1], 'base64url').toString('utf8'))
+    return typeof payload?.role === 'string' ? payload.role : null
+  } catch {
+    return null
+  }
 }
 
 /** O par de variaveis que a Vercel precisa receber para esta branch. */
@@ -261,7 +283,10 @@ export async function apontarPreviewParaRamificacao({
     `https://api.supabase.com/v1/projects/${refDaRamificacao}/api-keys?reveal=true`,
     { token: supabaseToken, fetchImpl },
   )
-  const chavePublica = escolherChavePublica(chaves?.keys ?? chaves)
+  // Array tambem possui um metodo nativo chamado `keys`. Conferir o tipo antes
+  // de desembrulhar evita passar essa funcao no lugar da lista documentada.
+  const listaDeChaves = Array.isArray(chaves) ? chaves : chaves?.keys
+  const chavePublica = escolherChavePublica(listaDeChaves)
 
   const variaveis = planejarVariaveis({
     projectRef: refDaRamificacao,
@@ -353,12 +378,20 @@ export async function reconstruirPreview({
     daBranch = await procurar()
   }
 
+  if (daBranch.target === 'production') {
+    throw new Error(
+      `O deployment encontrado para a branch ${gitBranch} e de producao; recusado por seguranca.`,
+    )
+  }
+
   await pedir(
     comEscopo('https://api.vercel.com/v13/deployments?forceNew=1', vercelTeamId),
     {
       token: vercelToken,
       method: 'POST',
-      body: { name: vercelProject, deploymentId: daBranch.uid, target: 'preview' },
+      // Na API de deployments, preview e o caminho sem `target`. Esse campo e
+      // reservado a production, staging ou ambiente customizado.
+      body: { name: vercelProject, deploymentId: daBranch.uid },
       fetchImpl,
     },
   )
