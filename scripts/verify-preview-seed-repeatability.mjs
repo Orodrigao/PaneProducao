@@ -6,6 +6,10 @@ import { pathToFileURL } from 'node:url'
 const FIXED_PLAN_ID = '54000000-0000-4000-8000-000000000002'
 const AUTH_PLAN_ID = '54000000-0000-4000-8000-000000000001'
 const TEST_ADMIN_ID = '94000000-0000-4000-8000-000000000001'
+const HISTORICAL_JC_FIRST_ID = '7fc00000-0000-4000-8000-000000000002'
+const HISTORICAL_JC_NEXT_ID = '7fc00000-0000-4000-8000-000000000003'
+const HISTORICAL_JC_FIRST_ITEM_ID = '7ec00000-0000-4000-8000-000000000002'
+const HISTORICAL_JC_FIRST_LEFTOVER_ID = '7dc00000-0000-4000-8000-000000000002'
 
 const AUTH_FIXTURE_SQL = `
 do $proof$
@@ -95,6 +99,10 @@ begin
   if (select count(*) from public.production_plans where id in ('${AUTH_PLAN_ID}', '${FIXED_PLAN_ID}')) <> 2 then
     raise exception 'A prova exige os dois planos ficticios antes da virada do dia.';
   end if;
+
+  if (select count(*) from public.romaneios where id in ('${HISTORICAL_JC_FIRST_ID}', '${HISTORICAL_JC_NEXT_ID}')) <> 2 then
+    raise exception 'A prova exige o par de romaneios historicos antes da virada do dia.';
+  end if;
 end
 $proof$;
 
@@ -104,6 +112,16 @@ set production_date = case id
   when '${FIXED_PLAN_ID}' then date '2000-01-02'
 end
 where id in ('${AUTH_PLAN_ID}', '${FIXED_PLAN_ID}');
+
+-- Simula o estado deixado pela execucao de ontem. A segunda fixture ocupa a
+-- data que a primeira tentara usar hoje, reproduzindo a colisao real.
+update public.romaneios
+set record_date = (now() at time zone 'America/Sao_Paulo')::date - 8
+where id = '${HISTORICAL_JC_FIRST_ID}';
+
+update public.romaneios
+set record_date = (now() at time zone 'America/Sao_Paulo')::date - 7
+where id = '${HISTORICAL_JC_NEXT_ID}';
 `,
     runProcess,
   })
@@ -146,6 +164,39 @@ begin
   ) then
     raise exception 'A reaplicacao perdeu o vinculo entre item e plano.';
   end if;
+
+  if not exists (
+    select 1 from public.romaneios
+    where id = '${HISTORICAL_JC_FIRST_ID}'
+      and record_date = (now() at time zone 'America/Sao_Paulo')::date - 7
+  ) or not exists (
+    select 1 from public.romaneios
+    where id = '${HISTORICAL_JC_NEXT_ID}'
+      and record_date = (now() at time zone 'America/Sao_Paulo')::date - 6
+  ) then
+    raise exception 'O historico ficticio nao foi recriado nas datas de hoje.';
+  end if;
+
+  if not exists (
+    select 1 from public.romaneio_items
+    where id = '${HISTORICAL_JC_FIRST_ITEM_ID}'
+      and romaneio_id = '${HISTORICAL_JC_FIRST_ID}'
+      and product_id = 'teste-historico'
+      and qty_sent = 20
+  ) then
+    raise exception 'O item do historico ficticio nao foi recriado.';
+  end if;
+
+  if not exists (
+    select 1 from public.sobras
+    where id = '${HISTORICAL_JC_FIRST_LEFTOVER_ID}'
+      and record_date = (now() at time zone 'America/Sao_Paulo')::date - 7
+      and product_id = 'teste-historico'
+      and store = 'jc'
+      and quantity = 4
+  ) then
+    raise exception 'A sobra do historico ficticio nao foi recriada.';
+  end if;
 end
 $proof$;
 `,
@@ -178,7 +229,7 @@ $proof$;
     runProcess,
   })
 
-  console.log('Os dois planos do seed foram reaplicados depois da virada ficticia do dia.')
+  console.log('Os planos e o historico do seed foram reaplicados depois da virada ficticia do dia.')
 }
 
 const isDirectExecution = process.argv[1]
