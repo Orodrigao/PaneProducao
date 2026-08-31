@@ -224,11 +224,15 @@ export async function apontarPreviewParaRamificacao({
   vercelToken,
   vercelProject,
   vercelTeamId,
-  // Se a PR altera supabase/migrations, ela MUDA O SCHEMA, e testar schema
-  // novo contra o banco compartilhado e justamente a mentira que esta ponte
-  // existe para acabar. Nesse caso a ausencia de ramificacao deixa de ser um
-  // caminho normal e vira erro.
-  prAlteraMigration = false,
+  // Se a PR altera qualquer coisa em supabase/, a plataforma cria ramificacao
+  // para ela (medido: a PR 292 mexeu so em seed e testes e ganhou a sua). Entao
+  // a ausencia de ramificacao deixa de ser caminho normal e vira erro: seguir
+  // apontaria uma PR de schema, ou de seed, para o banco compartilhado, que e a
+  // mentira que esta ponte existe para acabar.
+  prAlteraSupabase = false,
+  // Espera propria para a ramificacao nascer, separada da espera para ela ficar
+  // pronta. Sao momentos diferentes e o pior caso e a soma das duas.
+  esperarRamificacaoSegundos = 300,
   esperarSegundos = 300,
   // Espera propria: o banco nascer no Supabase e o preview aparecer na Vercel
   // sao duas demoras diferentes, com causas diferentes.
@@ -262,26 +266,34 @@ export async function apontarPreviewParaRamificacao({
   // workflow, entao a primeira consulta pode ser cedo demais. Para PR que
   // altera migration a gente espera antes de desistir; para as outras nao ha o
   // que esperar, porque ramificacao nem deveria nascer.
-  const limiteRamificacao = Date.now() + esperarSegundos * 1000
+  const limiteRamificacao = Date.now() + esperarRamificacaoSegundos * 1000
+  let ultimoTotal = primeiraLista?.length ?? 0
   let escolha = escolherRamificacao(primeiraLista, { prNumber, gitBranch })
 
-  while (escolha.situacao === 'sem-ramificacao' && prAlteraMigration) {
+  while (escolha.situacao === 'sem-ramificacao' && prAlteraSupabase) {
     if (Date.now() >= limiteRamificacao) {
       throw new Error(
-        `Esta PR altera supabase/migrations e nenhum banco proprio apareceu em ${esperarSegundos}s. `
+        `Esta PR altera supabase/ e nenhum banco proprio apareceu em ${esperarRamificacaoSegundos}s. `
+        // A cota de ramificacoes do projeto e pequena e compartilhada. Quando
+        // ela enche, nenhuma nova nasce ate uma PR fechar, e o vermelho aqui
+        // nao e defeito DESTA PR. Nomear a suspeita evita depurar a PR errada.
+        + `O Supabase listou ${ultimoTotal} ramificacao(oes) no projeto; se a cota estiver cheia, `
+        + 'nenhuma nova nasce ate outra PR ser fechada. '
         + 'Seguir apontaria o preview para o Banco Preview compartilhado, que tem o schema ANTIGO, '
-        + 'e o teste sairia verde contra o banco errado. Confira se a integracao do Supabase criou '
-        + 'a ramificacao desta PR (o check "Supabase Preview") e rode este workflow de novo.',
+        + 'e o teste sairia verde contra o banco errado. Confira o check "Supabase Preview" desta PR '
+        + 'e as ramificacoes abertas no painel, e rode este workflow de novo.',
       )
     }
-    registrar('PR com migration e ainda sem banco proprio; esperando a ramificacao nascer.')
+    registrar('PR que altera supabase/ e ainda sem banco proprio; esperando a ramificacao nascer.')
     await dormir(intervaloSegundos * 1000)
-    escolha = escolherRamificacao(await listar(), { prNumber, gitBranch })
+    const lista = await listar()
+    ultimoTotal = lista?.length ?? 0
+    escolha = escolherRamificacao(lista, { prNumber, gitBranch })
   }
 
   if (escolha.situacao === 'sem-ramificacao') {
     registrar(
-      'Esta PR nao altera migration e nao tem banco proprio, que e o esperado. '
+      'Esta PR nao altera supabase/ e nao tem banco proprio, que e o esperado. '
       + 'O preview segue no Banco Preview compartilhado, que espelha a main.',
     )
     return { situacao: 'sem-ramificacao' }
@@ -489,7 +501,7 @@ async function main() {
     ...comum,
     prNumber: process.env.PR_NUMBER,
     supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
-    prAlteraMigration: process.env.PR_ALTERA_MIGRATION === 'true',
+    prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
   })
 }
 
