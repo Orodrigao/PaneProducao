@@ -130,19 +130,65 @@ export function ramificacaoEstaPronta(ramificacao) {
  *
  * Prefere a chave nova (`sb_publishable_...`) e aceita a legada `anon` como
  * reserva, porque projetos criados em epocas diferentes expoem uma ou outra.
+ *
+ * A Management API documenta uma lista, mas ramificacoes de preview tambem ja
+ * devolveram um mapa de credenciais. O mapa e lido por uma lista FECHADA de
+ * nomes publicos; nao varremos o objeto, para nunca confundir `service_role` ou
+ * `sb_secret_...` com algo que pode viajar no navegador.
  */
 export function escolherChavePublica(chaves) {
-  if (!Array.isArray(chaves)) {
-    throw new Error('A listagem de chaves do Supabase nao veio como lista.')
+  const mapa = chaves && !Array.isArray(chaves) && typeof chaves === 'object'
+    ? chaves
+    : null
+
+  const candidatas = Array.isArray(chaves)
+    ? chaves
+    : mapa
+      ? [
+          { name: 'default', type: 'publishable', api_key: mapa.publishable },
+          { name: 'default', type: 'publishable', api_key: mapa.publishable_key },
+          { name: 'anon', type: 'legacy', api_key: mapa.anon },
+          { name: 'anon', type: 'legacy', api_key: mapa.anon_key },
+        ]
+      : null
+
+  if (!candidatas) {
+    throw new Error('A listagem de chaves do Supabase nao veio como lista nem mapa reconhecido.')
   }
 
-  const publicavel = chaves.find((chave) => chave?.type === 'publishable' && chave.api_key)
+  const publicavel = candidatas.find(
+    (chave) => chave?.type === 'publishable'
+      && typeof chave.api_key === 'string'
+      && /^sb_publishable_[A-Za-z0-9._-]+$/.test(chave.api_key),
+  )
   if (publicavel) return publicavel.api_key
 
-  const legada = chaves.find((chave) => chave?.name === 'anon' && chave.api_key)
+  const legada = candidatas.find(
+    (chave) => chave?.name === 'anon'
+      && typeof chave.api_key === 'string'
+      && papelDoJwt(chave.api_key) === 'anon',
+  )
   if (legada) return legada.api_key
 
-  throw new Error('O banco desta PR nao expos nenhuma chave publica utilizavel.')
+  const campos = mapa ? Object.keys(mapa).sort().join(', ') || '(vazio)' : 'lista'
+  throw new Error(
+    `O banco desta PR nao expos nenhuma chave publica utilizavel (formato: ${campos}).`,
+  )
+}
+
+function papelDoJwt(valor) {
+  const partes = valor.split('.')
+  if (partes.length !== 3) return null
+
+  try {
+    // Nao autenticamos a assinatura aqui: a origem ja e a Management API
+    // autenticada. O papel serve somente para impedir publicar uma chave
+    // privilegiada que tenha vindo, por engano, sob um nome publico.
+    const payload = JSON.parse(Buffer.from(partes[1], 'base64url').toString('utf8'))
+    return typeof payload?.role === 'string' ? payload.role : null
+  } catch {
+    return null
+  }
 }
 
 /** O par de variaveis que a Vercel precisa receber para esta branch. */

@@ -26,6 +26,12 @@ const RAMIFICACAO_DA_PR = {
   preview_project_status: 'ACTIVE_HEALTHY',
 }
 
+function jwtComPapel(role) {
+  const cabecalho = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ role })).toString('base64url')
+  return `${cabecalho}.${payload}.assinatura`
+}
+
 const RAMIFICACAO_MAIN = {
   id: 'cb50ec07-5702-49f5-b610-f35e707a9ebb',
   name: 'main',
@@ -138,20 +144,68 @@ describe('ramificacaoEstaPronta', () => {
 
 describe('escolherChavePublica', () => {
   it('prefere a chave nova e aceita a legada como reserva', () => {
+    const anonLegada = jwtComPapel('anon')
     assert.equal(escolherChavePublica([
-      { name: 'anon', type: 'legacy', api_key: 'jwt-legado' },
+      { name: 'anon', type: 'legacy', api_key: anonLegada },
       { name: 'default', type: 'publishable', api_key: 'sb_publishable_abc' },
     ]), 'sb_publishable_abc')
 
     assert.equal(escolherChavePublica([
-      { name: 'anon', type: 'legacy', api_key: 'jwt-legado' },
-    ]), 'jwt-legado')
+      { name: 'anon', type: 'legacy', api_key: anonLegada },
+    ]), anonLegada)
   })
 
-  it('falha quando nao ha chave publica utilizavel', () => {
+  it('aceita o mapa de credenciais da ramificacao somente pelos nomes publicos conhecidos', () => {
+    const anonLegada = jwtComPapel('anon')
+    assert.equal(escolherChavePublica({
+      publishable_key: 'sb_publishable_da_pr',
+      secret_key: 'sb_secret_nunca',
+    }), 'sb_publishable_da_pr')
+
+    assert.equal(escolherChavePublica({
+      anon_key: anonLegada,
+      service_role_key: jwtComPapel('service_role'),
+    }), anonLegada)
+
+    assert.equal(escolherChavePublica({
+      publishable: 'sb_publishable_sem_sufixo_no_campo',
+      service_role: jwtComPapel('service_role'),
+    }), 'sb_publishable_sem_sufixo_no_campo')
+
+    assert.equal(escolherChavePublica({
+      anon: anonLegada,
+      service_role: jwtComPapel('service_role'),
+    }), anonLegada)
+  })
+
+  it('falha fechado para formato desconhecido, chave secreta ou papel privilegiado', () => {
     assert.throws(() => escolherChavePublica([]), /nenhuma chave publica/i)
-    assert.throws(() => escolherChavePublica([{ name: 'service_role', type: 'secret' }]), /nenhuma chave publica/i)
-    assert.throws(() => escolherChavePublica(undefined), /lista/i)
+    assert.throws(
+      () => escolherChavePublica([{ name: 'service_role', type: 'secret', api_key: jwtComPapel('service_role') }]),
+      /nenhuma chave publica/i,
+    )
+    assert.throws(
+      () => escolherChavePublica([{
+        name: 'default',
+        type: 'publishable',
+        api_key: jwtComPapel('service_role'),
+      }]),
+      /nenhuma chave publica/i,
+    )
+    assert.throws(
+      () => escolherChavePublica({ publishable_key: 'sb_secret_nunca' }),
+      /publishable_key/i,
+    )
+    assert.throws(
+      () => escolherChavePublica({ anon_key: jwtComPapel('service_role') }),
+      /anon_key/i,
+    )
+    assert.throws(
+      () => escolherChavePublica({ credenciais: { anon: jwtComPapel('anon') } }),
+      /credenciais/i,
+    )
+    assert.throws(() => escolherChavePublica(undefined), /lista nem mapa/i)
+    assert.throws(() => escolherChavePublica(null), /lista nem mapa/i)
   })
 })
 
