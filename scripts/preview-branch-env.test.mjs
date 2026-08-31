@@ -647,3 +647,105 @@ describe('conferencia da branch no disparo manual', () => {
     )
   })
 })
+
+// A ponte concluia "nao achei ramificacao, logo esta PR nao mexe no banco".
+// Sao coisas diferentes, e a PR 303 provou: ela alterava migration, ficou sem
+// ramificacao, e a ponte a apontou para o banco compartilhado em VERDE, com a
+// mensagem "o normal para quem nao mexe em migration". Schema novo testado
+// contra schema velho e exatamente a mentira que esta ponte existe para matar.
+//
+// Quem sabe se o schema mudou e o diff da PR. O workflow decide por esta regra,
+// transcrita ao pe da letra:
+const REGRA_DA_DETECCAO = "grep -q '^supabase/migrations/' <<<\"$ARQUIVOS\""
+
+const alteraMigration = (arquivos) =>
+  arquivos.some((caminho) => caminho.startsWith('supabase/migrations/'))
+
+describe('PR que altera migration exige banco proprio', () => {
+  it('reconhece migration e ignora vizinhos parecidos', () => {
+    assert.equal(alteraMigration(['supabase/migrations/20260831_x.sql']), true)
+    assert.equal(alteraMigration(['src/app/page.tsx', 'supabase/migrations/a.sql']), true)
+
+    // Mexer em teste de banco ou em seed nao muda o schema, entao o banco
+    // compartilhado continua servindo e nao ha o que exigir.
+    assert.equal(alteraMigration(['supabase/tests/invariantes.test.sql']), false)
+    assert.equal(alteraMigration(['supabase/seed.sql']), false)
+    assert.equal(alteraMigration(['docs/migrations/leia.md']), false)
+    assert.equal(alteraMigration([]), false)
+  })
+
+  it('falha fechado quando a PR mexe em migration e nenhum banco aparece', async () => {
+    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN]))
+
+    await assert.rejects(apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraMigration: true,
+      esperarSegundos: 0,
+      dormir: async () => {},
+      fetchImpl,
+      registrar: () => {},
+    }), /altera supabase\/migrations e nenhum banco proprio apareceu/i)
+  })
+
+  it('espera a ramificacao nascer antes de desistir', async () => {
+    // A ramificacao nasce em paralelo com o workflow, entao a primeira consulta
+    // pode ser cedo demais. Desistir na primeira seria trocar uma corrida
+    // perdida por um vermelho injusto.
+    const respostas = [
+      resposta([RAMIFICACAO_MAIN]),
+      resposta([RAMIFICACAO_MAIN]),
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
+      resposta({}),
+      resposta({}),
+      resposta({ deployments: [{ uid: 'dpl_desta_branch' }] }),
+      resposta({ id: 'dpl_novo' }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+    let esperas = 0
+
+    const resultado = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraMigration: true,
+      dormir: async () => { esperas += 1 },
+      fetchImpl,
+      registrar: () => {},
+    })
+
+    assert.equal(resultado.situacao, 'apontado')
+    assert.equal(esperas, 2)
+    assert.equal(respostas.length, 0)
+  })
+
+  it('PR sem migration continua seguindo no banco compartilhado, sem esperar', async () => {
+    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN]))
+
+    const resultado = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraMigration: false,
+      fetchImpl,
+      registrar: () => {},
+    })
+
+    assert.equal(resultado.situacao, 'sem-ramificacao')
+    assert.equal(fetchImpl.mock.callCount(), 1)
+  })
+
+  it('a regra acima continua igual ao workflow de verdade', () => {
+    const workflow = readFileSync(
+      new URL('../.github/workflows/banco-por-pr.yml', import.meta.url),
+      'utf8',
+    )
+    assert.ok(
+      workflow.includes(REGRA_DA_DETECCAO),
+      'A deteccao de migration mudou no workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes('PR_ALTERA_MIGRATION=true') && workflow.includes('PR_ALTERA_MIGRATION=false'),
+      'O workflow parou de informar ao script se a PR altera migration.',
+    )
+  })
+})

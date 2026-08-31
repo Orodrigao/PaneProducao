@@ -108,6 +108,29 @@ jobs:
           fi
           echo "Confere: a PR $PR_INFORMADA esta na branch $BRANCH_DA_PR."
 
+      # A ponte concluia "nao ha ramificacao, logo esta PR nao mexe no banco".
+      # Sao coisas diferentes: a PR 303 alterava migration e mesmo assim ficou
+      # sem ramificacao, e a ponte a apontou para o banco compartilhado, em
+      # verde e com mensagem tranquilizadora. Quem sabe se o schema mudou e o
+      # diff da PR, nao a ausencia de uma ramificacao.
+      - name: Descobrir se esta PR altera migration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_ALVO: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if ! ARQUIVOS="$(gh pr diff "$PR_ALVO" --repo "$GITHUB_REPOSITORY" --name-only)"; then
+            echo "Nao consegui listar os arquivos da PR $PR_ALVO."
+            exit 1
+          fi
+          if grep -q '^supabase/migrations/' <<<"$ARQUIVOS"; then
+            echo "Esta PR altera supabase/migrations: banco proprio passa a ser obrigatorio."
+            echo "PR_ALTERA_MIGRATION=true" >> "$GITHUB_ENV"
+          else
+            echo "Esta PR nao altera supabase/migrations."
+            echo "PR_ALTERA_MIGRATION=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Apontar
         env:
           ACAO: apontar
