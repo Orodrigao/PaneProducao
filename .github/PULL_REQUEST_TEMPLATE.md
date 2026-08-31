@@ -16,7 +16,8 @@
 - [ ] `npx tsc --noEmit`
 - [ ] `npm test`
 - [ ] `npm run build`
-- [ ] `Banco Preview` verde (obrigatorio quando houver migration ou seed)
+- [ ] `Banco por PR` e `Usuarios do Banco por PR` verdes (quando a PR mexe em `supabase/`)
+- [ ] `CI Banco` verde (quando a PR mexe em migration, teste de banco, seed ou config.toml)
 - [ ] Fluxo completo testado no navegador
 
 ## Matriz de verificação

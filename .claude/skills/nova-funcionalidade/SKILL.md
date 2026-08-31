@@ -214,8 +214,8 @@ cada linha desta seção vira um teste na matriz perfil × loja>
 ## Riscos e cuidados
 <incluindo lições do lessons.md que mordem nesta área; se houver
 migration, RLS ou dado financeiro, listar aqui as exigências extras:
-CI Banco e Banco Preview verdes, grants explícitos, teste com perfil
-permitido E bloqueado>
+`CI Banco`, `Banco por PR` e `Usuarios do Banco por PR` verdes, grants
+explícitos, teste com perfil permitido E bloqueado>
 
 ## Estados da tela
 <carregando, vazio, erro, sucesso e repetição de ação — o que o

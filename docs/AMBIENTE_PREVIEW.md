@@ -56,13 +56,26 @@ Conferido em 2026-08-30 por leitura direta da API do Supabase, sem escrita: as
 PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e saudáveis,
 ambos criados sem dados de produção.
 
-**Restos do arranjo antigo continuam no código e não devem ser usados:** a
-etiqueta `precisa-banco-preview`, o job `Reconstruir Preview desta PR` em
-`banco-preview.yml` e o passo de espera por etiqueta no `ci.yml`. Não etiquete
-nada. Retirá-los muda comportamento de CI e pede PR própria. O job
-`Restaurar Banco Preview para a main`, no mesmo arquivo, **continua
-necessário**: é ele que mantém o banco compartilhado usado por toda PR que não
-mexe em `supabase/`.
+**O arranjo antigo saiu do código:** a etiqueta `precisa-banco-preview`, o job
+`Reconstruir Preview desta PR` e a espera por etiqueta no `ci.yml` foram
+removidos. O job `Restaurar Banco Preview para a main`, no mesmo arquivo,
+**continua necessário**: é ele que mantém o banco compartilhado usado por toda
+PR que não mexe em `supabase/`.
+
+**A fila do smoke continua de pé, e de propósito.** O job do navegador e o
+workflow do banco dividem a trava `banco-preview-compartilhado`. Ela parece
+desperdício, porque vários smokes poderiam correr juntos, mas os testes de
+navegador **escrevem** no banco: criam compra manual, cadastram fornecedor e
+lançam movimento financeiro, cada um com carimbo de tempo para se distinguir.
+Dois smokes simultâneos podem conferir o registro criado pelo outro. Tirar a
+trava sem antes separar os testes que escrevem dos que só leem troca um
+entupimento visível por falha intermitente, que é pior. Uma tentativa nesse
+sentido foi reprovada em revisão em 2026-08-30.
+
+O custo dela é real e está medido: naquele mesmo dia, com cinco frentes
+abertas, o GitHub cancelou quem estava na fila, dois CIs e quatro
+reconstruções morreram em cascata e o banco ficou sem ser restaurado. Resolver
+isso é fase própria, e começa pelos testes, não pela trava.
 
 **Limitação conhecida, ainda sem correção.** O `Banco por PR` consulta a lista
 de ramificações uma vez e, se a da PR ainda não tiver nascido, encerra tratando
