@@ -194,6 +194,25 @@ select set_config('pane.pj_dispatch_rpc', 'on', false);
 -- precisa semear o cenario de conferencia parcial. A chave fecha logo abaixo.
 select set_config('pane.pj_check_rpc', 'on', false);
 
+-- Quem testa o preview pode ter programado qualquer uma dessas linhas para o
+-- forno. A trava `guard_scheduled_pj_order_changes` proibe alterar pedido PJ ja
+-- programado, e o upsert abaixo reescreve as datas sempre que o dia vira: sem
+-- limpar a programacao ficticia antes, reaplicar o seed no dia seguinte para
+-- com "Pedido que ja entrou na producao nao pode mais ser alterado" e o banco
+-- da PR fica sem contas e sem cenario. Apagar a programacao devolve o pedido ao
+-- estado nao programado, que e o ponto de partida do teste, e libera a reserva
+-- de congelado, que e somada a partir destas linhas.
+-- Isto NAO e um reset financeiro: producao ja confirmada continua registrada em
+-- production_actuals e bread_movements, que sao agregados por pao e data e nao
+-- tem vinculo com a linha apagada. E o pedido que ja virou cobranca continua
+-- barrado por `guard_billed_pj_order_changes`, que e outra porta e pede outra
+-- limpeza.
+-- O intervalo `30000000-0000-4000-8000-` e o espaco de identificadores dos
+-- pedidos deste arquivo; pedido real nasce com identificador sorteado e nunca
+-- cai aqui.
+delete from public.pj_production_schedules
+where order_id::text like '30000000-0000-4000-8000-%';
+
 insert into public.orders (
   id, store, order_type, order_group_id, customer_id, pj_client,
   bread_id, product_source, product_name,

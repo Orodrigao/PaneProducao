@@ -56,11 +56,24 @@ describe('verifyPreviewSeedRepeatability', () => {
     assert.match(runProcess.mock.calls[2].arguments[2].input, /7fc00000-0000-4000-8000-000000000002/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /7fc00000-0000-4000-8000-000000000003/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /colisao real/)
+    assert.match(runProcess.mock.calls[2].arguments[2].input, /30000000-0000-4000-8000-000000000101/)
+    assert.match(runProcess.mock.calls[2].arguments[2].input, /guard_scheduled_pj_order_changes/)
+    const viradaPj = runProcess.mock.calls[2].arguments[2].input
+    const recuoDasDatas = viradaPj.indexOf('set order_date = order_date - 1')
+    const criacaoDaProgramacao = viradaPj.indexOf('insert into public.pj_production_schedules')
+    assert.ok(recuoDasDatas >= 0, 'a simulacao precisa recuar as datas do pedido PJ')
+    assert.ok(criacaoDaProgramacao >= 0, 'a simulacao precisa criar a programacao do forno')
+    assert.ok(
+      recuoDasDatas < criacaoDaProgramacao,
+      'a data precisa recuar antes de existir programacao, senao a trava barra a propria fixture',
+    )
     assert.match(runProcess.mock.calls[3].arguments[2].input, /select 42;/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /A reaplicacao perdeu o vinculo/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /historico ficticio nao foi recriado/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /item do historico ficticio nao foi recriado/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /sobra do historico ficticio nao foi recriada/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /nao voltou para as datas de hoje/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /programacao ficticia do forno sobreviveu/)
     assert.match(runProcess.mock.calls[5].arguments[2].input, /delete from auth\.users/)
     assert.match(runProcess.mock.calls[5].arguments[2].input, /A fixture Auth nao foi removida/)
   })
