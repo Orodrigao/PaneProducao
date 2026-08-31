@@ -179,11 +179,9 @@ máquina — nem site, nem banco.
   espelho é o job `Restaurar Banco Preview para a main`, disparado a cada push
   na `main` e ao fechar PR sem merge. Nunca copie dados reais de produção para
   lá.
-- **Não existe mais fila nem etiqueta no caminho normal:** duas PRs com
-  migration convivem sem se atropelar. A etiqueta `precisa-banco-preview`, o
-  job `Reconstruir Preview desta PR` e o passo de espera do `ci.yml` continuam
-  no código como remendo obsoleto. Não etiquete nada. Retirá-los muda
-  comportamento de CI e pede PR própria.
+- **Não existe mais fila nem etiqueta:** duas PRs com migration convivem sem
+  se atropelar. A etiqueta `precisa-banco-preview`, o job `Reconstruir Preview
+  desta PR` e a espera dela no `ci.yml` foram removidos do código.
 - O link da Vercel só vale para teste depois que a Vercel estiver verde. PR que
   mexe em `supabase/` espera também `Banco por PR` **e** `Usuarios do Banco por
   PR`: o primeiro aponta o preview para o banco certo, o segundo cria as contas
