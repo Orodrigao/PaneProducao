@@ -15,6 +15,12 @@ const SCHEDULED_PJ_ORDER_DELIVERY_OFFSET = 2
 const SCHEDULED_PJ_BREAD_ID = 'teste-brioche-pj'
 const SCHEDULED_PJ_REQUEST_ID = '58000000-0000-4000-8000-000000000001'
 const SCHEDULED_PJ_AUTHOR_ID = '59000000-0000-4000-8000-000000000001'
+const BILLED_PJ_ORDER_GROUP_ID = '70000000-0000-4000-8000-000000000001'
+const BILLED_PJ_RECEIVABLE_ID = '57000000-0000-4000-8000-000000000001'
+const BILLED_PJ_CUSTOMER_ID = '60000000-0000-4000-8000-000000000001'
+const REUSE_PLAN_ID = '56000000-0000-4000-8000-000000000001'
+const JC_REUSE_ORDER_ID = '30000000-0000-4000-8000-000000000004'
+const JC_NEW_ORDER_ID = '30000000-0000-4000-8000-000000000005'
 
 const AUTH_FIXTURE_SQL = `
 do $proof$
@@ -155,6 +161,42 @@ insert into public.pj_production_schedules (
   '${SCHEDULED_PJ_REQUEST_ID}', '${SCHEDULED_PJ_AUTHOR_ID}',
   '[TESTE] Producao programou antes da virada'
 );
+
+-- A segunda porta: alguem confirmou o envio, e isso gerou cobranca. A partir
+-- daqui guard_billed_pj_order_changes barra qualquer mudanca de data no pedido.
+-- Vem depois do recuo das datas pelo mesmo motivo da programacao: antes da
+-- cobranca existir, o recuo ainda e permitido.
+insert into public.receivables (
+  id, request_id, customer_id, origin, origin_ref, finance_category_id,
+  description, invoice_date, original_due_date, due_date, amount, status, created_by
+)
+select
+  '${BILLED_PJ_RECEIVABLE_ID}', '${BILLED_PJ_RECEIVABLE_ID}',
+  '${BILLED_PJ_CUSTOMER_ID}', 'pedido_pj', '${BILLED_PJ_ORDER_GROUP_ID}',
+  (select id from public.finance_categories order by id limit 1),
+  '[TESTE] cobranca gerada pela confirmacao de envio antes da virada',
+  (now() at time zone 'America/Sao_Paulo')::date,
+  (now() at time zone 'America/Sao_Paulo')::date + 7,
+  (now() at time zone 'America/Sao_Paulo')::date + 7,
+  403.20, 'aberta', '${TEST_ADMIN_ID}';
+
+-- Terceira porta: o par ficticio da JC na chave unica de loja, pao e data.
+-- Ontem o ...0005 ficou com a data de ontem e o ...0004 foi parar exatamente na
+-- data de hoje, que e a que o ...0005 vai pedir agora. O ...0005 recua primeiro
+-- porque, sem soltar a data, o proprio comando seguinte ja bateria na chave.
+update public.orders
+set order_date = order_date - 1
+where id = '${JC_NEW_ORDER_ID}';
+
+update public.orders
+set order_date = (now() at time zone 'America/Sao_Paulo')::date
+where id = '${JC_REUSE_ORDER_ID}';
+
+-- Quarta porta: o plano de reaproveitamento tem id fixo e data movel. Basta a
+-- data-alvo mudar para o upsert tentar inserir o mesmo id de novo.
+update public.bread_reuse_plans
+set target_production_date = target_production_date - 1
+where id = '${REUSE_PLAN_ID}';
 `,
     runProcess,
   })
@@ -249,6 +291,43 @@ begin
   ) then
     raise exception 'A programacao ficticia do forno sobreviveu a reaplicacao do seed.';
   end if;
+
+  if not exists (
+    select 1 from public.receivables
+    where id = '${BILLED_PJ_RECEIVABLE_ID}'
+      and status = 'cancelada'
+      and cancelled_at is not null
+  ) then
+    raise exception 'A cobranca ficticia do pedido PJ nao foi cancelada pela reaplicacao do seed.';
+  end if;
+
+  if not exists (
+    select 1 from public.orders
+    where id = '${JC_NEW_ORDER_ID}'
+      and order_date = (now() at time zone 'America/Sao_Paulo')::date
+  ) then
+    raise exception 'O pedido novo da JC nao voltou para a data de hoje.';
+  end if;
+
+  if not exists (
+    select 1 from public.orders
+    where id = '${JC_REUSE_ORDER_ID}'
+      and order_date > (now() at time zone 'America/Sao_Paulo')::date
+  ) then
+    raise exception 'O pedido reaproveitado da JC nao saiu da data de hoje.';
+  end if;
+
+  if (select count(*) from public.bread_reuse_plans where id = '${REUSE_PLAN_ID}') <> 1 then
+    raise exception 'O plano de reaproveitamento ficticio nao sobreviveu inteiro a reaplicacao.';
+  end if;
+
+  if not exists (
+    select 1 from public.bread_reuse_plans
+    where id = '${REUSE_PLAN_ID}'
+      and target_production_date > (now() at time zone 'America/Sao_Paulo')::date
+  ) then
+    raise exception 'O plano de reaproveitamento nao voltou para a data-alvo de hoje.';
+  end if;
 end
 $proof$;
 `,
@@ -257,6 +336,11 @@ $proof$;
   await runLocalPsql({
     containerName,
     sql: `
+-- A cobranca ficticia sai antes da conta Auth: receivables.created_by aponta
+-- para auth.users com "on delete no action", entao a ordem inversa travaria a
+-- limpeza. Os eventos dela saem em cascata.
+delete from public.receivables where id = '${BILLED_PJ_RECEIVABLE_ID}';
+
 delete from public.production_plan_items where plan_id = '${AUTH_PLAN_ID}';
 delete from public.production_plans where id = '${AUTH_PLAN_ID}';
 delete from public.bread_reuse_plans where id = '56000000-0000-4000-8000-000000000001';
@@ -267,7 +351,8 @@ where id = '${TEST_ADMIN_ID}' and lower(email) = 'rodrigao+teste@gmail.com';
 
 do $proof$
 begin
-  if exists (select 1 from auth.users where id = '${TEST_ADMIN_ID}')
+  if exists (select 1 from public.receivables where id = '${BILLED_PJ_RECEIVABLE_ID}')
+    or exists (select 1 from auth.users where id = '${TEST_ADMIN_ID}')
     or exists (select 1 from public.production_plans where id = '${AUTH_PLAN_ID}')
     or exists (select 1 from public.production_plan_items where plan_id = '${AUTH_PLAN_ID}')
     or exists (select 1 from public.bread_reuse_plans where id = '56000000-0000-4000-8000-000000000001')
