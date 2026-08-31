@@ -1,0 +1,151 @@
+name: Banco por PR
+
+# Avisa a Vercel qual banco de teste cada pull request deve usar.
+#
+# O Supabase ja cria um banco proprio para toda PR que mexe em arquivos do
+# Supabase. Faltava a outra ponta: sem isto, o preview da PR continua falando
+# com o Banco Preview compartilhado, e duas PRs se atropelam.
+#
+# PR sem migration nao ganha banco proprio e nao precisa: ela segue nas
+# variaveis genericas de Preview, que apontam para o compartilhado. Como
+# nenhuma PR reescreve mais aquele banco, ele espelha a main, que e exatamente
+# o certo para quem nao mexe em schema.
+#
+# A regra de decisao vive em scripts/preview-branch-env.mjs e e testada por
+# scripts/preview-branch-env.test.mjs, que roda no `npm test` de toda PR.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+  # Disparo manual para PR que ja existia antes desta ponte. Sem ele, apontar o
+  # preview de uma PR antiga exigiria empurrar commit na branch dela, que pode
+  # ser frente reservada por outro agente. Mesmo formato ja usado em
+  # usuarios-banco-por-pr.yml.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Numero da PR que ja possui banco isolado
+        required: true
+        type: string
+      git_branch:
+        description: Nome exato da branch Git da PR
+        required: true
+        type: string
+
+concurrency:
+  # No disparo manual nao existe `github.event.pull_request`, entao o numero
+  # vem dos inputs. Sem esse `||` todos os disparos manuais cairiam no mesmo
+  # grupo e, com cancel-in-progress, um cancelaria o outro.
+  group: banco-por-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Somente leitura, e so para conferir se a branch digitada no disparo manual
+  # e mesmo a daquela PR.
+  pull-requests: read
+
+env:
+  VERCEL_PROJECT: pane-producao
+
+jobs:
+  apontar:
+    # PR vinda de fork nao recebe segredo do repositorio, entao o trabalho
+    # falharia sem motivo aparente. Melhor nem comecar.
+    #
+    # O primeiro termo nao e conveniencia: em `workflow_dispatch` nao existe
+    # `github.event.pull_request`, entao a comparacao com o repositorio viraria
+    # falsa e o trabalho nao rodaria, sem dizer por que. Disparo manual so
+    # existe para quem ja tem acesso de escrita ao repositorio, entao aceitar
+    # esse caso nao abre porta nova.
+    #
+    # Os parenteses sao obrigatorios, nao estilo: a documentacao de expressoes
+    # do GitHub NAO declara precedencia entre `&&` e `||`. Sem eles, o sentido
+    # da guarda contra fork passaria a depender de comportamento nao
+    # documentado. NAO REMOVA os parenteses achando que sao redundancia.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    name: Apontar o preview para o banco desta PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Os dois campos do disparo manual sao digitados em separado, e o script
+      # aceita casar a ramificacao por numero da PR OU por nome da branch. Se a
+      # branch vier errada e nao tiver ramificacao propria, sobra uma candidata
+      # so, pelo numero, e o script gravaria as credenciais do banco de uma PR
+      # nas variaveis da branch de outra. Verde, silencioso e no banco errado,
+      # que e exatamente a falha que esta ponte existe para matar.
+      - name: Conferir que a branch informada e mesmo a da PR
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_INFORMADA: ${{ inputs.pr_number }}
+          BRANCH_INFORMADA: ${{ inputs.git_branch }}
+        run: |
+          set -euo pipefail
+          if ! BRANCH_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)"; then
+            echo "Nao consegui ler a PR $PR_INFORMADA neste repositorio."
+            exit 1
+          fi
+          if [ -z "$BRANCH_DA_PR" ]; then
+            echo "A PR $PR_INFORMADA nao devolveu nome de branch."
+            exit 1
+          fi
+          if [ "$BRANCH_DA_PR" != "$BRANCH_INFORMADA" ]; then
+            echo "A branch informada nao pertence a PR $PR_INFORMADA."
+            echo "  informada: $BRANCH_INFORMADA"
+            echo "  da PR:     $BRANCH_DA_PR"
+            exit 1
+          fi
+          echo "Confere: a PR $PR_INFORMADA esta na branch $BRANCH_DA_PR."
+
+      - name: Apontar
+        env:
+          ACAO: apontar
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  limpar:
+    # Em disparo manual `github.event.action` nao existe, e a comparacao com
+    # 'closed' e falsa, entao a limpeza nao roda. Isso depende de 'closed' NAO
+    # ser numerico: a conversao do GitHub transforma nulo em 0 e texto em
+    # numero, e comparar aquele campo com '' ou '0' daria VERDADEIRO no disparo
+    # manual, apagando as variaveis em vez de grava-las. Nao troque a
+    # comparacao por um valor numerico ou vazio.
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Devolver o preview ao banco compartilhado
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # O Supabase apaga o banco da PR sozinho quando ela fecha. Sobraria a
+      # variavel apontando para um endereco morto, que envenenaria qualquer
+      # preview futuro que reaproveitasse o mesmo nome de branch.
+      - name: Limpar
+        env:
+          ACAO: limpar
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs

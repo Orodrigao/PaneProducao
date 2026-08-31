@@ -10,8 +10,6 @@ import { ModulePaused } from '@/components/ModulePaused'
 import { COMPRAS_COTACOES_PAUSADAS } from '@/lib/features'
 import { resolvePurchaseAccess } from './access'
 
-const TG_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN!
-const TG_CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID!
 const SECTOR_LABELS: Record<string,string> = { padaria:'🥖 Padaria', cozinha:'🍳 Cozinha', loja:'🏪 Loja' }
 
 interface PurchaseList { id:string; sector:string; status:string; submitted_at:string|null; submitted_by:string|null; completed_at:string|null }
@@ -107,8 +105,7 @@ function ComprasAtivasPage() {
     setSaving(true)
     await supabase.from('purchase_lists').update({ status:'submitted', submitted_at: new Date().toISOString(), submitted_by: user.name }).eq('id', list!.id)
     setList(prev => prev ? {...prev, status:'submitted'} : prev)
-    const tgOk = await sendTelegram(filled)
-    showToast(tgOk ? '✅ Lista enviada!' : '⚠️ Lista salva, mas notificação não foi')
+    showToast('✅ Lista enviada!')
     setSaving(false)
   }
 
@@ -125,23 +122,6 @@ function ComprasAtivasPage() {
     setList(prev => prev ? {...prev, status:'draft'} : prev)
     setItems(prev => prev.map(i=>({...i,quantity:null,checked:false})))
     showToast('🔄 Novo ciclo iniciado')
-  }
-
-  const sendTelegram = async (filled: PurchaseItem[]): Promise<boolean> => {
-    if (!user || !sector) return false
-    const lines = filled.map(i=>`• ${i.is_adhoc?i.ad_hoc_name:i.products?.name||'?'}: ${i.quantity} ${i.unit||''}`)
-    const msg = `🛒 *Nova lista de compras!*\n\n👤 *${user.name}* — ${SECTOR_LABELS[sector]}\n📋 ${filled.length} itens\n\n${lines.slice(0,25).join('\n')}${lines.length>25?`\n_...+${lines.length-25}_`:''}\n\n🔗 pane-producao.vercel.app/compras`
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode:'Markdown' }) })
-      if (!res.ok) {
-        console.error('[compras] Telegram retornou', res.status, await res.text().catch(()=>''))
-        return false
-      }
-      return true
-    } catch (e) {
-      console.error('[compras] Telegram erro de rede:', e)
-      return false
-    }
   }
 
   const copyAsText = (sourceItems: PurchaseItem[], sec: string, submittedBy?: string|null) => {

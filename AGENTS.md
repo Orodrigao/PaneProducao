@@ -148,10 +148,10 @@ máquina — nem site, nem banco.
 - Merge na `main` → produção no ar em ~1 minuto. Não existe outro caminho.
 - Push em branch de PR → link de preview, estável durante a vida do PR. O
   bot da Vercel comenta o link no próprio PR ("Visit Preview").
-- Preview e máquina local usam exclusivamente o projeto Supabase
-  `PaneERP Preview`; a configuração de produção existe somente no escopo
-  Production da Vercel. A trava do build deve falhar se essas portas se
-  cruzarem.
+- Preview e máquina local nunca falam com produção: usam o `PaneERP Preview`
+  compartilhado ou o banco isolado daquela PR. A configuração de produção
+  existe somente no escopo Production da Vercel, e a trava do build falha se
+  essas portas se cruzarem.
 - Build da `main` quebrado → o deploy é recusado e produção continua na
   versão anterior. Corrija com novo PR; nunca com deploy manual.
 - `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo
@@ -167,45 +167,32 @@ máquina — nem site, nem banco.
   ensaia a história completa do schema num banco local descartável (workflow
   `CI Banco`); só depois do merge a Action aplica em produção com
   `supabase db push`.
-- PR que precisa do banco de teste com o schema dela pede pela etiqueta
-  `precisa-banco-preview`: só então o projeto `PaneERP Preview` é
-  reconstruído com a história e o seed daquela branch (workflow
-  `Banco Preview`). **Etiquete quando a mudança de banco tiver tela para o
-  Rodrigo testar no celular.** Migration sem tela dispensa a etiqueta: quem
-  prova que ela funciona é o ensaio descartável do `CI Banco`, que roda
-  sempre e não disputa nada com ninguém. Sem etiqueta, o smoke de navegador
-  roda contra o Banco Preview como está, restaurado a partir da `main`.
-- O link da Vercel só vale para teste depois que Vercel e CI Banco estiverem
-  verdes, mais o Banco Preview quando a PR for etiquetada.
-- Fechar ou integrar a PR reconstrói o Banco Preview a partir da `main`.
-  Esse reset é obrigatório: remove migration de PR descartada e devolve os
-  dados fictícios conhecidos. Nunca copie dados reais de produção para lá.
-- Enquanto existir um único `PaneERP Preview` compartilhado, somente uma PR
-  **etiquetada** pode ficar ativa por vez: a automação deve bloquear a
-  segunda, nunca alternar silenciosamente o schema entre duas PRs. PR sem
-  etiqueta não reconstrói nada e por isso nunca é bloqueada por migration
-  alheia — antes era, e foi o que fez a PR 225 ficar vermelha sem defeito
-  próprio. A etiqueta é remendo com data para morrer: quando existir banco
-  por pull request, ela e a fila somem juntas. Esse limite vem da
-  configuração atual do Supabase, não deste arquivo. Antes de
-  serializar trabalho, mandar outra sessão esperar ou declarar que "não dá",
-  confira a capacidade real da conta; se passar a existir banco por PR, a
-  fila deixa de valer e este trecho é corrigido no mesmo PR.
-- **Transição aprovada para Supabase Branching (2026-08-28):** Rodrigo aprovou
-  o custo baixo da funcionalidade para substituir o Banco Preview compartilhado
-  por um banco isolado por PR. A auditoria somente leitura confirmou a branch
-  `main` cadastrada, mas ainda não encontrou branches de preview por PR; portanto
-  a integração GitHub/Supabase/Vercel e a troca dos workflows ainda não estão
-  comprovadas. Até essa ativação ser implementada e testada em fase própria,
-  continuam valendo a etiqueta, a fila e o projeto `PaneERP Preview` descritos
-  acima. Não declare a fila extinta só porque a opção aparece habilitada no
-  painel.
-- Quando a transição estiver operacional, cada PR receberá ambiente Supabase
-  isolado, sem dados de produção, reconstruído pelas migrations e pelo seed
-  fictício e removido ao fechar ou integrar a PR. A mudança dos workflows,
-  secrets e variáveis da Vercel é governança protegida e exige tarefa própria.
-  Feature Branching não elimina por si só o Docker usado pelo ensaio local do
-  `CI Banco`; qualquer substituição desse ensaio também precisa de prova própria.
+- **Banco de teste por PR, no ar desde 2026-08-30 (PRs #287 a #291).** PR que
+  mexe em `supabase/` ganha do Supabase um banco isolado, construído com as
+  migrations e o seed fictício da própria branch. O workflow `Banco por PR`
+  aponta o preview da Vercel para esse banco e manda refazer o deploy; o
+  workflow `Usuarios do Banco por PR` cria nele as contas fictícias. Fechar a
+  PR apaga o banco e as variáveis daquela branch. A regra de decisão vive em
+  `scripts/preview-branch-env.mjs`, testada no `npm test` de toda PR.
+- PR que não mexe em `supabase/` não ganha banco próprio e não precisa: segue
+  no `PaneERP Preview` compartilhado, que espelha a `main`. Quem mantém esse
+  espelho é o job `Restaurar Banco Preview para a main`, disparado a cada push
+  na `main` e ao fechar PR sem merge. Nunca copie dados reais de produção para
+  lá.
+- **Não existe mais fila nem etiqueta:** duas PRs com migration convivem sem
+  se atropelar. A etiqueta `precisa-banco-preview`, o job `Reconstruir Preview
+  desta PR` e a espera dela no `ci.yml` foram removidos do código.
+- O link da Vercel só vale para teste depois que a Vercel estiver verde. PR que
+  mexe em `supabase/` espera também `Banco por PR` **e** `Usuarios do Banco por
+  PR`: o primeiro aponta o preview para o banco certo, o segundo cria as contas
+  fictícias lá dentro. Sem o segundo, o link abre num banco sem ninguém para
+  logar.
+- O ensaio descartável do `CI Banco` prova a história completa do schema, mas
+  **não roda em toda PR**: ele só dispara quando a PR toca
+  `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
+  `supabase/config.toml`. Quando dispara, é ele quem precisa estar verde. O
+  banco por PR não o substitui, e o Docker que ele usa segue de pé; trocar esse
+  ensaio precisa de prova própria.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
   migration precisa conviver tanto com a versão do site que está no ar
   quanto com a que está entrando. Mudança destrutiva (remover ou renomear
@@ -225,11 +212,11 @@ máquina — nem site, nem banco.
   auditoria live somente leitura — nunca deduzido de arquivo local.
 
 **Semáforo (CI):** todo PR roda lint, tipos, testes e build no GitHub.
-PR com migration ou seed também exige `CI Banco` e `Banco Preview` verdes.
+PR com migration ou seed também exige `CI Banco` e `Banco por PR` verdes.
 Merge exige todos os checks aplicáveis verdes + teste do Rodrigo no preview.
-CI vermelho = não mergeia, sem exceção. Se o Preview inteiro falhar depois
-de um período sem uso, confira primeiro se o projeto `PaneERP Preview` foi
-pausado antes de investigar a funcionalidade.
+CI vermelho = não mergeia, sem exceção. Se o preview de uma PR sem migration
+falhar depois de um período sem uso, confira primeiro se o projeto
+`PaneERP Preview` foi pausado antes de investigar a funcionalidade.
 
 ## Fluxo para nova funcionalidade
 
@@ -347,9 +334,9 @@ Mudança somente de documentação dispensa os comandos acima; exige no mínimo
 
 **Lógica de workflow se testa na máquina, não empurrando.** Passo de
 workflow que decide alguma coisa (um guarda que barra, um filtro que escolhe
-o que roda) só era exercitado abrindo PR e esperando o semáforo — caro,
-lento e, quando o passo disputa o Banco Preview, impossível de repetir à
-vontade. O que esses passos decidem depende só dos dados que chegam, então
+o que roda) só era exercitado abrindo PR e esperando o semáforo: caro e
+lento, e impossível de repetir à vontade enquanto todas as PRs disputavam um
+banco de teste só. O que esses passos decidem depende só dos dados que chegam, então
 copie o trecho do workflow ao pé da letra para um script de teste e troque
 apenas a fonte dos dados por casos fabricados. Cubra sempre os três que a
 realidade não oferece: lista vazia, campo ausente e lista truncada no
@@ -362,6 +349,13 @@ que o trecho real não foi executado.
 
 - Commits pequenos e em português.
 - Push somente da branch da tarefa.
+- **A sessão se identifica pela tarefa, e pela PR assim que ela existir.**
+  Renomeie a própria sessão para o assunto ao começar (`banco de teste por PR`)
+  e para `#<numero> <assunto curto>` logo depois de abrir a PR
+  (`#296 manual do banco por PR`). O Rodrigo acompanha várias frentes ao mesmo
+  tempo e a lista de sessões é o índice dele; sessão com nome genérico o obriga
+  a abrir uma por uma para achar a que ele quer. Vale para qualquer agente cuja
+  ferramenta permita renomear a sessão.
 - Pull request sempre draft, salvo pedido explícito em contrário.
 - Nunca fazer push direto na `main`.
 - Preencher todas as seções aplicáveis do template de PR; seção não
