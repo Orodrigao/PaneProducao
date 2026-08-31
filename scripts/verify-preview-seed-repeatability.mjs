@@ -10,6 +10,11 @@ const HISTORICAL_JC_FIRST_ID = '7fc00000-0000-4000-8000-000000000002'
 const HISTORICAL_JC_NEXT_ID = '7fc00000-0000-4000-8000-000000000003'
 const HISTORICAL_JC_FIRST_ITEM_ID = '7ec00000-0000-4000-8000-000000000002'
 const HISTORICAL_JC_FIRST_LEFTOVER_ID = '7dc00000-0000-4000-8000-000000000002'
+const SCHEDULED_PJ_ORDER_ID = '30000000-0000-4000-8000-000000000101'
+const SCHEDULED_PJ_ORDER_DELIVERY_OFFSET = 2
+const SCHEDULED_PJ_BREAD_ID = 'teste-brioche-pj'
+const SCHEDULED_PJ_REQUEST_ID = '58000000-0000-4000-8000-000000000001'
+const SCHEDULED_PJ_AUTHOR_ID = '59000000-0000-4000-8000-000000000001'
 
 const AUTH_FIXTURE_SQL = `
 do $proof$
@@ -103,6 +108,13 @@ begin
   if (select count(*) from public.romaneios where id in ('${HISTORICAL_JC_FIRST_ID}', '${HISTORICAL_JC_NEXT_ID}')) <> 2 then
     raise exception 'A prova exige o par de romaneios historicos antes da virada do dia.';
   end if;
+
+  if not exists (
+    select 1 from public.orders
+    where id = '${SCHEDULED_PJ_ORDER_ID}' and order_type = 'pj'
+  ) then
+    raise exception 'A prova exige o pedido PJ ficticio antes da virada do dia.';
+  end if;
 end
 $proof$;
 
@@ -122,6 +134,27 @@ where id = '${HISTORICAL_JC_FIRST_ID}';
 update public.romaneios
 set record_date = (now() at time zone 'America/Sao_Paulo')::date - 7
 where id = '${HISTORICAL_JC_NEXT_ID}';
+
+-- O outro lado da virada: o pedido PJ ficou com a data de ontem e a Producao
+-- ja programou essa linha para o forno. A ordem importa, porque a trava
+-- guard_scheduled_pj_order_changes so passa a proibir a alteracao depois de
+-- existir programacao; invertendo os dois comandos, a fixture nao nasce.
+update public.orders
+set order_date = order_date - 1,
+    delivery_date = delivery_date - 1,
+    pj_delivery_date = pj_delivery_date - 1
+where id = '${SCHEDULED_PJ_ORDER_ID}';
+
+insert into public.pj_production_schedules (
+  order_id, production_date, bread_id, scheduled_quantity,
+  frozen_quantity, request_id, created_by, created_by_name
+) values (
+  '${SCHEDULED_PJ_ORDER_ID}',
+  (now() at time zone 'America/Sao_Paulo')::date,
+  '${SCHEDULED_PJ_BREAD_ID}', 12, 0,
+  '${SCHEDULED_PJ_REQUEST_ID}', '${SCHEDULED_PJ_AUTHOR_ID}',
+  '[TESTE] Producao programou antes da virada'
+);
 `,
     runProcess,
   })
@@ -196,6 +229,25 @@ begin
       and quantity = 4
   ) then
     raise exception 'A sobra do historico ficticio nao foi recriada.';
+  end if;
+
+  if not exists (
+    select 1 from public.orders
+    where id = '${SCHEDULED_PJ_ORDER_ID}'
+      and order_date = (now() at time zone 'America/Sao_Paulo')::date
+      and delivery_date = (now() at time zone 'America/Sao_Paulo')::date
+        + ${SCHEDULED_PJ_ORDER_DELIVERY_OFFSET}
+      and pj_delivery_date = (now() at time zone 'America/Sao_Paulo')::date
+        + ${SCHEDULED_PJ_ORDER_DELIVERY_OFFSET}
+  ) then
+    raise exception 'O pedido PJ ja programado nao voltou para as datas de hoje.';
+  end if;
+
+  if exists (
+    select 1 from public.pj_production_schedules
+    where order_id = '${SCHEDULED_PJ_ORDER_ID}'
+  ) then
+    raise exception 'A programacao ficticia do forno sobreviveu a reaplicacao do seed.';
   end if;
 end
 $proof$;
