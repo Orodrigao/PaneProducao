@@ -213,6 +213,30 @@ select set_config('pane.pj_check_rpc', 'on', false);
 delete from public.pj_production_schedules
 where order_id::text like '30000000-0000-4000-8000-%';
 
+-- Segunda porta da mesma virada. Confirmar o envio de um pedido PJ gera
+-- cobranca, e `guard_billed_pj_order_changes` proibe alterar pedido cobrado,
+-- inclusive a data de entrega que o upsert abaixo reescreve a cada dia novo.
+-- Cancelar e o caminho que a propria mensagem do erro manda seguir, e e mais
+-- seguro do que apagar: nenhuma linha financeira desaparece e uma baixa ja
+-- registrada continua no historico ficticio. O indice
+-- `receivables_origem_viva_idx` so conta cobranca nao cancelada, entao o teste
+-- pode confirmar o envio de novo no dia seguinte.
+-- O intervalo `70000000-0000-4000-8000-` e o espaco dos grupos de pedido deste
+-- arquivo; grupo real nasce com identificador sorteado e nunca cai aqui.
+update public.receivables
+set status = 'cancelada',
+    cancelled_at = now(),
+    cancel_reason = '[TESTE] cobranca ficticia cancelada pelo seed para reaplicar o cenario'
+where origin = 'pedido_pj'
+  and status <> 'cancelada'
+  and origin_ref::text like '70000000-0000-4000-8000-%'
+  -- Cobranca que ja recebeu dinheiro NAO e cancelada aqui. A funcao oficial de
+  -- cancelamento recusa exatamente esse caso e manda estornar antes, e um seed
+  -- nao pode inventar um estado que o proprio sistema proibe. Nesse cenario o
+  -- seed para com a mensagem da trava, que e ruidoso mas honesto; estornar
+  -- recibo e lancamento e desenho proprio, fora desta correcao.
+  and private.receivable_recebido(id) = 0;
+
 insert into public.orders (
   id, store, order_type, order_group_id, customer_id, pj_client,
   bread_id, product_source, product_name,
@@ -360,6 +384,17 @@ on conflict (id) do update set
 -- protegida, inclusive para o restante deste seed.
 select set_config('pane.pj_dispatch_rpc', '', false);
 select set_config('pane.pj_check_rpc', '', false);
+
+-- Terceira porta da mesma virada, e a unica que nao passa por gatilho.
+-- `orders_store_bread_id_order_date_key` e unica em (store, bread_id,
+-- order_date) fora da PJ, e o par ficticio da JC cai bem nela: o pedido
+-- ...0004 nasce sempre alguns dias a frente e o ...0005 nasce sempre hoje.
+-- No dia seguinte, o ...0004 de ontem esta ocupando exatamente a data que o
+-- ...0005 vai pedir, e o upsert abaixo morre com chave duplicada antes de
+-- chegar no ...0004 para tira-lo dali. Apagar o ...0004 antes libera a data; a
+-- linha e recriada logo abaixo, com a data recalculada para hoje.
+delete from public.orders
+where id = '30000000-0000-4000-8000-000000000004';
 
 insert into public.orders (
   id, store, bread_id, quantity, order_date, obs,
@@ -1095,7 +1130,25 @@ select
   now()
 from test_schedule
 cross join test_admin
-on conflict (target_production_date, store, bread_id) do update set
+-- Quarta porta da mesma virada. Esta linha tem id fixo e data movel, e o
+-- conflito era tratado so pela chave (data, loja, pao). Quando o dia vira, o
+-- trio novo nao conflita com nada, o Postgres tenta INSERIR de novo o mesmo id
+-- e morre na chave primaria. Conflitar pelo id, como todo o resto deste
+-- arquivo, e o que corresponde ao que a linha realmente reaproveita.
+-- Apagar e recriar nao serve aqui: bread_leftover_events referencia o plano com
+-- "on delete restrict", entao uma sobra ja destinada no preview travaria.
+-- A linha volta inteira ao estado proposto. Sem zerar os campos de
+-- confirmacao, ela ficaria dizendo "proposto" e ao mesmo tempo guardando quem
+-- confirmou e quando, que e um estado que a tela nao sabe mostrar e que este
+-- arquivo nao deve inventar.
+on conflict (id) do update set
+  target_production_date = excluded.target_production_date,
+  store = excluded.store,
+  bread_id = excluded.bread_id,
+  confirmed_by = null,
+  confirmed_by_name = null,
+  confirmed_at = null,
+  proposed_at = now(),
   proposed_quantity = excluded.proposed_quantity,
   confirmed_quantity = excluded.confirmed_quantity,
   status = excluded.status,

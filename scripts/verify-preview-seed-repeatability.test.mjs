@@ -67,6 +67,12 @@ describe('verifyPreviewSeedRepeatability', () => {
       recuoDasDatas < criacaoDaProgramacao,
       'a data precisa recuar antes de existir programacao, senao a trava barra a propria fixture',
     )
+    const criacaoDaCobranca = viradaPj.indexOf("'pedido_pj', '70000000-0000-4000-8000-000000000001'")
+    assert.ok(criacaoDaCobranca >= 0, 'a simulacao precisa criar a cobranca do pedido PJ')
+    assert.ok(
+      recuoDasDatas < criacaoDaCobranca,
+      'a data precisa recuar antes de existir cobranca, pelo mesmo motivo da programacao',
+    )
     assert.match(runProcess.mock.calls[3].arguments[2].input, /select 42;/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /A reaplicacao perdeu o vinculo/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /historico ficticio nao foi recriado/)
@@ -74,6 +80,29 @@ describe('verifyPreviewSeedRepeatability', () => {
     assert.match(runProcess.mock.calls[4].arguments[2].input, /sobra do historico ficticio nao foi recriada/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /nao voltou para as datas de hoje/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /programacao ficticia do forno sobreviveu/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /cobranca ficticia do pedido PJ nao foi cancelada/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /pedido novo da JC nao voltou para a data de hoje/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /pedido reaproveitado da JC nao saiu da data de hoje/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /plano de reaproveitamento ficticio nao sobreviveu inteiro/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /plano de reaproveitamento nao voltou para a data-alvo de hoje/)
+    assert.match(runProcess.mock.calls[2].arguments[2].input, /update public\.bread_reuse_plans/)
+    const recuoDoPedidoNovo = viradaPj.indexOf("where id = '30000000-0000-4000-8000-000000000005'")
+    const avancoDoReaproveitado = viradaPj.indexOf("where id = '30000000-0000-4000-8000-000000000004'")
+    assert.ok(recuoDoPedidoNovo >= 0, 'a simulacao precisa recuar o pedido novo da JC')
+    assert.ok(avancoDoReaproveitado >= 0, 'a simulacao precisa por o reaproveitado na data de hoje')
+    assert.ok(
+      recuoDoPedidoNovo < avancoDoReaproveitado,
+      'o pedido novo solta a data antes, senao a propria simulacao bate na chave unica',
+    )
+    const limpeza = runProcess.mock.calls[5].arguments[2].input
+    const remocaoDaCobranca = limpeza.indexOf('delete from public.receivables')
+    const remocaoDaConta = limpeza.indexOf('delete from auth.users')
+    assert.ok(remocaoDaCobranca >= 0, 'a limpeza precisa remover a cobranca ficticia')
+    assert.ok(remocaoDaConta >= 0, 'a limpeza precisa remover a conta Auth da prova')
+    assert.ok(
+      remocaoDaCobranca < remocaoDaConta,
+      'a cobranca sai antes da conta Auth, senao a chave estrangeira trava a limpeza',
+    )
     assert.match(runProcess.mock.calls[5].arguments[2].input, /delete from auth\.users/)
     assert.match(runProcess.mock.calls[5].arguments[2].input, /A fixture Auth nao foi removida/)
   })
