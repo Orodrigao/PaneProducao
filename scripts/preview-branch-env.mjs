@@ -383,7 +383,9 @@ export async function reconstruirPreview({
     {
       token: vercelToken,
       method: 'POST',
-      body: { name: vercelProject, deploymentId: daBranch.uid, target: 'preview' },
+      // Na API de deployments, preview e o caminho sem `target`. Esse campo e
+      // reservado a production, staging ou ambiente customizado.
+      body: { name: vercelProject, deploymentId: daBranch.uid },
       fetchImpl,
     },
   )

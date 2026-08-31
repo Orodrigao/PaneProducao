@@ -279,7 +279,9 @@ describe('apontarPreviewParaRamificacao', () => {
     // preview continuaria falando com o banco errado mesmo estando verde.
     const redeploy = fetchImpl.mock.calls.at(-1)
     assert.match(redeploy.arguments[0], /v13\/deployments/)
-    assert.equal(JSON.parse(redeploy.arguments[1].body).deploymentId, 'dpl_desta_branch')
+    const corpoDoRedeploy = JSON.parse(redeploy.arguments[1].body)
+    assert.equal(corpoDoRedeploy.deploymentId, 'dpl_desta_branch')
+    assert.equal(Object.hasOwn(corpoDoRedeploy, 'target'), false)
 
     // O filtro por branch precisa acontecer no SERVIDOR. Filtrar no cliente uma
     // pagina dos deploys mais recentes do projeto inteiro confundiria "nao esta
