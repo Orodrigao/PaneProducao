@@ -108,6 +108,52 @@ jobs:
           fi
           echo "Confere: a PR $PR_INFORMADA esta na branch $BRANCH_DA_PR."
 
+      # A ponte concluia "nao ha ramificacao, logo esta PR nao mexe no banco".
+      # Sao coisas diferentes: a PR 303 alterava migration e mesmo assim ficou
+      # sem ramificacao, e a ponte a apontou para o banco compartilhado, em
+      # verde e com mensagem tranquilizadora. Quem sabe se o schema mudou e o
+      # diff da PR, nao a ausencia de uma ramificacao.
+      - name: Descobrir se esta PR altera o Supabase
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_ALVO: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          # Nao usar `gh pr diff --name-only`: ele busca o diff bruto e o GitHub
+          # recusa com HTTP 406 quando o diff passa de 20.000 LINHAS. O gatilho
+          # e linha, nao arquivo, e uma regeneracao de package-lock.json passa
+          # disso sozinha. Uma PR legitima com migration mais lockfile
+          # derrubaria a ponte inteira. Medido em PR de terceiro com 139
+          # arquivos: `gh pr diff` devolveu vazio e saiu com erro; a API de
+          # arquivos devolveu os 139.
+          if ! ARQUIVOS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_ALVO/files" --jq '.[].filename')"; then
+            echo "Nao consegui listar os arquivos da PR $PR_ALVO."
+            exit 1
+          fi
+          RECEBIDOS="$(printf '%s\n' "$ARQUIVOS" | grep -c . || true)"
+          if ! DECLARADOS="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_ALVO" --jq .changed_files)"; then
+            echo "Nao consegui ler quantos arquivos a PR $PR_ALVO declara."
+            exit 1
+          fi
+          # A API de arquivos para em 3000 e NAO avisa. Comparar o recebido com
+          # o que a propria PR declara transforma truncagem silenciosa em
+          # vermelho, que e o unico jeito de ela nao passar batida.
+          if [ "$RECEBIDOS" != "$DECLARADOS" ]; then
+            echo "A listagem veio incompleta: $RECEBIDOS arquivos recebidos contra $DECLARADOS declarados pela PR."
+            echo "Seguir com lista parcial poderia deixar passar uma alteracao em supabase/."
+            exit 1
+          fi
+          # Criterio em supabase/ inteiro, e nao so migrations, porque e assim
+          # que a plataforma decide criar ramificacao: medido na PR 292, que
+          # mexeu so em seed e testes e ganhou a sua.
+          if grep -q '^supabase/' <<<"$ARQUIVOS"; then
+            echo "Esta PR altera supabase/ ($RECEBIDOS arquivos): banco proprio passa a ser obrigatorio."
+            echo "PR_ALTERA_SUPABASE=true" >> "$GITHUB_ENV"
+          else
+            echo "Esta PR nao altera supabase/ ($RECEBIDOS arquivos)."
+            echo "PR_ALTERA_SUPABASE=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Apontar
         env:
           ACAO: apontar
