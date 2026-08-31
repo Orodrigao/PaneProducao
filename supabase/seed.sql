@@ -1384,6 +1384,22 @@ values ('teste-historico', '[TESTE] Pao com Historico', '{0,1,2,3,4,5,6}', true,
 on conflict (id) do update set
   name = excluded.name, active = excluded.active, unit = excluded.unit, days = excluded.days;
 
+-- Os identificadores abaixo pertencem exclusivamente ao historico ficticio.
+-- Como as datas avancam a cada dia, atualizar por id faria a linha de ontem
+-- tentar ocupar uma data ainda usada pela fixture seguinte. Remover primeiro
+-- evita a colisao sem tocar em romaneios ou sobras da operacao.
+delete from public.romaneio_items
+where id::text like '7ec00000-%'
+   or id::text like '7ea00000-%';
+
+delete from public.romaneios
+where id::text like '7fc00000-%'
+   or id::text like '7fa00000-%';
+
+delete from public.sobras
+where id::text like '7dc00000-%'
+   or id::text like '7da00000-%';
+
 with semanas as (
   select generate_series(1, 12) as n
 ), alvos as (
