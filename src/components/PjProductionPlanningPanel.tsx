@@ -114,7 +114,7 @@ export function PjProductionPlanningPanel() {
     setDrafts(current => {
       const next = { ...current }
       for (const item of group.items) {
-        if (item.mappingError || !item.breadId || item.lastScheduledDate === productionDate) continue
+        if (item.mappingError || !item.breadId) continue
         next[item.orderId] = {
           ...draftFor(item, current[item.orderId]),
           selected: true,
@@ -131,7 +131,6 @@ export function PjProductionPlanningPanel() {
 
     const selected = group.items.filter(item =>
       drafts[item.orderId]?.selected
-      && item.lastScheduledDate !== productionDate
       && !item.mappingError
       && Boolean(item.breadId))
     if (selected.length === 0) {
