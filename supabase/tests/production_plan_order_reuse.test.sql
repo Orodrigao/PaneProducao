@@ -61,14 +61,31 @@ values (
   'Planejamento Admin'
 );
 
--- O seed traz 5 baguetes congeladas. Este cenario precisa de mais 3 para
--- provar a composicao de 8 congeladas sem violar o saldo fisico compartilhado.
+-- Pao, congelado e estoque exclusivos deste teste. Antes o cenario emprestava a
+-- baguete do seed e somava 3 unidades as 5 dele. Isso quebrou quando a trava de
+-- saldo congelado passou a somar as reservas de TODOS os planejamentos com data
+-- a partir de hoje: o planejamento semeado ja reservava 5 daquela baguete, e a
+-- reserva de 8 deste teste estourava o estoque. A colisao so aparecia no banco
+-- compartilhado, porque o planejamento do seed so nasce quando existem contas
+-- no Auth, e o ensaio das PRs roda sem elas. Teste dono da propria fixture nao
+-- disputa saldo com ninguem.
+insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
+values ('teste-baguete-reuse', '[TESTE] Baguete Reaproveitamento',
+  '{0,1,2,3,4,5,6}', true, 'un', false, false);
+
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit, active, store, visible_stores
+) values (
+  '74400000-0000-4000-8000-000000000001', 'teste-baguete-reuse', 'bread',
+  '[TESTE] Baguete Reaproveitamento', 'un', true, 'jc', array['jc']::text[]
+);
+
 insert into public.frozen_stock (id, frozen_product_id, location, quantity)
 values (
   '74300000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000001',
+  '74400000-0000-4000-8000-000000000001',
   'jc-freezer-reuse-test',
-  3
+  8
 );
 
 insert into public.production_plan_items (
@@ -78,7 +95,7 @@ insert into public.production_plan_items (
 values (
   '74100000-0000-4000-8000-000000000001',
   '74000000-0000-4000-8000-000000000001',
-  'jc', 'teste-baguete', 10, 8, 2, null
+  'jc', 'teste-baguete-reuse', 10, 8, 2, null
 );
 
 insert into public.sobras (
@@ -89,7 +106,7 @@ insert into public.sobras (
 values (
   '74200000-0000-4000-8000-000000000001',
   private.data_na_padaria() + 2,
-  'Teste sobras', 'teste-baguete', 2, 'Teste reaproveitamento',
+  'Teste sobras', 'teste-baguete-reuse', 2, 'Teste reaproveitamento',
   'bread', 'jc', 'L' || to_char(private.data_na_padaria() + 2, 'MMDD'), 2, 'pending',
   'mesa_separacao', 'not_required'
 );
@@ -113,7 +130,7 @@ select ok(
   not exists (
     select 1 from public.orders
     where store = 'jc' and order_date = private.data_na_padaria() + 61
-      and bread_id = 'teste-baguete' and order_type = 'producao'
+      and bread_id = 'teste-baguete-reuse' and order_type = 'producao'
   ),
   'Importacao nao deixa pedido residual inexistente como linha fantasma'
 );
@@ -121,7 +138,7 @@ select ok(
 select is(
   (select proposed_quantity from public.bread_reuse_plans
    where target_production_date = private.data_na_padaria() + 61
-     and store = 'jc' and bread_id = 'teste-baguete'),
+     and store = 'jc' and bread_id = 'teste-baguete-reuse'),
   2,
   'Importacao salva a proposta mesmo sem pedido novo'
 );
@@ -136,7 +153,7 @@ select is(
   (select (public.confirm_bread_reuse_plan(
     (select id from public.bread_reuse_plans
      where target_production_date = private.data_na_padaria() + 61
-       and store = 'jc' and bread_id = 'teste-baguete'),
+       and store = 'jc' and bread_id = 'teste-baguete-reuse'),
     1
   )->>'confirmed_quantity')::integer),
   1,
@@ -146,7 +163,7 @@ select is(
 select is(
   (select quantity from public.orders
    where store = 'jc' and order_date = private.data_na_padaria() + 61
-     and bread_id = 'teste-baguete' and order_type = 'producao'),
+     and bread_id = 'teste-baguete-reuse' and order_type = 'producao'),
   1::numeric,
   'Confirmacao parcial cria a producao nova residual'
 );
@@ -155,7 +172,7 @@ select is(
   (select (public.confirm_bread_reuse_plan(
     (select id from public.bread_reuse_plans
      where target_production_date = private.data_na_padaria() + 61
-       and store = 'jc' and bread_id = 'teste-baguete'),
+       and store = 'jc' and bread_id = 'teste-baguete-reuse'),
     2
   )->>'confirmed_quantity')::integer),
   2,
@@ -166,7 +183,7 @@ select ok(
   not exists (
     select 1 from public.orders
     where store = 'jc' and order_date = private.data_na_padaria() + 61
-      and bread_id = 'teste-baguete' and order_type = 'producao'
+      and bread_id = 'teste-baguete-reuse' and order_type = 'producao'
   ),
   'Quando a sobra cobre o restante, o pedido residual e removido'
 );

@@ -77,8 +77,13 @@ insert into public.frozen_products (
 insert into public.frozen_stock (id, frozen_product_id, location, quantity)
 values ('97000000-0000-4000-8000-0000000000f2', '97000000-0000-4000-8000-0000000000f1', 'jc-freezer', 40);
 
+-- A data fica bem longe de propósito. O cenário do preview semeia um
+-- planejamento cuja data e calculada pelo dia da semana, e ela cai em hoje+1 na
+-- maioria dos dias. Com "um planejamento por data", hoje+1 aqui fazia este teste
+-- falhar em cinco dias da semana e passar nos outros dois, so quando existem
+-- contas no Auth. O que o teste precisa e apenas de uma data futura.
 insert into public.production_plans (id, production_date, status, created_by, created_by_name)
-values ('97000000-0000-4000-8000-0000000000b1', private.data_na_padaria() + 1, 'rascunho',
+values ('97000000-0000-4000-8000-0000000000b1', private.data_na_padaria() + 62, 'rascunho',
   '97000000-0000-4000-8000-000000000003', 'Admin Teste');
 insert into public.production_plan_items (
   id, plan_id, store, bread_id, planned_quantity, frozen_quantity, leftover_proposed_quantity

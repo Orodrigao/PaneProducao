@@ -83,6 +83,31 @@ select
   'Teste composicao'
 ;
 
+-- Pao, congelado e estoque exclusivos deste teste. Antes ele reservava 5
+-- congeladas da baguete do seed, e a trava de saldo passou a somar as reservas
+-- de TODOS os planejamentos com data a partir de hoje. O planejamento semeado ja
+-- reservava as mesmas 5, entao o total estourava o estoque. A colisao so
+-- aparecia no banco compartilhado, porque o planejamento do seed so nasce
+-- quando existem contas no Auth, e o ensaio das PRs roda sem elas.
+insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
+values ('teste-baguete-composicao', '[TESTE] Baguete Composicao',
+  '{0,1,2,3,4,5,6}', true, 'un', false, false);
+
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit, active, store, visible_stores
+) values (
+  '73000000-0000-4000-8000-000000000001', 'teste-baguete-composicao', 'bread',
+  '[TESTE] Baguete Composicao', 'un', true, 'jc', array['jc']::text[]
+);
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity)
+values (
+  '73000000-0000-4000-8000-000000000002',
+  '73000000-0000-4000-8000-000000000001',
+  'jc-freezer-composicao-test',
+  5
+);
+
 insert into public.production_plan_items (
   id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
   leftover_proposed_quantity, leftover_confirmed_quantity
@@ -91,7 +116,7 @@ values (
   '71000000-0000-4000-8000-000000000001',
   '70000000-0000-4000-8000-000000000001',
   'jc',
-  'teste-baguete',
+  'teste-baguete-composicao',
   10,
   5,
   2,
@@ -106,7 +131,7 @@ select
   '72000000-0000-4000-8000-000000000001',
   private.data_na_padaria() + 60,
   'jc',
-  'teste-baguete',
+  'teste-baguete-composicao',
   2,
   2,
   'confirmed',
@@ -122,22 +147,22 @@ select set_config(
 );
 
 select is(
-  (select planned_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select planned_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete-composicao'),
   10::numeric,
   'Expedicao recebe o total planejado'
 );
 select is(
-  (select frozen_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select frozen_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete-composicao'),
   5::numeric,
   'Expedicao recebe a quantidade congelada'
 );
 select is(
-  (select leftover_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select leftover_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete-composicao'),
   2::numeric,
   'Expedicao recebe a sobra confirmada'
 );
 select is(
-  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete-composicao'),
   3::numeric,
   'Expedicao recebe a producao nova residual'
 );
@@ -167,7 +192,7 @@ select set_config(
   true
 );
 select is(
-  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete'),
+  (select new_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc') where bread_id = 'teste-baguete-composicao'),
   3::numeric,
   'Admin tambem recebe a composicao residual'
 );
