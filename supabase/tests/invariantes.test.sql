@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(123);
+select plan(124);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 46,
@@ -514,6 +514,40 @@ select is(
      and lote.pending_quantity + destinos.liquido <> lote.quantity),
   0,
   'lote de sobra com historico fecha: pendente + destinos liquidos = quantidade');
+
+-- Conversao de compra: insumo de receita comprado por unidade nao pode
+-- converter 1 para 1 quando a nota declara o peso da embalagem.
+--
+-- Foi assim que a farinha passou a custar R$ 74,00 o quilo: a nota diz
+-- "25KG PAPEL", 48 sacos, e o vinculo foi gravado com fator 1, entao o sistema
+-- dividiu por 48 em vez de por 1200. Como a farinha esta em 23 das 31 fichas,
+-- um vinculo errado envenena quase todo o CMV do pao.
+--
+-- A regra vale so para insumo USADO EM FICHA, de proposito. Existem vinculos
+-- com o mesmo defeito fora de receita; eles sujam o historico de compras e nao
+-- mexem no custo do pao, e ficam para uma correcao propria.
+--
+-- Fator 1 continua legitimo quando a embalagem pesa mesmo 1 kg, que e o caso
+-- da linguica de 1KG. Por isso a comparacao e com o peso declarado, e nao
+-- "fator 1 e sempre erro".
+--
+-- No banco descartavel isto passa por vacuidade: nao ha vinculos la. Em
+-- producao a regra e verdadeira depois da migration da farinha.
+select is(
+  (select count(*)::int
+     from public.payable_product_mappings vinculo
+     join public.products insumo on insumo.id = vinculo.base_product_id
+    where vinculo.active
+      and lower(insumo.unit) = 'kg'
+      and upper(vinculo.purchase_unit) not in ('KG', 'G', 'L', 'ML')
+      and exists (select 1 from public.product_components pc
+                   where pc.component_id = insumo.id::text)
+      and vinculo.supplier_description ~* '[0-9]\s*KG'
+      and vinculo.conversion_factor
+          is distinct from replace((regexp_match(upper(vinculo.supplier_description),
+                                                 '([0-9]+(?:[.,][0-9]+)?)\s*KG'))[1], ',', '.')::numeric),
+  0,
+  'insumo de receita comprado por unidade converte pelo peso declarado na nota');
 
 select * from finish();
 rollback;
