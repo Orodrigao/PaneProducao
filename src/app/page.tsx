@@ -1313,6 +1313,12 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
             <div className="stat-row">
               {stores.map(s=><div key={s} className="stat-card"><div className="lbl">{s.toUpperCase()}</div><div className="val">{tots[s]}</div></div>)}
             </div>
+            {/* O Forno e o Relatorio respondem perguntas diferentes e nada na tela dizia
+                isso. Quem planeja olhando so este numero subestima, porque a producao PJ
+                pode ser maior que a das lojas somadas. */}
+            <div style={{marginTop:'.75rem',padding:'.6rem .75rem',border:'1px solid var(--border)',borderRadius:8,fontSize:13,color:'var(--text-muted)'}}>
+              Este relatório conta <strong>só os pedidos das lojas</strong>. A produção PJ é programada à parte e não entra nestes números. O total do que vai ao forno está na tela <strong>Forno</strong>.
+            </div>
             {grand===0 ? <div style={{color:'var(--text-muted)',fontSize:13}}>Nenhum pedido nesta data.</div> : <>
               <div className="section-label">Pedidos de {dateLabel(reportDate)}</div>
               <table className="report-table">

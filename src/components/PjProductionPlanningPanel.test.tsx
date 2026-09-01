@@ -23,7 +23,25 @@ describe('painel de programação PJ', () => {
 
   it('pede uma conferência explícita antes de tornar a programação definitiva', () => {
     expect(source).toContain('Confira a programação de hoje')
-    expect(source).toContain('esta programação não poderá ser alterada hoje')
+    expect(source).toContain('não dá para desfazer o que entrou')
     expect(source).toContain('window.confirm')
+  })
+
+  it('não trava a linha depois de programada hoje, porque a Geolar pode produzir mais', () => {
+    // O banco ja limita pelo total do pedido, e a fila so traz linha com
+    // quantidade pendente. Travar na tela era mais duro que a regra do negocio e
+    // empurrava producao para o dia seguinte sem necessidade.
+    expect(source).toContain('const blocked = Boolean(item.mappingError || !item.breadId)')
+    expect(source).not.toContain('|| scheduledToday)')
+    expect(source).toContain('Dá para programar mais, até o que falta')
+  })
+
+  it('deixa salvar sempre que houver linha marcada, mesmo ja programada hoje', () => {
+    expect(source).toContain('!group.items.some(item => drafts[item.orderId]?.selected)')
+    expect(source).not.toContain("item.lastScheduledDate !== productionDate)}")
+  })
+
+  it('diz de onde vem o congelado oferecido, sem deixar o número solto', () => {
+    expect(source).toContain("formatPjProductionQuantity(item.frozenAvailable, 'un')} em estoque")
   })
 })
