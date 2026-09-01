@@ -44,6 +44,18 @@ const RAMIFICACAO_MAIN = {
 
 const alvo = { prNumber: 285, gitBranch: BRANCH }
 
+// Ramificacoes de outras PRs, para o cenario de cota cheia.
+const RAMIFICACAO_DE_OUTRA = {
+  ...RAMIFICACAO_DA_PR,
+  id: 'outra-1', name: 'fix/outra', project_ref: 'aaaaaaaaaaaaaaaaaaaa',
+  git_branch: 'fix/outra', pr_number: 900,
+}
+const RAMIFICACAO_DA_PR_ALHEIA = {
+  ...RAMIFICACAO_DA_PR,
+  id: 'outra-2', name: 'fix/mais-outra', project_ref: 'bbbbbbbbbbbbbbbbbbbb',
+  git_branch: 'fix/mais-outra', pr_number: 901,
+}
+
 describe('escolherRamificacao', () => {
   it('acha a ramificacao pelo numero da PR', () => {
     const escolha = escolherRamificacao([RAMIFICACAO_MAIN, RAMIFICACAO_DA_PR], alvo)
@@ -644,6 +656,148 @@ describe('conferencia da branch no disparo manual', () => {
     assert.ok(
       workflow.includes('pull-requests: read'),
       'Sem permissao de leitura de PR a conferencia nao consegue rodar.',
+    )
+  })
+})
+
+// A ponte concluia "nao achei ramificacao, logo esta PR nao mexe no banco".
+// Sao coisas diferentes, e a PR 303 provou: ela alterava migration, ficou sem
+// ramificacao, e a ponte a apontou para o banco compartilhado em VERDE, com a
+// mensagem "o normal para quem nao mexe em migration". Schema novo testado
+// contra schema velho e exatamente a mentira que esta ponte existe para matar.
+//
+// Quem sabe se o schema mudou e o diff da PR. O workflow decide por esta regra,
+// transcrita ao pe da letra:
+const REGRA_DA_DETECCAO = "grep -q '^supabase/' <<<\"$ARQUIVOS\""
+const REGRA_DA_TRUNCAGEM = 'if [ "$RECEBIDOS" != "$DECLARADOS" ]; then'
+
+const alteraSupabase = (arquivos) =>
+  arquivos.some((caminho) => caminho.startsWith('supabase/'))
+
+// A API de arquivos para em 3000 e nao avisa. So a comparacao com o numero
+// que a propria PR declara transforma truncagem silenciosa em vermelho.
+const listaConfere = (recebidos, declarados) => recebidos === declarados
+
+describe('PR que altera supabase/ exige banco proprio', () => {
+  it('reconhece qualquer arquivo de supabase/ e ignora vizinhos parecidos', () => {
+    assert.equal(alteraSupabase(['supabase/migrations/20260831_x.sql']), true)
+    assert.equal(alteraSupabase(['src/app/page.tsx', 'supabase/migrations/a.sql']), true)
+
+    // Seed e teste de banco TAMBEM contam, porque e assim que a plataforma
+    // decide: medido na PR 292, que mexeu so nesses dois e ganhou ramificacao.
+    // Exigir menos do que ela cria deixa PR com banco proprio sem conferencia.
+    assert.equal(alteraSupabase(['supabase/tests/invariantes.test.sql']), true)
+    assert.equal(alteraSupabase(['supabase/seed.sql']), true)
+
+    // Nome parecido em outro lugar da arvore nao conta.
+    assert.equal(alteraSupabase(['docs/migrations/leia.md']), false)
+    assert.equal(alteraSupabase(['src/lib/supabase/cliente.ts']), false)
+    assert.equal(alteraSupabase([]), false)
+  })
+
+  it('falha fechado quando a PR mexe em supabase/ e nenhum banco aparece', async () => {
+    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN]))
+
+    await assert.rejects(apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraSupabase: true,
+      esperarRamificacaoSegundos: 0,
+      dormir: async () => {},
+      fetchImpl,
+      registrar: () => {},
+    }), /altera supabase\/ e nenhum banco proprio apareceu/i)
+  })
+
+  it('espera a ramificacao nascer antes de desistir', async () => {
+    // A ramificacao nasce em paralelo com o workflow, entao a primeira consulta
+    // pode ser cedo demais. Desistir na primeira seria trocar uma corrida
+    // perdida por um vermelho injusto.
+    const respostas = [
+      resposta([RAMIFICACAO_MAIN]),
+      resposta([RAMIFICACAO_MAIN]),
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
+      resposta({}),
+      resposta({}),
+      resposta({ deployments: [{ uid: 'dpl_desta_branch' }] }),
+      resposta({ id: 'dpl_novo' }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+    let esperas = 0
+
+    const resultado = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraSupabase: true,
+      dormir: async () => { esperas += 1 },
+      fetchImpl,
+      registrar: () => {},
+    })
+
+    assert.equal(resultado.situacao, 'apontado')
+    assert.equal(esperas, 2)
+    assert.equal(respostas.length, 0)
+  })
+
+  it('PR que nao toca supabase/ segue no compartilhado, sem esperar', async () => {
+    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN]))
+
+    const resultado = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraSupabase: false,
+      fetchImpl,
+      registrar: () => {},
+    })
+
+    assert.equal(resultado.situacao, 'sem-ramificacao')
+    assert.equal(fetchImpl.mock.callCount(), 1)
+  })
+
+  // O terceiro caso que a realidade nao oferece: a lista truncada. A API de
+  // arquivos para em 3000 e devolve sucesso, entao sem esta conferencia uma PR
+  // gigante com a migration no fim passaria batida e o defeito voltaria calado.
+  it('recusa listagem de arquivos incompleta', () => {
+    assert.equal(listaConfere(139, 139), true)
+    assert.equal(listaConfere(3000, 3412), false)
+    assert.equal(listaConfere(0, 2), false)
+    assert.equal(listaConfere(0, 0), true)
+  })
+
+  it('quando desiste, a mensagem nomeia a cota de ramificacoes', async () => {
+    // Cota cheia reprova TODA PR de supabase, por motivo que nao e da PR. O
+    // comportamento e o certo; a mensagem precisa dizer onde olhar, senao o
+    // proximo depura a PR errada.
+    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN, RAMIFICACAO_DE_OUTRA, RAMIFICACAO_DA_PR_ALHEIA]))
+
+    await assert.rejects(apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      prAlteraSupabase: true,
+      esperarRamificacaoSegundos: 0,
+      dormir: async () => {},
+      fetchImpl,
+      registrar: () => {},
+    }), /3 ramificacao\(oes\) no projeto; se a cota estiver cheia/i)
+  })
+
+  it('a regra acima continua igual ao workflow de verdade', () => {
+    const workflow = readFileSync(
+      new URL('../.github/workflows/banco-por-pr.yml', import.meta.url),
+      'utf8',
+    )
+    assert.ok(
+      workflow.includes(REGRA_DA_TRUNCAGEM),
+      'A conferencia de listagem truncada saiu do workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes(REGRA_DA_DETECCAO),
+      'A deteccao de migration mudou no workflow e este teste ficou para tras.',
+    )
+    assert.ok(
+      workflow.includes('PR_ALTERA_SUPABASE=true') && workflow.includes('PR_ALTERA_SUPABASE=false'),
+      'O workflow parou de informar ao script se a PR altera supabase/.',
     )
   })
 })

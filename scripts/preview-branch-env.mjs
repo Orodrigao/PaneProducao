@@ -224,6 +224,15 @@ export async function apontarPreviewParaRamificacao({
   vercelToken,
   vercelProject,
   vercelTeamId,
+  // Se a PR altera qualquer coisa em supabase/, a plataforma cria ramificacao
+  // para ela (medido: a PR 292 mexeu so em seed e testes e ganhou a sua). Entao
+  // a ausencia de ramificacao deixa de ser caminho normal e vira erro: seguir
+  // apontaria uma PR de schema, ou de seed, para o banco compartilhado, que e a
+  // mentira que esta ponte existe para acabar.
+  prAlteraSupabase = false,
+  // Espera propria para a ramificacao nascer, separada da espera para ela ficar
+  // pronta. Sao momentos diferentes e o pior caso e a soma das duas.
+  esperarRamificacaoSegundos = 300,
   esperarSegundos = 300,
   // Espera propria: o banco nascer no Supabase e o preview aparecer na Vercel
   // sao duas demoras diferentes, com causas diferentes.
@@ -253,18 +262,46 @@ export async function apontarPreviewParaRamificacao({
   // em algo investigavel em vez de uma suposicao silenciosa.
   registrar(`O Supabase devolveu ${primeiraLista?.length ?? 0} ramificacao(oes).`)
 
+  // "Nao achei" nao e "nao existe". A ramificacao nasce em paralelo com este
+  // workflow, entao a primeira consulta pode ser cedo demais. Para PR que
+  // altera migration a gente espera antes de desistir; para as outras nao ha o
+  // que esperar, porque ramificacao nem deveria nascer.
+  const limiteRamificacao = Date.now() + esperarRamificacaoSegundos * 1000
+  let ultimoTotal = primeiraLista?.length ?? 0
   let escolha = escolherRamificacao(primeiraLista, { prNumber, gitBranch })
+
+  while (escolha.situacao === 'sem-ramificacao' && prAlteraSupabase) {
+    if (Date.now() >= limiteRamificacao) {
+      throw new Error(
+        `Esta PR altera supabase/ e nenhum banco proprio apareceu em ${esperarRamificacaoSegundos}s. `
+        // A cota de ramificacoes do projeto e pequena e compartilhada. Quando
+        // ela enche, nenhuma nova nasce ate uma PR fechar, e o vermelho aqui
+        // nao e defeito DESTA PR. Nomear a suspeita evita depurar a PR errada.
+        + `O Supabase listou ${ultimoTotal} ramificacao(oes) no projeto; se a cota estiver cheia, `
+        + 'nenhuma nova nasce ate outra PR ser fechada. '
+        + 'Seguir apontaria o preview para o Banco Preview compartilhado, que tem o schema ANTIGO, '
+        + 'e o teste sairia verde contra o banco errado. Confira o check "Supabase Preview" desta PR '
+        + 'e as ramificacoes abertas no painel, e rode este workflow de novo.',
+      )
+    }
+    registrar('PR que altera supabase/ e ainda sem banco proprio; esperando a ramificacao nascer.')
+    await dormir(intervaloSegundos * 1000)
+    const lista = await listar()
+    ultimoTotal = lista?.length ?? 0
+    escolha = escolherRamificacao(lista, { prNumber, gitBranch })
+  }
+
   if (escolha.situacao === 'sem-ramificacao') {
     registrar(
-      'Esta PR nao tem banco proprio, o que e o normal para quem nao mexe em migration. '
+      'Esta PR nao altera supabase/ e nao tem banco proprio, que e o esperado. '
       + 'O preview segue no Banco Preview compartilhado, que espelha a main.',
     )
     return { situacao: 'sem-ramificacao' }
   }
 
-  const limite = Date.now() + esperarSegundos * 1000
+  const limitePronta = Date.now() + esperarSegundos * 1000
   while (!ramificacaoEstaPronta(escolha.ramificacao)) {
-    if (Date.now() >= limite) {
+    if (Date.now() >= limitePronta) {
       throw new Error(
         `O banco desta PR nao ficou pronto em ${esperarSegundos}s `
         + `(estado ${escolha.ramificacao.status}/${escolha.ramificacao.preview_project_status}).`,
@@ -464,6 +501,7 @@ async function main() {
     ...comum,
     prNumber: process.env.PR_NUMBER,
     supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
+    prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
   })
 }
 
