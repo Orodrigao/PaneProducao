@@ -194,6 +194,49 @@ select set_config('pane.pj_dispatch_rpc', 'on', false);
 -- precisa semear o cenario de conferencia parcial. A chave fecha logo abaixo.
 select set_config('pane.pj_check_rpc', 'on', false);
 
+-- Quem testa o preview pode ter programado qualquer uma dessas linhas para o
+-- forno. A trava `guard_scheduled_pj_order_changes` proibe alterar pedido PJ ja
+-- programado, e o upsert abaixo reescreve as datas sempre que o dia vira: sem
+-- limpar a programacao ficticia antes, reaplicar o seed no dia seguinte para
+-- com "Pedido que ja entrou na producao nao pode mais ser alterado" e o banco
+-- da PR fica sem contas e sem cenario. Apagar a programacao devolve o pedido ao
+-- estado nao programado, que e o ponto de partida do teste, e libera a reserva
+-- de congelado, que e somada a partir destas linhas.
+-- Isto NAO e um reset financeiro: producao ja confirmada continua registrada em
+-- production_actuals e bread_movements, que sao agregados por pao e data e nao
+-- tem vinculo com a linha apagada. E o pedido que ja virou cobranca continua
+-- barrado por `guard_billed_pj_order_changes`, que e outra porta e pede outra
+-- limpeza.
+-- O intervalo `30000000-0000-4000-8000-` e o espaco de identificadores dos
+-- pedidos deste arquivo; pedido real nasce com identificador sorteado e nunca
+-- cai aqui.
+delete from public.pj_production_schedules
+where order_id::text like '30000000-0000-4000-8000-%';
+
+-- Segunda porta da mesma virada. Confirmar o envio de um pedido PJ gera
+-- cobranca, e `guard_billed_pj_order_changes` proibe alterar pedido cobrado,
+-- inclusive a data de entrega que o upsert abaixo reescreve a cada dia novo.
+-- Cancelar e o caminho que a propria mensagem do erro manda seguir, e e mais
+-- seguro do que apagar: nenhuma linha financeira desaparece e uma baixa ja
+-- registrada continua no historico ficticio. O indice
+-- `receivables_origem_viva_idx` so conta cobranca nao cancelada, entao o teste
+-- pode confirmar o envio de novo no dia seguinte.
+-- O intervalo `70000000-0000-4000-8000-` e o espaco dos grupos de pedido deste
+-- arquivo; grupo real nasce com identificador sorteado e nunca cai aqui.
+update public.receivables
+set status = 'cancelada',
+    cancelled_at = now(),
+    cancel_reason = '[TESTE] cobranca ficticia cancelada pelo seed para reaplicar o cenario'
+where origin = 'pedido_pj'
+  and status <> 'cancelada'
+  and origin_ref::text like '70000000-0000-4000-8000-%'
+  -- Cobranca que ja recebeu dinheiro NAO e cancelada aqui. A funcao oficial de
+  -- cancelamento recusa exatamente esse caso e manda estornar antes, e um seed
+  -- nao pode inventar um estado que o proprio sistema proibe. Nesse cenario o
+  -- seed para com a mensagem da trava, que e ruidoso mas honesto; estornar
+  -- recibo e lancamento e desenho proprio, fora desta correcao.
+  and private.receivable_recebido(id) = 0;
+
 insert into public.orders (
   id, store, order_type, order_group_id, customer_id, pj_client,
   bread_id, product_source, product_name,
@@ -214,7 +257,7 @@ values
    252, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
-   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
    '[TESTE] pedido com pacote de 12 para conferir o valor do relatorio', false,
    null, null, null, null, null, null,
@@ -227,7 +270,7 @@ values
    4.5, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
-   (now() at time zone 'America/Sao_Paulo')::date + 1,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 2,
    '[TESTE] pedido por quilo, sem pacote', false,
    null, null, null, null, null, null,
@@ -258,7 +301,7 @@ values
    60, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date - 2,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
-   (now() at time zone 'America/Sao_Paulo')::date - 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date - 1,
    '[TESTE] entregue, mas o cliente nao tem prazo combinado', false,
    null, null, null, null, null, null,
@@ -290,7 +333,7 @@ values
    3, 89.00, 1, 'kg',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
-   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    '[TESTE] conferencia pela metade: esta linha ja foi conferida', false,
    null, null, null, null, null, null,
@@ -302,7 +345,7 @@ values
    48, 1.60, 12, 'un',
    (now() at time zone 'America/Sao_Paulo')::date,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
-   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   null,
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    '[TESTE] esta linha ainda NAO foi conferida, e e ela que segura o envio', false,
    null, null, null, null, null, null,
@@ -341,6 +384,17 @@ on conflict (id) do update set
 -- protegida, inclusive para o restante deste seed.
 select set_config('pane.pj_dispatch_rpc', '', false);
 select set_config('pane.pj_check_rpc', '', false);
+
+-- Terceira porta da mesma virada, e a unica que nao passa por gatilho.
+-- `orders_store_bread_id_order_date_key` e unica em (store, bread_id,
+-- order_date) fora da PJ, e o par ficticio da JC cai bem nela: o pedido
+-- ...0004 nasce sempre alguns dias a frente e o ...0005 nasce sempre hoje.
+-- No dia seguinte, o ...0004 de ontem esta ocupando exatamente a data que o
+-- ...0005 vai pedir, e o upsert abaixo morre com chave duplicada antes de
+-- chegar no ...0004 para tira-lo dali. Apagar o ...0004 antes libera a data; a
+-- linha e recriada logo abaixo, com a data recalculada para hoje.
+delete from public.orders
+where id = '30000000-0000-4000-8000-000000000004';
 
 insert into public.orders (
   id, store, bread_id, quantity, order_date, obs,
@@ -715,6 +769,46 @@ on conflict (id) do update set
   quantity = excluded.quantity,
   updated_at = excluded.updated_at;
 
+-- Saldo ficticio para Geolar testar o uso manual de congelado em um pedido PJ.
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit,
+  min_stock, active, store, visible_stores
+)
+values (
+  '50000000-0000-4000-8000-000000000003',
+  'teste-brioche-pj',
+  'bread',
+  '[TESTE] Brioche PJ',
+  'un',
+  0,
+  true,
+  'jc',
+  array['jc']::text[]
+)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit = excluded.unit,
+  min_stock = excluded.min_stock,
+  active = excluded.active,
+  store = excluded.store,
+  visible_stores = excluded.visible_stores;
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity, updated_at)
+values (
+  '51000000-0000-4000-8000-000000000003',
+  '50000000-0000-4000-8000-000000000003',
+  'jc-freezer',
+  30,
+  now()
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  quantity = excluded.quantity,
+  updated_at = excluded.updated_at;
+
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit,
   min_stock, active, store, visible_stores
@@ -916,7 +1010,8 @@ select
   now()
 from test_schedule
 cross join test_admin
-on conflict (production_date) do update set
+on conflict (id) do update set
+  production_date = excluded.production_date,
   status = excluded.status,
   created_by = excluded.created_by,
   created_by_name = excluded.created_by_name,
@@ -963,7 +1058,8 @@ values (
   'Rodrigo Teste',
   now()
 )
-on conflict (production_date) do update set
+on conflict (id) do update set
+  production_date = excluded.production_date,
   status = excluded.status,
   created_by = excluded.created_by,
   created_by_name = excluded.created_by_name,
@@ -1034,7 +1130,25 @@ select
   now()
 from test_schedule
 cross join test_admin
-on conflict (target_production_date, store, bread_id) do update set
+-- Quarta porta da mesma virada. Esta linha tem id fixo e data movel, e o
+-- conflito era tratado so pela chave (data, loja, pao). Quando o dia vira, o
+-- trio novo nao conflita com nada, o Postgres tenta INSERIR de novo o mesmo id
+-- e morre na chave primaria. Conflitar pelo id, como todo o resto deste
+-- arquivo, e o que corresponde ao que a linha realmente reaproveita.
+-- Apagar e recriar nao serve aqui: bread_leftover_events referencia o plano com
+-- "on delete restrict", entao uma sobra ja destinada no preview travaria.
+-- A linha volta inteira ao estado proposto. Sem zerar os campos de
+-- confirmacao, ela ficaria dizendo "proposto" e ao mesmo tempo guardando quem
+-- confirmou e quando, que e um estado que a tela nao sabe mostrar e que este
+-- arquivo nao deve inventar.
+on conflict (id) do update set
+  target_production_date = excluded.target_production_date,
+  store = excluded.store,
+  bread_id = excluded.bread_id,
+  confirmed_by = null,
+  confirmed_by_name = null,
+  confirmed_at = null,
+  proposed_at = now(),
   proposed_quantity = excluded.proposed_quantity,
   confirmed_quantity = excluded.confirmed_quantity,
   status = excluded.status,
@@ -1341,6 +1455,22 @@ insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
 values ('teste-historico', '[TESTE] Pao com Historico', '{0,1,2,3,4,5,6}', true, 'un', false, false)
 on conflict (id) do update set
   name = excluded.name, active = excluded.active, unit = excluded.unit, days = excluded.days;
+
+-- Os identificadores abaixo pertencem exclusivamente ao historico ficticio.
+-- Como as datas avancam a cada dia, atualizar por id faria a linha de ontem
+-- tentar ocupar uma data ainda usada pela fixture seguinte. Remover primeiro
+-- evita a colisao sem tocar em romaneios ou sobras da operacao.
+delete from public.romaneio_items
+where id::text like '7ec00000-%'
+   or id::text like '7ea00000-%';
+
+delete from public.romaneios
+where id::text like '7fc00000-%'
+   or id::text like '7fa00000-%';
+
+delete from public.sobras
+where id::text like '7dc00000-%'
+   or id::text like '7da00000-%';
 
 with semanas as (
   select generate_series(1, 12) as n

@@ -46,18 +46,25 @@ export function aggregateOvenPlan(rows: OvenPlanRow[]): Map<string, number> {
   return result
 }
 
-export function parseOvenQuantity(value: string): number | null {
-  if (!/^\d+$/.test(value.trim())) return null
-  const quantity = Number(value)
-  return Number.isSafeInteger(quantity) && quantity >= 0 ? quantity : null
+export function parseOvenQuantity(value: string, unit: string = 'un'): number | null {
+  const normalized = value.trim().replace(',', '.')
+  if (!/^\d+(?:\.\d{1,3})?$/.test(normalized)) return null
+  const quantity = Number(normalized)
+  if (!Number.isFinite(quantity) || quantity < 0 || quantity > 1_000_000) return null
+  if (unit !== 'kg' && !Number.isSafeInteger(quantity)) return null
+  return quantity
 }
 
-export function validateOvenConfirmation(input: OvenConfirmationInput): string | null {
-  const quantityGood = parseOvenQuantity(input.quantityGood)
-  const quantityLoss = parseOvenQuantity(input.quantityLoss)
+export function validateOvenConfirmation(input: OvenConfirmationInput, unit: string = 'un'): string | null {
+  const quantityGood = parseOvenQuantity(input.quantityGood, unit)
+  const quantityLoss = parseOvenQuantity(input.quantityLoss, unit)
 
-  if (quantityGood === null) return 'Informe a saída boa em unidades inteiras.'
-  if (quantityLoss === null) return 'Informe a perda em unidades inteiras.'
+  if (quantityGood === null) return unit === 'kg'
+    ? 'Informe a saída boa com até 3 casas decimais.'
+    : 'Informe a saída boa em unidades inteiras.'
+  if (quantityLoss === null) return unit === 'kg'
+    ? 'Informe a perda com até 3 casas decimais.'
+    : 'Informe a perda em unidades inteiras.'
   if (quantityLoss > 0 && !OVEN_LOSS_REASONS.includes(input.lossReason as OvenLossReason)) {
     return 'Escolha o motivo da perda.'
   }

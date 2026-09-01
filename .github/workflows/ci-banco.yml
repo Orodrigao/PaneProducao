@@ -11,6 +11,9 @@ on:
       - "supabase/tests/**"
       - "supabase/seed.sql"
       - "supabase/config.toml"
+      - "scripts/verify-preview-seed-repeatability.mjs"
+      - "scripts/verify-preview-seed-repeatability.test.mjs"
+      - ".github/workflows/ci-banco.yml"
 
 jobs:
   ensaio:
@@ -18,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - uses: supabase/setup-cli@v3
         with:
@@ -28,6 +35,9 @@ jobs:
 
       - name: Aplicar todas as migrations do zero
         run: supabase db reset --local
+
+      - name: Provar que o seed sobrevive a virada do dia
+        run: node scripts/verify-preview-seed-repeatability.mjs
 
       - name: Verificar invariantes estruturais (pgTAP)
         run: supabase test db

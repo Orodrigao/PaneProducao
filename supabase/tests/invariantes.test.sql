@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(124);
+select plan(132);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 46,
@@ -363,6 +363,28 @@ select is((select count(*)::int
       )
       and coalesce(array_to_string(p.proconfig, ','), '') ilike '%search_path=%'), 3,
   'as ações protegidas usam search_path seguro');
+
+-- Programacao diaria da producao PJ
+select ok((select relrowsecurity and relforcerowsecurity from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'pj_production_schedules'),
+  'programacao PJ tem RLS habilitada e forcada');
+select ok(not has_table_privilege('authenticated', 'public.pj_production_schedules', 'select'),
+  'authenticated nao le diretamente a programacao PJ');
+select ok(not has_table_privilege('authenticated', 'public.pj_production_schedules', 'insert'),
+  'authenticated nao grava diretamente a programacao PJ');
+select ok(has_function_privilege('authenticated', 'public.list_pj_production_queue()', 'execute'),
+  'fila PJ e exposta pela funcao protegida');
+select ok(has_function_privilege('authenticated', 'public.schedule_pj_production(date, jsonb, uuid)', 'execute'),
+  'programacao PJ e gravada pela funcao protegida');
+select ok(has_function_privilege('authenticated', 'public.list_pj_production_for_oven(date)', 'execute'),
+  'Forno le a programacao PJ pela funcao protegida');
+select ok(exists(select 1 from pg_trigger
+    where tgname = 'guard_scheduled_pj_order_changes' and not tgisinternal),
+  'pedido programado fica protegido contra alteracao comercial');
+select ok(exists(select 1 from pg_trigger
+    where tgname = 'guard_production_plan_frozen_balance' and not tgisinternal),
+  'lojas e PJ compartilham a trava de congelados');
 
 -- Privilegios deterministicos entre producao e bancos reconstruidos
 select is((select count(*)::int

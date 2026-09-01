@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Trash2, Save, Zap, X, Calendar, Pencil, Truck } from 'lucide-react'
+import { Trash2, Save, X, Calendar, Pencil, Truck } from 'lucide-react'
 import OrderCancellationPanel from '@/components/OrderCancellationPanel'
 import { PjOrderListPanel, type PjOrderListDisplayItem } from '@/components/PjOrderListPanel'
 import { supabase } from '@/lib/supabase'
@@ -102,9 +102,6 @@ function defaultDelivery(customerHours:number): string {
   const days = Math.ceil((customerHours || 48) / 24)
   return nextNonSunday(addDays(todayISO(), days))
 }
-function defaultProduction(deliveryDate:string): string {
-  return addDays(deliveryDate, -1)
-}
 function fmtBR(dateStr:string|null): string {
   if (!dateStr) return '—'
   const [y,m,d] = dateStr.split('-')
@@ -159,7 +156,6 @@ export default function PedidosPJPage() {
 
   const [custId, setCustId]    = useState<string>('')
   const [delivery, setDelivery] = useState<string>('')
-  const [production, setProduction] = useState<string>('')
   const [obs, setObs] = useState('')
   const [lines, setLines] = useState<OrderLine[]>([])
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({})
@@ -273,10 +269,9 @@ export default function PedidosPJPage() {
   const selectCustomer = (id:string) => {
     setCustId(id)
     const c = customers.find(x => x.id === id)
-    if (!c) { setDelivery(''); setProduction(''); setLines([]); return }
+    if (!c) { setDelivery(''); setLines([]); return }
     const d = defaultDelivery(c.delivery_hours)
     setDelivery(d)
-    setProduction(defaultProduction(d))
     setLines([])
     setSearch('')
   }
@@ -285,11 +280,6 @@ export default function PedidosPJPage() {
     if (isSunday(newDate)) { showToast('⚠️ Entrega não pode cair em domingo'); return }
     if (newDate < todayISO()) { showToast('⚠️ Entrega não pode ser no passado'); return }
     setDelivery(newDate)
-    setProduction(defaultProduction(newDate))
-  }
-  const changeProduction = (newDate:string) => {
-    if (newDate < todayISO()) { showToast('⚠️ Produção não pode ser no passado'); return }
-    setProduction(newDate)
   }
 
   const filteredCatalog = useMemo(() => {
@@ -364,7 +354,7 @@ export default function PedidosPJPage() {
       pj_client: cust.name,
       order_date: editing ? editing.order_date : todayISO(),
       delivery_date: delivery,
-      production_date: production || defaultProduction(delivery),
+      production_date: null,
       pj_delivery_date: delivery,
       obs: obs.trim() || null,
     }))
@@ -373,7 +363,7 @@ export default function PedidosPJPage() {
     if (editing) await supabase.from('orders').delete().in('id', editing.ids)
     setSaving(false)
     showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
-    setCustId(''); setDelivery(''); setProduction(''); setObs(''); setLines([]); setQuantityInputs({}); setSearch(''); setEditing(null)
+    setCustId(''); setDelivery(''); setObs(''); setLines([]); setQuantityInputs({}); setSearch(''); setEditing(null)
     setListStage('open'); setListSearch('')
     setTab('lista')
     loadAll()
@@ -381,9 +371,12 @@ export default function PedidosPJPage() {
 
   const startEdit = (g: PedidoGroup) => {
     if (!access.canManage || g.cancelled_at || g.dispatched_at || cancellingRef.current) return
+    if (g.production_date) {
+      showToast('Este pedido já entrou na produção e não pode mais ser alterado.')
+      return
+    }
     setCustId(g.customer_id || '')
     setDelivery(g.delivery_date || '')
-    setProduction(g.production_date || '')
     setObs(g.obs || '')
     setLines(g.rows.map((r, i) => {
       const pack = Number(r.pack_size) || 1
@@ -433,6 +426,9 @@ export default function PedidosPJPage() {
       }
       const g = groups.get(key)!
       g.rows.push(r)
+      if (r.production_date && (!g.production_date || r.production_date < g.production_date)) {
+        g.production_date = r.production_date
+      }
       g.total += (Number(r.unit_price)||0) * (Number(r.quantity)||0)
     })
     return Array.from(groups.values()).sort((a,b) => {
@@ -449,22 +445,6 @@ export default function PedidosPJPage() {
     if (g.delivery_date < t) return { label:'entregue', cls:'separado', border:'var(--ink-faint)' }
     if (g.production_date && g.production_date <= t && g.delivery_date >= t) return { label:'em produção', cls:'conferido', border:'var(--sage)' }
     return { label:'agendado', cls:'enviado', border:'var(--honey-deep)' }
-  }
-
-  const adiantarHoje = async (g:PedidoGroup) => {
-    if (!access.canManage || g.cancelled_at || g.dispatched_at || cancellingRef.current) return
-    if (!confirm(`Adiantar pedido de "${g.customer_name}" pra hoje?\n\nProdução e entrega serão movidas pra ${fmtBR(todayISO())}.`)) return
-    const today = todayISO()
-    if (isSunday(today)) { showToast('⚠️ Hoje é domingo, entrega não permitida'); return }
-    const { error } = await supabase.from('orders').update({
-      production_date: today,
-      delivery_date: today,
-      pj_delivery_date: today,
-    }).in('id', g.rows.map(r => r.id))
-    if (error) { showToast('Erro: ' + error.message); return }
-    showToast('✅ Pedido adiantado pra hoje')
-    setViewing(null)
-    loadAll()
   }
 
   const cancelPedido = async (g: PedidoGroup, rawReason: string): Promise<boolean> => {
@@ -746,18 +726,13 @@ export default function PedidosPJPage() {
                       </span>
                     </div>
 
-                    <div className="ps-fieldrow">
-                      <div className="ps-fieldgroup">
-                        <div className="ps-fieldlabel">Data de entrega *</div>
-                        <input type="date" value={delivery} onChange={e=>changeDelivery(e.target.value)}
-                          min={todayISO()} className="ps-input"/>
-                        {delivery && <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:3}}><Calendar size={11} style={{verticalAlign:-1, marginRight:3}}/>{fmtBR(delivery)}</div>}
-                      </div>
-                      <div className="ps-fieldgroup">
-                        <div className="ps-fieldlabel">Data de produção</div>
-                        <input type="date" value={production} onChange={e=>changeProduction(e.target.value)}
-                          min={todayISO()} className="ps-input"/>
-                        {production && <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:3}}><Calendar size={11} style={{verticalAlign:-1, marginRight:3}}/>{fmtBR(production)}</div>}
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">Data de entrega *</div>
+                      <input type="date" value={delivery} onChange={e=>changeDelivery(e.target.value)}
+                        min={todayISO()} className="ps-input"/>
+                      {delivery && <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:3}}><Calendar size={11} style={{verticalAlign:-1, marginRight:3}}/>{fmtBR(delivery)}</div>}
+                      <div style={{fontSize:11.5, color:'var(--ink-soft)', marginTop:5}}>
+                        A Produção decide no dia quais itens e quantidades entram no Forno.
                       </div>
                     </div>
 
@@ -865,7 +840,7 @@ export default function PedidosPJPage() {
                   )}
 
                   <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:16}}>
-                    <button onClick={()=>{ setEditing(null); setCustId(''); setLines([]); setObs(''); setSearch(''); setDelivery(''); setProduction(''); if (editing) setTab('lista') }} disabled={saving} className="ps-btn ghost">
+                    <button onClick={()=>{ setEditing(null); setCustId(''); setLines([]); setObs(''); setSearch(''); setDelivery(''); if (editing) setTab('lista') }} disabled={saving} className="ps-btn ghost">
                       {editing ? 'Cancelar' : 'Limpar'}
                     </button>
                     <button onClick={savePedido} disabled={saving || lines.length===0} className="ps-btn primary">
@@ -904,7 +879,7 @@ export default function PedidosPJPage() {
               {viewing.dispatched_at && <span className="ps-store-chip" style={{marginLeft:8, background:'#E3F0E0', color:'var(--sage)'}}>ENVIADO</span>}
             </h3>
             <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
-              Implantado {fmtBR(viewing.order_date)} · Produção {fmtBR(viewing.production_date)} · Entrega {fmtBR(viewing.delivery_date)}
+              Implantado {fmtBR(viewing.order_date)} · Produção {viewing.production_date ? fmtBR(viewing.production_date) : 'a definir pela Produção'} · Entrega {fmtBR(viewing.delivery_date)}
             </p>
 
             <div style={{display:'grid', gap:6, marginBottom:14}}>
@@ -1025,14 +1000,9 @@ export default function PedidosPJPage() {
             )}
 
             <div className="actions">
-              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && (
+              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && !viewing.production_date && (
                 <button onClick={()=>startEdit(viewing)} disabled={cancelling} className="ps-btn ghost">
                   <Pencil size={14}/> Editar
-                </button>
-              )}
-              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && viewing.production_date && viewing.production_date > todayISO() && (
-                <button onClick={()=>adiantarHoje(viewing)} disabled={cancelling} className="ps-btn info">
-                  <Zap size={14}/> Adiantar pra hoje
                 </button>
               )}
               <button onClick={()=>setViewing(null)} className="ps-btn ghost">
