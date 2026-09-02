@@ -3,10 +3,14 @@
 **Origem do pedido:** Rodrigo, 2026-08-20, com o nome "peso real em pedidos PJ".
 A descoberta mostrou que o problema é maior que peso — ver decisão 1.
 
-**Status:** descoberta concluída, **duas revisões adversariais independentes
-recebidas e incorporadas**, plano emendado absorvendo os bloqueadores das
-duas. **Aguardando aprovação do Rodrigo para a fase 1.** Nenhuma linha de
-código foi escrita.
+**Status em 2026-09-02:** fase 1 **no ar desde 21/08**; passo 1 da fase 2 (a
+cobrança espera a conferência) **no ar desde 26/08**; **a virada do valor não
+foi construída**. Rodrigo aprovou a fase 2 completa em 2026-09-02 e fechou as
+três pendências que a bloqueavam. Ver "Onde isto está em 2026-09-02".
+
+**Status original (2026-08-20):** descoberta concluída, **duas revisões
+adversariais independentes recebidas e incorporadas**, plano emendado
+absorvendo os bloqueadores das duas.
 
 **Histórico:** aberto como PR #247 numa sessão de nuvem; o PR foi fechado pelo
 GitHub quando a branch foi renomeada para a convenção do `AGENTS.md`. Continua
@@ -19,6 +23,119 @@ valor da cobrança do cliente. Aprovação fase a fase.
 `claude/peso-real-pedidos-pj-kfamrj`. A continuação será local.
 
 ---
+
+## Onde isto está em 2026-09-02
+
+Registro escrito na sessão que investigou a reclamação do Rodrigo: "a Rafaela
+conferiu, o ajuste foi salvo, e o sistema seguiu cobrando o pedido". Nada aqui
+reabre decisão anterior. São fatos novos, medição nova e as pendências fechadas.
+
+### O que está no ar
+
+| Entrega | Quando | O que faz |
+|---|---|---|
+| Fase 1, a conferência | 21/08 | A Expedição digita a quantidade que saiu de cada item, e "Marcar como enviado" exige tudo conferido. |
+| Passo 1 da fase 2 | 26/08 | Cobrança não nasce de pedido não conferido, e a lista "a faturar" marca quem espera a Expedição. |
+| A virada do valor | não construída | A cobrança continua somando `quantity * unit_price`. |
+
+Os cinco pontos de cálculo continuam onde a auditoria de agosto os encontrou.
+Mudou apenas o endereço de dois: as somas da tela de Pedidos PJ estão hoje em
+`src/app/pedidos-pj/page.tsx:432` (total do grupo) e `:899` (valor da linha no
+cartão do pedido). As linhas 415 e 811 citadas em agosto não valem mais.
+
+### O caso que reabriu o assunto (leitura live, 2026-09-02)
+
+Pedido `30fea4af`, um cliente PJ com prazo de 7 dias, entrega 02/09, conferido
+às 10h41 e enviado às 10h47:
+
+| Item | Pedido | Conferido | Cobrado | Pelo real |
+|---|---|---|---|---|
+| Baguete de Nozes | 2 kg | 1,7 kg | R$ 65,40 | R$ 55,59 |
+| Croissant | 60 un | 64 un | R$ 396,00 | R$ 422,40 |
+| **Total** | | | **R$ 461,40** | **R$ 477,99** |
+
+A conferência está gravada e correta nas duas linhas. A cobrança `8b362081`
+nasceu por R$ 461,40 na mesma transação do envio.
+
+### Medição da fase 1 (leitura live, 2026-09-02)
+
+Pedidos PJ não cancelados, com conferência gravada, desde 21/08:
+
+| Recorte | Linhas | Com diferença | Deixou de cobrar | Cobrou a mais | Saldo |
+|---|---|---|---|---|---|
+| ago/2026, de 21/08 em diante | 55 | 11 | R$ 156,18 | R$ 83,95 | +R$ 72,23 |
+| set/2026, até 02/09 | 4 | 2 | R$ 26,40 | R$ 9,81 | +R$ 16,59 |
+| **Total** | **59** | **13** | **R$ 182,58** | **R$ 93,76** | **+R$ 88,82** |
+
+Saldo positivo significa que a padaria faturaria mais se cobrasse o real. Os
+R$ 93,76 da coluna do meio são o número que importa para a confiança do cliente:
+foram cobrados de itens que não saíram.
+
+Distribuição observada, que fundamenta as travas da fase 2:
+
+- fator conferido/estimado por linha entre **0,69 e 1,57**;
+- **nenhuma linha conferida como zero** em duas semanas. O caminho do "não
+  enviei este item" está coberto por teste de banco e **nunca foi exercitado por
+  gente**;
+- maior linha registrada desde 01/06: **20 kg** e **600 un**, com p99 de
+  15,4 kg e 274 un.
+
+A adoção da fase 1 aconteceu: 59 linhas conferidas em duas semanas, contra a
+previsão de que a conferência seria abandonada antes da fase 2 existir.
+
+### A pergunta aberta 1 está respondida, e inverte um pressuposto
+
+Rodrigo, 2026-09-02: o cliente PJ recebe **nota fiscal** ou, quando compra sem
+nota, **um pedido em papel com quantidade e valor**. A nota é emitida **depois
+da entrega**, em outro sistema, **pelo que a Expedição confirma que saiu**, e a
+Elis busca esse número no ERP.
+
+Três consequências, a primeira delas contrária ao que o plano supunha:
+
+- **a divergência já existe hoje, e não é a virada que a cria.** A nota do
+  pedido `30fea4af` sai por R$ 477,99 e a cobrança do ERP ficou em R$ 461,40.
+  A fase 2 alinha os dois documentos em vez de separá-los;
+- o descarte registrado na segunda revisão adversarial, "não se aplica hoje
+  porque o ERP não emite documento externo", estava certo sobre o ERP e errado
+  sobre a padaria. O documento externo existe, só não nasce aqui. A ressalva que
+  o próprio documento deixou escrita ("se um dia o ERP emitir documento externo,
+  esta condição volta à mesa") vale desde já, com o alvo corrigido: quem emite é
+  a Elis, por fora, depois da entrega;
+- Rodrigo observou que o outro sistema fecha com centavos de diferença, provável
+  arredondamento. Isso confirma a regra já decidida: **arredondar cada linha a
+  centavos e somar as linhas**, com critério idêntico nos cinco pontos.
+
+### Fato novo sobre acesso, medido em produção
+
+`Rodrigão` (admin) **não tem a permissão `contas_receber.acessar`**. Não é o
+menu escondendo a tela: `private.current_user_can_receivables` nega os dados no
+próprio banco. O risco 10 deixa de ser suposição e passa a ter prova live. A
+Elis tem as seis permissões de Contas a Receber com escopo `*`.
+
+### Decisões tomadas por Rodrigo em 2026-09-02
+
+13. **Fase 2 completa, nas duas metades.** Confirma a decisão 9. A alternativa
+    de virar só o valor foi apresentada e recusada, pelo motivo já registrado:
+    cria uma janela em que a fatura depende de um número sem caminho de volta.
+
+14. **A tela de correção mora em `/pedidos-pj`.** Fecha o risco 10 sem depender
+    de mudança de permissão: é a rota que o admin e o financeiro alcançam, e é
+    onde o número vive. Dar a `Rodrigão` acesso ao Contas a Receber é tarefa
+    separada, com plano próprio, por ser mudança de permissão.
+
+15. **As travas de saída, com número:**
+
+    | Trava, por linha | Valor | Maior caso real |
+    |---|---|---|
+    | Fator conferido/estimado | recusa fora de 1/3 a 3x | 0,69 a 1,57 |
+    | Teto absoluto, quilo | 50 kg | 20 kg |
+    | Teto absoluto, unidade | 2.000 un | 600 un |
+
+    A folga é deliberada: a trava existe para pegar grama digitada em campo de
+    quilo (3000 no lugar de 3), não para discutir com quem separa mercadoria.
+    Revisão combinada depois de um mês de uso. **Passar da trava nunca impede o
+    envio**: o pedido é enviado, a cobrança não nasce e ele cai na lista de
+    pendências do financeiro, junto com o caso de "nada enviado" do bloqueador 4.
 
 ## O problema operacional
 
@@ -246,6 +363,24 @@ Emendada em 2026-08-20 absorvendo os bloqueadores 3, 5 e 8 e os riscos 11 a
 As duas metades vão no mesmo pacote (decisão 9). A correção precisa estar
 testada e no ar no mesmo dia em que a cobrança passa a depender do número.
 
+**Emenda de 2026-09-02, com o que já foi entregue e o que Rodrigo decidiu:**
+
+- o **passo 1 já está no ar desde 26/08**, na migration
+  `20260826201914_cobranca_espera_a_conferencia.sql`: a lista "a faturar" marca
+  quem espera conferência e o motor recusa cobrar pedido não conferido. O item
+  "fechar o caminho que fatura antes da conferência", abaixo, está **feito**,
+  com o buraco conhecido do cancelar-e-corrigir declarado lá e fechado por esta
+  fase;
+- as travas de saída deixam de ser "espelhar a Buck" e passam a ter número:
+  **decisão 15**;
+- a tela de correção mora em **`/pedidos-pj`**: **decisão 14**, que fecha o
+  risco 10;
+- **a nota fiscal entra na conta.** Ela é emitida depois da entrega, pelo que a
+  Expedição confirmou, então a virada alinha ERP e nota. A metade B, porém,
+  mexe num número que **já pode ter virado nota**: ver risco 21;
+- endereços atualizados dos pontos de cálculo da tela: `page.tsx:432` e
+  `page.tsx:899`.
+
 **Metade A — a virada:**
 
 - **cinco pontos calculam esse valor hoje, não um.** Todos mudam no mesmo
@@ -305,11 +440,15 @@ testada e no ar no mesmo dia em que a cobrança passa a depender do número.
   63 ao reabrir e salvar (risco 18);
 - `p_request_id` para repetição segura: chamar duas vezes não pode cancelar a
   cobrança recém-gerada e criar histórico falso;
-- **decidir antes de começar onde a tela mora** (risco 10): `admin` não alcança
-  `/contas-receber` hoje, então ou a correção mora em `/pedidos-pj`, ou
-  `/contas-receber` entra nas rotas do admin. Sem isso o Rodrigo não consegue
-  testar a própria fase no preview. Conferir as quatro listas da lição
+- ~~decidir antes de começar onde a tela mora~~ — **decidido em 2026-09-02
+  (decisão 14): a tela mora em `/pedidos-pj`**. Confirmado por leitura live que
+  o admin não tem `contas_receber.acessar`, então o bloqueio é do banco e não
+  só do menu. Conferir mesmo assim as quatro listas da lição
   `tela-nova-precisa-do-menu`;
+- **(2026-09-02) avisar sobre a nota fiscal já emitida** (risco 21): a tela de
+  correção mostra, junto do antes e depois, que a nota emitida por fora precisa
+  ser corrigida também. Aviso escrito, não campo novo; guardar o número da nota
+  é a fase 5 do `CONTAS_A_RECEBER.md`;
 - a cobrança cancelada permanece no histórico. O rastro é a razão de não
   sobrescrever valor.
 
@@ -502,13 +641,26 @@ do Rodrigo.
     nunca em "hoje"** — lição `seed-com-hoje-vence-a-meia-noite`, que já
     quebrou o roteiro de teste do Rodrigo neste mesmo módulo.
 
-### Perguntas que a descoberta não fechou
+#### Risco acrescentado em 2026-09-02
 
-1. **O que o cliente recebe junto com a entrega?** Não existe impressão de
-   pedido PJ. Se o motorista entrega um papel dizendo 3 kg e a fatura vem com
-   3,067 kg, o cliente contesta e a Elis não tem como provar. **Sem essa
-   resposta, cobrar o real pode criar disputa comercial em vez de resolver.**
-   Perguntar ao Rodrigo antes da fase 2.
+21. **A correção pós-envio pode divergir de uma nota já emitida.** A nota sai
+    depois da entrega, pelo que a Expedição confirmou. Se a Elis corrigir a
+    quantidade no ERP depois de emitir, ERP e nota passam a discordar, e desta
+    vez o ERP é que estaria certo. Não é caso hipotético: a decisão 3 nasceu de
+    um erro de tara percebido logo depois do envio.
+    **A tela de correção avisa por escrito, ao lado do antes e depois, que a
+    nota emitida precisa ser corrigida por fora. Guardar o número da nota na
+    cobrança é a fase 5 do `CONTAS_A_RECEBER.md` e não entra aqui.**
+
+## Perguntas que a descoberta não fechou
+
+1. ~~**O que o cliente recebe junto com a entrega?**~~ — **respondida por
+   Rodrigo em 2026-09-02.** O cliente recebe nota fiscal, ou um pedido em papel
+   com quantidade e valor quando compra sem nota. A nota é emitida depois da
+   entrega, em outro sistema, **pelo que a Expedição confirma que saiu**. A
+   consequência inverte o receio original: cobrar o real não cria disputa, ele
+   alinha a cobrança com o documento que o cliente já recebe. Ver "A pergunta
+   aberta 1 está respondida" no começo deste documento, e o risco 21.
 2. **A Elis pode conferir quando a Expedição não conferiu?** A decisão 4 só
    trata do pós-envio; falta a regra do pré-envio.
 3. **Pedidos sem `order_group_id`** (legado) não podem ser despachados nem
@@ -556,6 +708,12 @@ ao cliente. `boleto` aparece apenas como *método pelo qual o dinheiro entrou*,
 e a única Edge Function de e-mail é a de contas a pagar. A cobrança é registro
 interno. Se um dia o ERP emitir documento externo, esta condição volta à mesa.
 
+**Emenda de 2026-09-02:** o descarte estava certo sobre o ERP e errado sobre a
+padaria. A Elis emite nota fiscal por fora, então o Sol estava mais perto do que
+a conferência do código sugeriu. O que salva a virada é o **momento**: a nota
+sai depois da entrega e pelo número que a Expedição confirmou, nunca antes da
+conferência. O que sobra do achado dele vale para a metade B e virou o risco 21.
+
 Também descartados, por estarem fora do escopo já fechado com o Rodrigo: peso
 bruto, tara, integração com balança, lote e validade; e entrega parcial com
 saldo pendente, devolução e reposição. Fica registrado que "não enviado" **não**
@@ -586,6 +744,22 @@ mas a coluna nova entra nessa mesma leitura ampla.
 4. **Aprovação explícita do Rodrigo para a fase 1.** — única pendência que
    bloqueia o começo.
 
+## Pendências antes de começar a fase 2 (2026-09-02)
+
+1. ~~Responder a pergunta 1~~ — **respondida**, e ela mudou o pressuposto. Ver a
+   seção do começo do documento.
+2. ~~Decidir onde a tela de correção mora~~ — **decisão 14**: `/pedidos-pj`.
+3. ~~Definir os números da trava de saída~~ — **decisão 15**.
+4. ~~Aprovação do Rodrigo para a fase 2~~ — **dada em 2026-09-02**, para o
+   pacote completo.
+5. **Esperar a vaga da portaria.** A tarefa `20260902-classificacao-itens-nfe`
+   estava `running` quando isto foi escrito, e ela reserva os contratos
+   `money`, `migration` e `database-schema`. A fase 2 precisa dos três, então
+   as duas frentes não podem correr juntas. Não é fila do CI nem do banco: é a
+   portaria falhando fechado, como deve.
+6. **Revisão adversarial do código**, não do plano, antes de o Rodrigo testar.
+   O plano já teve duas; o diff da virada precisa da sua.
+
 ## Nota sobre ambiente de nuvem (2026-08-20)
 
 As skills `operario` (Gemini) e `consulta` (Sol) moram na máquina do Rodrigo e
@@ -601,20 +775,24 @@ não resolveria, porque os CLIs continuariam ausentes.
 Se Rodrigo aprovar, essa equivalência vira regra no `AGENTS.md`, em PR de
 documentação separado deste trabalho.
 
-## Como retomar numa sessão local
+## Como retomar
 
-```
-git fetch origin
-git checkout claude/peso-real-pedidos-pj-kfamrj
-git pull
-```
+A fase 1 e o passo 1 da fase 2 já estão na `main`. Quem for escrever a fase 2
+começa de `origin/main` fresco, pela portaria, e lê nesta ordem:
 
-Leia este documento, o `AGENTS.md`, o `lessons.md` e a migration
-`supabase/migrations/20260813215830_pedido_pj_vira_cobranca.sql`. O
-entendimento está fechado e as decisões acima não devem ser reabertas sem
-evidência nova. Se o código contradisser este documento, **o código vence** —
-pare e reporte.
+1. a seção "Onde isto está em 2026-09-02", no começo deste documento, que é o
+   estado mais recente;
+2. o resto deste documento, para as decisões e os riscos que continuam valendo;
+3. `AGENTS.md` e `lessons.md`;
+4. as três migrations que definem o comportamento atual:
+   `20260813215830_pedido_pj_vira_cobranca.sql` (o motor),
+   `20260820232802_conferencia_quantidade_enviada_pj.sql` (a conferência) e
+   `20260826201914_cobranca_espera_a_conferencia.sql` (a vigente do motor e da
+   lista "a faturar").
 
-Observação sobre a branch: resolvida em 2026-08-20. A branch chama-se
-`feat/quantidade-enviada-pedidos-pj`. O rename fechou o PR #247 (o GitHub não
-migra o PR quando a branch de origem some) e o trabalho seguiu em PR #248.
+As decisões acima não devem ser reabertas sem evidência nova. Se o código
+contradisser este documento, **o código vence**: pare e reporte.
+
+Histórico das branches, para quem procurar rastro antigo: a descoberta saiu na
+`feat/quantidade-enviada-pedidos-pj`, em PR #248, depois de o rename fechar o
+PR #247. Essa branch já foi integrada e não é mais o ponto de partida.
