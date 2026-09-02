@@ -1,7 +1,7 @@
 -- Programacao diaria PJ: fila, divisao, congelados compartilhados e Forno.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(30);
 
 select ok(has_function_privilege('authenticated', 'public.list_pj_production_queue()', 'execute'),
   'Producao autenticada pode abrir a fila PJ');
@@ -68,7 +68,19 @@ insert into public.orders (
   ('97000000-0000-4000-8000-000000000104', 'pj', 'pj', '97000000-0000-4000-8000-0000000000a2',
    'teste-focaccia-programacao', 'bread', '[TESTE] Focaccia', 4.5, null,
    '97000000-0000-4000-8000-0000000000c1', '[TESTE] Hamburgueria Producao',
-   private.data_na_padaria() + 3, private.data_na_padaria() + 3, private.data_na_padaria() + 3, null);
+   private.data_na_padaria() + 3, private.data_na_padaria() + 3, private.data_na_padaria() + 3, null),
+  -- Entrega ja passada: e o caso que poluiu a tela da Geolar em 02/09/2026, com
+  -- 170 linhas antigas na fila, a mais velha de 02/06. Nao pode aparecer.
+  ('97000000-0000-4000-8000-000000000105', 'pj', 'pj', '97000000-0000-4000-8000-0000000000a3',
+   'teste-brioche-programacao', 'bread', '[TESTE] Brioche entregue', 90, 'un',
+   '97000000-0000-4000-8000-0000000000c1', '[TESTE] Hamburgueria Producao',
+   private.data_na_padaria() - 90, private.data_na_padaria() - 88, private.data_na_padaria() - 88, null),
+  -- Sem data de entrega: CONTINUA aparecendo de proposito, com o aviso proprio.
+  -- Esconder faria a pendencia sumir sem ninguem consertar o cadastro.
+  ('97000000-0000-4000-8000-000000000106', 'pj', 'pj', '97000000-0000-4000-8000-0000000000a4',
+   'teste-brioche-programacao', 'bread', '[TESTE] Brioche sem data', 7, 'un',
+   '97000000-0000-4000-8000-0000000000c1', '[TESTE] Hamburgueria Producao',
+   private.data_na_padaria(), null, null, null);
 
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit, active, store, visible_stores
@@ -98,8 +110,24 @@ select throws_ok($$ select * from public.list_pj_production_queue() $$,
 
 select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001', true);
 select is((select count(*)::int from public.list_pj_production_queue()
-  where customer_id = '97000000-0000-4000-8000-0000000000c1'), 4,
-  'fila mostra todas as linhas pendentes');
+  where customer_id = '97000000-0000-4000-8000-0000000000c1'), 5,
+  'fila mostra as linhas pendentes, incluindo a sem data de entrega');
+
+-- Em 02/09/2026 a fila trouxe 199 linhas de 78 pedidos, a mais antiga de 02/06,
+-- somando 6.385 unidades, sendo que so 29 tinham entrega por vir. A fila decidia
+-- o que falta produzir so pelo campo de expedicao, que passou a existir em
+-- 21/07: tudo anterior estava vazio por falta de campo, nao por falta de
+-- entrega. O risco era programar producao de pedido entregue em junho.
+select ok(not exists (select 1 from public.list_pj_production_queue()
+  where order_id = '97000000-0000-4000-8000-000000000105'),
+  'pedido com entrega ja passada nao volta para a fila de producao');
+
+-- O sem data continua visivel de proposito: ele nao pode ser programado e
+-- precisa que alguem conserte o cadastro.
+select is((select mapping_error from public.list_pj_production_queue()
+  where order_id = '97000000-0000-4000-8000-000000000106'),
+  'Pedido sem data de entrega.',
+  'pedido sem data de entrega continua visivel, com o aviso que pede conserto');
 select is((select canonical_bread_id from public.list_pj_production_queue()
   where order_id = '97000000-0000-4000-8000-000000000102'), 'teste-italiano-programacao',
   'produto novo chega ao Forno pelo vinculo canonico');
