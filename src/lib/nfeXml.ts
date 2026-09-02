@@ -1,5 +1,5 @@
 export type NfePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
-export type NfeMappingStatus = 'pendente' | 'mapeado'
+export type NfeMappingStatus = 'pendente' | 'mapeado' | 'nao_aplicavel'
 export type NfeConversionBasis = 'simple' | 'package' | 'usable'
 
 /**
@@ -37,6 +37,14 @@ export interface NfeItemDraft {
   factorConfirmed: boolean
   /** O histórico do fornecedor reconheceu o item sozinho. */
   recognized: boolean
+}
+
+export interface NfeSupplierMappingIdentity {
+  supplier_product_code: string | null
+  supplier_ean: string | null
+  supplier_description: string
+  purchase_unit: string
+  updated_at: string
 }
 
 export interface NfeInstallmentDraft {
@@ -113,6 +121,18 @@ export function matchesProductSearch(name: string, query: string): boolean {
   return terms.every(term => target.includes(term))
 }
 
+/** O banco também desempata memórias repetidas pela confirmação mais recente. */
+export function findLatestSupplierMapping<T extends NfeSupplierMappingIdentity>(item: NfeItemDraft, mappings: readonly T[]): T | undefined {
+  return [...mappings]
+    .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+    .find(mapping => (
+      mapping.purchase_unit === item.purchaseUnit
+        && ((item.supplierCode && mapping.supplier_product_code === item.supplierCode)
+          || (item.ean && mapping.supplier_ean === item.ean)
+          || (!item.supplierCode && !item.ean && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
+    ))
+}
+
 const NOISE_WORDS = new Set(['de', 'da', 'do', 'com', 'sem', 'para', 'p', 'e'])
 
 /**
@@ -136,6 +156,19 @@ export function unitFamily(unit: string): UnitFamily {
   if (['ML', 'MILILITRO'].includes(normalized)) return 'volume'
   if (['UN', 'UND', 'UNID', 'UNIDADE', 'UNIDADES', 'PC', 'PCT', 'PECA'].includes(normalized)) return 'unidade'
   return 'desconhecida'
+}
+
+/**
+ * A confirmação só é obrigatória quando a unidade cobrada e a unidade da
+ * receita pertencem a famílias diferentes. O valor pode ser 1 e ainda assim
+ * estar correto; o que importa é alguém ter conferido conscientemente.
+ */
+export function conversionNeedsConfirmation(purchaseUnit: string, baseUnit: string, factorConfirmed: boolean): boolean {
+  if (factorConfirmed) return false
+  const purchase = unitFamily(purchaseUnit)
+  const base = unitFamily(baseUnit)
+  if (base === 'desconhecida') return false
+  return purchase !== base
 }
 
 function decimal(raw: string): number {
@@ -231,10 +264,11 @@ export function formatConversionExplanation(item: NfeItemDraft): ConversionExpla
 
 export function isClassificationComplete(items: NfeItemDraft[]): boolean {
   return items.length > 0 && items.every(item => (
-    item.mappingStatus === 'mapeado'
-    && item.baseProductId !== null
-    && item.usableQuantity !== null
-    && item.usableQuantity > 0
+    item.mappingStatus === 'nao_aplicavel'
+    || (item.mappingStatus === 'mapeado'
+      && item.baseProductId !== null
+      && item.usableQuantity !== null
+      && item.usableQuantity > 0)
   ))
 }
 

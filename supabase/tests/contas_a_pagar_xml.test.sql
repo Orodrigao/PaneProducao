@@ -38,8 +38,9 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'create_xml_payable') ilike all(array['%nfe_key%', '%request_id%', '%installments%', '%classification_status%']),
   'importação valida idempotência, parcelas e pendências');
-select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'classify_payable_item') ilike all(array['%usable_quantity%', '%cost_price%', '%mapping_status%']),
+select ok((select bool_or(prosrc ilike all(array['%usable_quantity%', '%cost_price%', '%mapping_status%']))
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'classify_payable_item'),
   'classificação recalcula quantidade útil e custo');
 select ok(exists(select 1 from pg_constraint where conname = 'payable_purchases_classification_status_check'),
   'status de classificação é restrito');

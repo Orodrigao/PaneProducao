@@ -5,10 +5,12 @@ import { Check, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
+  conversionNeedsConfirmation,
   type NfeConversionBasis,
 } from '@/lib/nfeXml'
 import {
   classifyPayableItem,
+  classifyPayableItemWithoutProduct,
   type PayableProduct,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -22,8 +24,8 @@ interface PendingPayableItemsProps {
 }
 
 export default function PendingPayableItems({ items, products, onChanged, onClose }: PendingPayableItemsProps) {
-  const [values, setValues] = useState<Record<string, { productId: string; basis: NfeConversionBasis; factor: string; usable: string; remember: boolean }>>(() => Object.fromEntries(items.map(item => [item.id, {
-    productId: '', basis: item.conversion_basis ?? 'simple', factor: '1', usable: String(Number(item.source_quantity ?? item.quantity) || 1), remember: true,
+  const [values, setValues] = useState<Record<string, { productId: string; basis: NfeConversionBasis; factor: string; usable: string; remember: boolean; factorConfirmed: boolean }>>(() => Object.fromEntries(items.map(item => [item.id, {
+    productId: '', basis: item.conversion_basis ?? 'simple', factor: '1', usable: String(Number(item.source_quantity ?? item.quantity) || 1), remember: true, factorConfirmed: false,
   }])))
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -37,10 +39,25 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
     const factor = Number(value.factor)
     const usable = Number(value.usable)
     if (!product || factor <= 0 || usable <= 0) { showToast('Escolha o item-base e confirme a conversão.'); return }
+    if (conversionNeedsConfirmation(item.source_unit ?? item.unit, product.unit ?? 'un', value.factorConfirmed)) {
+      showToast('Confira quanto vem na embalagem antes de confirmar.'); return
+    }
     setBusy(item.id)
     try {
-      await classifyPayableItem(item.id, product.id, value.basis, factor, usable, value.remember)
+      await classifyPayableItem(item.id, product.id, value.basis, factor, usable, value.remember, value.factorConfirmed)
       showToast('Item classificado e custo atualizado.')
+      await onChanged()
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível classificar o item.') }
+    finally { setBusy(null) }
+  }
+
+  async function saveWithoutProduct(item: PendingPayableItemRow) {
+    const value = values[item.id]
+    if (!window.confirm('Confirmar como uso ou despesa? O item continuará na NF-e, mas não alterará nenhum custo de receita.')) return
+    setBusy(item.id)
+    try {
+      await classifyPayableItemWithoutProduct(item.id, value.remember)
+      showToast('Item registrado como uso ou despesa, sem alterar custo de receita.')
       await onChanged()
     } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível classificar o item.') }
     finally { setBusy(null) }
@@ -55,24 +72,29 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
         const factor = Number(value.factor) || 0
         const usable = Number(value.usable) || 0
         const calculated = value.basis === 'usable' ? conversionFactorFromUsableQuantity(quantity, usable) : calculateUsableQuantity(quantity, factor)
+        const product = products.find(candidate => candidate.id === value.productId)
+        const needsConfirmation = Boolean(product && conversionNeedsConfirmation(item.source_unit ?? item.unit, product.unit ?? 'un', value.factorConfirmed))
         return (
           <div key={item.id} className="ps-card" style={{ padding: 10, marginTop: 8, background: 'var(--cream-raise)' }}>
             <b>{item.source_description ?? item.item_name}</b>
             <small style={{ display: 'block', marginTop: 3 }}>{quantity} {item.source_unit ?? item.unit} · {item.source_product_code ?? 'sem código'} · {String(item.line_total)}</small>
             <div className="ps-fieldgroup" style={{ marginTop: 8 }}>
               <div className="ps-fieldlabel">Item-base</div>
-              <select className="ps-select" value={value.productId} onChange={event => update(item.id, { productId: event.target.value })}>
+              <select className="ps-select" value={value.productId} onChange={event => update(item.id, { productId: event.target.value, factorConfirmed: false })}>
                 <option value="">Selecione</option>
                 {products.map(product => <option key={product.id} value={product.id}>{product.name} · {product.unit ?? 'un'}</option>)}
               </select>
             </div>
             <div className="ps-fieldrow" style={{ marginTop: 8 }}>
-              <div className="ps-fieldgroup"><div className="ps-fieldlabel">Base do cálculo</div><select className="ps-select" value={value.basis} onChange={event => update(item.id, { basis: event.target.value as NfeConversionBasis })}><option value="simple">Quantidade da NF</option><option value="package">Conteúdo por unidade</option><option value="usable">Total aproveitável</option></select></div>
-              <div className="ps-fieldgroup"><div className="ps-fieldlabel">{value.basis === 'usable' ? 'Total útil' : 'Fator'}</div><input className="ps-input" type="number" min="0" step="0.001" value={value.basis === 'usable' ? value.usable : value.factor} onChange={event => value.basis === 'usable' ? update(item.id, { usable: event.target.value, factor: String(conversionFactorFromUsableQuantity(quantity, Number(event.target.value))) }) : update(item.id, { factor: event.target.value, usable: String(calculateUsableQuantity(quantity, Number(event.target.value))) })} /></div>
+              <div className="ps-fieldgroup"><div className="ps-fieldlabel">Base do cálculo</div><select className="ps-select" value={value.basis} onChange={event => update(item.id, { basis: event.target.value as NfeConversionBasis, factorConfirmed: false })}><option value="simple">Quantidade da NF</option><option value="package">Conteúdo por unidade</option><option value="usable">Total aproveitável</option></select></div>
+              <div className="ps-fieldgroup"><div className="ps-fieldlabel">{value.basis === 'usable' ? 'Total útil' : 'Fator'}</div><input className="ps-input" type="number" min="0" step="0.001" value={value.basis === 'usable' ? value.usable : value.factor} onChange={event => value.basis === 'usable' ? update(item.id, { usable: event.target.value, factor: String(conversionFactorFromUsableQuantity(quantity, Number(event.target.value))), factorConfirmed: true }) : update(item.id, { factor: event.target.value, usable: String(calculateUsableQuantity(quantity, Number(event.target.value))), factorConfirmed: true })} /></div>
             </div>
+            {needsConfirmation && <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--red-border)', background: 'var(--red-bg)' }}><b style={{ color: 'var(--red)' }}>Confira quanto vem na embalagem</b><small style={{ display: 'block', marginTop: 3 }}>A NF-e cobra em {item.source_unit ?? item.unit} e a receita usa {product?.unit ?? 'un'}. Digite o fator, mesmo quando o valor correto for 1.</small></div>}
             <small style={{ display: 'block', marginTop: 6 }}>{quantity} × {value.basis === 'usable' ? calculated : factor} = {value.basis === 'usable' ? usable : calculated} unidade(s) úteis</small>
-            <label className="ps-checkrow" style={{ marginTop: 6 }}><input type="checkbox" checked={value.remember} onChange={event => update(item.id, { remember: event.target.checked })} /><span>Lembrar este fator para este fornecedor</span></label>
+            <label className="ps-checkrow" style={{ marginTop: 6 }}><input type="checkbox" checked={value.remember} onChange={event => update(item.id, { remember: event.target.checked })} /><span>Lembrar esta decisão para este fornecedor</span></label>
             <button className="ps-btn primary sm" style={{ marginTop: 8 }} disabled={busy === item.id} onClick={() => void save(item)}><Check size={14} /> {busy === item.id ? 'Salvando...' : 'Confirmar classificação'}</button>
+            {' '}
+            <button className="ps-btn ghost sm" style={{ marginTop: 8 }} disabled={busy === item.id} onClick={() => void saveWithoutProduct(item)}>Uso ou despesa — não entra em receita</button>
           </div>
         )
       })}

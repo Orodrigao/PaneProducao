@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const supabaseMocks = vi.hoisted(() => ({ from: vi.fn() }))
-vi.mock('@/lib/supabase', () => ({ supabase: { from: supabaseMocks.from } }))
+const supabaseMocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
+vi.mock('@/lib/supabase', () => ({ supabase: { from: supabaseMocks.from, rpc: supabaseMocks.rpc } }))
 import {
   buildInstallments,
+  classifyPayableItem,
+  classifyPayableItemWithoutProduct,
   effectiveDueDate,
   getPayableErrorMessage,
   isDueSoon,
@@ -39,6 +41,34 @@ const baseDraft: PayableDraft = {
 describe('contas a pagar manual', () => {
   beforeEach(() => {
     supabaseMocks.from.mockReset()
+    supabaseMocks.rpc.mockReset()
+  })
+
+  it('envia ao banco a confirmação explícita do fator na classificação posterior', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: null })
+
+    await classifyPayableItem('item-1', 'product-1', 'package', 1, 1, true, true)
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('classify_payable_item', {
+      p_item_id: 'item-1',
+      p_product_id: 'product-1',
+      p_conversion_basis: 'package',
+      p_conversion_factor: 1,
+      p_usable_quantity: 1,
+      p_remember_conversion: true,
+      p_factor_confirmed: true,
+    })
+  })
+
+  it('resolve item de uso ou despesa sem inventar produto canônico', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: null })
+
+    await classifyPayableItemWithoutProduct('item-1', true)
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('classify_payable_item_without_product', {
+      p_item_id: 'item-1',
+      p_remember_decision: true,
+    })
   })
 
   it('carrega todos os itens de uma NF-e pela compra, inclusive os já classificados', async () => {

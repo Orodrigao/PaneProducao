@@ -5,12 +5,12 @@ import { Check, Plus, Search, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
+  conversionNeedsConfirmation,
   formatConversionExplanation,
   getConversionUnitWarning,
   initialSearchFromDescription,
   matchesProductSearch,
   suggestConversionFactor,
-  unitFamily,
   type NfeConversionBasis,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
@@ -23,11 +23,13 @@ export function ProductSelector({
   products,
   onChange,
   onCreate,
+  onWithoutProduct,
 }: {
   item: NfeItemDraft
   products: PayableProduct[]
   onChange: (productId: string) => void
   onCreate: () => void
+  onWithoutProduct: () => void
 }) {
   const [query, setQuery] = useState(() => initialSearchFromDescription(item.description))
   const selected = products.find(product => product.id === item.baseProductId)
@@ -40,6 +42,22 @@ export function ProductSelector({
     () => (query.trim() ? products.filter(product => matchesProductSearch(product.name, query)).length : 0),
     [products, query],
   )
+
+  if (item.mappingStatus === 'nao_aplicavel') {
+    return (
+      <div className="ps-fieldgroup">
+        <div className="ps-fieldlabel">Classificação do item</div>
+        <div className="ps-card" style={{ padding: 10, borderColor: 'var(--teal-border)', background: 'var(--teal-bg)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Check size={16} color="var(--teal)" aria-hidden />
+          <div style={{ flex: 1 }}>
+            <b>Uso ou despesa — não entra em receita</b>
+            <small style={{ display: 'block', marginTop: 3 }}>O nome, a marca, o fornecedor e o preço da NF-e continuam guardados. O sistema lembrará desta decisão na próxima nota.</small>
+          </div>
+          <button className="ps-btn ghost sm" onClick={() => onChange('')}>Trocar</button>
+        </div>
+      </div>
+    )
+  }
 
   if (selected) {
     return (
@@ -59,17 +77,20 @@ export function ProductSelector({
 
   return (
     <div className="ps-fieldgroup">
-      <div className="ps-fieldlabel">Item-base da receita *</div>
+      <div className="ps-fieldlabel">Como este item deve ser tratado?</div>
       <div
         role="alert"
         className="ps-card"
         style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)', marginBottom: 8 }}
       >
-        <b style={{ color: 'var(--red)' }}>Item ainda não vinculado</b>
+        <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
         <small style={{ display: 'block', marginTop: 3 }}>
-          Procure o insumo que já existe antes de cadastrar um novo. Cadastrar de novo cria item repetido e o custo se perde entre os dois.
+          Se entrar em receita, procure o insumo já existente. Se for limpeza, manutenção, embalagem de uso ou outra despesa, não crie um produto artificial.
         </small>
       </div>
+      <button className="ps-btn ghost sm" style={{ marginBottom: 8 }} onClick={onWithoutProduct}>
+        Uso ou despesa — não entra em receita
+      </button>
       <div style={{ position: 'relative' }}>
         <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} aria-hidden />
         <input
@@ -135,6 +156,7 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
   const needsAttention = conversionNeedsAttention(item)
   const [open, setOpen] = useState(needsAttention)
 
+  if (item.mappingStatus === 'nao_aplicavel') return <small style={{ color: 'var(--teal)' }}>Resolvido sem item-base: esta compra não altera custo de receita.</small>
   if (!item.baseProductId) return <small style={{ color: 'var(--honey-deep)' }}>Classifique o item para liberar o custo normalizado.</small>
 
   const explanation = formatConversionExplanation(item)
@@ -198,9 +220,5 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
  */
 export function conversionNeedsAttention(item: NfeItemDraft): boolean {
   if (!item.baseProductId || !item.baseUnit) return false
-  if (item.factorConfirmed) return false
-  const purchase = unitFamily(item.purchaseUnit)
-  const base = unitFamily(item.baseUnit)
-  if (base === 'desconhecida') return false
-  return purchase !== base
+  return conversionNeedsConfirmation(item.purchaseUnit, item.baseUnit, item.factorConfirmed)
 }
