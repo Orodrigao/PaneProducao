@@ -435,6 +435,7 @@ export async function createXmlPayable(draft: NfeDraft, supplierId: string, requ
       line_total: item.lineTotal,
       discount_value: item.discountValue,
       factor_confirmed: item.factorConfirmed,
+      mapping_status: item.mappingStatus,
       remember_conversion: item.rememberConversion,
     })),
     p_installments: draft.installments.map(item => ({
@@ -455,6 +456,7 @@ export async function classifyPayableItem(
   factor: number,
   usableQuantity: number,
   rememberConversion: boolean,
+  factorConfirmed: boolean,
 ): Promise<void> {
   const { error } = await supabase.rpc('classify_payable_item', {
     p_item_id: itemId,
@@ -463,6 +465,15 @@ export async function classifyPayableItem(
     p_conversion_factor: factor,
     p_usable_quantity: usableQuantity,
     p_remember_conversion: rememberConversion,
+    p_factor_confirmed: factorConfirmed,
+  })
+  if (error) throw error
+}
+
+export async function classifyPayableItemWithoutProduct(itemId: string, rememberDecision: boolean): Promise<void> {
+  const { error } = await supabase.rpc('classify_payable_item_without_product', {
+    p_item_id: itemId,
+    p_remember_decision: rememberDecision,
   })
   if (error) throw error
 }

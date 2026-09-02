@@ -4,8 +4,10 @@ import {
   calculateNormalizedUnitCost,
   calculateUsableQuantity,
   conversionFactorFromUsableQuantity,
+  conversionNeedsConfirmation,
   getConversionUnitWarning,
   formatConversionExplanation,
+  findLatestSupplierMapping,
   isClassificationComplete,
   declaresNoPayment,
   resolveInstallments,
@@ -84,7 +86,21 @@ describe('conversão de itens importados da NF-e', () => {
 
   it('não considera a NF classificada enquanto houver linha pendente', () => {
     expect(isClassificationComplete([item({ mappingStatus: 'mapeado', baseProductId: 'product-1', usableQuantity: 100 })])).toBe(true)
+    expect(isClassificationComplete([item({ mappingStatus: 'nao_aplicavel' })])).toBe(true)
     expect(isClassificationComplete([item(), item({ lineNumber: 2, mappingStatus: 'mapeado', baseProductId: 'product-2', usableQuantity: 1 })])).toBe(false)
+  })
+
+  it('exige confirmação explícita quando compra e receita usam famílias diferentes', () => {
+    expect(conversionNeedsConfirmation('CX', 'kg', false)).toBe(true)
+    expect(conversionNeedsConfirmation('CX', 'kg', true)).toBe(false)
+    expect(conversionNeedsConfirmation('KG', 'kg', false)).toBe(false)
+  })
+
+  it('reaproveita a decisão mais recente quando há memória repetida', () => {
+    const older = { supplier_product_code: '1044', supplier_ean: null, supplier_description: 'SACO', purchase_unit: 'PACOTE', updated_at: '2026-08-01T10:00:00Z', decision: 'antiga' }
+    const newer = { ...older, updated_at: '2026-09-01T10:00:00Z', decision: 'nova' }
+
+    expect(findLatestSupplierMapping(item(), [older, newer])?.decision).toBe('nova')
   })
 })
 
