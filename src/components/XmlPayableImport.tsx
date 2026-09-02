@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import { FileUp, Plus, Save, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
+  findLatestSupplierMapping,
   parseNfeXml,
   type NfeConversionBasis,
   type NfeDraft,
@@ -31,6 +32,16 @@ interface ProductMapping {
   base_unit: string
   conversion_basis: NfeConversionBasis
   conversion_factor: number
+  factor_confirmed: boolean
+  updated_at: string
+}
+
+interface NonCatalogMapping {
+  supplier_product_code: string | null
+  supplier_ean: string | null
+  supplier_description: string
+  purchase_unit: string
+  updated_at: string
 }
 
 interface XmlPayableImportProps {
@@ -48,12 +59,16 @@ function initialFactor(item: NfeItemDraft): number {
   return item.conversionBasis === 'simple' ? 1 : 1
 }
 
-function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initialFactor(item), recognized = false): NfeItemDraft {
+function withProduct(
+  item: NfeItemDraft,
+  product: PayableProduct,
+  factor = initialFactor(item),
+  recognized = false,
+  factorConfirmed = factor !== 1,
+): NfeItemDraft {
   return {
     ...item,
-    // Fator 1 é o valor que o sistema assume sozinho; só conta como conferido
-    // quando alguém escolheu outro número.
-    factorConfirmed: factor !== 1,
+    factorConfirmed,
     recognized,
     baseProductId: product.id,
     baseProductName: product.name,
@@ -62,6 +77,14 @@ function withProduct(item: NfeItemDraft, product: PayableProduct, factor = initi
     conversionFactor: factor,
     usableQuantity: calculateUsableQuantity(item.quantity, factor),
     mappingStatus: 'mapeado',
+  }
+}
+
+function withoutProduct(item: NfeItemDraft, recognized = false): NfeItemDraft {
+  return {
+    ...clearProduct(item),
+    mappingStatus: 'nao_aplicavel',
+    recognized,
   }
 }
 
@@ -81,19 +104,11 @@ function clearProduct(item: NfeItemDraft): NfeItemDraft {
 }
 
 function itemStatus(item: NfeItemDraft): { label: string; color: string } {
+  if (item.mappingStatus === 'nao_aplicavel') return { label: item.recognized ? 'uso/despesa reconhecido' : 'uso/despesa', color: 'var(--teal)' }
   if (!item.baseProductId) return { label: 'item novo', color: 'var(--red)' }
   if (conversionNeedsAttention(item)) return { label: 'confira a embalagem', color: 'var(--red)' }
   if (item.recognized) return { label: 'reconhecido', color: 'var(--teal)' }
   return { label: 'vinculado agora', color: 'var(--teal)' }
-}
-
-function findMapping(item: NfeItemDraft, mappings: ProductMapping[]): ProductMapping | undefined {
-  return mappings.find(mapping => (
-    mapping.purchase_unit === item.purchaseUnit
-      && ((item.supplierCode && mapping.supplier_product_code === item.supplierCode)
-        || (item.ean && mapping.supplier_ean === item.ean)
-        || (!item.supplierCode && !item.ean && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
-  ))
 }
 
 export default function XmlPayableImport({ suppliers, products, onSaved, onCancel }: XmlPayableImportProps) {
@@ -152,20 +167,35 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
 
   async function loadMappings(nextSupplierId: string, nextDraft = draft) {
     if (!nextDraft || !nextSupplierId) return
-    const { data, error: mappingError } = await (await import('@/lib/supabase')).supabase
-      .from('payable_product_mappings')
-      .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor')
-      .eq('supplier_id', nextSupplierId)
-      .eq('active', true)
-    if (mappingError) { setAutoMappedCount(0); setError('Não foi possível carregar os últimos fatores deste fornecedor.'); return }
-    const nextMappings = (data ?? []) as ProductMapping[]
+    const { supabase } = await import('@/lib/supabase')
+    const [productResult, nonCatalogResult] = await Promise.all([
+      supabase
+        .from('payable_product_mappings')
+        .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,updated_at')
+        .eq('supplier_id', nextSupplierId)
+        .eq('active', true),
+      supabase
+        .from('payable_non_catalog_mappings')
+        .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,updated_at')
+        .eq('supplier_id', nextSupplierId)
+        .eq('active', true),
+    ])
+    if (productResult.error || nonCatalogResult.error) { setAutoMappedCount(0); setError('Não foi possível carregar as classificações anteriores deste fornecedor.'); return }
+    const nextMappings = (productResult.data ?? []) as ProductMapping[]
+    const nonCatalogMappings = (nonCatalogResult.data ?? []) as NonCatalogMapping[]
     let appliedCount = 0
     const mappedItems = nextDraft.items.map(item => {
-      const mapping = findMapping(item, nextMappings)
+      const mapping = findLatestSupplierMapping(item, nextMappings)
+      const nonCatalog = findLatestSupplierMapping(item, nonCatalogMappings)
+      if (nonCatalog && (!mapping || nonCatalog.updated_at >= mapping.updated_at)) {
+        appliedCount += 1
+        return withoutProduct(item, true)
+      }
       const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
       if (!product) return item
       appliedCount += 1
-      return withProduct(item, product, Number(mapping?.conversion_factor) || 1, true)
+      const factor = Number(mapping?.conversion_factor) || 1
+      return withProduct(item, product, factor, true, Boolean(mapping?.factor_confirmed) || factor !== 1)
     })
     setAutoMappedCount(appliedCount)
     setDraft({ ...nextDraft, items: mappedItems })
@@ -194,6 +224,10 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
       return
     }
     if (draft) updateItem(index, withProduct(draft.items[index], product))
+  }
+
+  function markWithoutProduct(index: number) {
+    if (draft) updateItem(index, withoutProduct(draft.items[index]))
   }
 
   async function saveNewProduct(index: number) {
@@ -251,7 +285,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     } finally { setSaving(false) }
   }
 
-  const mappedCount = draft?.items.filter(item => item.mappingStatus === 'mapeado').length ?? 0
+  const mappedCount = draft?.items.filter(item => item.mappingStatus !== 'pendente').length ?? 0
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
@@ -296,8 +330,8 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
           )}
           {autoMappedCount > 0 && (
             <div className="ps-banner" style={{ marginTop: 10 }}>
-              <b>{autoMappedCount} {autoMappedCount === 1 ? 'conversão reaproveitada' : 'conversões reaproveitadas'} automaticamente</b>
-              <small style={{ display: 'block', marginTop: 3 }}>O ERP encontrou fornecedor, item-base e fator já confirmados. Confira os itens abaixo e altere somente se necessário.</small>
+              <b>{autoMappedCount} {autoMappedCount === 1 ? 'classificação reaproveitada' : 'classificações reaproveitadas'} automaticamente</b>
+              <small style={{ display: 'block', marginTop: 3 }}>O ERP lembrou o item-base e o fator, ou que a compra é de uso/despesa. Confira abaixo e altere somente se necessário.</small>
             </div>
           )}
           <div className="ps-fieldgroup" style={{ marginTop: 10 }}>
@@ -341,7 +375,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
                 <small style={{ color: itemStatus(item).color, fontWeight: 650 }}>{itemStatus(item).label}</small>
               </div>
               <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
-              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} />
+              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
                   <div className="ps-fieldgroup">
