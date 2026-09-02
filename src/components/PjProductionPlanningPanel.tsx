@@ -114,7 +114,7 @@ export function PjProductionPlanningPanel() {
     setDrafts(current => {
       const next = { ...current }
       for (const item of group.items) {
-        if (item.mappingError || !item.breadId || item.lastScheduledDate === productionDate) continue
+        if (item.mappingError || !item.breadId) continue
         next[item.orderId] = {
           ...draftFor(item, current[item.orderId]),
           selected: true,
@@ -131,7 +131,6 @@ export function PjProductionPlanningPanel() {
 
     const selected = group.items.filter(item =>
       drafts[item.orderId]?.selected
-      && item.lastScheduledDate !== productionDate
       && !item.mappingError
       && Boolean(item.breadId))
     if (selected.length === 0) {
@@ -162,7 +161,7 @@ export function PjProductionPlanningPanel() {
       return `${item.productName}: ${formatPjProductionQuantity(selection.quantity, item.pricingUnit)}${frozen}`
     }).join('\n')
     if (!window.confirm(
-      `Confira a programação de hoje:\n\n${confirmation}\n\nDepois de confirmar, esta programação não poderá ser alterada hoje.`,
+      `Confira a programação de hoje:\n\n${confirmation}\n\nIsto entra na produção e no Forno agora. Depois dá para programar mais, mas não dá para desfazer o que entrou.`,
     )) return
 
     const stableRequestId = requestIds[groupKey] ?? requestId()
@@ -251,7 +250,11 @@ export function PjProductionPlanningPanel() {
             {group.items.map(item => {
               const draft = draftFor(item, drafts[item.orderId])
               const scheduledToday = item.lastScheduledDate === productionDate
-              const blocked = Boolean(item.mappingError || !item.breadId || scheduledToday)
+              // Ja ter programado hoje NAO trava a linha. A Geolar decide produzir
+              // mais quando o forno rende, e o banco ja limita pelo total do pedido.
+              // A linha some sozinha quando nao falta nada, porque a fila so traz
+              // pedido com quantidade pendente.
+              const blocked = Boolean(item.mappingError || !item.breadId)
               return (
                 <div
                   key={item.orderId}
@@ -288,7 +291,7 @@ export function PjProductionPlanningPanel() {
 
                   {scheduledToday && (
                     <div className="ps-warning" style={{ fontSize: 12 }}>
-                      A parte de hoje já foi definida. O restante volta como pendência amanhã.
+                      Você já programou este item hoje. Dá para programar mais, até o que falta.
                     </div>
                   )}
 
@@ -318,7 +321,7 @@ export function PjProductionPlanningPanel() {
                           style={{ marginTop: 4 }}
                         />
                         <span style={{ display: 'block', marginTop: 3 }}>
-                          {formatPjProductionQuantity(item.frozenAvailable, 'un')} livres
+                          {formatPjProductionQuantity(item.frozenAvailable, 'un')} em estoque
                         </span>
                       </label>
                     </div>
@@ -333,8 +336,7 @@ export function PjProductionPlanningPanel() {
             className="btn-save no-print"
             style={{ width: '100%', marginTop: 12 }}
             onClick={() => void programGroup(group.key)}
-            disabled={Boolean(programmingKey) || !group.items.some(item =>
-              drafts[item.orderId]?.selected && item.lastScheduledDate !== productionDate)}
+            disabled={Boolean(programmingKey) || !group.items.some(item => drafts[item.orderId]?.selected)}
           >
             <Check size={15} /> {programmingKey === group.key ? 'Programando...' : 'Programar selecionados para hoje'}
           </button>
