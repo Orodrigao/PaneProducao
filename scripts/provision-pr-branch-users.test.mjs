@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it, mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
@@ -16,6 +18,7 @@ import {
 
 const BRANCH_REF = 'unnlpxjuxikreramqlwz'
 const WORKFLOW_PATH = fileURLToPath(new URL('../.github/workflows/usuarios-banco-por-pr.yml', import.meta.url))
+const RAIZ_CONFIAVEL = fileURLToPath(new URL('..', import.meta.url))
 const INTERNAL_OR_MANUAL_CONDITION = "github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository"
 const BRANCH_ENV = [
   `POSTGRES_URL=postgresql://postgres.${BRANCH_REF}:senha-url-teste-9z8y7x@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?connect_timeout=10`,
@@ -279,6 +282,62 @@ describe('provisionPreviewBranchUsers', () => {
       )
       assert.ok(args.every((argument) => !argument.includes('senha-url-teste-9z8y7x')))
     }
+  })
+
+  // O seed PRECISA vir da PR: e a mudanca dela que tem de entrar no banco isolado.
+  // O roteiro de conferencia NAO pode: lido da copia da PR, bastaria enfraquecer o
+  // arquivo no mesmo commit para o check ficar verde sem provar nada. Quem confere
+  // nao pode ser escolhido por quem e conferido. Este teste monta exatamente esse
+  // ataque: a copia da PR traz um roteiro afrouxado, e ele precisa ser ignorado.
+  it('le o seed da PR, mas o roteiro de conferencia sempre da main', async () => {
+    const raizDaPr = mkdtempSync(join(tmpdir(), 'copia-da-pr-'))
+    mkdirSync(join(raizDaPr, 'supabase', 'verification'), { recursive: true })
+    writeFileSync(join(raizDaPr, 'supabase', 'seed.sql'), 'select 1; -- seed legitimo da PR')
+    writeFileSync(
+      join(raizDaPr, 'supabase', 'verification', 'preview_users.sql'),
+      'select 1; -- conferencia afrouxada pela propria PR',
+    )
+
+    const responses = [
+      new Response(JSON.stringify({
+        check_runs: [{ name: 'Supabase Preview', status: 'completed', conclusion: 'success' }],
+      }), { status: 200 }),
+      new Response(JSON.stringify([readyBranch()]), { status: 200 }),
+      new Response(JSON.stringify({ users: [] }), { status: 200 }),
+      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+    ]
+    const fetchImpl = mock.fn(async () => responses.shift())
+    const runCommand = mock.fn(async (_command, args) => ({
+      stdout: args.includes('branches') ? BRANCH_ENV : '',
+      stderr: '',
+    }))
+
+    await provisionPreviewBranchUsers({
+      prNumber: 286,
+      gitBranch: 'fix/programacao-producao-pj-preview',
+      prHeadSha: 'c'.repeat(40),
+      githubRepository: 'Orodrigao/PaneProducao',
+      githubToken: 'github-token',
+      supabaseToken: 'token-teste',
+      testUserPassword: 'SenhaTeste1!',
+      workdir: raizDaPr,
+      trustedRoot: RAIZ_CONFIAVEL,
+      fetchImpl,
+      runCommand,
+      log: () => {},
+    })
+
+    const enviados = runCommand.mock.calls.slice(1).map(call => {
+      const args = call.arguments[1]
+      return args[args.indexOf('--command') + 1]
+    })
+
+    assert.match(enviados[0], /seed legitimo da PR/,
+      'o seed continua vindo da copia da PR')
+    assert.doesNotMatch(enviados[1], /conferencia afrouxada pela propria PR/,
+      'o roteiro de conferencia NAO pode vir da copia da PR')
+    assert.match(enviados[1], /expected_users/,
+      'o roteiro de conferencia vem do arquivo real da main')
   })
 
   it('oculta a conexao do banco se a reaplicacao do seed falhar', async () => {

@@ -252,6 +252,9 @@ export async function provisionPreviewBranchUsers({
   supabaseToken,
   testUserPassword,
   workdir = process.cwd(),
+  // Raiz da automacao confiavel, que o workflow sempre traz da main. Separada de
+  // propósito da copia da PR.
+  trustedRoot = process.cwd(),
   fetchImpl = fetch,
   runCommand = defaultRunCommand,
   timeoutMs,
@@ -307,8 +310,19 @@ export async function provisionPreviewBranchUsers({
   })
 
   try {
-    for (const file of ['supabase/seed.sql', 'supabase/verification/preview_users.sql']) {
-      const sql = await readFile(resolve(workdir, file), 'utf8')
+    // O SEED vem da PR, de proposito: e a mudanca dela que precisa entrar no
+    // banco isolado, senao o preview nao testa o que a PR fez.
+    //
+    // O ROTEIRO DE CONFERENCIA vem sempre da main, como o resto da automacao.
+    // Lido da copia da PR, uma entrega poderia afrouxar a propria conferencia:
+    // bastaria enfraquecer esse arquivo no mesmo commit para o check ficar verde
+    // sem provar nada. Quem confere nao pode ser escolhido por quem e conferido.
+    const arquivos = [
+      { caminho: 'supabase/seed.sql', raiz: workdir },
+      { caminho: 'supabase/verification/preview_users.sql', raiz: trustedRoot },
+    ]
+    for (const { caminho: file, raiz } of arquivos) {
+      const sql = await readFile(resolve(raiz, file), 'utf8')
       await runCommand('psql', [
         ...psqlConnection.args,
         '--command',
@@ -354,6 +368,9 @@ async function main() {
       supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
       testUserPassword: process.env.SUPABASE_TEST_USER_PASSWORD,
       workdir: process.env.PROVISION_WORKDIR || process.cwd(),
+      // PROVISION_WORKDIR aponta para a copia da PR. A raiz do processo e sempre
+      // a automacao vinda da main, e e dela que sai o roteiro de conferencia.
+      trustedRoot: process.cwd(),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha desconhecida no banco isolado.'
