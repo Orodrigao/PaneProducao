@@ -185,7 +185,14 @@ export function PjProductionPlanningPanel() {
   }
 
   return (
-    <section className="print-card print-breads" style={{ marginTop: 20 }} aria-labelledby="pj-production-title">
+    // Este painel NAO entra no "Imprimir paes", de proposito. Ele mostra a FILA DE
+    // PENDENCIAS, e a impressao precisa mostrar A PRODUCAO DO DIA. Sao coisas
+    // diferentes: em 02/09/2026 a Geolar programou 10 linhas e a folha saiu com 24
+    // paginas de pedidos pendentes, alguns de junho, porque o painel inteiro estava
+    // marcado como imprimivel. Uma folha dessas pode fazer alguem assar pedido ja
+    // entregue. Enquanto a folha propria do PJ nao existir, a referencia de producao
+    // PJ e a tela Forno, que le a programacao de verdade.
+    <section className="no-print" style={{ marginTop: 20 }} aria-labelledby="pj-production-title">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
           <h3 id="pj-production-title">🏢 Produção PJ de hoje</h3>
