@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -121,6 +122,30 @@ export function buildPsqlConnection(branchEnvironment, expectedProjectRef) {
     },
     secrets: [sessionUrl.toString(), password],
   }
+}
+
+// Duas raizes sao a mesma quando apontam para o mesmo diretorio DE VERDADE, e
+// nao quando as strings coincidem. `resolve` desfaz `..` e barra final, mas nao
+// desfaz apelido: no Windows a caixa das letras nao importa, e nos dois sistemas
+// um junction ou symlink e outro nome da mesma pasta. Nesses casos a comparacao
+// de texto diria "diferentes" e a trava passaria batido, que e exatamente o tipo
+// de silencio que ela existe para acabar. `realpath` desfaz os apelidos.
+//
+// Caminho que ainda nao existe cai no `resolve`: e a resposta conservadora,
+// porque logo adiante o `readFile` derruba a execucao de qualquer jeito.
+export function mesmoDiretorio(a, b) {
+  const canonico = (caminho) => {
+    try {
+      return realpathSync.native(caminho)
+    } catch (erro) {
+      // So o "nao existe" tem resposta conservadora conhecida. Qualquer outro
+      // erro (permissao, por exemplo) viraria "diretorios diferentes", ou seja,
+      // falha ABERTA dentro de uma trava que promete o contrario. Entao estoura.
+      if (erro?.code !== 'ENOENT') throw erro
+      return resolve(caminho)
+    }
+  }
+  return canonico(a) === canonico(b)
 }
 
 export function buildPsqlServerCommand(sql) {
@@ -252,6 +277,9 @@ export async function provisionPreviewBranchUsers({
   supabaseToken,
   testUserPassword,
   workdir = process.cwd(),
+  // Raiz da automacao confiavel, que o workflow sempre traz da main. Separada de
+  // proposito da copia da PR.
+  trustedRoot = process.cwd(),
   fetchImpl = fetch,
   runCommand = defaultRunCommand,
   timeoutMs,
@@ -260,6 +288,41 @@ export async function provisionPreviewBranchUsers({
   sleep,
   log = console.log,
 }) {
+  // Trava que falha FECHADA, antes de qualquer chamada de rede.
+  //
+  // A protecao inteira depende de a copia da PR e a automacao confiavel serem
+  // dois diretorios diferentes. Hoje o workflow garante isso rodando o script a
+  // partir do checkout da main, com PROVISION_WORKDIR apontando para a copia da
+  // PR. Nada obriga que continue assim: um `working-directory: _pr-source` no
+  // passo, ou um PROVISION_WORKDIR esquecido, faz as duas raizes virarem a
+  // mesma. Ai o roteiro de conferencia volta a vir da PR, o check fica verde
+  // sem provar nada e nenhum outro teste reclama. Entao reclama aqui.
+  //
+  // O QUE ESTA TRAVA NAO COBRE, e e honesto dizer: ela pega o colapso
+  // ACIDENTAL, nao o adversarial. Duas razoes.
+  //
+  // Primeira: se um `working-directory` fizer o Node carregar o SCRIPT da copia
+  // da PR, uma PR que tambem edite este arquivo apaga a trava junto.
+  //
+  // Segunda, e mais importante porque e contraintuitiva: em evento
+  // `pull_request` o GitHub roda o WORKFLOW da propria PR, e nao o da main
+  // (quem rodaria o da base seria `pull_request_target`, que este repo nao usa).
+  // Entao a assercao de forma no teste tambem esta sob controle de quem abre a
+  // PR. O que `ref: main` de fato garante e so isto, que ja e bastante: o
+  // SCRIPT que recebe os segredos vem da main. Contra o adversarial, quem segura
+  // e a revisao humana do diff do workflow e a guarda que barra PR de fork.
+  if (mesmoDiretorio(trustedRoot, workdir)) {
+    throw new Error(
+      'A raiz confiavel e a copia da PR apontam para o mesmo diretorio. '
+      + `Confiavel: ${trustedRoot}. Copia da PR: ${workdir}. `
+      + `Os dois viram ${resolve(workdir)} depois de resolver apelidos do sistema `
+      + 'de arquivos, entao caminhos escritos diferente aqui podem ser a mesma '
+      + 'pasta. O roteiro de conferencia de perfis passaria a vir da propria PR, '
+      + 'que e o que esta separacao existe para impedir. Confira PROVISION_WORKDIR '
+      + 'e o working-directory do passo no workflow.',
+    )
+  }
+
   await waitForSupabasePreviewCheck({
     githubRepository,
     githubToken,
@@ -307,8 +370,19 @@ export async function provisionPreviewBranchUsers({
   })
 
   try {
-    for (const file of ['supabase/seed.sql', 'supabase/verification/preview_users.sql']) {
-      const sql = await readFile(resolve(workdir, file), 'utf8')
+    // O SEED vem da PR, de proposito: e a mudanca dela que precisa entrar no
+    // banco isolado, senao o preview nao testa o que a PR fez.
+    //
+    // O ROTEIRO DE CONFERENCIA vem sempre da main, como o resto da automacao.
+    // Lido da copia da PR, uma entrega poderia afrouxar a propria conferencia:
+    // bastaria enfraquecer esse arquivo no mesmo commit para o check ficar verde
+    // sem provar nada. Quem confere nao pode ser escolhido por quem e conferido.
+    const arquivos = [
+      { caminho: 'supabase/seed.sql', raiz: workdir },
+      { caminho: 'supabase/verification/preview_users.sql', raiz: trustedRoot },
+    ]
+    for (const { caminho: file, raiz } of arquivos) {
+      const sql = await readFile(resolve(raiz, file), 'utf8')
       await runCommand('psql', [
         ...psqlConnection.args,
         '--command',
@@ -354,6 +428,9 @@ async function main() {
       supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
       testUserPassword: process.env.SUPABASE_TEST_USER_PASSWORD,
       workdir: process.env.PROVISION_WORKDIR || process.cwd(),
+      // PROVISION_WORKDIR aponta para a copia da PR. A raiz do processo e sempre
+      // a automacao vinda da main, e e dela que sai o roteiro de conferencia.
+      trustedRoot: process.cwd(),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha desconhecida no banco isolado.'
