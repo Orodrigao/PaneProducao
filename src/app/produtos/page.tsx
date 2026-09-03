@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert, Tags } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -332,8 +332,8 @@ export default function ProdutosPage() {
 
         <div className="ps-scroll ps-pad">
           {/* Action row: search + new */}
-          <div style={{display:'flex', gap:8, marginTop:14, marginBottom:12}}>
-            <div style={{flex:1, position:'relative'}}>
+          <div style={{display:'flex', gap:8, marginTop:14, marginBottom:12, flexWrap:'wrap'}}>
+            <div style={{flex:'1 1 260px', position:'relative'}}>
               <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
               <input placeholder={tab==='produtos' ? "Buscar produto..." : "Buscar fabricação própria..."} value={search} onChange={e=>setSearch(e.target.value)}
                 className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
@@ -341,6 +341,11 @@ export default function ProdutosPage() {
             <Link href="/produtos/cmv" className="ps-btn ghost">
               <BarChart3 size={14}/> CMV
             </Link>
+            {user?.role === 'admin' && (
+              <Link href="/produtos/categorias" className="ps-btn ghost">
+                <Tags size={14}/> Categorias
+              </Link>
+            )}
             {tab==='produtos' ? (
               <button onClick={()=>{setIsNew(true);setConversionEdits([]);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
