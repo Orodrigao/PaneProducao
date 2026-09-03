@@ -1,10 +1,13 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-08-13
+**Data de referência:** 2026-09-03
 
-**Base observada:** `origin/main` em `6f483b0`, até a incorporação da PR `#229`.
-A leitura de 2026-08-13 cobriu o módulo Financeiro e o plano do Contas a
-Receber; as demais seções vêm das revisões anteriores e mantêm suas datas.
+**Base observada:** `origin/main` em `f229680`, até a incorporação da PR `#316`.
+A revisão de 2026-09-03 cobriu o que entrou entre 30/08 e 02/09 (banco de teste
+por PR, programação da produção PJ e classificação de itens da NF-e) e os riscos
+abertos nessas frentes. A leitura de 2026-08-13 cobriu o módulo Financeiro e o
+plano do Contas a Receber; as demais seções vêm das revisões anteriores e
+mantêm suas datas.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -109,6 +112,27 @@ Riscos ainda abertos:
   criar conta já quitada. Achado do Sol em 2026-08-07; conferido em 2026-08-13
   e **ainda aberto** — a função não foi redefinida desde então. Correção
   prevista em tarefa própria de contas a pagar;
+- **a entrada de NF-e recusa toda nota em que a soma dos produtos não fecha com
+  o valor total.** Relatado por Rodrigo em 2026-09-03: há muitas notas em que
+  incide imposto por fora, como ICMS substituição e IPI, ou despesa acessória,
+  e nelas o valor da nota é maior que a soma dos produtos. A função
+  `create_xml_payable` compara a soma dos itens com o total informado e levanta
+  "A soma dos itens da NF-e não fecha com o total informado"; o leitor de XML
+  (`src/lib/nfeXml.ts`) envia `vNF` como total e não lê `vST`, `vIPI`, `vFrete`,
+  `vSeg` nem `vOutro`. Efeito na operação: essas notas não entram e a conta a
+  pagar não nasce. Contorno existente: lançar a compra à mão somando o imposto
+  como item. A correção depende de decidir o destino do imposto, se compõe o
+  custo do insumo por rateio ou vira linha própria de despesa, porque isso muda
+  o custo unitário e o CMV. Frente própria, ainda não aberta;
+- **a trava do fator de conversão na importação de NF-e falha aberta.** Achado
+  da revisão adversarial da PR #315: em `create_xml_payable`, `factor_confirmed`
+  nulo não dispara a exigência de confirmação, enquanto a função irmã
+  `classify_payable_item` usa `coalesce` e falha fechada. A correção de uma
+  linha foi tentada e reprovada no `CI Banco`, porque quebrava a convivência com
+  a versão do site que estava no ar, caso `FARINHA SITE ANTIGO` do teste
+  `nfe_desconto_e_trava_do_fator`. Rodrigo decidiu em 2026-09-02 adiar para PR
+  própria, depois de a tela nova estar no ar. A tela entrou no ar naquele mesmo
+  dia, então a PR de correção está liberada para acontecer;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -180,6 +204,18 @@ disputavam um único banco de teste compartilhado.
   de 2026-08-28, ainda não achava banco por PR.
 - Não verificado: se o banco isolado reduz a falha intermitente do smoke
   descrita no bloqueio 5. Nada foi medido depois da mudança.
+- Observado em 2026-09-03, nas PRs #317 e #318: o check
+  `Usuarios do Banco por PR` pode correr antes de o banco isolado daquele commit
+  ficar pronto, e então falha fechado com "O Supabase Preview do commit terminou
+  como skipped". Reexecutar o job resolve, sem tocar no código. Aconteceu nas
+  duas PRs seguidas, o que sugere ordem de execução e não azar.
+- Observado em 2026-09-03: o smoke de navegador do CI usa o `PaneERP Preview`
+  compartilhado **mesmo quando a PR tem banco próprio**, e por isso falha quando
+  o cenário fictício do compartilhado foi consumido por uso anterior. A mensagem
+  do próprio job diz isso e manda reconstruir o banco compartilhado antes de
+  reexecutar. Consequência: uma PR que mexe em `supabase/` tem o preview
+  apontado para o banco dela, mas o smoke continua provando o banco espelho da
+  `main`.
 
 ## Capacidades já presentes
 
@@ -233,6 +269,13 @@ disputavam um único banco de teste compartilhado.
   linha, por causa do índice único de um lançamento ativo por origem e
   categoria. Aplicado em produção em 2026-08-20 (PR #244) e confirmado por
   leitura live da lista de migrations;
+- item de nota fiscal que não entra em receita (PR #315, no ar em 2026-09-02):
+  quando a nota traz detergente, papel toalha ou material de manutenção, a
+  pessoa marca *uso ou despesa* e o item deixa de exigir um item-base de
+  receita. A conta para de ficar presa em pendente, e a decisão fica gravada por
+  fornecedor: na nota seguinte o mesmo item já vem resolvido. A memória por
+  fornecedor tem RLS forçada e escrita somente por função, e a confirmação do
+  fator de conversão viaja da tela até o banco;
 - contas a receber (fase 2 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
   cobrança de cliente PJ digitada à mão em `/contas-receber`, com vencimento
   calculado do prazo do cliente, **recebimento em pedaços** (vários por
@@ -290,6 +333,14 @@ plano de CMV.
 Existem componentes, rendimentos, opções de venda e cálculo teórico. Ainda não
 há ficha versionada completa nem cobertura suficiente para declarar CMV
 confiável.
+
+### Catálogo: tipos e categorias controladas
+
+Plano em [CATALOGO_PRODUTOS.md](CATALOGO_PRODUTOS.md). A fase 1, que cria a
+estrutura controlada e a tela de categorias sem reclassificar nada, está na PR
+#318, aguardando o teste do Rodrigo. Enquanto a migração assistida não
+acontecer, tipo e categoria controlada são informação opcional e a categoria em
+texto livre continua em uso.
 
 ### CNM
 

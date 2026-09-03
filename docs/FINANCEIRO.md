@@ -169,6 +169,20 @@ esquecimento:
    agosto, a parcela de empréstimo e a recorrência vigente que ficaram lá e
    nunca nasceram no ERP. A fase 5 migra explicitamente títulos abertos e
    recorrências vigentes.
+8. **A entrada de NF-e recusa nota com imposto por fora** (registrado em
+   2026-09-03). `create_xml_payable` exige que a soma dos itens feche com o
+   total da nota, e o leitor de XML manda `vNF` como total sem ler `vST`,
+   `vIPI`, `vFrete`, `vSeg` nem `vOutro`. Nota com ICMS substituição, IPI ou
+   despesa acessória não entra, e a conta a pagar não nasce. Antes de codificar,
+   decidir o destino do imposto: compor o custo do insumo por rateio, o que
+   muda custo unitário e CMV, ou virar linha própria de despesa. Detalhe e
+   contorno em [CURRENT_STATE.md](CURRENT_STATE.md), Riscos ainda abertos.
+9. **A trava do fator de conversão da NF-e falha aberta** (achado da revisão da
+   PR #315, adiado por decisão de Rodrigo em 2026-09-02). `factor_confirmed`
+   nulo não exige confirmação em `create_xml_payable`, enquanto
+   `classify_payable_item` usa `coalesce` e falha fechada. A correção esperava a
+   tela nova entrar no ar, o que aconteceu em 2026-09-02, e agora cabe em PR
+   própria.
 
 ## Gate técnico (herdado do Contas a Receber, reforçado)
 
