@@ -12,7 +12,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(40);
 
 -- A data que vale e a da padaria ----------------------------------------------
 -- 23h30 do dia 31 em Brasilia ja e dia 1 em UTC. Se a competencia usasse a data
@@ -50,6 +50,8 @@ values
   ('95000000-0000-4000-8000-000000000001', 'contas_receber.lancar', 'jc', null),
   ('95000000-0000-4000-8000-000000000001', 'contas_receber.cancelar', 'jc', null),
   ('95000000-0000-4000-8000-000000000001', 'financeiro.acessar', '*', null),
+  -- A fase 2 acrescentou a correcao pos-envio, e ela e do financeiro.
+  ('95000000-0000-4000-8000-000000000001', 'pedidos_pj.corrigir_quantidade', 'jc', null),
   -- A Expedição recebe SOMENTE a permissão de confirmar envio. Nenhuma
   -- permissão financeira: é o que o teste precisa provar.
   ('95000000-0000-4000-8000-000000000002', 'pedidos_pj.confirmar_envio', 'jc', null);
@@ -263,42 +265,58 @@ select ok(exists(select 1 from public.list_pj_orders_to_bill()
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
   'pedido com cobranca cancelada volta para a lista de a faturar');
 
--- TRIPWIRE de buraco conhecido ----------------------------------------------
--- Corrigir a quantidade de um pedido ja conferido apaga `dispatched_quantity`
--- da linha corrigida, mas nao apaga `dispatched_at`. Entao a cobranca ainda
--- sai por um numero que ninguem conferiu. A trava do passo 1 NAO fecha isso de
--- proposito: fechar aqui criaria pedido sem saida, porque
--- `save_pj_order_dispatch_quantities` recusa reconferir pedido ja enviado.
+-- O BURACO CONHECIDO FOI FECHADO EM 03/09 -----------------------------------
+-- Corrigir a quantidade de um pedido ja conferido continua apagando
+-- `dispatched_quantity` da linha corrigida sem apagar `dispatched_at`. Ate a
+-- fase 2, a cobranca saia assim mesmo, por um numero que ninguem conferiu, e
+-- este tripwire afirmava o buraco com o aviso escrito: "quando a metade B do
+-- passo 2 entrar, ele vai falhar, e e para falhar".
 --
--- Este teste afirma o buraco. Quando a metade B do passo 2 entrar, ele vai
--- falhar — e e para falhar: e o lembrete de vir aqui e trocar por
--- `throws_ok`.
+-- Entrou. O estado de fato continua o mesmo; o que mudou e que a cobranca
+-- agora RECUSA, em vez de adivinhar.
 select is((select count(*)::int from public.orders
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid
       and cancelled_at is null and dispatched_quantity is null), 1,
-  'BURACO CONHECIDO: corrigir o pedido apaga a conferencia da linha corrigida');
+  'corrigir o pedido continua apagando a conferencia da linha corrigida');
 
 select is((select bool_or(dispatched_at is not null) from public.orders
     where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), true,
-  'BURACO CONHECIDO: mas o pedido continua marcado como enviado, e por isso a cobranca passa');
+  'e o pedido continua marcado como enviado');
 
 -- O caminho manual do financeiro -------------------------------------------
 
-select is((select amount from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid), 175.00,
-  'a lista ja mostra o valor corrigido do pedido');
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a1'::uuid),
+  'sem-conferencia-depois-do-envio',
+  'a lista mostra por que este pedido nao pode ser cobrado');
 
-select lives_ok(
+select throws_ok(
   $$ select public.create_receivable_from_pj_order(
        '95000000-0000-4000-8000-00000000f002'::uuid,
        '95000000-0000-4000-8000-0000000000a1'::uuid
      ) $$,
-  'financeiro gera a cobranca pela lista'
+  '22023',
+  'Este pedido saiu sem a conferência de algum item. Use "Corrigir quantidade enviada" em Pedidos PJ para registrar o que saiu.',
+  'e a cobranca recusa dizendo o que fazer, em vez de sair por numero nao conferido'
+);
+
+-- E a saida existe: a correcao pos-envio registra o que saiu e a cobranca
+-- volta a ser possivel. Antes da fase 2 este pedido ficava sem saida nenhuma -
+-- nao podia ser reconferido nem deixava de ser cobrado.
+select lives_ok(
+  $$ select public.corrigir_quantidade_enviada_pj(
+       '95000000-0000-4000-8000-00000000f0c1'::uuid,
+       '95000000-0000-4000-8000-0000000000a1'::uuid,
+       '[{"order_id":"95000000-0000-4000-8000-00000000e001","dispatched_quantity":25},
+         {"order_id":"95000000-0000-4000-8000-00000000e002","dispatched_quantity":10}]'::jsonb,
+       'registrando o que saiu depois da correcao comercial'
+     ) $$,
+  'a correcao pos-envio devolve a saida ao pedido corrigido'
 );
 
 select is((select amount from public.receivables
     where origin_ref = '95000000-0000-4000-8000-0000000000a1'::uuid and status <> 'cancelada'), 175.00,
-  'a cobranca gerada pela lista usa o valor recalculado no banco');
+  'e a cobranca nasce pelo valor recalculado no banco (25 + 10 linhas a 5,00)');
 
 -- Cliente sem prazo: o envio acontece, a cobrança não nasce ----------------
 
@@ -357,13 +375,18 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), true,
-  'pedido sem conferencia aparece marcado como aguardando conferencia');
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid),
+  'aguardando-conferencia',
+  'pedido sem conferencia aparece com o motivo escrito');
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid), false,
-  'pedido ja conferido nao fica marcado');
+-- O a2 e do cliente sem prazo: o motivo dele e outro, e a ordem importa.
+-- Sem prazo a cobranca espera um cadastro que a Elis resolve sozinha; sem
+-- conferencia ela depende de outra pessoa.
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid),
+  'sem-prazo',
+  'pedido conferido de cliente sem prazo mostra o motivo do prazo');
 
 -- Continuar na lista e deliberado: sumir faria a Elis perder de vista um
 -- pedido entregue e nao cobrado, que foi o estrago que a fila da Expedicao
@@ -394,9 +417,9 @@ select set_config('pane.pj_check_rpc', '', true);
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), false,
-  'depois da conferencia o pedido deixa de estar aguardando');
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), null,
+  'depois da conferencia o pedido deixa de ter motivo de bloqueio');
 
 select lives_ok(
   $$ select public.create_receivable_from_pj_order(
