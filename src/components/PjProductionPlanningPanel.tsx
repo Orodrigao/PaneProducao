@@ -190,8 +190,8 @@ export function PjProductionPlanningPanel() {
     // diferentes: em 02/09/2026 a Geolar programou 10 linhas e a folha saiu com 24
     // paginas de pedidos pendentes, alguns de junho, porque o painel inteiro estava
     // marcado como imprimivel. Uma folha dessas pode fazer alguem assar pedido ja
-    // entregue. Enquanto a folha propria do PJ nao existir, a referencia de producao
-    // PJ e a tela Forno, que le a programacao de verdade.
+    // entregue. A parcela PJ do dia entra na folha por uma leitura separada da
+    // programacao confirmada; esta fila inteira continua fora do papel.
     <section className="no-print" style={{ marginTop: 20 }} aria-labelledby="pj-production-title">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>

@@ -167,6 +167,8 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .print-row span { text-align: right; }
 .print-row .pname { text-align: left; }
 .print-row .ptotal { font-weight: 600; }
+.print-row.print-row-pj { grid-template-columns: minmax(0, 1fr) 42px 42px 42px minmax(88px, auto); }
+.print-pj-quantity { font-weight: 400; white-space: nowrap; }
 
 /* ── MODAL ─────────────────────────────────────────────────────── */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; align-items: flex-end; justify-content: center; }

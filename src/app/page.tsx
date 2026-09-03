@@ -18,6 +18,10 @@ import {
 import { supabase } from '@/lib/supabase'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
+import {
+  buildPjPrintSheet,
+  type PjProductionPrintSource,
+} from '@/lib/pjPrintSheet'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
 
@@ -1558,12 +1562,45 @@ interface GeolarProps {
 function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, prodQtys, prodObs, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
-  let grand = 0
-  const printRows = todayBds.map(b=>{
-    const vals = stores.map(s=>orders[s]?.[b.id]?.quantity||0)
-    const tot = vals.reduce((a,c)=>a+c,0); grand+=tot
-    return {...b,vals,tot}
-  }).filter(b=>b.tot>0)
+  const regularBreadIds = new Set(todayBds.map(bread => bread.id))
+  const [pjPrintProduction, setPjPrintProduction] = useState<PjProductionPrintSource[]>([])
+  const pjPrintRequestRef = useRef(0)
+
+  const loadPjPrintProduction = useCallback(async () => {
+    const requestId = ++pjPrintRequestRef.current
+    // A folha das lojas precisa continuar útil para quem não pode consultar a
+    // programação PJ e também quando a rede falha. Por isso esta leitura é opcional.
+    try {
+      const { data, error } = await supabase.rpc('list_pj_production_for_oven', {
+        p_production_date: geolarDate,
+      })
+      if (requestId !== pjPrintRequestRef.current) return
+      if (error) {
+        setPjPrintProduction([])
+        return
+      }
+      setPjPrintProduction((data ?? []) as PjProductionPrintSource[])
+    } catch {
+      if (requestId !== pjPrintRequestRef.current) return
+      setPjPrintProduction([])
+    }
+  }, [geolarDate])
+
+  useEffect(() => {
+    void loadPjPrintProduction()
+  }, [loadPjPrintProduction])
+
+  const printRows = buildPjPrintSheet(
+    breads.map(bread => ({
+      breadId: bread.id,
+      breadName: bread.name,
+      storeQuantities: regularBreadIds.has(bread.id)
+        ? stores.map(store => orders[store]?.[bread.id]?.quantity || 0)
+        : stores.map(() => 0),
+    })),
+    pjPrintProduction,
+  )
+  const grand = printRows.reduce((total, row) => total + row.total, 0)
 
   const pjSv = orders['pj']||{}
   const pjBreads = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
@@ -1579,6 +1616,11 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
     window.print()
     setPrintScope('')
   }, [printScope])
+
+  const printBreads = async () => {
+    await loadPjPrintProduction()
+    setPrintScope('breads')
+  }
 
   if (reuseGate.status !== 'ready' || reuseGate.hasPendingProposal) {
     return (
@@ -1631,27 +1673,34 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
         <div className="print-card print-breads">
           <h3>Pane &amp; Salute — Produção</h3>
           <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
-          <div className="print-row ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
+          <div className="print-row print-row-pj ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
           {!printRows.length && <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0',textAlign:'center'}}>Nenhum pedido para esta data.</div>}
           {printRows.map(b=>(
-            <div key={b.id} className="print-row">
-              <span className="pname">{b.name}</span>
-              {b.vals.map((v,i)=><span key={i}>{v}</span>)}
-              <span className="ptotal">{b.tot}</span>
+            <div key={b.breadId} className="print-row print-row-pj">
+              <span className="pname">{b.breadName}</span>
+              {b.storeQuantities.map((quantity,index)=><span key={index}>{quantity}</span>)}
+              <span className="ptotal">
+                {b.total}
+                {b.pjQuantity !== null && <span className="print-pj-quantity"> ({b.pjQuantity} PJ)</span>}
+              </span>
             </div>
           ))}
-          {printRows.length>0&&<div className="print-row" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
+          {printRows.length>0&&<div className="print-row print-row-pj" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
             <span>TOTAL GERAL</span><span/><span/><span/><span className="ptotal">{grand}</span>
           </div>}
+          {/* Há 2 pães marcados como is_pj no cadastro e apenas 1 das 20
+              programações recentes usou um deles. Como essa quantidade já entra
+              no total acima, repeti-la neste bloco cria o risco de assar o dobro. */}
           {pjBreads.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--border)'}}>
             <div style={{fontSize:12,fontWeight:500,marginBottom:6}}>PJ — {(Object.values(pjSv)[0] as any)?.pj_client||'—'} · {(Object.values(pjSv)[0] as any)?.pj_delivery_date||'—'}</div>
-            {pjBreads.map(p=><div key={p.id} style={{fontSize:12}}>{p.name}: {pjSv[p.id]?.quantity||0}</div>)}
+            <div style={{fontSize:12,marginBottom:4}}>Quantidades já incluídas no total da tabela acima.</div>
+            {pjBreads.map(p=><div key={p.id} style={{fontSize:12}}>{p.name}</div>)}
           </div>}
         </div>
 
         {/* Botões da lista de pães */}
         <div className="btn-row" style={{marginTop:10}}>
-          <button className="btn-save" disabled={!hasBreads} onClick={()=>setPrintScope('breads')}>🖨 Imprimir pães</button>
+          <button className="btn-save" disabled={!hasBreads} onClick={()=>void printBreads()}>🖨 Imprimir pães</button>
           <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp('breads')}>📋 Copiar texto</button>
         </div>
 
