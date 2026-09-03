@@ -15,6 +15,8 @@ import {
   pjOrderBillingBlock,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
+  PJ_ORDER_BILLING_BLOCK_MESSAGES,
+  type PjOrderBillingBlock,
   podeDividirEm,
   validateReceivablePaymentDraft,
   vencimentosDaFatura,
@@ -200,66 +202,67 @@ describe('pedidos PJ a faturar', () => {
     dispatched_at: null,
     items: 2,
     amount: 150,
-    aguardando_conferencia: false,
+    amount_estimado: 150,
+    motivo_bloqueio: null,
     ...overrides,
   })
 
-  it('pedido de cliente sem prazo nao pode ser cobrado', () => {
+  it('quem decide o bloqueio e o banco, e a tela repete o motivo dele', () => {
+    // A regra saiu da tela de proposito: o motor recusa por cinco motivos
+    // diferentes e a tela nao pode inventar um sexto, nem discordar do banco
+    // sobre qual deles vale.
     expect(pjOrderCanBeBilled(pedido())).toBe(true)
-    expect(pjOrderCanBeBilled(pedido({ payment_term_days: null }))).toBe(false)
-    // Zero é à vista, não é ausência de prazo.
-    expect(pjOrderCanBeBilled(pedido({ payment_term_days: 0 }))).toBe(true)
+    expect(pjOrderCanBeBilled(pedido({ motivo_bloqueio: 'sem-prazo' }))).toBe(false)
+    expect(pjOrderBillingBlock(pedido({ motivo_bloqueio: 'sem-prazo' }))).toBe('sem-prazo')
   })
 
   it('pedido esperando conferencia da Expedicao nao pode ser cobrado', () => {
     // O caso da Ines Vizioli, 25/08: entrega vencida, ninguem conferiu, e a
     // fatura saiu por deducao de calendario. Depois nem podia mais ser
     // conferida, porque pedido faturado fica congelado.
-    expect(pjOrderCanBeBilled(pedido({ aguardando_conferencia: true }))).toBe(false)
-    expect(pjOrderBillingBlock(pedido({ aguardando_conferencia: true })))
+    expect(pjOrderCanBeBilled(pedido({ motivo_bloqueio: 'aguardando-conferencia' }))).toBe(false)
+    expect(pjOrderBillingBlock(pedido({ motivo_bloqueio: 'aguardando-conferencia' })))
       .toBe('aguardando-conferencia')
   })
 
-  it('a conferencia pesa mais que o prazo quando faltam os dois', () => {
-    // Sem prazo a cobranca espera um cadastro; sem conferencia ela sairia com
-    // o numero errado. Quem le precisa ouvir o mais grave primeiro.
-    expect(pjOrderBillingBlock(pedido({
-      aguardando_conferencia: true,
-      payment_term_days: null,
-    }))).toBe('aguardando-conferencia')
+  it('os motivos novos da fase 2 tambem barram a cobranca', () => {
+    // Nada saiu, quantidade fora da trava e envio sem conferencia: em todos o
+    // envio ja aconteceu, e quem espera e a cobranca.
+    expect(pjOrderCanBeBilled(pedido({ motivo_bloqueio: 'nada-enviado' }))).toBe(false)
+    expect(pjOrderCanBeBilled(pedido({ motivo_bloqueio: 'fora-da-trava' }))).toBe(false)
+    expect(pjOrderCanBeBilled(pedido({ motivo_bloqueio: 'sem-conferencia-depois-do-envio' })))
+      .toBe(false)
   })
 
-  it('pedido com envio confirmado nao espera conferencia', () => {
-    // Confirmar o envio exige tudo conferido, entao os dois nunca se cruzam.
+  it('todo motivo tem recado escrito, senao a tela trava sem dizer por que', () => {
+    // Licao botao-desabilitado-sem-motivo-na-tela: controle desabilitado sem
+    // motivo visivel e lido como defeito.
+    for (const motivo of Object.keys(PJ_ORDER_BILLING_BLOCK_MESSAGES) as PjOrderBillingBlock[]) {
+      expect(PJ_ORDER_BILLING_BLOCK_MESSAGES[motivo].length).toBeGreaterThan(20)
+    }
+  })
+
+  it('pedido com envio confirmado e tudo conferido nao tem bloqueio', () => {
     expect(pjOrderBillingBlock(pedido({
       dispatched_at: '2026-08-26T10:00:00Z',
-      aguardando_conferencia: false,
+      motivo_bloqueio: null,
     }))).toBeNull()
   })
 
-  it('separa no resumo o que espera conferencia do que espera prazo', () => {
+  it('o resumo conta pedidos e valor por motivo', () => {
     const resumo = summarizePjOrdersToBill([
       pedido({ order_group_id: 'a', amount: 150 }),
-      pedido({ order_group_id: 'b', amount: 80, payment_term_days: null }),
-      pedido({ order_group_id: 'c', amount: 388, aguardando_conferencia: true }),
+      pedido({ order_group_id: 'b', amount: 80, motivo_bloqueio: 'sem-prazo' }),
+      pedido({ order_group_id: 'c', amount: 388, motivo_bloqueio: 'aguardando-conferencia' }),
+      pedido({ order_group_id: 'd', amount: 0, motivo_bloqueio: 'nada-enviado' }),
     ])
     expect(resumo.total).toBe(618)
-    expect(resumo.bloqueados).toBe(2)
+    expect(resumo.bloqueados).toBe(3)
     expect(resumo.valorBloqueado).toBe(468)
-    expect(resumo.semPrazo).toBe(1)
-    expect(resumo.valorSemPrazo).toBe(80)
-    expect(resumo.aguardandoConferencia).toBe(1)
-    expect(resumo.valorAguardandoConferencia).toBe(388)
-  })
-
-  it('separa o quanto esta travado por falta de prazo do cliente', () => {
-    const resumo = summarizePjOrdersToBill([
-      pedido({ order_group_id: 'a', amount: 150 }),
-      pedido({ order_group_id: 'b', amount: 80, payment_term_days: null }),
-    ])
-    expect(resumo.total).toBe(230)
-    expect(resumo.bloqueados).toBe(1)
-    expect(resumo.valorBloqueado).toBe(80)
+    expect(resumo.porMotivo['sem-prazo']).toEqual({ pedidos: 1, valor: 80 })
+    expect(resumo.porMotivo['aguardando-conferencia']).toEqual({ pedidos: 1, valor: 388 })
+    expect(resumo.porMotivo['nada-enviado']).toEqual({ pedidos: 1, valor: 0 })
+    expect(resumo.porMotivo['fora-da-trava']).toEqual({ pedidos: 0, valor: 0 })
   })
 })
 

@@ -9,6 +9,8 @@ import {
   pjOrderBillingBlock,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
+  PJ_ORDER_BILLING_BLOCK_MESSAGES,
+  type PjOrderBillingBlock,
   type PjOrderToBillRow,
 } from '@/lib/receivables'
 import { showToast } from '@/lib/utils'
@@ -21,6 +23,15 @@ interface PjOrdersToBillPanelProps {
 function formatDate(dateKey: string): string {
   const [year, month, day] = dateKey.split('-')
   return `${day}/${month}/${year}`
+}
+
+/** Rótulo curto ao lado do pedido; a frase inteira fica no aviso do topo. */
+const MOTIVO_CURTO: Record<PjOrderBillingBlock, string> = {
+  'aguardando-conferencia': 'aguardando conferência',
+  'sem-prazo': 'sem prazo cadastrado',
+  'nada-enviado': 'nada saiu',
+  'fora-da-trava': 'quantidade fora do esperado',
+  'sem-conferencia-depois-do-envio': 'saiu sem conferência',
 }
 
 export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBillPanelProps) {
@@ -78,24 +89,20 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
         <Truck size={18} />
       </div>
 
-      {/* Um aviso por motivo: juntar os dois numa frase só devolveria a
-          mensagem genérica que já custou tempo da Marselle no Romaneio. */}
-      {resumo.aguardandoConferencia > 0 && (
-        <div className="ps-alert error" role="alert" style={{ marginTop: 10 }}>
-          {resumo.aguardandoConferencia} pedido(s), somando{' '}
-          {formatReceivableMoney(resumo.valorAguardandoConferencia)}, ainda não foram conferidos
-          pela Expedição. Peça a conferência do que saiu em Pedidos PJ; a cobrança libera sozinha
-          depois disso.
-        </div>
-      )}
-
-      {resumo.semPrazo > 0 && (
-        <div className="ps-alert error" role="alert" style={{ marginTop: 10 }}>
-          {resumo.semPrazo} pedido(s), somando {formatReceivableMoney(resumo.valorSemPrazo)},
-          são de cliente sem prazo de pagamento cadastrado e não podem ser cobrados.
-          Defina o prazo na tela de Clientes.
-        </div>
-      )}
+      {/* Um aviso por motivo: juntar todos numa frase só devolveria a
+          mensagem genérica que já custou tempo da Marselle no Romaneio.
+          Os motivos vêm do banco, então a tela nunca inventa um recado que a
+          cobrança não vai cumprir. */}
+      {(Object.keys(resumo.porMotivo) as PjOrderBillingBlock[]).map(motivo => {
+        const contagem = resumo.porMotivo[motivo]
+        if (contagem.pedidos === 0) return null
+        return (
+          <div key={motivo} className="ps-alert error" role="alert" style={{ marginTop: 10 }}>
+            {contagem.pedidos} pedido(s), somando {formatReceivableMoney(contagem.valor)},{' '}
+            {PJ_ORDER_BILLING_BLOCK_MESSAGES[motivo]}
+          </div>
+        )
+      })}
 
       <div className="ps-list" style={{ marginTop: 10 }}>
         {orders.map(order => {
@@ -121,9 +128,17 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
                 <small style={{ display: 'block' }}>
                   Entrega {formatDate(order.delivery_date)} · {order.items} item(ns)
                   {order.dispatched_at ? ' · envio confirmado' : ' · sem confirmação de envio'}
-                  {motivo === 'aguardando-conferencia' ? ' · aguardando conferência' : ''}
-                  {motivo === 'sem-prazo' ? ' · sem prazo cadastrado' : ''}
+                  {motivo ? ` · ${MOTIVO_CURTO[motivo]}` : ''}
                 </small>
+                {/* A diferença aparece só quando existe: no dia a dia o que
+                    saiu bate com o pedido, e repetir dois números iguais em
+                    toda linha faria a lista parecer cheia de exceção. */}
+                {order.amount !== order.amount_estimado && (
+                  <small style={{ display: 'block', color: 'var(--honey-deep)' }}>
+                    Pedido {formatReceivableMoney(order.amount_estimado)} · saiu{' '}
+                    {formatReceivableMoney(order.amount)}
+                  </small>
+                )}
               </span>
               <b>{formatReceivableMoney(order.amount)}</b>
             </label>

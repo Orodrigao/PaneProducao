@@ -58,7 +58,10 @@ export default function RelatorioPJ() {
     // quando o pedido foi gravado sem delivery (pré-PR-C3a).
     const orFilter = `and(delivery_date.gte.${fromISO},delivery_date.lte.${toISO}),and(delivery_date.is.null,order_date.gte.${fromISO},order_date.lte.${toISO})`
     supabase.from('orders')
-      .select('id,customer_id,product_name,product_source,quantity,unit_price,pricing_unit,order_date,delivery_date')
+      // `dispatched_quantity` e `dispatched_at` entram aqui porque o valor da
+      // linha passou a ser o que a Expedição conferiu; sem elas o relatório
+      // continuaria somando a estimativa e divergiria do Contas a receber.
+      .select('id,customer_id,product_name,product_source,quantity,unit_price,pricing_unit,order_date,delivery_date,dispatched_quantity,dispatched_at')
       .eq('order_type', 'pj')
       .is('cancelled_at', null)
       .or(orFilter)
