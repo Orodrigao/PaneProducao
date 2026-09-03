@@ -357,13 +357,18 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), true,
-  'pedido sem conferencia aparece marcado como aguardando conferencia');
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid),
+  'aguardando-conferencia',
+  'pedido sem conferencia aparece com o motivo escrito');
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid), false,
-  'pedido ja conferido nao fica marcado');
+-- O a2 e do cliente sem prazo: o motivo dele e outro, e a ordem importa.
+-- Sem prazo a cobranca espera um cadastro que a Elis resolve sozinha; sem
+-- conferencia ela depende de outra pessoa.
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a2'::uuid),
+  'sem-prazo',
+  'pedido conferido de cliente sem prazo mostra o motivo do prazo');
 
 -- Continuar na lista e deliberado: sumir faria a Elis perder de vista um
 -- pedido entregue e nao cobrado, que foi o estrago que a fila da Expedicao
@@ -394,9 +399,9 @@ select set_config('pane.pj_check_rpc', '', true);
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-000000000001', true);
 
-select is((select aguardando_conferencia from public.list_pj_orders_to_bill()
-    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), false,
-  'depois da conferencia o pedido deixa de estar aguardando');
+select is((select motivo_bloqueio from public.list_pj_orders_to_bill()
+    where order_group_id = '95000000-0000-4000-8000-0000000000a3'::uuid), null,
+  'depois da conferencia o pedido deixa de ter motivo de bloqueio');
 
 select lives_ok(
   $$ select public.create_receivable_from_pj_order(
