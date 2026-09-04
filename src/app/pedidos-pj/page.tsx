@@ -26,6 +26,8 @@ import {
 } from '@/lib/pjOrderDispatchClient'
 import { PjDispatchCheckPanel, type DispatchCheckLine } from '@/components/PjDispatchCheckPanel'
 import { dispatchReadiness, versionOf } from '@/lib/pjDispatchCheck'
+import { pjLineValue } from '@/lib/pjOrderValue'
+import { PjDispatchQuantityFix } from '@/components/PjDispatchQuantityFix'
 
 // ===== Tipos =====
 interface Customer {
@@ -79,7 +81,10 @@ interface PedidoGroup {
   cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
   dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
   rows:OrderRow[]
+  /** O que a cobranca vai usar: o que saiu, quando ja foi conferido. */
   total:number
+  /** O que o pedido dizia. Serve para mostrar a diferenca lado a lado. */
+  totalPedido:number
 }
 
 // ===== Helpers de data =====
@@ -142,6 +147,11 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
 
 export default function PedidosPJPage() {
   const [user, setUser] = useState<AppUser | null>(null)
+  // Quem pode corrigir a quantidade depois do envio. O cargo nao basta: a
+  // permissao e por pessoa, e mostrar um botao que o banco vai recusar e o
+  // avesso da licao botao-desabilitado-sem-motivo-na-tela. Foi o que o teste
+  // do Rodrigo pegou no preview em 04/09.
+  const [podeCorrigirEnvio, setPodeCorrigirEnvio] = useState(false)
   const [tab, setTab] = useState<'novo'|'lista'>('lista')
   const [listStage, setListStage] = useState<'open'|'history'>('open')
   const [listSearch, setListSearch] = useState('')
@@ -234,6 +244,18 @@ export default function PedidosPJPage() {
     const currentUser = getCurrentUser()
     setUser(currentUser)
     void loadAll(currentUser)
+
+    // Administrador tem passe-livre, igual ao resto do sistema. Os demais
+    // entram pela permissao granular, e a mesma regra e conferida de novo pelo
+    // banco: a tela decide o que MOSTRAR, nunca o que autorizar.
+    if (!currentUser) { setPodeCorrigirEnvio(false); return }
+    if (currentUser.role === 'admin') { setPodeCorrigirEnvio(true); return }
+    void supabase
+      .from('app_user_permissions')
+      .select('permission_key')
+      .eq('user_id', currentUser.id)
+      .eq('permission_key', 'pedidos_pj.corrigir_quantidade')
+      .then(({ data }) => setPodeCorrigirEnvio((data ?? []).length > 0))
   }, [loadAll])
 
   const cust = customers.find(c => c.id === custId) || null
@@ -422,6 +444,7 @@ export default function PedidosPJPage() {
           dispatched_by_name: r.dispatched_by_name,
           rows: [],
           total: 0,
+          totalPedido: 0,
         })
       }
       const g = groups.get(key)!
@@ -429,7 +452,18 @@ export default function PedidosPJPage() {
       if (r.production_date && (!g.production_date || r.production_date < g.production_date)) {
         g.production_date = r.production_date
       }
-      g.total += (Number(r.unit_price)||0) * (Number(r.quantity)||0)
+      // O total do grupo passa a ser o que a Expedicao conferiu, a mesma
+      // regra que a cobranca usa (`private.valor_linha_pj` no banco). Enquanto
+      // o pedido nao foi enviado, `pjLineValue` devolve null e a soma cai para
+      // a estimativa, que e o que ele e nesse momento: previsao.
+      g.total += pjLineValue({
+        quantity: r.quantity,
+        dispatchedQuantity: r.dispatched_quantity ?? null,
+        unitPrice: r.unit_price,
+        dispatchedAt: r.dispatched_at ?? null,
+        pricingUnit: r.pricing_unit,
+      }) ?? ((Number(r.unit_price)||0) * (Number(r.quantity)||0))
+      g.totalPedido += (Number(r.unit_price)||0) * (Number(r.quantity)||0)
     })
     return Array.from(groups.values()).sort((a,b) => {
       if (a.delivery_date && b.delivery_date) return b.delivery_date.localeCompare(a.delivery_date)
@@ -896,11 +930,18 @@ export default function PedidosPJPage() {
                   <span style={{textAlign:'right'}}>
                     <span style={{color:'var(--ink-faint)', fontSize:12, marginRight:6}}>{r.quantity} {r.pricing_unit || 'un'}</span>
                     {access.showCommercialValues && (
-                      <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {((Number(r.unit_price)||0) * (Number(r.quantity)||0)).toFixed(2)}</strong>
+                      <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {(pjLineValue({
+                        quantity: r.quantity,
+                        dispatchedQuantity: r.dispatched_quantity ?? null,
+                        unitPrice: r.unit_price,
+                        dispatchedAt: r.dispatched_at ?? null,
+                        pricingUnit: r.pricing_unit,
+                      }) ?? ((Number(r.unit_price)||0) * (Number(r.quantity)||0))).toFixed(2)}</strong>
                     )}
                     {/* O que a expedicao conferiu. Aparece so quando difere do
-                        pedido: numero igual repetido vira ruido. A cobranca
-                        ainda sai pelo pedido — a virada e a fase 2. */}
+                        pedido: numero igual repetido vira ruido. Desde a fase 2
+                        e este numero que vira dinheiro, entao o valor ao lado
+                        ja e o dele. */}
                     {r.dispatched_quantity !== null && r.dispatched_quantity !== undefined
                       && Number(r.dispatched_quantity) !== Number(r.quantity) && (
                       <span style={{display:'block', fontSize:11.5, color:'var(--tomato, #A93A2E)', marginTop:2}}>
@@ -918,7 +959,17 @@ export default function PedidosPJPage() {
             {access.showCommercialValues && (
               <div className="ps-banner honey" style={{marginBottom:14, justifyContent:'space-between'}}>
                 <b>Total</b>
-                <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
+                <span style={{textAlign:'right'}}>
+                  <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
+                  {/* So aparece quando o que saiu difere do que foi pedido. E o
+                      numero que a Elis leva para a nota, entao ele precisa
+                      estar visivel sem clique nenhum. */}
+                  {Math.abs(viewing.total - viewing.totalPedido) >= 0.01 && (
+                    <span style={{display:'block', fontSize:12, color:'var(--ink-faint)'}}>
+                      pedido R$ {viewing.totalPedido.toFixed(2)}
+                    </span>
+                  )}
+                </span>
               </div>
             )}
 
@@ -945,6 +996,31 @@ export default function PedidosPJPage() {
                   Por {viewing.dispatched_by_name || 'expedição'} em {formatCancellationTimestamp(viewing.dispatched_at)}
                 </span>
               </div>
+            )}
+
+            {/* Corrigir depois do envio: metade B da fase 2. Aparece so para
+                quem cuida do dinheiro (admin e financeiro), e so em pedido ja
+                enviado — antes disso quem corrige e a propria Expedicao, na
+                tela dela. O banco confere a permissao de novo por dentro. */}
+            {access.showCommercialValues && podeCorrigirEnvio && !viewing.cancelled_at
+              && viewing.dispatched_at && viewing.order_group_id && (
+              <PjDispatchQuantityFix
+                orderGroupId={viewing.order_group_id}
+                rows={viewing.rows.map(row => ({
+                  id: row.id,
+                  product_name: row.product_name || row.bread_id,
+                  quantity: Number(row.quantity) || 0,
+                  unit_price: row.unit_price === null || row.unit_price === undefined
+                    ? null : Number(row.unit_price),
+                  pricing_unit: row.pricing_unit ?? null,
+                  dispatched_quantity: row.dispatched_quantity === null || row.dispatched_quantity === undefined
+                    ? null : Number(row.dispatched_quantity),
+                  dispatched_quantity_reason: row.dispatched_quantity_reason ?? null,
+                  dispatched_at: viewing.dispatched_at,
+                  dispatched_quantity_at: row.dispatched_quantity_at ?? null,
+                }))}
+                onCorrected={async () => { await loadAll(user) }}
+              />
             )}
 
             {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && viewingCancellationAvailability && (

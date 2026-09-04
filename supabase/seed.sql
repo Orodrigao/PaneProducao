@@ -544,6 +544,11 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.estornar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.cancelar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_receber.corrigir_vencimento', 'jc'),
+    -- Corrigir a quantidade enviada depois do envio (fase 2 do peso real). Em
+    -- producao a migration concede a todo perfil financeiro ativo; aqui a conta
+    -- ficticia nasce depois das migrations, entao a concessao precisa estar no
+    -- seed tambem, senao o teste do Rodrigo esbarra no botao que nao funciona.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.corrigir_quantidade', 'jc'),
     -- Sem estas duas o financeiro nao enxerga a loja EX nem os romaneios dela,
     -- e a tela de Relatorios > Romaneios abre vazia: a RLS de destinations e
     -- romaneios exige permissao de romaneio com escopo da loja. Em producao a

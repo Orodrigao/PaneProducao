@@ -249,8 +249,19 @@ export function sortReceivables(
   })
 }
 
-export function formatReceivableMoney(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+/**
+ * Aceita ausência de propósito.
+ *
+ * O smoke de 03/09 derrubou a tela inteira de Contas a receber com
+ * "client-side exception" porque a lista respondeu sem uma coluna nova e este
+ * formatador chamou `toLocaleString` em `undefined`. Isso é o estado normal da
+ * JANELA DE DEPLOY: o site novo sobe e a migration ainda não aplicou. Formatar
+ * dinheiro nunca pode ser o motivo de a página não abrir.
+ */
+export function formatReceivableMoney(value: number | null | undefined): string {
+  const numero = Number(value ?? 0)
+  return (Number.isFinite(numero) ? numero : 0)
+    .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 export interface ReceivableCustomerOption {
@@ -367,13 +378,18 @@ export interface PjOrderToBillRow {
   delivery_date: string
   dispatched_at: string | null
   items: number
+  /** O que a cobrança vai usar: o que saiu, quando há conferência. */
   amount: number
+  /** O que a cobrança usaria pela estimativa, para mostrar a diferença. */
+  amount_estimado: number
   /**
-   * Entregue mas sem envio confirmado e com item sem número da Expedição.
-   * Cobrar assim foi o que fez o pedido da Ines virar fatura sem conferência
-   * em 25/08, e depois nem poder mais ser conferido.
+   * Por que este pedido ainda não vira cobrança, ou `null` quando pode.
+   *
+   * O banco é quem decide, e a tela repete o motivo dele. Antes isto era um
+   * booleano de "aguardando conferência", e cada motivo novo virava um campo
+   * novo; agora é um motivo só, com nome.
    */
-  aguardando_conferencia: boolean
+  motivo_bloqueio: PjOrderBillingBlock | null
 }
 
 /**
@@ -388,7 +404,16 @@ export interface PjOrderToBillRow {
 export async function loadPjOrdersToBill(): Promise<PjOrderToBillRow[]> {
   const { data, error } = await supabase.rpc('list_pj_orders_to_bill')
   if (error) throw error
-  return (data ?? []) as PjOrderToBillRow[]
+
+  // Durante a janela do deploy o site novo conversa com a versão anterior da
+  // função, que não tem `amount_estimado` nem `motivo_bloqueio`. A tela não
+  // pode depender disso para abrir: sem esta normalização, a página inteira
+  // caiu no smoke de 03/09.
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    ...row,
+    amount_estimado: typeof row.amount_estimado === 'number' ? row.amount_estimado : (row.amount as number),
+    motivo_bloqueio: (row.motivo_bloqueio as PjOrderBillingBlock | null) ?? null,
+  })) as PjOrderToBillRow[]
 }
 
 export async function createReceivableFromPjOrder(
@@ -418,7 +443,12 @@ export async function splitReceivable(
 }
 
 /** Pedido cujo cliente ainda não tem prazo combinado não pode ser cobrado. */
-export type PjOrderBillingBlock = 'aguardando-conferencia' | 'sem-prazo'
+export type PjOrderBillingBlock =
+  | 'aguardando-conferencia'
+  | 'sem-prazo'
+  | 'nada-enviado'
+  | 'fora-da-trava'
+  | 'sem-conferencia-depois-do-envio'
 
 /**
  * Por que este pedido ainda não pode virar cobrança, ou `null` se pode.
@@ -431,15 +461,27 @@ export type PjOrderBillingBlock = 'aguardando-conferencia' | 'sem-prazo'
  * espera um cadastro; sem conferência ela sairia com o número errado.
  */
 export function pjOrderBillingBlock(
-  order: Pick<PjOrderToBillRow, 'payment_term_days' | 'aguardando_conferencia'>,
+  order: Pick<PjOrderToBillRow, 'motivo_bloqueio'>,
 ): PjOrderBillingBlock | null {
-  if (order.aguardando_conferencia) return 'aguardando-conferencia'
-  if (order.payment_term_days === null) return 'sem-prazo'
-  return null
+  return order.motivo_bloqueio ?? null
+}
+
+/** O recado que a Elis lê, e que sempre diz o que fazer em seguida. */
+export const PJ_ORDER_BILLING_BLOCK_MESSAGES: Record<PjOrderBillingBlock, string> = {
+  'aguardando-conferencia':
+    'ainda não foi conferido pela Expedição. Peça a conferência do que saiu; a cobrança libera sozinha depois disso.',
+  'sem-prazo':
+    'o cliente ainda não tem prazo de pagamento cadastrado. Cadastre em Clientes e o pedido libera.',
+  'nada-enviado':
+    'a Expedição registrou que nada saiu neste pedido. Se foi recusa na porta, cancele o pedido; se foi engano, peça a correção.',
+  'fora-da-trava':
+    'a quantidade conferida está muito longe da pedida. Confira com a Expedição antes de cobrar.',
+  'sem-conferencia-depois-do-envio':
+    'o pedido saiu sem conferência de algum item. Use "Corrigir quantidade enviada" para registrar o que saiu.',
 }
 
 export function pjOrderCanBeBilled(
-  order: Pick<PjOrderToBillRow, 'payment_term_days' | 'aguardando_conferencia'>,
+  order: Pick<PjOrderToBillRow, 'motivo_bloqueio'>,
 ): boolean {
   return pjOrderBillingBlock(order) === null
 }
@@ -448,10 +490,18 @@ export interface PjOrdersToBillSummary {
   total: number
   bloqueados: number
   valorBloqueado: number
-  semPrazo: number
-  valorSemPrazo: number
-  aguardandoConferencia: number
-  valorAguardandoConferencia: number
+  /** Quantos pedidos, e quanto, por motivo. A tela conta o que precisa. */
+  porMotivo: Record<PjOrderBillingBlock, { pedidos: number; valor: number }>
+}
+
+function motivosZerados(): Record<PjOrderBillingBlock, { pedidos: number; valor: number }> {
+  return {
+    'aguardando-conferencia': { pedidos: 0, valor: 0 },
+    'sem-prazo': { pedidos: 0, valor: 0 },
+    'nada-enviado': { pedidos: 0, valor: 0 },
+    'fora-da-trava': { pedidos: 0, valor: 0 },
+    'sem-conferencia-depois-do-envio': { pedidos: 0, valor: 0 },
+  }
 }
 
 export function summarizePjOrdersToBill(
@@ -461,10 +511,7 @@ export function summarizePjOrdersToBill(
     total: 0,
     bloqueados: 0,
     valorBloqueado: 0,
-    semPrazo: 0,
-    valorSemPrazo: 0,
-    aguardandoConferencia: 0,
-    valorAguardandoConferencia: 0,
+    porMotivo: motivosZerados(),
   }
   for (const order of orders) {
     resumo.total += order.amount
@@ -472,13 +519,8 @@ export function summarizePjOrdersToBill(
     if (motivo === null) continue
     resumo.bloqueados += 1
     resumo.valorBloqueado += order.amount
-    if (motivo === 'aguardando-conferencia') {
-      resumo.aguardandoConferencia += 1
-      resumo.valorAguardandoConferencia += order.amount
-    } else {
-      resumo.semPrazo += 1
-      resumo.valorSemPrazo += order.amount
-    }
+    resumo.porMotivo[motivo].pedidos += 1
+    resumo.porMotivo[motivo].valor += order.amount
   }
   return resumo
 }
@@ -504,4 +546,49 @@ export async function createReceivableFromRomaneio(
   })
   if (error) throw error
   return data as string
+}
+
+export interface PjDispatchFixLine {
+  orderId: string
+  dispatchedQuantity: number
+  reason?: string | null
+}
+
+export interface PjDispatchFixResult {
+  order_group_id: string
+  cobrancas_canceladas?: number
+  cobranca_nova?: string | null
+  parcelas?: number
+  ja_aplicado?: boolean
+}
+
+/**
+ * Corrige a quantidade enviada de um pedido já despachado e refaz a cobrança.
+ *
+ * O banco faz tudo numa transação só: cancela as cobranças vivas, grava o
+ * número novo e regera. Aqui só se monta o pedido e se deixa o erro subir com
+ * a mensagem que o banco escreveu, que é a que diz o que fazer.
+ */
+export async function corrigirQuantidadeEnviadaPj(
+  orderGroupId: string,
+  linhas: readonly PjDispatchFixLine[],
+  motivo: string,
+  requestId: string,
+  expectedVersion: string | null,
+): Promise<PjDispatchFixResult> {
+  const { data, error } = await supabase.rpc('corrigir_quantidade_enviada_pj', {
+    p_request_id: requestId,
+    p_order_group_id: orderGroupId,
+    p_linhas: linhas.map(linha => ({
+      order_id: linha.orderId,
+      dispatched_quantity: linha.dispatchedQuantity,
+      reason: linha.reason?.trim() || null,
+    })),
+    p_motivo: motivo.trim(),
+    // O carimbo que esta tela leu. Se alguém corrigiu no meio, o banco recusa
+    // em vez de deixar vencer quem salvou por último.
+    p_expected_version: expectedVersion,
+  })
+  if (error) throw error
+  return data as PjDispatchFixResult
 }
