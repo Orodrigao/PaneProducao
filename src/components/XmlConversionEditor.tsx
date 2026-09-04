@@ -85,38 +85,67 @@ export function ProductSelector({
       >
         <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
         <small style={{ display: 'block', marginTop: 3 }}>
-          Se entrar em receita, procure o insumo já existente. Se for limpeza, manutenção, embalagem de uso ou outra despesa, não crie um produto artificial.
+          Escolha um dos três caminhos abaixo: vincular ao cadastro, cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.
         </small>
       </div>
-      <button className="ps-btn ghost sm" style={{ marginBottom: 8 }} onClick={onWithoutProduct}>
-        Uso ou despesa — não entra em receita
-      </button>
-      <div style={{ position: 'relative' }}>
-        <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} aria-hidden />
-        <input
-          className="ps-input"
-          style={{ paddingLeft: 30 }}
-          value={query}
-          onChange={event => setQuery(event.target.value)}
-          placeholder="Procure pelo nome do insumo"
-          aria-label={`Procurar item-base para ${item.description}`}
-        />
-        {query && (
-          <button
-            className="ps-iconbtn"
-            style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
-            onClick={() => setQuery('')}
-            aria-label="Limpar busca"
-          >
-            <X size={14} />
-          </button>
-        )}
+      {/* Em 03/09/2026, duas cartelas de queijo para revenda foram marcadas
+          como despesa porque o cadastro de item novo estava escondido depois
+          da busca. As três saídas precisam permanecer visíveis e equivalentes. */}
+      <div className="ps-fieldgroup">
+        <div className="ps-fieldlabel">1. Insumo de receita já cadastrado</div>
+        <small className="ps-help">Procure e vincule ao item que a padaria já usa.</small>
+        <div style={{ position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} aria-hidden />
+          <input
+            className="ps-input"
+            style={{ paddingLeft: 30 }}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Procure pelo nome do insumo"
+            aria-label={`Procurar item-base para ${item.description}`}
+          />
+          {query && (
+            <button
+              className="ps-iconbtn"
+              style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
+              onClick={() => setQuery('')}
+              aria-label="Limpar busca"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {!query.trim() && products.length > 0 && <small className="ps-help">Digite parte do nome. Ex.: &quot;acucar&quot; acha &quot;AÇÚCAR INSUMO PRODUÇÃO&quot;.</small>}
 
+      <div className="ps-fieldrow" style={{ marginTop: 8 }}>
+        <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
+          <div className="ps-fieldlabel">2. Produto novo da padaria</div>
+          <small className="ps-help">Para um insumo novo ou uma mercadoria de revenda.</small>
+          {/* Assim que a busca comeca, este botao cede lugar ao que aparece
+              junto dos resultados e ao do "nenhum insumo com esse nome": o
+              cadastro precisa estar onde a pessoa esta olhando, e dois botoes
+              iguais na mesma tela confundem tanto quem le quanto o teste de
+              navegador, que clica pelo nome e nao sabe qual escolher. */}
+          {!query.trim()
+            ? <button className="ps-btn ghost sm block" onClick={onCreate}><Plus size={14} /> Cadastrar item novo</button>
+            : <small className="ps-help">O cadastro aparece junto do resultado da busca, abaixo.</small>}
+        </div>
+        <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
+          <div className="ps-fieldlabel">3. Uso ou despesa</div>
+          <small className="ps-help">Para limpeza, manutenção, escritório ou material de uso. Esta decisão fica memorizada para este fornecedor.</small>
+          <button className="ps-btn ghost sm block" onClick={onWithoutProduct}>Marcar como uso ou despesa</button>
+        </div>
+      </div>
+
+      {/* A busca pode achar um parente sem ser o item certo: "CREME" acha o
+          creme de bolo quando se procura o de confeiteiro. Por isso, o cadastro
+          continua disponível no bloco 2 mesmo quando há resultados e reaparece
+          no ponto de decisão quando nada é encontrado. */}
       {query.trim() && results.length > 0 && (
         <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+          <small className="ps-help">Itens encontrados para vincular:</small>
           {results.map(product => (
             <button key={product.id} className="ps-btn ghost sm" style={{ justifyContent: 'flex-start', textAlign: 'left' }} onClick={() => onChange(product.id)}>
               {product.name}{product.unit ? ` · ${product.unit}` : ''}
@@ -124,8 +153,10 @@ export function ProductSelector({
           ))}
           {total > results.length && <small className="ps-help">Mais {total - results.length} resultado(s). Escreva mais para estreitar.</small>}
           {/* A busca pode achar parente sem ser o certo: "CREME" acha o creme de
-              bolo quando se procura o de confeiteiro. Esconder o cadastro aqui
-              deixava a pessoa sem saída. */}
+              bolo quando se procura o de confeiteiro. Quem chegou ate aqui e nao
+              reconheceu nenhum resultado precisa da saida de cadastro no proprio
+              lugar onde desistiu, e nao la em cima. O smoke de navegador cobre
+              este caso e reprovou quando o bloco foi removido, em 03/09/2026. */}
           <small className="ps-help" style={{ marginTop: 4 }}>Nenhum desses serve?</small>
           <button className="ps-btn ghost sm" style={{ alignSelf: 'start' }} onClick={onCreate}><Plus size={14} /> Cadastrar item novo</button>
         </div>
