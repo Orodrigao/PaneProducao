@@ -269,9 +269,12 @@ select lives_ok(
 reset role;
 
 
--- A FRONTEIRA DA FASE 1 ------------------------------------------------------
--- Esta e a assercao que separa a fase 1 da fase 2. Se ela quebrar, alguem
--- ligou o dinheiro ao numero conferido antes da hora.
+-- A FRONTEIRA FOI ATRAVESSADA EM 03/09 ---------------------------------------
+-- Ate a fase 2 esta assercao dizia o contrario: a cobranca saia pela ESTIMATIVA
+-- e nunca pelo conferido, e ela existia para avisar se alguem ligasse o
+-- dinheiro antes da hora. A hora chegou, com aprovacao do Rodrigo em 02/09, e o
+-- teste inverteu junto: agora ele prova que o numero da Expedicao E o valor da
+-- cobranca. A regra completa esta em `cobranca_pelo_real.test.sql`.
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '96000000-0000-4000-8000-000000000003', true);
@@ -283,8 +286,8 @@ select is(
    where origin = 'pedido_pj'
      and origin_ref = '96000000-0000-4000-8000-0000000000a1'::uuid
      and status <> 'cancelada'),
-  220.00::numeric,
-  'FRONTEIRA DA FASE 1: a cobranca sai pela ESTIMATIVA (220,00), nunca pelo conferido (232,68)'
+  232.68::numeric,
+  'FASE 2: a cobranca sai pelo CONFERIDO (232,68), e nao pela estimativa (220,00)'
 );
 
 select ok(
