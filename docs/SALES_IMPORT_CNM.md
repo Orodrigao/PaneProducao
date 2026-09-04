@@ -158,3 +158,23 @@ sales_product_aliases (
 - Permitir substituir importação, mas com log.
 - Guardar linha bruta em JSON para auditoria.
 - Nunca usar dados de venda para alterar preço automaticamente.
+
+## O preço praticado vem daqui (decisão de 2026-09-03)
+
+O ERP não guarda preço de venda de varejo e **não vai passar a guardar**: o
+preço tem um dono só, que é o PDV. O que este relatório traz, além da
+quantidade, é **por quanto cada item foi vendido**, e é essa a fonte do preço
+praticado.
+
+Consequências para esta importação:
+
+- o vínculo entre o item do CNM e o produto do catálogo deixa de ser só uma
+  regra de CMV e passa a ser também o que permite calcular **margem por item**,
+  inclusive dos produtos de revenda, que hoje não têm preço em lugar nenhum do
+  ERP;
+- o preço observado é **registro do que aconteceu**, nunca alteração de
+  cadastro, o que continua respeitando a regra acima de não mexer em preço
+  automaticamente;
+- o preço sugerido, que é outra coisa, vive em
+  [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md). Comparar o sugerido com o
+  praticado é o que gera o aviso de reajuste.
