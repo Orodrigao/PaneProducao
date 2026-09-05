@@ -1,12 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Truck } from 'lucide-react'
 import {
   createReceivableFromPjOrder,
   formatReceivableMoney,
   getReceivableErrorMessage,
   pjOrderBillingBlock,
+  pjOrderBillingBlockLink,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
@@ -29,12 +31,15 @@ function formatDate(dateKey: string): string {
 const MOTIVO_CURTO: Record<PjOrderBillingBlock, string> = {
   'aguardando-conferencia': 'aguardando conferência',
   'sem-prazo': 'sem prazo cadastrado',
-  'nada-enviado': 'nada saiu',
+  'nada-enviado': 'nada vai neste pedido',
   'fora-da-trava': 'quantidade fora do esperado',
-  'sem-conferencia-depois-do-envio': 'saiu sem conferência',
+  'sem-conferencia-depois-do-envio': 'sem conferência',
+  'item-sem-preco': 'item sem preço',
+  'motivo-desconhecido': 'bloqueado',
 }
 
 export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBillPanelProps) {
+  const router = useRouter()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
 
@@ -108,6 +113,7 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
         {orders.map(order => {
           const motivo = pjOrderBillingBlock(order)
           const podeCobrar = motivo === null
+          const atalho = motivo ? pjOrderBillingBlockLink(motivo, order.order_group_id) : null
           return (
             <label
               key={order.order_group_id}
@@ -127,7 +133,7 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
                 <b>{order.customer_name}</b>
                 <small style={{ display: 'block' }}>
                   Entrega {formatDate(order.delivery_date)} · {order.items} item(ns)
-                  {order.dispatched_at ? ' · envio confirmado' : ' · sem confirmação de envio'}
+                  {order.dispatched_at ? ' · conferido pela Expedição' : ' · ainda na Expedição'}
                   {motivo ? ` · ${MOTIVO_CURTO[motivo]}` : ''}
                 </small>
                 {/* A diferença aparece só quando existe: no dia a dia o que
@@ -135,9 +141,22 @@ export default function PjOrdersToBillPanel({ orders, onBilled }: PjOrdersToBill
                     toda linha faria a lista parecer cheia de exceção. */}
                 {order.amount !== order.amount_estimado && (
                   <small style={{ display: 'block', color: 'var(--honey-deep)' }}>
-                    Pedido {formatReceivableMoney(order.amount_estimado)} · saiu{' '}
+                    Pedido {formatReceivableMoney(order.amount_estimado)} · conferido{' '}
                     {formatReceivableMoney(order.amount)}
                   </small>
+                )}
+                {/* O atalho para onde o bloqueio se resolve. Fica dentro da
+                    linha do pedido, e não no aviso do topo, porque o aviso
+                    agrupa vários pedidos e o link precisa saber de qual. */}
+                {atalho && (
+                  <button
+                    type="button"
+                    className="ps-link"
+                    onClick={event => { event.preventDefault(); router.push(atalho.href) }}
+                    style={{ display: 'inline-block', marginTop: 4, fontSize: 12.5 }}
+                  >
+                    {atalho.label}
+                  </button>
                 )}
               </span>
               <b>{formatReceivableMoney(order.amount)}</b>

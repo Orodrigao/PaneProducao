@@ -123,7 +123,7 @@ export function problemsBeforeSaving(lines: CheckLineState[]): CheckLineProblem[
         productLabel: line.productLabel,
         verdict,
         message: naoEnviado
-          ? `${line.productLabel}: escreva por que este item não foi enviado.`
+          ? `${line.productLabel}: escreva por que este item não vai.`
           : confirmationQuestion(line),
       })
     }
@@ -151,12 +151,12 @@ export interface DispatchReadiness {
 }
 
 /**
- * "Marcar como enviado" só libera com tudo conferido. O texto do bloqueio vai
+ * "Conferido, pronto para entrega" só libera com tudo conferido. O texto do
  * ao lado do botão, nunca em tooltip: no celular tooltip não existe.
  */
 export function dispatchReadiness(lines: Array<{ sent: number | null }>): DispatchReadiness {
   if (lines.length === 0) {
-    return { ready: false, pending: 0, reason: 'Este pedido não tem itens para enviar.' }
+    return { ready: false, pending: 0, reason: 'Este pedido não tem itens para conferir.' }
   }
 
   const pending = lines.filter(line => line.sent === null).length
@@ -166,8 +166,8 @@ export function dispatchReadiness(lines: Array<{ sent: number | null }>): Dispat
     ready: false,
     pending,
     reason: pending === 1
-      ? 'Falta conferir 1 item antes de marcar como enviado.'
-      : `Faltam conferir ${pending} itens antes de marcar como enviado.`,
+      ? 'Falta conferir 1 item antes de liberar para entrega.'
+      : `Faltam conferir ${pending} itens antes de liberar para entrega.`,
   }
 }
 

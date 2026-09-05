@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Trash2, Save, X, Calendar, Pencil, Truck } from 'lucide-react'
 import OrderCancellationPanel from '@/components/OrderCancellationPanel'
 import { PjOrderListPanel, type PjOrderListDisplayItem } from '@/components/PjOrderListPanel'
@@ -146,6 +147,7 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
 }
 
 export default function PedidosPJPage() {
+  const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
   // Quem pode corrigir a quantidade depois do envio. O cargo nao basta: a
   // permissao e por pessoa, e mostrar um botao que o banco vai recusar e o
@@ -174,6 +176,12 @@ export default function PedidosPJPage() {
   const [saving, setSaving] = useState(false)
 
   const [viewing, setViewing] = useState<PedidoGroup|null>(null)
+  // O pedido que o atalho do Contas a receber pediu para abrir, e se ele deve
+  // abrir ja no formulario de correcao. Guardado ate a lista carregar: o
+  // endereco chega antes dos pedidos.
+  const [atalho, setAtalho] = useState<{ id:string; corrigir:boolean }|null>(null)
+  const [correcaoAberta, setCorrecaoAberta] = useState<string|null>(null)
+  const fecharPedido = useCallback(() => { setViewing(null); setCorrecaoAberta(null) }, [])
   const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
   const [cancelling, setCancelling] = useState(false)
   const cancellingRef = useRef(false)
@@ -257,6 +265,25 @@ export default function PedidosPJPage() {
       .eq('permission_key', 'pedidos_pj.corrigir_quantidade')
       .then(({ data }) => setPodeCorrigirEnvio((data ?? []).length > 0))
   }, [loadAll])
+
+  // O atalho vem do Contas a receber: `?corrigir=<pedido>` abre o pedido com o
+  // formulario de correcao aberto, `?pedido=<pedido>` so abre o pedido. Lemos
+  // de `window.location` em vez de `useSearchParams` porque o site e estatico e
+  // o hook exigiria envolver a pagina inteira em Suspense so por causa disto.
+  // A limpeza do endereco passa pelo `router`, e nao por `history.replaceState`
+  // direto: o App Router guarda estado proprio na entrada do historico, e
+  // sobrescrever essa entrada por fora pode deixar o botao Voltar mudando o
+  // endereco sem trocar a tela.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const parametros = new URLSearchParams(window.location.search)
+    const paraCorrigir = parametros.get('corrigir')
+    const paraVer = parametros.get('pedido')
+    const alvo = paraCorrigir || paraVer
+    if (!alvo) return
+    setAtalho({ id: alvo, corrigir: Boolean(paraCorrigir) })
+    router.replace(window.location.pathname)
+  }, [router])
 
   const cust = customers.find(c => c.id === custId) || null
   const custTier = cust && tiers.find(t => t.id === cust.default_tier_id) || null
@@ -418,7 +445,7 @@ export default function PedidosPJPage() {
     setQuantityInputs({})
     setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date, order_group_id: g.order_group_id })
     setSearch('')
-    setViewing(null)
+    fecharPedido()
     setTab('novo')
   }
 
@@ -471,9 +498,30 @@ export default function PedidosPJPage() {
     })
   }, [orders, customers])
 
+  // Assim que os pedidos chegam, o atalho abre o pedido certo. Se ele nao
+  // estiver na lista (outra loja, pedido cancelado, endereco velho), a tela
+  // simplesmente abre normal, em vez de piscar um erro que nao ajuda ninguem.
+  useEffect(() => {
+    if (!atalho || pedidosGrouped.length === 0) return
+    const alvo = pedidosGrouped.find(g => g.order_group_id === atalho.id)
+    if (!alvo) {
+      // A tela carrega as 500 linhas mais recentes; a lista do financeiro nao
+      // tem esse limite. Pedido antigo demais nao aparece aqui, e silencio
+      // deixaria a Elis achando que o atalho nao funciona.
+      setAtalho(null)
+      showToast('Não encontrei este pedido na lista carregada. Procure por ele no Histórico.')
+      return
+    }
+    setTab('lista')
+    setListStage(alvo.dispatched_at ? 'history' : 'open')
+    setCorrecaoAberta(atalho.corrigir ? alvo.order_group_id : null)
+    setViewing(alvo)
+    setAtalho(null)
+  }, [atalho, pedidosGrouped])
+
   const groupStatus = (g:PedidoGroup): { label:string; cls:string; border:string } => {
     if (g.cancelled_at) return { label:'cancelado', cls:'separado', border:'var(--ink-faint)' }
-    if (g.dispatched_at) return { label:'enviado', cls:'conferido', border:'var(--sage)' }
+    if (g.dispatched_at) return { label:'pronto', cls:'conferido', border:'var(--sage)' }
     const t = todayISO()
     if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
     if (g.delivery_date < t) return { label:'entregue', cls:'separado', border:'var(--ink-faint)' }
@@ -484,7 +532,7 @@ export default function PedidosPJPage() {
   const cancelPedido = async (g: PedidoGroup, rawReason: string): Promise<boolean> => {
     if (cancellingRef.current) return false
     if (g.dispatched_at) {
-      showToast('Pedido já enviado não pode ser cancelado')
+      showToast('Pedido já liberado para entrega não pode ser cancelado')
       return false
     }
     if (!user || !canCancelOrder(user.role, 'pj')) {
@@ -556,7 +604,7 @@ export default function PedidosPJPage() {
         // numeros: recarrega para a pessoa ver o que ja foi gravado.
         if (result.stale) {
           checkRequestIdRef.current = null
-          setViewing(null)
+          fecharPedido()
           loadAll()
         }
         return
@@ -583,7 +631,7 @@ export default function PedidosPJPage() {
       checkRequestIdRef.current = null
       showToast(result.summary.pendentes > 0
         ? `✅ Conferência salva · ainda faltam ${result.summary.pendentes} item(ns)`
-        : '✅ Conferência salva · o pedido já pode ser marcado como enviado')
+        : '✅ Conferência salva · o pedido já pode ser liberado para entrega')
     } catch {
       showToast('Erro inesperado ao salvar a conferência. Recarregue a página e tente novamente.')
     } finally {
@@ -595,7 +643,7 @@ export default function PedidosPJPage() {
   const dispatchPedido = async (g: PedidoGroup) => {
     if (dispatchingRef.current) return
     if (!access.canDispatch) {
-      showToast('Seu perfil não pode confirmar o envio de Pedidos PJ')
+      showToast('Seu perfil não pode liberar Pedidos PJ para entrega')
       return
     }
     if (!g.order_group_id) {
@@ -603,7 +651,7 @@ export default function PedidosPJPage() {
       return
     }
     if (g.cancelled_at || g.dispatched_at) return
-    if (!window.confirm(`Confirmar que o pedido de "${g.customer_name}" foi enviado?\n\nDepois disso ele irá para o Histórico e não poderá mais ser alterado.`)) return
+    if (!window.confirm(`Confirmar que o pedido de "${g.customer_name}" está conferido e pronto para entrega?\n\nDepois disso ele irá para o Histórico e não poderá mais ser alterado.`)) return
 
     dispatchingRef.current = true
     setDispatching(true)
@@ -625,13 +673,13 @@ export default function PedidosPJPage() {
             }
           : row
       )))
-      setViewing(null)
+      fecharPedido()
       setListStage('history')
       showToast(dispatch.already_dispatched
-        ? 'Pedido já estava no Histórico como enviado'
-        : '✅ Pedido marcado como enviado e movido para o Histórico')
+        ? 'Pedido já estava no Histórico como pronto para entrega'
+        : '✅ Pedido pronto para entrega e movido para o Histórico')
     } catch {
-      showToast('Erro inesperado ao confirmar o envio. Recarregue a página e tente novamente.')
+      showToast('Erro inesperado ao liberar o pedido. Recarregue a página e tente novamente.')
     } finally {
       dispatchingRef.current = false
       setDispatching(false)
@@ -905,12 +953,12 @@ export default function PedidosPJPage() {
 
       {/* Modal de visualização */}
       {viewing && (
-        <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&setViewing(null)}>
+        <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&fecharPedido()}>
           <div className="ps-sheet confirm" style={{maxWidth:540, borderRadius:'var(--r-card)'}}>
             <h3>
               {viewing.customer_name}
               {viewing.cancelled_at && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>CANCELADO</span>}
-              {viewing.dispatched_at && <span className="ps-store-chip" style={{marginLeft:8, background:'#E3F0E0', color:'var(--sage)'}}>ENVIADO</span>}
+              {viewing.dispatched_at && <span className="ps-store-chip" style={{marginLeft:8, background:'#E3F0E0', color:'var(--sage)'}}>PRONTO PARA ENTREGA</span>}
             </h3>
             <p style={{fontSize:12.5, color:'var(--ink-soft)', margin:'0 0 14px'}}>
               Implantado {fmtBR(viewing.order_date)} · Produção {viewing.production_date ? fmtBR(viewing.production_date) : 'a definir pela Produção'} · Entrega {fmtBR(viewing.delivery_date)}
@@ -946,8 +994,8 @@ export default function PedidosPJPage() {
                       && Number(r.dispatched_quantity) !== Number(r.quantity) && (
                       <span style={{display:'block', fontSize:11.5, color:'var(--tomato, #A93A2E)', marginTop:2}}>
                         {Number(r.dispatched_quantity) === 0
-                          ? 'não enviado'
-                          : `saiu ${String(r.dispatched_quantity).replace('.', ',')} ${r.pricing_unit || 'un'}`}
+                          ? 'não vai neste pedido'
+                          : `conferido ${String(r.dispatched_quantity).replace('.', ',')} ${r.pricing_unit || 'un'}`}
                         {r.dispatched_quantity_reason ? ` · ${r.dispatched_quantity_reason}` : ''}
                       </span>
                     )}
@@ -991,7 +1039,7 @@ export default function PedidosPJPage() {
 
             {viewing.dispatched_at && (
               <div className="ps-banner" style={{marginBottom:14, display:'grid', gap:4, background:'#E3F0E0', color:'var(--sage)', border:'1px solid #C5D5BA'}}>
-                <strong>Pedido enviado</strong>
+                <strong>Pronto para entrega</strong>
                 <span style={{fontSize:12.5}}>
                   Por {viewing.dispatched_by_name || 'expedição'} em {formatCancellationTimestamp(viewing.dispatched_at)}
                 </span>
@@ -1019,6 +1067,7 @@ export default function PedidosPJPage() {
                   dispatched_at: viewing.dispatched_at,
                   dispatched_quantity_at: row.dispatched_quantity_at ?? null,
                 }))}
+                comecarAberto={correcaoAberta === viewing.order_group_id}
                 onCorrected={async () => { await loadAll(user) }}
               />
             )}
@@ -1039,7 +1088,7 @@ export default function PedidosPJPage() {
               <div className="ps-warning" style={{marginBottom:14, display:'grid', gap:4}}>
                 <strong>Conferência encerrada para este pedido</strong>
                 <span style={{fontSize:12.5}}>
-                  Ele já virou cobrança, então a quantidade enviada não pode mais ser alterada por aqui.
+                  Ele já virou cobrança, então a quantidade conferida não pode mais ser alterada por aqui.
                   Se algo saiu diferente do pedido, avise o financeiro.
                 </span>
               </div>
@@ -1063,7 +1112,7 @@ export default function PedidosPJPage() {
                   disabled={dispatching || savingCheck || !viewingReadiness.ready}
                   onClick={() => dispatchPedido(viewing)}
                 >
-                  <Truck size={15}/> {dispatching ? 'Confirmando envio…' : 'Marcar como enviado'}
+                  <Truck size={15}/> {dispatching ? 'Liberando…' : 'Conferido, pronto para entrega'}
                 </button>
                 {/* O motivo do bloqueio vai escrito na tela, ao lado do botao:
                     tooltip nao existe no celular da expedicao. */}
@@ -1081,7 +1130,7 @@ export default function PedidosPJPage() {
                   <Pencil size={14}/> Editar
                 </button>
               )}
-              <button onClick={()=>setViewing(null)} className="ps-btn ghost">
+              <button onClick={()=>fecharPedido()} className="ps-btn ghost">
                 <X size={14}/> Fechar
               </button>
             </div>
