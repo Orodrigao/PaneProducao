@@ -442,13 +442,35 @@ export async function splitReceivable(
   if (error) throw error
 }
 
-/** Pedido cujo cliente ainda não tem prazo combinado não pode ser cobrado. */
+/**
+ * Por que um pedido entregue ainda não virou cobrança.
+ *
+ * A lista precisa cobrir TUDO o que `private.motivo_bloqueio_cobranca_pj`
+ * devolve. Quando faltava `item-sem-preco`, a tela de Contas a receber quebrava
+ * inteira num pedido misto (um item com preço, outro sem): o resumo indexava
+ * um motivo que não existia no mapa e o navegador derrubava a página.
+ * `motivo-desconhecido` é a rede embaixo disso: motivo novo no banco passa a
+ * aparecer como bloqueio genérico, nunca como página em branco, e nunca como
+ * cobrança liberada por engano.
+ */
 export type PjOrderBillingBlock =
   | 'aguardando-conferencia'
   | 'sem-prazo'
   | 'nada-enviado'
   | 'fora-da-trava'
   | 'sem-conferencia-depois-do-envio'
+  | 'item-sem-preco'
+  | 'motivo-desconhecido'
+
+/** Os motivos que a tela sabe explicar, na forma exata que o banco devolve. */
+const MOTIVOS_CONHECIDOS: readonly PjOrderBillingBlock[] = [
+  'aguardando-conferencia',
+  'sem-prazo',
+  'nada-enviado',
+  'fora-da-trava',
+  'sem-conferencia-depois-do-envio',
+  'item-sem-preco',
+]
 
 /**
  * Por que este pedido ainda não pode virar cobrança, ou `null` se pode.
@@ -463,21 +485,72 @@ export type PjOrderBillingBlock =
 export function pjOrderBillingBlock(
   order: Pick<PjOrderToBillRow, 'motivo_bloqueio'>,
 ): PjOrderBillingBlock | null {
-  return order.motivo_bloqueio ?? null
+  const motivo = order.motivo_bloqueio ?? null
+  if (motivo === null) return null
+  // O banco pode saber de um motivo que esta versão da tela não conhece: basta
+  // uma migration nova chegar antes do site, o que acontece em toda janela de
+  // publicação. Bloquear com recado genérico é o lado seguro; devolver `null`
+  // liberaria a cobrança de um pedido que o banco recusa.
+  return MOTIVOS_CONHECIDOS.includes(motivo) ? motivo : 'motivo-desconhecido'
 }
 
 /** O recado que a Elis lê, e que sempre diz o que fazer em seguida. */
 export const PJ_ORDER_BILLING_BLOCK_MESSAGES: Record<PjOrderBillingBlock, string> = {
   'aguardando-conferencia':
-    'ainda não foi conferido pela Expedição. Peça a conferência do que saiu; a cobrança libera sozinha depois disso.',
+    'ainda não foi conferido pela Expedição. A cobrança libera sozinha depois da conferência.',
   'sem-prazo':
     'o cliente ainda não tem prazo de pagamento cadastrado. Cadastre em Clientes e o pedido libera.',
   'nada-enviado':
-    'a Expedição registrou que nada saiu neste pedido. Se foi recusa na porta, cancele o pedido; se foi engano, peça a correção.',
+    'a Expedição conferiu e nada vai neste pedido. Se foi engano, corrija a quantidade; se nada saiu mesmo, não há o que cobrar e ele fica nesta lista.',
   'fora-da-trava':
     'a quantidade conferida está muito longe da pedida. Confira com a Expedição antes de cobrar.',
   'sem-conferencia-depois-do-envio':
-    'o pedido saiu sem conferência de algum item. Use "Corrigir quantidade enviada" para registrar o que saiu.',
+    'foi fechado sem a conferência de algum item. Corrija a quantidade para registrar o que saiu.',
+  'item-sem-preco':
+    'tem item sem preço para este cliente. Ajuste a tabela de preço do cliente e o pedido libera.',
+  'motivo-desconhecido':
+    'está bloqueado por um motivo que esta tela ainda não conhece. Abra o pedido para ver, e avise se ele continuar aqui depois de recarregar.',
+}
+
+/**
+ * Onde a Elis resolve cada bloqueio, sem sair da tela procurando.
+ *
+ * O aviso dizia o que fazer e não dizia onde: ela lia "corrija a quantidade" e
+ * tinha de ir a Pedidos PJ, abrir o Histórico e caçar o pedido na lista. O
+ * atalho leva direto ao pedido certo, com o painel de correção já aberto
+ * quando é ele que resolve.
+ */
+export function pjOrderBillingBlockLink(
+  block: PjOrderBillingBlock,
+  orderGroupId: string,
+): { href: string; label: string } | null {
+  switch (block) {
+    case 'sem-prazo':
+      return { href: '/clientes', label: 'Cadastrar o prazo' }
+    case 'item-sem-preco':
+      return { href: '/tabelas-preco', label: 'Abrir tabelas de preço' }
+    case 'motivo-desconhecido':
+      return {
+        href: `/pedidos-pj?pedido=${encodeURIComponent(orderGroupId)}`,
+        label: 'Ver o pedido',
+      }
+    case 'nada-enviado':
+    case 'fora-da-trava':
+    case 'sem-conferencia-depois-do-envio':
+      return {
+        href: `/pedidos-pj?corrigir=${encodeURIComponent(orderGroupId)}`,
+        label: 'Corrigir a quantidade',
+      }
+    case 'aguardando-conferencia':
+      // Quem resolve é a Expedição, na tela dela. Abrir o pedido ajuda a Elis
+      // a saber de qual pedido falar, mas não existe botão dela aqui.
+      return {
+        href: `/pedidos-pj?pedido=${encodeURIComponent(orderGroupId)}`,
+        label: 'Ver o pedido',
+      }
+    default:
+      return null
+  }
 }
 
 export function pjOrderCanBeBilled(
@@ -501,6 +574,8 @@ function motivosZerados(): Record<PjOrderBillingBlock, { pedidos: number; valor:
     'nada-enviado': { pedidos: 0, valor: 0 },
     'fora-da-trava': { pedidos: 0, valor: 0 },
     'sem-conferencia-depois-do-envio': { pedidos: 0, valor: 0 },
+    'item-sem-preco': { pedidos: 0, valor: 0 },
+    'motivo-desconhecido': { pedidos: 0, valor: 0 },
   }
 }
 

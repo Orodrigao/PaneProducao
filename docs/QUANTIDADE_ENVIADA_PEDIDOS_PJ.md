@@ -3,10 +3,11 @@
 **Origem do pedido:** Rodrigo, 2026-08-20, com o nome "peso real em pedidos PJ".
 A descoberta mostrou que o problema é maior que peso — ver decisão 1.
 
-**Status em 2026-09-02:** fase 1 **no ar desde 21/08**; passo 1 da fase 2 (a
-cobrança espera a conferência) **no ar desde 26/08**; **a virada do valor não
-foi construída**. Rodrigo aprovou a fase 2 completa em 2026-09-02 e fechou as
-três pendências que a bloqueavam. Ver "Onde isto está em 2026-09-02".
+**Status em 2026-09-04:** plano **concluído**. Fase 1 no ar desde 21/08, passo 1
+da fase 2 desde 26/08 e a **fase 2 completa desde 04/09** (PR #328): a cobrança
+sai pela quantidade conferida e o financeiro corrige depois do fechamento. Ver
+"Onde isto está em 2026-09-04"; a seção de 02/09 fica como registro da
+investigação que reabriu o assunto.
 
 **Status original (2026-08-20):** descoberta concluída, **duas revisões
 adversariais independentes recebidas e incorporadas**, plano emendado
@@ -136,6 +137,72 @@ Elis tem as seis permissões de Contas a Receber com escopo `*`.
     Revisão combinada depois de um mês de uso. **Passar da trava nunca impede o
     envio**: o pedido é enviado, a cobrança não nasce e ele cai na lista de
     pendências do financeiro, junto com o caso de "nada enviado" do bloqueador 4.
+
+## Onde isto está em 2026-09-04
+
+A fase 2 foi ao ar na PR #328, migration
+`20260903182000_cobranca_pelo_real.sql`. O que mudou, em uma linha cada:
+
+- **o valor da cobrança vem do que a Expedição conferiu.** A regra vive em
+  `private.valor_linha_pj` e tem um espelho de tela em `src/lib/pjOrderValue.ts`;
+  os cinco pontos de cálculo que a auditoria de agosto encontrou passaram a
+  chamar essa única regra;
+- **pedido fechado antes de 21/08 sem conferência continua cobrando a
+  estimativa** (`private.marco_cobranca_pelo_real`), porque naquele tempo o campo
+  não existia e zerar a cobrança apagaria faturamento real;
+- **as travas da decisão 15 recusam a cobrança, nunca o fechamento do pedido.**
+  Fora da faixa ou acima do teto, o pedido é fechado, a cobrança não nasce e o
+  motivo aparece escrito no Contas a Receber;
+- **a correção pós-fechamento** é `public.corrigir_quantidade_enviada_pj`, com
+  permissão nova `pedidos_pj.corrigir_quantidade`, restrita a admin e
+  financeiro. Ela cancela a cobrança viva, regrava a quantidade, refaz a
+  cobrança e **restaura os vencimentos combinados**;
+- **cliente que já pagou fecha a janela:** a correção é recusada enquanto
+  houver recebimento ativo. Estornar primeiro é decisão de gente, não de código;
+- **o motivo do bloqueio tem uma fonte só**, `private.motivo_bloqueio_cobranca_pj`,
+  na ordem prazo → conferência → trava → nada enviado → item sem preço.
+
+### O que a virada encontrou em produção (leitura live, 04/09)
+
+Onze cobranças em aberto, criadas entre 21/08 e 04/09, foram geradas pela
+estimativa e divergem do que a Expedição conferiu: **R$ 109,61 cobrados a mais**
+no saldo, sendo R$ 100,00 num único pedido. Outras quatro já foram recebidas e a
+correção as recusa por isso. Nada disso é regressão da fase 2: é a herança das
+duas semanas em que a conferência existia e a cobrança a ignorava. A limpeza é
+manual, pela tela de correção, e ficou com a Elis.
+
+### Dois defeitos da PR #328, corrigidos na PR seguinte
+
+A revisão adversarial da PR de tela achou dois buracos que vieram junto com a
+fase 2 e que nenhum teste pegava:
+
+- **o painel da Expedição continuava dizendo que a conferência não altera a
+  cobrança.** Era verdade na fase 1 e virou mentira no merge, exatamente na tela
+  de quem digita o número que vira dinheiro. Trocado por "este número é o que o
+  cliente vai pagar";
+- **`item-sem-preco` derrubava o Contas a Receber.** O banco devolve sete
+  motivos de bloqueio e a tela conhecia cinco; um pedido misto (um item com
+  preço, outro sem) fazia o resumo indexar um motivo inexistente e a página
+  inteira quebrava. Agora o motivo existe na tela, e qualquer motivo novo do
+  banco cai num caso padrão que **bloqueia** com recado genérico, em vez de
+  quebrar ou de liberar a cobrança.
+
+### Um caminho sem saída, ainda aberto
+
+Pedido em que a Expedição conferiu tudo como zero fica bloqueado com "nada vai
+neste pedido" e **não tem como sair da lista**: cobrança não nasce, e cancelar é
+recusado depois que o pedido foi liberado para entrega. Hoje o recado é honesto
+sobre isso e nada mais. Resolver exige decisão do Rodrigo entre permitir o
+cancelamento depois da liberação ou criar um "nada a cobrar, arquivar".
+
+### O vocabulário mudou junto (PR seguinte)
+
+A Expedição confere **antes** de o pão sair: a nota fiscal e a carga vêm depois.
+Chamar aquele momento de "enviado" descrevia um fato que ainda não aconteceu.
+Nas telas de Pedido PJ o estado passou a se chamar **pronto para entrega**, o
+botão da Expedição virou "Conferido, pronto para entrega" e a lista do financeiro
+diz "conferido pela Expedição". Nenhuma coluna do banco foi renomeada: as
+mensagens de erro do próprio Postgres ainda falam em "quantidade enviada".
 
 ## O problema operacional
 

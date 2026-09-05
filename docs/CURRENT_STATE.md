@@ -1,11 +1,13 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-03
+**Data de referência:** 2026-09-04
 
-**Base observada:** `origin/main` em `f229680`, até a incorporação da PR `#316`.
-A revisão de 2026-09-03 cobriu o que entrou entre 30/08 e 02/09 (banco de teste
-por PR, programação da produção PJ e classificação de itens da NF-e) e os riscos
-abertos nessas frentes. A leitura de 2026-08-13 cobriu o módulo Financeiro e o
+**Base observada:** `origin/main` em `ce26854`, até a incorporação da PR `#328`.
+A revisão de 2026-09-04 cobriu a fase 2 da quantidade enviada em Pedidos PJ (a
+cobrança pelo conferido e a correção pós-fechamento). A revisão de 2026-09-03
+cobriu o que entrou entre 30/08 e 02/09 (banco de teste por PR, programação da
+produção PJ e classificação de itens da NF-e) e os riscos abertos nessas
+frentes. A leitura de 2026-08-13 cobriu o módulo Financeiro e o
 plano do Contas a Receber; as demais seções vêm das revisões anteriores e
 mantêm suas datas.
 
@@ -301,6 +303,21 @@ disputavam um único banco de teste compartilhado.
   cobrança deixar de nascer. Pedido já cobrado fica travado para alteração,
   cancelamento e exclusão; cliente sem prazo cadastrado não impede o envio, e o
   pedido fica na lista até o prazo existir;
+- **desde 04/09 (PR #328) o valor da cobrança PJ é o que a Expedição
+  conferiu**, e não mais a estimativa lançada no pedido
+  ([QUANTIDADE_ENVIADA_PEDIDOS_PJ.md](QUANTIDADE_ENVIADA_PEDIDOS_PJ.md)). A
+  regra vive em `private.valor_linha_pj` com espelho de tela em
+  `src/lib/pjOrderValue.ts`; pedido fechado antes de 21/08 sem conferência
+  segue cobrando a estimativa. Quantidade fora da faixa de 1/3 a 3x, ou acima
+  de 50 kg / 2.000 un por linha, **não impede o fechamento do pedido**: a
+  cobrança é que não nasce, e o motivo aparece escrito na lista do financeiro,
+  vindo de `private.motivo_bloqueio_cobranca_pj`. O financeiro corrige depois
+  por `public.corrigir_quantidade_enviada_pj` (permissão
+  `pedidos_pj.corrigir_quantidade`, admin e financeiro), que refaz a cobrança
+  preservando os vencimentos combinados e **é recusada em pedido com
+  recebimento ativo**. Herança conhecida: onze cobranças em aberto criadas
+  entre 21/08 e 04/09 nasceram pela estimativa e divergem do conferido, saldo
+  de R$ 109,61 cobrados a mais, corrigíveis uma a uma pela tela;
 - conta semanal da Buck (fase 4 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
   na tela de Romaneios, o período faturado vira cobrança da Buck com vencimento
   em 15 dias e receita em `buck_ex`. **O valor é somado no banco** a partir dos

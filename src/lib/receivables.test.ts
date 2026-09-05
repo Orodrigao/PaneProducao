@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const PASTA_MIGRATIONS = join(process.cwd(), 'supabase', 'migrations')
 
 // O módulo cria o cliente Supabase ao ser importado; estes testes só exercitam
 // as funções puras, então o cliente é dispensado.
@@ -13,6 +17,7 @@ import {
   summarizeReceivables,
   validateReceivableDraft,
   pjOrderBillingBlock,
+  pjOrderBillingBlockLink,
   pjOrderCanBeBilled,
   summarizePjOrdersToBill,
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
@@ -247,6 +252,81 @@ describe('pedidos PJ a faturar', () => {
       dispatched_at: '2026-08-26T10:00:00Z',
       motivo_bloqueio: null,
     }))).toBeNull()
+  })
+
+  it('a tela conhece todo motivo que o banco sabe devolver', () => {
+    // Lida do proprio SQL, e nao de uma lista escrita a mao: foi exatamente
+    // por `item-sem-preco` existir no banco e nao existir aqui que a tela de
+    // Contas a receber quebrava inteira num pedido misto. Se alguem acrescentar
+    // um motivo na migration e esquecer da tela, este teste reprova.
+    const migrations = readdirSync(PASTA_MIGRATIONS).filter(nome => nome.endsWith('.sql')).sort()
+    const corpos = migrations
+      .map(nome => readFileSync(join(PASTA_MIGRATIONS, nome), 'utf8'))
+      .filter(sql => sql.includes('function private.motivo_bloqueio_cobranca_pj'))
+    expect(corpos.length, 'nenhuma migration define motivo_bloqueio_cobranca_pj').toBeGreaterThan(0)
+
+    const ultima = corpos[corpos.length - 1]
+    const corpo = ultima.slice(ultima.indexOf('function private.motivo_bloqueio_cobranca_pj'))
+    const motivos = [...corpo.matchAll(/then '([a-z-]+)'/g)].map(achado => achado[1])
+    expect(motivos.length).toBeGreaterThan(4)
+
+    for (const motivo of motivos) {
+      // `pedido-inexistente` nunca chega a esta lista: ela so traz pedido que
+      // existe. Os demais chegam, e cada um precisa de recado e de atalho.
+      if (motivo === 'pedido-inexistente') continue
+      expect(PJ_ORDER_BILLING_BLOCK_MESSAGES[motivo as PjOrderBillingBlock], `motivo sem recado: ${motivo}`)
+        .toBeTruthy()
+      expect(pjOrderBillingBlock({ motivo_bloqueio: motivo as PjOrderBillingBlock }))
+        .toBe(motivo)
+    }
+  })
+
+  it('motivo que a tela nao conhece bloqueia, em vez de derrubar a pagina', () => {
+    // Janela de publicacao: a migration chega antes do site. Antes disto o
+    // resumo indexava um motivo ausente do mapa e o navegador mostrava
+    // "Application error" no lugar do Contas a receber inteiro.
+    const desconhecido = { motivo_bloqueio: 'motivo-que-ainda-nao-existe' as PjOrderBillingBlock }
+    expect(pjOrderBillingBlock(desconhecido)).toBe('motivo-desconhecido')
+    expect(pjOrderCanBeBilled(desconhecido)).toBe(false)
+
+    const resumo = summarizePjOrdersToBill([pedido({ amount: 10, ...desconhecido })])
+    expect(resumo.bloqueados).toBe(1)
+    expect(resumo.porMotivo['motivo-desconhecido']).toEqual({ pedidos: 1, valor: 10 })
+  })
+
+  it('item sem preco manda ajustar a tabela de preco, e nao corrigir quantidade', () => {
+    // Corrigir a quantidade nao cria preco nenhum: mandar a Elis para la seria
+    // dar a ferramenta errada e ela voltaria ao mesmo bloqueio.
+    expect(pjOrderBillingBlockLink('item-sem-preco', 'p1')?.href).toBe('/tabelas-preco')
+  })
+
+  it('todo motivo aponta para onde ele se resolve', () => {
+    // O aviso dizia o que fazer e nao dizia onde: a Elis lia "corrija a
+    // quantidade" e tinha de caçar o pedido no Historico de Pedidos PJ.
+    for (const motivo of Object.keys(PJ_ORDER_BILLING_BLOCK_MESSAGES) as PjOrderBillingBlock[]) {
+      const atalho = pjOrderBillingBlockLink(motivo, 'pedido-1')
+      expect(atalho, `motivo sem atalho: ${motivo}`).not.toBeNull()
+      expect(atalho?.label.length).toBeGreaterThan(3)
+    }
+  })
+
+  it('o que a correcao resolve abre o formulario; o resto so abre a tela certa', () => {
+    expect(pjOrderBillingBlockLink('fora-da-trava', 'p1')?.href).toBe('/pedidos-pj?corrigir=p1')
+    expect(pjOrderBillingBlockLink('nada-enviado', 'p1')?.href).toBe('/pedidos-pj?corrigir=p1')
+    expect(pjOrderBillingBlockLink('sem-conferencia-depois-do-envio', 'p1')?.href)
+      .toBe('/pedidos-pj?corrigir=p1')
+    // Conferir e da Expedicao, e prazo e cadastro de cliente: abrir o
+    // formulario de correcao nesses dois seria oferecer a ferramenta errada.
+    expect(pjOrderBillingBlockLink('aguardando-conferencia', 'p1')?.href).toBe('/pedidos-pj?pedido=p1')
+    expect(pjOrderBillingBlockLink('sem-prazo', 'p1')?.href).toBe('/clientes')
+  })
+
+  it('o identificador do pedido vai escapado no endereco', () => {
+    // Um id nunca deveria trazer caractere especial, mas o dia em que trouxer
+    // o atalho tem de continuar apontando para o pedido, e nao virar outro
+    // parametro.
+    expect(pjOrderBillingBlockLink('fora-da-trava', 'a&b=c')?.href)
+      .toBe('/pedidos-pj?corrigir=a%26b%3Dc')
   })
 
   it('o resumo conta pedidos e valor por motivo', () => {
