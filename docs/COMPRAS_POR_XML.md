@@ -1,0 +1,391 @@
+# COMPRAS_POR_XML.md: entrada de NF-e e custo do insumo
+
+**Criado em:** 2026-09-05, para registrar a decisão de Rodrigo sobre o destino
+do imposto, que até então vivia somente na conversa.
+
+**Revisado em:** 2026-09-07, com sete decisões e correções de Rodrigo. A
+revisão mudou o documento de forma relevante: rebaixou um suposto defeito à
+condição de hipótese, precisou a regra do custo pelo regime tributário da
+empresa, proibiu o fechamento de nota por diferença desconhecida e acrescentou
+o plano em fases.
+
+**Autoridade:** este documento registra o problema, as decisões e o desenho
+pretendido. O que existe de fato está no código, nas migrations e nos testes.
+O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
+
+**Status: nada em execução.** As decisões estão tomadas e o plano está escrito.
+A implementação depende de aprovação por fase e não começou.
+
+## O problema
+
+A entrada de NF-e recusa toda nota em que a soma dos produtos não fecha com o
+valor total da nota.
+
+Como funciona hoje:
+
+- o leitor de XML tira o total da compra do campo `vNF`, no bloco de totais da
+  nota (`src/lib/nfeXml.ts`);
+- cada item soma `vProd` menos o `vDesc` daquele item;
+- a função `create_xml_payable` compara as duas contas arredondadas a duas casas
+  e recusa a nota inteira quando diferem, com a mensagem "A soma dos itens da
+  NF-e não fecha com o total informado".
+
+Efeito na operação: a nota não entra e a conta a pagar não nasce. Contorno em
+uso: lançar a compra à mão, somando o imposto como se fosse um item.
+
+## A nota já vem com a conta fechada
+
+Este é o fato que organiza todo o resto. O valor total da NF-e não é um número
+solto: ele é validado pela SEFAZ antes da autorização, pela regra que gera a
+rejeição 610. A composição é esta:
+
+```text
+vNF = (vProd - vDesc + vST + vFCPST + vIPI + vIPIDevol
+       + vFrete + vSeg + vOutro + vII) - vICMSDeson
+```
+
+Consequência prática: **numa nota autorizada, a diferença entre a soma dos
+produtos e o total é inteiramente explicada por campos que existem no
+arquivo.** Não sobra resíduo. Se o nosso sistema não consegue explicar a
+diferença, o problema é da nossa leitura, não da nota.
+
+Hoje o ERP lê três desses valores (`vProd` e `vDesc` por item, e `vNF` como
+total) e ignora os outros oito. Por isso toda nota com imposto por fora ou
+despesa acessória é recusada.
+
+## O que ainda é hipótese, não defeito
+
+A primeira versão deste documento afirmava que existia um segundo caso: o
+fornecedor lançar desconto somente no rodapé da nota, deixando a soma dos itens
+maior que o total. **Isso não está comprovado e não deve ser tratado como
+defeito confirmado.**
+
+Rodrigo apontou em 2026-09-07 que o padrão da NF-e define o desconto total como
+o somatório dos descontos dos itens, e a conferência confirmou: o campo `vDesc`
+do bloco de totais é o somatório dos `vDesc` dos itens, e existe rejeição
+própria para a divergência (a 537, "Total do desconto difere do somatório dos
+itens"). Um emissor conforme, portanto, não consegue lançar desconto só no
+rodapé: a nota não seria autorizada.
+
+O que era observação de código (o ERP não lê o `vDesc` do rodapé) virou
+conclusão sobre a operação (existem notas assim) sem nenhum XML que
+sustentasse a passagem. Fica registrado como **hipótese a investigar na fase 0**,
+com uma resposta objetiva: ou aparece uma nota real com desconto de rodapé não
+espelhado nos itens, e o caso existe, ou não aparece, e o caso é descartado.
+
+## A decisão sobre o custo
+
+**Rodrigo, 2026-09-05, refinada em 2026-09-07.**
+
+A Pane & Salute está no **Simples Nacional**, e isso decide a regra: a empresa
+não se credita de ICMS, IPI, PIS ou COFINS. O que vem cobrado na nota de compra
+é dinheiro que sai e não volta.
+
+Regra: **o custo do insumo inclui os impostos não recuperáveis e as despesas de
+aquisição, e desconta os abatimentos.** Sem somar de novo o que já está dentro
+do preço.
+
+| Valor na nota | Como vem | Entra no custo |
+| --- | --- | --- |
+| `vProd` | por item | Sim, é o preço |
+| ICMS próprio | por dentro, já embutido no `vProd` | Não somar de novo, já está no preço |
+| `vDesc` | por item | Subtrai |
+| `vST` (substituição) | por fora | Sim, não recuperável |
+| `vFCPST` (fundo de combate à pobreza sobre ST) | por fora | Sim, não recuperável |
+| `vIPI` | por fora | Sim, não recuperável neste regime |
+| `vFrete` | por item ou no total | Sim, despesa de aquisição |
+| `vSeg` | por item ou no total | Sim, despesa de aquisição |
+| `vOutro` | por item ou no total | Sim, despesa de aquisição |
+| `vICMSDeson` | subtrai do total | Reduz o custo quando de fato abatido |
+| `vIPIDevol`, `vII` | por fora | A confirmar na fase 0, raros neste ramo |
+
+O erro que essa tabela existe para evitar é somar imposto duas vezes. O ICMS
+próprio é calculado "por dentro": ele já está no preço que o fornecedor cobra.
+Somá-lo ao custo inflaria o custo do insumo e, por consequência, o CMV e o preço
+de venda sugerido.
+
+Foram apresentadas e descartadas duas alternativas: só o imposto no custo, com
+frete como despesa separada; e imposto mais frete no custo, com seguro e outras
+despesas de fora. As duas deixariam o custo por quilo menor que a realidade.
+
+## Como o cálculo deve ser feito
+
+O sistema calcula, a Elis confere. Ela não faz conta.
+
+1. **Primeiro, o que o XML atribui ao próprio item.** A NF-e permite informar
+   frete, seguro, desconto e outras despesas dentro de cada item, e informa o
+   imposto de cada item no bloco de tributos dele. Quando o valor está lá, é ele
+   que entra no custo daquele produto. Numa nota com refrigerante e farinha, só
+   o refrigerante tem substituição tributária, e um rateio cego jogaria imposto
+   na farinha, mentindo no custo do pão.
+2. **Depois, o rateio, apenas de despesa comum identificada.** Rateia-se somente
+   o valor que a nota cobra dela inteira e que não foi atribuído a nenhum item.
+   A base do rateio é o valor de cada item.
+3. **Nunca somar o mesmo valor duas vezes.** Se um valor já veio atribuído ao
+   item, ele não entra de novo pelo total. Essa é a armadilha central do
+   desenho: os campos do total são somatórios dos campos dos itens, então ler os
+   dois e somar dobra o imposto em silêncio.
+4. **Nunca distribuir diferença desconhecida para fechar a nota.** Se, depois de
+   ler tudo, sobrar valor não explicado, a importação **não se completa**. O
+   sistema mostra o valor que não conseguiu explicar. Fechar a conta empurrando
+   a sobra para algum item transformaria um erro de leitura em custo errado,
+   silenciosamente e para sempre.
+5. **Ajuste de centavos tem regra explícita e limite.** Rateio proporcional gera
+   sobra de arredondamento, e a regra precisa ser determinística para que a
+   regra 4 possa ser aplicada:
+   - a parcela de cada item é calculada proporcionalmente e arredondada a duas
+     casas, com meio centavo indo para cima;
+   - a sobra é a diferença entre o valor a ratear e a soma das parcelas
+     arredondadas. Como cada item erra no máximo meio centavo, a sobra é sempre
+     menor, em módulo, que o número de itens da nota em centavos;
+   - a sobra é distribuída um centavo por item, do item de maior valor para o de
+     menor. Em empate de valor, vence o item de menor número de linha, que é
+     estável e está no próprio arquivo;
+   - nessa etapa, portanto, **nenhum item recebe mais de um centavo**. Somando o
+     arredondamento inicial, o desvio de um item em relação ao valor matemático
+     exato pode chegar a cerca de um centavo e meio. Esse é o limite real, e é
+     ele que deve estar no teste;
+   - diferença maior que o número de itens em centavos não é arredondamento: é
+     divergência, e cai na regra 4.
+
+A regra 5 existe para que a 4 seja aplicável. Sem um limite declarado e
+calculável, qualquer diferença poderia ser chamada de arredondamento, e a
+proibição da regra 4 viraria letra morta.
+
+## O fluxo da Elis
+
+O que ela faz hoje, ao lançar uma compra à mão, some. O fluxo pretendido:
+
+1. **Importa o XML.**
+2. **Confere na tela**, contra a DANFE em papel ou PDF: o valor dos produtos, os
+   acréscimos discriminados (cada imposto e cada despesa com seu nome), os
+   descontos e o total a pagar. Os números precisam aparecer como estão na nota,
+   para que a conferência seja possível olhando um e outro.
+3. **Confirma.**
+
+O que ela **não** faz: calcular rateio, decidir o que é custo, ou criar item
+fictício para compensar diferença. Se a tela pedir qualquer uma dessas três
+coisas, o desenho está errado.
+
+## Quando a conta não fecha
+
+A tela mostra:
+
+- **o valor que não foi explicado**, em reais, e contra qual conta ele sobrou;
+- **a orientação**, em duas linhas: confira o arquivo com o fornecedor; se o XML
+  estiver correto, é a leitura do ERP que está falhando, e a equipe técnica
+  precisa investigar.
+
+Nunca oferecer um botão que ajuste a diferença para fechar. A saída de quem
+está na frente da tela é conferir e escalar, não remendar.
+
+## Importação pendente de conferência
+
+**Esta capacidade não existe hoje** e é pré-requisito do fluxo acima. Hoje a
+importação é tudo ou nada: ou completa e gera conta a pagar, ou falha e se
+perde.
+
+O que precisa passar a existir: uma importação salva em estado pendente de
+conferência, que
+
+- **não gera conta a pagar** enquanto não for confirmada;
+- **não atualiza o custo** de nenhum produto enquanto não for confirmada;
+- **é retomável** sem refazer o trabalho já feito, inclusive o mapeamento de
+  itens para insumos do catálogo, que é a parte cara.
+
+Sem isso, qualquer divergência custa à Elis todo o trabalho de novo, e a
+tentação de forçar o fechamento volta pela porta dos fundos.
+
+# Plano em fases
+
+Cada fase cabe em uma conversa e termina testável. A ordem importa: a fase 0
+produz a evidência sem a qual as outras são chute, e a fase 3 é a única que
+toca dinheiro.
+
+**Aprovação é fase a fase.** Nenhuma fase começa sem o aval de Rodrigo para
+aquela fase.
+
+## Fase 0: evidência, com notas reais anonimizadas
+
+**Objetivo.** Sair do layout teórico e descobrir o que os fornecedores da Pane
+realmente emitem.
+
+**Escopo.**
+
+- Reunir XMLs reais de compras recentes, cobrindo os casos que importam: nota
+  sem nenhum acréscimo; nota com ICMS substituição; nota com IPI; nota com
+  frete; nota com desconto; e, se existir, nota com desconto no rodapé não
+  espelhado nos itens.
+- Anonimizar: CNPJ, razão social, endereço, chave de acesso, números de
+  documento e qualquer dado pessoal. Preços e quantidades podem ser
+  substituídos por valores fictícios desde que a **composição continue
+  fechando** pela fórmula da SEFAZ, senão a fixture não testa nada.
+- Guardar em `test/fixtures/`, conforme o contrato de arquivos.
+- Produzir uma tabela: para cada campo da fórmula, em quantas notas ele veio
+  preenchido, e se veio por item, no total, ou nos dois.
+- Fechar dois casos de borda que a fórmula acima não cobre e que podem produzir
+  diferença legítima: `vServ` (valor de serviço, que só aparece em nota mista de
+  produto e serviço, provavelmente ausente nas compras de insumo, a confirmar) e
+  `indTot` (marcador que diz se o valor de um item entra ou não no total da
+  nota, usado em bonificação e brinde). Um item com `indTot` zerado produz
+  diferença que não é erro e precisa ser tratado antes da fase 3.
+
+**Fora do escopo.** Nenhuma mudança de código de produção.
+
+**Arquivos prováveis.** `test/fixtures/nfe/` com as notas anonimizadas, e um
+teste novo em `src/lib/` que lê cada fixture e confere a composição. Nenhum
+arquivo de produção é tocado.
+
+**Riscos.** Anonimização mal feita vaza dado de fornecedor. A conferência é
+ler o arquivo final inteiro antes de commitar, não confiar no script.
+
+**Critério de aceite.**
+
+- A hipótese do desconto no rodapé está respondida com sim ou não, apoiada em
+  arquivo, e o documento é atualizado com a resposta.
+- Está escrito quais campos a fase 3 pode contar como presentes e quais precisam
+  de tratamento para ausência.
+
+**Testes.** Um teste que lê cada fixture e confere que a composição fecha pela
+fórmula. Ele documenta a regra e protege as fixtures de serem editadas errado
+depois.
+
+**Rollback.** Trivial, são arquivos de teste.
+
+## Fase 1: o ERP passa a enxergar a nota inteira
+
+**Objetivo.** Ler todos os campos da composição e mostrar a conferência na tela,
+sem mudar custo, conta a pagar ou o que é aceito.
+
+**Escopo.**
+
+- `src/lib/nfeXml.ts` passa a ler os campos do bloco de totais e os
+  equivalentes por item.
+- Uma função nova, isolada e testada, que recebe a nota lida e devolve a
+  composição: produtos, cada acréscimo com seu nome, descontos, total, e o
+  valor não explicado (que deve ser zero).
+- A tela de importação mostra essa composição.
+- Quando não fecha, a tela mostra o valor não explicado e a orientação da seção
+  anterior, em vez da mensagem atual, que não diz o que fazer.
+
+**Fora do escopo.** Custo, conta a pagar e a trava do banco não mudam. Nota que
+hoje é recusada continua recusada, mas agora explicada.
+
+**Arquivos prováveis.** `src/lib/nfeXml.ts`, `src/lib/nfeXml.test.ts`, uma
+função nova em `src/lib/` com teste próprio, `src/components/XmlPayableImport.tsx`.
+
+**Riscos.** Baixo. Nada do que a fase escreve chega ao banco. O risco real é de
+UI: poluir a tela de importação com números que a Elis não precisa. Mitigação:
+mostrar a composição resumida, com o detalhe atrás de um toque.
+
+**Critério de aceite.** Para cada fixture da fase 0, a tela mostra a composição
+correta, e o valor não explicado é zero em todas.
+
+**Testes.** Unidade sobre as fixtures, cobrindo campo ausente, campo zerado e
+valor só no item, só no total, e nos dois.
+
+**Rollback.** Reverter o PR. Nenhum dado gravado.
+
+## Fase 2: importação pendente de conferência
+
+**Objetivo.** Permitir salvar uma importação sem que ela vire dinheiro.
+
+**Escopo.**
+
+- Estado novo de importação, persistido, que não gera conta a pagar nem
+  atualiza custo.
+- Retomada: reabrir a importação com o mapeamento de itens já feito preservado.
+- Descarte explícito de uma importação pendente.
+
+**Fora do escopo.** O cálculo do custo com acréscimos continua sendo o da fase 3.
+
+**Arquivos prováveis.** Migration nova, `src/lib/payables.ts`,
+`src/components/XmlPayableImport.tsx`, testes pgTAP.
+
+**Riscos.** Médio para alto: mexe em schema e na fronteira do que vira conta a
+pagar. Uma importação pendente que gere conta por engano cria dívida falsa.
+Mitigação: teste pgTAP que prova que importação pendente não produz linha em
+contas a pagar nem altera `cost_price`.
+
+**Critério de aceite.** Importar, sair da tela, voltar e continuar de onde
+parou, sem que nada tenha aparecido no financeiro nem no custo.
+
+**Testes.** pgTAP para as invariantes acima, e teste de tela para a retomada.
+
+**Rollback.** Migration só de ida; o rollback é uma migration nova que remove o
+estado, possível enquanto nenhuma importação pendente real existir.
+
+## Fase 3: o custo passa a incluir os não recuperáveis
+
+**Frente financeira. Área crítica: dinheiro, migration e função do banco. Não
+desce para ajudante e exige aprovação específica.**
+
+**Objetivo.** Aplicar a decisão do custo, com atribuição por item, rateio só do
+que é comum, e recusa de diferença desconhecida.
+
+**Escopo.**
+
+- Atribuição por item e rateio das despesas comuns, com a regra de centavos da
+  seção anterior.
+- O custo do produto passa a considerar o valor com acréscimos; o valor
+  original do item continua guardado e visível, para conferência contra a
+  DANFE.
+- A trava do total passa a exigir composição explicada, em vez de igualdade
+  entre soma dos produtos e total.
+
+**Fora do escopo.** **Notas já lançadas não são reprocessadas.** Decisão de
+Rodrigo em 2026-09-07. O custo histórico permanece como está; o CMV real vem da
+contagem semanal de inventário, e reescrever o passado quebraria a comparação
+entre meses.
+
+**Arquivos prováveis.** Migration redefinindo `create_xml_payable`,
+`src/lib/payables.ts`, a função de rateio com teste próprio, testes pgTAP.
+
+**Riscos.** Altos e de dinheiro:
+
+- somar imposto duas vezes, inflando custo, CMV e preço sugerido. É o risco
+  principal e o teste tem de mirar nele diretamente;
+- rateio que fecha a nota escondendo erro de leitura, exatamente o que a regra 4
+  proíbe;
+- o site e o banco chegam separados no mesmo merge, então a função nova precisa
+  conviver com a versão do site que está no ar.
+
+**Critério de aceite.**
+
+- Cada fixture da fase 0 importa e o custo resultante bate com o valor calculado
+  à mão, conferido por Rodrigo em pelo menos uma nota real.
+- Uma nota fabricada com diferença inexplicável é recusada, com o valor não
+  explicado na tela.
+- Nenhum produto fora do catálogo tem custo atualizado.
+
+**Testes.** pgTAP sobre a função, unidade sobre o rateio (incluindo a sobra de
+centavos e o caso de valor presente no item e no total), e conferência manual
+de uma nota real por Rodrigo no preview.
+
+**Rollback.** Migration nova revertendo a função para a versão anterior. Como
+custo já gravado não volta sozinho, a fase precisa ser aprovada com o
+entendimento de que o custo dos produtos tocados muda a partir dali.
+
+## Decisões pendentes
+
+- **Efeito nos preços de venda.** O custo dos insumos sobe quando a fase 3
+  entrar, e alguns preços vão aparecer defasados na formação de preço. Não é
+  defeito novo: é uma conta incompleta ficando completa. Cabe decidir se a
+  revisão de preços acompanha a fase 3 ou vem depois. Ver
+  [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).
+
+## Fora do escopo
+
+- Estoque e baixa por consumo. O CMV da padaria é por inventário periódico.
+- Recuperação de crédito tributário. A empresa está no Simples Nacional; o
+  imposto entra como custo, não como crédito a recuperar. Se o regime mudar, a
+  regra do custo muda junto e este documento precisa ser revisto.
+
+## Onde continuar
+
+- Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md). A
+  entrada que descreve este defeito ainda diz que a correção depende de decidir
+  o destino do imposto. Isso mudou: a decisão está tomada e está aqui. A
+  correção daquela linha depende de o arquivo sair da reserva de outra tarefa.
+- Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
+- Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).
