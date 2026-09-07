@@ -148,12 +148,12 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <ClipboardCheck size={16} />
-        <strong style={{ fontSize: 14 }}>Conferência do que saiu</strong>
+        <strong style={{ fontSize: 14 }}>Conferência do que vai sair</strong>
       </div>
 
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink-soft)' }}>
-        Digite quanto saiu de cada item. Por enquanto isto <strong>não altera a cobrança</strong>,
-        que continua saindo pelo pedido: serve para medirmos a diferença real antes de mexer em dinheiro.
+        Digite quanto vai de cada item. <strong>Este número é o que o cliente vai pagar</strong> e é
+        o que a nota fiscal vai levar, então confira antes de salvar.
       </p>
 
       <div style={{ display: 'grid', gap: 10 }}>
@@ -192,7 +192,7 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
                   inputMode={unidade === 'kg' ? 'decimal' : 'numeric'}
                   className="ps-input"
                   style={{ maxWidth: 130 }}
-                  placeholder={`quanto saiu (${unidade})`}
+                  placeholder={`quanto vai (${unidade})`}
                   value={draft?.notSent ? '' : (draft?.value ?? '')}
                   disabled={draft?.notSent || saving}
                   onChange={e => atualiza(line.orderId, { value: e.target.value })}
@@ -208,7 +208,7 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
                   })}
                 >
                   {draft?.notSent ? <RotateCcw size={13} /> : <Ban size={13} />}
-                  {draft?.notSent ? 'Voltar a enviar' : 'Não enviei este item'}
+                  {draft?.notSent ? 'Voltar a incluir' : 'Este item não vai'}
                 </button>
               </div>
 
@@ -229,7 +229,7 @@ export function PjDispatchCheckPanel({ lines, saving, onSave }: Props) {
                   <input
                     type="text"
                     className="ps-input"
-                    placeholder={draft?.notSent ? 'Por que não foi enviado?' : 'Por que a quantidade mudou?'}
+                    placeholder={draft?.notSent ? 'Por que este item não vai?' : 'Por que a quantidade mudou?'}
                     value={draft?.reason ?? ''}
                     disabled={saving}
                     onChange={e => atualiza(line.orderId, { reason: e.target.value })}

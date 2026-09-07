@@ -78,7 +78,7 @@ describe('fila operacional de Pedidos PJ', () => {
 
     await expect(confirmPjOrderDispatch('grupo-1')).resolves.toEqual({
       ok: false,
-      message: 'Não foi possível marcar o pedido como enviado: Sem permissão',
+      message: 'Não foi possível liberar o pedido para entrega: Sem permissão',
     })
   })
 })
