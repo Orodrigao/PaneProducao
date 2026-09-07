@@ -14,8 +14,8 @@ describe('fila operacional de Pedidos PJ', () => {
   beforeEach(() => mocks.rpc.mockReset())
 
   it('carrega os itens pela leitura operacional protegida', async () => {
-    mocks.rpc.mockResolvedValue({
-      data: [{
+    mocks.rpc.mockReturnValue({ order: () => ({ range: async () => ({
+      count: 1, data: [{
         id: 'item-1',
         order_group_id: 'grupo-1',
         customer_id: 'cliente-1',
@@ -37,13 +37,13 @@ describe('fila operacional de Pedidos PJ', () => {
         dispatched_by_name: null,
       }],
       error: null,
-    })
+    }) }) })
 
     const result = await loadPjOrdersForDispatch()
 
     expect(result.ok).toBe(true)
     expect(result.ok && result.orders[0].customer_name).toBe('Mercado Central')
-    expect(mocks.rpc).toHaveBeenCalledWith('list_pj_orders_for_dispatch')
+    expect(mocks.rpc).toHaveBeenCalledWith('list_pj_orders_for_dispatch', {}, { count: 'exact' })
   })
 
   it('confirma o grupo uma vez e devolve os dados gravados', async () => {

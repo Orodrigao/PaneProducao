@@ -1,4 +1,8 @@
 'use client'
+import { PjOrderOverview } from '@/components/PjOrderOverview'
+import { loadAllCommercialPjOrders, loadPjBilling } from '@/lib/pjOrderReadClient'
+import { pjOperationalOverview, pjBillingForOrder, pjHasPendingFollowup, type PjBillingState } from '@/lib/pjOrderOverview'
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2, Save, X, Calendar, Pencil, Truck } from 'lucide-react'
@@ -13,7 +17,6 @@ import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
   cancellationAvailability,
-  formatCancellationTimestamp,
   normalizeCancellationReason,
 } from '@/lib/orderCancellation'
 import { cancelOrderRows } from '@/lib/orderCancellationClient'
@@ -155,7 +158,7 @@ export default function PedidosPJPage() {
   // do Rodrigo pegou no preview em 04/09.
   const [podeCorrigirEnvio, setPodeCorrigirEnvio] = useState(false)
   const [tab, setTab] = useState<'novo'|'lista'>('lista')
-  const [listStage, setListStage] = useState<'open'|'history'>('open')
+  const [listStage, setListStage] = useState<'open'|'history'|'pending'>('open')
   const [listSearch, setListSearch] = useState('')
 
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -165,6 +168,7 @@ export default function PedidosPJPage() {
   const [orders, setOrders]       = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [billingState, setBillingState] = useState<PjBillingState>({ kind: 'loading' })
 
   const [custId, setCustId]    = useState<string>('')
   const [delivery, setDelivery] = useState<string>('')
@@ -181,7 +185,12 @@ export default function PedidosPJPage() {
   // Depois de salvar, a tela devolve a pessoa para a lista de onde ela veio,
   // em vez de deixa-la no meio de Pedidos PJ procurando o caminho de volta.
   const [voltarParaCobranca, setVoltarParaCobranca] = useState(false)
-  const fecharPedido = useCallback(() => { setViewing(null); setCorrecaoAberta(null); setVoltarParaCobranca(false) }, [])
+  const fecharPedido = useCallback(() => {
+    setViewing(null); setCorrecaoAberta(null); setVoltarParaCobranca(false)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('pedido'); url.searchParams.delete('corrigir')
+    window.history.replaceState(window.history.state, '', url)
+  }, [])
   const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
   const [cancelling, setCancelling] = useState(false)
   const cancellingRef = useRef(false)
@@ -197,15 +206,20 @@ export default function PedidosPJPage() {
 
   const access = resolvePjOrderAccess(user)
 
+  const loadingRound = useRef(0)
   const loadAll = useCallback(async (activeUser?: AppUser | null) => {
+    const round = ++loadingRound.current
     setLoading(true)
     setLoadError('')
+    setOrders([])
+    setBillingState({ kind: 'loading' })
     const currentUser = activeUser ?? getCurrentUser()
     const currentAccess = resolvePjOrderAccess(currentUser)
 
     try {
       if (currentAccess.mode === 'dispatch') {
         const result = await loadPjOrdersForDispatch()
+        if (round !== loadingRound.current) return
         if (!result.ok) {
           setLoadError(result.message)
           setOrders([])
@@ -225,27 +239,31 @@ export default function PedidosPJPage() {
         return
       }
 
-      const [cRes, tRes, iRes, oRes, ordRes] = await Promise.all([
+      const [cRes, tRes, iRes, oRes, ordRes, billingResult] = await Promise.all([
         supabase.from('customers').select('*').eq('active',true).order('name'),
         supabase.from('price_tiers').select('id,name').eq('active',true),
         supabase.from('price_tier_items').select('*').eq('active',true),
         supabase.from('customer_price_overrides').select('*').eq('active',true),
-        supabase.from('orders').select('*').eq('order_type','pj').order('order_date',{ascending:false}).limit(500),
+        loadAllCommercialPjOrders<OrderRow>().then(data => ({ data, error: null })),
+        currentUser ? loadPjBilling(currentUser.id) : Promise.resolve<PjBillingState>({ kind: 'restricted' }),
       ])
+      if (round !== loadingRound.current) return
       const firstError = [cRes.error, tRes.error, iRes.error, oRes.error, ordRes.error].find(Boolean)
       if (firstError) {
         setLoadError(`Não foi possível carregar os Pedidos PJ: ${firstError.message}`)
         return
       }
+      setBillingState(billingResult)
       setCustomers((cRes.data||[]) as Customer[])
       setTiers((tRes.data||[]) as PriceTier[])
       setItems((iRes.data||[]) as TierItem[])
       setOverrides((oRes.data||[]) as Override[])
       setOrders((ordRes.data||[]) as OrderRow[])
     } catch {
+      if (round !== loadingRound.current) return
       setLoadError('Não foi possível carregar os Pedidos PJ. Verifique a internet e tente novamente.')
     } finally {
-      setLoading(false)
+      if (round === loadingRound.current) setLoading(false)
     }
   }, [])
   useEffect(() => {
@@ -432,6 +450,7 @@ export default function PedidosPJPage() {
   }
 
   const pedidosGrouped = useMemo<PedidoGroup[]>(() => {
+    const billedGroups = new Set(billingState.kind === 'loaded' ? billingState.bills.filter(bill => bill.status !== 'cancelada').map(bill => bill.origin_ref) : [])
     const groups = new Map<string, PedidoGroup>()
     orders.forEach(r => {
       const key = pjOrderGroupKey(r)
@@ -457,7 +476,7 @@ export default function PedidosPJPage() {
         })
       }
       const g = groups.get(key)!
-      g.rows.push(r)
+      g.rows.push(billedGroups.has(r.order_group_id) ? { ...r, already_billed: true } : r)
       if (r.production_date && (!g.production_date || r.production_date < g.production_date)) {
         g.production_date = r.production_date
       }
@@ -478,16 +497,17 @@ export default function PedidosPJPage() {
       if (a.delivery_date && b.delivery_date) return b.delivery_date.localeCompare(a.delivery_date)
       return b.order_date.localeCompare(a.order_date)
     })
-  }, [orders, customers])
+  }, [orders, customers, billingState])
+
+  useEffect(() => {
+    if (!loading && !loadError) setViewing(previous => previous ? pedidosGrouped.find(group => group.key === previous.key) ?? null : null)
+  }, [pedidosGrouped, loading, loadError])
 
   const groupStatus = (g:PedidoGroup): { label:string; cls:string; border:string } => {
     if (g.cancelled_at) return { label:'cancelado', cls:'separado', border:'var(--ink-faint)' }
     if (g.dispatched_at) return { label:'pronto', cls:'conferido', border:'var(--sage)' }
-    const t = todayISO()
-    if (!g.delivery_date) return { label:'sem data', cls:'separado', border:'var(--ps-line)' }
-    if (g.delivery_date < t) return { label:'entregue', cls:'separado', border:'var(--ink-faint)' }
-    if (g.production_date && g.production_date <= t && g.delivery_date >= t) return { label:'em produção', cls:'conferido', border:'var(--sage)' }
-    return { label:'agendado', cls:'enviado', border:'var(--honey-deep)' }
+    const state = pjOperationalOverview(g, todayISO())
+    return { label: state.status.toLocaleLowerCase('pt-BR'), cls:'enviado', border:'var(--honey-deep)' }
   }
 
   const cancelPedido = async (g: PedidoGroup, rawReason: string): Promise<boolean> => {
@@ -675,6 +695,7 @@ export default function PedidosPJPage() {
 
   const listOrders: PjOrderListDisplayItem[] = pedidosGrouped.map(group => {
     const status = groupStatus(group)
+    const estimated = group.rows.some(row => pjLineValue({ quantity: row.quantity, unitPrice: row.unit_price, dispatchedQuantity: row.dispatched_quantity, dispatchedAt: row.dispatched_at, pricingUnit: row.pricing_unit }) === null)
     return {
       key: group.key,
       customerName: group.customer_name,
@@ -696,8 +717,12 @@ export default function PedidosPJPage() {
           alreadyBilled: row.already_billed,
         })),
       }),
+      pendingAction: pjHasPendingFollowup(group, todayISO(), access.showCommercialValues ? pjBillingForOrder(billingState, group.order_group_id) : undefined),
+      nextAction: pjOperationalOverview(group, todayISO()).next,
       itemCount: group.rows.length,
-      total: group.total,
+      total: estimated ? group.totalPedido : group.total,
+      estimated,
+      valueAvailable: group.rows.every(row => row.unit_price !== null),
       statusLabel: status.label,
       statusClass: status.cls,
       statusBorder: status.border,
@@ -723,7 +748,7 @@ export default function PedidosPJPage() {
   const atalhoJaUsado = useRef(false)
   useEffect(() => {
     if (atalhoJaUsado.current || typeof window === 'undefined') return
-    if (listOrders.length === 0) return
+    if (loading || loadError) return
     atalhoJaUsado.current = true
 
     const organizados = organizePjOrders(listOrders, { today: todayISO(), query: '' })
@@ -741,12 +766,7 @@ export default function PedidosPJPage() {
     )
     if (decisao.tipo === 'nenhum') return
     if (decisao.tipo === 'nao-encontrado') {
-      // A tela carrega as 500 linhas de pedido mais recentes; a lista do
-      // financeiro nao tem esse limite. Medido em producao em 07/09: existem
-      // 455 linhas PJ no total, entao hoje isto nao acontece. Se acontecer, o
-      // recado NAO manda voltar ao Contas a receber: e de la que a pessoa veio,
-      // e o mesmo link traria ela de volta para ca.
-      showToast('Este pedido é antigo demais para a lista de Pedidos PJ carregar. Ele não pode ser aberto por aqui.')
+      showToast('Pedido não encontrado entre os registros disponíveis para seu acesso. Confira o link ou recarregue a lista.')
       return
     }
     const alvo = pedidosGrouped.find(group => group.order_group_id === decisao.id)
@@ -754,16 +774,12 @@ export default function PedidosPJPage() {
     setTab('lista')
     setListStage(decisao.stage)
     setCorrecaoAberta(decisao.abrirCorrecao ? alvo.order_group_id : null)
-    // A viagem de volta so vale para quem abriu o formulario E consegue abrir o
-    // Contas a receber. Aqui a pergunta e feita a lista de rotas, e nao a
-    // `canAccess`, que devolve verdadeiro para administrador sem olhar rota
-    // nenhuma: o administrador e justamente quem NAO tem Contas a receber,
-    // medido em producao, e voltaria para uma tela que o banco recusa.
+    // Voltar à cobrança somente quando a rota já está disponível para a pessoa.
     setVoltarParaCobranca(
       decisao.abrirCorrecao && (user?.allowedRoutes.includes(RECEIVABLES_ROUTE) ?? false),
     )
     setViewing(alvo)
-  }, [listOrders, pedidosGrouped, user])
+  }, [listOrders, pedidosGrouped, user, loading, loadError])
 
   return (
     <div className="ps-canvas">
@@ -964,7 +980,15 @@ export default function PedidosPJPage() {
               onStageChange={setListStage}
               onOpen={orderKey => {
                 const group = pedidosGrouped.find(item => item.key === orderKey)
-                if (group) setViewing(group)
+                if (group) {
+                  setViewing(group)
+                  if (group.order_group_id) {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete('corrigir')
+                    url.searchParams.set('pedido', group.order_group_id)
+                    window.history.replaceState(window.history.state, '', url)
+                  }
+                }
               }}
               formatDate={fmtBR}
               showCommercialValues={access.showCommercialValues}
@@ -974,9 +998,10 @@ export default function PedidosPJPage() {
       </div>
 
       {/* Modal de visualização */}
-      {viewing && (
+      {viewing && !loading && !loadError && (
         <div className="ps-sheet-overlay" style={{alignItems:'center'}} onClick={e=>e.target===e.currentTarget&&fecharPedido()}>
-          <div className="ps-sheet confirm" style={{maxWidth:540, borderRadius:'var(--r-card)'}}>
+          <div role="dialog" aria-modal="true" aria-label="Ficha do pedido PJ" className="ps-sheet confirm" style={{maxWidth:540, maxHeight:'90dvh', overflowY:'auto', borderRadius:'var(--r-card)'}}>
+            <button type="button" className="ps-btn-ghost" onClick={fecharPedido}>Fechar ficha</button>
             <h3>
               {viewing.customer_name}
               {viewing.cancelled_at && <span className="ps-store-chip" style={{marginLeft:8, background:'var(--line-soft)', color:'var(--ink-soft)'}}>CANCELADO</span>}
@@ -986,88 +1011,7 @@ export default function PedidosPJPage() {
               Implantado {fmtBR(viewing.order_date)} · Produção {viewing.production_date ? fmtBR(viewing.production_date) : 'a definir pela Produção'} · Entrega {fmtBR(viewing.delivery_date)}
             </p>
 
-            <div style={{display:'grid', gap:6, marginBottom:14}}>
-              {viewing.rows.map(r => (
-                <div key={r.id} style={{display:'flex', justifyContent:'space-between', padding:'8px 12px', background:'var(--line-soft)', borderRadius:'var(--r-ctrl)', fontSize:13, gap:8}}>
-                  <span style={{fontWeight:600}}>
-                    {r.product_name || r.bread_id}
-                    {r.pack_size && r.pack_size > 1 && (
-                      <span style={{marginLeft:6, fontSize:11, color:'var(--ink-faint)', fontWeight:500}}>
-                        {Math.round((r.quantity||0)/r.pack_size)}×pack{r.pack_size}
-                      </span>
-                    )}
-                  </span>
-                  <span style={{textAlign:'right'}}>
-                    <span style={{color:'var(--ink-faint)', fontSize:12, marginRight:6}}>{r.quantity} {r.pricing_unit || 'un'}</span>
-                    {access.showCommercialValues && (
-                      <strong style={{color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>R$ {(pjLineValue({
-                        quantity: r.quantity,
-                        dispatchedQuantity: r.dispatched_quantity ?? null,
-                        unitPrice: r.unit_price,
-                        dispatchedAt: r.dispatched_at ?? null,
-                        pricingUnit: r.pricing_unit,
-                      }) ?? ((Number(r.unit_price)||0) * (Number(r.quantity)||0))).toFixed(2)}</strong>
-                    )}
-                    {/* O que a expedicao conferiu. Aparece so quando difere do
-                        pedido: numero igual repetido vira ruido. Desde a fase 2
-                        e este numero que vira dinheiro, entao o valor ao lado
-                        ja e o dele. */}
-                    {r.dispatched_quantity !== null && r.dispatched_quantity !== undefined
-                      && Number(r.dispatched_quantity) !== Number(r.quantity) && (
-                      <span style={{display:'block', fontSize:11.5, color:'var(--tomato, #A93A2E)', marginTop:2}}>
-                        {Number(r.dispatched_quantity) === 0
-                          ? 'não vai neste pedido'
-                          : `conferido ${String(r.dispatched_quantity).replace('.', ',')} ${r.pricing_unit || 'un'}`}
-                        {r.dispatched_quantity_reason ? ` · ${r.dispatched_quantity_reason}` : ''}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {access.showCommercialValues && (
-              <div className="ps-banner honey" style={{marginBottom:14, justifyContent:'space-between'}}>
-                <b>Total</b>
-                <span style={{textAlign:'right'}}>
-                  <b style={{fontFamily:'var(--font-display)', fontSize:18}}>R$ {viewing.total.toFixed(2)}</b>
-                  {/* So aparece quando o que saiu difere do que foi pedido. E o
-                      numero que a Elis leva para a nota, entao ele precisa
-                      estar visivel sem clique nenhum. */}
-                  {Math.abs(viewing.total - viewing.totalPedido) >= 0.01 && (
-                    <span style={{display:'block', fontSize:12, color:'var(--ink-faint)'}}>
-                      pedido R$ {viewing.totalPedido.toFixed(2)}
-                    </span>
-                  )}
-                </span>
-              </div>
-            )}
-
-            {viewing.obs && (
-              <div className="ps-warning" style={{marginBottom:14}}>
-                <strong style={{marginRight:6}}>Obs:</strong> {viewing.obs}
-              </div>
-            )}
-
-            {viewing.cancelled_at && (
-              <div className="ps-warning" style={{marginBottom:14, display:'grid', gap:4}}>
-                <strong>Pedido cancelado</strong>
-                <span style={{fontSize:12.5}}>
-                  Por {viewing.cancelled_by || 'usuário não identificado'} em {formatCancellationTimestamp(viewing.cancelled_at)}
-                </span>
-                <span style={{fontSize:12.5}}><strong>Motivo:</strong> {viewing.cancel_reason || 'não informado'}</span>
-              </div>
-            )}
-
-            {viewing.dispatched_at && (
-              <div className="ps-banner" style={{marginBottom:14, display:'grid', gap:4, background:'#E3F0E0', color:'var(--sage)', border:'1px solid #C5D5BA'}}>
-                <strong>Pronto para entrega</strong>
-                <span style={{fontSize:12.5}}>
-                  Por {viewing.dispatched_by_name || 'expedição'} em {formatCancellationTimestamp(viewing.dispatched_at)}
-                </span>
-              </div>
-            )}
-
+            <PjOrderOverview key={viewing.key} order={viewing} today={todayISO()} billing={pjBillingForOrder(billingState, viewing.order_group_id)} showValues={access.showCommercialValues} />
             {/* Corrigir depois do envio: metade B da fase 2. Aparece so para
                 quem cuida do dinheiro (admin e financeiro), e so em pedido ja
                 enviado — antes disso quem corrige e a propria Expedicao, na

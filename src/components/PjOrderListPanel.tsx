@@ -10,6 +10,10 @@ export interface PjOrderListDisplayItem extends PjOrderListItem {
   statusLabel: string
   statusClass: string
   statusBorder: string
+  pendingAction?: boolean
+  nextAction?: string
+  estimated?: boolean
+  valueAvailable?: boolean
 }
 
 interface PjOrderListPanelProps {
@@ -17,8 +21,8 @@ interface PjOrderListPanelProps {
   today: string
   search: string
   onSearchChange: (value: string) => void
-  activeStage: 'open' | 'history'
-  onStageChange: (stage: 'open' | 'history') => void
+  activeStage: 'open' | 'history' | 'pending'
+  onStageChange: (stage: 'open' | 'history' | 'pending') => void
   onOpen: (orderKey: string) => void
   formatDate: (date: string | null) => string
   showCommercialValues: boolean
@@ -83,6 +87,7 @@ function OrderRow({
           <span><b>Entrega</b> {formatDate(order.deliveryDate)}</span>
           <span className="pj-order-created">Implantado {formatDate(order.orderDate)}</span>
         </div>
+        {order.nextAction && <div className="pj-order-dates">{order.nextAction}</div>}
       </div>
 
       <div className="pj-order-row-summary">
@@ -94,7 +99,7 @@ function OrderRow({
         </div>
         <div className="pj-order-numbers">
           <span>{order.itemCount} {order.itemCount === 1 ? 'item' : 'itens'}</span>
-          {showCommercialValues && <strong>R$ {order.total.toFixed(2)}</strong>}
+          {showCommercialValues && (order.valueAvailable === false ? <span>Valor indisponível</span> : order.estimated ? <span>Estimativa R$ {order.total.toFixed(2)}</span> : <strong>R$ {order.total.toFixed(2)}</strong>)}
         </div>
       </div>
       <ChevronRight className="pj-order-chevron" size={18} aria-hidden="true" />
@@ -115,6 +120,7 @@ export function PjOrderListPanel({
 }: PjOrderListPanelProps) {
   const organized = organizePjOrders(orders, { today, query: search })
   const trimmedSearch = search.trim()
+  const pending = [...organized.open, ...organized.history].filter(order => order.pendingAction)
 
   return (
     <section className="pj-order-list" aria-label="Lista de Pedidos PJ">
@@ -136,7 +142,10 @@ export function PjOrderListPanel({
           )}
         </div>
 
-        <div className="pj-order-stage-tabs" aria-label="Situação dos pedidos">
+        <div className="pj-order-stage-tabs" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }} aria-label="Situação dos pedidos">
+          <button type="button" aria-pressed={activeStage === 'pending'} className={activeStage === 'pending' ? 'active' : ''} onClick={() => onStageChange('pending')}>
+            Pendências <span>{pending.length}</span>
+          </button>
           <button
             type="button"
             aria-pressed={activeStage === 'open'}
@@ -183,6 +192,12 @@ export function PjOrderListPanel({
             </div>
           )}
         </div>
+      ) : activeStage === 'pending' ? (
+        <div className="pj-order-results">
+          <p className="pj-order-result-summary">Pedidos para conferir ou acompanhar. Abra a ficha para ver a próxima providência{showCommercialValues ? ' e consultar a cobrança; estar nesta lista não significa dívida em aberto' : ''}.</p>
+          {pending.length === 0 && <div className="ps-empty pj-order-empty">Nenhuma providência identificada nesta lista.</div>}
+          <div className="pj-order-rows">{pending.map(order => <OrderRow key={order.key} order={order} stage={order.dispatchedAt ? 'history' : 'open'} showStage={false} onOpen={onOpen} formatDate={formatDate} showCommercialValues={showCommercialValues} />)}</div>
+        </div>
       ) : activeStage === 'open' ? (
         organized.openSections.length === 0 ? (
           <div className="ps-empty pj-order-empty">Nenhum pedido em aberto.</div>
@@ -223,7 +238,7 @@ export function PjOrderListPanel({
       ) : (
         <div className="pj-order-results">
           <div className="pj-order-result-summary">
-            {organized.history.length} {organized.history.length === 1 ? 'pedido fechado' : 'pedidos fechados'}
+            {organized.history.length} pedidos no histórico. Data passada e pronto para entrega não comprovam saída ou pagamento.
           </div>
           <div className="pj-order-rows">
             {organized.history.map(order => (

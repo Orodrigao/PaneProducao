@@ -1,0 +1,9 @@
+.overview { display: grid; gap: 16px; text-align: left; font-size: 14px; margin-bottom: 18px; overflow-wrap: anywhere; }
+.overview h4 { margin: 0 0 8px; font-size: 15px; }
+.overview p { margin: 6px 0; line-height: 1.5; }
+.overview small { color: var(--ink-soft); line-height: 1.5; }
+.summary { padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-ctrl); }
+.items { display: grid; gap: 8px; }
+.item { display: grid; gap: 5px; padding: 12px; background: var(--line-soft); border-radius: var(--r-ctrl); }
+.history { padding-left: 20px; display: grid; gap: 8px; }
+.overview summary { cursor: pointer; padding: 10px 0; font-weight: 600; }
