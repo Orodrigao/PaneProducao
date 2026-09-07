@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasPendingDispatchCheck, organizePjOrders, type PjOrderListItem } from './pjOrderList'
+import { hasPendingDispatchCheck, organizePjOrders, resolvePjOrderShortcut, type PjOrderListItem } from './pjOrderList'
 
 function order(
   key: string,
@@ -209,5 +209,79 @@ describe('quando o pedido ainda segura a fila da Expedição', () => {
       dispatchedAt: null,
       rows: [],
     })).toBe(false)
+  })
+})
+
+describe('atalho do Contas a receber', () => {
+  const candidato = (id: string, stage: 'open' | 'history', dispatched: boolean) => ({
+    orderGroupId: id, stage, dispatched,
+  })
+  // 'a' foi liberado e mora em Fechados; 'b' nao foi liberado mas a entrega
+  // venceu, e por isso TAMBEM mora em Fechados para o financeiro. Era esse o
+  // caso que a versao anterior mandava para "Em aberto".
+  const lista = [
+    candidato('a', 'history', true),
+    candidato('b', 'history', false),
+    candidato('c', 'open', false),
+  ]
+
+  it('sem parametro no endereco, nao faz nada', () => {
+    expect(resolvePjOrderShortcut('', lista).tipo).toBe('nenhum')
+    expect(resolvePjOrderShortcut('?outra=coisa', lista).tipo).toBe('nenhum')
+  })
+
+  it('a aba vem de quem organiza a lista, e nao de "foi liberado?"', () => {
+    // Pedido nao liberado com entrega vencida esta em Fechados. Se este teste
+    // passar a dizer 'open' para 'b', o defeito de 07/09 voltou.
+    expect(resolvePjOrderShortcut('?pedido=b', lista)).toMatchObject({ stage: 'history' })
+    expect(resolvePjOrderShortcut('?pedido=c', lista)).toMatchObject({ stage: 'open' })
+    expect(resolvePjOrderShortcut('?pedido=a', lista)).toMatchObject({ stage: 'history' })
+  })
+
+  it('corrigir abre o formulario em pedido ja liberado', () => {
+    expect(resolvePjOrderShortcut('?corrigir=a', lista)).toMatchObject({
+      tipo: 'abrir', id: 'a', abrirCorrecao: true, stage: 'history',
+    })
+  })
+
+  it('corrigir em pedido nao liberado abre so o pedido', () => {
+    // O formulario nao existe antes da liberacao: prometer o botao e abrir a
+    // janela sem ele e pior do que nao oferecer.
+    expect(resolvePjOrderShortcut('?corrigir=b', lista)).toMatchObject({
+      tipo: 'abrir', abrirCorrecao: false,
+    })
+  })
+
+  it('ver o pedido nunca abre o formulario', () => {
+    expect(resolvePjOrderShortcut('?pedido=a', lista)).toMatchObject({ abrirCorrecao: false })
+  })
+
+  it('pedido fora da lista carregada e dito, nao engolido', () => {
+    expect(resolvePjOrderShortcut('?corrigir=zzz', lista)).toEqual({
+      tipo: 'nao-encontrado', id: 'zzz',
+    })
+  })
+
+  it('lista vazia devolve nao-encontrado, e nao um abrir sem alvo', () => {
+    expect(resolvePjOrderShortcut('?corrigir=a', [])).toEqual({ tipo: 'nao-encontrado', id: 'a' })
+  })
+
+  it('parametro vazio conta como ausente', () => {
+    expect(resolvePjOrderShortcut('?corrigir=', lista).tipo).toBe('nenhum')
+    expect(resolvePjOrderShortcut('?corrigir=&pedido=a', lista)).toMatchObject({
+      tipo: 'abrir', id: 'a', abrirCorrecao: false,
+    })
+  })
+
+  it('corrigir vence pedido quando os dois vem no endereco', () => {
+    expect(resolvePjOrderShortcut('?pedido=c&corrigir=a', lista)).toMatchObject({
+      tipo: 'abrir', id: 'a', abrirCorrecao: true,
+    })
+  })
+
+  it('pedido sem identificacao de grupo nunca casa com o atalho', () => {
+    expect(resolvePjOrderShortcut('?pedido=a', [
+      { orderGroupId: null, stage: 'open' as const, dispatched: false },
+    ])).toEqual({ tipo: 'nao-encontrado', id: 'a' })
   })
 })

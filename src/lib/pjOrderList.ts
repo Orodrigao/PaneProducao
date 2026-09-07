@@ -149,3 +149,58 @@ export function organizePjOrders<T extends PjOrderListItem>(
     searchResults,
   }
 }
+
+/**
+ * O que o atalho do Contas a receber manda a tela de Pedidos PJ fazer.
+ *
+ * Isto era código solto dentro da página e quebrou duas vezes: primeiro
+ * abrindo a aba errada, depois perdendo o alvo porque a limpeza do endereço
+ * remontava a tela. Como função pura, a decisão passa a ter teste; o que fica
+ * sem teste é só a ligação com a tela.
+ *
+ * **A aba não é decidida aqui, de propósito.** Quem sabe em qual aba um pedido
+ * mora é `organizePjOrders`, e a regra dela é maior do que "foi liberado?":
+ * pedido não liberado com entrega vencida mora em Fechados para o financeiro.
+ * Reescrever esse critério aqui foi exatamente o defeito de 07/09, então o
+ * chamador passa a aba já resolvida pela fonte única.
+ *
+ * `?corrigir=<pedido>` abre o pedido com o formulário de correção aberto e,
+ * depois de salvar, devolve a pessoa ao Contas a receber. `?pedido=<pedido>`
+ * apenas abre o pedido.
+ */
+export interface PjOrderShortcutCandidate {
+  orderGroupId: string | null
+  stage: 'open' | 'history'
+  /** O formulário de correção só existe em pedido já liberado para entrega. */
+  dispatched: boolean
+}
+
+export type PjOrderShortcut =
+  | { tipo: 'nenhum' }
+  | { tipo: 'nao-encontrado'; id: string }
+  | { tipo: 'abrir'; id: string; stage: 'open' | 'history'; abrirCorrecao: boolean }
+
+export function resolvePjOrderShortcut(
+  search: string,
+  candidatos: readonly PjOrderShortcutCandidate[],
+): PjOrderShortcut {
+  const parametros = new URLSearchParams(search)
+  const paraCorrigir = parametros.get('corrigir')
+  const alvoId = paraCorrigir || parametros.get('pedido')
+  if (!alvoId) return { tipo: 'nenhum' }
+
+  const alvo = candidatos.find(candidato => candidato.orderGroupId === alvoId)
+  // Pedido fora da lista carregada (ela traz as 500 linhas mais recentes) não
+  // é erro do atalho: a tela avisa em vez de ficar calada.
+  if (!alvo) return { tipo: 'nao-encontrado', id: alvoId }
+
+  return {
+    tipo: 'abrir',
+    id: alvoId,
+    stage: alvo.stage,
+    // Pedir correção num pedido que a Expedição ainda não liberou abriria a
+    // janela sem o formulário, porque ele só existe depois da liberação. Aqui
+    // isso vira "só abrir o pedido", e o Contas a receber já evita mandar.
+    abrirCorrecao: Boolean(paraCorrigir) && alvo.dispatched,
+  }
+}

@@ -93,7 +93,7 @@ describe('o que impede o salvamento', () => {
     const [problema] = problemsBeforeSaving([linha({ sent: 0 })])
     expect(problema.verdict).toBe('exige_motivo')
     expect(problema.message).toContain('Mini-croissant')
-    expect(problema.message).toContain('não foi enviado')
+    expect(problema.message).toContain('não vai')
   })
 
   it('aceita o item não enviado assim que existe motivo', () => {

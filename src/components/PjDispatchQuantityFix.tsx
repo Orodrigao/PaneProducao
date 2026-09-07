@@ -26,6 +26,8 @@ interface PjDispatchQuantityFixProps {
   orderGroupId: string
   rows: PjDispatchFixRow[]
   onCorrected: () => Promise<void> | void
+  /** Chegou pelo atalho do Contas a receber: abre já no formulário. */
+  comecarAberto?: boolean
 }
 
 function parseQuantidade(valor: string, pricingUnit: string | null): number | null {
@@ -44,14 +46,16 @@ function formatMoney(value: number): string {
 }
 
 /**
- * Corrigir a quantidade enviada depois do envio, para o financeiro.
+ * Corrigir a quantidade conferida depois que a Expedicao fechou o pedido.
  *
  * Mora em Pedidos PJ, e não em Contas a receber, por decisão do Rodrigo em
  * 2026-09-02: é a rota que o administrador alcança (medido em produção: o
  * login dele não tem permissão de Contas a receber) e é onde o número vive.
  */
-export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDispatchQuantityFixProps) {
-  const [aberto, setAberto] = useState(false)
+export function PjDispatchQuantityFix({
+  orderGroupId, rows, onCorrected, comecarAberto = false,
+}: PjDispatchQuantityFixProps) {
+  const [aberto, setAberto] = useState(comecarAberto)
   const [motivo, setMotivo] = useState('')
   const [salvando, setSalvando] = useState(false)
   // Um identificador por FORMULÁRIO, e não por clique. Se a resposta se perder
@@ -105,7 +109,11 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
   const impedimento = invalidas.length > 0
     ? `Confira a quantidade de ${invalidas.length} item(ns): número igual ou maior que zero, e sem fração no que é vendido por unidade.`
     : !mudou
-      ? 'Mude ao menos uma quantidade para corrigir.'
+      // Chegar aqui não é erro: é o caso normal de quem abriu para conferir e
+      // viu que está tudo certo. Dizer "mude alguma coisa" parecia porta
+      // trancada; o que a Elis precisa saber é que a cobrança já usa estes
+      // números, e que mexer só faz sentido se a conferência estiver errada.
+      ? `Nada a corrigir: a cobrança já usa estes números, ${formatMoney(antes.valor ?? antes.valorEstimado)}. Mude um número só se a conferência da Expedição estiver errada.`
       : semMotivo
         ? 'Escreva o motivo da correção, com pelo menos 3 letras.'
         : ''
@@ -149,7 +157,7 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
   if (!aberto) {
     return (
       <button className="ps-btn ghost block" onClick={() => setAberto(true)} style={{ marginBottom: 12 }}>
-        <PencilLine size={14} /> Corrigir quantidade enviada
+        <PencilLine size={14} /> Corrigir quantidade conferida
       </button>
     )
   }
@@ -157,7 +165,7 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
   return (
     <section className="ps-card" style={{ marginBottom: 12, borderColor: 'var(--honey-deep)' }}>
       <div className="ps-card-head">
-        <b>Corrigir quantidade enviada</b>
+        <b>Corrigir quantidade conferida</b>
       </div>
 
       <div className="ps-alert error" role="alert" style={{ marginTop: 8 }}>
@@ -197,7 +205,7 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
                   value={digitado[row.id] ?? ''}
                   onChange={event => setDigitado(atual => ({ ...atual, [row.id]: event.target.value }))}
                   style={{ width: 120 }}
-                  aria-label={`Quantidade enviada de ${row.product_name}`}
+                  aria-label={`Quantidade conferida de ${row.product_name}`}
                 />
                 <small style={{ color: 'var(--ink-faint)' }}>{row.pricing_unit || 'un'}</small>
                 {valorNovo !== null && (
@@ -229,6 +237,15 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
         </span>
       </div>
 
+      {/* O botão prometia "refazer a cobrança" mesmo quando cobrança nenhuma
+          existia ainda, que é o caso de todo pedido bloqueado. O que ele faz
+          de verdade está escrito aqui, e vale nos dois casos. */}
+      <small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 6 }}>
+        Se este pedido já tem cobrança em aberto, ela é cancelada e refeita com o novo valor,
+        mantendo o vencimento combinado. Se ainda não tem, a cobrança nasce depois, pelo número
+        corrigido.
+      </small>
+
       <label className="ps-field" style={{ marginTop: 10 }}>
         <span>Motivo da correção</span>
         <input
@@ -251,7 +268,7 @@ export function PjDispatchQuantityFix({ orderGroupId, rows, onCorrected }: PjDis
           onClick={() => void corrigir()}
           disabled={salvando || impedimento !== ''}
         >
-          {salvando ? 'Corrigindo...' : 'Corrigir e refazer a cobrança'}
+          {salvando ? 'Corrigindo...' : 'Salvar a correção'}
         </button>
         <button className="ps-btn ghost block" onClick={() => setAberto(false)} disabled={salvando}>
           Cancelar

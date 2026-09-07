@@ -474,7 +474,14 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     -- O financeiro carrega as rotas comerciais do cenario PJ: sem
     -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
     -- (o tripe rota-permissao-RLS precisa concordar nos tres).
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios"]'::jsonb)
+    --
+    -- /clientes e /tabelas-preco entraram em 07/09 porque a conta ficticia
+    -- precisa espelhar a real: lido em producao, a Elis tem as duas na lista
+    -- dela. Sem elas o atalho de "cadastrar o prazo" e o de "abrir tabelas de
+    -- preco", que o Contas a receber oferece quando o pedido esta bloqueado,
+    -- caem na tela inicial no preview e nao no de producao, e o teste do
+    -- Rodrigo acusa um defeito que so existe no banco de teste.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/clientes", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios", "/tabelas-preco"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
