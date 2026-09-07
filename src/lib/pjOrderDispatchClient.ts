@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { readAllPjPages } from './pjOrderReadClient'
 
 export interface PjDispatchOrderRow {
   id: string
@@ -78,21 +79,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export async function loadPjOrdersForDispatch(): Promise<LoadDispatchOrdersResult> {
-  const { data, error } = await supabase.rpc('list_pj_orders_for_dispatch')
-
-  if (error) {
-    return {
-      ok: false,
-      message: `Não foi possível carregar os pedidos para expedição: ${error.message}`,
-    }
+  try {
+    const orders = await readAllPjPages<PjDispatchOrderRow>((from, to) => supabase
+      .rpc('list_pj_orders_for_dispatch', {}, { count: 'exact' })
+      .order('id').range(from, to))
+    return { ok: true, orders }
+  } catch (error) {
+    return { ok: false, message: `Não foi possível carregar os pedidos para expedição: ${error instanceof Error ? error.message : 'tente novamente'}` }
   }
-  if (!Array.isArray(data)) {
-    return { ok: false, message: 'A fila de expedição retornou um formato inválido.' }
-  }
-
-  return { ok: true, orders: data as PjDispatchOrderRow[] }
 }
-
 /**
  * Grava a conferência do pedido inteiro numa transação só.
  *
