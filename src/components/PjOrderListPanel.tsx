@@ -88,7 +88,7 @@ function OrderRow({
       <div className="pj-order-row-summary">
         <div className="pj-order-badges">
           {showStage && (
-            <span className={`pj-order-stage ${stage}`}>{stage === 'open' ? 'Em aberto' : 'Histórico'}</span>
+            <span className={`pj-order-stage ${stage}`}>{stage === 'open' ? 'Em aberto' : 'Fechados'}</span>
           )}
           <span className={`ps-status ${order.statusClass}`}>{order.statusLabel}</span>
         </div>
@@ -151,7 +151,7 @@ export function PjOrderListPanel({
             className={activeStage === 'history' ? 'active' : ''}
             onClick={() => onStageChange('history')}
           >
-            <History size={15} /> Histórico <span>{organized.history.length}</span>
+            <History size={15} /> Fechados <span>{organized.history.length}</span>
           </button>
         </div>
       </div>
@@ -223,7 +223,7 @@ export function PjOrderListPanel({
       ) : (
         <div className="pj-order-results">
           <div className="pj-order-result-summary">
-            {organized.history.length} {organized.history.length === 1 ? 'pedido no histórico' : 'pedidos no histórico'}
+            {organized.history.length} {organized.history.length === 1 ? 'pedido fechado' : 'pedidos fechados'}
           </div>
           <div className="pj-order-rows">
             {organized.history.map(order => (

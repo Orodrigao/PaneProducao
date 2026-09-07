@@ -42,7 +42,9 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   await expect(cafeAberto).toContainText('R$ 400.50')
 
   // O Historico guarda o enviado e o cancelado, cada um com seu selo.
-  await page.getByRole('button', { name: /Histórico/ }).click()
+  // A aba se chamava Histórico até 07/09: o nome prometia arquivo morto e é
+  // onde mora a correção que ainda mexe em dinheiro.
+  await page.getByRole('button', { name: /Fechados/ }).click()
 
   const enviado = page.locator('.pj-order-row.is-dispatched', { hasText: '[TESTE] Bistro Cliente PJ' })
   await expect(enviado).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
@@ -55,7 +57,10 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   // Abrir o enviado mostra selo e itens: o dado que entrou volta a aparecer.
   await enviado.click()
   await expect(page.getByRole('heading', { name: /Bistro Cliente PJ/ })).toBeVisible()
-  await expect(page.getByText('ENVIADO', { exact: true })).toBeVisible()
+  // A etiqueta mudou de ENVIADO para PRONTO PARA ENTREGA em 04/09: a
+  // Expedicao confere ANTES de o pao sair, entao "enviado" descrevia um
+  // fato que ainda nao tinha acontecido.
+  await expect(page.getByText('PRONTO PARA ENTREGA', { exact: true })).toBeVisible()
   await expect(page.getByText('[TESTE] Brioche PJ').first()).toBeVisible()
 
   // Relatorio de Vendas PJ: o preset padrao vai de 29 dias atras ate hoje e

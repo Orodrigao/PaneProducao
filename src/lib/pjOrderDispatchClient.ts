@@ -136,7 +136,7 @@ export async function savePjOrderDispatchQuantities(
 }
 
 export async function confirmPjOrderDispatch(orderGroupId: string): Promise<ConfirmDispatchResult> {
-  if (!orderGroupId) return { ok: false, message: 'Pedido sem identificação para confirmar o envio.' }
+  if (!orderGroupId) return { ok: false, message: 'Pedido sem identificação para liberar para entrega.' }
 
   const { data, error } = await supabase.rpc('confirm_pj_order_dispatch', {
     p_order_group_id: orderGroupId,
@@ -145,7 +145,7 @@ export async function confirmPjOrderDispatch(orderGroupId: string): Promise<Conf
   if (error) {
     return {
       ok: false,
-      message: `Não foi possível marcar o pedido como enviado: ${error.message}`,
+      message: `Não foi possível liberar o pedido para entrega: ${error.message}`,
     }
   }
   if (
@@ -155,7 +155,7 @@ export async function confirmPjOrderDispatch(orderGroupId: string): Promise<Conf
     || typeof data.dispatched_by_name !== 'string'
     || typeof data.already_dispatched !== 'boolean'
   ) {
-    return { ok: false, message: 'O banco não confirmou os dados do envio.' }
+    return { ok: false, message: 'O banco não confirmou a liberação do pedido.' }
   }
 
   return {
