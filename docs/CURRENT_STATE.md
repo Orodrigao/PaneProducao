@@ -123,9 +123,11 @@ Riscos ainda abertos:
   (`src/lib/nfeXml.ts`) envia `vNF` como total e não lê `vST`, `vIPI`, `vFrete`,
   `vSeg` nem `vOutro`. Efeito na operação: essas notas não entram e a conta a
   pagar não nasce. Contorno existente: lançar a compra à mão somando o imposto
-  como item. A correção depende de decidir o destino do imposto, se compõe o
-  custo do insumo por rateio ou vira linha própria de despesa, porque isso muda
-  o custo unitário e o CMV. Frente própria, ainda não aberta;
+  como item. **Decisão registrada em 2026-09-07:** impostos não recuperáveis
+  e despesas de aquisição compõem o custo, sem dupla contagem e sem ratear
+  diferença desconhecida. Ver [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md).
+  O defeito continua aberto: implementação não iniciada, dependente da fase 0
+  de evidência com XMLs anonimizados e de aprovação própria por fase;
 - **a trava do fator de conversão na importação de NF-e falha aberta.** Achado
   da revisão adversarial da PR #315: em `create_xml_payable`, `factor_confirmed`
   nulo não dispara a exigência de confirmação, enquanto a função irmã
