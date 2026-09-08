@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import type { PjFlowBill, PjFinancialEvent } from './pjFlowFinance'
 
 export interface PjFlowItem {
   id: string; name: string; ordered: number; quantity: number | null
@@ -9,6 +10,8 @@ export interface PjFlow {
   checked_at: string | null; released_at: string | null; departed_at: string | null
   can_check: boolean; can_release: boolean; items: PjFlowItem[]
   approved_amount?: number | null; due_date?: string | null; payment_term_days?: number | null
+  agreed_date?: string | null; can_correct_due?: boolean; can_split?: boolean
+  bills?: PjFlowBill[]; financial_history?: PjFinancialEvent[]
   history: { action: PjFlowAction; at: string; actor: string; version: number }[]
 }
 export type PjFlowAction = 'save' | 'check' | 'release' | 'depart'

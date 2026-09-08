@@ -14,6 +14,16 @@ mantêm suas datas.
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
+## Jornada PJ preparada (08/09/2026)
+
+PR #339 integrada em `4ed1d26`, após aprovação de Rodrigo da ficha, proteção de
+rascunho e troca de perfil. Publicação confirmada e Action de migrations
+`34237625465` concluída. Consulta somente leitura após a integração confirmou
+zero pedidos inscritos em `private.pj_flow` em produção: a jornada está preparada,
+mas a operação real ainda não foi ativada. O corte de produção continua pendente.
+Vencimentos e parcelas são o próximo recorte autorizado; devoluções e crédito
+manual permanecem posteriores. As demais seções conservam suas datas de revisão.
+
 ## Fase estratégica
 
 O projeto está em estabilização e conclusão da Sprint 0 de segurança.
