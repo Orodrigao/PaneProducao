@@ -12,6 +12,12 @@ alter table public.finance_entries drop constraint if exists finance_entries_sou
 alter table public.finance_entries add constraint finance_entries_source_check
   check(source in ('avulso','contas_pagar','recorrencia','transferencia','contas_receber','pj_devolucao'));
 
+alter table public.receivable_events
+  drop constraint if exists receivable_events_event_type_check;
+alter table public.receivable_events
+  add constraint receivable_events_event_type_check
+    check(event_type in ('lancada','baixada','estornada','cancelada','vencimento_corrigido','dividida','valor_corrigido_pj'));
+
 create table private.pj_flow_excess_resolutions(
   request_id uuid primary key,
   order_group_id uuid not null references private.pj_flow(order_group_id),

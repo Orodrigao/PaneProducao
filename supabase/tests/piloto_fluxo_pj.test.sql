@@ -30,8 +30,8 @@ insert into public.breads(id,name,days,active,unit,is_special,is_shelf)
 values ('teste-piloto-isolado','[TESTE] Brioche Piloto','{0,1,2,3,4,5,6}',true,'un',false,false);
 insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
  quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,needs_production)
-select ('97000000-0000-4000-8000-00000000010'||n)::uuid,'pj','pj',
- ('97000000-0000-4000-8000-00000000020'||n)::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
+select ('97000000-0000-4000-8000-'||lpad((100+n)::text,12,'0'))::uuid,'pj','pj',
+ ('97000000-0000-4000-8000-'||lpad((200+n)::text,12,'0'))::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
  40,5,1,'un','97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado',
  private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false
 from generate_series(1,3) n;
@@ -203,8 +203,8 @@ select ok(private.pj_flow_billing_valid('97000000-0000-4000-8000-000000000202'),
 -- Crédito aceito: um pedido de origem pode quitar integralmente um único pedido seguinte.
 insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
  quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,needs_production)
-select ('97000000-0000-4000-8000-00000000010'||n)::uuid,'pj','pj',
- ('97000000-0000-4000-8000-00000000020'||n)::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
+select ('97000000-0000-4000-8000-'||lpad((100+n)::text,12,'0'))::uuid,'pj','pj',
+ ('97000000-0000-4000-8000-'||lpad((200+n)::text,12,'0'))::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
  40,5,1,'un','97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado',
  private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false from generate_series(4,5)n;
 insert into private.pj_flow(order_group_id) values
@@ -260,8 +260,8 @@ values('97000000-0000-4000-8000-000000000011','[TESTE] Outro Cliente Piloto','00
 insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
  quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,
  needs_production,dispatched_quantity)
-select ('97000000-0000-4000-8000-00000000010'||n)::uuid,'pj','pj',
- ('97000000-0000-4000-8000-00000000020'||n)::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
+select ('97000000-0000-4000-8000-'||lpad((100+n)::text,12,'0'))::uuid,'pj','pj',
+ ('97000000-0000-4000-8000-'||lpad((200+n)::text,12,'0'))::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
  case when n in(9,10) then 2 else 40 end,5,1,'un',
  case when n=7 then '97000000-0000-4000-8000-000000000011'::uuid else '97000000-0000-4000-8000-000000000010'::uuid end,
  case when n=7 then '[TESTE] Outro Cliente Piloto' else '[TESTE] Cliente Piloto Isolado' end,

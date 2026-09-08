@@ -38,6 +38,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const normalizedCredit = creditAmount.trim().replace(',', '.')
   const credit = normalizedCredit && /^\d+(\.\d{1,2})?$/.test(normalizedCredit) ? Number(normalizedCredit) : 0
   const creditDirty = Boolean(creditSource || creditAmount || creditReason)
+  const creditPreview = Boolean(creditSource && credit > 0 && (total === null || credit <= total))
   const creditError = creditDirty && (!creditSource ? 'Escolha o pedido que originou o crédito.'
     : !normalizedCredit || !/^\d+(\.\d{1,2})?$/.test(normalizedCredit) || credit <= 0 ? 'Informe um crédito válido, com até duas casas decimais.'
       : total !== null && credit > total ? 'O crédito não pode ser maior que o valor dos produtos.'
@@ -107,8 +108,8 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     {flow.can_release && <div className={styles.finance}><h3>Revisão financeira</h3>
     {flow.payment_term_days !== undefined && <p>Prazo: {flow.payment_term_days ?? 'não definido'} dias a partir da entrega/coleta combinada.</p>}
     {total !== null && <><p>Produtos conferidos: <strong>{money(total)}</strong></p>
-      {creditDirty && !creditError && <p>Crédito anterior: <strong>− {money(credit)}</strong></p>}
-      <p className={styles.amount}><strong>Total a receber: {money(Math.max(total - (creditError ? 0 : credit), 0))}</strong></p></>}
+      {creditPreview && <p>Crédito anterior: <strong>− {money(credit)}</strong></p>}
+      <p className={styles.amount}><strong>Total a receber: {money(Math.max(total - (creditPreview ? credit : 0), 0))}</strong></p></>}
     {flow.approved_amount != null && <p>Última revisão: produtos {money(flow.approved_amount)}, crédito {money(flow.credit_applied_amount || 0)},
       total a receber {money(flow.net_amount ?? flow.approved_amount)}{flow.due_date ? ` · vencimento ${date(flow.due_date)}` : ''}.
       {!flow.released_at && ' Aguarda nova revisão; esse valor ainda não libera a saída.'}</p>}
