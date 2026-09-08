@@ -66,7 +66,8 @@ language sql stable security definer set search_path='' as $$
         group by root.installment_count,root.customer_id,root.invoice_date
         having sum(r.amount)=f.approved_amount-f.credit_applied_amount
           and count(*)=root.installment_count
-          and count(distinct r.customer_id)=1 and min(r.customer_id)=root.customer_id
+          and count(distinct r.customer_id)=1
+          and bool_and(r.customer_id = root.customer_id)
           and count(distinct r.invoice_date)=1 and min(r.invoice_date)=root.invoice_date)
       end
       and (select coalesce(sum(x.amount),0) from private.pj_flow_excess_resolutions x
