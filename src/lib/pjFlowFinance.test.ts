@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 const rpc = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { rpc } }))
-import { previewPjInstallments, validatePjDueDate, changePjFlowTerms, type PjFlowBill } from './pjFlowFinance'
+import { previewPjInstallments, validatePjDueDate, changePjFlowTerms, resolvePjFlowExcess, type PjFlowBill } from './pjFlowFinance'
 
 describe('condições financeiras PJ', () => {
   it('divide centavos sem perder valor e conta desde a entrega combinada', () => {
@@ -37,5 +37,15 @@ describe('condições financeiras PJ', () => {
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_expected_version: 4, p_reason: 'Novo acordo', p_action: 'due' })
     rpc.mockResolvedValue({ error: { message: 'O pedido mudou' } })
     await expect(changePjFlowTerms({ id: 'pedido', version: 4 }, 'request', input)).rejects.toThrow('O pedido mudou')
+  })
+  it('preserva a mesma devolução ao repetir uma tentativa sem resposta', async () => {
+    rpc.mockReset().mockResolvedValue({ error: null })
+    const input = { kind: 'refund_pix' as const, reason: 'Quantidade corrigida',
+      refundDate: '2026-09-08', accountKey: 'banco_sicredi_jc' }
+    await resolvePjFlowExcess({ id: 'pedido', version: 8 }, 'devolucao', input)
+    await resolvePjFlowExcess({ id: 'pedido', version: 8 }, 'devolucao', input)
+    expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1])
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_kind: 'refund_pix', p_expected_version: 8,
+      p_account_key: 'banco_sicredi_jc' })
   })
 })

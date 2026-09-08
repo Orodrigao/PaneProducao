@@ -45,4 +45,15 @@ describe('preparação da jornada PJ', () => {
     expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1])
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_expected_version: 3, p_review_term_days: 7, p_nf_confirmed: true })
   })
+  it('envia crédito separado do valor dos produtos e não inventa crédito nas outras etapas', async () => {
+    rpc.mockReset().mockResolvedValue({ data: {}, error: null })
+    const flow = { id: 'pedido', version: 3, payment_term_days: 7 } as PjFlow
+    await transitionPjFlowPilot(flow, 'release', 'credito', [], true,
+      { amount: 20, sourceGroupId: 'origem', reason: 'Crédito aceito pelo cliente' })
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_credit_amount: 20,
+      p_credit_source_group_id: 'origem', p_credit_reason: 'Crédito aceito pelo cliente' })
+    await transitionPjFlowPilot(flow, 'check', 'sem-credito', [], false)
+    expect(rpc.mock.calls[1][1]).toMatchObject({ p_credit_amount: 0,
+      p_credit_source_group_id: null, p_credit_reason: null })
+  })
 })

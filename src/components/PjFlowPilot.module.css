@@ -35,7 +35,7 @@
 .item legend span { display: block; font-weight: 400; color: #6b725f; font-size: 12px; margin-top: 4px; }
 .fields { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr; gap: 14px; }
 .fields label { display: grid; gap: 8px; font-size: 13px; color: #525c44; }
-.fields input { width: 100%; min-width: 0; border: 1px solid #c5cbb8; border-radius: 7px; background: white; padding: 11px 12px; font-size: 16px; color: #303b26; }
+.fields input, .fields select { width: 100%; min-width: 0; border: 1px solid #c5cbb8; border-radius: 7px; background: white; padding: 11px 12px; font-size: 16px; color: #303b26; }
 .fields input:disabled { background: #f4f5ee; color: #4e5647; opacity: 1; }
 .item p { margin: 14px 0 0; font-size: 13px; }
 .finance { margin: 24px 0; padding: 22px; background: #f6f4ed; border-radius: 12px; }
@@ -90,3 +90,4 @@
   .footer { flex-direction: column; }
 }
 .billList{list-style:none;padding:0;display:grid;gap:14px}.billList>li{padding:12px 0;border-bottom:1px solid #ded8ca}.termsForm{margin-top:16px;padding:16px;border:1px solid #c7b995;border-radius:12px;background:#fffdf7}.termsForm fieldset{border:0;padding:0}.termsForm select{min-height:44px;width:100%;font:inherit;padding:8px;border:1px solid #b7b09f;border-radius:6px}.termsForm button{margin:6px 6px 0 0}
+.reconciliation{margin:24px 0;padding:20px;border:1px solid #d3aa6e;border-radius:12px;background:#fff6e7}.reconciliation h3{margin:0 0 10px}.reconciliation p{line-height:1.6}.reconciliationFields,.creditFields{display:grid;gap:13px;border:1px solid #d8d0bd;border-radius:10px;padding:16px;margin:14px 0;background:#fffdf8}.reconciliationFields legend,.creditFields legend{font-weight:700;padding:0 6px}.reconciliationFields>label,.creditFields>label{display:grid;gap:7px;font-size:13px}.reconciliationFields>label:has(input[type=radio]){display:flex;align-items:center}.reconciliationFields input:not([type=radio]),.reconciliationFields select,.creditFields input,.creditFields select{width:100%;min-height:44px;border:1px solid #c5cbb8;border-radius:7px;background:white;padding:10px 12px;font:inherit}.reconciliationFields input[type=radio]{width:18px;height:18px;accent-color:#4c6134}.creditFields{background:#f8f8f0}
