@@ -12,10 +12,18 @@ export interface PjFlow {
   approved_amount?: number | null; due_date?: string | null; payment_term_days?: number | null
   agreed_date?: string | null; can_correct_due?: boolean; can_split?: boolean
   bills?: PjFlowBill[]; financial_history?: PjFinancialEvent[]
+  current_gross_amount?: number | null; net_amount?: number | null; received_total?: number
+  pending_excess?: number; credit_applied_amount?: number; credit_source_group_id?: string | null
+  credit_reason?: string | null; can_resolve_excess?: boolean; excess_resolution_supported?: boolean
+  refund_accounts?: { key: string; label: string }[]
+  credit_sources?: { id: string; delivery_date: string; amount: number; reason: string }[]
+  excess_resolution?: { id: string; kind: 'refund_pix' | 'credit'; amount: number; reason: string
+    refund_date: string | null; account: string | null; at: string; actor: string } | null
   history: { action: PjFlowAction; at: string; actor: string; version: number }[]
 }
 export type PjFlowAction = 'save' | 'check' | 'release' | 'depart'
 export interface PjFlowInput { id: string; quantity: number | null; reason: string | null }
+export interface PjFlowCreditInput { amount: number; sourceGroupId: string | null; reason: string }
 
 export function parsePjFlowQuantity(value: string): number | null {
   if (!value.trim()) return null
@@ -57,11 +65,15 @@ function validatePjFlows(data: unknown): PjFlow[] {
 }
 
 export async function transitionPjFlowPilot(flow: PjFlow, action: PjFlowAction,
-  requestId: string, items: PjFlowInput[], nfConfirmed: boolean): Promise<void> {
+  requestId: string, items: PjFlowInput[], nfConfirmed: boolean,
+  credit: PjFlowCreditInput = { amount: 0, sourceGroupId: null, reason: '' }): Promise<void> {
   const { error } = await supabase.rpc('transition_pj_flow_pilot', {
     p_request_id: requestId, p_order_group_id: flow.id, p_expected_version: flow.version,
     p_action: action, p_items: items, p_nf_confirmed: nfConfirmed,
     p_review_term_days: action === 'release' ? flow.payment_term_days : null,
+    p_credit_amount: action === 'release' ? credit.amount : 0,
+    p_credit_source_group_id: action === 'release' ? credit.sourceGroupId : null,
+    p_credit_reason: action === 'release' && credit.amount > 0 ? credit.reason : null,
   })
   if (error) throw new Error(error.message)
 }

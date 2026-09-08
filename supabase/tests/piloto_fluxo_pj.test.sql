@@ -20,7 +20,7 @@ values
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '97000000-0000-4000-8000-000000000001',key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.liberar','contas_receber.acessar','contas_receber.lancar',
-  'contas_receber.baixar','contas_receber.cancelar','contas_receber.corrigir_vencimento']) key;
+  'contas_receber.baixar','contas_receber.cancelar','contas_receber.corrigir_vencimento','contas_receber.estornar']) key;
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select ('97000000-0000-4000-8000-00000000000'||n)::uuid,key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.confirmar_envio']) key cross join (values(2),(5)) a(n);
@@ -153,11 +153,191 @@ select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'970
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
 select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000202',7,'release','[]',true,7)$q$,
  '22023',null,'sem procedimento da diferença, nova liberação fica bloqueada');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000003',true);
+select throws_ok($q$select public.resolve_pj_flow_excess(gen_random_uuid(),
+ '97000000-0000-4000-8000-000000000202',7,'credit','Tentativa sem permissão')$q$,
+ '42501',null,'perfil sem permissão não trata a diferença');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.resolve_pj_flow_excess(gen_random_uuid(),
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Conta física não serve para Pix',
+ private.data_na_padaria(),'caixa_fisico_jc')$q$,'22023',null,'caixa físico não recebe devolução Pix');
+select throws_ok($q$select public.resolve_pj_flow_excess(gen_random_uuid(),
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Conta de outra empresa não serve',
+ private.data_na_padaria(),'banco_sicredi_ja')$q$,'22023',null,'conta bancária de outra empresa é recusada');
+select throws_ok($q$select public.resolve_pj_flow_excess(gen_random_uuid(),
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Data anterior ao recebimento',
+ private.data_na_padaria()-1,'banco_sicredi_jc')$q$,'22023',null,'devolução não antecede o recebimento');
 select is((select sum(rr.amount) from public.receivable_receipts rr join public.receivables r on r.id=rr.receivable_id
  where r.origin_ref='97000000-0000-4000-8000-000000000202' and rr.reversed_at is null),200.00,'Pix real não foi apagado nem estornado');
 select is((select count(*)::int from public.receivables where origin_ref='97000000-0000-4000-8000-000000000202'),1,'revisão recusada não substituiu cobrança paga');
 reset role;
 select ok((select released_at is null from private.pj_flow where order_group_id='97000000-0000-4000-8000-000000000202'),'falha não gravou meia liberação');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.resolve_pj_flow_excess('97000000-0000-4000-8000-000000000401',
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Quantidade corrigida depois do Pix',
+ private.data_na_padaria(),'banco_sicredi_jc')$q$,'devolução Pix registra a diferença exata');
+select lives_ok($q$select public.resolve_pj_flow_excess('97000000-0000-4000-8000-000000000401',
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Quantidade corrigida depois do Pix',
+ private.data_na_padaria(),'banco_sicredi_jc')$q$,'repetir devolução não duplica a saída');
+select throws_ok($q$select public.resolve_pj_flow_excess('97000000-0000-4000-8000-000000000401',
+ '97000000-0000-4000-8000-000000000202',7,'refund_pix','Quantidade corrigida depois do Pix',
+ private.data_na_padaria(),'banco_sicoob_jc')$q$,'22023',null,'mesmo identificador não aceita trocar a conta');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),
+ '97000000-0000-4000-8000-000000000202',7,'release','[]',true,7)$q$,
+ 'Elis corrige o contas a receber e libera depois da devolução');
+reset role;
+select is((select amount from public.receivables where origin_ref='97000000-0000-4000-8000-000000000202'
+ and status<>'cancelada'),190.00,'contas a receber guarda o valor correto');
+select is((select sum(rr.amount) from public.receivable_receipts rr join public.receivables r on r.id=rr.receivable_id
+ where r.origin_ref='97000000-0000-4000-8000-000000000202' and rr.reversed_at is null),200.00,
+ 'recebimento original continua inteiro');
+select is((select count(*)::int from public.finance_entries where source='pj_devolucao'
+ and source_ref='97000000-0000-4000-8000-000000000401'),1,'devolução gera uma única saída no livro');
+select is((select amount from public.finance_entries where source='pj_devolucao'
+ and source_ref='97000000-0000-4000-8000-000000000401'),10.00,'saída no livro tem a diferença devolvida');
+select ok(private.pj_flow_billing_valid('97000000-0000-4000-8000-000000000202'),
+ 'pagamento, devolução e cobrança corrigida fecham juntos');
+
+-- Crédito aceito: um pedido de origem pode quitar integralmente um único pedido seguinte.
+insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
+ quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,needs_production)
+select ('97000000-0000-4000-8000-00000000010'||n)::uuid,'pj','pj',
+ ('97000000-0000-4000-8000-00000000020'||n)::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
+ 40,5,1,'un','97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado',
+ private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false from generate_series(4,5)n;
+insert into private.pj_flow(order_group_id) values
+ ('97000000-0000-4000-8000-000000000204'),('97000000-0000-4000-8000-000000000205');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000104","quantity":40,"reason":null}]')$q$,'confere pedido que originará crédito');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',1,'check')$q$,'conclui pedido de origem');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',2,'release','[]',true,7)$q$,'libera origem');
+select lives_ok($q$select public.record_receivable_receipt(gen_random_uuid(),(select id from public.receivables
+ where origin_ref='97000000-0000-4000-8000-000000000204' and status<>'cancelada'),
+ private.data_na_padaria(),200,'pix','banco_sicredi_jc')$q$,'recebe origem');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',3,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000104","quantity":38,"reason":"Duas unidades a menos"}]')$q$,'corrige origem paga');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',4,'check')$q$,'reconfere origem');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.resolve_pj_flow_excess(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',5,
+ 'credit','Cliente aceitou usar no próximo pedido')$q$,'registra crédito sem inventar saída bancária');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',5,'release','[]',true,7)$q$,'libera origem reconciliada');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',6,'depart')$q$,
+ 'saída da origem torna o crédito definitivo');
+select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000204',6,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000104","quantity":40,"reason":null}]')$q$,
+ '22023',null,'pedido de origem não muda depois que o crédito ficou disponível');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000205',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000105","quantity":2,"reason":"Pedido de duas unidades"}]')$q$,'confere pedido que usará crédito integral');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000205',1,'check')$q$,'conclui destino');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000205',2,'release','[]',true,7,
+ 5,'97000000-0000-4000-8000-000000000204','Parte do crédito combinado no pedido anterior')$q$,'crédito parcial reduz a cobrança sem inventar recebimento');
+reset role;
+select is((select credit_applied_amount from private.pj_flow where order_group_id='97000000-0000-4000-8000-000000000205'),
+ 5.00,'crédito parcial fica separado do valor dos produtos');
+select is((select count(*)::int from public.receivables where origin_ref='97000000-0000-4000-8000-000000000205'
+ and status<>'cancelada'),1,'crédito parcial mantém uma cobrança real');
+select is((select amount from public.receivables where origin_ref='97000000-0000-4000-8000-000000000205'
+ and status<>'cancelada'),5.00,'contas a receber guarda somente o valor líquido');
+select ok(private.pj_flow_billing_valid('97000000-0000-4000-8000-000000000205'),'pedido com crédito parcial está apto à saída');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000205',3,'depart')$q$,
+ 'Expedição registra a saída sem ver valores');
+reset role;
+
+-- Reuso, cliente diferente, crédito integral e parcela paga falham ou fecham de modo explícito.
+insert into public.customers(id,name,doc,payment_term_days,active)
+values('97000000-0000-4000-8000-000000000011','[TESTE] Outro Cliente Piloto','00000000000197',7,true);
+insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
+ quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,
+ needs_production,dispatched_quantity)
+select ('97000000-0000-4000-8000-00000000010'||n)::uuid,'pj','pj',
+ ('97000000-0000-4000-8000-00000000020'||n)::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
+ case when n in(9,10) then 2 else 40 end,5,1,'un',
+ case when n=7 then '97000000-0000-4000-8000-000000000011'::uuid else '97000000-0000-4000-8000-000000000010'::uuid end,
+ case when n=7 then '[TESTE] Outro Cliente Piloto' else '[TESTE] Cliente Piloto Isolado' end,
+ private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false,null
+from generate_series(6,10)n;
+insert into private.pj_flow(order_group_id) values
+ ('97000000-0000-4000-8000-000000000206'),('97000000-0000-4000-8000-000000000207'),
+ ('97000000-0000-4000-8000-000000000208'),('97000000-0000-4000-8000-000000000210');
+insert into private.pj_flow(order_group_id,version,checked_at,released_version,released_at,departed_at,
+ agreed_date,approved_amount)
+values('97000000-0000-4000-8000-000000000209',1,now(),1,now(),now(),private.data_na_padaria()+2,10);
+insert into private.pj_flow_excess_resolutions(request_id,order_group_id,flow_version,kind,amount,reason,created_by)
+values('97000000-0000-4000-8000-000000000409','97000000-0000-4000-8000-000000000209',0,'credit',10,
+ 'Crédito fictício isolado para provar total zero','97000000-0000-4000-8000-000000000001');
+update private.pj_flow set excess_resolution_id='97000000-0000-4000-8000-000000000409'
+where order_group_id='97000000-0000-4000-8000-000000000209';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000206',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000106","quantity":2,"reason":"Pedido pequeno"}]')$q$,'confere segundo destino');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000206',1,'check')$q$,'conclui segundo destino');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000206',2,'release','[]',true,7,
+ 5,'97000000-0000-4000-8000-000000000204','Tentativa de usar o crédito outra vez')$q$,
+ '22023',null,'crédito não pode ser usado em dois pedidos');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000207',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000107","quantity":2,"reason":"Pedido de outro cliente"}]')$q$,'confere outro cliente');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000207',1,'check')$q$,'conclui outro cliente');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000207',2,'release','[]',true,7,
+ 5,'97000000-0000-4000-8000-000000000209','Crédito pertence a outro cliente')$q$,
+ '22023',null,'crédito não atravessa clientes');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000210',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000110","quantity":2,"reason":null}]')$q$,'confere pedido coberto integralmente');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000210',1,'check')$q$,'conclui pedido coberto integralmente');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000210',2,'release','[]',true,7,
+ 10,'97000000-0000-4000-8000-000000000209','Crédito cobre todo o novo pedido')$q$,
+ 'crédito integral libera sem cobrança ou Pix fictício');
+reset role;
+select is((select count(*)::int from public.receivables where origin_ref='97000000-0000-4000-8000-000000000210'
+ and status<>'cancelada'),0,'total líquido zero não cria cobrança zero');
+select ok(private.pj_flow_billing_valid('97000000-0000-4000-8000-000000000210'),'total zero continua apto à saída');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',0,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000108","quantity":40,"reason":null}]')$q$,'confere pedido parcelado');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',1,'check')$q$,'conclui pedido parcelado');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',2,'release','[]',true,7)$q$,'libera pedido antes de parcelar');
+select lives_ok($q$select public.change_pj_flow_terms(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',3,'split',
+ (select id from public.receivables where origin_ref='97000000-0000-4000-8000-000000000208'),null,2,'Cliente pediu duas parcelas')$q$,
+ 'divide pedido antes do recebimento');
+select lives_ok($q$select public.record_receivable_receipt(gen_random_uuid(),(select id from public.receivables
+ where origin_ref='97000000-0000-4000-8000-000000000208' and installment_number=1 and status<>'cancelada'),
+ private.data_na_padaria(),100,'pix','banco_sicredi_jc')$q$,'recebe a primeira parcela');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',4,'save',
+ '[{"id":"97000000-0000-4000-8000-000000000108","quantity":18,"reason":"Correção após primeira parcela"}]')$q$,
+ 'registra quantidade real sem alterar dinheiro');
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',5,'check')$q$,'reconfere pedido parcelado');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.resolve_pj_flow_excess('97000000-0000-4000-8000-000000000408','97000000-0000-4000-8000-000000000208',6,
+ 'refund_pix','Devolução da diferença da primeira parcela',private.data_na_padaria(),'banco_sicredi_jc')$q$,
+ '22023',null,'parcela paga bloqueia antes de qualquer devolução');
+select is((select count(*)::int from private.pj_flow_excess_resolutions
+ where order_group_id='97000000-0000-4000-8000-000000000208'),0,'caso parcelado recusado não grava resolução');
+select is((select count(*)::int from public.finance_entries where source='pj_devolucao'
+ and source_ref='97000000-0000-4000-8000-000000000408'),0,'caso parcelado recusado não tira dinheiro da conta');
+select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',6,'release','[]',true,7)$q$,
+ '22023',null,'correção paga e parcelada permanece bloqueada para tratamento manual');
+reset role;
 
 -- O mesmo banco novo continua atendendo o site antigo em pedidos não inscritos.
 set local role authenticated;

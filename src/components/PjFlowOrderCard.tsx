@@ -6,6 +6,7 @@ import { parsePjFlowQuantity, pjFlowStatus, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
 import styles from './PjFlowPilot.module.css'
 import { PjFlowFinance } from './PjFlowFinance'
+import { PjFlowReconciliation } from './PjFlowReconciliation'
 
 const actionNames = { save: 'Conferência salva / corrigida', check: 'Conferência concluída',
   release: 'NF confirmada, cobrança revisada e saída liberada', depart: 'Saída física registrada' }
@@ -19,24 +20,39 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const [reasons, setReasons] = useState<Record<string, string>>(() => Object.fromEntries(flow.items.map(item => [item.id, item.reason || ''])))
   const [nf, setNf] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [financeLocked, setFinanceLocked] = useState(false)
+  const [termsLocked, setTermsLocked] = useState(false)
+  const [reconciliationLocked, setReconciliationLocked] = useState(false)
+  const [creditSource, setCreditSource] = useState('')
+  const [creditAmount, setCreditAmount] = useState('')
+  const [creditReason, setCreditReason] = useState('')
   const [error, setError] = useState('')
   const [confirm, setConfirm] = useState<PjFlowAction | null>(null)
-  const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean } | null>(null)
+  const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean
+    credit: { amount: number; sourceGroupId: string | null; reason: string } } | null>(null)
   const running = useRef(false)
   const total = flow.items.every(item => typeof item.price === 'number' && item.quantity !== null)
     ? flow.items.reduce((sum, item) => sum + Math.round(pjLineValue({ quantity: item.ordered,
       dispatchedQuantity: item.quantity, unitPrice: item.price, dispatchedAt: null })! * 100), 0) / 100 : null
   const dirty = flow.items.some(item => quantities[item.id] !== (item.quantity === null ? '' : String(item.quantity).replace('.', ','))
     || reasons[item.id] !== (item.reason || ''))
+  const normalizedCredit = creditAmount.trim().replace(',', '.')
+  const credit = normalizedCredit && /^\d+(\.\d{1,2})?$/.test(normalizedCredit) ? Number(normalizedCredit) : 0
+  const creditDirty = Boolean(creditSource || creditAmount || creditReason)
+  const creditError = creditDirty && (!creditSource ? 'Escolha o pedido que originou o crédito.'
+    : !normalizedCredit || !/^\d+(\.\d{1,2})?$/.test(normalizedCredit) || credit <= 0 ? 'Informe um crédito válido, com até duas casas decimais.'
+      : total !== null && credit > total ? 'O crédito não pode ser maior que o valor dos produtos.'
+        : creditReason.trim().length < 3 ? 'Informe a justificativa do crédito.' : '')
   const operationalLocked = dirty || busy || Boolean(confirm) || Boolean(pending.current)
-  const locked = operationalLocked || financeLocked
+  const locked = operationalLocked || termsLocked || reconciliationLocked || creditDirty
   useEffect(() => { onLock(locked) }, [locked, onLock])
   const step = flow.departed_at ? 3 : flow.released_at ? 2 : flow.checked_at ? 1 : 0
   const releaseBlocked = !flow.checked_at ? 'A Expedição JC precisa concluir a conferência antes da revisão.'
     : total === null ? 'Há quantidade ou preço pendente. A cobrança ainda não pode ser confirmada.'
       : total <= 0 ? 'Nenhum item para sair. O pedido continua pendente; não será cancelado automaticamente.'
-        : flow.payment_term_days == null ? 'Defina o prazo do cliente antes de confirmar a cobrança.' : ''
+        : (flow.pending_excess || 0) > 0 && flow.excess_resolution_supported === false
+          ? 'Este pedido foi parcelado e já recebeu dinheiro. Não faça a devolução por esta ficha; o Financeiro precisa tratar o caso manualmente.'
+          : (flow.pending_excess || 0) > 0 ? 'Trate o valor recebido a mais antes de liberar novamente.'
+          : flow.payment_term_days == null ? 'Defina o prazo do cliente antes de confirmar a cobrança.' : creditError
   async function discard() {
     if (window.confirm('Recarregar a ficha e descartar as alterações locais? Uma tentativa sem resposta pode já ter sido registrada.')) await reload()
   }
@@ -53,15 +69,18 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
         action, requestId: crypto.randomUUID(), nf,
         items: action === 'save' ? flow.items.map(item => ({ id: item.id,
           quantity: parsePjFlowQuantity(quantities[item.id]), reason: reasons[item.id] || null })) : [],
+        credit: action === 'release' && creditDirty
+          ? { amount: credit, sourceGroupId: creditSource, reason: creditReason.trim() }
+          : { amount: 0, sourceGroupId: null, reason: '' },
       }
       const request = pending.current
-      await transitionPjFlowPilot(flow, request.action, request.requestId, request.items, request.nf)
+      await transitionPjFlowPilot(flow, request.action, request.requestId, request.items, request.nf, request.credit)
       pending.current = null
       await reload(actionNames[request.action])
     } catch (e) { setError(e instanceof Error ? e.message : 'Falha na operação. Recarregue para conferir o estado.') }
     finally { running.current = false; setBusy(false); setConfirm(null) }
   }
-  const frozen = financeLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
+  const frozen = termsLocked || reconciliationLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
   return <section className={styles.detail} aria-label={`Ficha de ${flow.customer}`}>
     <header className={styles.detailHeader}><span className={styles.eyebrow}>Ficha do pedido</span>
       <h2>{flow.customer}</h2><p>Entrega/coleta combinada: <strong>{date(flow.delivery_date)}</strong></p>
@@ -87,12 +106,16 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     </fieldset>)}
     {flow.can_release && <div className={styles.finance}><h3>Revisão financeira</h3>
     {flow.payment_term_days !== undefined && <p>Prazo: {flow.payment_term_days ?? 'não definido'} dias a partir da entrega/coleta combinada.</p>}
-    {total !== null && <p className={styles.amount}><strong>Valor conferido: {money(total)}</strong></p>}
-    {flow.approved_amount != null && <p>Última cobrança: {money(flow.approved_amount)}{flow.due_date ? ` · vencimento ${date(flow.due_date)}` : ''}.
+    {total !== null && <><p>Produtos conferidos: <strong>{money(total)}</strong></p>
+      {creditDirty && !creditError && <p>Crédito anterior: <strong>− {money(credit)}</strong></p>}
+      <p className={styles.amount}><strong>Total a receber: {money(Math.max(total - (creditError ? 0 : credit), 0))}</strong></p></>}
+    {flow.approved_amount != null && <p>Última revisão: produtos {money(flow.approved_amount)}, crédito {money(flow.credit_applied_amount || 0)},
+      total a receber {money(flow.net_amount ?? flow.approved_amount)}{flow.due_date ? ` · vencimento ${date(flow.due_date)}` : ''}.
       {!flow.released_at && ' Aguarda nova revisão; esse valor ainda não libera a saída.'}</p>}
     <a href="/contas-receber" onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>Abrir contas a receber</a>
     </div>}
-    <PjFlowFinance flow={flow} disabled={operationalLocked} onLock={setFinanceLocked} reload={reload} />
+    {flow.can_release && <PjFlowReconciliation flow={flow} disabled={operationalLocked || termsLocked} onLock={setReconciliationLocked} reload={reload} />}
+    <PjFlowFinance flow={flow} disabled={operationalLocked || reconciliationLocked} onLock={setTermsLocked} reload={reload} />
     {flow.can_check && !flow.departed_at && <div className={styles.actions}>
       <button className={styles.secondary} disabled={frozen} onClick={() => void run('save')}>Salvar conferência / correção</button>
       {!flow.released_at && <button className={styles.primary} disabled={frozen || dirty || Boolean(flow.checked_at)} onClick={() => setConfirm('check')}>Concluir conferência</button>}
@@ -102,6 +125,18 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     </div>}
     {flow.can_release && !flow.departed_at && !flow.released_at && <div className={styles.release}>
       {releaseBlocked && <p className={styles.warning}>{releaseBlocked}</p>}
+      {flow.checked_at && (flow.received_total || 0) === 0 && Boolean(flow.credit_sources?.length) && <fieldset className={styles.creditFields} disabled={frozen}>
+        <legend>Crédito de pedido anterior (opcional)</legend>
+        <label>Pedido de origem<select value={creditSource} onChange={event => {
+          const source = flow.credit_sources?.find(item => item.id === event.target.value)
+          setCreditSource(event.target.value); setCreditAmount(source ? String(Math.min(source.amount, total || 0)).replace('.', ',') : '')
+          if (!source) setCreditReason('')
+        }}><option value="">Não usar crédito</option>{flow.credit_sources?.map(source => <option key={source.id} value={source.id}>
+          Entrega {date(source.delivery_date)} · até {money(source.amount)}</option>)}</select></label>
+        {creditSource && <><label>Valor do crédito<input inputMode="decimal" value={creditAmount} onChange={event => setCreditAmount(event.target.value)} /></label>
+          <label>Justificativa<input value={creditReason} maxLength={500} onChange={event => setCreditReason(event.target.value)} /></label></>}
+        {creditError && <p className={styles.warning}>{creditError}</p>}
+      </fieldset>}
       <label className={styles.checkbox}><input type="checkbox" checked={nf} disabled={frozen || Boolean(releaseBlocked)} onChange={event => setNf(event.target.checked)} />
         Confirmei os valores e emiti a NF no sistema externo; ela está disponível para acompanhar o pedido.</label>
       <button className={styles.primary} disabled={frozen || !nf || Boolean(releaseBlocked)} onClick={() => setConfirm('release')}>Confirmar cobrança e liberar entrega/coleta</button>

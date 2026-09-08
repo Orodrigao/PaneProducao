@@ -256,3 +256,40 @@ test('parcelamento mostra centavos e datas antes da confirmação no celular', a
   expect(mutations[0]).toMatchObject({ p_action: 'split', p_installments: 3, p_due_date: null })
   await expect(page.getByText('Parcelas registradas.', { exact: false })).toBeVisible()
 })
+
+test('crédito manual mostra produtos, abatimento e total líquido antes da liberação', async ({ page }) => {
+  await enter(page, 'financeiro')
+  const current = { ...financialFixture, released_at: null, approved_amount: null, net_amount: null,
+    received_total: 0, pending_excess: 0, bills: [], refund_accounts: [],
+    credit_sources: [{ id: '96000000-0000-4000-8000-000000000299', delivery_date: '2026-09-01',
+      amount: 10, reason: 'Cliente aceitou o crédito' }] }
+  const mutations: Record<string, unknown>[] = []
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [current] }))
+  await page.route('**/rest/v1/rpc/transition_pj_flow_pilot', async route => {
+    mutations.push(route.request().postDataJSON())
+    await route.fulfill({ json: { repeated: false, version: 4 } })
+  })
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
+  await page.getByLabel('Pedido de origem').selectOption('96000000-0000-4000-8000-000000000299')
+  await expect(page.getByText(/Crédito anterior:.*R\$\s*10,00/)).toBeVisible()
+  await expect(page.getByText(/Total a receber:.*R\$\s*180,00/)).toBeVisible()
+  await page.getByLabel('Justificativa', { exact: true }).fill('Crédito combinado no pedido anterior')
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Confirmar cobrança e liberar entrega/coleta' }).click()
+  await page.getByRole('button', { name: 'Sim, confirmar', exact: true }).click()
+  await expect.poll(() => mutations.length).toBe(1)
+  expect(mutations[0]).toMatchObject({ p_credit_amount: 10,
+    p_credit_source_group_id: '96000000-0000-4000-8000-000000000299',
+    p_credit_reason: 'Crédito combinado no pedido anterior' })
+})
+
+test('perfil somente leitura não recebe controles nem mensagem falsa de pedido parcelado', async ({ page }) => {
+  await enter(page, 'financeiro')
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [{ ...financialFixture,
+    can_release: false, can_resolve_excess: false, excess_resolution_supported: true,
+    released_at: null, received_total: 200, current_gross_amount: 190, pending_excess: 10,
+  }] }))
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
+  await expect(page.getByRole('region', { name: 'Tratamento do valor recebido a mais' })).toHaveCount(0)
+  await expect(page.getByText('A cobrança tem parcelas', { exact: false })).toHaveCount(0)
+})

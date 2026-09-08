@@ -13,6 +13,9 @@ export interface PjFinancialEvent {
   before: Pick<PjFlowBill, 'id' | 'number' | 'count' | 'amount' | 'due_date' | 'original_due_date'>[]
   after: PjFinancialEvent['before']
 }
+export interface PjExcessInput {
+  kind: 'refund_pix' | 'credit'; reason: string; refundDate: string | null; accountKey: string | null
+}
 function day(value: string): number {
   const result = Date.parse(`${value}T00:00:00Z`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(result)
@@ -42,6 +45,16 @@ export async function changePjFlowTerms(flow: Pick<PjFlow, 'id' | 'version'>, re
     p_request_id: requestId, p_order_group_id: flow.id, p_expected_version: flow.version,
     p_action: input.action, p_receivable_id: input.billId, p_due_date: input.dueDate,
     p_installments: input.installments, p_reason: input.reason,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function resolvePjFlowExcess(flow: Pick<PjFlow, 'id' | 'version'>,
+  requestId: string, input: PjExcessInput): Promise<void> {
+  const { error } = await supabase.rpc('resolve_pj_flow_excess', {
+    p_request_id: requestId, p_order_group_id: flow.id, p_expected_version: flow.version,
+    p_kind: input.kind, p_reason: input.reason, p_refund_date: input.refundDate,
+    p_account_key: input.accountKey,
   })
   if (error) throw new Error(error.message)
 }
