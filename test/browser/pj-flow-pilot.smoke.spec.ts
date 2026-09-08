@@ -2,6 +2,12 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.use({ browserName: 'chromium', channel: 'chrome', viewport: { width: 390, height: 844 } })
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/rest/v1/rpc/read_pj_flow_activation_status', route => route.fulfill({
+    json: { mode: 'test', can_return: false },
+  }))
+})
+
 async function enter(page: Page, profile: 'financeiro' | 'expedicao') {
   await page.goto('/login')
   await signInOnCurrentPage(page, profile)
@@ -299,4 +305,29 @@ test('perfil somente leitura não recebe controles nem mensagem falsa de pedido 
   await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
   await expect(page.getByRole('region', { name: 'Tratamento do valor recebido a mais' })).toHaveCount(0)
   await expect(page.getByText('A cobrança tem parcelas', { exact: false })).toHaveCount(0)
+})
+
+test('pedido real intacto pode voltar à rotina anterior com motivo', async ({ page }) => {
+  await enter(page, 'financeiro')
+  await page.unroute('**/rest/v1/rpc/read_pj_flow_activation_status')
+  await page.route('**/rest/v1/rpc/read_pj_flow_activation_status', route => route.fulfill({
+    json: { mode: 'controlled_real', can_return: true },
+  }))
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [{ ...financialFixture,
+    version: 0, checked_at: null, released_at: null, approved_amount: null, bills: [], financial_history: [],
+  }] }))
+  const mutations: Record<string, unknown>[] = []
+  await page.route('**/rest/v1/rpc/rollback_pj_flow_enrollment', async route => {
+    mutations.push(route.request().postDataJSON())
+    await route.fulfill({ json: { repeated: false, returned: true } })
+  })
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
+  await expect(page.getByText('Primeira operação real em acompanhamento.')).toBeVisible()
+  page.on('dialog', async dialog => {
+    if (dialog.type() === 'prompt') await dialog.accept('Pedido escolhido por engano')
+    else await dialog.accept()
+  })
+  await page.getByRole('button', { name: 'Voltar este pedido à rotina anterior' }).click()
+  await expect.poll(() => mutations.length).toBe(1)
+  expect(mutations[0]).toMatchObject({ p_order_group_id: fixture.id, p_reason: 'Pedido escolhido por engano' })
 })
