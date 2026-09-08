@@ -394,9 +394,11 @@ select throws_ok($q$select public.rollback_pj_flow_enrollment(gen_random_uuid(),
 reset role;
 delete from private.pj_flow_events where order_group_id='97000000-0000-4000-8000-000000000203';
 delete from private.pj_flow where order_group_id='97000000-0000-4000-8000-000000000203';
+select set_config('pane.pj_check_rpc','on',true);
 update public.orders set dispatched_quantity=null,dispatched_quantity_reason=null,
   dispatched_quantity_at=null,dispatched_quantity_by=null,dispatched_quantity_by_name=null
 where order_group_id='97000000-0000-4000-8000-000000000203';
+select set_config('pane.pj_check_rpc','',true);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
