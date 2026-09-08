@@ -6,14 +6,15 @@ description: Guiar o Rodrigo do desejo bruto ao plano aprovado e ao briefing de 
 # Nova funcionalidade — do desejo ao briefing
 
 Esta skill transforma um pedido bruto do Rodrigo em três coisas, nesta
-ordem: entendimento fechado do problema, plano em fases aprovado por ele
+ordem: entendimento fechado do problema, plano em fases coberto pela autorização
 e briefing autocontido para o agente executor. Ela operacionaliza o fluxo
 "Descoberta → Plano" do AGENTS.md — as regras de lá continuam valendo;
 aqui está o roteiro de como percorrê-las.
 
 Lembrete de risco: funcionalidade nova nunca é risco baixo. Diga o nível
 (médio ou alto) em voz alta logo no início, e por quê. Risco alto muda o
-jogo: aprovação passa a ser fase a fase, nunca só do plano geral.
+jogo: explicite escopo, ambiente, efeitos e reversão das fases. Rodrigo pode
+autorizar essas fases em conjunto; não repita aprovação das já cobertas.
 
 ## Etapa 0 — Checagem de conflitos (imediata)
 
@@ -28,34 +29,28 @@ migrations e testes) deve estar concluído antes de apresentar qualquer
 solução ou plano — mas a auditoria profunda pode esperar as primeiras
 respostas da descoberta, porque um pedido vago ainda não diz onde olhar.
 
-**Coordene com o outro agente.** No PaneERP, Claude e Codex (Sol)
-trabalham em paralelo, e o AGENTS.md proíbe os dois de tocar o mesmo
-fluxo — sobreposição de área, não só de arquivo. As branches `codex/*`,
-os worktrees e as PRs abertas mostram onde o outro está mexendo agora,
-mas o git só revela o presente: as próximas fases planejadas do outro
-agente não estão em lugar nenhum que você possa ler. Por isso, pergunte
-ao Rodrigo se há trabalho paralelo em andamento e qual área ele cobre,
-antes de recomendar por onde começar. Isso muda a ordem das fases, não
-só o isolamento da branch: uma fase que mexe na área do outro agente
-espera ele terminar. (Nesta skill isso já mordeu uma vez — uma sequência
-recomendada colidiu com a frente de segurança do Sol sobre custos, e só
-não virou retrabalho porque o Rodrigo avisou a tempo.)
+**Coordene com os outros agentes.** Consulte Status/Show da portaria,
+mandato, passagens, worktrees e PRs; confira arquivos, contratos e recursos.
+Use o coordenador vigente e os registros para resolver dependências. Não
+pergunte rotineiramente a Rodrigo quem está trabalhando onde. Só solicite
+informação se houver uma lacuna material que os registros não resolvam.
 
 ## Etapa 1 — Descoberta
 
 O pedido é sintoma, não especificação. O objetivo desta etapa é você
 conseguir contar a história completa do fluxo — quem faz o quê, quando,
 com que dado, o que dá errado hoje — sem inventar nenhum pedaço.
-Enquanto houver pedaço inventado, há pergunta a fazer.
+Investigue lacunas nos registros antes de perguntar. Suposições técnicas
+reversíveis cabem ao agente; decisões de negócio relevantes ainda ausentes
+cabem a Rodrigo. Não invente requisitos nem reabra decisões respondidas.
 
 **Formato das perguntas:** uma por vez. Quando houver alternativas
 claras, use AskUserQuestion com opções clicáveis (Rodrigo responde do
 celular); quando a resposta for aberta, pergunte em texto livre no chat.
 Linguagem leiga, cenário concreto da padaria.
 
-**Comece sempre pelo caso real:** "Me conta a última vez que isso fez
-falta — o que aconteceu?" O caso concreto ancora todas as perguntas
-seguintes e evita discussão abstrata.
+**Use o caso real já fornecido.** Se faltar contexto operacional que mude
+a solução, peça um exemplo concreto. Não repita uma pergunta respondida.
 
 **Entenda primeiro o caminho normal, depois as exceções.** Exceção só
 entra na conversa se puder mudar a solução, e uma de cada vez — despejar
@@ -128,14 +123,13 @@ avisar é desserviço.
 ## Etapa 2 — Plano
 
 Primeiro, feche o entendimento: resuma em 5–10 linhas leigas o problema,
-quem é afetado, o nível de risco e o que ficou fora do escopo. Peça
-confirmação do Rodrigo.
+quem é afetado, o nível de risco e o que ficou fora do escopo. Confira a
+autorização existente; não peça confirmação ritual de entendimento já claro.
 
 Depois, quando existirem alternativas reais, apresente-as antes do plano
-detalhado — tipicamente "não fazer nada", "solução mínima" e "solução
-completa" — cada uma com custo, risco e efeito na operação, em linguagem
-leiga. Rodrigo escolhe informado; só então detalhe o plano do caminho
-escolhido.
+detalhado, com custo, risco e efeito na operação, em linguagem leiga.
+O agente escolhe e fundamenta a solução técnica. Rodrigo decide quando
+houver diferença material de negócio, gasto ou consequência fora do escopo.
 
 O plano segue o AGENTS.md: fases pequenas, cada uma cabe numa conversa e
 termina testável no navegador. Para cada fase:
@@ -152,6 +146,8 @@ termina testável no navegador. Para cada fase:
   deve ser bloqueado;
 - recuperação se der errado — lembrando que migration mergeada não se
   desfaz nem se edita: recuperação de banco é sempre migration nova.
+- limite autorizado: plano, preview ou integração/publicação; registrar
+  separadamente ativação de fluxo real e eventual aceite humano solicitado.
 
 Para plano de módulo inteiro (mais de duas fases, ou qualquer coisa
 com dado financeiro), antes de pedir a aprovação do Rodrigo peça uma
@@ -162,14 +158,18 @@ plano que qualquer sistema desse tipo tem?" Cada lacuna apontada
 entra no plano ou é descartada por escrito, nunca ignorada.
 
 Apresente o plano em linguagem leiga primeiro; o detalhe técnico vem
-depois, como apoio. Risco médio: aprovação do plano libera a execução.
-Risco alto: cada fase precisa da própria aprovação antes de começar.
-Mudança relevante de direção depois de aprovado exige nova aprovação.
+depois, como apoio. Risco médio: o pedido suficiente já pode autorizar o plano
+e a execução, sem novo OK ritual.
+Risco alto: as fases precisam estar explicitamente cobertas, podendo receber
+autorização conjunta com seus efeitos e limites. Ajuste técnico dentro do
+escopo cabe ao agente. Mudança de escopo ou consequência não autorizada exige
+nova aprovação, com recomendação concreta, sem transferir julgamento técnico.
 
 ## Etapa 3 — Briefing de execução
 
-Com o plano aprovado, gere o briefing da fase 1 (e das seguintes quando
-o Rodrigo pedir). O briefing é um bloco de texto no chat — nunca um
+Com o plano aprovado, gere o briefing da fase 1 e das seguintes já cobertas
+pela autorização, sem esperar novo pedido a cada etapa. O briefing é um bloco
+de texto no chat — nunca um
 arquivo novo no repositório — e precisa ser autocontido: quem o recebe
 não vê esta conversa nem a auditoria que você fez. Tudo que o executor
 precisa saber vai no texto. Ele serve tanto para esta mesma sessão
@@ -226,8 +226,13 @@ usuário vê em cada um>
 
 ## Verificação
 <comandos exatos em sequência (lint → tsc → test → build), matriz
-perfil × loja, fluxo a testar no navegador e o roteiro de preview que
-o Rodrigo executa no celular>
+perfil × loja, fluxo que o agente executa no preview, prova de persistência
+real quando afetada e evidência sanitizada por revisão; avaliação humana
+complementar ou dependência concreta, sem transferir testes técnicos>
+
+## Limite autorizado da entrega
+<referência à autorização, ambiente, efeitos cobertos, integração/publicação
+incluídas ou não, ativação de fluxo real e eventual aceite humano solicitado>
 
 ## Recuperação
 <como voltar atrás com segurança se der errado; migration é só ida —
@@ -244,7 +249,7 @@ decide o "como" técnico dentro das decisões já tomadas.
 ## Regras
 
 - Esta skill termina no briefing. Implementação só começa depois do
-  plano aprovado (fase a fase, se risco alto) e, se for na mesma
+  plano autorizado (fases de risco alto explicitamente cobertas) e, se for na mesma
   conversa, seguindo o fluxo normal do AGENTS.md (branch, worktree,
   verificação, PR draft).
 - Interrogatório não é o objetivo: pergunta boa é a que muda o plano.

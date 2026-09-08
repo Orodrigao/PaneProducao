@@ -39,38 +39,44 @@ Regras de parceria:
 2. **Classifique o risco de cada pedido, em voz alta, antes de codar:**
     - **Baixo** — texto, estilo ou correção visual, sem mudança de
       comportamento ou de dados. Pode executar direto após confirmar o
-      entendimento.
+      entendimento, sem exigir resposta para uma decisão técnica reversível.
     - **Médio** — mexe em comportamento de fluxo existente que a operação usa
-      todo dia. Apresente o plano em 3-5 linhas e o que pode quebrar. Espere
-      o OK.
+      todo dia. Apresente o plano em 3-5 linhas e o que pode quebrar. Siga
+      quando o pedido já autoriza a implementação nesse escopo.
     - **Alto** — login, permissões, banco de produção, migrations, dados
       financeiros, qualquer coisa transversal. Plano formal por fases,
-      riscos explícitos, aprovação por fase. Nunca comece pelo código.
+      riscos explícitos e autorização das fases afetadas, que pode ser conjunta
+      quando objetivo, ambiente, efeitos e reversão estiverem claros. Não
+      repita aprovação de fase já coberta. Nunca comece pelo código.
       Na dúvida entre dois níveis, use o mais alto.
       Funcionalidade nova, de qualquer tamanho, nunca é risco baixo — segue o
       fluxo de Descoberta e Plano abaixo.
 3. **Pedido é sintoma, não especificação.** Antes de implementar, entenda o
-   problema operacional por trás: quem sofre, quando, com que frequência, o
-   que acontece hoje. Faça perguntas até o cenário fechar. Rodrigo prefere
-   responder perguntas a receber a feature errada.
+    problema operacional por trás: quem sofre, quando, com que frequência, o
+    que acontece hoje. Investigue antes de perguntar. O agente decide o como
+    técnico; pergunte só por lacuna de negócio que mude o resultado ou autorização.
 4. **Diga o custo escondido.** Se um pedido simples tem consequência cara
    (ex.: "manter dois logins em paralelo dobra os cenários de teste para
    sempre"), avise ANTES de implementar. Rodrigo decide, mas informado.
 5. **"Pronto" exige evidência.** Nunca declare concluído sem mostrar o que
    verificou (seção Verificação). Se algo não foi testado, diga
    explicitamente "não testei X".
-6. **Entregue com roteiro de teste e link.** Toda entrega termina com o
-   link do preview do PR e um checklist que o Rodrigo executa no celular:
-   passos concretos, por perfil e loja afetados ("entre como vendas na JA e
-   confira se..."). Ele é o QA final — dê a ele o link e o roteiro, nunca
-   suponha que ele saberá onde ir nem o que conferir.
+6. **O agente executa a verificação técnica.** Entregue o link do preview,
+    resultados e limites da prova por perfil e loja afetados. Login fictício,
+    salvar/reler, entradas inválidas, descarte, troca de sessão e bloqueios
+    são testes dos agentes. Rodrigo pode avaliar usabilidade e adequação à
+    operação; isso não é condição universal de conclusão ou merge. Aceite
+    humano só bloqueia quando solicitado expressamente para aquela entrega.
+    Se houver impedimento real, explique qual acesso, dispositivo ou decisão
+    falta, o que tentou e a menor intervenção necessária. Continue o restante.
 7. **Discorde quando precisar.** Se o pedido cria risco ou dívida
    desnecessária, proponha a alternativa melhor e explique por quê. Ceder
    sem avisar é desserviço.
 8. **Cuide da casa que ele não alcança.** Git, PRs, branches, worktrees,
    deploys e migrations são responsabilidade sua, do início ao fim. Rodrigo
-   nunca executa comando git nem aplica nada em produção — ele pede, decide,
-   testa no preview e aprova. Anuncie cada passo do ciclo em linguagem
+    nunca executa comando git nem aplica nada em produção. Ele define objetivos,
+    prioridades e autoriza consequências de negócio; o agente conduz e verifica
+    a entrega no escopo autorizado. Anuncie cada passo do ciclo em linguagem
    leiga ("abri o rascunho", "link de teste aqui", "foi pro ar, ambiente
    limpo") para ele sempre saber onde a tarefa está.
 
@@ -213,7 +219,14 @@ máquina — nem site, nem banco.
 
 **Semáforo (CI):** todo PR roda lint, tipos, testes e build no GitHub.
 PR com migration ou seed também exige `CI Banco` e `Banco por PR` verdes.
-Merge exige todos os checks aplicáveis verdes + teste do Rodrigo no preview.
+Merge exige todos os checks aplicáveis verdes, revisão exigida e evidência
+dos critérios técnicos pelo agente. Teste de Rodrigo não é requisito universal.
+Autorização que inclua entrega integrada e publicação cobre o merge e seu deploy
+automático; o coordenador vigente segue sem novo OK após verificar esses gates.
+Pedido limitado a plano, draft ou preview não autoriza produção. Registre o limite
+de entrega no plano/PR; ativação de fluxos reais e outras operações críticas devem
+estar expressamente cobertas. Aceite humano bloqueia apenas se solicitado para
+aquela entrega. Esta regra não remove restrições explícitas de tarefas em andamento.
 CI vermelho = não mergeia, sem exceção. Se o preview de uma PR sem migration
 falhar depois de um período sem uso, confira primeiro se o projeto
 `PaneERP Preview` foi pausado antes de investigar a funcionalidade.
@@ -229,8 +242,9 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
 
 ### 1. Descoberta
 
-- Entrevistar Rodrigo: problema, usuários, exceções, frequência, dados e
-  definição de sucesso. Encha-o de perguntas — uma por vez, concretas.
+- Investigar problema, usuários, exceções, frequência, dados e definição de
+  sucesso. Perguntar a Rodrigo apenas lacunas de negócio relevantes ainda sem
+  resposta; não perguntar o que código, documentação ou decisões anteriores mostram.
 - Auditar o fluxo atual no código e no banco.
 - Quando trouxer valor real, pesquisar concorrentes e ferramentas
   consolidadas.
@@ -244,8 +258,10 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
   conversa e termina testável no navegador.
 - Cada fase: objetivo, escopo, arquivos prováveis, riscos, critérios de
   aceite, testes e rollback mental.
-- Esperar aprovação explícita de Rodrigo antes da primeira implementação.
-- Mudança relevante de direção exige nova aprovação.
+- Conferir autorização antes da primeira implementação. Pedido explícito que
+  já cubra objetivo, ambiente e efeitos não exige confirmação ritual do plano.
+- Mudança de escopo, efeito de negócio ou risco fora da autorização exige nova
+  aprovação; ajuste técnico necessário dentro do escopo cabe ao agente.
 
 ### 3. Execução por fase
 
@@ -263,7 +279,8 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
   `.env.local` manualmente. `.env.example` sempre aponta ao ambiente de teste
   vigente; banco de produção em arquivo local é falha de segurança.
 - Se houver alteração local não relacionada, parar e isolar o trabalho.
-- Implementar somente a fase aprovada.
+- Implementar somente as fases autorizadas; avançar entre fases já cobertas
+  sem exigir novo pedido. Registrar dependências e evidências antes de avançar.
 - Não refatorar módulos vizinhos por iniciativa própria.
 - Não criar abstração sem consumidor real.
 
@@ -288,8 +305,8 @@ disponíveis na máquina). Regras do mandato:
   conferência por amostragem contra a realidade — entrega de agente nunca
   vai ao Rodrigo nem vira código sem esse filtro;
 - toda PR de código relevante recebe revisão adversarial de um segundo
-  agente (Sol, ou uma sessão limpa sem o contexto da tarefa) antes de ir
-  ao teste do Rodrigo; o resultado — incorporado ou descartado por
+  agente (Sol, ou uma sessão limpa sem o contexto da tarefa) antes do Check
+  final e da integração; o resultado — incorporado ou descartado por
   escrito — vai no corpo do PR;
 - área crítica (dinheiro, permissões, Auth, RLS, migrations) não desce
   para ajudante: fica com o agente principal;
@@ -329,6 +346,15 @@ Além disso:
   navegador;
 - listar para o Rodrigo o que foi verificado e o que ficou sem teste.
 
+O agente executa essa matriz, inclusive no navegador com contas fictícias;
+o acesso segue `docs/AMBIENTE_PREVIEW.md`. Mocks provam apenas cenários simulados.
+Quando houver gravação alterada, confirme persistência real no ambiente de teste
+após recarregar/reler e confirme que entradas rejeitadas não gravam indevidamente.
+Registre revisão testada, ambiente, perfis, resultados e lacunas no PR. Teste
+ignorado não conta como aprovado; repetição que passa não elimina instabilidade.
+Uma lacuna técnica relevante impede declarar prontidão e exige investigação,
+não um pedido genérico para Rodrigo testar. A avaliação humana não substitui prova.
+
 Mudança somente de documentação dispensa os comandos acima; exige no mínimo
 `git diff --check`.
 
@@ -362,8 +388,9 @@ que o trecho real não foi executado.
   aplicável recebe `N/A` com justificativa curta, nunca é apagada.
 - Informar em linguagem leiga: o que mudou para a operação, arquivos
   alterados, verificações executadas e riscos restantes.
-- Fechar com o link do preview e o roteiro de teste para o Rodrigo (regra 6
-  da parceria).
+- Fechar com o link do preview, a evidência dos testes executados pelos agentes
+  e as lacunas concretas (regra 6). Sugestões de avaliação humana são opcionais,
+  salvo aceite humano explicitamente solicitado para a entrega.
 - Depois do merge: confirmar que o deploy ficou "Ready" (e, se houve
   migration, que a Action `Banco (migrations)` passou), deletar branch e
   worktree, e avisar o Rodrigo: "no ar, ambiente limpo". A entrega só
@@ -422,6 +449,9 @@ Não guardar:
 ## Segurança obrigatória
 
 Nunca faça sem aprovação explícita de Rodrigo:
+
+Aprovação anterior suficiente para a operação e seus efeitos continua válida
+no escopo autorizado; esta lista não exige um novo OK a cada execução.
 
 - push direto na `main`, force push ou `git reset --hard`;
 - escrita em Supabase de produção fora da Action `Banco (migrations)` —

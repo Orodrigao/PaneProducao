@@ -41,10 +41,21 @@ com N/A e a justificativa — não apague a seção. -->
 
 <!-- Diga explicitamente. "Nada" só se for verdade. -->
 
-# Roteiro de teste para o Rodrigo
+# Evidência do fluxo e participação humana
 
-<!-- Passos concretos no celular, por perfil e loja afetados:
-"Entre como vendas na JA e confira se..." -->
+<!-- Agente executa os testes técnicos. Informe revisão, ambiente, perfis,
+cenários, resultados e links de evidência sanitizada; distinga mocks de
+persistência real. Documentação apenas: N/A com justificativa.
+Avaliação humana é complementar, salvo aceite expressamente solicitado.
+Se depender de Rodrigo, descreva a dependência concreta e as alternativas
+tentadas; não delegue a ele salvar/reler, validação ou troca de login. -->
+
+# Limite autorizado da entrega
+
+<!-- Registre a instrução que autoriza: plano/draft/preview ou integração e
+publicação. Merge na main publica automaticamente. Ativação de fluxo real e
+operações críticas devem estar cobertas. Com autorização e gates cumpridos,
+o agente integra sem novo OK. Não ampliar limites de tarefas existentes. -->
 
 # Riscos restantes e decisões conscientes
 
