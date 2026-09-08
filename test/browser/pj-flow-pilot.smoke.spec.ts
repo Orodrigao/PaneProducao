@@ -319,7 +319,9 @@ test('pedido real intacto pode voltar à rotina anterior com motivo', async ({ p
   const mutations: Record<string, unknown>[] = []
   await page.route('**/rest/v1/rpc/rollback_pj_flow_enrollment', async route => {
     mutations.push(route.request().postDataJSON())
-    await route.fulfill({ json: { repeated: false, returned: true } })
+    await route.fulfill(mutations.length === 1
+      ? { status: 503, json: { message: 'Resposta perdida fictícia' } }
+      : { json: { repeated: true, returned: true } })
   })
   await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
   await expect(page.getByText('Primeira operação real em acompanhamento.')).toBeVisible()
@@ -328,6 +330,8 @@ test('pedido real intacto pode voltar à rotina anterior com motivo', async ({ p
     else await dialog.accept()
   })
   await page.getByRole('button', { name: 'Voltar este pedido à rotina anterior' }).click()
-  await expect.poll(() => mutations.length).toBe(1)
+  await page.getByRole('button', { name: 'Repetir o mesmo retorno' }).click()
+  await expect.poll(() => mutations.length).toBe(2)
+  expect(mutations[1]).toEqual(mutations[0])
   expect(mutations[0]).toMatchObject({ p_order_group_id: fixture.id, p_reason: 'Pedido escolhido por engano' })
 })

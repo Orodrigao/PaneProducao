@@ -33,7 +33,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean
     credit: { amount: number; sourceGroupId: string | null; reason: string } } | null>(null)
   const running = useRef(false)
-  const rollbackRequestId = useRef<string | null>(null)
+  const rollbackPending = useRef<{ requestId: string; reason: string } | null>(null)
   useEffect(() => {
     let alive = true
     void readPjFlowActivationStatus(flow.id).then(status => {
@@ -94,13 +94,17 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     finally { running.current = false; setBusy(false); setConfirm(null) }
   }
   async function returnToLegacy() {
-    const reason = window.prompt('Por que este pedido deve voltar à rotina anterior?')?.trim() || ''
-    if (reason.length < 3) { if (reason) setError('Informe um motivo com pelo menos três caracteres.'); return }
-    if (!window.confirm('Confirmar o retorno? O pedido deixará a nova jornada e reaparecerá na rotina anterior.')) return
-    if (!rollbackRequestId.current) rollbackRequestId.current = crypto.randomUUID()
+    if (!rollbackPending.current) {
+      const reason = window.prompt('Por que este pedido deve voltar à rotina anterior?')?.trim() || ''
+      if (reason.length < 3) { if (reason) setError('Informe um motivo com pelo menos três caracteres.'); return }
+      if (!window.confirm('Confirmar o retorno? O pedido deixará a nova jornada e reaparecerá na rotina anterior.')) return
+      rollbackPending.current = { requestId: crypto.randomUUID(), reason }
+    }
+    const request = rollbackPending.current
     setBusy(true); setError('')
     try {
-      await rollbackPjFlowEnrollment(flow.id, rollbackRequestId.current, reason)
+      await rollbackPjFlowEnrollment(flow.id, request.requestId, request.reason)
+      rollbackPending.current = null
       window.location.assign(`/pedidos-pj?legado=1&pedido=${encodeURIComponent(flow.id)}`)
     } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível devolver o pedido.') }
     finally { setBusy(false) }
@@ -174,9 +178,12 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     </div>}
     {error && <div className={styles.error} role="alert"><p>{error}</p>
       {pending.current && <button className={styles.secondary} disabled={busy} onClick={() => void run(pending.current!.action)}>Repetir a mesma tentativa</button>}
+      {rollbackPending.current && <button className={styles.secondary} disabled={busy} onClick={() => void returnToLegacy()}>
+        Repetir o mesmo retorno
+      </button>}
     </div>}
     {(dirty || Boolean(pending.current)) && <button className={styles.secondary} disabled={busy || Boolean(confirm)} onClick={() => void discard()}>Recarregar ficha e descartar alterações</button>}
-    {canReturn && <button className={styles.secondary} disabled={busy || locked} onClick={() => void returnToLegacy()}>
+    {canReturn && !rollbackPending.current && <button className={styles.secondary} disabled={busy || locked} onClick={() => void returnToLegacy()}>
       Voltar este pedido à rotina anterior
     </button>}
     {busy && <p role="status">Salvando e conferindo o resultado…</p>}
