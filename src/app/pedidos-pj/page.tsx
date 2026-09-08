@@ -1,5 +1,6 @@
 'use client'
 import { PjOrderOverview } from '@/components/PjOrderOverview'
+import { PjFlowPilot } from '@/components/PjFlowPilot'
 import { loadAllCommercialPjOrders, loadPjBilling } from '@/lib/pjOrderReadClient'
 import { pjOperationalOverview, pjBillingForOrder, pjHasPendingFollowup, type PjBillingState } from '@/lib/pjOrderOverview'
 
@@ -152,6 +153,8 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
 export default function PedidosPJPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
+  const [pilot, setPilot] = useState(false)
+  useEffect(() => { setPilot(new URLSearchParams(window.location.search).get('piloto') === '1') }, [])
   // Quem pode corrigir a quantidade depois do envio. O cargo nao basta: a
   // permissao e por pessoa, e mostrar um botao que o banco vai recusar e o
   // avesso da licao botao-desabilitado-sem-motivo-na-tela. Foi o que o teste
@@ -780,6 +783,8 @@ export default function PedidosPJPage() {
     )
     setViewing(alvo)
   }, [listOrders, pedidosGrouped, user, loading, loadError])
+
+  if (pilot && user) return <PjFlowPilot />
 
   return (
     <div className="ps-canvas">

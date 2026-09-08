@@ -1,0 +1,38 @@
+import { describe, expect, it, vi } from 'vitest'
+const rpc = vi.hoisted(() => vi.fn())
+vi.mock('./supabase', () => ({ supabase: { rpc } }))
+import { parsePjFlowQuantity, pjFlowStatus, readPjFlowPilot, transitionPjFlowPilot, type PjFlow } from './pjFlowPilot'
+
+describe('preparação da jornada PJ', () => {
+  it('distingue campo vazio de zero e rejeita entradas ambíguas', () => {
+    expect(parsePjFlowQuantity('')).toBeNull()
+    expect(parsePjFlowQuantity('0')).toBe(0)
+    expect(parsePjFlowQuantity('3,120')).toBe(3.12)
+    for (const value of ['-1', 'NaN', 'Infinity', '1e3', '1.000,50', '1.0001']) {
+      expect(() => parsePjFlowQuantity(value)).toThrow()
+    }
+  })
+  it('correção que retirou a liberação volta a bloquear saída', () => {
+    expect(pjFlowStatus({ checked_at: null, released_at: null, departed_at: null })).toContain('saída bloqueada')
+    expect(pjFlowStatus({ checked_at: 'x', released_at: null, departed_at: null })).toContain('Elis')
+    expect(pjFlowStatus({ checked_at: 'x', released_at: 'x', departed_at: null })).toContain('Liberado')
+    expect(pjFlowStatus({ checked_at: 'x', released_at: 'x', departed_at: 'x' })).toBe('Saída física registrada')
+  })
+  it('banco antigo fica indisponível sem tentar o despacho antigo', async () => {
+    rpc.mockReset().mockResolvedValue({ data: null, error: { message: 'function not found' } })
+    await expect(readPjFlowPilot()).rejects.toThrow('Nenhuma ação do fluxo antigo')
+    expect(rpc.mock.calls.map(call => call[0])).toEqual(['read_pj_flow_pilot'])
+  })
+  it('não aceita uma ficha incompleta para agir', async () => {
+    rpc.mockReset().mockResolvedValue({ data: [{ id: 'pedido', version: 1 }], error: null })
+    await expect(readPjFlowPilot()).rejects.toThrow('Resposta incompleta')
+  })
+  it('repetição preserva pedido, versão, prazo e identificador da revisão', async () => {
+    rpc.mockReset().mockResolvedValue({ data: {}, error: null })
+    const flow = { id: 'pedido', version: 3, payment_term_days: 7 } as PjFlow
+    await transitionPjFlowPilot(flow, 'release', 'mesma-tentativa', [], true)
+    await transitionPjFlowPilot(flow, 'release', 'mesma-tentativa', [], true)
+    expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1])
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_expected_version: 3, p_review_term_days: 7, p_nf_confirmed: true })
+  })
+})
