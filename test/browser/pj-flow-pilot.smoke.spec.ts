@@ -80,7 +80,7 @@ test('contrato ausente permanece indisponível, sem botão do envio antigo', asy
   await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ status: 404,
     json: { message: 'Contrato ainda não instalado', code: 'PGRST202' } }))
   await page.goto('/pedidos-pj?piloto=1')
-  await expect(page.getByRole('alert')).toContainText('Nenhuma ação do fluxo antigo será usada')
+  await expect(page.locator('main').getByRole('alert')).toContainText('Nenhuma ação do fluxo antigo será usada')
   await expect(page.getByRole('button', { name: 'Registrar saída física', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Confirmar.*envio/ })).toHaveCount(0)
 })
