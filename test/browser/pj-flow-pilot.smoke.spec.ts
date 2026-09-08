@@ -31,6 +31,7 @@ test('trocar Expedição e Financeiro mantém o piloto; saída comum não força
   await page.goto('/pedidos-pj?piloto=1')
   for (const profile of ['financeiro', 'expedicao'] as const) {
     await expect(page.getByRole('heading', { name: 'Piloto do novo fluxo PJ', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
     await page.getByRole('button', { name: 'Sair', exact: true }).click()
     await expect(page).toHaveURL(/\/login\?force=email&returnTo=%2Fpedidos-pj%3Fpiloto%3D1$/)
     await signInOnCurrentPage(page, profile)
@@ -41,6 +42,7 @@ test('trocar Expedição e Financeiro mantém o piloto; saída comum não força
   }
   await page.getByRole('link', { name: 'Voltar aos pedidos', exact: true }).click()
   await expect(page).toHaveURL(/\/pedidos-pj$/)
+  await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
   await page.getByRole('button', { name: 'Sair', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
 })
