@@ -3,9 +3,13 @@ import { expect, test, type Page } from '@playwright/test'
 test.use({ browserName: 'chromium', channel: 'chrome', viewport: { width: 390, height: 844 } })
 
 async function enter(page: Page, profile: 'financeiro' | 'expedicao') {
+  await page.goto('/login')
+  await signInOnCurrentPage(page, profile)
+}
+
+async function signInOnCurrentPage(page: Page, profile: 'financeiro' | 'expedicao') {
   const password = process.env.SUPABASE_TEST_USER_PASSWORD
   test.skip(!password, 'Credencial fictícia disponível apenas no GitHub.')
-  await page.goto('/login')
   await page.getByPlaceholder('nome@paneesalute.com.br').fill(`rodrigao+teste-${profile}-jc@gmail.com`)
   await page.locator('input[type="password"]').fill(password!)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
@@ -19,6 +23,27 @@ const fixture = {
   items: [{ id: '96000000-0000-4000-8000-000000000101', name: 'Brioche fictício', ordered: 40,
     quantity: 40, unit: 'un', reason: null }],
 }
+
+test('trocar Expedição e Financeiro mantém o piloto; saída comum não força o piloto', async ({ page }) => {
+  test.setTimeout(90_000)
+  await enter(page, 'expedicao')
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [fixture] }))
+  await page.goto('/pedidos-pj?piloto=1')
+  for (const profile of ['financeiro', 'expedicao'] as const) {
+    await expect(page.getByRole('heading', { name: 'Piloto do novo fluxo PJ', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Sair', exact: true }).click()
+    await expect(page).toHaveURL(/\/login\?force=email&returnTo=%2Fpedidos-pj%3Fpiloto%3D1$/)
+    await signInOnCurrentPage(page, profile)
+    await expect(page).toHaveURL(/\/pedidos-pj\?piloto=1$/)
+    await expect(page.getByRole('heading', { name: 'Piloto do novo fluxo PJ', exact: true })).toBeVisible()
+    await expect(page.locator('.ps-sidebar-user')).toHaveAttribute('title',
+      profile === 'financeiro' ? 'Financeiro JC Teste' : 'Expedicao JC Teste')
+  }
+  await page.getByRole('link', { name: 'Voltar aos pedidos', exact: true }).click()
+  await expect(page).toHaveURL(/\/pedidos-pj$/)
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  await expect(page).toHaveURL(/\/login$/)
+})
 
 // Estes testes provam a interface com contratos fictícios. Não são prova de
 // transação live: a matriz de escrita e preservação financeira está no pgTAP.
