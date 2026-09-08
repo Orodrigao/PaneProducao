@@ -87,9 +87,16 @@ export default function Nav() {
   const moreActive = moreGroups.some(g => g.items.some(i => isActive(i.href)))
 
   function handleLogout() {
+    // O ensaio usa a mesma rota da rotina antiga. Ao trocar de perfil,
+    // mantenha sua entrada explícita, sem mudar o destino das demais telas.
+    const inPjPilot = pathname === '/pedidos-pj'
+      && new URLSearchParams(window.location.search).get('piloto') === '1'
+    const loginTarget = inPjPilot
+      ? `/login?force=email&returnTo=${encodeURIComponent('/pedidos-pj?piloto=1')}`
+      : '/login'
     setSheetOpen(false)
     logout()
-    router.replace('/login')
+    router.replace(loginTarget)
   }
 
   const navLink = (l: NavLink, variant: 'primary' | 'sidebar') => (

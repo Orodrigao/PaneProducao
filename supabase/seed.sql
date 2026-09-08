@@ -538,6 +538,7 @@ with requested_permissions(email, permission_key, scope) as (
     -- Sem esta permissao o login filtra /pedidos-pj de volta para fora das
     -- rotas (resolveAllowedRoutes) e o financeiro nao ve a tela.
     ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.acessar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'pedidos_pj.liberar', 'jc'),
     -- Livro-caixa: escopo global porque o livro cobre a empresa inteira,
     -- inclusive os lancamentos 'geral' (que nao pertencem a uma loja so).
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.acessar', '*'),
@@ -1580,3 +1581,24 @@ on conflict (id) do update set
   status = excluded.status,
   reconciliation_status = excluded.reconciliation_status,
   updated_at = excluded.updated_at;
+
+-- Piloto da jornada PJ, somente dados fictícios. Não converter pedidos legados.
+-- INSERT sem UPDATE preserva os testes manuais ao repetir o seed de usuários.
+insert into public.customers(id,name,doc,payment_term_days,active)
+values ('96000000-0000-4000-8000-000000000001','[TESTE] Piloto PJ - prazo 7 dias','00.000.000/0096-00',7,true)
+on conflict (id) do nothing;
+insert into public.orders(id,store,order_type,order_group_id,bread_id,product_source,product_name,
+  quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,needs_production,obs)
+select ('96000000-0000-4000-8000-0000000001'||lpad(n::text,2,'0'))::uuid,
+  'pj','pj',('96000000-0000-4000-8000-0000000002'||lpad(n::text,2,'0'))::uuid,
+  'teste-baguete','bread','[TESTE] Piloto PJ '||n||' - brioches',40,5,1,'un',
+  '96000000-0000-4000-8000-000000000001','[TESTE] Piloto PJ - prazo 7 dias',
+  private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false,
+  '[TESTE] Fase 2: conferir, revisar NF/cobrança e registrar saída separadamente.'
+from generate_series(1,4) n
+where not exists (select 1 from public.orders o
+  where o.id=('96000000-0000-4000-8000-0000000001'||lpad(n::text,2,'0'))::uuid)
+on conflict (id) do nothing;
+insert into private.pj_flow(order_group_id)
+select ('96000000-0000-4000-8000-0000000002'||lpad(n::text,2,'0'))::uuid
+from generate_series(1,4) n on conflict do nothing;
