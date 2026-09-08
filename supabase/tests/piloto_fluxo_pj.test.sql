@@ -205,7 +205,7 @@ insert into public.orders(id,store,order_type,order_group_id,bread_id,product_so
  quantity,unit_price,pack_size,pricing_unit,customer_id,pj_client,order_date,delivery_date,pj_delivery_date,needs_production)
 select ('97000000-0000-4000-8000-'||lpad((100+n)::text,12,'0'))::uuid,'pj','pj',
  ('97000000-0000-4000-8000-'||lpad((200+n)::text,12,'0'))::uuid,'teste-piloto-isolado','bread','[TESTE] Brioche Piloto',
- 40,5,1,'un','97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado',
+ case when n=5 then 2 else 40 end,5,1,'un','97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado',
  private.data_na_padaria(),private.data_na_padaria()+2,private.data_na_padaria()+2,false from generate_series(4,5)n;
 insert into private.pj_flow(order_group_id) values
  ('97000000-0000-4000-8000-000000000204'),('97000000-0000-4000-8000-000000000205');
@@ -331,10 +331,13 @@ select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001'
 select throws_ok($q$select public.resolve_pj_flow_excess('97000000-0000-4000-8000-000000000408','97000000-0000-4000-8000-000000000208',6,
  'refund_pix','Devolução da diferença da primeira parcela',private.data_na_padaria(),'banco_sicredi_jc')$q$,
  '22023',null,'parcela paga bloqueia antes de qualquer devolução');
+reset role;
 select is((select count(*)::int from private.pj_flow_excess_resolutions
  where order_group_id='97000000-0000-4000-8000-000000000208'),0,'caso parcelado recusado não grava resolução');
 select is((select count(*)::int from public.finance_entries where source='pj_devolucao'
  and source_ref='97000000-0000-4000-8000-000000000408'),0,'caso parcelado recusado não tira dinheiro da conta');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
 select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97000000-0000-4000-8000-000000000208',6,'release','[]',true,7)$q$,
  '22023',null,'correção paga e parcelada permanece bloqueada para tratamento manual');
 reset role;

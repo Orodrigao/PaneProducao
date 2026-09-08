@@ -441,6 +441,10 @@ begin
           update public.receivables r set due_date=(a->>'due')::date,original_due_date=(a->>'original')::date
           from jsonb_array_elements(v_plan)a where r.origin='pedido_pj' and r.origin_ref=p_order_group_id
             and r.status<>'cancelada' and r.installment_number=(a->>'number')::integer;
+          update public.receivable_events e set details=e.details||jsonb_build_object('due_date',r.due_date)
+          from public.receivables r where e.receivable_id=r.id and e.event_type='lancada'
+            and r.origin='pedido_pj' and r.origin_ref=p_order_group_id and r.status<>'cancelada'
+            and e.details->>'flow_version'=(v_flow.version+1)::text;
         end if;
       else v_bill:=null;
       end if;
