@@ -114,6 +114,7 @@ por migration. E-mails previstos:
 - `rodrigao+teste@gmail.com` — administrador;
 - `rodrigao+teste-vendas-ja@gmail.com` — Vendas JA, entra no Romaneio e testa as cinco rotas aprovadas;
 - `rodrigao+teste-expedicao-jc@gmail.com` — saída de Romaneio/PJ;
+- `rodrigao+teste-financeiro-jc@gmail.com` — Financeiro JC;
 - `rodrigao+teste-romaneio-ex@gmail.com` — conferência da EX;
 - `rodrigao+teste-cozinha-jc@gmail.com` — Produção da Cozinha na JC;
 - `rodrigao+teste-geolar-jc@gmail.com` — tela de Produção da Geolar na JC.
@@ -128,6 +129,42 @@ Todas usam uma senha fictícia que obedece à política do aplicativo e fica no
 secret `SUPABASE_TEST_USER_PASSWORD` do GitHub e no gerenciador de senhas do
 Rodrigo. Senha nunca entra no repositório, documentação, log ou conversa.
 
+### Acesso dos agentes e prova funcional
+
+Os agentes estão autorizados a autenticar com essas contas no preview e executar
+os testes do escopo aprovado, inclusive criar, alterar e limpar registros fictícios
+da própria execução. Usar login existente não é alterar Auth, roles ou permissões.
+Não enviar e-mail/SMS real, efetuar pagamento nem acionar integração externa real
+como efeito de teste. Não apagar registros de outra tarefa nem reconstruir o banco
+compartilhado por conveniência; respeitar as reservas e o ciclo oficial de reset.
+
+Antes do teste, conferir a PR/revisão, URL publicada, checks de provisionamento e
+destino do banco. Usar o perfil correto, não apenas uma sessão admin já aberta.
+Testar os perfis/lojas afetados e o fluxo completo: entrada válida, salvar, reler
+após reload, rejeição de entrada inválida, descarte e troca de sessão quando
+afetados. Dados simulados no navegador não comprovam gravação nem RLS real.
+
+A credencial de aplicativo do preview pode ser fornecida ao agente por cofre ou
+canal local aprovado, separado do repositório. Não usar senha pessoal, senha de
+banco, service role ou token administrativo para simular um usuário comum. O CI
+já injeta `SUPABASE_TEST_USER_PASSWORD`; o secret do GitHub não oferece leitura
+do valor, portanto não tentar extraí-lo por log ou artefato. Fora do CI, usar
+integração de cofre ou canal local já disponível e autorizado. Não copiar a credencial
+para `.env.local` da worktree, selado pela portaria.
+
+Se o acesso local não estiver preparado, aproveitar os testes existentes no CI
+e completar a cobertura pelo fluxo autorizado. Identificar as lacunas reais e
+preparar o acesso reutilizável por canal aprovado; caso dependa de intervenção
+humana, pedir apenas esse provisionamento, nunca transferir todo o roteiro.
+Não tratar essa orientação como evidência de que o acesso local já foi instalado.
+Execução local de código continua restrita ao ambiente isolado da equipe; a
+autorização de usar conta fictícia não libera execução no Windows real.
+
+Relatar ambiente, revisão, cenários, resultado e limites, sem credenciais. Teste
+ignorado ou instável não vira prova por repetir até passar. Rodrigo não é o
+testador técnico final; sua avaliação de usabilidade é complementar, salvo
+aceite humano expressamente pedido para a entrega.
+
 ## Segredos de infraestrutura
 
 O workflow espera estes secrets, instalados somente na fase de ativação:
@@ -135,7 +172,7 @@ O workflow espera estes secrets, instalados somente na fase de ativação:
 - `SUPABASE_OWNER_ACCESS_TOKEN` — token criado pela conta proprietária do
   Rodrigo;
 - `SUPABASE_PREVIEW_DB_PASSWORD` — senha técnica apenas do banco de teste;
-- `SUPABASE_TEST_USER_PASSWORD` — senha compartilhada apenas pelas seis
+- `SUPABASE_TEST_USER_PASSWORD` — senha compartilhada apenas pelas
   contas fictícias do ambiente de teste.
 
 A chave administrativa do Auth não fica gravada como secret adicional. O
