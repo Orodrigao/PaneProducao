@@ -240,8 +240,8 @@ begin
         from private.pj_flow_excess_resolutions x where x.order_group_id=sf.order_group_id and x.kind='credit')sx on sx.amount>0
       where sf.order_group_id<>f.order_group_id and sf.departed_at is not null
         and not exists(select 1 from private.pj_flow used where used.credit_source_group_id=sf.order_group_id)
-        and (select min(so.customer_id) from public.orders so where so.order_group_id=sf.order_group_id)
-          =(select min(o.customer_id) from public.orders o where o.order_group_id=f.order_group_id)),
+        and (select min(so.customer_id::text)::uuid from public.orders so where so.order_group_id=sf.order_group_id)
+          =(select min(o.customer_id::text)::uuid from public.orders o where o.order_group_id=f.order_group_id)),
     'due_date',(select max(r.due_date) from public.receivables r where r.origin='pedido_pj'
       and r.origin_ref=f.order_group_id and r.status<>'cancelada'),'agreed_date',f.agreed_date,
     'can_correct_due',private.pj_flow_permission('pedidos_pj.liberar') and private.pj_flow_permission('contas_receber.corrigir_vencimento'),
@@ -354,7 +354,7 @@ begin
         or(o.dispatched_quantity>0 and(o.unit_price is null or o.unit_price<=0)))) then
       raise exception using errcode='22023',message='Revise as quantidades e os precos antes de cobrar.';
     end if;
-    select round(sum(private.valor_linha_pj(quantity,dispatched_quantity,unit_price,null)),2),min(delivery_date),min(customer_id)
+    select round(sum(private.valor_linha_pj(quantity,dispatched_quantity,unit_price,null)),2),min(delivery_date),min(customer_id::text)::uuid
       into v_total,v_date,v_customer from public.orders where order_group_id=p_order_group_id;
     if v_total is null or v_total<=0 or v_total>1000000 then
       raise exception using errcode='22023',message='Pedido sem produtos para cobrar permanece pendente; nao pode sair.';
@@ -377,7 +377,7 @@ begin
         where sf.order_group_id=p_credit_source_group_id and sf.departed_at is not null
           and(select coalesce(sum(sx.amount),0) from private.pj_flow_excess_resolutions sx
             where sx.order_group_id=sf.order_group_id and sx.kind='credit')>=v_credit
-          and(select min(o.customer_id) from public.orders o where o.order_group_id=sf.order_group_id)=v_customer)
+          and(select min(o.customer_id::text)::uuid from public.orders o where o.order_group_id=sf.order_group_id)=v_customer)
         or exists(select 1 from private.pj_flow used where used.credit_source_group_id=p_credit_source_group_id
           and used.order_group_id<>p_order_group_id) then
         raise exception using errcode='22023',message='O credito de origem nao esta disponivel para este cliente.';
