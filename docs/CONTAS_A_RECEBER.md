@@ -19,6 +19,25 @@ Aprovação é **fase a fase**, nunca do plano inteiro de uma vez.
 Para o estado real do sistema consulte [CURRENT_STATE.md](CURRENT_STATE.md).
 Código, migrations e testes vencem este documento em caso de divergência.
 
+## Condições da nova jornada PJ (08/09/2026)
+
+Recorte autorizado por Rodrigo após a aprovação da PR #339: corrigir vencimento
+com justificativa e dividir uma cobrança inteira, sem pagamentos, em parcelas.
+A ficha PJ concentra essas ações; Contas a Receber direciona os pedidos inscritos
+para ela. Os pedidos da rotina anterior mantêm seu contrato existente.
+
+Mudar apenas datas conserva a liberação vigente e os pagamentos. Se uma correção
+na quantidade já bloqueou a saída, mudar a data não a libera. Parcelas usam a
+entrega/coleta combinada como início e o vencimento acordado como limite; os
+centavos restantes ficam na primeira. Cada parcela pode ter seu vencimento
+corrigido, respeitando o vencimento original e até um ano do faturamento.
+Uma nova revisão de quantidades preserva o número de parcelas e as datas
+originais/efetivas. Pagamentos ativos impedem substituir as cobranças.
+
+Expedição não recebe valores nem histórico dos acordos. Elis e o substituto
+explicitamente autorizado precisam das permissões financeiras correspondentes.
+Não há inscrição de pedidos reais nem concessão automática nesta entrega.
+Devolução por Pix e crédito manual são a entrega seguinte, sem carteira de saldo.
 ## Problema
 
 A mesma informação de cobrança é lançada em três lugares e a verdade não mora

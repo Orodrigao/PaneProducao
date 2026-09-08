@@ -89,3 +89,4 @@
   .actions button { width: 100%; }
   .footer { flex-direction: column; }
 }
+.billList{list-style:none;padding:0;display:grid;gap:14px}.billList>li{padding:12px 0;border-bottom:1px solid #ded8ca}.termsForm{margin-top:16px;padding:16px;border:1px solid #c7b995;border-radius:12px;background:#fffdf7}.termsForm fieldset{border:0;padding:0}.termsForm select{min-height:44px;width:100%;font:inherit;padding:8px;border:1px solid #b7b09f;border-radius:6px}.termsForm button{margin:6px 6px 0 0}

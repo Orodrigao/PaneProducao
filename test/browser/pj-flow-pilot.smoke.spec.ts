@@ -193,3 +193,66 @@ test('zero e conferência incompleta explicam bloqueio financeiro', async ({ pag
   await expect(page.getByText('A Expedição JC precisa concluir', { exact: false })).toBeVisible()
   await expect(page.getByRole('checkbox')).toBeDisabled()
 })
+
+const financialFixture = {
+  ...fixture, can_check: false, can_release: true, can_correct_due: true, can_split: true,
+  approved_amount: 190, agreed_date: '2026-09-10', due_date: '2026-09-17', payment_term_days: 7,
+  items: fixture.items.map(item => ({ ...item, quantity: 38, price: 5 })), financial_history: [],
+  bills: [{ id: '96000000-0000-4000-8000-000000000501', number: 1, count: 1, amount: 190,
+    received: 0, status: 'aberta', invoice_date: '2026-09-08', original_due_date: '2026-09-17', due_date: '2026-09-17' }],
+}
+
+test('vencimento PJ exige justificativa, trava troca e repete a mesma tentativa', async ({ page }) => {
+  await enter(page, 'financeiro')
+  const current = structuredClone(financialFixture)
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [current,
+    { ...financialFixture, id: '96000000-0000-4000-8000-000000000202', customer: 'Segundo cliente financeiro' }] }))
+  const mutations: Record<string, unknown>[] = []
+  await page.route('**/rest/v1/rpc/change_pj_flow_terms', async route => {
+    mutations.push(route.request().postDataJSON())
+    if (mutations.length === 1) { await route.abort(); return }
+    current.version++; current.bills[0].due_date = '2026-09-20'
+    await route.fulfill({ json: { repeated: true, version: current.version } })
+  })
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
+  await page.getByRole('button', { name: 'Corrigir vencimento', exact: true }).click()
+  await page.getByLabel('Novo vencimento').fill('2026-09-20')
+  await expect(page.getByRole('button', { name: 'Revisar alteração', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Segundo cliente financeiro/ })).toBeDisabled()
+  await page.getByLabel('Justificativa do acordo').fill('Acordo de prazo com cliente')
+  await page.getByRole('button', { name: 'Revisar alteração', exact: true }).click()
+  await expect(page.getByLabel('Novo vencimento')).toBeDisabled()
+  await page.getByRole('button', { name: 'Confirmar alteração financeira', exact: true }).click()
+  await page.getByRole('button', { name: 'Repetir alteração financeira', exact: true }).click()
+  await expect.poll(() => mutations.length).toBe(2)
+  expect(mutations[0]).toEqual(mutations[1])
+  expect(mutations[0]).toMatchObject({ p_expected_version: 3, p_due_date: '2026-09-20', p_action: 'due' })
+  await expect(page.getByText('Novo vencimento registrado.', { exact: false })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Condições da cobrança' })).toContainText('20/09/2026')
+  await expect(page.getByRole('button', { name: /Segundo cliente financeiro/ })).toBeEnabled()
+})
+
+test('parcelamento mostra centavos e datas antes da confirmação no celular', async ({ page }) => {
+  await enter(page, 'financeiro')
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [financialFixture] }))
+  const mutations: Record<string, unknown>[] = []
+  await page.route('**/rest/v1/rpc/change_pj_flow_terms', async route => {
+    mutations.push(route.request().postDataJSON())
+    await route.fulfill({ json: { repeated: false, version: 4 } })
+  })
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${fixture.id}`)
+  await page.getByRole('button', { name: 'Dividir em parcelas', exact: true }).click()
+  await page.getByLabel('Quantidade de parcelas').selectOption('3')
+  await page.getByLabel('Justificativa do acordo').fill('Divisão acordada com cliente')
+  const conditions = page.getByRole('region', { name: 'Condições da cobrança' })
+  await expect(conditions).toContainText('63,34')
+  await expect(conditions).toContainText('12/09/2026')
+  await expect(conditions).toContainText('15/09/2026')
+  await expect(conditions).toContainText('17/09/2026')
+  expect(mutations).toHaveLength(0)
+  await page.getByRole('button', { name: 'Revisar alteração', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirmar alteração financeira', exact: true }).click()
+  await expect.poll(() => mutations.length).toBe(1)
+  expect(mutations[0]).toMatchObject({ p_action: 'split', p_installments: 3, p_due_date: null })
+  await expect(page.getByText('Parcelas registradas.', { exact: false })).toBeVisible()
+})

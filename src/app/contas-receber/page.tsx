@@ -24,12 +24,14 @@ import {
   type ReceivableRow,
 } from '@/lib/receivables'
 import { showToast } from '@/lib/utils'
+import { discoverPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
 
 export default function ContasReceberPage() {
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
   const [customers, setCustomers] = useState<ReceivableCustomerOption[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
   const [pjOrdersToBill, setPjOrdersToBill] = useState<PjOrderToBillRow[]>([])
+  const [pjFlows, setPjFlows] = useState<PjFlow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -40,12 +42,14 @@ export default function ContasReceberPage() {
     setLoading(true)
     setError(null)
     try {
-      const [rows, customerRows, accountRows, pjRows] = await Promise.all([
+      const [rows, customerRows, accountRows, pjRows, flows] = await Promise.all([
         loadReceivables(),
         loadReceivableCustomers(),
         loadFinanceAccounts(),
         loadPjOrdersToBill(),
+        discoverPjFlowPilot(),
       ])
+      setPjFlows(flows)
       setReceivables(rows)
       setCustomers(customerRows)
       setAccounts(accountRows)
@@ -96,7 +100,19 @@ export default function ContasReceberPage() {
     }
   }
 
+  function openPjConditions(receivable: ReceivableRow, action: 'due' | 'split'): boolean {
+    if (error || loading) { showToast('Recarregue as cobranças antes de alterar condições.'); return true }
+    const flow = pjFlows.find(row => receivable.origin === 'pedido_pj' && row.id === receivable.origin_ref)
+    if (!flow) return false
+    if (!(action === 'due' ? flow.can_correct_due : flow.can_split)) {
+      showToast('Sem permissão para alterar estas condições na ficha PJ.'); return true
+    }
+    window.location.assign(`/pedidos-pj?pedido=${encodeURIComponent(flow.id)}&financeiro=${action}`)
+    return true
+  }
+
   async function handleSplit(receivable: ReceivableRow) {
+    if (openPjConditions(receivable, 'split')) return
     const resposta = window.prompt('Dividir esta cobrança em quantas vezes? (2 ou 3)', '2')?.trim()
     if (!resposta) return
     const parcelas = Number(resposta)
@@ -118,6 +134,7 @@ export default function ContasReceberPage() {
   }
 
   async function handleCorrectDueDate(receivable: ReceivableRow) {
+    if (openPjConditions(receivable, 'due')) return
     const dueDate = window.prompt('Novo vencimento (AAAA-MM-DD):', receivable.due_date)?.trim()
     if (!dueDate) return
     const reason = window.prompt('Por que o vencimento está sendo alterado?')?.trim()

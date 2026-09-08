@@ -5,6 +5,7 @@ import { pjLineValue } from '@/lib/pjOrderValue'
 import { parsePjFlowQuantity, pjFlowStatus, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
 import styles from './PjFlowPilot.module.css'
+import { PjFlowFinance } from './PjFlowFinance'
 
 const actionNames = { save: 'Conferência salva / corrigida', check: 'Conferência concluída',
   release: 'NF confirmada, cobrança revisada e saída liberada', depart: 'Saída física registrada' }
@@ -18,6 +19,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const [reasons, setReasons] = useState<Record<string, string>>(() => Object.fromEntries(flow.items.map(item => [item.id, item.reason || ''])))
   const [nf, setNf] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [financeLocked, setFinanceLocked] = useState(false)
   const [error, setError] = useState('')
   const [confirm, setConfirm] = useState<PjFlowAction | null>(null)
   const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean } | null>(null)
@@ -27,7 +29,8 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
       dispatchedQuantity: item.quantity, unitPrice: item.price, dispatchedAt: null })! * 100), 0) / 100 : null
   const dirty = flow.items.some(item => quantities[item.id] !== (item.quantity === null ? '' : String(item.quantity).replace('.', ','))
     || reasons[item.id] !== (item.reason || ''))
-  const locked = dirty || busy || Boolean(confirm) || Boolean(pending.current)
+  const operationalLocked = dirty || busy || Boolean(confirm) || Boolean(pending.current)
+  const locked = operationalLocked || financeLocked
   useEffect(() => { onLock(locked) }, [locked, onLock])
   const step = flow.departed_at ? 3 : flow.released_at ? 2 : flow.checked_at ? 1 : 0
   const releaseBlocked = !flow.checked_at ? 'A Expedição JC precisa concluir a conferência antes da revisão.'
@@ -58,7 +61,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     } catch (e) { setError(e instanceof Error ? e.message : 'Falha na operação. Recarregue para conferir o estado.') }
     finally { running.current = false; setBusy(false); setConfirm(null) }
   }
-  const frozen = busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
+  const frozen = financeLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
   return <section className={styles.detail} aria-label={`Ficha de ${flow.customer}`}>
     <header className={styles.detailHeader}><span className={styles.eyebrow}>Ficha do pedido</span>
       <h2>{flow.customer}</h2><p>Entrega/coleta combinada: <strong>{date(flow.delivery_date)}</strong></p>
@@ -89,6 +92,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
       {!flow.released_at && ' Aguarda nova revisão; esse valor ainda não libera a saída.'}</p>}
     <a href="/contas-receber" onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>Abrir contas a receber</a>
     </div>}
+    <PjFlowFinance flow={flow} disabled={operationalLocked} onLock={setFinanceLocked} reload={reload} />
     {flow.can_check && !flow.departed_at && <div className={styles.actions}>
       <button className={styles.secondary} disabled={frozen} onClick={() => void run('save')}>Salvar conferência / correção</button>
       {!flow.released_at && <button className={styles.primary} disabled={frozen || dirty || Boolean(flow.checked_at)} onClick={() => setConfirm('check')}>Concluir conferência</button>}
