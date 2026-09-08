@@ -1,6 +1,6 @@
 'use client'
 import { PjOrderOverview } from '@/components/PjOrderOverview'
-import { PjFlowPilot } from '@/components/PjFlowPilot'
+import { PjFlowEntry } from '@/components/PjFlowEntry'
 import { loadAllCommercialPjOrders, loadPjBilling } from '@/lib/pjOrderReadClient'
 import { pjOperationalOverview, pjBillingForOrder, pjHasPendingFollowup, type PjBillingState } from '@/lib/pjOrderOverview'
 
@@ -151,10 +151,12 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
 }
 
 export default function PedidosPJPage() {
+  return <PjFlowEntry legacy={excluded => <LegacyPedidosPJPage excludedFlowIds={excluded} />} />
+}
+
+function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] }) {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
-  const [pilot, setPilot] = useState(false)
-  useEffect(() => { setPilot(new URLSearchParams(window.location.search).get('piloto') === '1') }, [])
   // Quem pode corrigir a quantidade depois do envio. O cargo nao basta: a
   // permissao e por pessoa, e mostrar um botao que o banco vai recusar e o
   // avesso da licao botao-desabilitado-sem-motivo-na-tela. Foi o que o teste
@@ -456,6 +458,7 @@ export default function PedidosPJPage() {
     const billedGroups = new Set(billingState.kind === 'loaded' ? billingState.bills.filter(bill => bill.status !== 'cancelada').map(bill => bill.origin_ref) : [])
     const groups = new Map<string, PedidoGroup>()
     orders.forEach(r => {
+      if (r.order_group_id && excludedFlowIds.includes(r.order_group_id)) return
       const key = pjOrderGroupKey(r)
       if (!groups.has(key)) {
         groups.set(key, {
@@ -500,7 +503,7 @@ export default function PedidosPJPage() {
       if (a.delivery_date && b.delivery_date) return b.delivery_date.localeCompare(a.delivery_date)
       return b.order_date.localeCompare(a.order_date)
     })
-  }, [orders, customers, billingState])
+  }, [orders, customers, billingState, excludedFlowIds])
 
   useEffect(() => {
     if (!loading && !loadError) setViewing(previous => previous ? pedidosGrouped.find(group => group.key === previous.key) ?? null : null)
@@ -783,8 +786,6 @@ export default function PedidosPJPage() {
     )
     setViewing(alvo)
   }, [listOrders, pedidosGrouped, user, loading, loadError])
-
-  if (pilot && user) return <PjFlowPilot />
 
   return (
     <div className="ps-canvas">

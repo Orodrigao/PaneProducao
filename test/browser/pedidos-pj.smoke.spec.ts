@@ -30,7 +30,7 @@ async function enterWithPreviewAccount(
 test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', async ({ page }) => {
   await enterWithPreviewAccount(page, financeiroJc)
 
-  await page.goto('/pedidos-pj')
+  await page.goto('/pedidos-pj?legado=1')
 
   // Aba "Em aberto" e a padrao: os dois pedidos abertos do seed, com valor.
   const bistroAberto = page.locator('.pj-order-row', { hasText: '[TESTE] Bistro Cliente PJ' })
@@ -106,7 +106,7 @@ test('ficha no celular encontra pedido antigo e todos os 601 itens', async ({ pa
     const data = rows.slice(from, from + Number(query.get('limit') || 200))
     await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `${from}-${from + data.length - 1}/${rows.length}`, 'access-control-expose-headers': 'content-range' }, body: JSON.stringify(data) })
   })
-  await page.goto('/pedidos-pj')
+  await page.goto('/pedidos-pj?legado=1')
   await page.getByRole('button', { name: /Pendências/ }).click()
   await page.getByPlaceholder('Buscar cliente em todos os pedidos').fill('Pedido antigo completo')
   await page.locator('.pj-order-row', { hasText: '[TESTE] Pedido antigo completo' }).click()
@@ -137,7 +137,7 @@ test('Expedição JC abre a ficha sem buscar ou mostrar valores financeiros', as
   page.on('request', request => {
     if (/\/rest\/v1\/(receivables|receivable_receipts)(?:\?|$)/.test(request.url())) financialRequests.push(request.url())
   })
-  await page.goto('/pedidos-pj')
+  await page.goto('/pedidos-pj?legado=1')
   await page.locator('.pj-order-row').first().click({ timeout: slowPreviewDataTimeoutMs })
   const ficha = page.getByRole('dialog', { name: 'Ficha do pedido PJ' })
   await expect(ficha).toBeVisible()

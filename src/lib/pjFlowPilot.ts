@@ -25,14 +25,27 @@ export function parsePjFlowQuantity(value: string): number | null {
 
 export function pjFlowStatus(flow: Pick<PjFlow, 'departed_at' | 'released_at' | 'checked_at'>): string {
   if (flow.departed_at) return 'Saída física registrada'
-  if (flow.released_at) return 'Liberado por Elis · Expedição pode registrar a saída'
-  if (flow.checked_at) return 'Elis: revisar cobrança e confirmar NF · saída bloqueada'
-  return 'Expedição: conferir quantidades · saída bloqueada'
+  if (flow.released_at) return 'Liberado · Expedição JC pode registrar a saída'
+  if (flow.checked_at) return 'Elis ou Rodrigo: revisar cobrança e confirmar NF · saída bloqueada'
+  return 'Expedição JC: conferir quantidades · saída bloqueada'
 }
 
 export async function readPjFlowPilot(): Promise<PjFlow[]> {
   const { data, error } = await supabase.rpc('read_pj_flow_pilot')
   if (error) throw new Error(`Piloto indisponível: ${error.message}. Nenhuma ação do fluxo antigo será usada.`)
+  return validatePjFlows(data)
+}
+
+// Descoberta da entrada: somente contrato ausente ou perfil fora da nova
+// jornada deixam a rotina anterior disponível. Falha inesperada não escolhe fluxo.
+export async function discoverPjFlowPilot(): Promise<PjFlow[]> {
+  const { data, error } = await supabase.rpc('read_pj_flow_pilot')
+  if (error?.code === 'PGRST202' || error?.code === '42501') return []
+  if (error) throw new Error('Não foi possível identificar a jornada dos pedidos. Recarregue para tentar novamente.')
+  return validatePjFlows(data)
+}
+
+function validatePjFlows(data: unknown): PjFlow[] {
   if (!Array.isArray(data) || data.some(row => !row || typeof row.id !== 'string'
     || !Number.isInteger(row.version) || !Array.isArray(row.items) || !Array.isArray(row.history))) {
     throw new Error('Resposta incompleta do piloto. Recarregue antes de agir.')

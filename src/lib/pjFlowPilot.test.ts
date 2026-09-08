@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 const rpc = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { rpc } }))
-import { parsePjFlowQuantity, pjFlowStatus, readPjFlowPilot, transitionPjFlowPilot, type PjFlow } from './pjFlowPilot'
+import { discoverPjFlowPilot, parsePjFlowQuantity, pjFlowStatus, readPjFlowPilot, transitionPjFlowPilot, type PjFlow } from './pjFlowPilot'
 
 describe('preparação da jornada PJ', () => {
+  it('descoberta preserva rotina anterior somente quando contrato ou acesso não existem', async () => {
+    for (const code of ['PGRST202', '42501']) {
+      rpc.mockReset().mockResolvedValue({ data: null, error: { code } })
+      await expect(discoverPjFlowPilot()).resolves.toEqual([])
+    }
+    rpc.mockReset().mockResolvedValue({ data: null, error: { code: '503' } })
+    await expect(discoverPjFlowPilot()).rejects.toThrow('Não foi possível identificar')
+    rpc.mockReset().mockResolvedValue({ data: null, error: null })
+    await expect(discoverPjFlowPilot()).rejects.toThrow('Resposta incompleta')
+  })
   it('distingue campo vazio de zero e rejeita entradas ambíguas', () => {
     expect(parsePjFlowQuantity('')).toBeNull()
     expect(parsePjFlowQuantity('0')).toBe(0)
