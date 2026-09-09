@@ -7,6 +7,11 @@ import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
 import { getConversionUnitWarning } from '@/lib/nfeXml'
+import {
+  normalizeOperationalClassification,
+  requiresCompleteOperationalClassification,
+  type ProductionProcess,
+} from '@/lib/productOperationalClassification'
 
 type Kind = 'kit' | 'insumo' | 'final'
 
@@ -20,6 +25,9 @@ interface Product {
   is_pj: boolean
   production_days: number[]
   production_area: string | null
+  production_process: ProductionProcess | null
+  allows_planned_production: boolean | null
+  allows_unplanned_production: boolean | null
   legacy_bread_id: string | null
 }
 
@@ -66,6 +74,11 @@ const PRODUCTION_AREAS = [
   { value: 'confeitaria', label: 'Confeitaria' },
   { value: 'expedicao', label: 'Expedição' },
   { value: 'outros', label: 'Outros' },
+]
+const PRODUCTION_PROCESSES: { value: ProductionProcess; label: string; description: string }[] = [
+  { value: 'forno', label: 'Forno', description: 'O produto final sai do forno.' },
+  { value: 'montagem', label: 'Montagem', description: 'O produto final é montado e não volta ao forno.' },
+  { value: 'preparo', label: 'Preparo', description: 'O produto final é preparado pela área, como pastinhas e recheios.' },
 ]
 
 function canUseTechnicalSheet(product: Product): boolean {
@@ -139,6 +152,7 @@ export default function ProdutosPage() {
   const [search, setSearch]     = useState('')
   const [catFilter, setCat]     = useState('Todos')
   const [kindFilter, setKindFilter] = useState<'all'|Kind|'revenda'>('all')
+  const [pendingReviewOnly, setPendingReviewOnly] = useState(false)
   const [editItem, setEditItem] = useState<EditableProduct|null>(null)
   const [isNew, setIsNew]       = useState(false)
 
@@ -189,10 +203,30 @@ export default function ProdutosPage() {
     setTab(nextTab)
     setCat('Todos')
     setKindFilter('all')
+    setPendingReviewOnly(false)
   }
 
   async function save() {
     if (!editItem?.name?.trim()) { showToast('Nome obrigatório'); return }
+    const originalProduct = isNew ? null : products.find(product => product.id === editItem.id) ?? null
+    const operationalClassification = normalizeOperationalClassification(editItem, {
+      requireComplete: requiresCompleteOperationalClassification(
+        isNew,
+        !!originalProduct?.is_fabricacao_propria,
+        !!editItem.is_fabricacao_propria,
+      ),
+    })
+    if (!operationalClassification.ok) {
+      showToast(operationalClassification.error)
+      return
+    }
+    const removesExistingClassification = !!originalProduct?.production_process
+      && (!editItem.is_fabricacao_propria || !editItem.production_process)
+    if (removesExistingClassification && !window.confirm(
+      editItem.is_fabricacao_propria
+        ? 'Este produto já tem uma classificação de produção. Deseja removê-la e deixá-lo como revisão pendente?'
+        : 'Este produto já tem uma classificação de produção. Ela será removida porque o produto deixará de ser fabricação própria. Deseja continuar?',
+    )) return
     const conversionPayload = conversionEdits.map(conversion => ({
       id: conversion.id,
       conversion_basis: conversion.conversion_basis,
@@ -205,6 +239,7 @@ export default function ProdutosPage() {
     const { cost_price: rawCostPrice, ...rest } = editItem
     const body: Partial<Product> = {
       ...rest,
+      ...operationalClassification.value,
       cost_price: normalizeCostPrice(rawCostPrice),
     }
     try {
@@ -245,6 +280,9 @@ export default function ProdutosPage() {
       is_pj: false,
       production_days: [],
       production_area: fabricacaoPropria ? 'padaria' : null,
+      production_process: null,
+      allows_planned_production: null,
+      allows_unplanned_production: null,
       legacy_bread_id: null,
     }
   }
@@ -265,7 +303,8 @@ export default function ProdutosPage() {
     const matchKind = kindFilter==='all'
       || (kindFilter==='revenda' ? p.is_revenda : p.kind===kindFilter)
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchKind && matchSearch
+    const matchPendingReview = !pendingReviewOnly || (p.active && p.is_fabricacao_propria && !p.production_process)
+    return matchCat && matchKind && matchSearch && matchPendingReview
   })
   // CMV teorico por produto com ficha tecnica: soma (custo do componente × quantidade).
   // Se algum componente não tem custo cadastrado, marca como parcial.
@@ -292,6 +331,9 @@ export default function ProdutosPage() {
   const fabricacaoActiveCount = products.filter(p => p.is_fabricacao_propria && p.active).length
   const fabricacaoWithoutCost = products.filter(p =>
     p.is_fabricacao_propria && p.active && (p.cost_price === null || Number(p.cost_price) === 0)
+  ).length
+  const fabricacaoPendingReview = products.filter(p =>
+    p.is_fabricacao_propria && p.active && !p.production_process
   ).length
   const saleOptionsByProduct = new Map<string, SaleOption[]>()
   saleOptions.forEach(option => {
@@ -374,6 +416,14 @@ export default function ProdutosPage() {
             <button onClick={()=>setKindFilter('revenda')} className={`ps-preset ${kindFilter==='revenda'?'active':''}`}>
               🛒 Revenda ({kindCounts.revenda})
             </button>
+            {tab === 'fabricacao' && (
+              <button
+                onClick={() => setPendingReviewOnly(current => !current)}
+                className={`ps-preset ${pendingReviewOnly ? 'active' : ''}`}
+              >
+                ⚠ Revisão pendente ({fabricacaoPendingReview})
+              </button>
+            )}
           </div>
 
           {/* Category filter */}
@@ -424,6 +474,11 @@ export default function ProdutosPage() {
                           {p.is_fabricacao_propria && (
                             <span className="ps-store-chip jc">FABRICAÇÃO</span>
                           )}
+                          {tab === 'fabricacao' && p.is_fabricacao_propria && !p.production_process && (
+                            <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>
+                              REVISÃO PENDENTE
+                            </span>
+                          )}
                           {p.is_pj && (
                             <span className="ps-store-chip ja">PJ</span>
                           )}
@@ -462,7 +517,16 @@ export default function ProdutosPage() {
                         )}
                         {p.is_fabricacao_propria && (
                           <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
-                            {p.production_area || 'sem área'} · {formatProductionDays(p.production_days)}
+                            Área: {p.production_area || 'não definida'} · Processo: {p.production_process
+                              ? PRODUCTION_PROCESSES.find(process => process.value === p.production_process)?.label.toLowerCase()
+                              : 'não revisado'}
+                            {p.production_process && (
+                              <> · Formas: {[
+                                p.allows_planned_production ? 'planejada' : null,
+                                p.allows_unplanned_production ? 'sem ordem' : null,
+                              ].filter(Boolean).join(' + ')}</>
+                            )}
+                            <br/>Dias: {formatProductionDays(p.production_days)}
                           </div>
                         )}
                         {canUseTechnicalSheet(p) && cmvByProduct[p.id] && (
@@ -666,7 +730,7 @@ export default function ProdutosPage() {
                     </span>
                   </label>
                   <div className="ps-fieldgroup">
-                    <div className="ps-fieldlabel">Área</div>
+                    <div className="ps-fieldlabel">Área responsável</div>
                     <select
                       value={editItem.production_area || ''}
                       onChange={e=>setEditItem(prev=>({...prev, production_area: e.target.value || null}))}
@@ -675,6 +739,62 @@ export default function ProdutosPage() {
                       {PRODUCTION_AREAS.map(area => <option key={area.value} value={area.value}>{area.label}</option>)}
                     </select>
                   </div>
+                  <div style={{padding:'10px 12px', borderRadius:10, background:'var(--crust-tint)', color:'var(--ink-soft)', fontSize:12, lineHeight:1.5}}>
+                    A categoria continua servindo para venda e organização. A classificação abaixo define como a produção deste produto será controlada; uma não altera a outra automaticamente.
+                  </div>
+                  <div className="ps-fieldgroup">
+                    <div className="ps-fieldlabel">Como o produto final é produzido?</div>
+                    <select
+                      value={editItem.production_process || ''}
+                      onChange={e => {
+                        const process = e.target.value as ProductionProcess | ''
+                        setEditItem(prev => ({
+                          ...prev,
+                          production_process: process || null,
+                          allows_planned_production: process ? (prev?.allows_planned_production ?? false) : prev?.allows_planned_production ?? null,
+                          allows_unplanned_production: process ? (prev?.allows_unplanned_production ?? false) : prev?.allows_unplanned_production ?? null,
+                        }))
+                      }}
+                      className="ps-select"
+                    >
+                      <option value="">Ainda não revisado</option>
+                      {PRODUCTION_PROCESSES.map(process => (
+                        <option key={process.value} value={process.value}>{process.label}</option>
+                      ))}
+                    </select>
+                    {editItem.production_process && (
+                      <small style={{display:'block', marginTop:5, color:'var(--ink-faint)'}}>
+                        {PRODUCTION_PROCESSES.find(process => process.value === editItem.production_process)?.description}
+                      </small>
+                    )}
+                  </div>
+                  {editItem.production_process && (
+                    <div className="ps-fieldgroup">
+                      <div className="ps-fieldlabel">Formas permitidas de produção</div>
+                      <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer', padding:'6px 0'}}>
+                        <input
+                          type="checkbox"
+                          checked={editItem.allows_planned_production === true}
+                          onChange={e => setEditItem(prev => ({...prev, allows_planned_production: e.target.checked}))}
+                          style={{width:18, height:18, cursor:'pointer', marginTop:1}}
+                        />
+                        <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                          <b>Aceita quantidade planejada</b> — pode entrar em uma ordem de produção.
+                        </span>
+                      </label>
+                      <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer', padding:'6px 0'}}>
+                        <input
+                          type="checkbox"
+                          checked={editItem.allows_unplanned_production === true}
+                          onChange={e => setEditItem(prev => ({...prev, allows_unplanned_production: e.target.checked}))}
+                          style={{width:18, height:18, cursor:'pointer', marginTop:1}}
+                        />
+                        <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                          <b>Permite lançar sem ordem</b> — a área pode registrar o que fez conforme a necessidade.
+                        </span>
+                      </label>
+                    </div>
+                  )}
                   <div className="ps-fieldgroup">
                     <div className="ps-fieldlabel">Dias de produção</div>
                     <div className="ps-presets" style={{flexWrap:'wrap', marginBottom:0}}>

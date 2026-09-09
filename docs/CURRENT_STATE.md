@@ -387,6 +387,19 @@ estrutura controlada e a tela de categorias sem reclassificar nada, está na PR
 acontecer, tipo e categoria controlada são informação opcional e a categoria em
 texto livre continua em uso.
 
+### Produção: classificação operacional dos produtos
+
+`products` separa a categoria comercial da classificação usada pela produção:
+área responsável, processo final (`forno`, `montagem` ou `preparo`) e permissão
+para produção planejada e/ou lançamento sem ordem. Cadastros antigos de
+fabricação própria continuam funcionando com a classificação pendente, sem
+inferência automática por nome ou categoria.
+
+Esta é uma capacidade parcial: Forno, Cozinha e Pedidos PJ ainda não usam os
+novos campos para decidir seus fluxos. Antes dessa troca, o catálogo legado
+precisa ser revisado e todo consumidor novo deve tratar explicitamente o estado
+pendente. A classificação não gera ordens de componentes ou semiacabados.
+
 ### CNM
 
 Há trabalhos de leitura XLS e coleta autorizada por navegador. Isso não
