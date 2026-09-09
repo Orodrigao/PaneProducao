@@ -18,6 +18,26 @@ export interface PjPrintSheetRow {
   total: number
 }
 
+const BAKERY_TIME_ZONE = 'America/Sao_Paulo'
+const bakeryDayFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: BAKERY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/** Dia civil da padaria, sem depender do fuso configurado no aparelho. */
+export function bakeryDayKey(value: Date = new Date()): string {
+  if (Number.isNaN(value.getTime())) return ''
+  const parts = Object.fromEntries(
+    bakeryDayFormatter
+      .formatToParts(value)
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
 function positivePjQuantity(value: unknown): number | null {
   if (typeof value !== 'number' && typeof value !== 'string') return null
   if (typeof value === 'string' && !value.trim()) return null

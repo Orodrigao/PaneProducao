@@ -9,6 +9,7 @@ import {
 import { aggregateWholePending, clampReuseProposal, subtractActiveReuseProposals } from '@/lib/breadLeftovers'
 import {
   PRODUCTION_PLAN_STATUS_LABELS,
+  nextProductionPlanDate,
   summarizePlanItemsByStore,
   storeNeedsOrderConversion,
   type ProductionPlanOrderItemInput,
@@ -19,6 +20,7 @@ import { supabase } from '@/lib/supabase'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import {
+  bakeryDayKey,
   buildPjPrintSheet,
   type PjProductionPrintSource,
 } from '@/lib/pjPrintSheet'
@@ -417,7 +419,7 @@ export default function ProducaoPage() {
       setDelivIdx(todayDelivIdx)
       setIsLocked(checkDeadline())
       if (user === 'geolar') {
-        const defDate = requestedProductionDate() ?? deliveryDateKey(todayDelivIdx)
+        const defDate = requestedProductionDate() ?? nextProductionPlanDate(bakeryDayKey())
         setGeolarDate(defDate)
         await loadGeolarReuseGate(defDate)
         const map = await loadOrders(defDate)
@@ -740,9 +742,9 @@ export default function ProducaoPage() {
     finally { hideLoad() }
   }
 
-  const generateWhatsApp = (ordMap: OrderMap, scope: 'all'|'breads'|'itens' = 'all') => {
+  const generateWhatsApp = (ordMap: OrderMap, scope: 'all'|'breads'|'itens' = 'all', selectedDate?: string) => {
     const stores: Store[] = ['ex','jc','ja']
-    const dLabel = deliveryDayLabel(delivIdx)
+    const dLabel = selectedDate ? dateLabel(selectedDate) : deliveryDayLabel(delivIdx)
     const lines: string[] = []
     if (scope !== 'itens') {
       const bds = breads.filter(b=>!b.is_pj&&b.active)
@@ -863,7 +865,7 @@ export default function ProducaoPage() {
       prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       reuseGate={geolarReuseGate}
       onDateChange={loadGeolar}
-      onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope)}
+      onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope, geolarDate)}
       onOpenPending={()=>router.push(`/sobras/pendencias?date=${encodeURIComponent(geolarDate)}&store=jc`)}
       onRefreshReuse={()=>void loadGeolarReuseGate(geolarDate)}
       onLogout={logout}
@@ -1572,7 +1574,10 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
     // programação PJ e também quando a rede falha. Por isso esta leitura é opcional.
     try {
       const { data, error } = await supabase.rpc('list_pj_production_for_oven', {
-        p_production_date: geolarDate,
+        // A folha regular mostra a proxima saida, mas PJ pode ser antecipado
+        // total ou parcialmente. Aqui entra tudo que a Geolar programou hoje,
+        // sem filtrar pela data futura de entrega do pedido.
+        p_production_date: bakeryDayKey(),
       })
       if (requestId !== pjPrintRequestRef.current) return
       if (error) {
@@ -1584,7 +1589,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
       if (requestId !== pjPrintRequestRef.current) return
       setPjPrintProduction([])
     }
-  }, [geolarDate])
+  }, [])
 
   useEffect(() => {
     void loadPjPrintProduction()
@@ -1602,12 +1607,10 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
   )
   const grand = printRows.reduce((total, row) => total + row.total, 0)
 
-  const pjSv = orders['pj']||{}
-  const pjBreads = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
   const dLabel = (() => { const d=new Date(geolarDate+'T12:00:00'); return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'}) })()
 
   const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
-  const hasBreads = printRows.length > 0 || pjBreads.length > 0
+  const hasBreads = printRows.length > 0
 
   // Impressão de listas separadas: aplica classe no #app que oculta o outro card via @media print
   const [printScope, setPrintScope] = useState<''|'breads'|'itens'>('')
@@ -1687,14 +1690,6 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
           ))}
           {printRows.length>0&&<div className="print-row print-row-pj" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
             <span>TOTAL GERAL</span><span/><span/><span/><span className="ptotal">{grand}</span>
-          </div>}
-          {/* Há 2 pães marcados como is_pj no cadastro e apenas 1 das 20
-              programações recentes usou um deles. Como essa quantidade já entra
-              no total acima, repeti-la neste bloco cria o risco de assar o dobro. */}
-          {pjBreads.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--border)'}}>
-            <div style={{fontSize:12,fontWeight:500,marginBottom:6}}>PJ — {(Object.values(pjSv)[0] as any)?.pj_client||'—'} · {(Object.values(pjSv)[0] as any)?.pj_delivery_date||'—'}</div>
-            <div style={{fontSize:12,marginBottom:4}}>Quantidades já incluídas no total da tabela acima.</div>
-            {pjBreads.map(p=><div key={p.id} style={{fontSize:12}}>{p.name}</div>)}
           </div>}
         </div>
 
