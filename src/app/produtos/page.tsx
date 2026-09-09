@@ -244,11 +244,11 @@ export default function ProdutosPage() {
     }
     try {
       if (isNew) {
-        const { error } = await supabase.from('products').insert({ ...body, active: true })
+        const { error } = await supabase.from('products').insert({ ...body, active: true }).select('id').single()
         if (error) throw error
         showToast('✅ Produto criado')
       } else {
-        const { error } = await supabase.from('products').update(body).eq('id', editItem.id!)
+        const { error } = await supabase.from('products').update(body).eq('id', editItem.id!).select('id').single()
         if (error) throw error
         if (conversionPayload.length > 0) {
           const { error: conversionError } = await supabase.rpc('update_payable_product_mappings', {
