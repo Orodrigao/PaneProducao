@@ -1,28 +1,31 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-04
+**Data de referência:** 2026-09-08
 
-**Base observada:** `origin/main` em `ce26854`, até a incorporação da PR `#328`.
-A revisão de 2026-09-04 cobriu a fase 2 da quantidade enviada em Pedidos PJ (a
-cobrança pelo conferido e a correção pós-fechamento). A revisão de 2026-09-03
-cobriu o que entrou entre 30/08 e 02/09 (banco de teste por PR, programação da
-produção PJ e classificação de itens da NF-e) e os riscos abertos nessas
-frentes. A leitura de 2026-08-13 cobriu o módulo Financeiro e o
-plano do Contas a Receber; as demais seções vêm das revisões anteriores e
-mantêm suas datas.
+**Base observada:** `origin/main` em `34acab5`, até a incorporação da PR `#343`.
+A revisão de 2026-09-08 cobriu a jornada nova de Pedidos PJ, da ficha separada
+por etapas à ativação controlada de um pedido real. As demais seções conservam
+suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
-## Jornada PJ preparada (08/09/2026)
+## Jornada PJ em ativação controlada (08/09/2026)
 
-PR #339 integrada em `4ed1d26`, após aprovação de Rodrigo da ficha, proteção de
-rascunho e troca de perfil. Publicação confirmada e Action de migrations
-`34237625465` concluída. Consulta somente leitura após a integração confirmou
-zero pedidos inscritos em `private.pj_flow` em produção: a jornada está preparada,
-mas a operação real ainda não foi ativada. O corte de produção continua pendente.
-Vencimentos e parcelas são o próximo recorte autorizado; devoluções e crédito
-manual permanecem posteriores. As demais seções conservam suas datas de revisão.
+As PRs #339, #340 e #341 publicaram a ficha separada em Conferência → Revisão e
+NF → Saída, a revisão de vencimentos e parcelas e as exceções de devolução por
+Pix e crédito manual. A PR #343, integrada em `34acab5`, abriu a entrada
+controlada: Financeiro ou Administrador autorizado escolhe explicitamente um
+pedido PJ ainda intacto e somente um pedido real pode usar a jornada por vez.
+
+O banco serializa tentativas simultâneas, registra entrada e retorno e só permite
+voltar à rotina anterior antes da primeira conferência ou movimentação
+financeira. A migration `20260908233749_ativacao_controlada_fluxo_pj` foi aplicada
+pela Action `Banco (migrations)`; site, CI e banco de preview ficaram verdes.
+Consulta somente leitura após a publicação confirmou as funções de entrada e
+retorno, a tabela privada de auditoria e zero pedidos reais inscritos. O próximo
+passo operacional é escolher o primeiro pedido real e acompanhar seu ciclo
+completo antes de decidir se a capacidade será ampliada.
 
 ## Fase estratégica
 
