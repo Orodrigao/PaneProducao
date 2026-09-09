@@ -9,14 +9,17 @@ select ('97000000-0000-4000-8000-00000000000'||n)::uuid,
   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
   'piloto-fase2-'||n||'@example.com','',now(),now(),now(),
   '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,false
-from generate_series(1,5) n;
+from generate_series(1,8) n;
 insert into public.app_profiles(user_id,display_name,role,store,active,allowed_routes)
 values
  ('97000000-0000-4000-8000-000000000001','Piloto Financeiro','financeiro','jc',true,'["/pedidos-pj"]'),
  ('97000000-0000-4000-8000-000000000002','Piloto Expedição','expedicao','jc',true,'["/pedidos-pj"]'),
  ('97000000-0000-4000-8000-000000000003','Piloto Vendas','vendas','ja',true,'["/sobras"]'),
  ('97000000-0000-4000-8000-000000000004','Piloto Admin sem concessão','admin','jc',true,'["/pedidos-pj"]'),
- ('97000000-0000-4000-8000-000000000005','Piloto Expedição EX','expedicao','ex',true,'["/pedidos-pj"]');
+ ('97000000-0000-4000-8000-000000000005','Piloto Expedição EX','expedicao','ex',true,'["/pedidos-pj"]'),
+ ('97000000-0000-4000-8000-000000000006','Piloto Financeiro sem liberação','financeiro','jc',true,'["/pedidos-pj"]'),
+ ('97000000-0000-4000-8000-000000000007','Piloto Financeiro inativo','financeiro','jc',false,'["/pedidos-pj"]'),
+ ('97000000-0000-4000-8000-000000000008','Piloto Financeiro incompleto','financeiro','jc',true,'["/pedidos-pj"]');
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '97000000-0000-4000-8000-000000000001',key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.liberar','contas_receber.acessar','contas_receber.lancar',
@@ -24,6 +27,28 @@ from unnest(array['pedidos_pj.acessar','pedidos_pj.liberar','contas_receber.aces
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select ('97000000-0000-4000-8000-00000000000'||n)::uuid,key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.confirmar_envio']) key cross join (values(2),(5)) a(n);
+insert into public.app_user_permissions(user_id,permission_key,scope)
+select '97000000-0000-4000-8000-000000000006',key,'jc'
+from unnest(array['pedidos_pj.acessar','contas_receber.acessar','contas_receber.lancar']) key;
+insert into public.app_user_permissions(user_id,permission_key,scope)
+select '97000000-0000-4000-8000-000000000007',key,'jc'
+from unnest(array['pedidos_pj.acessar','contas_receber.acessar','contas_receber.lancar']) key;
+insert into public.app_user_permissions(user_id,permission_key,scope)
+select '97000000-0000-4000-8000-000000000008',key,'jc'
+from unnest(array['pedidos_pj.acessar','contas_receber.acessar']) key;
+
+select is(private.backfill_pj_flow_release_for_finance(),1,
+  'alinha somente o Financeiro ativo com todos os pré-requisitos');
+select is(private.backfill_pj_flow_release_for_finance(),0,
+  'repetir o alinhamento não duplica concessões');
+select is((select count(*)::int from public.app_user_permissions
+  where permission_key='pedidos_pj.liberar' and scope='jc'
+    and user_id in ('97000000-0000-4000-8000-000000000006','97000000-0000-4000-8000-000000000007',
+      '97000000-0000-4000-8000-000000000008')),1,
+  'Financeiro inativo ou incompleto não recebe liberação');
+delete from public.app_user_permissions
+where user_id='97000000-0000-4000-8000-000000000006'
+  and permission_key='pedidos_pj.liberar' and scope='jc';
 insert into public.customers(id,name,doc,payment_term_days,active)
 values ('97000000-0000-4000-8000-000000000010','[TESTE] Cliente Piloto Isolado','00000000000097',7,true);
 insert into public.breads(id,name,days,active,unit,is_special,is_shelf)
@@ -46,6 +71,8 @@ $$;
 select ok(not has_table_privilege('authenticated','private.pj_flow','insert'),'inscrição não é acessível ao navegador');
 select ok(not has_table_privilege('authenticated','private.pj_flow_events','select'),'eventos internos não expõem payload');
 select ok(not has_function_privilege('anon','public.read_pj_flow_pilot()','execute'),'anon não consulta piloto');
+select ok(not has_function_privilege('authenticated','private.backfill_pj_flow_release_for_finance()','execute'),
+  'navegador não executa o alinhamento administrativo');
 select is((select count(*)::int from private.pj_flow where order_group_id='97000000-0000-4000-8000-000000000203'),0,'legado não foi inscrito automaticamente');
 
 set local role authenticated;
@@ -56,6 +83,10 @@ select throws_ok($q$select pg_temp.act('check',0)$q$,'42501',null,'Vendas não c
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);
 select throws_ok('select public.read_pj_flow_pilot()','42501',null,'admin sem concessão não recebe passe livre novo');
 select is((select count(*)::int from public.orders where order_group_id='97000000-0000-4000-8000-000000000201'),0,'admin sem concessão não lê preço piloto direto');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000006',true);
+select ok(public.read_pj_flow_pilot()::text like '%"price"%','Financeiro sem liberação ainda consulta a revisão');
+select throws_ok($q$select pg_temp.act('release',0,'[]',gen_random_uuid(),true,7)$q$,
+  '42501',null,'Financeiro sem concessão específica não libera pedido');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000005',true);
 select throws_ok($q$select pg_temp.act('check',0)$q$,'42501',null,'Expedição EX bloqueada mesmo com concessão JC');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
@@ -354,6 +385,9 @@ select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-000
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);
 select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
   '42501',null,'admin sem concessão não inicia jornada real');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000006',true);
+select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
+  '42501',null,'Financeiro sem concessão específica não inicia jornada real');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
 select lives_ok($q$select public.enroll_pj_flow('97000000-0000-4000-8000-000000000501',
   '97000000-0000-4000-8000-000000000203')$q$,'Financeiro inicia o primeiro pedido real');
