@@ -1,11 +1,11 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-08
+**Data de referência:** 2026-09-09
 
-**Base observada:** `origin/main` em `34acab5`, até a incorporação da PR `#343`.
-A revisão de 2026-09-08 cobriu a jornada nova de Pedidos PJ, da ficha separada
-por etapas à ativação controlada de um pedido real. As demais seções conservam
-suas datas de revisão anteriores.
+**Base observada:** `origin/main` em `e9a5d4e`, acrescida da correção de acesso
+financeiro desta entrega. A revisão de 2026-09-09 cobriu a jornada nova de
+Pedidos PJ, da ficha separada por etapas à ativação controlada de um pedido
+real. As demais seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -26,6 +26,14 @@ Consulta somente leitura após a publicação confirmou as funções de entrada 
 retorno, a tabela privada de auditoria e zero pedidos reais inscritos. O próximo
 passo operacional é escolher o primeiro pedido real e acompanhar seu ciclo
 completo antes de decidir se a capacidade será ampliada.
+
+A primeira tentativa real revelou que o seed de teste já concedia
+`pedidos_pj.liberar` ao Financeiro, mas a criação da jornada não havia alinhado
+os perfis existentes de produção. Esta migration alinha os perfis existentes
+na data de sua aplicação, somente quando o Financeiro está ativo, já tem acesso
+a Pedidos PJ e pode consultar e lançar Contas a receber. Novos perfis continuam
+dependendo de concessão administrativa explícita. Administradores sem
+concessão, Vendas e Expedição continuam sem poder iniciar ou liberar a jornada.
 
 ## Fase estratégica
 
