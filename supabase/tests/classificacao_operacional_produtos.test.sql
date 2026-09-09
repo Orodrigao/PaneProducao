@@ -2,7 +2,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(20);
 
 select ok(exists(select 1 from information_schema.columns
   where table_schema = 'public' and table_name = 'products' and column_name = 'production_process'),
@@ -99,6 +99,64 @@ select lives_ok(
         allows_unplanned_production = null
     where id = '94000000-0000-4000-8000-000000000001'$$,
   'produto pode deixar de ser fabricacao propria com limpeza coerente');
+
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data, is_super_admin
+) values
+  ('94000000-0000-4000-8000-00000000f001', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'admin-classificacao-produto-test@example.com',
+   '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+   now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false),
+  ('94000000-0000-4000-8000-00000000f002', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'vendas-classificacao-produto-test@example.com',
+   '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+   now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false);
+
+insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
+values
+  ('94000000-0000-4000-8000-00000000f001', 'Admin Classificação', 'admin', null, true, '["/produtos"]'::jsonb),
+  ('94000000-0000-4000-8000-00000000f002', 'Vendas Classificação', 'vendas', 'ja', true, '["/produtos"]'::jsonb);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-00000000f001', true);
+
+select is(
+  (with changed as (
+    update public.products
+    set production_process = 'montagem',
+        allows_planned_production = true,
+        allows_unplanned_production = true
+    where id = '94000000-0000-4000-8000-000000000007'
+    returning id
+  ) select count(*)::integer from changed),
+  1,
+  'administrador autorizado confirma exatamente um produto atualizado');
+
+select is(
+  (with created as (
+    insert into public.products (
+      id, name, is_fabricacao_propria, production_area, production_process,
+      allows_planned_production, allows_unplanned_production
+    ) values (
+      '94000000-0000-4000-8000-000000000009', '[TESTE] Produto criado pelo catálogo', true,
+      'cozinha', 'preparo', true, true
+    ) returning id
+  ) select count(*)::integer from created),
+  1,
+  'administrador autorizado confirma exatamente um produto criado');
+
+select set_config('request.jwt.claim.sub', '94000000-0000-4000-8000-00000000f002', true);
+select is(
+  (with changed as (
+    update public.products
+    set active = false
+    where id = '94000000-0000-4000-8000-000000000007'
+    returning id
+  ) select count(*)::integer from changed),
+  0,
+  'perfil de vendas nao altera produto nem recebe falso sucesso do banco');
 
 select * from finish();
 rollback;
