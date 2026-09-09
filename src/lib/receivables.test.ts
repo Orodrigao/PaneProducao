@@ -12,6 +12,7 @@ import {
   daysOverdue,
   defaultPaymentDraft,
   emptyReceivableDraft,
+  filterReceivables,
   isOverdue,
   sortReceivables,
   summarizeReceivables,
@@ -194,6 +195,59 @@ describe('sortReceivables', () => {
     expect(ordenado.map(row => row.id)).toEqual([
       'atrasada-velha', 'atrasada-nova', 'a-vencer', 'recebida',
     ])
+  })
+})
+
+describe('filterReceivables', () => {
+  const todas = { search: '', situation: 'todas' as const, invoicePeriod: 'todas' as const }
+  const rows = [
+    cobranca({ id: 'antiga', description: 'Pães antigos', invoice_date: '2026-07-20', due_date: '2026-08-01', customer: { name: 'Café São José' } }),
+    cobranca({ id: 'hoje', description: 'Pedido do almoço', invoice_date: HOJE, due_date: '2026-08-30', customer: { name: 'Quinta Parrilla' } }),
+    cobranca({ id: 'vence-hoje', invoice_date: '2026-08-15', due_date: HOJE }),
+    cobranca({ id: 'recebida', invoice_date: '2026-08-16', status: 'recebida' }),
+    cobranca({ id: 'cancelada', invoice_date: '2026-08-17', status: 'cancelada' }),
+  ]
+
+  it('encontra cliente ou descrição sem depender de acento e maiúsculas', () => {
+    expect(filterReceivables(rows, { ...todas, search: 'cafe sao' }, HOJE).map(row => row.id))
+      .toEqual(['antiga'])
+    expect(filterReceivables(rows, { ...todas, search: 'ALMOÇO' }, HOJE).map(row => row.id))
+      .toEqual(['hoje'])
+  })
+
+  it('separa atrasadas, vencendo hoje e a vencer', () => {
+    expect(filterReceivables(rows, { ...todas, situation: 'atrasadas' }, HOJE).map(row => row.id))
+      .toEqual(['antiga'])
+    expect(filterReceivables(rows, { ...todas, situation: 'vence_hoje' }, HOJE).map(row => row.id))
+      .toEqual(['vence-hoje'])
+    expect(filterReceivables(rows, { ...todas, situation: 'a_vencer' }, HOJE).map(row => row.id))
+      .toEqual(['hoje'])
+  })
+
+  it('localiza cobranças faturadas hoje mesmo quando vencem depois', () => {
+    expect(filterReceivables(rows, { ...todas, invoicePeriod: 'hoje' }, HOJE).map(row => row.id))
+      .toEqual(['hoje'])
+  })
+
+  it('combina período, situação e busca', () => {
+    expect(filterReceivables(rows, {
+      search: 'quinta', situation: 'em_aberto', invoicePeriod: 'ultimos_7_dias',
+    }, HOJE).map(row => row.id)).toEqual(['hoje'])
+  })
+
+  it('inclui somente o mês corrente no atalho deste mês', () => {
+    expect(filterReceivables(rows, { ...todas, invoicePeriod: 'este_mes' }, HOJE).map(row => row.id))
+      .toEqual(['hoje', 'vence-hoje', 'recebida', 'cancelada'])
+  })
+
+  it('nos últimos 7 dias inclui hoje menos 6 e exclui hoje menos 7, mesmo na virada do mês', () => {
+    const virada = '2026-09-03'
+    const limite = [
+      cobranca({ id: 'dentro', invoice_date: '2026-08-28' }),
+      cobranca({ id: 'fora', invoice_date: '2026-08-27' }),
+    ]
+    expect(filterReceivables(limite, { ...todas, invoicePeriod: 'ultimos_7_dias' }, virada).map(row => row.id))
+      .toEqual(['dentro'])
   })
 })
 

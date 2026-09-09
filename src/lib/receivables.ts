@@ -205,6 +205,76 @@ export interface ReceivableTotals {
   recebidoNoPeriodo: number
 }
 
+export type ReceivableSituationFilter =
+  | 'todas'
+  | 'em_aberto'
+  | 'atrasadas'
+  | 'vence_hoje'
+  | 'a_vencer'
+  | 'recebidas'
+  | 'canceladas'
+
+export type ReceivableInvoicePeriodFilter = 'todas' | 'hoje' | 'ultimos_7_dias' | 'este_mes'
+
+export interface ReceivableFilters {
+  search: string
+  situation: ReceivableSituationFilter
+  invoicePeriod: ReceivableInvoicePeriodFilter
+}
+
+function receivableSearchText(row: ReceivableRow): string {
+  return [
+    row.customer?.name,
+    row.description,
+    row.origin_ref,
+    RECEIVABLE_ORIGIN_LABELS[row.origin],
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+}
+
+function invoicePeriodStart(today: string, period: ReceivableInvoicePeriodFilter): string | null {
+  if (period === 'todas') return null
+  if (period === 'hoje') return today
+  if (period === 'este_mes') return `${today.slice(0, 7)}-01`
+  const start = new Date(`${today}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() - 6)
+  return start.toISOString().slice(0, 10)
+}
+
+/** Filtra somente a lista visível. Os totais do topo continuam mostrando o quadro completo. */
+export function filterReceivables(
+  rows: readonly ReceivableRow[],
+  filters: ReceivableFilters,
+  today = todayKey(),
+): ReceivableRow[] {
+  const search = filters.search
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+  const periodStart = invoicePeriodStart(today, filters.invoicePeriod)
+
+  return rows.filter(row => {
+    const open = row.status === 'aberta' || row.status === 'parcial'
+    const matchesSituation = filters.situation === 'todas'
+      || (filters.situation === 'em_aberto' && open)
+      || (filters.situation === 'atrasadas' && open && row.due_date < today)
+      || (filters.situation === 'vence_hoje' && open && row.due_date === today)
+      || (filters.situation === 'a_vencer' && open && row.due_date > today)
+      || (filters.situation === 'recebidas' && row.status === 'recebida')
+      || (filters.situation === 'canceladas' && row.status === 'cancelada')
+    const matchesPeriod = filters.invoicePeriod === 'todas'
+      || (periodStart !== null && row.invoice_date >= periodStart && row.invoice_date <= today)
+    return matchesSituation
+      && matchesPeriod
+      && (!search || receivableSearchText(row).includes(search))
+  })
+}
+
 /**
  * Os três números do topo da tela. Cobrança cancelada não entra em nenhum
  * deles — ela existe só como história.

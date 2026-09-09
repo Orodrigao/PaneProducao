@@ -56,6 +56,38 @@ test('Financeiro JC ve as cobrancas semeadas, com atrasada e a vencer separadas'
   expect(posicaoAtrasada).toBeGreaterThanOrEqual(0)
   expect(posicaoAtrasada).toBeLessThan(posicaoAVencer)
 
+  // A Elis encontra o que acabou de faturar sem perder a prioridade dos
+  // atrasados na visualizacao completa.
+  const busca = page.getByLabel('Buscar contas a receber')
+  await busca.fill('cobranca a vencer')
+  await expect(atrasada).toBeHidden()
+  await expect(aVencer).toBeVisible()
+  await expect(page.getByText(/1 de \d+ cobrança\(s\)/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Limpar filtros' }).click()
+  await expect(atrasada).toBeVisible()
+
+  await page.getByLabel('Situação').selectOption('atrasadas')
+  await expect(atrasada).toBeVisible()
+  await expect(aVencer).toBeHidden()
+
+  await page.getByRole('button', { name: 'Limpar filtros' }).click()
+  await page.getByLabel('Faturamento').selectOption('ultimos_7_dias')
+  await expect(aVencer).toBeVisible()
+  await expect(atrasada).toBeHidden()
+
+  await page.getByLabel('Faturamento').selectOption('hoje')
+  const cobrancasDeHoje = page.locator('article')
+  const quantidadeDeHoje = await cobrancasDeHoje.count()
+  if (quantidadeDeHoje === 0) {
+    await expect(page.getByText('Nenhuma cobrança encontrada com esses filtros.')).toBeVisible()
+  } else {
+    const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    for (let indice = 0; indice < quantidadeDeHoje; indice += 1) {
+      await expect(cobrancasDeHoje.nth(indice)).toContainText(`Faturado em ${hoje}`)
+    }
+  }
+
   // O menu leva a tela: rota, permissao e RLS nao bastam se o link nao existe.
   await expect(page.locator('a[href="/contas-receber"]').first()).toBeAttached()
 })
