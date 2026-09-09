@@ -14,7 +14,8 @@ import {
   fetchPjProductionQueue,
   schedulePjProduction,
 } from '@/lib/pjProductionPlanningClient'
-import { formatDateBR, todayKey } from '@/lib/utils'
+import { bakeryDayKey } from '@/lib/pjPrintSheet'
+import { formatDateBR } from '@/lib/utils'
 
 interface ItemDraft {
   selected: boolean
@@ -60,7 +61,7 @@ function draftFor(item: PjProductionQueueItem, current?: ItemDraft): ItemDraft {
 }
 
 export function PjProductionPlanningPanel() {
-  const productionDate = todayKey()
+  const productionDate = bakeryDayKey()
   const [rows, setRows] = useState<PjProductionQueueRow[]>([])
   const [drafts, setDrafts] = useState<Drafts>({})
   const [loading, setLoading] = useState(true)

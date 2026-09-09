@@ -16,6 +16,11 @@ describe('painel de programação PJ', () => {
     expect(source).toContain('pedidos por entrega mais próxima')
   })
 
+  it('programa pelo dia civil da padaria mesmo durante a madrugada', () => {
+    expect(source).toContain('const productionDate = bakeryDayKey()')
+    expect(source).not.toContain('const productionDate = todayKey()')
+  })
+
   it('mantém o mesmo identificador quando uma tentativa de rede falha', () => {
     expect(source).toContain('requestIds[groupKey] ?? requestId()')
     expect(source).toContain("setRequestIds(current => ({ ...current, [groupKey]: stableRequestId }))")
