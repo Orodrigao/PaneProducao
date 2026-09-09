@@ -27,6 +27,7 @@ insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
 values
   ('teste-congelado-identidade', '[TESTE] Congelado Identidade', '{0,1,2,3,4,5,6}', true, 'un', false, false),
   ('teste-congelado-produto', '[TESTE] Congelado Produto', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-congelado-produto-ja', '[TESTE] Congelado Produto JA', '{0,1,2,3,4,5,6}', true, 'un', false, false),
   ('teste-congelado-unidade', '[TESTE] Congelado Unidade', '{0,1,2,3,4,5,6}', true, 'un', false, false),
   ('teste-congelado-inativo', '[TESTE] Congelado Inativo', '{0,1,2,3,4,5,6}', true, 'un', false, false);
 
@@ -38,7 +39,8 @@ insert into public.products (
   ('97200000-0000-4000-8000-0000000000d2', '[TESTE] Congelado Identidade', 'Paes', true, 'un', 'final', true, true, 'padaria', null),
   ('97200000-0000-4000-8000-0000000000d3', '[TESTE] Congelado Produto', 'Paes', true, 'un', 'final', true, true, 'padaria', 'teste-congelado-produto'),
   ('97200000-0000-4000-8000-0000000000d4', '[TESTE] Congelado Unidade', 'Paes', true, 'kg', 'final', true, true, 'padaria', 'teste-congelado-unidade'),
-  ('97200000-0000-4000-8000-0000000000d5', '[TESTE] Congelado Inativo', 'Paes', false, 'un', 'final', true, true, 'padaria', 'teste-congelado-inativo');
+  ('97200000-0000-4000-8000-0000000000d5', '[TESTE] Congelado Inativo', 'Paes', false, 'un', 'final', true, true, 'padaria', 'teste-congelado-inativo'),
+  ('97200000-0000-4000-8000-0000000000d6', '[TESTE] Congelado Produto JA', 'Paes', true, 'un', 'final', true, true, 'padaria', 'teste-congelado-produto-ja');
 
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit, active, store, visible_stores
@@ -47,7 +49,7 @@ insert into public.frozen_products (
   ('97200000-0000-4000-8000-0000000000f2', '97200000-0000-4000-8000-0000000000d1', 'product', '[TESTE] Novo Duplicado', 'un', true, 'jc', array['jc']::text[]),
   ('97200000-0000-4000-8000-0000000000f3', '97200000-0000-4000-8000-0000000000d2', 'product', '[TESTE] Mesmo Nome Sem Ligacao', 'un', true, 'jc', array['jc']::text[]),
   ('97200000-0000-4000-8000-0000000000f4', '97200000-0000-4000-8000-0000000000d3', 'product', '[TESTE] Novo JC', 'un', true, 'jc', array['jc']::text[]),
-  ('97200000-0000-4000-8000-0000000000f5', '97200000-0000-4000-8000-0000000000d3', 'product', '[TESTE] Novo JA', 'un', true, 'ja', array['ja']::text[]),
+  ('97200000-0000-4000-8000-0000000000f5', '97200000-0000-4000-8000-0000000000d6', 'product', '[TESTE] Novo JA', 'un', true, 'ja', array['ja']::text[]),
   ('97200000-0000-4000-8000-0000000000f6', '97200000-0000-4000-8000-0000000000d4', 'product', '[TESTE] Unidade Incompativel', 'kg', true, 'jc', array['jc']::text[]),
   ('97200000-0000-4000-8000-0000000000f7', 'id-inexistente', 'product', '[TESTE] Produto Inexistente', 'un', true, 'jc', array['jc']::text[]),
   ('97200000-0000-4000-8000-0000000000f8', '97200000-0000-4000-8000-0000000000d5', 'product', '[TESTE] Produto Inativo', 'un', true, 'jc', array['jc']::text[]),
@@ -71,7 +73,7 @@ select is(private.frozen_stock_for_bread_store('teste-congelado-identidade', 'jc
   'cadastro bread tem precedencia e evita contagem dupla');
 select is(private.frozen_stock_for_bread_store('teste-congelado-produto', 'jc'), 6::numeric,
   'produto ligado assume quando nao existe cadastro bread ativo');
-select is(private.frozen_stock_for_bread_store('teste-congelado-produto', 'ja'), 3::numeric,
+select is(private.frozen_stock_for_bread_store('teste-congelado-produto-ja', 'ja'), 3::numeric,
   'saldo do produto ligado respeita a loja');
 select is(private.frozen_stock_for_bread_store('97200000-0000-4000-8000-0000000000d2', 'jc'), 0::numeric,
   'mesmo nome sem equivalencia nao cria vinculo');
@@ -110,7 +112,7 @@ select is((select available_quantity from public.list_frozen_production_availabi
   where store = 'jc' and bread_id = 'teste-congelado-produto'), 6::numeric,
   'producao enxerga o congelado cadastrado pelo produto');
 select is((select available_quantity from public.list_frozen_production_availability(null)
-  where store = 'ja' and bread_id = 'teste-congelado-produto'), 3::numeric,
+  where store = 'ja' and bread_id = 'teste-congelado-produto-ja'), 3::numeric,
   'lista publica tambem preserva o isolamento da JA');
 select ok(not exists (
   select 1 from public.list_frozen_production_availability(null) where bread_id is null
