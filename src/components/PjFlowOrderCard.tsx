@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { pjLineValue } from '@/lib/pjOrderValue'
-import { parsePjFlowQuantity, pjFlowStatus, transitionPjFlowPilot,
+import { parsePjFlowQuantity, pjFlowStatus, readPjFlowActivationStatus,
+  rollbackPjFlowEnrollment, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
 import styles from './PjFlowPilot.module.css'
 import { PjFlowFinance } from './PjFlowFinance'
@@ -26,10 +27,21 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const [creditAmount, setCreditAmount] = useState('')
   const [creditReason, setCreditReason] = useState('')
   const [error, setError] = useState('')
+  const [canReturn, setCanReturn] = useState(false)
+  const [activationMode, setActivationMode] = useState<'test' | 'controlled_real' | null>(null)
   const [confirm, setConfirm] = useState<PjFlowAction | null>(null)
   const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean
     credit: { amount: number; sourceGroupId: string | null; reason: string } } | null>(null)
   const running = useRef(false)
+  const rollbackPending = useRef<{ requestId: string; reason: string } | null>(null)
+  useEffect(() => {
+    let alive = true
+    void readPjFlowActivationStatus(flow.id).then(status => {
+      if (!alive) return
+      setCanReturn(status.can_return); setActivationMode(status.mode)
+    }).catch(() => { if (alive) setCanReturn(false) })
+    return () => { alive = false }
+  }, [flow.id])
   const total = flow.items.every(item => typeof item.price === 'number' && item.quantity !== null)
     ? flow.items.reduce((sum, item) => sum + Math.round(pjLineValue({ quantity: item.ordered,
       dispatchedQuantity: item.quantity, unitPrice: item.price, dispatchedAt: null })! * 100), 0) / 100 : null
@@ -81,10 +93,27 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     } catch (e) { setError(e instanceof Error ? e.message : 'Falha na operação. Recarregue para conferir o estado.') }
     finally { running.current = false; setBusy(false); setConfirm(null) }
   }
+  async function returnToLegacy() {
+    if (!rollbackPending.current) {
+      const reason = window.prompt('Por que este pedido deve voltar à rotina anterior?')?.trim() || ''
+      if (reason.length < 3) { if (reason) setError('Informe um motivo com pelo menos três caracteres.'); return }
+      if (!window.confirm('Confirmar o retorno? O pedido deixará a nova jornada e reaparecerá na rotina anterior.')) return
+      rollbackPending.current = { requestId: crypto.randomUUID(), reason }
+    }
+    const request = rollbackPending.current
+    setBusy(true); setError('')
+    try {
+      await rollbackPjFlowEnrollment(flow.id, request.requestId, request.reason)
+      rollbackPending.current = null
+      window.location.assign(`/pedidos-pj?legado=1&pedido=${encodeURIComponent(flow.id)}`)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível devolver o pedido.') }
+    finally { setBusy(false) }
+  }
   const frozen = termsLocked || reconciliationLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
   return <section className={styles.detail} aria-label={`Ficha de ${flow.customer}`}>
     <header className={styles.detailHeader}><span className={styles.eyebrow}>Ficha do pedido</span>
       <h2>{flow.customer}</h2><p>Entrega/coleta combinada: <strong>{date(flow.delivery_date)}</strong></p>
+      {activationMode === 'controlled_real' && <p>Primeira operação real em acompanhamento.</p>}
     </header>
     <ol className={styles.steps} aria-label="Etapas do pedido">{['Conferência', 'Revisão e NF', 'Saída'].map((label, i) =>
       <li key={label} className={i < step ? styles.done : i === step ? styles.current : ''} aria-current={i === step ? 'step' : undefined}>
@@ -149,8 +178,14 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     </div>}
     {error && <div className={styles.error} role="alert"><p>{error}</p>
       {pending.current && <button className={styles.secondary} disabled={busy} onClick={() => void run(pending.current!.action)}>Repetir a mesma tentativa</button>}
+      {rollbackPending.current && <button className={styles.secondary} disabled={busy} onClick={() => void returnToLegacy()}>
+        Repetir o mesmo retorno
+      </button>}
     </div>}
     {(dirty || Boolean(pending.current)) && <button className={styles.secondary} disabled={busy || Boolean(confirm)} onClick={() => void discard()}>Recarregar ficha e descartar alterações</button>}
+    {canReturn && !rollbackPending.current && <button className={styles.secondary} disabled={busy || locked} onClick={() => void returnToLegacy()}>
+      Voltar este pedido à rotina anterior
+    </button>}
     {busy && <p role="status">Salvando e conferindo o resultado…</p>}
     <details className={styles.history}><summary>Histórico registrado <span>{flow.history.length}</span></summary>
     {!flow.history.length && <p>Nenhuma etapa registrada ainda.</p>}

@@ -24,6 +24,8 @@ export interface PjFlow {
 export type PjFlowAction = 'save' | 'check' | 'release' | 'depart'
 export interface PjFlowInput { id: string; quantity: number | null; reason: string | null }
 export interface PjFlowCreditInput { amount: number; sourceGroupId: string | null; reason: string }
+export interface PjFlowEnrollmentGate { can_enroll: boolean; slot_available: boolean }
+export interface PjFlowActivationStatus { mode: 'test' | 'controlled_real' | null; can_return: boolean }
 
 export function parsePjFlowQuantity(value: string): number | null {
   if (!value.trim()) return null
@@ -74,6 +76,45 @@ export async function transitionPjFlowPilot(flow: PjFlow, action: PjFlowAction,
     p_credit_amount: action === 'release' ? credit.amount : 0,
     p_credit_source_group_id: action === 'release' ? credit.sourceGroupId : null,
     p_credit_reason: action === 'release' && credit.amount > 0 ? credit.reason : null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function readPjFlowEnrollmentGate(): Promise<PjFlowEnrollmentGate> {
+  const { data, error } = await supabase.rpc('read_pj_flow_enrollment_gate')
+  if (error) throw new Error(error.message)
+  if (!data || typeof data.can_enroll !== 'boolean' || typeof data.slot_available !== 'boolean') {
+    throw new Error('Não foi possível confirmar se a nova jornada pode ser iniciada.')
+  }
+  return data as PjFlowEnrollmentGate
+}
+
+export async function enrollPjFlow(orderGroupId: string, requestId: string): Promise<void> {
+  const { error } = await supabase.rpc('enroll_pj_flow', {
+    p_request_id: requestId,
+    p_order_group_id: orderGroupId,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function readPjFlowActivationStatus(orderGroupId: string): Promise<PjFlowActivationStatus> {
+  const { data, error } = await supabase.rpc('read_pj_flow_activation_status', {
+    p_order_group_id: orderGroupId,
+  })
+  if (error) throw new Error(error.message)
+  if (!data || !['test', 'controlled_real', null].includes(data.mode)
+    || typeof data.can_return !== 'boolean') {
+    throw new Error('Não foi possível confirmar o estado de ativação deste pedido.')
+  }
+  return data as PjFlowActivationStatus
+}
+
+export async function rollbackPjFlowEnrollment(orderGroupId: string, requestId: string,
+  reason: string): Promise<void> {
+  const { error } = await supabase.rpc('rollback_pj_flow_enrollment', {
+    p_request_id: requestId,
+    p_order_group_id: orderGroupId,
+    p_reason: reason,
   })
   if (error) throw new Error(error.message)
 }

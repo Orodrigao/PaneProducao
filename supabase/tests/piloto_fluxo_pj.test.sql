@@ -343,6 +343,63 @@ select throws_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),'97
 reset role;
 
 -- O mesmo banco novo continua atendendo o site antigo em pedidos não inscritos.
+select ok(not has_table_privilege('authenticated','private.pj_flow_activation_events','select'),
+  'histórico de ativação não fica exposto ao navegador');
+select ok(not has_function_privilege('anon','public.enroll_pj_flow(uuid,uuid)','execute'),
+  'visitante não inicia jornada real');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000003',true);
+select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
+  '42501',null,'Vendas não inicia jornada real');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);
+select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
+  '42501',null,'admin sem concessão não inicia jornada real');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.enroll_pj_flow('97000000-0000-4000-8000-000000000501',
+  '97000000-0000-4000-8000-000000000203')$q$,'Financeiro inicia o primeiro pedido real');
+select lives_ok($q$select public.enroll_pj_flow('97000000-0000-4000-8000-000000000501',
+  '97000000-0000-4000-8000-000000000203')$q$,'resposta perdida repete a mesma ativação');
+select is((public.read_pj_flow_enrollment_gate()->>'slot_available')::boolean,false,
+  'segunda ativação fica fechada durante o acompanhamento');
+reset role;
+select throws_ok($q$update private.pj_flow set activation_mode='controlled_real'
+  where order_group_id='97000000-0000-4000-8000-000000000201'$q$,
+  '23505',null,'banco mantém uma única operação real mesmo sob disputa');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select is(public.read_pj_flow_activation_status('97000000-0000-4000-8000-000000000203')->>'mode',
+  'controlled_real','pedido identifica a operação real controlada');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select throws_ok($q$select public.rollback_pj_flow_enrollment(gen_random_uuid(),
+  '97000000-0000-4000-8000-000000000203','Expedição pediu retorno')$q$,
+  '42501',null,'Expedição não devolve pedido à rotina anterior');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$select public.rollback_pj_flow_enrollment('97000000-0000-4000-8000-000000000502',
+  '97000000-0000-4000-8000-000000000203','Pedido escolhido por engano')$q$,
+  'Financeiro devolve pedido ainda intacto');
+select lives_ok($q$select public.rollback_pj_flow_enrollment('97000000-0000-4000-8000-000000000502',
+  '97000000-0000-4000-8000-000000000203','Pedido escolhido por engano')$q$,
+  'resposta perdida repete o mesmo retorno');
+select lives_ok($q$select public.enroll_pj_flow('97000000-0000-4000-8000-000000000503',
+  '97000000-0000-4000-8000-000000000203')$q$,'pedido pode ser escolhido novamente após retorno');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
+select lives_ok($q$select public.transition_pj_flow_pilot(gen_random_uuid(),
+  '97000000-0000-4000-8000-000000000203',0,'save',
+  '[{"id":"97000000-0000-4000-8000-000000000103","quantity":40,"reason":null}]')$q$,
+  'Expedição começa a conferência do pedido ativado');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.rollback_pj_flow_enrollment(gen_random_uuid(),
+  '97000000-0000-4000-8000-000000000203','Tentativa depois da conferência')$q$,
+  '22023',null,'pedido iniciado não volta ao legado');
+reset role;
+delete from private.pj_flow_events where order_group_id='97000000-0000-4000-8000-000000000203';
+delete from private.pj_flow where order_group_id='97000000-0000-4000-8000-000000000203';
+select set_config('pane.pj_check_rpc','on',true);
+update public.orders set dispatched_quantity=null,dispatched_quantity_reason=null,
+  dispatched_quantity_at=null,dispatched_quantity_by=null,dispatched_quantity_by_name=null
+where order_group_id='97000000-0000-4000-8000-000000000203';
+select set_config('pane.pj_check_rpc','',true);
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
 select lives_ok($q$select public.save_pj_order_dispatch_quantities(gen_random_uuid(),

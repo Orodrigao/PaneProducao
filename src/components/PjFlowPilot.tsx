@@ -46,14 +46,14 @@ export function PjFlowPilot() {
   const flow = flows.find(item => item.id === selected)
   return <main className={`ps-canvas ${styles.canvas}`}><div className={styles.shell}>
     <header className={styles.header}>
-      <div><span className={styles.eyebrow}>Prévia · novo fluxo</span><h1>Pedidos PJ</h1>
+      <div><span className={styles.eyebrow}>Nova jornada</span><h1>Pedidos PJ</h1>
         <p>Da conferência à saída, cada etapa no seu lugar.</p></div>
       <button className={styles.secondary} type="button" onClick={() => void load()} disabled={loading || locked}>Recarregar pedidos</button>
     </header>
     {loading && <p className={styles.empty} role="status">Carregando pedidos…</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     {notice && <p className={styles.next} role="status">{notice}.</p>}
-    {!loading && !error && !flows.length && <p className={styles.empty}>Não há pedidos inscritos. O piloto está inativo neste banco.</p>}
+    {!loading && !error && !flows.length && <p className={styles.empty}>Não há pedidos nesta jornada.</p>}
     {!loading && !error && flows.length > 0 && <div className={styles.workspace}>
       <nav className={styles.orders} aria-label="Escolher pedido">
         <div className={styles.listHeading}><strong>Pedidos</strong><span>{flows.length}</span></div>
@@ -70,6 +70,6 @@ export function PjFlowPilot() {
         : <p className={styles.empty} role="alert">O pedido deste link não está disponível nesta jornada. Escolha um pedido da lista.</p>}
     </div>}
     <footer className={styles.footer}><a href="/pedidos-pj?legado=1" onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>
-      Ver pedidos da rotina anterior</a><span>Ambiente de teste · operação real ainda não ativada</span></footer>
+      Ver pedidos da rotina anterior</a><span>Pedidos entram individualmente · os demais continuam na rotina anterior</span></footer>
   </div></main>
 }

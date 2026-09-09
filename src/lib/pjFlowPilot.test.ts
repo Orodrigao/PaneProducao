@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 const rpc = vi.hoisted(() => vi.fn())
 vi.mock('./supabase', () => ({ supabase: { rpc } }))
-import { discoverPjFlowPilot, parsePjFlowQuantity, pjFlowStatus, readPjFlowPilot, transitionPjFlowPilot, type PjFlow } from './pjFlowPilot'
+import { discoverPjFlowPilot, enrollPjFlow, parsePjFlowQuantity, pjFlowStatus,
+  readPjFlowActivationStatus, readPjFlowEnrollmentGate, readPjFlowPilot,
+  rollbackPjFlowEnrollment, transitionPjFlowPilot, type PjFlow } from './pjFlowPilot'
 
 describe('preparação da jornada PJ', () => {
   it('descoberta preserva rotina anterior somente quando contrato ou acesso não existem', async () => {
@@ -55,5 +57,25 @@ describe('preparação da jornada PJ', () => {
     await transitionPjFlowPilot(flow, 'check', 'sem-credito', [], false)
     expect(rpc.mock.calls[1][1]).toMatchObject({ p_credit_amount: 0,
       p_credit_source_group_id: null, p_credit_reason: null })
+  })
+  it('ativa e devolve o mesmo pedido com tentativas estáveis', async () => {
+    rpc.mockReset().mockResolvedValue({ data: {}, error: null })
+    await enrollPjFlow('pedido', 'tentativa-ativar')
+    await rollbackPjFlowEnrollment('pedido', 'tentativa-voltar', 'Pedido escolhido por engano')
+    expect(rpc.mock.calls[0]).toEqual(['enroll_pj_flow', {
+      p_request_id: 'tentativa-ativar', p_order_group_id: 'pedido',
+    }])
+    expect(rpc.mock.calls[1]).toEqual(['rollback_pj_flow_enrollment', {
+      p_request_id: 'tentativa-voltar', p_order_group_id: 'pedido', p_reason: 'Pedido escolhido por engano',
+    }])
+  })
+  it('valida os contratos de disponibilidade e retorno antes de exibir controles', async () => {
+    rpc.mockReset()
+      .mockResolvedValueOnce({ data: { can_enroll: true, slot_available: false }, error: null })
+      .mockResolvedValueOnce({ data: { mode: 'controlled_real', can_return: true }, error: null })
+    await expect(readPjFlowEnrollmentGate()).resolves.toEqual({ can_enroll: true, slot_available: false })
+    await expect(readPjFlowActivationStatus('pedido')).resolves.toEqual({ mode: 'controlled_real', can_return: true })
+    rpc.mockReset().mockResolvedValue({ data: { can_enroll: 'sim' }, error: null })
+    await expect(readPjFlowEnrollmentGate()).rejects.toThrow('confirmar')
   })
 })
