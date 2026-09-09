@@ -2,15 +2,15 @@
 
 **Data de referência:** 2026-09-09
 
-**Base observada:** `origin/main` em `e9a5d4e`, acrescida da correção de acesso
-financeiro desta entrega. A revisão de 2026-09-09 cobriu a jornada nova de
-Pedidos PJ, da ficha separada por etapas à ativação controlada de um pedido
-real. As demais seções conservam suas datas de revisão anteriores.
+**Base observada:** `origin/main` em `73f6369`. A revisão de 2026-09-09 cobriu
+a jornada nova de Pedidos PJ, da ficha separada por etapas à ativação controlada
+do primeiro pedido real. As demais seções conservam suas datas de revisão
+anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
-## Jornada PJ em ativação controlada (08/09/2026)
+## Jornada PJ em ativação controlada (09/09/2026)
 
 As PRs #339, #340 e #341 publicaram a ficha separada em Conferência → Revisão e
 NF → Saída, a revisão de vencimentos e parcelas e as exceções de devolução por
@@ -22,18 +22,23 @@ O banco serializa tentativas simultâneas, registra entrada e retorno e só perm
 voltar à rotina anterior antes da primeira conferência ou movimentação
 financeira. A migration `20260908233749_ativacao_controlada_fluxo_pj` foi aplicada
 pela Action `Banco (migrations)`; site, CI e banco de preview ficaram verdes.
-Consulta somente leitura após a publicação confirmou as funções de entrada e
-retorno, a tabela privada de auditoria e zero pedidos reais inscritos. O próximo
-passo operacional é escolher o primeiro pedido real e acompanhar seu ciclo
-completo antes de decidir se a capacidade será ampliada.
 
 A primeira tentativa real revelou que o seed de teste já concedia
 `pedidos_pj.liberar` ao Financeiro, mas a criação da jornada não havia alinhado
-os perfis existentes de produção. Esta migration alinha os perfis existentes
-na data de sua aplicação, somente quando o Financeiro está ativo, já tem acesso
-a Pedidos PJ e pode consultar e lançar Contas a receber. Novos perfis continuam
-dependendo de concessão administrativa explícita. Administradores sem
-concessão, Vendas e Expedição continuam sem poder iniciar ou liberar a jornada.
+os perfis existentes de produção. A PR #346 corrigiu esse cadastro: somente a
+Elis recebeu `pedidos_pj.liberar` com escopo JC, porque já era Financeiro ativo,
+tinha acesso a Pedidos PJ e podia consultar e lançar Contas a receber. Novos
+perfis continuam dependendo de concessão administrativa explícita.
+Administradores sem concessão, Vendas e Expedição continuam sem poder iniciar
+ou liberar a jornada.
+
+Em 09/09/2026 às 13:12, a Elis inscreveu o pedido da Quinta Parrilla Bar como o
+primeiro e único pedido real acompanhado. A consulta somente leitura após a
+ativação confirmou a versão inicial: 5 unidades de Italiano, ainda sem quantidade
+conferida, cobrança, liberação ou saída. O próximo passo operacional é a
+Expedição JC conferir esse pedido; depois, o ciclo segue para revisão financeira
+e NF, liberação e saída. A capacidade permanece limitada a um pedido real até o
+ciclo completo ser acompanhado.
 
 ## Fase estratégica
 
