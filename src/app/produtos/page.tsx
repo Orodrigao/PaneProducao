@@ -264,8 +264,18 @@ export default function ProdutosPage() {
   }
 
   async function toggleActive(p: Product) {
-    await supabase.from('products').update({ active: !p.active }).eq('id', p.id)
-    setProducts(prev => prev.map(x => x.id===p.id ? {...x,active:!p.active} : x))
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ active: !p.active })
+        .eq('id', p.id)
+        .select('id')
+        .single()
+      if (error) throw error
+      setProducts(prev => prev.map(x => x.id===p.id ? {...x,active:!p.active} : x))
+    } catch (error: unknown) {
+      showToast('Erro: '+getErrorMessage(error, 'não foi possível alterar o produto'))
+    }
   }
 
   function newProductDefaults(fabricacaoPropria: boolean): EditableProduct {
