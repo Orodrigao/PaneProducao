@@ -89,7 +89,8 @@ values
   -- cenario de sobras, para nao alterar as quantidades ja conferidas por outros
   -- testes.
   ('teste-brioche-pj', '[TESTE] Brioche PJ', '{0,1,2,3,4,5,6}', true, 'un', false, false),
-  ('teste-focaccia-pj', '[TESTE] Focaccia PJ', '{0,1,2,3,4,5,6}', true, 'kg', false, false)
+  ('teste-focaccia-pj', '[TESTE] Focaccia PJ', '{0,1,2,3,4,5,6}', true, 'kg', false, false),
+  ('teste-produto-congelado', '[TESTE] Produto Congelado', '{0,1,2,3,4,5,6}', true, 'un', false, false)
 on conflict (id) do update set
   name = excluded.name,
   days = excluded.days,
@@ -97,6 +98,41 @@ on conflict (id) do update set
   unit = excluded.unit,
   is_special = excluded.is_special,
   is_shelf = excluded.is_shelf;
+
+-- Cenario visivel no Preview para provar a transicao: o congelado nasce pelo
+-- catalogo unificado e chega ao planejamento pelo vinculo explicito, sem um
+-- segundo frozen_product legado para o mesmo pao.
+insert into public.products (
+  id, name, category, active, sort_order, unit, kind,
+  is_fabricacao_propria, production_days, production_area, is_pj,
+  legacy_bread_id
+)
+values (
+  '10000000-0000-4000-8000-000000000023',
+  '[TESTE] Produto Congelado',
+  'Paes',
+  true,
+  230,
+  'un',
+  'final',
+  true,
+  '{0,1,2,3,4,5,6}',
+  'padaria',
+  true,
+  'teste-produto-congelado'
+)
+on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  active = excluded.active,
+  sort_order = excluded.sort_order,
+  unit = excluded.unit,
+  kind = excluded.kind,
+  is_fabricacao_propria = excluded.is_fabricacao_propria,
+  production_days = excluded.production_days,
+  production_area = excluded.production_area,
+  is_pj = excluded.is_pj,
+  legacy_bread_id = excluded.legacy_bread_id;
 
 -- Cenario comercial PJ: tabela de preco, clientes e pedidos.
 --
@@ -814,6 +850,45 @@ values (
   '50000000-0000-4000-8000-000000000003',
   'jc-freezer',
   30,
+  now()
+)
+on conflict (id) do update set
+  frozen_product_id = excluded.frozen_product_id,
+  location = excluded.location,
+  quantity = excluded.quantity,
+  updated_at = excluded.updated_at;
+
+insert into public.frozen_products (
+  id, product_id, product_source, product_name, unit,
+  min_stock, active, store, visible_stores
+)
+values (
+  '50000000-0000-4000-8000-000000000004',
+  '10000000-0000-4000-8000-000000000023',
+  'product',
+  '[TESTE] Produto Congelado',
+  'un',
+  0,
+  true,
+  'jc',
+  array['jc']::text[]
+)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  unit = excluded.unit,
+  min_stock = excluded.min_stock,
+  active = excluded.active,
+  store = excluded.store,
+  visible_stores = excluded.visible_stores;
+
+insert into public.frozen_stock (id, frozen_product_id, location, quantity, updated_at)
+values (
+  '51000000-0000-4000-8000-000000000004',
+  '50000000-0000-4000-8000-000000000004',
+  'jc-freezer',
+  6,
   now()
 )
 on conflict (id) do update set
