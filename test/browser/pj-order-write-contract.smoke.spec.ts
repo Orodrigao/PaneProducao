@@ -24,6 +24,12 @@ function futureDelivery(): string {
   return date.toISOString().slice(0, 10)
 }
 
+async function addBrioche(page: Page) {
+  const search = page.getByPlaceholder('Digite ou clique pra ver produtos da tabela')
+  await search.fill('Brioche PJ')
+  await search.locator('..').locator('span').filter({ hasText: /^\[TESTE\] Brioche PJ/ }).first().click()
+}
+
 test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo pedido', async ({ page, request }) => {
   test.setTimeout(120_000)
   await enterWithPreviewAccount(page)
@@ -56,8 +62,7 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
   try {
     await page.goto('/pedidos-pj?legado=1&novo=1')
     await page.locator('select').selectOption({ label: '[TESTE] Bistro Cliente PJ' })
-    await page.getByPlaceholder('Digite ou clique pra ver produtos da tabela').fill('Brioche PJ')
-    await page.getByText('[TESTE] Brioche PJ', { exact: true }).click()
+    await addBrioche(page)
     await page.locator('input[type="date"]').fill(futureDelivery())
 
     await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
@@ -69,8 +74,7 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
     await page.reload()
     await page.getByRole('tab', { name: '+ Novo pedido', exact: true }).click()
     await page.locator('select').selectOption({ label: '[TESTE] Cafe Cliente PJ' })
-    await page.getByPlaceholder('Digite ou clique pra ver produtos da tabela').fill('Brioche PJ')
-    await page.getByText('[TESTE] Brioche PJ', { exact: true }).click()
+    await addBrioche(page)
     await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
     await expect(page).toHaveURL(/pedido=/)
 
@@ -134,8 +138,7 @@ test('sucesso no modo padrão abre o pedido na nova jornada', async ({ page }) =
 
   await page.goto('/pedidos-pj?legado=1&novo=1')
   await page.locator('select').selectOption({ label: '[TESTE] Bistro Cliente PJ' })
-  await page.getByPlaceholder('Digite ou clique pra ver produtos da tabela').fill('Brioche PJ')
-  await page.getByText('[TESTE] Brioche PJ', { exact: true }).click()
+  await addBrioche(page)
   await page.locator('input[type="date"]').fill(futureDelivery())
   await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
 
@@ -161,8 +164,7 @@ test('recusa confirmada libera a correção do rascunho', async ({ page }) => {
 
   await page.goto('/pedidos-pj?legado=1&novo=1')
   await page.locator('select').selectOption({ label: '[TESTE] Bistro Cliente PJ' })
-  await page.getByPlaceholder('Digite ou clique pra ver produtos da tabela').fill('Brioche PJ')
-  await page.getByText('[TESTE] Brioche PJ', { exact: true }).click()
+  await addBrioche(page)
   const quantity = page.getByLabel('Quantidade de [TESTE] Brioche PJ')
   await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Salvar pedido', exact: true })).toBeEnabled()
