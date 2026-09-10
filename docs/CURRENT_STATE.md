@@ -1,11 +1,10 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-09
+**Data de referência:** 2026-09-10
 
-**Base observada:** `origin/main` em `73f6369`. A revisão de 2026-09-09 cobriu
-a jornada nova de Pedidos PJ, da ficha separada por etapas à ativação controlada
-do primeiro pedido real. As demais seções conservam suas datas de revisão
-anteriores.
+**Base observada:** `origin/main` em `0cef017`. A revisão de 2026-09-10 cobriu
+a classificação operacional na programação PJ, no Forno e no saldo dos produtos
+assados. As demais seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -395,10 +394,17 @@ para produção planejada e/ou lançamento sem ordem. Cadastros antigos de
 fabricação própria continuam funcionando com a classificação pendente, sem
 inferência automática por nome ou categoria.
 
-Esta é uma capacidade parcial: Forno, Cozinha e Pedidos PJ ainda não usam os
-novos campos para decidir seus fluxos. Antes dessa troca, o catálogo legado
-precisa ser revisado e todo consumidor novo deve tratar explicitamente o estado
-pendente. A classificação não gera ordens de componentes ou semiacabados.
+Pedidos PJ e Forno usam essa classificação para produtos cujo processo final é
+`forno`. Um produto classificado pode ser programado e confirmado sem depender
+de cadastro duplicado em `breads`; a programação, o realizado, o histórico e o
+saldo guardam sua identidade e uma fotografia do nome e da unidade. Registros
+antigos continuam identificados como pão legado, sem reescrita do histórico.
+
+Produtos sem classificação continuam visíveis na fila PJ, mas bloqueados com o
+motivo. `montagem` e `preparo` também não entram no Forno e ainda não recebem
+programação PJ: essa liberação depende da tela de produção da área responsável.
+A Cozinha conserva seu fluxo atual de lotes com ou sem ordem. A classificação
+não gera ordens de componentes ou semiacabados.
 
 ### CNM
 

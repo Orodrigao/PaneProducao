@@ -12,6 +12,11 @@ const breads: PjPrintBreadSource[] = [
 ]
 
 describe('folha de pães com produção PJ', () => {
+  it('recarrega o PJ do dia imediatamente depois de uma nova programação', () => {
+    expect(productionPageSource).toContain("window.addEventListener('pj-production-scheduled', refreshAfterScheduling)")
+    expect(productionPageSource).toContain("window.removeEventListener('pj-production-scheduled', refreshAfterScheduling)")
+  })
+
   it('consulta a produção PJ de hoje mesmo quando a folha das lojas está no dia seguinte', () => {
     const geolarScreen = productionPageSource.slice(
       productionPageSource.indexOf('function GeolarScreen'),
@@ -76,6 +81,29 @@ describe('folha de pães com produção PJ', () => {
       pjQuantity: 40,
       total: 40,
     })
+  })
+
+  it('inclui produto de Forno sem cadastro duplicado em pães', () => {
+    expect(buildPjPrintSheet(breads, [{
+      product_source: 'product',
+      product_id: 'produto-sem-vinculo',
+      product_name: 'Baguete de Alecrim',
+      production_unit: 'un',
+      quantity: 12,
+    }])).toContainEqual({
+      breadId: 'product:produto-sem-vinculo',
+      breadName: 'Baguete de Alecrim',
+      storeQuantities: [0, 0, 0],
+      storeTotal: 0,
+      pjQuantity: 12,
+      total: 12,
+    })
+  })
+
+  it('usa o contrato novo com reserva para a versão anterior do banco', () => {
+    expect(productionPageSource).toContain("supabase.rpc('list_pj_production_for_oven_v2'")
+    expect(productionPageSource).toContain("supabase.rpc('list_pj_production_for_oven'")
+    expect(productionPageSource).toContain('isMissingPjPrintContract(error)')
   })
 
   it('soma quantidade PJ numérica recebida como texto', () => {

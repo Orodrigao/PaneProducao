@@ -8,7 +8,9 @@ export const OVEN_LOSS_REASONS = [
 export type OvenLossReason = typeof OVEN_LOSS_REASONS[number]
 
 export interface OvenPlanRow {
-  bread_id: string
+  bread_id?: string | null
+  product_source?: string | null
+  product_id?: string | null
   quantity: number | null
 }
 
@@ -34,13 +36,27 @@ export function ovenLotCode(isoDate: string): string {
   return `L${month}${day}`
 }
 
+export function ovenProductKey(productSource: string, productId: string): string {
+  return `${productSource}:${productId}`
+}
+
+export function ovenPlanRowKey(row: OvenPlanRow): string | null {
+  if (row.product_id) {
+    return ovenProductKey(row.product_source === 'product' ? 'product' : 'bread', row.product_id)
+  }
+  // Consumidores antigos agregam apenas por bread_id. Manter essa forma evita
+  // alterar relatórios que ainda não trabalham com duas origens de identidade.
+  return row.bread_id || null
+}
+
 export function aggregateOvenPlan(rows: OvenPlanRow[]): Map<string, number> {
   const result = new Map<string, number>()
 
   for (const row of rows) {
     const quantity = Number(row.quantity ?? 0)
-    if (!row.bread_id || !Number.isFinite(quantity) || quantity <= 0) continue
-    result.set(row.bread_id, (result.get(row.bread_id) ?? 0) + quantity)
+    const key = ovenPlanRowKey(row)
+    if (!key || !Number.isFinite(quantity) || quantity <= 0) continue
+    result.set(key, (result.get(key) ?? 0) + quantity)
   }
 
   return result

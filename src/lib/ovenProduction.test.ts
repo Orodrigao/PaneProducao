@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateOvenPlan,
   ovenLotCode,
+  ovenProductKey,
   parseOvenQuantity,
   validateOvenConfirmation,
 } from './ovenProduction'
@@ -26,6 +27,16 @@ describe('aggregateOvenPlan', () => {
 
     expect(result.get('integral')).toBe(20)
     expect(result.get('italiano')).toBe(5)
+  })
+
+  it('não mistura produto unificado com a identidade histórica', () => {
+    const result = aggregateOvenPlan([
+      { product_source: 'bread', product_id: 'mesmo-id', quantity: 2 },
+      { product_source: 'product', product_id: 'mesmo-id', quantity: 3 },
+    ])
+
+    expect(result.get(ovenProductKey('bread', 'mesmo-id'))).toBe(2)
+    expect(result.get(ovenProductKey('product', 'mesmo-id'))).toBe(3)
   })
 
   it('ignora quantidades vazias, inválidas ou não positivas', () => {
