@@ -463,7 +463,7 @@ with test_schedule as (
         when 1 then 1
         when 2 then 1
         when 3 then 1
-        when 4 then 2
+        when 4 then 1
         when 5 then 1
         when 6 then 2
       end::integer
@@ -990,7 +990,7 @@ with test_schedule as (
         when 1 then 1
         when 2 then 1
         when 3 then 1
-        when 4 then 2
+        when 4 then 1
         when 5 then 1
         when 6 then 2
       end::integer
@@ -1076,7 +1076,7 @@ with test_schedule as (
         when 1 then 1
         when 2 then 1
         when 3 then 1
-        when 4 then 2
+        when 4 then 1
         when 5 then 1
         when 6 then 2
       end::integer
@@ -1191,7 +1191,7 @@ with test_schedule as (
         when 1 then 1
         when 2 then 1
         when 3 then 1
-        when 4 then 2
+        when 4 then 1
         when 5 then 1
         when 6 then 2
       end::integer

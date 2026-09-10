@@ -1,10 +1,23 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
+import { readFile } from 'node:fs/promises'
 import {
+  assertSeedProductionCalendars,
   buildServerOnlySql,
   readProjectId,
   verifyPreviewSeedRepeatability,
 } from './verify-preview-seed-repeatability.mjs'
+
+describe('assertSeedProductionCalendars', () => {
+  it('prova os sete dias e reprova a antiga excecao de quinta-feira', async () => {
+    const seed = await readFile(new URL('../supabase/seed.sql', import.meta.url), 'utf8')
+    assert.doesNotThrow(() => assertSeedProductionCalendars(seed))
+    assert.throws(
+      () => assertSeedProductionCalendars(seed.replace('when 4 then 1', 'when 4 then 2')),
+      /dia 4: esperado \+1/,
+    )
+  })
+})
 
 describe('buildServerOnlySql', () => {
   it('envia uma transacao ao servidor e recusa comandos locais do psql', () => {
@@ -28,8 +41,9 @@ describe('readProjectId', () => {
 
 describe('verifyPreviewSeedRepeatability', () => {
   it('desloca o plano e reaplica o arquivo canonico no Postgres local', async () => {
+    const canonicalSeed = await readFile(new URL('../supabase/seed.sql', import.meta.url), 'utf8')
     const readFileImpl = mock.fn(async (file) => (
-      file.endsWith('config.toml') ? 'project_id = "pane-processo"' : 'select 42;'
+      file.endsWith('config.toml') ? 'project_id = "pane-processo"' : canonicalSeed
     ))
     const runProcess = mock.fn(async () => ({ stdout: '', stderr: '' }))
 
@@ -50,7 +64,7 @@ describe('verifyPreviewSeedRepeatability', () => {
     assert.match(runProcess.mock.calls[0].arguments[2].input, /rodrigao\+teste@gmail\.com/)
     assert.match(runProcess.mock.calls[0].arguments[2].input, /fixture Auth da prova ja existe/)
     assert.doesNotMatch(runProcess.mock.calls[0].arguments[2].input, /on conflict/i)
-    assert.match(runProcess.mock.calls[1].arguments[2].input, /select 42;/)
+    assert.match(runProcess.mock.calls[1].arguments[2].input, /with test_schedule as/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /2000-01-01/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /2000-01-02/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /7fc00000-0000-4000-8000-000000000002/)
@@ -73,7 +87,7 @@ describe('verifyPreviewSeedRepeatability', () => {
       recuoDasDatas < criacaoDaCobranca,
       'a data precisa recuar antes de existir cobranca, pelo mesmo motivo da programacao',
     )
-    assert.match(runProcess.mock.calls[3].arguments[2].input, /select 42;/)
+    assert.match(runProcess.mock.calls[3].arguments[2].input, /with test_schedule as/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /A reaplicacao perdeu o vinculo/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /historico ficticio nao foi recriado/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /item do historico ficticio nao foi recriado/)
@@ -85,6 +99,7 @@ describe('verifyPreviewSeedRepeatability', () => {
     assert.match(runProcess.mock.calls[4].arguments[2].input, /pedido reaproveitado da JC nao saiu da data de hoje/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /plano de reaproveitamento ficticio nao sobreviveu inteiro/)
     assert.match(runProcess.mock.calls[4].arguments[2].input, /plano de reaproveitamento nao voltou para a data-alvo de hoje/)
+    assert.match(runProcess.mock.calls[4].arguments[2].input, /sobra da Geolar nao voltou para a vespera exata/)
     assert.match(runProcess.mock.calls[2].arguments[2].input, /update public\.bread_reuse_plans/)
     const recuoDoPedidoNovo = viradaPj.indexOf("where id = '30000000-0000-4000-8000-000000000005'")
     const avancoDoReaproveitado = viradaPj.indexOf("where id = '30000000-0000-4000-8000-000000000004'")
