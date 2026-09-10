@@ -7,12 +7,14 @@ import {
   groupKitchenItems,
   isEmptyKitchenBatchRequest,
   isKitchenDateOpen,
+  kitchenDaySummaryTotals,
+  kitchenTotalsByUnit,
   kitchenStoresForUser,
   kitchenTotalsByProduct,
+  normalizeKitchenPlanRow,
   normalizeKitchenStore,
   sanitizeKitchenQuantity,
   shiftDateKey,
-  totalKitchenQuantity,
   type KitchenEntry,
 } from './kitchenProduction'
 
@@ -26,6 +28,10 @@ const entry = (
   corrected_by: null,
   cancelled_at: null,
   cancelled_by: null,
+  product_name: null,
+  production_unit: null,
+  production_process: null,
+  production_area: null,
   ...overrides,
 })
 
@@ -80,8 +86,9 @@ describe('canLaunchKitchenProduction', () => {
 })
 
 describe('sanitizeKitchenQuantity', () => {
-  it('corta fração, negativo e texto', () => {
-    expect(sanitizeKitchenQuantity(7.9)).toBe(7)
+  it('preserva milésimos em kg e exige inteiro nas demais unidades', () => {
+    expect(sanitizeKitchenQuantity(7.125, 'kg')).toBe(7.125)
+    expect(sanitizeKitchenQuantity(7.9, 'un')).toBe(7)
     expect(sanitizeKitchenQuantity(-3)).toBe(0)
     expect(sanitizeKitchenQuantity('abc')).toBe(0)
     expect(sanitizeKitchenQuantity(null)).toBe(0)
@@ -113,9 +120,11 @@ describe('buildKitchenBatchRequests', () => {
   it('cada salvamento gera somente os novos lotes informados', () => {
     const firstSave = buildKitchenBatchRequests({
       quantities: { 'prod-a': 4, 'prod-b': 0 },
+      items: [{ id: 'prod-a', name: 'A', category: null, unit: 'un' }],
     })
     const secondSave = buildKitchenBatchRequests({
       quantities: { 'prod-a': 3, 'prod-b': 0 },
+      items: [{ id: 'prod-a', name: 'A', category: null, unit: 'un' }],
     })
 
     expect(firstSave).toEqual([{ product_id: 'prod-a', quantity: 4 }])
@@ -125,6 +134,7 @@ describe('buildKitchenBatchRequests', () => {
   it('ignora zero e limita cada lote ao teto aceito pelo banco', () => {
     const batches = buildKitchenBatchRequests({
       quantities: { zero: 0, negative: -2, maximum: 4000 },
+      items: [{ id: 'maximum', name: 'Máximo', category: null, unit: 'un' }],
     })
 
     expect(batches).toEqual([{ product_id: 'maximum', quantity: 999 }])
@@ -212,8 +222,46 @@ describe('agrupamento e totais', () => {
     ])
   })
 
-  it('soma o total dos campos ignorando lixo', () => {
-    expect(totalKitchenQuantity({ a: 6, b: 4, c: -2 })).toBe(10)
+  it('separa totais por unidade para não somar quilos com peças', () => {
+    expect(kitchenTotalsByUnit(
+      { a: 6, b: 4.125, c: -2 },
+      [
+        { id: 'a', name: 'A', category: null, unit: 'un' },
+        { id: 'b', name: 'B', category: null, unit: 'kg' },
+        { id: 'c', name: 'C', category: null, unit: 'un' },
+      ],
+    )).toEqual({ un: 6, kg: 4.125 })
+  })
+
+  it('preserva nome e unidade fotografados mesmo se o cadastro atual mudou', () => {
+    const summary = buildKitchenDaySummary(
+      [{ id: 'prod-a', name: 'Nome novo', category: 'Outra', unit: 'un' }],
+      [entry({
+        id: 'row-1',
+        product_id: 'prod-a',
+        quantity: 2.375,
+        product_name: 'Pizza original',
+        production_unit: 'kg',
+      })],
+    )
+
+    expect(summary).toEqual([
+      { product_id: 'prod-a', name: 'Pizza original', unit: 'kg', quantity: 2.375 },
+    ])
+    expect(kitchenDaySummaryTotals(summary)).toEqual({ kg: 2.375 })
+  })
+})
+
+describe('normalizeKitchenPlanRow', () => {
+  it('mostra excedente sem bloquear produção acima do plano', () => {
+    expect(normalizeKitchenPlanRow({
+      product_id: 'a',
+      product_name: 'Pastinha',
+      production_unit: 'un',
+      production_process: 'preparo',
+      planned_quantity: '30',
+      produced_quantity: '32',
+    })).toMatchObject({ plannedQuantity: 30, producedQuantity: 32, balanceQuantity: -2 })
   })
 })
 

@@ -5,6 +5,7 @@ import { AlertTriangle, Check, RefreshCw, Snowflake } from 'lucide-react'
 import {
   formatPjProductionQuantity,
   groupPjProductionQueue,
+  pjProductionDestination,
   validatePjProductionSelection,
   type PjProductionQueueItem,
   type PjProductionQueueRow,
@@ -158,10 +159,10 @@ export function PjProductionPlanningPanel() {
       const frozen = selection.frozenQuantity > 0
         ? `, sendo ${formatPjProductionQuantity(selection.frozenQuantity, 'un')} congelados`
         : ''
-      return `${item.productName}: ${formatPjProductionQuantity(selection.quantity, item.pricingUnit)}${frozen}`
+      return `${item.productName}: ${formatPjProductionQuantity(selection.quantity, item.pricingUnit)}${frozen} → ${pjProductionDestination(item)}`
     }).join('\n')
     if (!window.confirm(
-      `Confira a programação de hoje:\n\n${confirmation}\n\nIsto entra na produção do Forno agora. Depois dá para programar mais, mas não dá para desfazer o que entrou.`,
+      `Confira a programação de hoje:\n\n${confirmation}\n\nIsto entra agora na área indicada. Depois dá para programar mais, mas não dá para desfazer o que entrou.`,
     )) return
 
     const stableRequestId = requestIds[groupKey] ?? requestId()
@@ -175,7 +176,7 @@ export function PjProductionPlanningPanel() {
         const { [groupKey]: _done, ...rest } = current
         return rest
       })
-      setSuccess(`${selections.length} produto(s) entraram na produção e no Forno de hoje.`)
+      setSuccess(`${selections.length} produto(s) entraram na produção de hoje.`)
       window.dispatchEvent(new CustomEvent('pj-production-scheduled'))
       await loadQueue()
     } catch (scheduleError) {
@@ -210,7 +211,8 @@ export function PjProductionPlanningPanel() {
       </div>
 
       <div className="ps-warning no-print" style={{ marginTop: 12, fontSize: 12.5 }}>
-        Sobras das lojas não atendem PJ. Congelados só entram quando você informar a quantidade abaixo.
+        Cada produto segue para sua área responsável. Sobras das lojas não atendem PJ;
+        congelados existem apenas para itens do Forno.
       </div>
 
       {loading && <div className="ps-empty" style={{ padding: 24 }}>Carregando pedidos PJ...</div>}
@@ -289,12 +291,17 @@ export function PjProductionPlanningPanel() {
                         Pedido {formatPjProductionQuantity(item.orderedQuantity, item.pricingUnit)}
                         {item.scheduledQuantity > 0 && ` · já programado ${formatPjProductionQuantity(item.scheduledQuantity, item.pricingUnit)}`}
                         {' · '}falta {formatPjProductionQuantity(item.pendingQuantity, item.pricingUnit)}
+                        {' · '}destino {pjProductionDestination(item)}
                       </span>
                     </span>
                   </label>
 
                   {item.mappingError && (
                     <div className="ps-warning" role="alert" style={{ fontSize: 12 }}>{item.mappingError}</div>
+                  )}
+
+                  {item.catalogWarning && (
+                    <div className="ps-warning" style={{ fontSize: 12 }}>{item.catalogWarning}</div>
                   )}
 
                   {scheduledToday && (
@@ -317,21 +324,23 @@ export function PjProductionPlanningPanel() {
                           style={{ marginTop: 4 }}
                         />
                       </label>
-                      <label style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
-                        <Snowflake size={12} /> Usar congelados
-                        <input
-                          className="ps-input"
-                          type="text"
-                          inputMode="numeric"
-                          value={draft.frozenQuantity}
-                          onChange={event => updateDraft(item.orderId, { frozenQuantity: event.target.value })}
-                          aria-label={`Congelados para ${item.productName}`}
-                          style={{ marginTop: 4 }}
-                        />
-                        <span style={{ display: 'block', marginTop: 3 }}>
-                          {formatPjProductionQuantity(item.frozenAvailable, 'un')} em estoque
-                        </span>
-                      </label>
+                      {item.productionProcess === 'forno' && (
+                        <label style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                          <Snowflake size={12} /> Usar congelados
+                          <input
+                            className="ps-input"
+                            type="text"
+                            inputMode="numeric"
+                            value={draft.frozenQuantity}
+                            onChange={event => updateDraft(item.orderId, { frozenQuantity: event.target.value })}
+                            aria-label={`Congelados para ${item.productName}`}
+                            style={{ marginTop: 4 }}
+                          />
+                          <span style={{ display: 'block', marginTop: 3 }}>
+                            {formatPjProductionQuantity(item.frozenAvailable, 'un')} em estoque
+                          </span>
+                        </label>
+                      )}
                     </div>
                   )}
                 </div>

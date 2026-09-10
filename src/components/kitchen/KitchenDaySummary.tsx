@@ -1,12 +1,12 @@
-import type { KitchenDaySummaryItem } from '@/lib/kitchenProduction'
+import { formatKitchenQuantity, type KitchenDaySummaryItem } from '@/lib/kitchenProduction'
 
 interface KitchenDaySummaryProps {
   title: string
   rows: readonly KitchenDaySummaryItem[]
-  total: number
+  totals: Readonly<Record<string, number>>
 }
 
-export function KitchenDaySummary({ title, rows, total }: KitchenDaySummaryProps) {
+export function KitchenDaySummary({ title, rows, totals }: KitchenDaySummaryProps) {
   return (
     <div style={{ display: 'grid', gap: 9 }}>
       <b style={{ fontSize: 14 }}>{title}</b>
@@ -29,10 +29,9 @@ export function KitchenDaySummary({ title, rows, total }: KitchenDaySummaryProps
             >
               <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
                 {row.name}
-                {row.unit ? ` · ${row.unit}` : ''}
               </span>
               <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
-                {row.quantity}
+                {formatKitchenQuantity(row.quantity, row.unit)}
               </b>
             </div>
           ))}
@@ -50,7 +49,9 @@ export function KitchenDaySummary({ title, rows, total }: KitchenDaySummaryProps
         <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontWeight: 700 }}>
           Total
         </span>
-        <b style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>{total}</b>
+        <b style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>
+          {Object.entries(totals).map(([unit, total]) => formatKitchenQuantity(total, unit)).join(' · ') || '0'}
+        </b>
       </div>
     </div>
   )

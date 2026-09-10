@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   groupPjProductionQueue,
+  pjProductionDestination,
   parseFrozenProductionQuantity,
   parsePjProductionQuantity,
   validatePjProductionSelection,
@@ -25,9 +26,23 @@ function row(patch: Partial<PjProductionQueueRow> = {}): PjProductionQueueRow {
     frozen_available: 40,
     last_scheduled_date: null,
     mapping_error: null,
+    production_process: 'forno',
+    production_area: 'padaria',
+    catalog_warning: null,
     ...patch,
   }
 }
+
+describe('pjProductionDestination', () => {
+  it('manda montagem da cozinha para a Cozinha, nunca para o Forno', () => {
+    const item = groupPjProductionQueue([row({
+      canonical_bread_id: null,
+      production_process: 'montagem',
+      production_area: 'cozinha',
+    })])[0].items[0]
+    expect(pjProductionDestination(item)).toBe('Cozinha')
+  })
+})
 
 describe('groupPjProductionQueue', () => {
   it('mantém os produtos do mesmo pedido juntos e ordena pela entrega mais próxima', () => {
@@ -86,6 +101,9 @@ describe('validatePjProductionSelection', () => {
     frozenAvailable: 40,
     lastScheduledDate: null,
     mappingError: null,
+    productionProcess: 'forno',
+    productionArea: 'padaria',
+    catalogWarning: null,
   }
 
   it('permite dividir 600 em uma programação de 300', () => {
