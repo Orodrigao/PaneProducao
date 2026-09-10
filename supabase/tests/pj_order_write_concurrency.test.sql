@@ -193,6 +193,7 @@ create temporary table retry_payload as
 select request_payload->'expected_rows' as rows
 from private.pj_order_write_requests
 where request_id='9e000000-0000-4000-8000-000000000102';
+grant select on retry_payload to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000001',true);
@@ -219,6 +220,7 @@ reset role;
 
 create temporary table snapshot_anterior as
 select pg_temp.versao('9e000000-0000-4000-8000-000000000201') as rows;
+grant select on snapshot_anterior to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000001',true);
@@ -297,6 +299,7 @@ reset role;
 
 create temporary table snapshot_antes_conferencia as
 select pg_temp.versao('9e000000-0000-4000-8000-000000000201') as rows;
+grant select on snapshot_antes_conferencia to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000003',true);

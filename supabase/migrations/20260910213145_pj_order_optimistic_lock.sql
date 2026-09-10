@@ -109,7 +109,6 @@ begin
   for update;
   perform set_config('pane.pj_dispatch_rpc', 'on', true);
   v_result := private.confirm_pj_order_dispatch_lock_order_impl(p_order_group_id);
-  perform set_config('pane.pj_dispatch_rpc', '', true);
   return v_result;
 end;
 $$;
