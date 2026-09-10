@@ -79,9 +79,11 @@ select lives_ok($$select public.schedule_pj_production(private.data_na_padaria()
 select lives_ok($$select public.schedule_pj_production(private.data_na_padaria(),
   '[{"order_id":"98000000-0000-4000-8000-000000000102","quantity":30,"frozen_quantity":0}]',
   '98000000-0000-4000-8000-000000000302')$$,'programa item que nao aceita producao livre');
+reset role;
 select is((select production_process from public.pj_production_schedules
   where order_id='98000000-0000-4000-8000-000000000101'),'montagem','programacao congela o processo');
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-000000000002',true);
 select throws_ok($$select * from public.list_pj_production_queue_v2()$$,
   '42501','Usuario sem permissao para organizar a producao PJ.',
