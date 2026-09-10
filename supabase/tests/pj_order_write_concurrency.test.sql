@@ -84,30 +84,27 @@ select ok(
   ),
   'usuario autenticado pode chegar ao contrato, sujeito a validacao interna'
 );
-select like(
+select ok(
   pg_get_functiondef(
     'public.save_pj_order_dispatch_quantities(uuid,uuid,jsonb,timestamptz)'::regprocedure
-  ),
-  '%order by order_row.id%for update%',
+  ) ilike '%order by order_row.id%for update%',
   'conferencia pre-trava todas as linhas na ordem canonica'
 );
-select like(
-  pg_get_functiondef('public.confirm_pj_order_dispatch(uuid)'::regprocedure),
-  '%order by order_row.id%for update%',
+select ok(
+  pg_get_functiondef('public.confirm_pj_order_dispatch(uuid)'::regprocedure)
+    ilike '%order by order_row.id%for update%',
   'saida pre-trava todas as linhas na ordem canonica'
 );
-select like(
+select ok(
   pg_get_functiondef(
     'private.schedule_pj_production_contract_impl(date,jsonb,uuid)'::regprocedure
-  ),
-  '%order by order_row.id%for update%',
+  ) ilike '%order by order_row.id%for update%',
   'producao pre-trava os itens na ordem canonica antes do loop legado'
 );
-select like(
+select ok(
   pg_get_functiondef(
     'private.schedule_pj_production_contract_impl(date,jsonb,uuid)'::regprocedure
-  ),
-  '%pg_advisory_xact_lock%pane-pj-production-schedule%',
+  ) ilike '%pg_advisory_xact_lock%pane-pj-production-schedule%',
   'producao serializa a programacao antes de qualquer trava de linha ou saldo'
 );
 select ok(

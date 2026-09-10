@@ -115,9 +115,9 @@ select extensions.dblink_exec('pj_lock_holder', 'commit');
 create temporary table remote_schedule_result as
 select result
 from extensions.dblink_get_result('pj_lock_worker', false) as response(result jsonb);
-select like(
-  extensions.dblink_error_message('pj_lock_worker'),
-  '%A programacao PJ deve ser feita para hoje.%',
+select ok(
+  extensions.dblink_error_message('pj_lock_worker')
+    ilike '%A programacao PJ deve ser feita para hoje.%',
   'segunda sessao prossegue depois da liberacao sem deadlock'
 );
 select extensions.dblink_exec('pj_lock_worker', 'rollback');
