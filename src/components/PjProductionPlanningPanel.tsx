@@ -176,6 +176,7 @@ export function PjProductionPlanningPanel() {
         return rest
       })
       setSuccess(`${selections.length} produto(s) entraram na produção e no Forno de hoje.`)
+      window.dispatchEvent(new CustomEvent('pj-production-scheduled'))
       await loadQueue()
     } catch (scheduleError) {
       setError(operationalMessage(scheduleError))

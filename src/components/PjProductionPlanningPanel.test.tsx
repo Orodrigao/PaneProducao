@@ -26,6 +26,10 @@ describe('painel de programação PJ', () => {
     expect(source).toContain("setRequestIds(current => ({ ...current, [groupKey]: stableRequestId }))")
   })
 
+  it('avisa a folha do dia para atualizar assim que a programação é confirmada', () => {
+    expect(source).toContain("window.dispatchEvent(new CustomEvent('pj-production-scheduled'))")
+  })
+
   it('pede uma conferência explícita antes de tornar a programação definitiva', () => {
     expect(source).toContain('Confira a programação de hoje')
     expect(source).toContain('não dá para desfazer o que entrou')

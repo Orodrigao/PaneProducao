@@ -1610,6 +1610,12 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
     void loadPjPrintProduction()
   }, [loadPjPrintProduction])
 
+  useEffect(() => {
+    const refreshAfterScheduling = () => void loadPjPrintProduction()
+    window.addEventListener('pj-production-scheduled', refreshAfterScheduling)
+    return () => window.removeEventListener('pj-production-scheduled', refreshAfterScheduling)
+  }, [loadPjPrintProduction])
+
   const printRows = buildPjPrintSheet(
     breads.map(bread => ({
       breadId: bread.id,

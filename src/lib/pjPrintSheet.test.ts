@@ -12,6 +12,11 @@ const breads: PjPrintBreadSource[] = [
 ]
 
 describe('folha de pães com produção PJ', () => {
+  it('recarrega o PJ do dia imediatamente depois de uma nova programação', () => {
+    expect(productionPageSource).toContain("window.addEventListener('pj-production-scheduled', refreshAfterScheduling)")
+    expect(productionPageSource).toContain("window.removeEventListener('pj-production-scheduled', refreshAfterScheduling)")
+  })
+
   it('consulta a produção PJ de hoje mesmo quando a folha das lojas está no dia seguinte', () => {
     const geolarScreen = productionPageSource.slice(
       productionPageSource.indexOf('function GeolarScreen'),
