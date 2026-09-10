@@ -175,14 +175,18 @@ select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000003'
 select lives_ok($q$select public.save_pj_order_dispatch_quantities(
   '9f000000-0000-4000-8000-000000000111','9f000000-0000-4000-8000-000000000202',
   (select jsonb_agg(jsonb_build_object('order_id',id,'quantity',quantity,'reason',null))
-   from public.orders where order_group_id='9f000000-0000-4000-8000-000000000202'),null)$q$,
+   from public.list_pj_orders_for_dispatch()
+   where order_group_id='9f000000-0000-4000-8000-000000000202'),null)$q$,
   'contrato legado de conferencia continua funcionando depois do corte');
 select lives_ok($q$select public.confirm_pj_order_dispatch('9f000000-0000-4000-8000-000000000202')$q$,
   'contrato legado de saida continua funcionando depois do corte');
 select lives_ok($q$select public.transition_pj_flow_pilot(
   '9f000000-0000-4000-8000-000000000112','9f000000-0000-4000-8000-000000000203',0,'save',
-  (select jsonb_agg(jsonb_build_object('id',id,'quantity',quantity,'reason',null))
-   from public.orders where order_group_id='9f000000-0000-4000-8000-000000000203'))$q$,
+  (select jsonb_agg(jsonb_build_object('id',item.value->>'id',
+      'quantity',(item.value->>'ordered')::numeric,'reason',null))
+   from jsonb_array_elements(public.read_pj_flow_pilot()) flow(value)
+   cross join lateral jsonb_array_elements(flow.value->'items') item(value)
+   where (flow.value->>'id')::uuid='9f000000-0000-4000-8000-000000000203'))$q$,
   'jornada padrao continua salvando a conferencia depois do corte');
 select lives_ok($q$select public.transition_pj_flow_pilot(
   '9f000000-0000-4000-8000-000000000113','9f000000-0000-4000-8000-000000000203',1,'check')$q$,
