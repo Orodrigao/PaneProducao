@@ -19,8 +19,12 @@ const BILLED_PJ_ORDER_GROUP_ID = '70000000-0000-4000-8000-000000000001'
 const BILLED_PJ_RECEIVABLE_ID = '57000000-0000-4000-8000-000000000001'
 const BILLED_PJ_CUSTOMER_ID = '60000000-0000-4000-8000-000000000001'
 const REUSE_PLAN_ID = '56000000-0000-4000-8000-000000000001'
+const REUSE_LEFTOVER_ID = '53000000-0000-4000-8000-000000000001'
 const JC_REUSE_ORDER_ID = '30000000-0000-4000-8000-000000000004'
 const JC_NEW_ORDER_ID = '30000000-0000-4000-8000-000000000005'
+
+const EXPECTED_PRODUCTION_DAY_OFFSETS = [1, 1, 1, 1, 1, 1, 2]
+const PRODUCTION_CALENDAR_PATTERN = /case\s+extract\(dow from \(now\(\) at time zone 'America\/Sao_Paulo'\)::date\)([\s\S]*?)end::integer/g
 
 const AUTH_FIXTURE_SQL = `
 do $proof$
@@ -61,6 +65,25 @@ export function buildServerOnlySql(sql) {
   return `begin;\n${source}\ncommit;`
 }
 
+export function assertSeedProductionCalendars(seed) {
+  const calendars = [...String(seed ?? '').matchAll(PRODUCTION_CALENDAR_PATTERN)]
+  if (calendars.length !== 4) {
+    throw new Error(`O seed deve ter exatamente 4 calendarios de producao; encontrados: ${calendars.length}.`)
+  }
+
+  for (const [, body] of calendars) {
+    const offsets = new Map(
+      [...body.matchAll(/when\s+([0-6])\s+then\s+(\d+)/g)]
+        .map(([, day, offset]) => [Number(day), Number(offset)]),
+    )
+    for (const [day, expectedOffset] of EXPECTED_PRODUCTION_DAY_OFFSETS.entries()) {
+      if (offsets.get(day) !== expectedOffset) {
+        throw new Error(`Calendario do seed invalido no dia ${day}: esperado +${expectedOffset}.`)
+      }
+    }
+  }
+}
+
 export function defaultRunProcess(command, args, { input }) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
@@ -98,6 +121,7 @@ export async function verifyPreviewSeedRepeatability({
 } = {}) {
   const config = await readFileImpl(resolve(workdir, 'supabase/config.toml'), 'utf8')
   const seed = await readFileImpl(resolve(workdir, 'supabase/seed.sql'), 'utf8')
+  assertSeedProductionCalendars(seed)
   const containerName = `supabase_db_${readProjectId(config)}`
 
   await runLocalPsql({ containerName, sql: AUTH_FIXTURE_SQL, runProcess })
@@ -223,7 +247,7 @@ begin
         (now() at time zone 'America/Sao_Paulo')::date
         + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
             when 0 then 1 when 1 then 1 when 2 then 1 when 3 then 1
-            when 4 then 2 when 5 then 1 when 6 then 2
+            when 4 then 1 when 5 then 1 when 6 then 2
           end::integer
       )
   ) then
@@ -312,7 +336,13 @@ begin
   if not exists (
     select 1 from public.orders
     where id = '${JC_REUSE_ORDER_ID}'
-      and order_date > (now() at time zone 'America/Sao_Paulo')::date
+      and order_date = (
+        (now() at time zone 'America/Sao_Paulo')::date
+        + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+            when 0 then 1 when 1 then 1 when 2 then 1 when 3 then 1
+            when 4 then 1 when 5 then 1 when 6 then 2
+          end::integer
+      )
   ) then
     raise exception 'O pedido reaproveitado da JC nao saiu da data de hoje.';
   end if;
@@ -324,9 +354,29 @@ begin
   if not exists (
     select 1 from public.bread_reuse_plans
     where id = '${REUSE_PLAN_ID}'
-      and target_production_date > (now() at time zone 'America/Sao_Paulo')::date
+      and target_production_date = (
+        (now() at time zone 'America/Sao_Paulo')::date
+        + case extract(dow from (now() at time zone 'America/Sao_Paulo')::date)
+            when 0 then 1 when 1 then 1 when 2 then 1 when 3 then 1
+            when 4 then 1 when 5 then 1 when 6 then 2
+          end::integer
+      )
   ) then
     raise exception 'O plano de reaproveitamento nao voltou para a data-alvo de hoje.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.sobras leftover
+    join public.bread_reuse_plans reuse_plan
+      on reuse_plan.id = '${REUSE_PLAN_ID}'
+     and reuse_plan.store = leftover.store
+     and reuse_plan.bread_id = leftover.product_id
+    where leftover.id = '${REUSE_LEFTOVER_ID}'
+      and leftover.pending_quantity = reuse_plan.proposed_quantity
+      and leftover.record_date = reuse_plan.target_production_date - 1
+  ) then
+    raise exception 'A sobra da Geolar nao voltou para a vespera exata do reaproveitamento.';
   end if;
 end
 $proof$;
