@@ -23,6 +23,9 @@ values
   ('97200000-0000-4000-8000-000000000001', 'Producao Congelado Teste', 'producao', 'jc', true, '["/", "/forno"]'::jsonb),
   ('97200000-0000-4000-8000-000000000002', 'Vendas Congelado Teste', 'vendas', 'jc', true, '["/pedidos-pj"]'::jsonb);
 
+insert into public.app_user_permissions (user_id, permission_key, scope)
+values ('97200000-0000-4000-8000-000000000001', 'producao_pj.programar', 'jc');
+
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
 values
   ('teste-congelado-identidade', '[TESTE] Congelado Identidade', '{0,1,2,3,4,5,6}', true, 'un', false, false),

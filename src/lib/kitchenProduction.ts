@@ -21,6 +21,7 @@ export interface KitchenItem {
   name: string
   category: string | null
   unit: string | null
+  production_process?: 'montagem' | 'preparo' | null
 }
 
 export interface KitchenEntry {
@@ -34,6 +35,10 @@ export interface KitchenEntry {
   corrected_by: string | null
   cancelled_at: string | null
   cancelled_by: string | null
+  product_name: string | null
+  production_unit: string | null
+  production_process: string | null
+  production_area: string | null
 }
 
 export interface KitchenBatchRequest {
@@ -46,6 +51,25 @@ export interface KitchenDaySummaryItem {
   name: string
   unit: string | null
   quantity: number
+}
+
+export interface KitchenPlanRow {
+  product_id: string
+  product_name: string
+  production_unit: string
+  production_process: 'montagem' | 'preparo'
+  planned_quantity: number | string
+  produced_quantity: number | string
+}
+
+export interface KitchenPlanItem {
+  productId: string
+  productName: string
+  unit: string
+  process: 'montagem' | 'preparo'
+  plannedQuantity: number
+  producedQuantity: number
+  balanceQuantity: number
 }
 
 export function normalizeKitchenStore(value: string | null | undefined): KitchenStore | null {
@@ -81,10 +105,13 @@ export function canLaunchKitchenProduction(
 }
 
 /** Contagem de peça ou pote: inteira, nunca negativa, com teto igual ao do banco. */
-export function sanitizeKitchenQuantity(value: unknown): number {
+export function sanitizeKitchenQuantity(value: unknown, unit: string | null = 'un'): number {
   const parsed = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return 0
-  return Math.min(Math.trunc(parsed), KITCHEN_MAX_QUANTITY)
+  const limited = Math.min(parsed, KITCHEN_MAX_QUANTITY)
+  return unit === 'kg'
+    ? Math.round(limited * 1000) / 1000
+    : Math.trunc(limited)
 }
 
 export function shiftDateKey(dateKey: string, days: number): string {
@@ -119,10 +146,12 @@ export function groupKitchenItems(
 /** Cada clique em salvar representa novos lotes, nunca o acumulado do dia. */
 export function buildKitchenBatchRequests(params: {
   quantities: Readonly<Record<string, number>>
+  items: readonly KitchenItem[]
 }): KitchenBatchRequest[] {
+  const units = new Map(params.items.map(item => [item.id, item.unit]))
   const batches: KitchenBatchRequest[] = []
   for (const [product_id, rawQuantity] of Object.entries(params.quantities)) {
-    const quantity = sanitizeKitchenQuantity(rawQuantity)
+    const quantity = sanitizeKitchenQuantity(rawQuantity, units.get(product_id))
     if (quantity > 0) batches.push({ product_id, quantity })
   }
   return batches
@@ -141,7 +170,7 @@ export function kitchenTotalsByProduct(
   for (const entry of entries) {
     if (entry.cancelled_at) continue
     totals[entry.product_id] = (totals[entry.product_id] ?? 0)
-      + sanitizeKitchenQuantity(entry.quantity)
+      + sanitizeKitchenQuantity(entry.quantity, entry.production_unit)
   }
   return totals
 }
@@ -150,17 +179,75 @@ export function buildKitchenDaySummary(
   items: readonly KitchenItem[],
   entries: readonly KitchenEntry[],
 ): KitchenDaySummaryItem[] {
+  const products = new Map(items.map(item => [item.id, { name: item.name, unit: item.unit }]))
+  const snapshots = new Map<string, { name: string; unit: string | null }>()
+  for (const entry of entries) {
+    if (snapshots.has(entry.product_id)) continue
+    const current = products.get(entry.product_id)
+    snapshots.set(entry.product_id, {
+      name: entry.product_name || current?.name || 'Produto antigo',
+      unit: entry.production_unit || current?.unit || null,
+    })
+  }
+  for (const [productId, snapshot] of snapshots) {
+    products.set(productId, snapshot)
+  }
   const totals = kitchenTotalsByProduct(entries)
-  return items.flatMap(item => {
-    const quantity = totals[item.id] ?? 0
-    return quantity > 0
-      ? [{ product_id: item.id, name: item.name, unit: item.unit, quantity }]
-      : []
-  })
+  return Array.from(products, ([product_id, product]) => ({
+    product_id,
+    name: product.name,
+    unit: product.unit,
+    quantity: totals[product_id] ?? 0,
+  })).filter(item => item.quantity > 0)
 }
 
-export function totalKitchenQuantity(quantities: Readonly<Record<string, number>>): number {
-  return Object.values(quantities).reduce((total, value) => total + sanitizeKitchenQuantity(value), 0)
+export function kitchenTotalsByUnit(
+  quantities: Readonly<Record<string, number>>,
+  items: readonly KitchenItem[],
+): Record<string, number> {
+  const totals: Record<string, number> = {}
+  for (const item of items) {
+    const unit = item.unit || 'un'
+    const quantity = sanitizeKitchenQuantity(quantities[item.id], unit)
+    if (quantity > 0) totals[unit] = Math.round(((totals[unit] ?? 0) + quantity) * 1000) / 1000
+  }
+  return totals
+}
+
+export function kitchenDaySummaryTotals(
+  rows: readonly KitchenDaySummaryItem[],
+): Record<string, number> {
+  return kitchenTotalsByUnit(
+    Object.fromEntries(rows.map(row => [row.product_id, row.quantity])),
+    rows.map(row => ({
+      id: row.product_id,
+      name: row.name,
+      category: null,
+      unit: row.unit,
+    })),
+  )
+}
+
+export function normalizeKitchenPlanRow(row: KitchenPlanRow): KitchenPlanItem {
+  const plannedQuantity = Number(row.planned_quantity) || 0
+  const producedQuantity = Number(row.produced_quantity) || 0
+  return {
+    productId: row.product_id,
+    productName: row.product_name,
+    unit: row.production_unit || 'un',
+    process: row.production_process,
+    plannedQuantity,
+    producedQuantity,
+    balanceQuantity: Math.round((plannedQuantity - producedQuantity) * 1000) / 1000,
+  }
+}
+
+export function formatKitchenQuantity(quantity: number, unit: string | null): string {
+  const normalizedUnit = unit || 'un'
+  const value = normalizedUnit === 'kg'
+    ? quantity.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+    : String(Math.trunc(quantity))
+  return `${value} ${normalizedUnit}`
 }
 
 // PostgREST responde 'PGRST205' quando a tabela não está no cache do schema e o

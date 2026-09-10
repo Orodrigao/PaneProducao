@@ -184,8 +184,8 @@ select is(
 select is(
   (select count(*)::int from public.price_tier_items
     where tier_id = '50000000-0000-4000-8000-000000000001' and active),
-  3,
-  'seed cria a tabela de preco ficticia de PJ com tres itens'
+  4,
+  'seed cria a tabela de preco ficticia de PJ com quatro itens'
 );
 
 select is(
@@ -232,8 +232,8 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and store = 'pj'),
-  7,
-  'seed cria pedidos PJ em aberto, por quilo, enviado, cancelado, sem prazo e em conferencia parcial'
+  8,
+  'seed cria pedidos PJ incluindo o cenario planejado da Cozinha'
 );
 
 select is(
@@ -243,7 +243,7 @@ select is(
      and cancelled_at is null
      and dispatched_at is null
      and production_date is null),
-  5,
+  6,
   'pedido PJ aberto nasce sem data de producao escolhida pelo Comercial'
 );
 
@@ -281,8 +281,8 @@ select is(
     where id::text like '30000000-0000-4000-8000-0000000001%'
       and order_type = 'pj'
       and cancelled_at is null),
-  1320.30::numeric,
-  'pedidos PJ ficticios nao cancelados somam R$ 1.320,30'
+  1609.05::numeric,
+  'pedidos PJ ficticios nao cancelados somam R$ 1.609,05'
 );
 
 -- A soma acima usa `quantity`, a ESTIMATIVA, e nao o que a expedicao conferiu.
