@@ -172,6 +172,43 @@ test('entrada normal e link financeiro abrem a ficha certa, sem misturar pedido 
   await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toHaveCount(0)
 })
 
+test('separa andamento e concluídos e filtra a fila pelo status', async ({ page }) => {
+  await enter(page, 'expedicao')
+  const conference = { ...fixture, id: '96000000-0000-4000-8000-000000000202', customer: 'Pedido em conferência',
+    checked_at: null, released_at: null, items: [{ ...fixture.items[0], quantity: null }] }
+  const review = { ...fixture, id: '96000000-0000-4000-8000-000000000203', customer: 'Pedido em revisão',
+    released_at: null }
+  const completed = { ...fixture, id: '96000000-0000-4000-8000-000000000204', customer: 'Pedido concluído',
+    departed_at: '2026-09-10T12:00:00Z' }
+  let flows = [conference, review, fixture, completed]
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({
+    json: flows,
+  }))
+
+  await page.goto('/pedidos-pj?piloto=1')
+  await expect(page.getByRole('button', { name: 'Em andamento 3' })).toHaveAttribute('aria-pressed', 'true')
+  const statusFilters = page.locator('[aria-label="Filtrar pedidos em andamento por status"]')
+  await expect(statusFilters.getByRole('button')).toHaveCount(4)
+  expect(await statusFilters.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).not.toContainText('Pedido concluído')
+
+  await page.getByRole('button', { name: 'Conferência 1' }).click()
+  await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toContainText('Pedido em conferência')
+  await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).not.toContainText('Pedido em revisão')
+
+  flows = [review, fixture, completed]
+  await page.getByRole('button', { name: 'Recarregar pedidos', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Todos 2' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('region', { name: 'Ficha de Pedido em revisão' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Concluídos 1' }).click()
+  await expect(page.getByRole('region', { name: 'Ficha de Pedido concluído' })).toContainText('Saída física registrada')
+  await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).not.toContainText('Pedido em conferência')
+
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${completed.id}`)
+  await expect(page.getByRole('button', { name: 'Concluídos 1' })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('troca de ficha preserva rascunho e saída mantém pedido selecionado', async ({ page }) => {
   await enter(page, 'expedicao')
   let departed = false
