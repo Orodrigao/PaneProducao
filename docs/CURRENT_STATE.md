@@ -2,9 +2,10 @@
 
 **Data de referência:** 2026-09-10
 
-**Base observada:** `origin/main` em `0cef017`. A revisão de 2026-09-10 cobriu
-a classificação operacional na programação PJ, no Forno e no saldo dos produtos
-assados. As demais seções conservam suas datas de revisão anteriores.
+**Base observada:** `origin/main` em `0dd35f8`. A revisão de 2026-09-10 cobriu
+a classificação operacional, a programação PJ por área, o Forno e a produção
+planejada e livre da Cozinha. As demais seções conservam suas datas de revisão
+anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -85,7 +86,9 @@ Estado conhecido:
    Pedidos PJ e a Produção da Cozinha por loja via RPCs
    (`replace_user_permissions`, `confirm_pj_order_dispatch`,
    `confirm_romaneio_departure`, `confirm_romaneio_receipt`,
-   `approve_romaneio_divergence`, `record_kitchen_batches`,
+   `approve_romaneio_divergence`, `schedule_pj_production`,
+   `list_pj_production_queue_v2`, `list_kitchen_production_plan`,
+   `record_kitchen_batches`,
    `correct_kitchen_batch`, `cancel_kitchen_batch`). Administradas pela tela
    de gestão de acessos.
 3. **Policies RLS** — a autorização efetiva do acesso direto às tabelas. As
@@ -256,13 +259,17 @@ disputavam um único banco de teste compartilhado.
   reservado em conjunto com o planejamento de JC/JA para não prometer o mesmo
   pão duas vezes. O Forno continua agregado por pão e soma lojas, encomendas e
   somente o PJ explicitamente programado, inclusive itens do catálogo novo
-  ligados por `products.legacy_bread_id` e quantidades vendidas por kg. O
-  Comercial informa apenas a entrega obrigatória. Agrupamento de pedidos na
+  cujo processo final é forno e quantidades vendidas por kg. Produtos de
+  montagem ou preparo seguem para a Cozinha de JC, sem controle de congelados.
+  O Comercial informa apenas a entrega obrigatória. Agrupamento de pedidos na
   Expedição, adiantamento de entrega e cobrança pela quantidade enviada
   permanecem em fases posteriores;
-- produção da Cozinha registrada em lotes conforme a demanda e resumo diário
-  por produto; o banco já possui ações protegidas de correção e cancelamento,
-  mas a interface dessas ações ainda não foi implementada;
+- produção da Cozinha reúne, na mesma tela, a quantidade planejada dos pedidos
+  PJ de JC e o lançamento livre conforme a saída da vitrine. O planejado orienta,
+  mas não limita: a equipe pode registrar excedente, e o realizado persiste por
+  produto e unidade. JA e EX permanecem no lançamento livre. O banco já possui
+  ações protegidas de correção e cancelamento, mas a interface dessas ações ainda
+  não foi implementada;
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
@@ -401,10 +408,12 @@ saldo guardam sua identidade e uma fotografia do nome e da unidade. Registros
 antigos continuam identificados como pão legado, sem reescrita do histórico.
 
 Produtos sem classificação continuam visíveis na fila PJ, mas bloqueados com o
-motivo. `montagem` e `preparo` também não entram no Forno e ainda não recebem
-programação PJ: essa liberação depende da tela de produção da área responsável.
-A Cozinha conserva seu fluxo atual de lotes com ou sem ordem. A classificação
-não gera ordens de componentes ou semiacabados.
+motivo. Produtos de `montagem` e `preparo` não entram no Forno: a programação PJ
+deles segue para a Cozinha de JC e aparece junto do lançamento livre por demanda.
+Produto inativado depois de um pedido aceito continua atendível, com aviso; a
+inativação impede novos pedidos, não apaga o compromisso existente. A
+classificação não gera ordens de componentes ou semiacabados e nenhum lançamento
+da Cozinha movimenta estoque nesta fase.
 
 ### CNM
 
@@ -442,6 +451,11 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
    Diagnóstico de falha de smoke deve separar as duas famílias antes de
    aumentar qualquer tempo limite (ver `lessons.md`,
    `tela-vazia-nao-e-tela-carregando`).
+   Em merge com migration, os gatilhos simultâneos de push e fechamento da PR
+   também podem cancelar a reconstrução automática do Banco Preview antes de ela
+   iniciar; o navegador da `main` fica esperando esse check. A recuperação segura
+   é reconstruir o banco fictício pelo workflow próprio e repetir o CI. A causa
+   estrutural de concorrência ainda precisa de correção separada.
 
 ## Próximas fases aprovadas
 
