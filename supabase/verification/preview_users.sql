@@ -41,8 +41,9 @@ begin
     where lower(user_account.email) = 'rodrigao+teste@gmail.com'
       and profile.allowed_routes ->> 0 = '/'
       and profile.allowed_routes ? '*'
+      and profile.allowed_routes ? '/produtos'
   ) then
-    raise exception 'Administrador de teste precisa iniciar em / e manter acesso total.';
+    raise exception 'Administrador de teste precisa iniciar em /, manter acesso total e gravar o catalogo.';
   end if;
 
   if not exists (
