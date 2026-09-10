@@ -9,6 +9,7 @@ on:
     paths:
       - "supabase/migrations/**"
       - "supabase/tests/**"
+      - "supabase/tests-local/**"
       - "supabase/seed.sql"
       - "supabase/config.toml"
       - "scripts/verify-preview-seed-repeatability.mjs"
@@ -41,3 +42,6 @@ jobs:
 
       - name: Verificar invariantes estruturais (pgTAP)
         run: supabase test db
+
+      - name: Provar concorrencia real da programacao PJ
+        run: supabase test db supabase/tests-local/pj_production_lock_concurrency.test.sql
