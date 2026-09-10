@@ -15,9 +15,13 @@ function rpcRows<T>(data: unknown): T[] {
 }
 
 export async function fetchPjProductionQueue(): Promise<PjProductionQueueRow[]> {
-  const { data, error } = await supabase.rpc('list_pj_production_queue')
-  if (error) throw error
-  return rpcRows<PjProductionQueueRow>(data)
+  const current = await supabase.rpc('list_pj_production_queue_v2')
+  if (!current.error) return rpcRows<PjProductionQueueRow>(current.data)
+  if (!['42883', 'PGRST202'].includes(current.error.code ?? '')) throw current.error
+
+  const legacy = await supabase.rpc('list_pj_production_queue')
+  if (legacy.error) throw legacy.error
+  return rpcRows<PjProductionQueueRow>(legacy.data)
 }
 
 export async function schedulePjProduction(

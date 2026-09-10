@@ -303,10 +303,10 @@ select ok((select qual from pg_policies
     ilike all(array[
       '%current_user_is_access_admin%',
       '%producao_cozinha.lancar%',
-      '%recorded_by%',
+      '%store%',
       '%record_date%'
     ]),
-  'cozinha lê apenas seus lotes de hoje; admin lê o histórico');
+  'equipe da cozinha lê hoje e ontem da sua loja; admin lê o histórico');
 select ok(exists(select 1 from pg_constraint
     where conname = 'kitchen_production_quantity_range'),
   'quantidade limitada no banco, não só na tela');

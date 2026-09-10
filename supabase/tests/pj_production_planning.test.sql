@@ -34,6 +34,9 @@ values
   ('97000000-0000-4000-8000-000000000002', 'Vendas Teste', 'vendas', 'jc', true, '["/pedidos-pj"]'::jsonb),
   ('97000000-0000-4000-8000-000000000003', 'Admin Teste', 'admin', null, true, '["*"]'::jsonb);
 
+insert into public.app_user_permissions(user_id, permission_key, scope)
+values ('97000000-0000-4000-8000-000000000001', 'producao_pj.programar', 'jc');
+
 insert into public.customers (id, name, doc, active)
 values ('97000000-0000-4000-8000-0000000000c1', '[TESTE] Hamburgueria Producao', '55666777000188', true);
 

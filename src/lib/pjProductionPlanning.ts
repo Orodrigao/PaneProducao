@@ -14,6 +14,9 @@ export interface PjProductionQueueRow {
   frozen_available: number | string
   last_scheduled_date: string | null
   mapping_error: string | null
+  production_process?: 'forno' | 'montagem' | 'preparo' | null
+  production_area?: string | null
+  catalog_warning?: string | null
 }
 
 export interface PjProductionQueueItem {
@@ -32,6 +35,9 @@ export interface PjProductionQueueItem {
   frozenAvailable: number
   lastScheduledDate: string | null
   mappingError: string | null
+  productionProcess: 'forno' | 'montagem' | 'preparo' | null
+  productionArea: string | null
+  catalogWarning: string | null
 }
 
 export interface PjProductionQueueGroup {
@@ -72,7 +78,17 @@ export function normalizePjProductionQueueRow(
     frozenAvailable: nonNegativeQuantity(row.frozen_available),
     lastScheduledDate: row.last_scheduled_date,
     mappingError: row.mapping_error,
+    productionProcess: row.production_process ?? (row.canonical_bread_id ? 'forno' : null),
+    productionArea: row.production_area ?? (row.canonical_bread_id ? 'padaria' : null),
+    catalogWarning: row.catalog_warning ?? null,
   }
+}
+
+export function pjProductionDestination(item: PjProductionQueueItem): string {
+  if (item.productionProcess === 'forno') return 'Forno'
+  if (item.productionArea === 'cozinha') return 'Cozinha'
+  if (item.productionArea === 'confeitaria') return 'Confeitaria'
+  return item.productionArea || 'Área não definida'
 }
 
 export function groupPjProductionQueue(
