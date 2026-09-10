@@ -187,6 +187,9 @@ test('separa andamento e concluídos e filtra a fila pelo status', async ({ page
 
   await page.goto('/pedidos-pj?piloto=1')
   await expect(page.getByRole('button', { name: 'Em andamento 3' })).toHaveAttribute('aria-pressed', 'true')
+  const statusFilters = page.locator('[aria-label="Filtrar pedidos em andamento por status"]')
+  await expect(statusFilters.getByRole('button')).toHaveCount(4)
+  expect(await statusFilters.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).not.toContainText('Pedido concluído')
 
   await page.getByRole('button', { name: 'Conferência 1' }).click()
