@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { getCurrentUser } from '@/lib/auth'
 import { readPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
+import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import { PjFlowOrderCard } from './PjFlowOrderCard'
 import styles from './PjFlowPilot.module.css'
 
@@ -9,6 +11,8 @@ const shortDate = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).
 const stage = (flow: PjFlow) => flow.departed_at ? 'Saiu' : flow.released_at ? 'Saída liberada' : flow.checked_at ? 'Revisão e NF' : 'Conferência'
 
 export function PjFlowPilot() {
+  const canManage = resolvePjOrderAccess(getCurrentUser()).canManage
+  const [authorized, setAuthorized] = useState(false)
   const [flows, setFlows] = useState<PjFlow[]>([])
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(true)
@@ -17,7 +21,7 @@ export function PjFlowPilot() {
   const [locked, setLocked] = useState(false)
   const [notice, setNotice] = useState('')
   const load = useCallback(async (message = '') => {
-    setLoading(true); setError(''); setFlows([]); setNotice('')
+    setLoading(true); setError(''); setFlows([]); setNotice(''); setAuthorized(false)
     try {
       const result = await readPjFlowPilot()
       const params = new URLSearchParams(window.location.search)
@@ -31,6 +35,7 @@ export function PjFlowPilot() {
       setFlows(result)
       setSelected(id)
       setNotice(message)
+      setAuthorized(true)
       setRound(value => value + 1); setLocked(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível carregar os pedidos.') }
     finally { setLoading(false); setLocked(false) }
@@ -48,7 +53,11 @@ export function PjFlowPilot() {
     <header className={styles.header}>
       <div><span className={styles.eyebrow}>Nova jornada</span><h1>Pedidos PJ</h1>
         <p>Da conferência à saída, cada etapa no seu lugar.</p></div>
-      <button className={styles.secondary} type="button" onClick={() => void load()} disabled={loading || locked}>Recarregar pedidos</button>
+      <div className={styles.headerActions}>
+        {authorized && canManage && <a className={styles.primary} href="/pedidos-pj?legado=1&novo=1"
+          onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>Novo pedido</a>}
+        <button className={styles.secondary} type="button" onClick={() => void load()} disabled={loading || locked}>Recarregar pedidos</button>
+      </div>
     </header>
     {loading && <p className={styles.empty} role="status">Carregando pedidos…</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
@@ -70,6 +79,6 @@ export function PjFlowPilot() {
         : <p className={styles.empty} role="alert">O pedido deste link não está disponível nesta jornada. Escolha um pedido da lista.</p>}
     </div>}
     <footer className={styles.footer}><a href="/pedidos-pj?legado=1" onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>
-      Ver pedidos da rotina anterior</a><span>Pedidos entram individualmente · os demais continuam na rotina anterior</span></footer>
+      Ver pedidos da rotina anterior</a><span>Pedidos anteriores permanecem na rotina anterior.</span></footer>
   </div></main>
 }

@@ -25,7 +25,7 @@ export type PjFlowAction = 'save' | 'check' | 'release' | 'depart'
 export interface PjFlowInput { id: string; quantity: number | null; reason: string | null }
 export interface PjFlowCreditInput { amount: number; sourceGroupId: string | null; reason: string }
 export interface PjFlowEnrollmentGate { can_enroll: boolean; slot_available: boolean }
-export interface PjFlowActivationStatus { mode: 'test' | 'controlled_real' | null; can_return: boolean }
+export interface PjFlowActivationStatus { mode: 'test' | 'controlled_real' | 'standard' | null; can_return: boolean }
 
 export function parsePjFlowQuantity(value: string): number | null {
   if (!value.trim()) return null
@@ -102,8 +102,8 @@ export async function readPjFlowActivationStatus(orderGroupId: string): Promise<
     p_order_group_id: orderGroupId,
   })
   if (error) throw new Error(error.message)
-  if (!data || !['test', 'controlled_real', null].includes(data.mode)
-    || typeof data.can_return !== 'boolean') {
+  if (!data || !['test', 'controlled_real', 'standard', null].includes(data.mode)
+    || typeof data.can_return !== 'boolean' || (data.mode === 'standard' && data.can_return)) {
     throw new Error('Não foi possível confirmar o estado de ativação deste pedido.')
   }
   return data as PjFlowActivationStatus

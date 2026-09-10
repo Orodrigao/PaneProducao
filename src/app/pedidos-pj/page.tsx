@@ -33,7 +33,6 @@ import { PjDispatchCheckPanel, type DispatchCheckLine } from '@/components/PjDis
 import { dispatchReadiness, versionOf } from '@/lib/pjDispatchCheck'
 import { pjLineValue } from '@/lib/pjOrderValue'
 import { PjDispatchQuantityFix } from '@/components/PjDispatchQuantityFix'
-import { PjFlowActivation } from '@/components/PjFlowActivation'
 
 // ===== Tipos =====
 interface Customer {
@@ -275,6 +274,13 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
   useEffect(() => {
     const currentUser = getCurrentUser()
     setUser(currentUser)
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('novo') === '1') {
+      if (resolvePjOrderAccess(currentUser).canManage) setTab('novo')
+      const url = new URL(window.location.href)
+      url.searchParams.delete('novo')
+      window.history.replaceState(window.history.state, '', url)
+    }
     void loadAll(currentUser)
 
     // Administrador tem passe-livre, igual ao resto do sistema. Os demais
@@ -1019,9 +1025,6 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
             </p>
 
             <PjOrderOverview key={viewing.key} order={viewing} today={todayISO()} billing={pjBillingForOrder(billingState, viewing.order_group_id)} showValues={access.showCommercialValues} />
-            {access.canManage && viewing.order_group_id && !viewing.cancelled_at && !viewing.dispatched_at && (
-              <PjFlowActivation orderGroupId={viewing.order_group_id} />
-            )}
             {/* Corrigir depois do envio: metade B da fase 2. Aparece so para
                 quem cuida do dinheiro (admin e financeiro), e so em pedido ja
                 enviado — antes disso quem corrige e a propria Expedicao, na

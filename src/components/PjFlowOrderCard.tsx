@@ -28,7 +28,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   const [creditReason, setCreditReason] = useState('')
   const [error, setError] = useState('')
   const [canReturn, setCanReturn] = useState(false)
-  const [activationMode, setActivationMode] = useState<'test' | 'controlled_real' | null>(null)
+  const [activationMode, setActivationMode] = useState<'test' | 'controlled_real' | 'standard' | null>(null)
   const [confirm, setConfirm] = useState<PjFlowAction | null>(null)
   const pending = useRef<{ action: PjFlowAction; requestId: string; items: PjFlowInput[]; nf: boolean
     credit: { amount: number; sourceGroupId: string | null; reason: string } } | null>(null)

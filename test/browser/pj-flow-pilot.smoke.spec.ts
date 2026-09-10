@@ -4,19 +4,23 @@ test.use({ browserName: 'chromium', channel: 'chrome', viewport: { width: 390, h
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/rest/v1/rpc/read_pj_flow_activation_status', route => route.fulfill({
-    json: { mode: 'test', can_return: false },
+    json: { mode: 'standard', can_return: false },
   }))
 })
 
-async function enter(page: Page, profile: 'financeiro' | 'expedicao') {
+type Profile = 'admin' | 'financeiro' | 'expedicao' | 'vendas'
+
+async function enter(page: Page, profile: Profile) {
   await page.goto('/login')
   await signInOnCurrentPage(page, profile)
 }
 
-async function signInOnCurrentPage(page: Page, profile: 'financeiro' | 'expedicao') {
+async function signInOnCurrentPage(page: Page, profile: Profile) {
   const password = process.env.SUPABASE_TEST_USER_PASSWORD
   test.skip(!password, 'Credencial fictícia disponível apenas no GitHub.')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(`rodrigao+teste-${profile}-jc@gmail.com`)
+  const email = profile === 'admin' ? 'rodrigao+teste@gmail.com'
+    : `rodrigao+teste-${profile}-${profile === 'vendas' ? 'ja' : 'jc'}@gmail.com`
+  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
   await page.locator('input[type="password"]').fill(password!)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
   await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
@@ -35,22 +39,58 @@ test('trocar Expedição e Financeiro mantém o piloto; saída comum não força
   await enter(page, 'expedicao')
   await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [fixture] }))
   await page.goto('/pedidos-pj?piloto=1')
-  for (const profile of ['financeiro', 'expedicao'] as const) {
-    await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toBeVisible()
-    await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
-    await page.getByRole('button', { name: 'Sair', exact: true }).click()
-    await expect(page).toHaveURL(/\/login\?force=email&returnTo=%2Fpedidos-pj%3Fpiloto%3D1$/)
-    await signInOnCurrentPage(page, profile)
-    await expect(page).toHaveURL(/\/pedidos-pj\?piloto=1(?:&pedido=[^&]+)?$/)
-    await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toBeVisible()
-    await expect(page.locator('.ps-sidebar-user')).toHaveAttribute('title',
-      profile === 'financeiro' ? 'Financeiro JC Teste' : 'Expedicao JC Teste')
-  }
+  await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Novo pedido', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  await expect(page).toHaveURL(/\/login\?force=email&returnTo=%2Fpedidos-pj%3Fpiloto%3D1$/)
+  await signInOnCurrentPage(page, 'financeiro')
+  await expect(page).toHaveURL(/\/pedidos-pj\?piloto=1(?:&pedido=[^&]+)?$/)
+  await expect(page.locator('.ps-sidebar-user')).toHaveAttribute('title', 'Financeiro JC Teste')
+  await expect(page.getByRole('link', { name: 'Novo pedido', exact: true })).toBeVisible()
+  await expect(page.getByText('Primeira operação real em acompanhamento.')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Voltar este pedido à rotina anterior' })).toHaveCount(0)
+  await page.getByRole('link', { name: 'Novo pedido', exact: true }).click()
+  await expect(page).toHaveURL(/\/pedidos-pj\?legado=1$/)
+  await expect(page.getByRole('tab', { name: '+ Novo pedido', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('link', { name: 'Voltar à nova jornada PJ', exact: true }).click()
   await page.getByRole('link', { name: 'Ver pedidos da rotina anterior', exact: true }).click()
   await expect(page).toHaveURL(/\/pedidos-pj\?legado=1$/)
+  await page.locator('.pj-order-row').first().click({ timeout: 15_000 })
+  await expect(page.getByRole('dialog', { name: 'Ficha do pedido PJ' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Iniciar nova jornada neste pedido' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Fechar ficha', exact: true }).click()
   await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
   await page.getByRole('button', { name: 'Sair', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
+})
+
+test('Admin pode iniciar pedido; perfil bloqueado não abre o formulário por URL direta', async ({ page }) => {
+  await enter(page, 'admin')
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [fixture] }))
+  await page.goto('/pedidos-pj?piloto=1')
+  await expect(page.getByRole('link', { name: 'Novo pedido', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  await signInOnCurrentPage(page, 'expedicao')
+  await page.goto('/pedidos-pj?legado=1&novo=1')
+  await expect(page).toHaveURL(/\/pedidos-pj\?legado=1$/)
+  await expect(page.getByRole('tab', { name: '+ Novo pedido', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Mais seções', exact: true }).click()
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  await signInOnCurrentPage(page, 'vendas')
+  await page.goto('/pedidos-pj?legado=1&novo=1')
+  await expect(page).not.toHaveURL(/\/pedidos-pj(?:[?#]|$)/)
+  await expect(page.getByRole('tab', { name: '+ Novo pedido', exact: true })).toHaveCount(0)
+})
+
+test('falha de autorização não revela o atalho de criação na jornada', async ({ page }) => {
+  await enter(page, 'financeiro')
+  await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ status: 403,
+    json: { message: 'Acesso negado fictício', code: '42501' } }))
+  await page.goto('/pedidos-pj?piloto=1')
+  await expect(page.locator('main').getByRole('alert')).toContainText('Piloto indisponível')
+  await expect(page.getByRole('link', { name: 'Novo pedido', exact: true })).toHaveCount(0)
 })
 
 // Estes testes provam a interface com contratos fictícios. Não são prova de
