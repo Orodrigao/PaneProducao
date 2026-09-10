@@ -111,12 +111,13 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
   } finally {
     // Se uma asserção falhar depois da criação, retira somente o pedido fictício
     // desta execução da fila operacional. Pedido cancelado continua no histórico.
-    if (groupId && rpcUrl) {
+    const cleanupGroupId = groupId ?? createBodies[0]?.p_order_group_id
+    if (cleanupGroupId && rpcUrl) {
       await request.post(rpcUrl.replace('create_pj_order_atomic', 'cancel_pj_order_atomic'), {
         headers: rpcHeaders,
         data: {
           p_request_id: randomUUID(),
-          p_order_group_id: groupId,
+          p_order_group_id: cleanupGroupId,
           p_reason: '[TESTE] limpeza após execução interrompida',
         },
       }).catch(() => undefined)
