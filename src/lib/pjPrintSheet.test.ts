@@ -78,6 +78,29 @@ describe('folha de pães com produção PJ', () => {
     })
   })
 
+  it('inclui produto de Forno sem cadastro duplicado em pães', () => {
+    expect(buildPjPrintSheet(breads, [{
+      product_source: 'product',
+      product_id: 'produto-sem-vinculo',
+      product_name: 'Baguete de Alecrim',
+      production_unit: 'un',
+      quantity: 12,
+    }])).toContainEqual({
+      breadId: 'product:produto-sem-vinculo',
+      breadName: 'Baguete de Alecrim',
+      storeQuantities: [0, 0, 0],
+      storeTotal: 0,
+      pjQuantity: 12,
+      total: 12,
+    })
+  })
+
+  it('usa o contrato novo com reserva para a versão anterior do banco', () => {
+    expect(productionPageSource).toContain("supabase.rpc('list_pj_production_for_oven_v2'")
+    expect(productionPageSource).toContain("supabase.rpc('list_pj_production_for_oven'")
+    expect(productionPageSource).toContain('isMissingPjPrintContract(error)')
+  })
+
   it('soma quantidade PJ numérica recebida como texto', () => {
     expect(buildPjPrintSheet([breads[0]], [
       { bread_id: 'hamburguer', quantity: '120' },

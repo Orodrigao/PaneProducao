@@ -133,15 +133,13 @@ export function validatePjProductionSelection(
   quantityValue: string,
   frozenValue: string,
 ): PjProductionSelection | string {
-  if (item.mappingError || !item.breadId) {
-    return item.mappingError || 'Produto sem vínculo com o Forno.'
-  }
+  if (item.mappingError) return item.mappingError
 
   const quantity = parsePjProductionQuantity(quantityValue, item.pricingUnit)
   if (quantity === null) {
     return item.pricingUnit === 'kg'
       ? 'Informe uma quantidade com até 3 casas decimais.'
-      : 'Informe uma quantidade inteira de pães.'
+      : 'Informe uma quantidade inteira de produtos.'
   }
   if (quantity > item.pendingQuantity) return 'A quantidade passa do que ainda falta produzir.'
 

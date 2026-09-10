@@ -115,7 +115,7 @@ export function PjProductionPlanningPanel() {
     setDrafts(current => {
       const next = { ...current }
       for (const item of group.items) {
-        if (item.mappingError || !item.breadId) continue
+        if (item.mappingError) continue
         next[item.orderId] = {
           ...draftFor(item, current[item.orderId]),
           selected: true,
@@ -132,8 +132,7 @@ export function PjProductionPlanningPanel() {
 
     const selected = group.items.filter(item =>
       drafts[item.orderId]?.selected
-      && !item.mappingError
-      && Boolean(item.breadId))
+      && !item.mappingError)
     if (selected.length === 0) {
       setError('Marque ao menos um produto deste pedido.')
       return
@@ -162,7 +161,7 @@ export function PjProductionPlanningPanel() {
       return `${item.productName}: ${formatPjProductionQuantity(selection.quantity, item.pricingUnit)}${frozen}`
     }).join('\n')
     if (!window.confirm(
-      `Confira a programação de hoje:\n\n${confirmation}\n\nIsto entra na produção e no Forno agora. Depois dá para programar mais, mas não dá para desfazer o que entrou.`,
+      `Confira a programação de hoje:\n\n${confirmation}\n\nIsto entra na produção do Forno agora. Depois dá para programar mais, mas não dá para desfazer o que entrou.`,
     )) return
 
     const stableRequestId = requestIds[groupKey] ?? requestId()
@@ -262,7 +261,7 @@ export function PjProductionPlanningPanel() {
               // mais quando o forno rende, e o banco ja limita pelo total do pedido.
               // A linha some sozinha quando nao falta nada, porque a fila so traz
               // pedido com quantidade pendente.
-              const blocked = Boolean(item.mappingError || !item.breadId)
+              const blocked = Boolean(item.mappingError)
               return (
                 <div
                   key={item.orderId}

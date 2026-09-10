@@ -11,12 +11,12 @@ import {
 import {
   aggregateOvenPlan,
   ovenLotCode,
+  ovenProductKey,
   OVEN_LOSS_REASONS,
   parseOvenQuantity,
   validateOvenConfirmation,
 } from '@/lib/ovenProduction'
 import { supabase } from '@/lib/supabase'
-import type { BreadOption as Bread } from '@/lib/types'
 import { formatDateBR, showToast, todayKey } from '@/lib/utils'
 
 interface OrderRow {
@@ -26,19 +26,33 @@ interface OrderRow {
 }
 
 interface PjOvenPlanRow {
-  bread_id: string
+  product_source: 'bread' | 'product'
+  product_id: string
+  product_name: string
+  production_unit: string | null
   quantity: number | null
 }
 
 interface ProductionActualRow {
   id: string
-  bread_id: string
+  bread_id: string | null
+  product_source: 'bread' | 'product'
+  product_id: string
+  product_name: string
+  production_unit: string | null
   record_date: string
   lot_code?: string | null
   quantity_baked: number
   quantity_loss: number
   loss_reason: string | null
   obs: string | null
+}
+
+interface OvenProduct {
+  id: string
+  source: 'bread' | 'product'
+  name: string
+  unit: string | null
 }
 
 interface OvenFormState {
@@ -80,9 +94,16 @@ function errorMessage(error: unknown): string {
   return 'Não foi possível concluir a operação.'
 }
 
+function isMissingIdentityContract(error: unknown, identifier: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; message?: string }
+  return ['PGRST202', 'PGRST204', '42703'].includes(candidate.code ?? '')
+    && (candidate.message ?? '').includes(identifier)
+}
+
 export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
-  const [breads, setBreads] = useState<Bread[]>([])
+  const [products, setProducts] = useState<OvenProduct[]>([])
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
   const [actuals, setActuals] = useState<Record<string, ProductionActualRow>>({})
   const [forms, setForms] = useState<Record<string, OvenFormState>>({})
@@ -110,7 +131,7 @@ export default function FornoPage() {
     setLoadError('')
 
     try {
-      const [regularResult, pjResult, customResult, actualsResult, reuseResult] = await Promise.all([
+      const [regularResult, customResult, reuseResult] = await Promise.all([
         supabase
           .from('orders')
           .select('id, bread_id, quantity')
@@ -119,9 +140,6 @@ export default function FornoPage() {
           .eq('order_type', 'producao')
           .eq('order_date', date)
           .gt('quantity', 0),
-        supabase.rpc('list_pj_production_for_oven', {
-          p_production_date: date,
-        }),
         supabase
           .from('orders')
           .select('id, bread_id, quantity')
@@ -131,39 +149,93 @@ export default function FornoPage() {
           .eq('product_source', 'bread')
           .gt('quantity', 0),
         supabase
-          .from('production_actuals')
-          .select('*')
-          .eq('record_date', date),
-        supabase
           .from('bread_reuse_plans')
           .select('bread_id, confirmed_quantity, status')
           .eq('target_production_date', date)
           .eq('status', 'confirmed'),
       ])
 
+      const pjResult = await supabase.rpc('list_pj_production_for_oven_v2', {
+        p_production_date: date,
+      })
+      let pjError = pjResult.error
+      let pjRows: PjOvenPlanRow[]
+      if (pjResult.error && isMissingIdentityContract(pjResult.error, 'list_pj_production_for_oven_v2')) {
+        const legacyPjResult = await supabase.rpc('list_pj_production_for_oven', {
+          p_production_date: date,
+        })
+        if (legacyPjResult.error) throw legacyPjResult.error
+        pjRows = ((legacyPjResult.data ?? []) as Array<{ bread_id: string; quantity: number | null }>).map(row => ({
+          product_source: 'bread',
+          product_id: row.bread_id,
+          product_name: row.bread_id,
+          production_unit: null,
+          quantity: row.quantity,
+        }))
+        pjError = null
+      } else {
+        pjRows = (pjResult.data ?? []) as PjOvenPlanRow[]
+      }
+
+      const actualsResult = await supabase
+        .from('production_actuals')
+        .select('id,bread_id,product_source,product_id,product_name,production_unit,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
+        .eq('record_date', date)
+      let actualsError = actualsResult.error
+      let actualRows: ProductionActualRow[]
+      if (actualsResult.error && isMissingIdentityContract(actualsResult.error, 'product_source')) {
+        const legacyActualsResult = await supabase
+          .from('production_actuals')
+          .select('id,bread_id,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
+          .eq('record_date', date)
+        if (legacyActualsResult.error) throw legacyActualsResult.error
+        actualRows = ((legacyActualsResult.data ?? []) as Array<Omit<ProductionActualRow,
+          'product_source' | 'product_id' | 'product_name' | 'production_unit'>>).map(row => ({
+          ...row,
+          product_source: 'bread',
+          product_id: row.bread_id ?? '',
+          product_name: row.bread_id ?? '',
+          production_unit: null,
+        }))
+        actualsError = null
+      } else {
+        actualRows = (actualsResult.data ?? []) as ProductionActualRow[]
+      }
+
       const firstError = regularResult.error
-        ?? pjResult.error
+        ?? pjError
         ?? customResult.error
-        ?? actualsResult.error
+        ?? actualsError
         ?? reuseResult.error
       if (firstError) throw firstError
 
-      const regularRows = (regularResult.data ?? []) as OrderRow[]
-      const pjRows = (pjResult.data ?? []) as PjOvenPlanRow[]
-      const customRows = (customResult.data ?? []) as OrderRow[]
-      const actualRows = (actualsResult.data ?? []) as ProductionActualRow[]
+      const regularRows = ((regularResult.data ?? []) as OrderRow[]).map(row => ({
+        ...row,
+        product_source: 'bread',
+        product_id: row.bread_id,
+      }))
+      const customRows = ((customResult.data ?? []) as OrderRow[]).map(row => ({
+        ...row,
+        product_source: 'bread',
+        product_id: row.bread_id,
+      }))
       const originalPlan = aggregateOvenPlan([...regularRows, ...pjRows, ...customRows])
-      const confirmedReuse = aggregateConfirmedReuse(
+      const confirmedReuse = new Map(Array.from(aggregateConfirmedReuse(
         (reuseResult.data ?? []) as ConfirmedReuseRow[],
-      )
+      )).map(([breadId, quantity]) => [ovenProductKey('bread', breadId), quantity]))
       const plan = subtractConfirmedReuse(originalPlan, confirmedReuse)
-      const breadIds = Array.from(new Set([
-        ...plan.keys(),
-        ...actualRows.map(row => row.bread_id),
-      ]))
+      const identities = [
+        ...Array.from(plan.keys()).map(key => {
+          const separator = key.indexOf(':')
+          return { source: key.slice(0, separator), id: key.slice(separator + 1) }
+        }),
+        ...actualRows.map(row => ({ source: row.product_source, id: row.product_id })),
+      ]
+      const breadIds = Array.from(new Set(identities.filter(item => item.source === 'bread').map(item => item.id)))
+      const productIds = Array.from(new Set(identities.filter(item => item.source === 'product').map(item => item.id)))
 
-      if (breadIds.length === 0) {
-        setBreads([])
+      if (breadIds.length === 0 && productIds.length === 0) {
+        setProducts([])
         setPlannedMap(new Map())
         setActuals({})
         setForms({})
@@ -171,30 +243,46 @@ export default function FornoPage() {
         return
       }
 
-      const breadsResult = await supabase
-        .from('breads')
-        .select('id, name, unit, is_pj, active')
-        .in('id', breadIds)
+      const [breadsResult, productsResult] = await Promise.all([
+        breadIds.length > 0
+          ? supabase.from('breads').select('id,name,unit').in('id', breadIds)
+          : Promise.resolve({ data: [], error: null }),
+        productIds.length > 0
+          ? supabase.from('products').select('id,name,unit').in('id', productIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
       if (breadsResult.error) throw breadsResult.error
+      if (productsResult.error) throw productsResult.error
 
-      const loadedBreads = ((breadsResult.data ?? []) as Bread[])
-        .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
-      const actualsByBread: Record<string, ProductionActualRow> = {}
+      const loadedProducts: OvenProduct[] = [
+        ...((breadsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>).map(item => ({
+          ...item,
+          source: 'bread' as const,
+        })),
+        ...((productsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>).map(item => ({
+          ...item,
+          source: 'product' as const,
+        })),
+      ].sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
+      const actualsByProduct: Record<string, ProductionActualRow> = {}
       const initialForms: Record<string, OvenFormState> = {}
 
-      for (const actual of actualRows) actualsByBread[actual.bread_id] = actual
-      for (const bread of loadedBreads) {
-        const actual = actualsByBread[bread.id]
-        initialForms[bread.id] = {
-          quantityGood: String(actual?.quantity_baked ?? plan.get(bread.id) ?? 0),
+      for (const actual of actualRows) {
+        actualsByProduct[ovenProductKey(actual.product_source, actual.product_id)] = actual
+      }
+      for (const product of loadedProducts) {
+        const key = ovenProductKey(product.source, product.id)
+        const actual = actualsByProduct[key]
+        initialForms[key] = {
+          quantityGood: String(actual?.quantity_baked ?? plan.get(key) ?? 0),
           quantityLoss: String(actual?.quantity_loss ?? 0),
           lossReason: actual?.loss_reason ?? OVEN_LOSS_REASONS[0],
         }
       }
 
-      setBreads(loadedBreads)
+      setProducts(loadedProducts)
       setPlannedMap(plan)
-      setActuals(actualsByBread)
+      setActuals(actualsByProduct)
       setForms(initialForms)
       setEditing({})
     } catch (error: unknown) {
@@ -210,56 +298,57 @@ export default function FornoPage() {
     void loadData()
   }, [loadData])
 
-  function updateForm(breadId: string, patch: Partial<OvenFormState>) {
+  function updateForm(productKey: string, patch: Partial<OvenFormState>) {
     setForms(current => ({
       ...current,
-      [breadId]: { ...current[breadId], ...patch },
+      [productKey]: { ...current[productKey], ...patch },
     }))
   }
 
   function adjustQuantity(
-    breadId: string,
+    productKey: string,
     field: 'quantityGood' | 'quantityLoss',
     delta: number,
   ) {
-    const bread = breads.find(item => item.id === breadId)
-    const unit = bread?.unit === 'kg' ? 'kg' : 'un'
-    const current = parseOvenQuantity(forms[breadId]?.[field] ?? '0', unit) ?? 0
-    updateForm(breadId, {
+    const product = products.find(item => ovenProductKey(item.source, item.id) === productKey)
+    const unit = product?.unit === 'kg' ? 'kg' : 'un'
+    const current = parseOvenQuantity(forms[productKey]?.[field] ?? '0', unit) ?? 0
+    updateForm(productKey, {
       [field]: String(Math.max(0, Math.round((current + delta) * 1000) / 1000)),
     })
   }
 
-  function startEditing(breadId: string) {
-    setEditing(current => ({ ...current, [breadId]: true }))
+  function startEditing(productKey: string) {
+    setEditing(current => ({ ...current, [productKey]: true }))
   }
 
-  function cancelEditing(breadId: string) {
-    const actual = actuals[breadId]
-    const planned = plannedMap.get(breadId) ?? 0
+  function cancelEditing(productKey: string) {
+    const actual = actuals[productKey]
+    const planned = plannedMap.get(productKey) ?? 0
     setForms(current => ({
       ...current,
-      [breadId]: {
+      [productKey]: {
         quantityGood: String(actual?.quantity_baked ?? planned),
         quantityLoss: String(actual?.quantity_loss ?? 0),
         lossReason: actual?.loss_reason ?? OVEN_LOSS_REASONS[0],
       },
     }))
-    setEditing(current => ({ ...current, [breadId]: false }))
+    setEditing(current => ({ ...current, [productKey]: false }))
   }
 
-  async function confirmBread(bread: Bread, quickConfirmation = false) {
-    const planned = plannedMap.get(bread.id) ?? 0
+  async function confirmProduct(product: OvenProduct, quickConfirmation = false) {
+    const productKey = ovenProductKey(product.source, product.id)
+    const planned = plannedMap.get(productKey) ?? 0
     const form = quickConfirmation
       ? {
           quantityGood: String(planned),
           quantityLoss: '0',
           lossReason: OVEN_LOSS_REASONS[0],
         }
-      : forms[bread.id]
+      : forms[productKey]
 
     if (!form) return
-    const unit = bread.unit === 'kg' ? 'kg' : 'un'
+    const unit = product.unit === 'kg' ? 'kg' : 'un'
     const validationError = validateOvenConfirmation(form, unit)
     if (validationError) {
       showToast(validationError)
@@ -270,7 +359,7 @@ export default function FornoPage() {
     const quantityLoss = parseOvenQuantity(form.quantityLoss, unit)
     if (quantityGood === null || quantityLoss === null) return
 
-    setSaving(current => ({ ...current, [bread.id]: true }))
+    setSaving(current => ({ ...current, [productKey]: true }))
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
       if (sessionError) throw sessionError
@@ -278,23 +367,41 @@ export default function FornoPage() {
         throw new Error('Entre com seu e-mail para confirmar o forno com segurança.')
       }
 
-      const { data, error } = await supabase.rpc('confirm_oven_output', {
+      let confirmationResult = await supabase.rpc('confirm_oven_product_output', {
         p_record_date: date,
-        p_bread_id: bread.id,
+        p_product_source: product.source,
+        p_product_id: product.id,
         p_quantity_good: quantityGood,
         p_quantity_loss: quantityLoss,
         p_loss_reason: quantityLoss > 0 ? form.lossReason : null,
         p_obs: null,
       })
-      if (error) throw error
+      if (confirmationResult.error
+        && product.source === 'bread'
+        && isMissingIdentityContract(confirmationResult.error, 'confirm_oven_product_output')) {
+        confirmationResult = await supabase.rpc('confirm_oven_output', {
+          p_record_date: date,
+          p_bread_id: product.id,
+          p_quantity_good: quantityGood,
+          p_quantity_loss: quantityLoss,
+          p_loss_reason: quantityLoss > 0 ? form.lossReason : null,
+          p_obs: null,
+        })
+      }
+      if (confirmationResult.error) throw confirmationResult.error
 
+      const data = confirmationResult.data
       const rpcRows = (Array.isArray(data) ? data : [data]) as OvenRpcRow[]
       const result = rpcRows[0]
       if (!result) throw new Error('O banco não retornou a confirmação do lote.')
 
       const confirmed: ProductionActualRow = {
         id: result.production_actual_id,
-        bread_id: bread.id,
+        bread_id: product.source === 'bread' ? product.id : null,
+        product_source: product.source,
+        product_id: product.id,
+        product_name: product.name,
+        production_unit: product.unit,
         record_date: date,
         lot_code: result.returned_lot_code,
         quantity_baked: Number(result.returned_quantity_good),
@@ -303,26 +410,26 @@ export default function FornoPage() {
         obs: null,
       }
 
-      setActuals(current => ({ ...current, [bread.id]: confirmed }))
+      setActuals(current => ({ ...current, [productKey]: confirmed }))
       setForms(current => ({
         ...current,
-        [bread.id]: {
+        [productKey]: {
           quantityGood: String(confirmed.quantity_baked),
           quantityLoss: String(confirmed.quantity_loss),
           lossReason: confirmed.loss_reason ?? OVEN_LOSS_REASONS[0],
         },
       }))
-      setEditing(current => ({ ...current, [bread.id]: false }))
-      showToast(`✓ ${bread.name}: ${confirmed.quantity_baked} confirmados`)
+      setEditing(current => ({ ...current, [productKey]: false }))
+      showToast(`✓ ${product.name}: ${confirmed.quantity_baked} confirmados`)
     } catch (error: unknown) {
       showToast(`Erro: ${errorMessage(error)}`)
     } finally {
-      setSaving(current => ({ ...current, [bread.id]: false }))
+      setSaving(current => ({ ...current, [productKey]: false }))
     }
   }
 
   const dateOptions = Array.from({ length: 8 }, (_, index) => dateKeyOffset(index))
-  const confirmedCount = breads.filter(bread => Boolean(actuals[bread.id])).length
+  const confirmedCount = products.filter(product => Boolean(actuals[ovenProductKey(product.source, product.id)])).length
   const userInitial = user?.displayName.trim().charAt(0).toUpperCase() ?? ''
   const avatarColor = user ? roleColor(user.role) : 'var(--crust)'
 
@@ -379,24 +486,25 @@ export default function FornoPage() {
               <span>Não foi possível carregar o forno.</span>
               <button type="button" onClick={() => void loadData()}>Tentar novamente</button>
             </div>
-          ) : breads.length === 0 ? (
-            <div className="ps-empty">Nenhum pão previsto para {formatDateBR(date)}.</div>
+          ) : products.length === 0 ? (
+            <div className="ps-empty">Nenhum produto de Forno previsto para {formatDateBR(date)}.</div>
           ) : (
             <>
               <div className="ps-section">
                 <div className="bar" />
                 <b>Saída do forno</b>
-                <span className="meta">{confirmedCount}/{breads.length} confirmados</span>
+                <span className="meta">{confirmedCount}/{products.length} confirmados</span>
               </div>
 
               <div className="ps-grid">
-                {breads.map(bread => {
-                  const planned = plannedMap.get(bread.id) ?? 0
-                  const actual = actuals[bread.id]
-                  const form = forms[bread.id]
-                  const isEditing = Boolean(editing[bread.id])
-                  const isSaving = Boolean(saving[bread.id])
-                  const unit = bread.unit === 'kg' ? 'kg' : 'un'
+                {products.map(product => {
+                  const productKey = ovenProductKey(product.source, product.id)
+                  const planned = plannedMap.get(productKey) ?? 0
+                  const actual = actuals[productKey]
+                  const form = forms[productKey]
+                  const isEditing = Boolean(editing[productKey])
+                  const isSaving = Boolean(saving[productKey])
+                  const unit = product.unit === 'kg' ? 'kg' : 'un'
                   const step = unit === 'kg' ? 0.1 : 1
                   const quantityGood = parseOvenQuantity(form?.quantityGood ?? '0', unit) ?? 0
                   const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0', unit) ?? 0
@@ -404,12 +512,12 @@ export default function FornoPage() {
 
                   return (
                     <article
-                      key={bread.id}
+                      key={productKey}
                       className={`ps-card ps-oven-card${actual ? ' confirmed' : ''}`}
                     >
                       <div className="ps-oven-card-head">
                         <div>
-                          <div className="ps-pname">{bread.name}</div>
+                          <div className="ps-pname">{product.name}</div>
                           <div className="ps-oven-lot">Lote {lotCode}</div>
                         </div>
                         <div className="ps-oven-planned">
@@ -436,7 +544,7 @@ export default function FornoPage() {
                             type="button"
                             className="ps-oven-confirm"
                             disabled={isSaving}
-                            onClick={() => void confirmBread(bread, true)}
+                            onClick={() => void confirmProduct(product, true)}
                           >
                             {isSaving
                               ? <LoaderCircle className="ps-spin" size={21} />
@@ -447,7 +555,7 @@ export default function FornoPage() {
                             type="button"
                             className="ps-oven-adjust"
                             disabled={isSaving}
-                            onClick={() => startEditing(bread.id)}
+                            onClick={() => startEditing(productKey)}
                           >
                             <Pencil size={15} /> Ajustar ou informar perda
                           </button>
@@ -458,7 +566,7 @@ export default function FornoPage() {
                         <button
                           type="button"
                           className="ps-oven-adjust"
-                          onClick={() => startEditing(bread.id)}
+                          onClick={() => startEditing(productKey)}
                         >
                           <Pencil size={15} /> Corrigir confirmação
                         </button>
@@ -467,19 +575,19 @@ export default function FornoPage() {
                       {isEditing && form && (
                         <div className="ps-oven-editor">
                           <div className="ps-oven-field">
-                            <label htmlFor={`good-${bread.id}`}>Saída boa</label>
+                            <label htmlFor={`good-${productKey}`}>Saída boa</label>
                             <div className="ps-stepper">
                               <button
                                 type="button"
                                 className="ps-step"
                                 disabled={quantityGood <= 0 || isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityGood', -step)}
-                                aria-label={`Diminuir saída boa de ${bread.name}`}
+                                onClick={() => adjustQuantity(productKey, 'quantityGood', -step)}
+                                aria-label={`Diminuir saída boa de ${product.name}`}
                               >
                                 <Minus size={21} />
                               </button>
                               <input
-                                id={`good-${bread.id}`}
+                                id={`good-${productKey}`}
                                 className="ps-qty"
                                 type="number"
                                 inputMode={unit === 'kg' ? 'decimal' : 'numeric'}
@@ -487,14 +595,14 @@ export default function FornoPage() {
                                 step={step}
                                 disabled={isSaving}
                                 value={form.quantityGood}
-                                onChange={event => updateForm(bread.id, { quantityGood: event.target.value })}
+                                onChange={event => updateForm(productKey, { quantityGood: event.target.value })}
                               />
                               <button
                                 type="button"
                                 className="ps-step"
                                 disabled={isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityGood', step)}
-                                aria-label={`Aumentar saída boa de ${bread.name}`}
+                                onClick={() => adjustQuantity(productKey, 'quantityGood', step)}
+                                aria-label={`Aumentar saída boa de ${product.name}`}
                               >
                                 <Plus size={21} />
                               </button>
@@ -502,19 +610,19 @@ export default function FornoPage() {
                           </div>
 
                           <div className="ps-oven-field loss">
-                            <label htmlFor={`loss-${bread.id}`}>Perda no forno</label>
+                            <label htmlFor={`loss-${productKey}`}>Perda no forno</label>
                             <div className="ps-stepper">
                               <button
                                 type="button"
                                 className="ps-step"
                                 disabled={quantityLoss <= 0 || isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', -step)}
-                                aria-label={`Diminuir perda de ${bread.name}`}
+                                onClick={() => adjustQuantity(productKey, 'quantityLoss', -step)}
+                                aria-label={`Diminuir perda de ${product.name}`}
                               >
                                 <Minus size={21} />
                               </button>
                               <input
-                                id={`loss-${bread.id}`}
+                                id={`loss-${productKey}`}
                                 className={`ps-qty${quantityLoss === 0 ? ' zero' : ''}`}
                                 type="number"
                                 inputMode={unit === 'kg' ? 'decimal' : 'numeric'}
@@ -522,14 +630,14 @@ export default function FornoPage() {
                                 step={step}
                                 disabled={isSaving}
                                 value={form.quantityLoss}
-                                onChange={event => updateForm(bread.id, { quantityLoss: event.target.value })}
+                                onChange={event => updateForm(productKey, { quantityLoss: event.target.value })}
                               />
                               <button
                                 type="button"
                                 className="ps-step"
                                 disabled={isSaving}
-                                onClick={() => adjustQuantity(bread.id, 'quantityLoss', step)}
-                                aria-label={`Aumentar perda de ${bread.name}`}
+                                onClick={() => adjustQuantity(productKey, 'quantityLoss', step)}
+                                aria-label={`Aumentar perda de ${product.name}`}
                               >
                                 <Plus size={21} />
                               </button>
@@ -539,10 +647,10 @@ export default function FornoPage() {
                           {quantityLoss > 0 && (
                             <select
                               className="ps-select"
-                              aria-label={`Motivo da perda de ${bread.name}`}
+                              aria-label={`Motivo da perda de ${product.name}`}
                               disabled={isSaving}
                               value={form.lossReason}
-                              onChange={event => updateForm(bread.id, { lossReason: event.target.value })}
+                              onChange={event => updateForm(productKey, { lossReason: event.target.value })}
                             >
                               {OVEN_LOSS_REASONS.map(reason => (
                                 <option key={reason} value={reason}>{reason}</option>
@@ -555,7 +663,7 @@ export default function FornoPage() {
                               type="button"
                               className="ps-btn ghost"
                               disabled={isSaving}
-                              onClick={() => cancelEditing(bread.id)}
+                              onClick={() => cancelEditing(productKey)}
                             >
                               Cancelar
                             </button>
@@ -563,7 +671,7 @@ export default function FornoPage() {
                               type="button"
                               className="ps-btn success"
                               disabled={isSaving}
-                              onClick={() => void confirmBread(bread)}
+                              onClick={() => void confirmProduct(product)}
                             >
                               {isSaving && <LoaderCircle className="ps-spin" size={18} />}
                               {actual ? 'Salvar correção' : 'Confirmar saída'}

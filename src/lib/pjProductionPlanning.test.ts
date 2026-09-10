@@ -41,11 +41,11 @@ describe('groupPjProductionQueue', () => {
     expect(groups[0].items.map(item => item.productName)).toEqual(['Brioche', 'Italiano'])
   })
 
-  it('não perde a linha bloqueada sem vínculo com o Forno', () => {
+  it('não perde a linha bloqueada sem classificação operacional', () => {
     const groups = groupPjProductionQueue([
-      row({ canonical_bread_id: null, mapping_error: 'Produto sem vínculo com um pão do Forno.' }),
+      row({ canonical_bread_id: null, mapping_error: 'Produto sem classificação operacional para produção.' }),
     ])
-    expect(groups[0].items[0].mappingError).toContain('sem vínculo')
+    expect(groups[0].items[0].mappingError).toContain('sem classificação')
   })
 })
 
@@ -92,6 +92,14 @@ describe('validatePjProductionSelection', () => {
     expect(validatePjProductionSelection(item, '300', '0')).toEqual({
       orderId: 'order-1',
       quantity: 300,
+      frozenQuantity: 0,
+    })
+  })
+
+  it('permite produto de Forno sem vínculo com o cadastro antigo', () => {
+    expect(validatePjProductionSelection({ ...item, breadId: null }, '10', '0')).toEqual({
+      orderId: 'order-1',
+      quantity: 10,
       frozenQuantity: 0,
     })
   })
