@@ -59,6 +59,21 @@ on conflict (id) do update set
   production_days = excluded.production_days,
   production_area = excluded.production_area;
 
+-- Catálogo fictício da Cozinha já nasce com o processo real. Bruschettas e
+-- pizzas são montagem; pastinhas e pestos são preparo. Todos podem nascer de
+-- uma necessidade planejada ou da rotina livre da vitrine.
+update public.products
+set production_process = case
+      when category in ('Bruschettas', 'Pizza Redonda', 'Pizza Romana') then 'montagem'
+      else 'preparo'
+    end,
+    production_area = 'cozinha',
+    allows_planned_production = true,
+    allows_unplanned_production = true
+where id::text like '10000000-0000-4000-8000-0000000000%'
+  and id between '10000000-0000-4000-8000-000000000001'::uuid
+             and '10000000-0000-4000-8000-000000000020'::uuid;
+
 insert into public.products (
   id, name, category, active, sort_order, unit, kind,
   is_fabricacao_propria, production_days, production_area
@@ -164,7 +179,11 @@ values
   ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001',
    'teste-focaccia-pj', 'bread', '[TESTE] Focaccia PJ', 89.00, 'kg', 1, true),
   ('51000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001',
-   'teste-baguete', 'bread', '[TESTE] Baguete', 2.97, 'un', 1, true)
+   'teste-baguete', 'bread', '[TESTE] Baguete', 2.97, 'un', 1, true),
+  -- Produto montado pela Cozinha e vendido por peso.
+  ('51000000-0000-4000-8000-000000000004', '50000000-0000-4000-8000-000000000001',
+   '10000000-0000-4000-8000-000000000015', 'product',
+   '[TESTE] Pizza Romana de Calabresa', 70.00, 'kg', 1, true)
 on conflict (id) do update set
   tier_id = excluded.tier_id,
   product_id = excluded.product_id,
@@ -385,6 +404,21 @@ values
    (now() at time zone 'America/Sao_Paulo')::date + 3,
    '[TESTE] esta linha ainda NAO foi conferida, e e ela que segura o envio', false,
    null, null, null, null, null, null,
+   null, null, null, null),
+  -- Montagem da Cozinha: Geolar programa e a Cozinha enxerga no painel sem
+  -- que este item apareça no Forno.
+  ('30000000-0000-4000-8000-000000000108', 'pj', 'pj',
+   '70000000-0000-4000-8000-000000000008',
+   '60000000-0000-4000-8000-000000000001', '[TESTE] Bistro Cliente PJ',
+   '10000000-0000-4000-8000-000000000015', 'product',
+   '[TESTE] Pizza Romana de Calabresa',
+   4.125, 70.00, 1, 'kg',
+   (now() at time zone 'America/Sao_Paulo')::date,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   null,
+   (now() at time zone 'America/Sao_Paulo')::date + 2,
+   '[TESTE] pedido planejado para a Cozinha, sem passagem pelo Forno', false,
+   null, null, null, null, null, null,
    null, null, null, null)
 on conflict (id) do update set
   store = excluded.store,
@@ -566,6 +600,8 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.visualizar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.conferir_recebimento', 'ex'),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'producao_cozinha.lancar', 'jc'),
+    ('rodrigao+teste-geolar-jc@gmail.com', 'producao.acessar', '*'),
+    ('rodrigao+teste-geolar-jc@gmail.com', 'producao_pj.programar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.acessar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.lancar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.importar_xml', 'jc'),
