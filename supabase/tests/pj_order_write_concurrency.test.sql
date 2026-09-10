@@ -301,6 +301,13 @@ create temporary table snapshot_antes_conferencia as
 select pg_temp.versao('9e000000-0000-4000-8000-000000000201') as rows;
 grant select on snapshot_antes_conferencia to authenticated;
 
+create temporary table item_conferencia as
+select id
+from public.orders
+where order_group_id='9e000000-0000-4000-8000-000000000201'
+  and bread_id='teste-lock-pj-a';
+grant select on item_conferencia to authenticated;
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000003',true);
 select lives_ok($q$
@@ -308,11 +315,7 @@ select lives_ok($q$
     '9e000000-0000-4000-8000-000000000109',
     '9e000000-0000-4000-8000-000000000201',
     jsonb_build_array(jsonb_build_object(
-      'order_id',(
-        select id from public.orders
-        where order_group_id='9e000000-0000-4000-8000-000000000201'
-          and bread_id='teste-lock-pj-a'
-      ),
+      'order_id',(select id from item_conferencia),
       'quantity',9,
       'reason',null
     )),
