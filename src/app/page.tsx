@@ -74,6 +74,12 @@ function requestedProductionDate() {
   const date = new URLSearchParams(window.location.search).get('date')
   return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null
 }
+function isMissingPjPrintContract(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; message?: string }
+  return candidate.code === 'PGRST202'
+    && (candidate.message ?? '').includes('list_pj_production_for_oven_v2')
+}
 function parseDays(d: any): number[] {
   if (Array.isArray(d)) return d.map(Number)
   if (typeof d === 'string') return d.replace(/[{}\s]/g,'').split(',').map(Number).filter((n:number) => !isNaN(n))
@@ -1573,12 +1579,21 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
     // A folha das lojas precisa continuar útil para quem não pode consultar a
     // programação PJ e também quando a rede falha. Por isso esta leitura é opcional.
     try {
-      const { data, error } = await supabase.rpc('list_pj_production_for_oven', {
+      const currentResult = await supabase.rpc('list_pj_production_for_oven_v2', {
         // A folha regular mostra a proxima saida, mas PJ pode ser antecipado
         // total ou parcialmente. Aqui entra tudo que a Geolar programou hoje,
         // sem filtrar pela data futura de entrega do pedido.
         p_production_date: bakeryDayKey(),
       })
+      let data = currentResult.data
+      let error = currentResult.error
+      if (error && isMissingPjPrintContract(error)) {
+        const legacyResult = await supabase.rpc('list_pj_production_for_oven', {
+          p_production_date: bakeryDayKey(),
+        })
+        data = legacyResult.data
+        error = legacyResult.error
+      }
       if (requestId !== pjPrintRequestRef.current) return
       if (error) {
         setPjPrintProduction([])
@@ -1676,7 +1691,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
         <div className="print-card print-breads">
           <h3>Pane &amp; Salute — Produção</h3>
           <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
-          <div className="print-row print-row-pj ph"><span>Pão</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
+          <div className="print-row print-row-pj ph"><span>Produto</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
           {!printRows.length && <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0',textAlign:'center'}}>Nenhum pedido para esta data.</div>}
           {printRows.map(b=>(
             <div key={b.breadId} className="print-row print-row-pj">
