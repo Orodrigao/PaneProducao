@@ -311,13 +311,19 @@ begin
       when resolved.effective_source = 'product' and resolved.catalog_product_id is null then 'Produto nao encontrado no cadastro.'
       when resolved.effective_source = 'product' and not coalesce(resolved.catalog_active, false) then 'Produto inativo no cadastro.'
       when resolved.effective_source = 'product' and not coalesce(resolved.is_fabricacao_propria, false) then 'Produto nao marcado como fabricacao propria.'
+      when resolved.effective_source = 'product' and resolved.resolved_bread_id is not null and bread.id is null
+        then 'Pao antigo vinculado nao encontrado.'
       when resolved.effective_source = 'product'
+        and resolved.resolved_bread_id is null
         and (resolved.production_process is null or resolved.production_area is null
           or resolved.allows_planned_production is null)
         then 'Produto sem classificacao operacional para producao.'
-      when resolved.effective_source = 'product' and not resolved.allows_planned_production
+      when resolved.effective_source = 'product'
+        and not coalesce(resolved.allows_planned_production, resolved.resolved_bread_id is not null)
         then 'Produto nao aceita producao planejada.'
-      when resolved.effective_source = 'product' and resolved.production_process <> 'forno'
+      when resolved.effective_source = 'product'
+        and coalesce(resolved.production_process,
+          case when resolved.resolved_bread_id is not null then 'forno' end) <> 'forno'
         then 'Pedidos PJ desta area ainda nao recebem programacao. Registre a producao na area responsavel.'
       else null
     end
@@ -474,15 +480,18 @@ begin
       if not v_product.is_fabricacao_propria then
         raise exception using errcode = '22023', message = 'Produto nao marcado como fabricacao propria.';
       end if;
-      if v_product.production_process is null or v_product.production_area is null
+      if v_product.legacy_bread_id is null
+        and (v_product.production_process is null or v_product.production_area is null
         or v_product.allows_planned_production is null
-      then
+        ) then
         raise exception using errcode = '22023', message = 'Produto sem classificacao operacional para producao.';
       end if;
-      if not v_product.allows_planned_production then
+      if not coalesce(v_product.allows_planned_production, v_product.legacy_bread_id is not null) then
         raise exception using errcode = '22023', message = 'Produto nao aceita producao planejada.';
       end if;
-      if v_product.production_process <> 'forno' then
+      if coalesce(v_product.production_process,
+        case when v_product.legacy_bread_id is not null then 'forno' end) <> 'forno'
+      then
         raise exception using errcode = '22023',
           message = 'Pedidos PJ desta area ainda nao recebem programacao.';
       end if;
@@ -490,8 +499,8 @@ begin
       v_bread_id := v_product.legacy_bread_id;
       v_product_name := coalesce(v_order.product_name, v_product.name);
       v_pricing_unit := coalesce(v_order.pricing_unit, v_product.unit, 'un');
-      v_process := v_product.production_process;
-      v_area := v_product.production_area;
+      v_process := coalesce(v_product.production_process, 'forno');
+      v_area := coalesce(v_product.production_area, 'padaria');
     else
       raise exception using errcode = '22023', message = 'Origem do produto invalida.';
     end if;
