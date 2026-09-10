@@ -36,7 +36,7 @@ describe('painel de programação PJ', () => {
     // O banco ja limita pelo total do pedido, e a fila so traz linha com
     // quantidade pendente. Travar na tela era mais duro que a regra do negocio e
     // empurrava producao para o dia seguinte sem necessidade.
-    expect(source).toContain('const blocked = Boolean(item.mappingError || !item.breadId)')
+    expect(source).toContain('const blocked = Boolean(item.mappingError)')
     expect(source).not.toContain('|| scheduledToday)')
     expect(source).toContain('Dá para programar mais, até o que falta')
   })
@@ -64,7 +64,7 @@ describe('painel de programação PJ', () => {
     expect(source).toContain('const scheduledToday = item.lastScheduledDate === productionDate')
 
     // e em nenhum lugar que decide o que pode ser salvo
-    expect(source).toContain('if (item.mappingError || !item.breadId) continue')
+    expect(source).toContain('if (item.mappingError) continue')
     expect(source).not.toContain('&& item.lastScheduledDate !== productionDate')
   })
 

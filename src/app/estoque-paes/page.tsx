@@ -5,20 +5,39 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
 
-import type { BreadOption as Bread } from '@/lib/types'
-
 interface BreadMovement {
-  bread_id: string
+  bread_id: string | null
+  product_source: 'bread' | 'product'
+  product_id: string
   location: string
   quantity: number
 }
 
 interface SaldoRow {
-  bread_id: string
-  bread_name: string
+  key: string
+  product_name: string
   is_pj: boolean
   unit: string | null
   saldo: number
+}
+
+interface StockProduct {
+  id: string
+  source: 'bread' | 'product'
+  name: string
+  unit: string | null
+  is_pj: boolean
+}
+
+function stockProductKey(source: string, productId: string): string {
+  return `${source}:${productId}`
+}
+
+function isMissingMovementIdentity(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; message?: string }
+  return ['PGRST204', '42703'].includes(candidate.code ?? '')
+    && (candidate.message ?? '').includes('product_source')
 }
 
 const LOCATIONS = ['central', 'jc', 'ja', 'ex', 'pj'] as const
@@ -32,7 +51,7 @@ const LOCATION_LABELS: Record<string, string> = {
 
 export default function EstoquePaesPage() {
   const [user, setUser]         = useState<AppUser | null>(null)
-  const [breads, setBreads]     = useState<Bread[]>([])
+  const [products, setProducts] = useState<StockProduct[]>([])
   const [movements, setMovements] = useState<BreadMovement[]>([])
   const [selectedLoc, setSelectedLoc] = useState<string>('central')
   const [search, setSearch]     = useState('')
@@ -52,34 +71,74 @@ export default function EstoquePaesPage() {
   const load = useCallback(async () => {
     if (!ready) return
     setLoading(true)
-    const [{ data: bs }, { data: ms }] = await Promise.all([
-      supabase.from('breads').select('id,name,unit,is_pj,active').eq('active', true).order('name'),
-      supabase.from('bread_movements').select('bread_id,location,quantity'),
+    const { data: bs } = await supabase
+      .from('breads').select('id,name,unit,is_pj,active').eq('active', true).order('name')
+    const movementResult = await supabase
+      .from('bread_movements')
+      .select('bread_id,product_source,product_id,location,quantity')
+    let movementError = movementResult.error
+    let movementRows: BreadMovement[]
+    if (movementResult.error && isMissingMovementIdentity(movementResult.error)) {
+      const legacyMovementResult = await supabase
+        .from('bread_movements')
+        .select('bread_id,location,quantity')
+      movementRows = ((legacyMovementResult.data ?? []) as Array<{
+        bread_id: string; location: string; quantity: number
+      }>).map(item => ({
+        ...item,
+        product_source: 'bread',
+        product_id: item.bread_id,
+      }))
+      movementError = legacyMovementResult.error
+    } else {
+      movementRows = (movementResult.data ?? []) as BreadMovement[]
+    }
+    const referencedProductIds = new Set(movementRows
+      .filter(item => item.product_source === 'product')
+      .map(item => item.product_id))
+    const { data: ps } = await supabase
+      .from('products')
+      .select('id,name,unit,is_pj,legacy_bread_id,active,production_process')
+      .is('legacy_bread_id', null)
+      .order('name')
+    setProducts([
+      ...((bs || []) as Array<{ id: string; name: string; unit: string | null; is_pj: boolean }>).map(item => ({
+        ...item,
+        source: 'bread' as const,
+      })),
+      ...((ps || []) as Array<{
+        id: string; name: string; unit: string | null; is_pj: boolean
+        active: boolean; production_process: string | null
+      }>).filter(item =>
+        (item.active && item.production_process === 'forno') || referencedProductIds.has(item.id),
+      ).map(item => ({ ...item, source: 'product' as const })),
     ])
-    setBreads(bs || [])
-    setMovements((ms || []) as BreadMovement[])
+    if (!movementError) setMovements(movementRows)
     setLoading(false)
   }, [ready])
 
   useEffect(() => { load() }, [load])
 
-  // Calcula saldo: filtra movements pela location selecionada, agrupa por bread_id, soma.
+  // A ponte legada continua em bread; produto sem ponte passa a ter saldo proprio.
   const saldoRows = useMemo<SaldoRow[]>(() => {
     const map = new Map<string, number>()
     movements
       .filter(m => m.location === selectedLoc)
-      .forEach(m => { map.set(m.bread_id, (map.get(m.bread_id) ?? 0) + Number(m.quantity)) })
-    return breads
-      .map(b => ({
-        bread_id: b.id,
-        bread_name: b.name,
-        is_pj: b.is_pj,
-        unit: b.unit,
-        saldo: map.get(b.id) ?? 0,
+      .forEach(m => {
+        const key = stockProductKey(m.product_source || 'bread', m.product_id || m.bread_id || '')
+        map.set(key, (map.get(key) ?? 0) + Number(m.quantity))
+      })
+    return products
+      .map(product => ({
+        key: stockProductKey(product.source, product.id),
+        product_name: product.name,
+        is_pj: product.is_pj,
+        unit: product.unit,
+        saldo: map.get(stockProductKey(product.source, product.id)) ?? 0,
       }))
-      .filter(r => !search || r.bread_name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => a.bread_name.localeCompare(b.bread_name))
-  }, [breads, movements, selectedLoc, search])
+      .filter(r => !search || r.product_name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => a.product_name.localeCompare(b.product_name))
+  }, [products, movements, selectedLoc, search])
 
   const kpis = useMemo(() => {
     const withStock = saldoRows.filter(r => r.saldo > 0)
@@ -88,7 +147,7 @@ export default function EstoquePaesPage() {
     return {
       total,
       variedades: withStock.length,
-      top: top && top.saldo > 0 ? top.bread_name : '—',
+      top: top && top.saldo > 0 ? top.product_name : '—',
       topSaldo: top?.saldo ?? 0,
     }
   }, [saldoRows])
@@ -110,7 +169,7 @@ export default function EstoquePaesPage() {
           <div className="ps-wordmark">
             <div className="ps-mark">P</div>
             <div className="ps-brand">
-              <b>Saldo de Pães</b>
+              <b>Saldo de Produtos do Forno</b>
               <span>{user?.store ? user.store.toUpperCase() : 'Admin'}</span>
             </div>
           </div>
@@ -123,9 +182,9 @@ export default function EstoquePaesPage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          <h1 className="ps-page-title">📊 Saldo de Pães</h1>
+          <h1 className="ps-page-title">📊 Saldo de Produtos do Forno</h1>
           <p className="ps-page-lead">
-            Saldo atual de pães por local. Calculado a partir das movimentações (forno + romaneio + descartes).
+            Saldo atual dos produtos do Forno por local, calculado pelas movimentações de forno, romaneio e descartes.
           </p>
 
           {/* Filtros */}
@@ -143,7 +202,7 @@ export default function EstoquePaesPage() {
             )}
             <div style={{flex:1, minWidth:180, position:'relative'}}>
               <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
-              <input placeholder="Buscar pão..." value={search} onChange={e=>setSearch(e.target.value)}
+              <input placeholder="Buscar produto..." value={search} onChange={e=>setSearch(e.target.value)}
                 className="ps-input" style={{width:'100%', padding:'6px 10px 6px 30px', fontSize:13}}/>
             </div>
           </div>
@@ -168,14 +227,14 @@ export default function EstoquePaesPage() {
             <div className="ps-empty">Carregando saldos...</div>
           ) : saldoRows.length === 0 ? (
             <div className="ps-empty">
-              {breads.length === 0 ? 'Nenhum pão cadastrado.' : 'Nenhum pão encontrado.'}
+              {products.length === 0 ? 'Nenhum produto de Forno cadastrado.' : 'Nenhum produto encontrado.'}
             </div>
           ) : (
             <div className="ps-table-wrap" style={{overflowX:'auto'}}>
               <table className="ps-table">
                 <thead>
                   <tr>
-                    <th>Pão</th>
+                    <th>Produto</th>
                     <th className="right">Saldo</th>
                   </tr>
                 </thead>
@@ -184,9 +243,9 @@ export default function EstoquePaesPage() {
                     const neg = r.saldo < 0
                     const empty = r.saldo === 0
                     return (
-                      <tr key={r.bread_id}>
+                      <tr key={r.key}>
                         <td>
-                          {r.bread_name}
+                          {r.product_name}
                           {r.is_pj && <span className="ps-pjbadge">PJ</span>}
                           {r.unit && <span style={{marginLeft:8, fontSize:11, color:'var(--ink-faint)'}}>{r.unit}</span>}
                         </td>
