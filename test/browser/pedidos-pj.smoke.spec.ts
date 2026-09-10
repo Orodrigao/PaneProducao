@@ -33,7 +33,9 @@ test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', 
   await page.goto('/pedidos-pj?legado=1')
 
   // Aba "Em aberto" e a padrao: os dois pedidos abertos do seed, com valor.
-  const bistroAberto = page.locator('.pj-order-row', { hasText: '[TESTE] Bistro Cliente PJ' })
+  const bistroAberto = page
+    .locator('.pj-order-row', { hasText: '[TESTE] Bistro Cliente PJ' })
+    .filter({ hasText: 'R$ 403.20' })
   await expect(bistroAberto).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(bistroAberto).toContainText('R$ 403.20')
 
