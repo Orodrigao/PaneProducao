@@ -1,16 +1,15 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-10
+**Data de referência:** 2026-09-11
 
-**Base observada:** `origin/main` em `0dd35f8`. A revisão de 2026-09-10 cobriu
-a classificação operacional, a programação PJ por área, o Forno e a produção
-planejada e livre da Cozinha. As demais seções conservam suas datas de revisão
-anteriores.
+**Base observada:** `origin/main` em `7cb8ce5` e auditoria somente leitura de
+produção em 11/09/2026. A revisão cobriu a virada da jornada PJ; as demais
+seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
-## Jornada PJ em ativação controlada (09/09/2026)
+## Jornada PJ padrão para novos pedidos (11/09/2026)
 
 As PRs #339, #340 e #341 publicaram a ficha separada em Conferência → Revisão e
 NF → Saída, a revisão de vencimentos e parcelas e as exceções de devolução por
@@ -37,8 +36,16 @@ primeiro e único pedido real acompanhado. A consulta somente leitura após a
 ativação confirmou a versão inicial: 5 unidades de Italiano, ainda sem quantidade
 conferida, cobrança, liberação ou saída. O próximo passo operacional é a
 Expedição JC conferir esse pedido; depois, o ciclo segue para revisão financeira
-e NF, liberação e saída. A capacidade permanece limitada a um pedido real até o
-ciclo completo ser acompanhado.
+e NF, liberação e saída.
+
+Em 11/09/2026, a PR #380 publicou a gravação atômica e idempotente de criação,
+edição e cancelamento, a proteção contra edição simultânea e o gerenciamento do
+pedido padrão ainda intacto. A migration
+`20260911180134_ativar_rotina_padrao_pedidos_pj` faz a virada sob a mesma trava
+usada pela criação: somente pedidos criados após o instante gravado em
+`private.pj_flow_rollout_settings.cutover_at` entram automaticamente na jornada
+`standard`. Pedidos anteriores permanecem legados, e o pedido controlado da
+Quinta Parrilla conserva sua identidade `controlled_real` até concluir o ciclo.
 
 ## Fase estratégica
 
