@@ -117,7 +117,11 @@ Antes de propor uma mudança:
    não repetir o erro; gravar sem ler não protege ninguém;
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
-10. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
+10. faça o checkpoint de distribuição descrito em `MASTER.md` e em
+   `C:\Users\rodri\.ai-team\workspace\manuals\COORDENACAO.md`: registre
+   frentes independentes e seguras,
+   despachos escolhidos ou o motivo concreto para concentrar o trabalho;
+11. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
     conflito encontrado no preflight.
 
 Não carregue todo o diretório `docs/` por padrão.
@@ -313,6 +317,10 @@ disponíveis na máquina). Regras do mandato:
 - fan-out grande (mais de ~4 agentes de uma vez, ou orquestração em
   nuvem) continua exigindo aviso prévio ao Rodrigo, pelo custo.
 
+Essa autorização não é passiva: o checkpoint do preflight deve ser cumprido sem
+Rodrigo precisar lembrar. Não crie uma frente quando a separação custar mais que
+o ganho ou quando ela dividir artificialmente o mesmo problema.
+
 ### 4. Verificação
 
 Toda mudança de código, antes de declarar pronto:
@@ -324,8 +332,20 @@ npm test
 npm run build
 ```
 
-O CI roda exatamente esses passos em todo PR — rodá-los antes do push é o
-que evita ciclo de tentativa e erro público. `tsc` e `build` sempre em
+Esses comandos pertencem ao fechamento caro, não ao diagnóstico. Durante a
+investigação, use `Diagnose` da Portaria para executar no isolamento o menor teste
+que reproduz a falha e prove vermelho-verde quando couber. Quando o diff
+estabilizar, faça a revisão independente exigida; só então rode a prova específica
+final e um único Check isolado, que executa a bateria acima. Depois vêm push e
+confirmação pelo CI remoto.
+
+Falha de bateria, Check ou CI devolve ao teste específico. Não repita a bateria
+completa sem mudança relevante de código, dado ou ambiente, salvo instabilidade
+ou falha de infraestrutura identificada e registrada. Conte e explique no
+fechamento qualquer repetição completa.
+
+O CI e o Check isolado rodam exatamente esses passos em todo PR; concluir o Check
+antes do push evita ciclo de tentativa e erro público. `tsc` e `build` sempre em
 sequência, nunca em paralelo (ver `lessons.md`).
 
 Além disso:
@@ -395,6 +415,17 @@ que o trecho real não foi executado.
   migration, que a Action `Banco (migrations)` passou), deletar branch e
   worktree, e avisar o Rodrigo: "no ar, ambiente limpo". A entrega só
   termina com a casa limpa.
+
+Uma sessão cobre uma entrega lógica. PR substituta da mesma entrega pode
+continuar nela; entrega integrada, cancelada ou encerrada exige fechamento e fim
+da sessão. Nova fase ou novo objetivo que abra outra PR nasce em nova
+sessão, com passagem curta e sem logs extensos. Acompanhe jobs por esperas ou
+consultas compactas, com intervalo crescente, e comunique somente transições
+relevantes.
+
+No fechamento, quando observável, separe tempo de implementação, diagnóstico,
+testes específicos, baterias completas, espera externa, retrabalho e bloqueio
+por cota. Não estime retrospectivamente o que não foi medido.
 
 ## Memória útil
 
