@@ -55,6 +55,16 @@ language sql stable as $$
   );
 $$;
 
+create function pg_temp.versao(p_group uuid) returns jsonb
+language sql stable as $$
+  select jsonb_agg(
+    jsonb_build_object('id', id, 'updated_at', updated_at)
+    order by id
+  )
+  from public.orders
+  where order_group_id = p_group;
+$$;
+
 select is(private.pj_flow_rollout_state(),'preparing','migration instala contrato com virada desligada');
 select ok(not has_table_privilege('authenticated','private.pj_flow_rollout_settings','select'),
   'navegador nao le nem altera a chave de ativacao');
@@ -62,6 +72,8 @@ select ok(not has_table_privilege('authenticated','private.pj_order_write_reques
   'auditoria idempotente permanece privada');
 select ok(not has_function_privilege('anon','public.create_pj_order_atomic(uuid,uuid,jsonb)','execute'),
   'anonimo nao cria pedido pelo contrato');
+select ok(not has_function_privilege('authenticated','public.replace_pj_order_atomic(uuid,uuid,jsonb)','execute'),
+  'contrato antigo de edicao nao fica disponivel ao navegador');
 select ok(not has_function_privilege('authenticated',
   'private.schedule_pj_production_contract_impl(date,jsonb,uuid)','execute'),
   'navegador nao chama diretamente a implementacao interna da producao');
@@ -146,13 +158,19 @@ select is((select count(*)::int from private.pj_order_write_requests where reque
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000001',true);
-select lives_ok($q$select public.replace_pj_order_atomic(
-  '9f000000-0000-4000-8000-000000000105','9f000000-0000-4000-8000-000000000202',pg_temp.pedido(8))$q$,
-  'edicao atomica do legado continua permitida depois do corte');
-select lives_ok($q$select public.replace_pj_order_atomic(
-  '9f000000-0000-4000-8000-000000000106','9f000000-0000-4000-8000-000000000203',
+select throws_ok($q$select public.replace_pj_order_atomic(
+  '9f000000-0000-4000-8000-000000000116','9f000000-0000-4000-8000-000000000203',
   jsonb_build_array(pg_temp.pedido(9)->0))$q$,
-  'pedido padrao pode ser corrigido antes da conferencia');
+  '42501',null,'contrato antigo nao altera pedido padrao');
+select lives_ok($q$select public.replace_pj_order_atomic_v2(
+  '9f000000-0000-4000-8000-000000000105','9f000000-0000-4000-8000-000000000202',
+  pg_temp.pedido(8),pg_temp.versao('9f000000-0000-4000-8000-000000000202'))$q$,
+  'edicao protegida do legado continua permitida depois do corte');
+select lives_ok($q$select public.replace_pj_order_atomic_v2(
+  '9f000000-0000-4000-8000-000000000106','9f000000-0000-4000-8000-000000000203',
+  jsonb_build_array(pg_temp.pedido(9)->0),
+  pg_temp.versao('9f000000-0000-4000-8000-000000000203'))$q$,
+  'pedido padrao pode ser corrigido com a versao aberta antes da conferencia');
 reset role;
 select is((select count(*)::int from public.orders where order_group_id='9f000000-0000-4000-8000-000000000202'),
   2,'edicao legada substitui sem duplicar nem perder linhas');
