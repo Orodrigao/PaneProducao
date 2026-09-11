@@ -14,13 +14,27 @@ import { getCurrentUser, roleColor, RECEIVABLES_ROUTE, type AppUser } from '@/li
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
-import { ensureOrderGroupId, pjOrderGroupKey } from '@/lib/orderGrouping'
+import { pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
   cancellationAvailability,
   normalizeCancellationReason,
 } from '@/lib/orderCancellation'
-import { cancelOrderRows } from '@/lib/orderCancellationClient'
+import {
+  cancelPjOrder,
+  clearPendingPjCreate,
+  createPjOrder,
+  matchesPjWriteAttempt,
+  pendingPjCreateAttempt,
+  PjOrderWriteError,
+  readPendingPjCreate,
+  rememberPendingPjCreate,
+  replacePjOrder,
+  resolvePjWriteAttempt,
+  type PjOrderExpectedRow,
+  type PjOrderWriteRow,
+  type PjWriteAttempt,
+} from '@/lib/pjOrderWriteClient'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import { hasPendingDispatchCheck, organizePjOrders, resolvePjOrderShortcut } from '@/lib/pjOrderList'
 import {
@@ -63,6 +77,7 @@ interface OrderLine {
 
 interface OrderRow {
   id:string
+  updated_at:string|null
   order_group_id:string|null
   customer_id:string|null; pj_client:string|null
   order_date:string; delivery_date:string|null; production_date:string|null
@@ -121,6 +136,7 @@ function fmtBR(dateStr:string|null): string {
 function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
   return {
     id: row.id,
+    updated_at: null,
     order_group_id: row.order_group_id,
     customer_id: row.customer_id,
     pj_client: row.customer_name,
@@ -151,10 +167,15 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
 }
 
 export default function PedidosPJPage() {
-  return <PjFlowEntry legacy={excluded => <LegacyPedidosPJPage excludedFlowIds={excluded} />} />
+  return <PjFlowEntry legacy={(excluded, managedFlowId) => (
+    <LegacyPedidosPJPage excludedFlowIds={excluded} managedFlowId={managedFlowId} />
+  )} />
 }
 
-function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] }) {
+function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
+  excludedFlowIds: string[]
+  managedFlowId: string | null
+}) {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
   // Quem pode corrigir a quantidade depois do envio. O cargo nao basta: a
@@ -196,13 +217,20 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
     url.searchParams.delete('pedido'); url.searchParams.delete('corrigir')
     window.history.replaceState(window.history.state, '', url)
   }, [])
-  const [editing, setEditing] = useState<{ids:string[]; order_date:string; order_group_id:string|null}|null>(null)
+  const [editing, setEditing] = useState<{
+    ids:string[]
+    order_date:string
+    order_group_id:string|null
+    expectedRows:PjOrderExpectedRow[]
+  }|null>(null)
   const [cancelling, setCancelling] = useState(false)
   const cancellingRef = useRef(false)
   const [dispatching, setDispatching] = useState(false)
   const dispatchingRef = useRef(false)
   const [savingCheck, setSavingCheck] = useState(false)
   const savingCheckRef = useRef(false)
+  const saveAttemptRef = useRef<PjWriteAttempt | null>(null)
+  const cancelAttemptRef = useRef<PjWriteAttempt | null>(null)
   // O identificador da tentativa sobrevive a uma falha de rede: repetir com o
   // MESMO id faz o banco devolver o resultado anterior em vez de gravar duas
   // vezes. Gerar um novo a cada toque transformaria "a resposta se perdeu" em
@@ -397,12 +425,7 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
     if (lines.some(line => quantityInputs[line.key] !== undefined && parseOrderLinePacksInput(quantityInputs[line.key], line.pricing_unit) === null)) { showToast('Digite uma quantidade válida'); return }
     if (lines.some(l => l.packs <= 0)) { showToast('Quantidade inválida'); return }
 
-    setSaving(true)
-    const orderGroupId = ensureOrderGroupId(editing?.order_group_id)
-    const rows = lines.map(l => ({
-      store: 'pj',
-      order_type: 'pj',
-      order_group_id: orderGroupId,
+    const rows: PjOrderWriteRow[] = lines.map(l => ({
       bread_id: l.product_id,
       product_source: l.product_source,
       product_name: l.product_name,
@@ -416,24 +439,90 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
       order_date: editing ? editing.order_date : todayISO(),
       delivery_date: delivery,
       production_date: null,
-      pj_delivery_date: delivery,
       obs: obs.trim() || null,
     }))
-    const { error } = await supabase.from('orders').insert(rows)
-    if (error) { setSaving(false); showToast('Erro: ' + error.message); return }
-    if (editing) await supabase.from('orders').delete().in('id', editing.ids)
-    setSaving(false)
-    showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
-    setCustId(''); setDelivery(''); setObs(''); setLines([]); setQuantityInputs({}); setSearch(''); setEditing(null)
-    setListStage('open'); setListSearch('')
-    setTab('lista')
-    loadAll()
+    setSaving(true)
+    try {
+      const operation = editing ? 'replace' : 'create'
+      if (!editing && user) {
+        const pending = readPendingPjCreate(user.id)
+        const sameImmediateRetry = pending
+          && pending.requestId === saveAttemptRef.current?.requestId
+          && matchesPjWriteAttempt(saveAttemptRef.current, 'create', null, rows)
+        if (pending && !sameImmediateRetry) {
+          // A tentativa anterior pode estar confirmada, ainda em andamento ou
+          // nem ter chegado ao banco. Repetir exatamente o mesmo pedido com os
+          // mesmos ids resolve os tres casos sem abrir uma segunda identidade.
+          const recovered = await createPjOrder(pendingPjCreateAttempt(pending), pending.rows)
+          clearPendingPjCreate(user.id)
+          saveAttemptRef.current = null
+          showToast('✅ O pedido anterior foi confirmado. Nenhuma cópia foi criada.')
+          window.location.assign(`/pedidos-pj?pedido=${recovered.order_group_id}`)
+          return
+        }
+      }
+      const writePayload = editing ? { rows, expectedRows: editing.expectedRows } : rows
+      const attempt = resolvePjWriteAttempt(
+        saveAttemptRef.current,
+        operation,
+        editing?.order_group_id ?? null,
+        writePayload,
+      )
+      saveAttemptRef.current = attempt
+      if (!editing && user) rememberPendingPjCreate(user.id, attempt, rows)
+      const result = editing
+        ? await replacePjOrder(attempt, rows, editing.expectedRows)
+        : await createPjOrder(attempt, rows)
+
+      saveAttemptRef.current = null
+      if (!editing && user) clearPendingPjCreate(user.id)
+      showToast(editing ? `✅ Pedido atualizado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}` : `✅ Pedido criado — ${lines.length} produto(s) · R$ ${totalValue.toFixed(2)}`)
+      if (!editing && result.flow_enabled) {
+        window.location.assign(`/pedidos-pj?pedido=${result.order_group_id}`)
+        return
+      }
+      setCustId(''); setDelivery(''); setObs(''); setLines([]); setQuantityInputs({}); setSearch(''); setEditing(null)
+      setListStage('open'); setListSearch('')
+      setTab('lista')
+      loadAll()
+    } catch (error) {
+      if (error instanceof PjOrderWriteError && !error.ambiguous) {
+        saveAttemptRef.current = null
+        if (!editing && user) clearPendingPjCreate(user.id)
+        if (editing && error.code === '40001') {
+          setEditing(null)
+          setCustId('')
+          setDelivery('')
+          setObs('')
+          setLines([])
+          setQuantityInputs({})
+          setSearch('')
+          setSearchOpen(false)
+          setTab('lista')
+          await loadAll(user)
+        }
+      }
+      showToast('Erro: ' + (error instanceof Error ? error.message : 'Não foi possível salvar o pedido.'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const startEdit = (g: PedidoGroup) => {
     if (!access.canManage || g.cancelled_at || g.dispatched_at || cancellingRef.current) return
+    if (!g.order_group_id) {
+      showToast('Pedido antigo sem identificação. Fale com o Rodrigo.')
+      return
+    }
     if (g.production_date) {
       showToast('Este pedido já entrou na produção e não pode mais ser alterado.')
+      return
+    }
+    const expectedRows = g.rows.flatMap(row => row.updated_at
+      ? [{ id: row.id, updated_at: row.updated_at }]
+      : [])
+    if (expectedRows.length !== g.rows.length) {
+      showToast('Não foi possível confirmar a versão deste pedido. Recarregue a página.')
       return
     }
     setCustId(g.customer_id || '')
@@ -455,7 +544,12 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
       }
     }))
     setQuantityInputs({})
-    setEditing({ ids: g.rows.map(r => r.id), order_date: g.order_date, order_group_id: g.order_group_id })
+    setEditing({
+      ids: g.rows.map(r => r.id),
+      order_date: g.order_date,
+      order_group_id: g.order_group_id,
+      expectedRows,
+    })
     setSearch('')
     fecharPedido()
     setTab('novo')
@@ -465,6 +559,7 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
     const billedGroups = new Set(billingState.kind === 'loaded' ? billingState.bills.filter(bill => bill.status !== 'cancelada').map(bill => bill.origin_ref) : [])
     const groups = new Map<string, PedidoGroup>()
     orders.forEach(r => {
+      if (managedFlowId && r.order_group_id !== managedFlowId) return
       if (r.order_group_id && excludedFlowIds.includes(r.order_group_id)) return
       const key = pjOrderGroupKey(r)
       if (!groups.has(key)) {
@@ -510,7 +605,7 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
       if (a.delivery_date && b.delivery_date) return b.delivery_date.localeCompare(a.delivery_date)
       return b.order_date.localeCompare(a.order_date)
     })
-  }, [orders, customers, billingState, excludedFlowIds])
+  }, [orders, customers, billingState, excludedFlowIds, managedFlowId])
 
   useEffect(() => {
     if (!loading && !loadError) setViewing(previous => previous ? pedidosGrouped.find(group => group.key === previous.key) ?? null : null)
@@ -531,6 +626,10 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
     }
     if (!user || !canCancelOrder(user.role, 'pj')) {
       showToast('Você não tem permissão para cancelar pedidos PJ')
+      return false
+    }
+    if (!g.order_group_id) {
+      showToast('Pedido antigo sem identificação. Fale com o Rodrigo.')
       return false
     }
 
@@ -554,19 +653,26 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
     setCancelling(true)
 
     try {
-      const result = await cancelOrderRows(ids, user.displayName, reason)
-      if (!result.ok) {
-        showToast(result.message)
-        return false
+      const attempt = resolvePjWriteAttempt(
+        cancelAttemptRef.current,
+        'cancel',
+        g.order_group_id,
+        { reason },
+      )
+      cancelAttemptRef.current = attempt
+      const result = await cancelPjOrder(attempt, reason)
+      cancelAttemptRef.current = null
+      const cancellation = {
+        cancelled_at: result.cancelled_at,
+        cancelled_by: result.cancelled_by,
+        cancel_reason: result.cancel_reason,
       }
-
-      const cancellation = result.cancellation
       setOrders(previous => previous.map(row => ids.includes(row.id) ? { ...row, ...cancellation } : row))
       setViewing(previous => previous?.key === g.key ? { ...previous, ...cancellation } : previous)
       showToast('✅ Pedido cancelado e retirado da operação')
       return true
-    } catch {
-      showToast('Erro inesperado ao cancelar. Recarregue a página e tente novamente.')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Erro inesperado ao cancelar. Recarregue a página e tente novamente.')
       return false
     } finally {
       cancellingRef.current = false
@@ -1054,7 +1160,7 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
               />
             )}
 
-            {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && viewingCancellationAvailability && (
+            {access.canManage && viewing.order_group_id && !viewing.cancelled_at && !viewing.dispatched_at && viewingCancellationAvailability && (
               <OrderCancellationPanel
                 canCancel={canCancelOrder(user?.role, 'pj')}
                 availability={viewingCancellationAvailability}
@@ -1107,7 +1213,7 @@ function LegacyPedidosPJPage({ excludedFlowIds }: { excludedFlowIds: string[] })
             )}
 
             <div className="actions">
-              {access.canManage && !viewing.cancelled_at && !viewing.dispatched_at && !viewing.production_date && (
+              {access.canManage && viewing.order_group_id && !viewing.cancelled_at && !viewing.dispatched_at && !viewing.production_date && (
                 <button onClick={()=>startEdit(viewing)} disabled={cancelling} className="ps-btn ghost">
                   <Pencil size={14}/> Editar
                 </button>
