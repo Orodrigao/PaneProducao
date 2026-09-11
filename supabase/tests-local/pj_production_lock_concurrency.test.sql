@@ -120,6 +120,9 @@ select ok(
     ilike '%A programacao PJ deve ser feita para hoje.%',
   'segunda sessao prossegue depois da liberacao sem deadlock'
 );
+create temporary table remote_schedule_result_end as
+select result
+from extensions.dblink_get_result('pj_lock_worker', false) as response(result jsonb);
 select extensions.dblink_exec('pj_lock_worker', 'rollback');
 
 select extensions.dblink_exec(
