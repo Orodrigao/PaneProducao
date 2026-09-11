@@ -1,0 +1,11 @@
+[
+  { "case": "case-01", "items": 4, "fields": ["vProd"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-02", "items": 3, "fields": ["vProd", "vST", "vICMSDeson"], "indDeduzDeson": "0", "indTotZero": 0, "closes": true },
+  { "case": "case-03", "items": 3, "fields": ["vProd"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-04", "items": 8, "fields": ["vProd", "vFrete"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-06", "items": 1, "fields": ["vProd"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-07", "items": 2, "fields": ["vProd"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-08", "items": 15, "fields": ["vProd", "vST", "vIPI", "vOutro"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-11", "items": 10, "fields": ["vProd"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true },
+  { "case": "case-12", "items": 2, "fields": ["vProd", "vFrete"], "indDeduzDeson": "absent", "indTotZero": 0, "closes": true }
+]
