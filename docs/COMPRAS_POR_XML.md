@@ -13,8 +13,10 @@ o plano em fases.
 pretendido. O que existe de fato está no código, nas migrations e nos testes.
 O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
 
-**Status: nada em execução.** As decisões estão tomadas e o plano está escrito.
-A implementação depende de aprovação por fase e não começou.
+**Status: fase 0 executada parcialmente em 2026-09-10.** Doze XMLs reais
+foram conferidos localmente e quatro padrões fiscais viraram fixtures reduzidas,
+inteiramente fictícias. A amostra não contém desconto nem alguns casos de
+borda; por isso ainda não libera a fase 3. Nenhuma regra de produção mudou.
 
 ## O problema
 
@@ -273,6 +275,45 @@ validada. Para as não suportadas, conferir o bloqueio explícito. O teste
 registra a regra aplicável e protege contra alteração indevida das fixtures.
 
 **Rollback.** Trivial, são arquivos de teste.
+
+### Evidência obtida em 2026-09-10
+
+A amostra contém 12 NF-e versão 4.00. Os originais ficaram somente na pasta
+local indicada por Rodrigo e não foram versionados. As fixtures são exemplos
+reduzidos: preservam a posição dos campos fiscais observados, mas substituem
+fornecedor, produtos, documentos, datas, quantidades e valores por conteúdo
+fictício. Assinatura, certificado, protocolo, QR Code, responsável técnico e
+texto livre não foram copiados.
+
+| Campo ou caso | Notas com valor | Onde apareceu | Resultado |
+| --- | ---: | --- | --- |
+| Produtos (`vProd`) | 12 de 12 | itens e total | base presente em toda a amostra |
+| ST (`vST` no total, `vICMSST` no item) | 4 de 12 | itens e total | usar o item e não somar o total novamente |
+| IPI (`vIPI`) | 3 de 12 | itens e total | usar o item e não somar o total novamente |
+| Frete (`vFrete`) | 3 de 12 | item e total | usar o item e não somar o total novamente |
+| Outras despesas (`vOutro`) | 3 de 12 | itens e total | usar o item e não somar o total novamente |
+| ICMS desonerado (`vICMSDeson`) | 1 de 12 | item e total | o indicador era `0`, portanto não reduziu `vNF` |
+| Desconto (`vDesc`) | 0 de 12 | ausente | amostra insuficiente para fechar a hipótese do rodapé |
+| `vFCPST`, seguro, imposto de importação ou serviço | 0 de 12 | ausente | continuam sem evidência real nesta fase |
+| Item fora do total (`indTot=0`) | 0 de 12 | ausente | bonificação e brinde continuam sem caso real |
+
+As 12 notas fecharam até o centavo pela composição documentada, incluindo o
+caso em que `indDeduzDeson=0`. Essa conferência local ficou preservada, sem
+identificadores nem valores, em `test/fixtures/nfe/evidence-summary.json`; o
+arquivo permite reproduzir as contagens da tabela, enquanto os originais são a
+única fonte para reauditar os números fiscais. Não apareceu
+`indDeduzDeson=1`, indicador misto na mesma nota, desconto, `vServ` ou item com
+`indTot=0`. Esses casos permanecem bloqueados para a futura fase 3 até existir
+evidência real.
+
+Quatro fixtures em `test/fixtures/nfe/` cobrem os padrões encontrados: sem
+acréscimos; ST com desoneração não dedutível; frete atribuído ao item; e ST com
+IPI e outras despesas. O teste automatizado confirma a conta até o centavo e
+recusa assinatura, certificado, protocolo, chave de 44 dígitos e blocos que
+possam carregar identificação do documento original. Além das guardas por
+campo, o conteúdo inteiro de cada fixture fica selado por hash: comentário,
+atributo, série, texto solto, campo duplicado ou qualquer outro byte novo exige
+atualização explícita do teste e nova revisão da anonimização.
 
 ## Fase 1: o ERP passa a enxergar a nota inteira
 
