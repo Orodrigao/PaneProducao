@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { getCurrentUser } from '@/lib/auth'
 import { pjLineValue } from '@/lib/pjOrderValue'
+import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import { parsePjFlowQuantity, pjFlowStatus, readPjFlowActivationStatus,
   rollbackPjFlowEnrollment, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
@@ -15,6 +17,7 @@ const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currenc
 const date = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')
 
 export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload: (message?: string) => Promise<void>; onLock: (locked: boolean) => void }) {
+  const canManageOrder = resolvePjOrderAccess(getCurrentUser()).canManage
   const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(
     flow.items.map(item => [item.id, item.quantity === null ? '' : String(item.quantity).replace('.', ',')]),
   ))
@@ -110,6 +113,9 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
     finally { setBusy(false) }
   }
   const frozen = termsLocked || reconciliationLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
+  const canManageBeforeConference = canManageOrder && activationMode === 'standard'
+    && flow.version === 0 && !flow.checked_at && !flow.released_at && !flow.departed_at
+  const manageUrl = `/pedidos-pj?legado=1&gerenciar=1&pedido=${encodeURIComponent(flow.id)}`
   return <section className={styles.detail} aria-label={`Ficha de ${flow.customer}`}>
     <header className={styles.detailHeader}><span className={styles.eyebrow}>Ficha do pedido</span>
       <h2>{flow.customer}</h2><p>Entrega/coleta combinada: <strong>{date(flow.delivery_date)}</strong></p>
@@ -123,6 +129,14 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
       {!flow.checked_at && <p>Salvar guarda as quantidades. Concluir a conferência envia o pedido para revisão.</p>}
       {flow.checked_at && !flow.released_at && <p>A saída aguarda a revisão da cobrança e a confirmação da NF.</p>}
     </div>
+    {canManageBeforeConference && <div className={styles.actions} aria-label="Gerenciar pedido antes da conferência">
+      <a className={styles.secondary} href={manageUrl} onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>
+        Editar pedido
+      </a>
+      <a className={styles.secondary} href={manageUrl} onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>
+        Cancelar pedido
+      </a>
+    </div>}
     <div className={styles.body}><h3>Quantidades</h3>
     {flow.items.map(item => <fieldset className={styles.item} key={item.id} disabled={frozen || !flow.can_check}>
       <legend>{item.name} <span>Pedido: {item.ordered.toLocaleString('pt-BR')} {item.unit}</span></legend>

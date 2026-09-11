@@ -85,6 +85,29 @@ select ok(
   'usuario autenticado pode chegar ao contrato, sujeito a validacao interna'
 );
 select ok(
+  not has_function_privilege(
+    'authenticated', 'public.replace_pj_order_atomic_v2_impl(uuid,uuid,jsonb,jsonb)', 'execute'
+  ),
+  'navegador nao contorna a trava chamando a implementacao diretamente'
+);
+select ok(
+  not has_function_privilege(
+    'service_role', 'public.replace_pj_order_atomic_v2_impl(uuid,uuid,jsonb,jsonb)', 'execute'
+  ),
+  'service role tambem nao contorna a trava de modo da jornada'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.cancel_pj_order_atomic_impl(uuid,uuid,text)', 'execute'
+  ),
+  'navegador nao contorna a serializacao chamando o cancelamento interno'
+);
+select ok(
+  pg_get_functiondef('public.cancel_pj_order_atomic(uuid,uuid,text)'::regprocedure)
+    ilike '%pane-pj-write:%pane-pj-controlled-real-slot%cancel_pj_order_atomic_impl%',
+  'cancelamento segue a ordem request, slot de ativacao, fluxo e linhas'
+);
+select ok(
   pg_get_functiondef(
     'public.save_pj_order_dispatch_quantities(uuid,uuid,jsonb,timestamptz)'::regprocedure
   ) ilike '%order by order_row.id%for update%',
@@ -173,6 +196,77 @@ select lives_ok($q$
     pg_temp.versao('9e000000-0000-4000-8000-000000000201')
   )
 $q$, 'snapshot exato permite editar o pedido');
+select lives_ok($q$
+  select public.create_pj_order_atomic(
+    '9e000000-0000-4000-8000-000000000111',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido()
+  )
+$q$, 'prepara outro pedido para provar a separacao entre piloto e padrao');
+select lives_ok($q$
+  select public.replace_pj_order_atomic_v2(
+    '9e000000-0000-4000-8000-000000000112',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido(8),
+    pg_temp.versao('9e000000-0000-4000-8000-000000000202')
+  )
+$q$, 'edicao legada confirma antes de o pedido entrar em acompanhamento');
+reset role;
+
+create temporary table retry_antes_piloto as
+select request_payload->'expected_rows' as rows
+from private.pj_order_write_requests
+where request_id = '9e000000-0000-4000-8000-000000000112';
+grant select on retry_antes_piloto to authenticated;
+
+insert into private.pj_flow(order_group_id, activation_mode)
+values ('9e000000-0000-4000-8000-000000000202', 'controlled_real');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000001',true);
+select is(
+  (public.replace_pj_order_atomic_v2(
+    '9e000000-0000-4000-8000-000000000112',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido(8),
+    (select rows from retry_antes_piloto)
+  )->>'repeated')::boolean,
+  true,
+  'resposta perdida repete o sucesso mesmo depois de entrar no piloto'
+);
+select throws_ok($q$
+  select public.replace_pj_order_atomic(
+    '9e000000-0000-4000-8000-000000000115',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido(9)
+  )
+$q$, '42501', null,
+  'contrato antigo nao contorna a protecao do pedido acompanhado');
+select throws_ok($q$
+  select public.replace_pj_order_atomic_v2(
+    '9e000000-0000-4000-8000-000000000114',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido(9),
+    pg_temp.versao('9e000000-0000-4000-8000-000000000202')
+  )
+$q$, '22023', 'Pedido acompanhado usa os controles do piloto e nao pode ser editado aqui.',
+  'edicao comercial nao altera pedido do piloto acompanhado');
+reset role;
+
+update private.pj_flow
+set activation_mode = 'standard'
+where order_group_id = '9e000000-0000-4000-8000-000000000202';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','9e000000-0000-4000-8000-000000000001',true);
+select lives_ok($q$
+  select public.replace_pj_order_atomic_v2(
+    '9e000000-0000-4000-8000-000000000113',
+    '9e000000-0000-4000-8000-000000000202',
+    pg_temp.pedido(8),
+    pg_temp.versao('9e000000-0000-4000-8000-000000000202')
+  )
+$q$, 'pedido standard virgem conserva a edicao comercial');
 reset role;
 
 select is(
