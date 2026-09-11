@@ -9,15 +9,15 @@ select no_plan();
 select extensions.dblink_connect(
   'pj_lock_holder',
   format(
-    'host=127.0.0.1 port=%s dbname=%s user=postgres password=postgres',
-    current_setting('port'), current_database()
+    'hostaddr=%s port=%s dbname=%s user=postgres password=postgres',
+    inet_server_addr(), current_setting('port'), current_database()
   )
 );
 select extensions.dblink_connect(
   'pj_lock_worker',
   format(
-    'host=127.0.0.1 port=%s dbname=%s user=postgres password=postgres',
-    current_setting('port'), current_database()
+    'hostaddr=%s port=%s dbname=%s user=postgres password=postgres',
+    inet_server_addr(), current_setting('port'), current_database()
   )
 );
 
