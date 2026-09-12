@@ -55,8 +55,73 @@ const SURCHARGE_ORDER: readonly { key: NfeSurchargeKey; label: string }[] = [
 /** Campos que apareceram na amostra real da fase 0. Os demais ficam bloqueados. */
 const VALIDATED_SURCHARGES: ReadonlySet<NfeSurchargeKey> = new Set(['icmsSt', 'ipi', 'freight', 'otherExpenses'])
 
+/** Nome de cada campo do bloco de totais, como está no XML, para a pessoa achar. */
+const TOTAL_TAGS: Record<Exclude<keyof NfeTotals, 'services'>, string> = {
+  products: 'vProd',
+  discounts: 'vDesc',
+  icmsSt: 'vST',
+  fcpSt: 'vFCPST',
+  ipi: 'vIPI',
+  ipiReturned: 'vIPIDevol',
+  freight: 'vFrete',
+  insurance: 'vSeg',
+  otherExpenses: 'vOutro',
+  importTax: 'vII',
+  icmsExempt: 'vICMSDeson',
+  total: 'vNF',
+}
+
+type NumericFiscalField = { [K in keyof NfeItemFiscal]: NfeItemFiscal[K] extends number ? K : never }[keyof NfeItemFiscal]
+
+const ITEM_TAGS: Record<NumericFiscalField, string> = {
+  discount: 'vDesc',
+  freight: 'vFrete',
+  insurance: 'vSeg',
+  otherExpenses: 'vOutro',
+  importTax: 'vII',
+  icmsSt: 'vICMSST',
+  fcpSt: 'vFCPST',
+  ipi: 'vIPI',
+  ipiReturned: 'vIPIDevol',
+  icmsExempt: 'vICMSDeson',
+}
+
 function cents(value: number): number {
   return Math.round((value + Number.EPSILON) * 100)
+}
+
+/** Depois da validação, ausente e ilegível já estão bloqueados; a conta segue com zero só para mostrar o resto. */
+function known(value: number | null): number {
+  return value === null || Number.isNaN(value) ? 0 : value
+}
+
+/**
+ * Uma NF-e 4.00 autorizada traz o bloco de totais inteiro. Arquivo sem esses
+ * campos, ou com valor que não é número, não é conferível: em vez de supor
+ * zero, a composição diz o que falta.
+ */
+function validateFiscalFields(totals: NfeTotals, items: readonly { lineNumber: number; fiscal: NfeItemFiscal }[]): string[] {
+  const blockers: string[] = []
+  const totalKeys = Object.keys(TOTAL_TAGS) as (keyof typeof TOTAL_TAGS)[]
+  const missing = totalKeys.filter(key => totals[key] === null).map(key => TOTAL_TAGS[key])
+  const invalid = totalKeys.filter(key => totals[key] !== null && Number.isNaN(totals[key])).map(key => TOTAL_TAGS[key])
+  if (missing.length > 0) {
+    blockers.push(`O bloco de totais da nota não informa ${missing.join(', ')}. Uma NF-e autorizada sempre traz esses campos; confira se o arquivo está completo.`)
+  }
+  if (invalid.length > 0) {
+    blockers.push(`O bloco de totais da nota traz valor ilegível em ${invalid.join(', ')}.`)
+  }
+  if (Number.isNaN(totals.services)) {
+    blockers.push('O bloco de serviços da nota traz valor ilegível em vServ.')
+  }
+  for (const item of items) {
+    const itemKeys = Object.keys(ITEM_TAGS) as NumericFiscalField[]
+    const unreadable = itemKeys.filter(key => Number.isNaN(item.fiscal[key])).map(key => ITEM_TAGS[key])
+    if (unreadable.length > 0) {
+      blockers.push(`O item ${item.lineNumber} traz valor ilegível em ${unreadable.join(', ')}.`)
+    }
+  }
+  return blockers
 }
 
 function reais(centsValue: number): number {
@@ -67,39 +132,30 @@ function money(value: number): string {
   return `R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
 }
 
-type NumericFiscalField = { [K in keyof NfeItemFiscal]: NfeItemFiscal[K] extends number ? K : never }[keyof NfeItemFiscal]
-
 function sumItems(items: readonly { fiscal: NfeItemFiscal }[], field: NumericFiscalField): number {
-  return items.reduce((sum, item) => sum + cents(item.fiscal[field]), 0)
+  return items.reduce((sum, item) => sum + cents(known(item.fiscal[field])), 0)
 }
 
 export function composeNfe(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeComposition {
   const totals: NfeTotals = draft.totals
   const items = draft.items
-  const blockers: string[] = []
+  const blockers = validateFiscalFields(totals, items)
 
-  if (totals.products === null) {
-    blockers.push('A nota não informa o total dos produtos (vProd) no bloco de totais.')
-  }
-  if (totals.total === null) {
-    blockers.push('A nota não informa o valor total (vNF) no bloco de totais.')
-  }
-
-  const products = cents(totals.products ?? 0)
-  const discounts = cents(totals.discounts)
+  const products = cents(known(totals.products))
+  const discounts = cents(known(totals.discounts))
   const itemProducts = items.reduce((sum, item) => sum + cents(item.grossLineTotal), 0)
   const itemDiscounts = sumItems(items, 'discount')
   if (totals.products !== null && itemProducts !== products) {
     blockers.push(`Os itens somam ${money(reais(itemProducts))} em produtos, mas o total da nota informa ${money(reais(products))}.`)
   }
-  if (itemDiscounts !== discounts) {
+  if (totals.discounts !== null && itemDiscounts !== discounts) {
     blockers.push(`Os itens somam ${money(reais(itemDiscounts))} de desconto, mas o total da nota informa ${money(reais(discounts))}.`)
   }
 
   const surcharges: NfeCompositionLine[] = []
   let surchargesTotal = 0
   for (const { key, label } of SURCHARGE_ORDER) {
-    const amount = cents(totals[key])
+    const amount = cents(known(totals[key]))
     const inItems = sumItems(items, key)
     if (amount === 0 && inItems === 0) continue
     if (amount !== 0) {
@@ -116,32 +172,32 @@ export function composeNfe(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeCompos
     }
   }
 
-  if (cents(totals.services) !== 0) {
-    blockers.push(`A nota traz serviços (${money(totals.services)}), um caso ainda sem evidência real na fase 0.`)
+  if (cents(known(totals.services)) !== 0) {
+    blockers.push(`A nota traz serviços (${money(known(totals.services))}), um caso ainda sem evidência real na fase 0.`)
   }
 
   let exemptionDeducted = 0
   let itemExemption = 0
   for (const item of items) {
-    const exemption = cents(item.fiscal.icmsExempt)
+    const exemption = cents(known(item.fiscal.icmsExempt))
     itemExemption += exemption
     if (item.fiscal.composesTotal === '0') {
-      blockers.push(`O item ${item.lineNumber} não compõe o total da nota (indTot 0), um caso ainda sem evidência real na fase 0.`)
+      blockers.push(`O item ${item.lineNumber} está marcado no XML como fora do total da nota (indTot 0), um caso ainda sem evidência real na fase 0.`)
     }
     if (exemption === 0) continue
     if (item.fiscal.deductsExemption === '1') {
       exemptionDeducted += exemption
-      blockers.push(`O item ${item.lineNumber} manda abater ICMS desonerado do total (indDeduzDeson 1), um caso ainda sem evidência real na fase 0.`)
+      blockers.push(`O item ${item.lineNumber} tem ICMS desonerado e o XML manda abater do total (indDeduzDeson 1), um caso ainda sem evidência real na fase 0.`)
     } else if (item.fiscal.deductsExemption === null) {
-      blockers.push(`O item ${item.lineNumber} tem ICMS desonerado sem o indicador de dedução (indDeduzDeson), um caso ainda não esclarecido.`)
+      blockers.push(`O item ${item.lineNumber} tem ICMS desonerado e o XML não diz se ele abate do total (indDeduzDeson ausente), um caso ainda não esclarecido.`)
     }
   }
-  if (itemExemption !== cents(totals.icmsExempt)) {
-    blockers.push(`Os itens somam ${money(reais(itemExemption))} de ICMS desonerado, mas o total da nota informa ${money(totals.icmsExempt)}.`)
+  if (totals.icmsExempt !== null && itemExemption !== cents(known(totals.icmsExempt))) {
+    blockers.push(`Os itens somam ${money(reais(itemExemption))} de ICMS desonerado, mas o total da nota informa ${money(known(totals.icmsExempt))}.`)
   }
 
   const expectedTotal = products - discounts + surchargesTotal - exemptionDeducted
-  const total = cents(totals.total ?? 0)
+  const total = cents(known(totals.total))
 
   return {
     products: reais(products),

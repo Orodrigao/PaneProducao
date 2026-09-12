@@ -124,7 +124,7 @@ function CompositionCard({ composition }: { composition: NfeComposition }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <b style={{ flex: 1 }}>Composição da nota</b>
         <small style={{ color: closes ? 'var(--teal)' : 'var(--berry)', fontWeight: 650 }}>
-          {closes ? 'fecha até o centavo' : composition.unexplained !== 0 ? `${formatCompositionMoney(Math.abs(composition.unexplained))} sem explicação` : 'caso sem regra'}
+          {closes ? 'fecha até o centavo' : composition.blockers.length > 0 ? 'caso sem regra' : `${formatCompositionMoney(Math.abs(composition.unexplained))} sem explicação`}
         </small>
       </div>
       <small style={{ display: 'block', marginTop: 3 }}>{summary}</small>
@@ -369,9 +369,10 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const assumedOnIssueDate = draft?.dueDateSource === 'a-vista'
     && draft.installments.every(item => item.dueDate === draft.issueDate)
   // A composição vem antes dos outros motivos: nota que o banco vai recusar não
-  // deve fazer a pessoa classificar tudo para descobrir no fim.
+  // deve fazer a pessoa classificar tudo para descobrir no fim. A explicação
+  // inteira fica no cartão da composição; aqui só o encaminhamento.
   const blockingReason = compositionReason
-    ? compositionReason
+    ? 'Esta NF-e não pode ser confirmada. Veja o motivo em "Composição da nota", no alto da importação.'
     : missingDueDate
       ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
       : dueDateBeforeIssue

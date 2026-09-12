@@ -20,7 +20,8 @@ export type NfeDeductionIndicator = '0' | '1' | null
 /**
  * Valores fiscais do item, como a NF-e os escreve. Impostos por fora e
  * despesas de aquisição que a fase 3 vai levar ao custo; nesta fase são só
- * lidos e mostrados. Zero quando a nota não informa.
+ * lidos e mostrados. Esses campos são opcionais no item da NF-e: ausente é
+ * zero de verdade; conteúdo ilegível vira `NaN` para a composição recusar.
  */
 export interface NfeItemFiscal {
   /** vDesc do item. */
@@ -49,22 +50,24 @@ export interface NfeItemFiscal {
 }
 
 /**
- * Bloco de totais da NF-e (`ICMSTot`, mais `vServ` do `ISSQNtot`). `vProd` e
- * `vNF` distinguem ausência (`null`) de zero, porque são obrigatórios na nota
- * e a composição precisa recusar o arquivo que não os traz.
+ * Bloco de totais da NF-e (`ICMSTot`, mais `vServ` do `ISSQNtot`). Todos os
+ * campos do `ICMSTot` são obrigatórios na NF-e 4.00, por isso cada um
+ * distingue ausência (`null`) de zero, e conteúdo ilegível vira `NaN`: a
+ * composição recusa o arquivo incompleto em vez de supor zero. `services`
+ * vem do `ISSQNtot`, que é opcional; ausente é zero de verdade.
  */
 export interface NfeTotals {
   products: number | null
-  discounts: number
-  icmsSt: number
-  fcpSt: number
-  ipi: number
-  ipiReturned: number
-  freight: number
-  insurance: number
-  otherExpenses: number
-  importTax: number
-  icmsExempt: number
+  discounts: number | null
+  icmsSt: number | null
+  fcpSt: number | null
+  ipi: number | null
+  ipiReturned: number | null
+  freight: number | null
+  insurance: number | null
+  otherExpenses: number | null
+  importTax: number | null
+  icmsExempt: number | null
   services: number
   total: number | null
 }
@@ -404,10 +407,22 @@ function conversionBasis(unit: string): NfeConversionBasis {
   return ['PACOTE', 'PCT', 'FD', 'FARDO', 'CX', 'CAIXA'].includes(unit.toUpperCase()) ? 'package' : 'simple'
 }
 
+/** Valor fiscal como está na nota; `NaN` quando o conteúdo não é número. */
+function fiscalNumber(text: string): number {
+  const parsed = Number(text.replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : Number.NaN
+}
+
 /** Número quando a tag existe; `null` quando a nota não a escreveu. */
 function optionalNumber(root: ParentNode, localName: string): number | null {
   const text = childText(root, localName)
-  return text ? numberValue(text) : null
+  return text ? fiscalNumber(text) : null
+}
+
+/** Campo opcional do item: ausente é zero de verdade. */
+function itemNumber(root: ParentNode, localName: string): number {
+  const text = childText(root, localName)
+  return text ? fiscalNumber(text) : 0
 }
 
 function indicator(root: ParentNode, localName: string): '0' | '1' | null {
@@ -423,15 +438,15 @@ function indicator(root: ParentNode, localName: string): '0' | '1' | null {
 function readItemFiscal(detail: Element, prod: Element, discountValue: number): NfeItemFiscal {
   return {
     discount: discountValue,
-    freight: numberValue(childText(prod, 'vFrete')),
-    insurance: numberValue(childText(prod, 'vSeg')),
-    otherExpenses: numberValue(childText(prod, 'vOutro')),
-    importTax: numberValue(childText(detail, 'vII')),
-    icmsSt: numberValue(childText(detail, 'vICMSST')),
-    fcpSt: numberValue(childText(detail, 'vFCPST')),
-    ipi: numberValue(childText(detail, 'vIPI')),
-    ipiReturned: numberValue(childText(detail, 'vIPIDevol')),
-    icmsExempt: numberValue(childText(detail, 'vICMSDeson')),
+    freight: itemNumber(prod, 'vFrete'),
+    insurance: itemNumber(prod, 'vSeg'),
+    otherExpenses: itemNumber(prod, 'vOutro'),
+    importTax: itemNumber(detail, 'vII'),
+    icmsSt: itemNumber(detail, 'vICMSST'),
+    fcpSt: itemNumber(detail, 'vFCPST'),
+    ipi: itemNumber(detail, 'vIPI'),
+    ipiReturned: itemNumber(detail, 'vIPIDevol'),
+    icmsExempt: itemNumber(detail, 'vICMSDeson'),
     deductsExemption: indicator(detail, 'indDeduzDeson'),
     composesTotal: indicator(prod, 'indTot'),
   }
@@ -441,17 +456,17 @@ function readTotals(document: Document, total: Element): NfeTotals {
   const services = firstElement(document, 'ISSQNtot')
   return {
     products: optionalNumber(total, 'vProd'),
-    discounts: numberValue(childText(total, 'vDesc')),
-    icmsSt: numberValue(childText(total, 'vST')),
-    fcpSt: numberValue(childText(total, 'vFCPST')),
-    ipi: numberValue(childText(total, 'vIPI')),
-    ipiReturned: numberValue(childText(total, 'vIPIDevol')),
-    freight: numberValue(childText(total, 'vFrete')),
-    insurance: numberValue(childText(total, 'vSeg')),
-    otherExpenses: numberValue(childText(total, 'vOutro')),
-    importTax: numberValue(childText(total, 'vII')),
-    icmsExempt: numberValue(childText(total, 'vICMSDeson')),
-    services: services ? numberValue(childText(services, 'vServ')) : 0,
+    discounts: optionalNumber(total, 'vDesc'),
+    icmsSt: optionalNumber(total, 'vST'),
+    fcpSt: optionalNumber(total, 'vFCPST'),
+    ipi: optionalNumber(total, 'vIPI'),
+    ipiReturned: optionalNumber(total, 'vIPIDevol'),
+    freight: optionalNumber(total, 'vFrete'),
+    insurance: optionalNumber(total, 'vSeg'),
+    otherExpenses: optionalNumber(total, 'vOutro'),
+    importTax: optionalNumber(total, 'vII'),
+    icmsExempt: optionalNumber(total, 'vICMSDeson'),
+    services: services ? itemNumber(services, 'vServ') : 0,
     total: optionalNumber(total, 'vNF'),
   }
 }

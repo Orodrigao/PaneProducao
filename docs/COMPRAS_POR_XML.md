@@ -371,8 +371,10 @@ O que passou a existir:
 - `src/lib/nfeXml.ts` lê o bloco de totais inteiro (`vProd`, `vDesc`, `vST`,
   `vFCPST`, `vIPI`, `vIPIDevol`, `vFrete`, `vSeg`, `vOutro`, `vII`,
   `vICMSDeson`, `vNF`, mais `vServ`) e, por item, os equivalentes, o `indTot`
-  e o `indDeduzDeson`. Ausência de `vProd` ou `vNF` fica registrada como
-  ausência, não como zero; ausência do indicador fica `null`.
+  e o `indDeduzDeson`. No bloco de totais, que a NF-e 4.00 exige inteiro,
+  campo ausente fica registrado como ausência, não como zero; no item, onde
+  esses campos são opcionais, ausente é zero de verdade. Conteúdo que não é
+  número fica marcado como ilegível. Ausência do indicador fica `null`.
 - `src/lib/nfeComposition.ts` recebe a nota lida e devolve a composição:
   produtos, descontos, cada acréscimo com seu nome, desoneração abatida, a soma
   do que foi lido, o total declarado, o valor não explicado e a lista de
@@ -387,7 +389,14 @@ Como a tela decide, na ordem:
    `indTot=0`, `vICMSDeson` sem indicador ou com indicador `1`, e divergência
    entre a soma dos itens e o total (produtos, desconto, desoneração, ou
    acréscimo maior nos itens do que no total). Acréscimo só no total é aceito:
-   é a despesa comum que a fase 3 vai ratear.
+   é a despesa comum que a fase 3 vai ratear. Entram aqui também o arquivo
+   sem o bloco de totais completo e o valor ilegível em campo fiscal.
+   **Esta é a única mudança no que é aceito:** um XML que traga só `vNF` no
+   bloco de totais entrava no banco antes da fase 1 e agora é recusado com a
+   lista do que falta. NF-e autorizada pela SEFAZ sempre traz o bloco inteiro,
+   então nenhuma nota real é afetada; só arquivo montado à mão. A recusa é
+   deliberada: sem o bloco, a composição não é conferível, e supor zero seria
+   o palpite silencioso que este documento proíbe.
 2. **Resíduo diferente de zero** mostra o valor não explicado, a soma lida e o
    total declarado, e a orientação: conferir com o fornecedor; se o XML estiver
    certo, a leitura do ERP está falhando. Nunca há botão de ajuste.
@@ -400,7 +409,12 @@ Como a tela decide, na ordem:
 O que ficou de fora e por quê: o leitor de XML usa o `DOMParser` do navegador,
 que o Vitest não tem; a composição é testada sobre as fixtures por um leitor
 mínimo do teste, e a leitura real é provada pelo smoke de navegador do CI, que
-importa uma nota com ST, IPI e outras despesas e confere a composição na tela.
+importa uma nota simples e a confirma, importa uma nota com ST, IPI e outras
+despesas e confere a composição e o bloqueio, e importa um arquivo sem o bloco
+de totais e confere a recusa explicada. Resíduo diferente de zero e os demais
+casos sem regra só têm teste unitário. A revisão adversarial pediu testes que
+exercitem o leitor real no Vitest; isso exige uma dependência de DOM que não
+existe no projeto e fica como decisão separada.
 
 ## Fase 2: importação pendente de conferência
 

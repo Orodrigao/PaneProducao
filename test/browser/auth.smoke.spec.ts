@@ -22,6 +22,11 @@ const previewAccounts = {
 const slowPreviewDataTimeoutMs = 15_000
 const romaneioDraftTimeoutMs = 60_000
 
+// Bloco de totais de uma NF-e 4.00 sem acrescimos: so produtos e o total.
+function totaisSimples(valor: string): string {
+  return `<vProd>${valor}</vProd><vDesc>0.00</vDesc><vST>0.00</vST><vFCPST>0.00</vFCPST><vIPI>0.00</vIPI><vIPIDevol>0.00</vIPIDevol><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vOutro>0.00</vOutro><vII>0.00</vII><vICMSDeson>0.00</vICMSDeson><vNF>${valor}</vNF>`
+}
+
 function romaneioCardByObs(page: import('@playwright/test').Page, obs: string) {
   return page.locator('.ps-card', { hasText: obs }).first()
 }
@@ -367,14 +372,19 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
+  // A chave precisa ser unica por rodada: o banco recusa NF-e repetida e o
+  // Banco Preview guarda o que as rodadas anteriores confirmaram.
   const uniqueCnpj = `99${Date.now().toString().slice(-12)}`
+  const uniqueKey = `35${Date.now()}`.padEnd(44, '0')
+  // O bloco de totais completo e o que toda NF-e 4.00 autorizada traz; desde a
+  // fase 1 das compras por XML, arquivo sem ele e recusado com explicacao.
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
-  <infNFe Id="NFe35260807999999999999550010000000011000000010" versao="4.00">
+  <infNFe Id="NFe${uniqueKey}" versao="4.00">
     <ide><nNF>999991</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>[TESTE] Fornecedor direto XML</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-XML</cProd><xProd>[TESTE] Item XML</xProd><NCM>17019900</NCM><qCom>1.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
-    <total><ICMSTot><vProd>10.00</vProd><vNF>10.00</vNF></ICMSTot></total>
+    <total><ICMSTot>${totaisSimples('10.00')}</ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`
@@ -394,6 +404,14 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   await expect(page.locator('input[placeholder="CNPJ ou CPF"]')).toHaveValue(uniqueCnpj)
   await page.getByRole('button', { name: 'Cadastrar e usar fornecedor' }).click()
   await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+
+  // Nota simples continua entrando no banco como antes da fase 1: a nova trava
+  // da composicao nao segura o que create_xml_payable aceita.
+  const confirmar = page.getByRole('button', { name: 'Confirmar NF-e' })
+  await expect(confirmar).toBeEnabled()
+  await confirmar.click()
+  await expect(page.locator('.toast', { hasText: 'Conta importada' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.locator('.ps-card', { hasText: '[TESTE] Fornecedor direto XML' }).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })
 
 test('Financeiro JC ve a composicao da NF-e com imposto por fora e a confirmacao explica o bloqueio', async ({ page }) => {
@@ -430,6 +448,21 @@ test('Financeiro JC ve a composicao da NF-e com imposto por fora e a confirmacao
   await expect(page.getByText('IPI', { exact: true })).toBeVisible()
   await expect(page.getByText('Outras despesas', { exact: true })).toBeVisible()
   await expect(page.getByText('R$ 6,50 de acréscimos ainda não entram pelo XML')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Confirmar NF-e' })).toBeDisabled()
+
+  // O XML minimo que os smokes usavam antes da fase 1 (so vNF no bloco de
+  // totais) nao e uma NF-e autorizada: passa a ser recusado dizendo o que falta,
+  // em vez de deixar a pessoa classificar tudo e descobrir na recusa do banco.
+  const xmlIncompleto = xml
+    .replace(/<total><ICMSTot>[\s\S]*?<\/ICMSTot><\/total>/, '<total><ICMSTot><vNF>126.50</vNF></ICMSTot></total>')
+    .replace('000000093000000093', '000000094000000094')
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'incompleto-inline.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xmlIncompleto),
+  })
+  await expect(page.getByText('caso sem regra', { exact: true })).toBeVisible()
+  await expect(page.getByText('O bloco de totais da nota não informa vProd, vDesc, vST')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Confirmar NF-e' })).toBeDisabled()
 })
 
@@ -494,7 +527,7 @@ test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar',
     <ide><nNF>999992</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>99000000000191</CNPJ><xNome>[TESTE] Fornecedor conversao</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-CONV</cProd><xProd>MANJERICAO DESIDRATADO CAIXA 2KG TESTE</xProd><NCM>17019900</NCM><qCom>3.0000</qCom><uCom>CX</uCom><vUnCom>60.00</vUnCom><vProd>180.00</vProd></prod></det>
-    <total><ICMSTot><vProd>180.00</vProd><vNF>180.00</vNF></ICMSTot></total>
+    <total><ICMSTot>${totaisSimples('180.00')}</ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>180.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`
@@ -536,7 +569,7 @@ test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async
     <ide><nNF>999993</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>99000000000192</CNPJ><xNome>[TESTE] Fornecedor parente</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-PAR</cProd><xProd>MANJERICAO FRESCO MACO TESTE</xProd><NCM>17019900</NCM><qCom>2.0000</qCom><uCom>UN</uCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det>
-    <total><ICMSTot><vProd>10.00</vProd><vNF>10.00</vNF></ICMSTot></total>
+    <total><ICMSTot>${totaisSimples('10.00')}</ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`

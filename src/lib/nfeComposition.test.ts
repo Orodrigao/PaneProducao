@@ -117,16 +117,16 @@ function readFixture(name: string): { items: NfeItemDraft[]; totals: NfeTotals }
     items,
     totals: {
       products: optional(totalBlock, 'vProd'),
-      discounts: number(totalBlock, 'vDesc'),
-      icmsSt: number(totalBlock, 'vST'),
-      fcpSt: number(totalBlock, 'vFCPST'),
-      ipi: number(totalBlock, 'vIPI'),
-      ipiReturned: number(totalBlock, 'vIPIDevol'),
-      freight: number(totalBlock, 'vFrete'),
-      insurance: number(totalBlock, 'vSeg'),
-      otherExpenses: number(totalBlock, 'vOutro'),
-      importTax: number(totalBlock, 'vII'),
-      icmsExempt: number(totalBlock, 'vICMSDeson'),
+      discounts: optional(totalBlock, 'vDesc'),
+      icmsSt: optional(totalBlock, 'vST'),
+      fcpSt: optional(totalBlock, 'vFCPST'),
+      ipi: optional(totalBlock, 'vIPI'),
+      ipiReturned: optional(totalBlock, 'vIPIDevol'),
+      freight: optional(totalBlock, 'vFrete'),
+      insurance: optional(totalBlock, 'vSeg'),
+      otherExpenses: optional(totalBlock, 'vOutro'),
+      importTax: optional(totalBlock, 'vII'),
+      icmsExempt: optional(totalBlock, 'vICMSDeson'),
       services: 0,
       total: optional(totalBlock, 'vNF'),
     },
@@ -234,11 +234,30 @@ describe('divergência entre itens e total', () => {
     expect(composition.expectedTotal).toBe(104)
   })
 
-  it('bloqueia quando falta o total de produtos ou o total da nota', () => {
+  it('bloqueia arquivo sem o bloco de totais completo, listando o que falta', () => {
     expect(composeNfe({ items: [item(1, 100)], totals: totals({ products: null }) }).blockers)
-      .toEqual(['A nota não informa o total dos produtos (vProd) no bloco de totais.'])
-    expect(composeNfe({ items: [item(1, 100)], totals: totals({ total: null }) }).blockers)
-      .toEqual(['A nota não informa o valor total (vNF) no bloco de totais.'])
+      .toEqual(['O bloco de totais da nota não informa vProd. Uma NF-e autorizada sempre traz esses campos; confira se o arquivo está completo.'])
+    expect(composeNfe({ items: [item(1, 100)], totals: totals({ discounts: null, total: null }) }).blockers)
+      .toEqual(['O bloco de totais da nota não informa vDesc, vNF. Uma NF-e autorizada sempre traz esses campos; confira se o arquivo está completo.'])
+  })
+
+  it('XML mínimo só com vNF, como o dos smoke tests antigos, é recusado com explicação e sem resíduo inventado', () => {
+    const composition = composeNfe({
+      items: [item(1, 10)],
+      totals: { products: null, discounts: null, icmsSt: null, fcpSt: null, ipi: null, ipiReturned: null, freight: null, insurance: null, otherExpenses: null, importTax: null, icmsExempt: null, services: 0, total: 10 },
+    })
+    expect(composition.blockers).toHaveLength(1)
+    expect(composition.blockers[0]).toContain('não informa vProd, vDesc, vST, vFCPST, vIPI, vIPIDevol, vFrete, vSeg, vOutro, vII, vICMSDeson')
+    expect(compositionBlockReason(composition)).toContain('ainda não sabe conferir')
+  })
+
+  it('valor ilegível no total ou no item bloqueia em vez de virar zero', () => {
+    expect(composeNfe({ items: [item(1, 100)], totals: totals({ freight: Number.NaN, total: 100 }) }).blockers)
+      .toEqual(['O bloco de totais da nota traz valor ilegível em vFrete.'])
+    expect(composeNfe({ items: [item(1, 100, { icmsSt: Number.NaN })], totals: totals() }).blockers)
+      .toEqual(['O item 1 traz valor ilegível em vICMSST.'])
+    expect(composeNfe({ items: [item(1, 100)], totals: totals({ services: Number.NaN }) }).blockers)
+      .toEqual(['O bloco de serviços da nota traz valor ilegível em vServ.'])
   })
 })
 
@@ -262,7 +281,7 @@ describe('casos sem regra validada na fase 0 ficam bloqueados', () => {
 
   it('item fora do total (indTot 0) bloqueia', () => {
     const composition = composeNfe({ items: [item(1, 100, { composesTotal: '0' })], totals: totals() })
-    expect(composition.blockers).toEqual(['O item 1 não compõe o total da nota (indTot 0), um caso ainda sem evidência real na fase 0.'])
+    expect(composition.blockers).toEqual(['O item 1 está marcado no XML como fora do total da nota (indTot 0), um caso ainda sem evidência real na fase 0.'])
   })
 
   it('desoneração com indicador ausente bloqueia em vez de virar 0 ou 1', () => {
@@ -270,7 +289,7 @@ describe('casos sem regra validada na fase 0 ficam bloqueados', () => {
       items: [item(1, 100, { icmsExempt: 3, deductsExemption: null })],
       totals: totals({ icmsExempt: 3 }),
     })
-    expect(composition.blockers).toEqual(['O item 1 tem ICMS desonerado sem o indicador de dedução (indDeduzDeson), um caso ainda não esclarecido.'])
+    expect(composition.blockers).toEqual(['O item 1 tem ICMS desonerado e o XML não diz se ele abate do total (indDeduzDeson ausente), um caso ainda não esclarecido.'])
   })
 
   it('desoneração dedutível (indicador 1) abate na conta, mas bloqueia por falta de evidência', () => {
@@ -280,7 +299,7 @@ describe('casos sem regra validada na fase 0 ficam bloqueados', () => {
     })
     expect(composition.exemptionDeducted).toBe(3)
     expect(composition.unexplained).toBe(0)
-    expect(composition.blockers).toEqual(['O item 1 manda abater ICMS desonerado do total (indDeduzDeson 1), um caso ainda sem evidência real na fase 0.'])
+    expect(composition.blockers).toEqual(['O item 1 tem ICMS desonerado e o XML manda abater do total (indDeduzDeson 1), um caso ainda sem evidência real na fase 0.'])
   })
 
   it('desoneração no total sem item correspondente é divergência', () => {
