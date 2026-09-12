@@ -12,6 +12,8 @@ interface EvidenceCase {
   fields: string[]
   indDeduzDeson: '0' | '1' | 'mixed' | 'absent'
   indTotZero: number
+  productTotalMatchesItems: boolean
+  discountTotalMatchesItems: boolean
   closes: boolean
 }
 
@@ -20,6 +22,13 @@ const evidence = JSON.parse(
 ) as EvidenceCase[]
 
 const expectedFixtures = {
+  'desconto-por-item.xml': {
+    total: { vProd: 100, vDesc: 5, vNF: 95 },
+    items: [
+      { qCom: 1, uCom: 'UN', vUnCom: 60, vProd: 60, vDesc: 3 },
+      { qCom: 1, uCom: 'UN', vUnCom: 40, vProd: 40, vDesc: 2 },
+    ],
+  },
   'frete-por-item.xml': {
     total: { vProd: 100, vFrete: 4, vNF: 104 },
     items: [
@@ -53,18 +62,31 @@ const expectedFixtures = {
 } as const
 
 const expectedEvidence: EvidenceCase[] = [
-  { case: 'case-01', items: 4, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-02', items: 3, fields: ['vProd', 'vST', 'vICMSDeson'], indDeduzDeson: '0', indTotZero: 0, closes: true },
-  { case: 'case-03', items: 3, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-04', items: 8, fields: ['vProd', 'vFrete'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-06', items: 1, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-07', items: 2, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-08', items: 15, fields: ['vProd', 'vST', 'vIPI', 'vOutro'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-11', items: 10, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
-  { case: 'case-12', items: 2, fields: ['vProd', 'vFrete'], indDeduzDeson: 'absent', indTotZero: 0, closes: true },
+  { case: 'case-01', items: 4, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-02', items: 3, fields: ['vProd', 'vST', 'vICMSDeson'], indDeduzDeson: '0', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-03', items: 3, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-04', items: 8, fields: ['vProd', 'vFrete'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-06', items: 1, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-07', items: 2, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-08', items: 15, fields: ['vProd', 'vST', 'vIPI', 'vOutro'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-11', items: 10, fields: ['vProd'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-12', items: 2, fields: ['vProd', 'vFrete'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-13', items: 1, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-14', items: 7, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-15', items: 8, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-16', items: 8, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-17', items: 8, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-18', items: 9, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-19', items: 10, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-20', items: 10, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-21', items: 10, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-22', items: 11, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-23', items: 12, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
+  { case: 'case-24', items: 16, fields: ['vProd', 'vDesc'], indDeduzDeson: 'absent', indTotZero: 0, productTotalMatchesItems: true, discountTotalMatchesItems: true, closes: true },
 ]
 
 const expectedFixtureHashes: Record<string, string> = {
+  'desconto-por-item.xml': '8d8b8ac53531ed8031a99b12dc165f09169a3e7ad7b77b0d9ffd8cd418b631fb',
   'frete-por-item.xml': '99bf2c1c4f83abf06e9e4a55e355868db24cebd2565d9bb50718115dc3768e62',
   'sem-acrescimos.xml': '5bdbe698cca1b63fa0f7c69788ecce12ef6853fbee436a03ee4aa08cf150f57d',
   'st-desoneracao-nao-deduz.xml': '5b52aec2b19099f784d10dc58a0be6b7cd86cb2819aa923f2acb767d1215d5c7',
@@ -118,10 +140,13 @@ function firstItemValue(item: string, tag: string): string | null {
 }
 
 function assertEvidenceSupported(xml: string): void {
-  for (const tag of ['vDesc', 'vFCPST', 'vIPIDevol', 'vSeg', 'vII', 'vServ']) {
+  for (const tag of ['vFCPST', 'vIPIDevol', 'vSeg', 'vII', 'vServ']) {
     if (allTagValues(xml, tag).some(value => value !== 0)) {
       throw new Error(`Campo sem evidência real: ${tag}`)
     }
+  }
+  if (Math.abs(itemTagTotal(xml, 'vDesc') - tagValue(xml, 'vDesc')) > 0.001) {
+    throw new Error('Desconto total diferente da soma dos itens sem evidência real')
   }
   if (/<indTot>0<\/indTot>/.test(xml)) throw new Error('Item fora do total sem evidência real')
   if (/<indDeduzDeson>1<\/indDeduzDeson>/.test(xml)) throw new Error('Desoneração dedutível sem evidência real')
@@ -135,8 +160,9 @@ function assertEvidenceSupported(xml: string): void {
 }
 
 describe('evidência fiscal anonimizada das NF-e reais', () => {
-  it('mantém apenas os quatro cenários encontrados na amostra', () => {
+  it('mantém apenas os cinco cenários encontrados na amostra', () => {
     expect(fixtureNames).toEqual([
+      'desconto-por-item.xml',
       'frete-por-item.xml',
       'sem-acrescimos.xml',
       'st-desoneracao-nao-deduz.xml',
@@ -149,8 +175,8 @@ describe('evidência fiscal anonimizada das NF-e reais', () => {
     expect(expectedInvoiceTotal(xml)).toBeCloseTo(tagValue(xml, 'vNF'), 2)
   })
 
-  it.each(fixtureNames)('%s permanece byte a byte na versão anonimizada revisada', name => {
-    const contents = readFileSync(join(fixtureDirectory, name))
+  it.each(fixtureNames)('%s permanece na versão anonimizada revisada, independentemente da quebra de linha', name => {
+    const contents = readFileSync(join(fixtureDirectory, name), 'utf8').replace(/\r\n/g, '\n')
     expect(createHash('sha256').update(contents).digest('hex')).toBe(expectedFixtureHashes[name])
   })
 
@@ -184,6 +210,9 @@ describe('evidência fiscal anonimizada das NF-e reais', () => {
   })
 
   it('preserva os campos por item sem somar novamente os totais da nota', () => {
+    const discount = readFileSync(join(fixtureDirectory, 'desconto-por-item.xml'), 'utf8')
+    expect(itemTagTotal(discount, 'vDesc')).toBe(tagValue(discount, 'vDesc'))
+
     const freight = readFileSync(join(fixtureDirectory, 'frete-por-item.xml'), 'utf8')
     expect(itemTagTotal(freight, 'vFrete')).toBe(tagValue(freight, 'vFrete'))
 
@@ -203,7 +232,7 @@ describe('evidência fiscal anonimizada das NF-e reais', () => {
   })
 
   it.each([
-    ['desconto', '<vDesc>1.00</vDesc>'],
+    ['desconto total diferente dos itens', '<ICMSTot><vDesc>1.00</vDesc></ICMSTot>'],
     ['desoneração dedutível', '<det><vICMSDeson>1.00</vICMSDeson><indDeduzDeson>1</indDeduzDeson></det>'],
     ['desoneração sem indicador', '<det><vICMSDeson>1.00</vICMSDeson></det>'],
     ['item fora do total', '<indTot>0</indTot>'],
@@ -212,16 +241,18 @@ describe('evidência fiscal anonimizada das NF-e reais', () => {
     expect(() => assertEvidenceSupported(xml)).toThrow()
   })
 
-  it('preserva o resumo sanitizado das 9 notas distintas sem identificadores nem valores', () => {
+  it('preserva o resumo sanitizado das 21 notas distintas sem identificadores nem valores', () => {
     expect(evidence).toEqual(expectedEvidence)
     expect(new Set(evidence.map(item => item.case)).size).toBe(evidence.length)
-    expect(evidence.filter(item => item.fields.includes('vProd'))).toHaveLength(9)
+    expect(evidence.filter(item => item.fields.includes('vProd'))).toHaveLength(21)
     expect(evidence.filter(item => item.fields.includes('vST'))).toHaveLength(2)
     expect(evidence.filter(item => item.fields.includes('vIPI'))).toHaveLength(1)
     expect(evidence.filter(item => item.fields.includes('vFrete'))).toHaveLength(2)
     expect(evidence.filter(item => item.fields.includes('vOutro'))).toHaveLength(1)
     expect(evidence.filter(item => item.fields.includes('vICMSDeson'))).toHaveLength(1)
-    expect(evidence.filter(item => item.fields.includes('vDesc'))).toHaveLength(0)
+    expect(evidence.filter(item => item.fields.includes('vDesc'))).toHaveLength(12)
+    expect(evidence.every(item => item.productTotalMatchesItems)).toBe(true)
+    expect(evidence.filter(item => item.fields.includes('vDesc')).every(item => item.discountTotalMatchesItems)).toBe(true)
     expect(evidence.filter(item => item.fields.includes('vServ'))).toHaveLength(0)
     for (const field of ['vFCPST', 'vIPIDevol', 'vSeg', 'vII']) {
       expect(evidence.filter(item => item.fields.includes(field))).toHaveLength(0)
@@ -242,13 +273,13 @@ describe('evidência fiscal anonimizada das NF-e reais', () => {
     expect([...xml.matchAll(/<CNPJ>([^<]+)<\/CNPJ>/g)].map(match => match[1]))
       .toEqual(['00000000000000'])
     expect([...xml.matchAll(/<xNome>([^<]+)<\/xNome>/g)].map(match => match[1]))
-      .toEqual([expect.stringMatching(/^FORNECEDOR FICTICIO [A-D]$/)])
+      .toEqual([expect.stringMatching(/^FORNECEDOR FICTICIO [A-E]$/)])
     expect([...xml.matchAll(/<nNF>([^<]+)<\/nNF>/g)].map(match => match[1]))
-      .toEqual([expect.stringMatching(/^900[1-4]$/)])
+      .toEqual([expect.stringMatching(/^900[1-5]$/)])
     expect([...xml.matchAll(/<serie>([^<]+)<\/serie>/g)].map(match => match[1])).toEqual(['1'])
     expect([...xml.matchAll(/<mod>([^<]+)<\/mod>/g)].map(match => match[1])).toEqual(['55'])
     expect([...xml.matchAll(/<dhEmi>([^<]+)<\/dhEmi>/g)].map(match => match[1]))
-      .toEqual([expect.stringMatching(/^2026-01-1[0-3]T09:00:00-03:00$/)])
+      .toEqual([expect.stringMatching(/^2026-01-1[0-4]T09:00:00-03:00$/)])
     expect(xml).toContain('FICTICIO')
   })
 
