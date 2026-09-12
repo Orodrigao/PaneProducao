@@ -157,8 +157,8 @@ e completar a cobertura pelo fluxo autorizado. Identificar as lacunas reais e
 preparar o acesso reutilizável por canal aprovado; caso dependa de intervenção
 humana, pedir apenas esse provisionamento, nunca transferir todo o roteiro.
 Não tratar essa orientação como evidência de que o acesso local já foi instalado.
-Execução local de código continua restrita ao ambiente isolado da equipe; a
-autorização de usar conta fictícia não libera execução no Windows real.
+Teste focal roda direto na worktree sobre dependências já instaladas; a bateria
+completa selada roda no Check isolado da Portaria, depois do CI remoto verde.
 
 Relatar ambiente, revisão, cenários, resultado e limites, sem credenciais. Teste
 ignorado ou instável não vira prova por repetir até passar. Rodrigo não é o
@@ -216,6 +216,41 @@ aprovação.
 A configuração usa somente `http://127.0.0.1` para o site da branch. A trava
 existente no build valida que o Supabase é o projeto Preview. Screenshots,
 vídeos, traces e relatórios com sessão não são gerados.
+
+## Testes locais e armadilhas conhecidas
+
+Regras curtas tiradas de falhas reais entre julho e setembro de 2026. O
+post-mortem de cada uma está na PR correspondente.
+
+- **pgTAP na máquina, pelo container.** `npx supabase start` e depois
+  `docker exec -i supabase_db_pane-processo psql -U postgres -d postgres -f - <
+  supabase/tests/<arquivo>.test.sql`; confira `grep -c "^ ok"` contra o
+  `plan(N)` e `grep "^ not ok"` para as falhas. O atalho `supabase test db`
+  falha com "No plan found in TAP output" por defeito do container auxiliar; o
+  schema aplica normalmente. Cada rodada de CI evitada assim vale minutos.
+- **Reexecutar o navegador em outro dia exige seed novo.** O seed grava a data
+  do dia em que rodou. O job de navegador do CI lê sempre o `PaneERP Preview`
+  compartilhado, mesmo em PR que mexe em `supabase/`: reexecute `Banco Preview`
+  com `RECONSTRUIR` e só depois o job. Para o banco isolado da PR (teste humano
+  pelo link), reexecute `Usuarios do Banco por PR`, que recria as contas e
+  reaplica o seed; `Banco por PR` só aponta a Vercel para o banco certo.
+- **Teste humano no preview compartilhado consome cenário.** O smoke exige
+  sobras da Geolar por resolver e a tela obriga a resolvê-las. Depois de um
+  teste humano no banco compartilhado, reconstrua antes de confiar no semáforo.
+- **Falha de smoke na janela de reconstrução não é corrida esperada.** O job de
+  navegador divide a fila `banco-preview-compartilhado` com o `Banco Preview` e
+  espera a restauração terminar. Se ainda assim falhar nessa janela, a guarda
+  falhou: investigue, não reexecute por reflexo.
+- **PRs sem `supabase/` abertas juntas geram links quase iguais no mesmo banco.** Ao
+  entregar o link, diga o trecho do endereço que identifica a branch e um sinal
+  visível na tela. Para confirmar a versão no ar: `curl` na página e `grep` no
+  chunk de `/_next/static/chunks/app/<rota>/` por texto que só a versão nova tem.
+- **Roteiro de perfis vem da `main`, seed vem da PR.** PR que muda rota ou
+  permissão de perfil fictício entra em três passos: afrouxar o roteiro para
+  aceitar os dois estados, entrar o seed novo, apertar o roteiro de volta.
+- **Preview não reproduz produção.** Permissão que falta ao perfil fictício faz
+  a RLS esconder a linha e a tela dizer "não existe"; compare o cenário com
+  produção (leitura) antes de mexer no código.
 
 ## Reconstrução manual
 

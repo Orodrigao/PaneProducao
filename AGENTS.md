@@ -113,8 +113,7 @@ Antes de propor uma mudança:
    tocando a mesma área, pare e proponha como isolar ou reconciliar o trabalho
    antes de editar;
 6. leia este arquivo e `docs/CURRENT_STATE.md`;
-7. leia `lessons.md` — as lições registradas existem para a próxima sessão
-   não repetir o erro; gravar sem ler não protege ninguém;
+7. leia `lessons.md`: regras de uma linha, no máximo 40 linhas, sem narrativa;
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
 10. faça o checkpoint de distribuição descrito em `MASTER.md` e em
@@ -333,21 +332,36 @@ npm test
 npm run build
 ```
 
-Esses comandos pertencem ao fechamento caro, não ao diagnóstico. Durante a
-investigação, use `Diagnose` da Portaria para executar no isolamento o menor teste
-que reproduz a falha e prove vermelho-verde quando couber. Quando o diff
-estabilizar, faça a revisão independente exigida; só então rode a prova específica
-final e um único Check isolado, que executa a bateria acima. Depois vêm push e
-confirmação pelo CI remoto.
+Esses comandos pertencem ao fechamento, não ao diagnóstico. Durante a
+investigação, rode direto na worktree o menor teste que reproduz a falha
+(`npx vitest run <arquivo>`, `npx tsc --noEmit`, `npx eslint <arquivo>`) e prove
+vermelho-verde quando couber. As dependências já foram instaladas pelo `npm ci` no
+nascimento do worktree; pacote novo só entra pela caixa isolada. O `Diagnose` da
+Portaria reconstrói a caixa inteira a cada chamada e fica reservado à prova que
+exigir isolamento.
 
-Falha de bateria, Check ou CI devolve ao teste específico. Não repita a bateria
-completa sem mudança relevante de código, dado ou ambiente, salvo instabilidade
-ou falha de infraestrutura identificada e registrada. Conte e explique no
-fechamento qualquer repetição completa.
+A ordem do fechamento é fixa. Ela existe porque selar antes do CI custou seis PRs
+para uma entrega (367 a 374) e cinco para outra (376 a 380) em setembro de 2026:
 
-O CI e o Check isolado rodam esses passos em PR de código/configuração; concluir o Check
-antes do push evita ciclo de tentativa e erro público. `tsc` e `build` sempre em
-sequência, nunca em paralelo (ver `lessons.md`).
+1. diff estável e revisão independente;
+2. push da branch e PR em rascunho;
+3. CI remoto verde. Falha no CI corrige na mesma branch e na mesma PR, com a
+   tarefa da Portaria ainda `running`; correção que altera comportamento volta
+   ao passo 1; correção que altera comportamento volta
+   ao passo 1; correção que altera comportamento volta
+   ao passo 1;
+4. `Verify` e um único `Check` isolado, que roda a bateria acima e sela o conteúdo;
+5. integração.
+
+O `Check` nunca vem antes do push: a caixa isolada não executa banco nem
+navegador, parte das provas só existe no CI remoto, e tarefa selada não volta a
+`running`. Selo antes do CI obriga a cancelar
+tarefa, branch e PR a cada falha encontrada lá.
+
+Não repita a bateria completa sem mudança relevante de código, dado ou ambiente,
+salvo instabilidade ou falha de infraestrutura identificada e registrada. Conte e
+explique no fechamento qualquer repetição completa. `tsc` e `build` sempre em
+sequência, nunca em paralelo.
 
 Além disso:
 
@@ -448,8 +462,11 @@ Após uma tarefa bem-sucedida:
 
 - atualize `docs/CURRENT_STATE.md` somente se fase, capacidade ou risco real
   mudou;
-- registre em `lessons.md` somente aprendizado não óbvio, generalizável e
-  capaz de evitar erro futuro — formato `data - slug - Trap/Rule`;
+- registre em `lessons.md` somente regra de uma linha (até 40 palavras),
+  generalizável e capaz de evitar erro futuro, formato `data - slug - regra`.
+  O arquivo tem teto de 40 linhas: passou disso, consolide antes de acrescentar.
+  Post-mortem fica no corpo da PR; lição que puder virar teste, lint ou guarda
+  vira código; como-fazer de ambiente vai para `docs/AMBIENTE_PREVIEW.md`;
 - altere `AGENTS.md` somente quando surgir uma regra global e durável —
   nunca estado, que envelhece e vira mapa errado;
 - atualize `docs/PLAN.md` somente quando roadmap, ordem ou critério de
