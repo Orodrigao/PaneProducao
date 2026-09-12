@@ -460,6 +460,52 @@ nenhuma fase é aceita só porque a interface escondeu o botão.
 **Rollback.** Migration só de ida; o rollback é uma migration nova que remove o
 estado, possível enquanto nenhuma importação pendente real existir.
 
+### Registro da fase 2 (2026-09-12, em PR)
+
+Decisão de desenho: o rascunho vive numa tabela própria,
+`payable_import_drafts`, e não num estado novo de `payable_purchases`. A conta
+a pagar alimenta o semáforo de fornecedores, o relatório, o livro financeiro e
+as baixas; um estado "pendente" na mesma tabela obrigaria cada uma dessas telas
+a lembrar de filtrá-lo, e um esquecimento viraria dívida falsa. Em tabela
+separada, "não gera conta a pagar nem custo" é verdade por construção, e o
+teste do banco prova isso contando linhas.
+
+O que passou a existir:
+
+- **Rascunho** com o XML original da nota e as decisões da pessoa por linha
+  (insumo, fator, uso/despesa, embalagem conferida, memorizar), mais os
+  vencimentos digitados e o fornecedor escolhido. Ao retomar, o ERP relê o XML
+  com o leitor atual e reaplica só as decisões (`src/lib/xmlImportDrafts.ts`);
+  insumo que saiu do catálogo volta a pendente e a linha é apontada. Salvar
+  não grava memória de fornecedor nem custo: isso continua só na confirmação.
+- **Gate no banco.** RLS habilitada e forçada; leitura só com
+  `contas_pagar.importar_xml` na JC; escrita direta revogada (nem o financeiro
+  insere pela Data API); mutação só por `save_xml_import_draft` e
+  `discard_xml_import_draft`, ambas `SECURITY DEFINER` com `search_path`
+  vazio e grants explícitos.
+- **Uma nota, um rascunho pendente.** Índice único parcial por chave da NF-e e
+  trava por chave na função: reenvio e duplo toque atualizam a mesma linha;
+  nota já importada não vira rascunho. `create_xml_payable` foi copiada da
+  versão vigente com duas inserções: a mesma trava por chave, que serializa
+  confirmar e salvar da mesma nota, e a marcação do rascunho pendente como
+  confirmado na transação da conta. O defeito da trava do fator nessa função
+  continua como está, por ser PR própria.
+- **Tela.** Botão "Salvar para conferir depois" na importação; lista
+  "Importações pendentes de conferência" em Contas a pagar com "Continuar
+  conferência" e "Descartar" (com confirmação); ao abrir um XML cuja nota já
+  tem rascunho, a tela avisa e oferece continuar de onde parou ou recomeçar.
+
+Provas: pgTAP `supabase/tests/importacao_pendente_nfe.test.sql` (rascunho não
+produz conta, parcela nem altera `cost_price`; Financeiro JC salva, relê e
+descarta; Vendas JA é barrada e não enxerga; inserção direta negada; reenvio
+não duplica; nota importada não vira rascunho; confirmação fecha o rascunho e
+só ela atualiza o custo) e cenários de navegador em
+`test/browser/auth.smoke.spec.ts`. Limite conhecido: o smoke do CI roda no
+`PaneERP Preview` compartilhado, que espelha a `main`; antes do merge a tabela
+não existe lá e os cenários novos pulam com motivo explícito. A prova de
+navegador da PR é feita no preview isolado dela, com o banco que tem a
+migration; depois do merge os cenários rodam no CI.
+
 ## Fase 3: o custo passa a incluir os não recuperáveis
 
 **Frente financeira. Área crítica: dinheiro, migration e função do banco. Não
@@ -534,7 +580,8 @@ entendimento de que o custo dos produtos tocados muda a partir dali.
 
 - Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md).
   A decisão sobre o custo está registrada; fases 0 e 1 feitas; a fase 2
-  (importação pendente de conferência) e a fase 3 (custo) continuam pendentes,
-  cada uma com aprovação própria.
+  (importação pendente de conferência) está implementada em PR em rascunho,
+  autorizada até o rascunho e sem aval de merge; a fase 3 (custo) continua
+  pendente, com aprovação própria.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

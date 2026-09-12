@@ -1,9 +1,8 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { FileUp, Plus, Save, X } from 'lucide-react'
+import { FileClock, FileUp, Plus, Save, X } from 'lucide-react'
 import {
-  calculateUsableQuantity,
   findLatestSupplierMapping,
   parseNfeXml,
   type NfeConversionBasis,
@@ -18,6 +17,19 @@ import {
   getPayableErrorMessage,
   type PayableProduct,
 } from '@/lib/payables'
+import {
+  applyInstallmentDecisions,
+  applyItemDecisions,
+  clearProduct,
+  findPendingXmlImportDraft,
+  formatDraftSavedAt,
+  loadXmlImportDraft,
+  saveXmlImportDraft,
+  withProduct,
+  withoutProduct,
+  type XmlImportDraftContent,
+  type XmlImportDraftRow,
+} from '@/lib/xmlImportDrafts'
 import { showToast } from '@/lib/utils'
 import { composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
 import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
@@ -48,6 +60,8 @@ interface NonCatalogMapping {
 interface XmlPayableImportProps {
   suppliers: XmlSupplierOption[]
   products: PayableProduct[]
+  /** Importação salva pela metade para retomar; a nota é relida do XML guardado. */
+  initialDraft?: XmlImportDraftContent | null
   onSaved: () => Promise<void> | void
   onCancel: () => void
 }
@@ -56,52 +70,27 @@ function digits(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '')
 }
 
-function initialFactor(item: NfeItemDraft): number {
-  return item.conversionBasis === 'simple' ? 1 : 1
+interface ResumedImport {
+  draft: NfeDraft
+  xmlText: string
+  supplierId: string
+  lostLines: number[]
 }
 
-function withProduct(
-  item: NfeItemDraft,
-  product: PayableProduct,
-  factor = initialFactor(item),
-  recognized = false,
-  factorConfirmed = factor !== 1,
-): NfeItemDraft {
-  return {
-    ...item,
-    factorConfirmed,
-    recognized,
-    baseProductId: product.id,
-    baseProductName: product.name,
-    baseUnit: product.unit ?? 'un',
-    category: product.category ?? null,
-    conversionFactor: factor,
-    usableQuantity: calculateUsableQuantity(item.quantity, factor),
-    mappingStatus: 'mapeado',
-  }
-}
-
-function withoutProduct(item: NfeItemDraft, recognized = false): NfeItemDraft {
-  return {
-    ...clearProduct(item),
-    mappingStatus: 'nao_aplicavel',
-    recognized,
-  }
-}
-
-function clearProduct(item: NfeItemDraft): NfeItemDraft {
-  return {
-    ...item,
-    baseProductId: null,
-    baseProductName: null,
-    baseUnit: null,
-    category: null,
-    conversionFactor: null,
-    usableQuantity: null,
-    mappingStatus: 'pendente',
-    factorConfirmed: false,
-    recognized: false,
-  }
+/**
+ * Retomar é reler o XML com o leitor de hoje e reaplicar só as decisões da
+ * pessoa. Fornecedor salvo vence; sem ele, vale o CNPJ da nota, como na leitura
+ * de um arquivo novo.
+ */
+function resumeImport(content: XmlImportDraftContent, suppliers: readonly XmlSupplierOption[], catalog: readonly PayableProduct[]): ResumedImport {
+  const parsed = parseNfeXml(content.xml_content)
+  const applied = applyItemDecisions(parsed, content.item_decisions, catalog)
+  const draft = applyInstallmentDecisions(applied.draft, content.installments)
+  const matched = suppliers.find(supplier => digits(supplier.cnpj) === digits(draft.supplierCnpj) && digits(draft.supplierCnpj) !== '')
+  const supplierId = content.supplier_id && suppliers.some(supplier => supplier.id === content.supplier_id)
+    ? content.supplier_id
+    : matched?.id ?? ''
+  return { draft, xmlText: content.xml_content, supplierId, lostLines: applied.lostLines }
 }
 
 /**
@@ -179,11 +168,34 @@ function itemStatus(item: NfeItemDraft): { label: string; color: string } {
   return { label: 'vinculado agora', color: 'var(--teal)' }
 }
 
-export default function XmlPayableImport({ suppliers, products, onSaved, onCancel }: XmlPayableImportProps) {
+function lostLinesMessage(lines: readonly number[]): string {
+  const list = lines.join(', ')
+  return lines.length === 1
+    ? `O item-base da linha ${list} saiu do catálogo desde que a importação foi salva. Classifique essa linha de novo.`
+    : `Os itens-base das linhas ${list} saíram do catálogo desde que a importação foi salva. Classifique essas linhas de novo.`
+}
+
+export default function XmlPayableImport({ suppliers, products, initialDraft = null, onSaved, onCancel }: XmlPayableImportProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const requestIdRef = useRef(crypto.randomUUID())
-  const [draft, setDraft] = useState<NfeDraft | null>(null)
-  const [supplierId, setSupplierId] = useState('')
+  // A retomada acontece uma vez, na montagem; depois disso a pessoa é dona do
+  // rascunho e nenhuma recarga de lista pode sobrescrever o que ela mudou.
+  const [initial] = useState<{ resumed: ResumedImport | null; error: string | null }>(() => {
+    if (!initialDraft) return { resumed: null, error: null }
+    try {
+      const resumed = resumeImport(initialDraft, suppliers, products)
+      return { resumed, error: resumed.lostLines.length > 0 ? lostLinesMessage(resumed.lostLines) : null }
+    } catch (resumeError) {
+      return { resumed: null, error: getPayableErrorMessage(resumeError, 'Não foi possível reabrir a importação pendente.') }
+    }
+  })
+  const [draft, setDraft] = useState<NfeDraft | null>(initial.resumed?.draft ?? null)
+  const [supplierId, setSupplierId] = useState(initial.resumed?.supplierId ?? '')
+  const [xmlText, setXmlText] = useState(initial.resumed?.xmlText ?? '')
+  const [resumedDraft, setResumedDraft] = useState<XmlImportDraftContent | null>(initial.resumed ? initialDraft : null)
+  // Arquivo lido cuja NF-e já tem importação pendente: a pessoa escolhe entre
+  // continuar de onde parou ou recomeçar do XML.
+  const [pendingDraft, setPendingDraft] = useState<XmlImportDraftRow | null>(null)
   // As listas vêm da página e continuam chegando depois da montagem. Guardá-las
   // em useState congelava a versão vazia: quem abria a importação antes de o
   // cadastro carregar ficava sem nenhum insumo para escolher e ia criar um novo.
@@ -198,7 +210,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     () => [...products, ...createdProducts.filter(extra => !products.some(known => known.id === extra.id))],
     [products, createdProducts],
   )
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initial.error)
   const [saving, setSaving] = useState(false)
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
   const [creatingSupplier, setCreatingSupplier] = useState(false)
@@ -211,7 +223,8 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     setError(null)
     setDuplicateNfe(false)
     try {
-      const nextDraft = parseNfeXml(await file.text())
+      const text = await file.text()
+      const nextDraft = parseNfeXml(text)
       const { supabase } = await import('@/lib/supabase')
       const { data: existingPurchase, error: duplicateError } = await supabase
         .from('payable_purchases')
@@ -219,7 +232,13 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
         .eq('nfe_key', nextDraft.accessKey)
         .maybeSingle()
       if (duplicateError) throw new Error('Não foi possível verificar se esta NF-e já foi importada.')
+      // Nota já importada não tem rascunho pendente por regra do banco; só vale
+      // procurar quando a conta ainda não existe.
+      const savedDraft = existingPurchase ? null : await findPendingXmlImportDraft(nextDraft.accessKey)
       setDraft(nextDraft)
+      setXmlText(text)
+      setResumedDraft(null)
+      setPendingDraft(savedDraft)
       setDuplicateNfe(Boolean(existingPurchase))
       setAutoMappedCount(0)
       setCreatingSupplier(false)
@@ -355,6 +374,39 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     } finally { setSaving(false) }
   }
 
+  // Salvar para depois guarda a nota e as decisões feitas até aqui. Nada vira
+  // conta a pagar, parcela ou custo: o banco só aceita isso pela confirmação.
+  async function saveForLater() {
+    if (!draft) return
+    if (duplicateNfe) { showToast('Esta NF-e já foi importada. Não há o que salvar.'); return }
+    setSaving(true)
+    try {
+      await saveXmlImportDraft(draft, supplierId || null, xmlText)
+      showToast('Importação salva para conferir depois. Nada entrou no financeiro nem no custo.')
+      await onSaved()
+    } catch (saveError) {
+      showToast(getPayableErrorMessage(saveError, 'Não foi possível salvar a importação pendente.'))
+    } finally { setSaving(false) }
+  }
+
+  async function resumePending() {
+    if (!pendingDraft) return
+    setSaving(true)
+    try {
+      const content = await loadXmlImportDraft(pendingDraft.id)
+      const resumed = resumeImport(content, availableSuppliers, catalog)
+      setDraft(resumed.draft)
+      setXmlText(resumed.xmlText)
+      setSupplierId(resumed.supplierId)
+      setResumedDraft(content)
+      setPendingDraft(null)
+      setAutoMappedCount(0)
+      setError(resumed.lostLines.length > 0 ? lostLinesMessage(resumed.lostLines) : null)
+    } catch (resumeError) {
+      showToast(getPayableErrorMessage(resumeError, 'Não foi possível reabrir a importação pendente.'))
+    } finally { setSaving(false) }
+  }
+
   const mappedCount = draft?.items.filter(item => item.mappingStatus !== 'pendente').length ?? 0
   // Os totais são fato do XML e não mudam com a classificação; a composição
   // só precisa ser refeita quando entra outra nota.
@@ -406,6 +458,24 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
               <small style={{ display: 'block', marginTop: 4 }}>
                 Esta chave de acesso já está registrada no Contas a pagar. A importação foi bloqueada para evitar duplicidade.
               </small>
+            </div>
+          )}
+          {pendingDraft && (
+            <div role="alert" className="ps-card" style={{ marginTop: 10, borderColor: 'var(--honey-deep)', background: 'var(--cream-raise)' }}>
+              <b><FileClock size={15} style={{ verticalAlign: '-2px' }} /> Esta NF-e já tem uma importação pendente</b>
+              <small style={{ display: 'block', marginTop: 4 }}>
+                Salva em {formatDraftSavedAt(pendingDraft.updated_at)}, sem virar conta a pagar. Continue de onde parou para não refazer a classificação. Se recomeçar e salvar de novo, o que estava guardado é substituído.
+              </small>
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="ps-btn primary sm" disabled={saving} onClick={() => void resumePending()}>Continuar de onde parou</button>{' '}
+                <button type="button" className="ps-btn ghost sm" disabled={saving} onClick={() => setPendingDraft(null)}>Recomeçar do XML</button>
+              </div>
+            </div>
+          )}
+          {resumedDraft && !pendingDraft && (
+            <div className="ps-banner" style={{ marginTop: 10 }}>
+              <b>Importação retomada</b>
+              <small style={{ display: 'block', marginTop: 3 }}>Salva em {formatDraftSavedAt(resumedDraft.updated_at)}. A nota foi relida do XML e as decisões guardadas foram reaplicadas. Ainda não existe conta a pagar.</small>
             </div>
           )}
           {autoMappedCount > 0 && (
@@ -530,6 +600,14 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
           {blockingReason && (
             <small role="alert" style={{ display: 'block', marginTop: 10, color: 'var(--berry)' }}>{blockingReason}</small>
           )}
+          <div style={{ marginTop: 10 }}>
+            <button type="button" className="ps-btn ghost block" disabled={saving || duplicateNfe} onClick={() => void saveForLater()}>
+              <FileClock size={16} /> Salvar para conferir depois
+            </button>
+            <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>
+              Guarda a nota e a classificação feita até aqui. Não cria conta a pagar nem mexe no custo; você continua de onde parou.
+            </small>
+          </div>
           <div className="ps-totalbar">
             <div className="ps-total-num"><b>{formatBRL(draft.total)}</b><span>{mappedCount === draft.items.length ? 'itens classificados' : `${draft.items.length - mappedCount} item(ns) pendente(s)`}</span></div>
             <button className="ps-save" disabled={saving || !supplierId || duplicateNfe || Boolean(blockingReason)} onClick={() => void confirmImport()}><Save size={16} /> {saving ? 'Importando...' : 'Confirmar NF-e'}</button>

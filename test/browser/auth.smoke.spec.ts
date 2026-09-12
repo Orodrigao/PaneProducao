@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 test.use({
@@ -590,4 +592,184 @@ test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async
   await expect(nome).toHaveValue('MANJERICAO FRESCO MACO TESTE')
   await page.getByText('Usar o mesmo nome da NF-e').click()
   await expect(nome).toBeEnabled()
+})
+
+// --- Fase 2 das compras por XML: importacao pendente de conferencia ---------
+//
+// O rascunho vive numa tabela nova (payable_import_drafts). O smoke do CI roda
+// contra o PaneERP Preview compartilhado, que espelha a main: enquanto a PR nao
+// for integrada, a tabela nao existe la e estes cenarios pulam com o motivo
+// explicito, em vez de fingir aprovacao. A prova real da PR e feita no preview
+// isolado dela, que tem o banco com a migration. Depois do merge, o banco
+// compartilhado ganha a tabela e os cenarios passam a rodar de verdade aqui.
+
+function previewApi(): { url: string; anonKey: string } {
+  const env = readFileSync(resolve(process.cwd(), '.env.example'), 'utf8')
+  const read = (name: string) => env.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1]?.trim().replace(/^"|"$/g, '') ?? ''
+  return { url: read('NEXT_PUBLIC_SUPABASE_URL'), anonKey: read('NEXT_PUBLIC_SUPABASE_ANON_KEY') }
+}
+
+// O token da sessao aberta no navegador: e com ele que a Data API decide, pela
+// RLS e pelos grants, o que a pessoa logada pode ler e escrever.
+async function sessionAccessToken(page: import('@playwright/test').Page): Promise<string> {
+  return page.evaluate(() => {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index) ?? ''
+      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as { access_token?: string }
+        return parsed.access_token ?? ''
+      }
+    }
+    return ''
+  })
+}
+
+async function dataApiHeaders(page: import('@playwright/test').Page): Promise<Record<string, string>> {
+  const api = previewApi()
+  const token = await sessionAccessToken(page)
+  expect(token, 'a sessao do navegador precisa ter um token para falar com a Data API').not.toBe('')
+  return { apikey: api.anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+}
+
+async function skipWithoutImportDraftsTable(page: import('@playwright/test').Page, headers: Record<string, string>) {
+  const probe = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id&limit=1`, { headers })
+  test.skip(probe.status() === 404, 'A tabela de rascunhos de importacao ainda nao existe neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
+  expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar rascunhos`).toBe(true)
+}
+
+function nfeXmlDeUmItem(uniqueKey: string, uniqueCnpj: string, numero: string, fornecedor: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe${uniqueKey}" versao="4.00">
+    <ide><nNF>${numero}</nNF><serie>1</serie><dhEmi>2026-09-10T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>${fornecedor}</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-RASCUNHO</cProd><xProd>[TESTE] Detergente 5L</xProd><NCM>34022000</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
+    <total><ICMSTot>${totaisSimples('10.00')}</ICMSTot></total>
+    <pag><detPag><tPag>15</tPag><vPag>10.00</vPag></detPag></pag>
+    <cobr><dup><nDup>001</nDup><dVenc>2026-10-10</dVenc><vDup>10.00</vDup></dup></cobr>
+  </infNFe>
+</NFe>`
+}
+
+async function importarXmlComFornecedorNovo(page: import('@playwright/test').Page, xml: string, nomeArquivo: string, fornecedor: string) {
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+  await page.locator('input[type="file"]').setInputFiles({ name: nomeArquivo, mimeType: 'application/xml', buffer: Buffer.from(xml) })
+  await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: 'Cadastrar fornecedor com dados da NF-e' }).click()
+  await expect(page.locator('input[placeholder="Nome do fornecedor"]')).toHaveValue(fornecedor)
+  await page.getByRole('button', { name: 'Cadastrar e usar fornecedor' }).click()
+  await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+}
+
+test('Financeiro JC salva a NF-e para conferir depois, retoma com a decisao guardada e descarta sem criar conta', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  const headers = await dataApiHeaders(page)
+  await skipWithoutImportDraftsTable(page, headers)
+
+  const stamp = Date.now().toString()
+  const uniqueCnpj = `98${stamp.slice(-12)}`
+  const uniqueKey = `36${stamp}`.padEnd(44, '1')
+  const numero = '999992'
+  const fornecedor = '[TESTE] Fornecedor rascunho'
+  await importarXmlComFornecedorNovo(page, nfeXmlDeUmItem(uniqueKey, uniqueCnpj, numero, fornecedor), 'rascunho.xml', fornecedor)
+
+  // A decisao cara: o item vira uso/despesa. E isso que a retomada precisa preservar.
+  await page.getByRole('button', { name: 'Marcar como uso ou despesa' }).click()
+  await expect(page.getByText('Uso ou despesa — não entra em receita')).toBeVisible()
+  await page.getByRole('button', { name: 'Salvar para conferir depois' }).click()
+  await expect(page.locator('.toast', { hasText: 'Importação salva para conferir depois' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  const draftCard = page.locator('[data-testid="xml-import-draft"]', { hasText: `NF ${numero}` })
+  await expect(draftCard).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+  // Nada virou dinheiro: nem na lista de lancamentos, nem no banco.
+  await expect(page.locator('.ps-card', { hasText: `NF-e ${numero}` })).toHaveCount(0)
+  const contas = await page.request.get(`${previewApi().url}/rest/v1/payable_purchases?select=id&nfe_key=eq.${uniqueKey}`, { headers })
+  expect(await contas.json()).toEqual([])
+
+  // Sair e voltar: a retomada rele o XML e reaplica a decisao.
+  await page.reload()
+  await draftCard.getByRole('button', { name: 'Continuar conferência' }).click()
+  await expect(page.getByText('Importação retomada')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.getByText('Uso ou despesa — não entra em receita')).toBeVisible()
+  await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+
+  // Reenvio: salvar de novo atualiza o mesmo rascunho em vez de criar outro.
+  await page.getByRole('button', { name: 'Salvar para conferir depois' }).click()
+  await expect(page.locator('.toast', { hasText: 'Importação salva para conferir depois' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(draftCard).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+
+  // Escrita direta pela Data API e negada mesmo para quem pode importar.
+  const direto = await page.request.post(`${previewApi().url}/rest/v1/payable_import_drafts`, {
+    headers: { ...headers, Prefer: 'return=minimal' },
+    data: { nfe_key: `37${stamp}`.padEnd(44, '2'), supplier_name: 'Direto', nfe_issued_at: '2026-09-10', total_value: 10, xml_content: '<NFe/>' },
+  })
+  expect([401, 403], `insercao direta respondeu ${direto.status()}`).toContain(direto.status())
+
+  // Descartar pede confirmacao e nao deixa nada no financeiro.
+  page.once('dialog', dialog => void dialog.accept())
+  await draftCard.getByRole('button', { name: 'Descartar' }).click()
+  await expect(page.locator('.toast', { hasText: 'Importação pendente descartada' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(draftCard).toHaveCount(0)
+  await expect(page.locator('.ps-card', { hasText: `NF-e ${numero}` })).toHaveCount(0)
+})
+
+test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica vez', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  const headers = await dataApiHeaders(page)
+  await skipWithoutImportDraftsTable(page, headers)
+
+  const stamp = Date.now().toString()
+  const uniqueCnpj = `97${stamp.slice(-12)}`
+  const uniqueKey = `38${stamp}`.padEnd(44, '3')
+  const numero = '999993'
+  const fornecedor = '[TESTE] Fornecedor confirma rascunho'
+  await importarXmlComFornecedorNovo(page, nfeXmlDeUmItem(uniqueKey, uniqueCnpj, numero, fornecedor), 'rascunho-confirma.xml', fornecedor)
+  await page.getByRole('button', { name: 'Marcar como uso ou despesa' }).click()
+  await page.getByRole('button', { name: 'Salvar para conferir depois' }).click()
+  await expect(page.locator('.toast', { hasText: 'Importação salva para conferir depois' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  const draftCard = page.locator('[data-testid="xml-import-draft"]', { hasText: `NF ${numero}` })
+  await expect(draftCard).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+  await draftCard.getByRole('button', { name: 'Continuar conferência' }).click()
+  await expect(page.getByText('Importação retomada')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  const confirmar = page.getByRole('button', { name: 'Confirmar NF-e' })
+  await expect(confirmar).toBeEnabled()
+  await confirmar.click()
+  await expect(page.locator('.toast', { hasText: 'importad' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  // A conta existe uma vez, e o rascunho saiu da lista de pendentes.
+  await expect(page.locator('.ps-card', { hasText: `NF-e ${numero}` }).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(draftCard).toHaveCount(0)
+  const contas = await page.request.get(`${previewApi().url}/rest/v1/payable_purchases?select=id&nfe_key=eq.${uniqueKey}`, { headers })
+  expect(((await contas.json()) as unknown[]).length).toBe(1)
+  const pendentes = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id,status&nfe_key=eq.${uniqueKey}`, { headers })
+  expect(await pendentes.json()).toEqual([expect.objectContaining({ status: 'confirmada' })])
+})
+
+test('Vendas JA nao enxerga nem salva importacao pendente, nem pela Data API', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  const headers = await dataApiHeaders(page)
+  await skipWithoutImportDraftsTable(page, headers)
+
+  // A tela nem abre: o perfil e devolvido a rota dele.
+  await page.goto('/contas-pagar')
+  await expect(page).toHaveURL(/\/romaneio$/)
+
+  // Leitura fora do escopo: a RLS devolve lista vazia, nunca os rascunhos da JC.
+  const leitura = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id`, { headers })
+  expect(leitura.status()).toBe(200)
+  expect(await leitura.json()).toEqual([])
+
+  // Mutacao fora do escopo: a RPC recusa no banco, nao so na tela.
+  const salvar = await page.request.post(`${previewApi().url}/rest/v1/rpc/save_xml_import_draft`, {
+    headers,
+    data: {
+      p_access_key: `39${Date.now()}`.padEnd(44, '4'), p_supplier_id: null, p_supplier_name: 'Vendas', p_nfe_number: '1',
+      p_nfe_series: '1', p_issue_date: '2026-09-10', p_total_value: 10, p_xml_content: '<NFe/>', p_item_decisions: [], p_installments: [],
+    },
+  })
+  expect([401, 403]).toContain(salvar.status())
+  expect(JSON.stringify(await salvar.json())).toContain('Sem permissão para importar XML.')
 })
