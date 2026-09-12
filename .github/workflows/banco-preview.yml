@@ -39,11 +39,51 @@ env:
   PRODUCTION_PROJECT_REF: gohluceldchoitihrimw
 
 jobs:
+  # Reconstruir o Banco Preview apaga schema, dados e contas do Auth (ver
+  # `supabase db reset` abaixo). Uma main atualizada so por README/AGENTS.md
+  # ou so pelo mecanismo de CI cadastrado (perfil 'ci-mechanism': os oito
+  # caminhos testados em scripts/change-scope.test.mjs) nao precisa disso:
+  # nada no schema mudou nos dois casos. So o push importa aqui — o disparo
+  # manual (workflow_dispatch) e sempre explicito e nunca passa por esta
+  # classificacao, e o fechamento de PR sem merge NUNCA e dispensado por ela:
+  # o diff FINAL de uma PR fechada nao prova que ela nao criou recursos no
+  # banco compartilhado em commits anteriores (ver job restaurar-main).
+  classificacao:
+    if: github.event_name == 'push'
+    name: Classificar mudança (documental, mecanismo de CI ou produto)
+    runs-on: ubuntu-latest
+    outputs:
+      perfil: ${{ steps.classificar.outputs.perfil }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Classificar
+        id: classificar
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/change-scope.mjs >> "$GITHUB_OUTPUT"
+
   restaurar-main:
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false) ||
-      github.event_name == 'workflow_dispatch'
+    needs: classificacao
+    # always() e obrigatorio aqui. O job "classificacao" logo acima so roda
+    # em push (`if: github.event_name == 'push'`); em workflow_dispatch e em
+    # pull_request(closed) ele fica "skipped", nunca "success". Um `if`
+    # personalizado que nao menciona always()/success()/failure()/cancelled()
+    # e implicitamente combinado com success() pelo GitHub — entao, sem
+    # always(), este job inteiro era pulado em silencio toda vez que
+    # "classificacao" nao rodava, mesmo a condicao abaixo dizendo que ele
+    # deveria rodar. Na pratica isso significava que a reconstrucao manual
+    # (workflow_dispatch) e a limpeza de PR fechada sem merge NUNCA
+    # disparavam. A decisao real de "reconstruir ou nao" fica nos passos
+    # abaixo, nao neste `if` de job.
+    if: always()
     name: Restaurar Banco Preview para a main
     runs-on: ubuntu-latest
     env:
@@ -51,25 +91,61 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PREVIEW_DB_PASSWORD }}
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
     steps:
+      # Primeiro passo do job, antes de qualquer outro — nenhum passo
+      # anterior usa segredo. Um push cuja classificacao falhou, foi pulada
+      # ou nao produziu um dos tres perfis validos nao pode ser tratado como
+      # dispensavel nem como "reconstruir" por omissao: falha aqui e para o
+      # job (os passos seguintes so rodam se este for bem-sucedido, exceto os
+      # que tem o proprio `if`), sem tocar no banco compartilhado.
+      - name: Falhar se o push tiver classificacao ausente ou invalida
+        if: >-
+          github.event_name == 'push' &&
+          (needs.classificacao.result != 'success' ||
+          (needs.classificacao.outputs.perfil != 'documentation' &&
+          needs.classificacao.outputs.perfil != 'ci-mechanism' &&
+          needs.classificacao.outputs.perfil != 'product'))
+        run: |
+          echo "::error::Push na main com classificacao ausente ou invalida (resultado=${{ needs.classificacao.result }}, perfil=${{ needs.classificacao.outputs.perfil }}). Recusando decidir as cegas entre reconstruir ou nao; corrija a classificacao e rode de novo."
+          exit 1
+
+      - name: Nada a reconstruir para este evento
+        if: >-
+          github.event_name != 'workflow_dispatch' &&
+          !(github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product') &&
+          !(github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)
+        run: echo "Evento nao exige reconstrucao (push so documental/mecanismo de CI, ou PR fechada com merge); nada a fazer."
+
       - name: Exigir confirmacao da reconstrucao manual
         if: github.event_name == 'workflow_dispatch' && inputs.confirmacao != 'RECONSTRUIR'
         run: |
           echo "Confirmacao invalida. Digite RECONSTRUIR para continuar."
           exit 1
 
+      # Condicao real de reconstrucao, repetida em cada passo abaixo (mesmo
+      # padrao usado em ci.yml para passos condicionais): workflow_dispatch
+      # confirmado, OU push cuja classificacao (ja validada acima) deu
+      # perfil=product, OU PR fechada sem merge (limpeza incondicional —
+      # nunca depende da classificacao, ver comentario historico abaixo).
       - uses: actions/checkout@v4
+        if: &deve-reconstruir >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product') ||
+          (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)
         with:
           ref: main
 
       - uses: supabase/setup-cli@v3
+        if: *deve-reconstruir
         with:
           version: 2.109.1
 
       - uses: actions/setup-node@v4
+        if: *deve-reconstruir
         with:
           node-version: 22
 
       - name: Confirmar que o alvo nunca e producao
+        if: *deve-reconstruir
         run: |
           if [[ "$PREVIEW_PROJECT_REF" == "$PRODUCTION_PROJECT_REF" || "$PREVIEW_PROJECT_REF" != "tuqzhjsbodoycjbmwuqm" ]]; then
             echo "ALVO BLOQUEADO: o workflow Banco Preview nao recebeu o projeto de teste esperado."
@@ -77,6 +153,7 @@ jobs:
           fi
 
       - name: Confirmar que o projeto de teste esta acordado
+        if: *deve-reconstruir
         run: |
           PROJECT_STATUS="$(supabase projects list --output-format json | jq -r --arg ref "$PREVIEW_PROJECT_REF" '(.projects // .)[] | select(.id == $ref) | .status')"
           if [[ "$PROJECT_STATUS" != "ACTIVE_HEALTHY" ]]; then
@@ -86,12 +163,15 @@ jobs:
           fi
 
       - name: Conectar exclusivamente ao Banco Preview
+        if: *deve-reconstruir
         run: supabase link --project-ref "$PREVIEW_PROJECT_REF"
 
       - name: Apagar desvios e reconstruir a partir da main
+        if: *deve-reconstruir
         run: supabase db reset --linked --yes
 
       - name: Obter credencial temporaria do Auth de teste
+        if: *deve-reconstruir
         run: |
           SERVICE_ROLE_KEY="$(supabase projects api-keys --project-ref "$PREVIEW_PROJECT_REF" --output-format json | jq -r '(.keys // .)[] | select(.name == "service_role" and .type == "legacy") | .api_key')"
           if [[ -z "$SERVICE_ROLE_KEY" || "$SERVICE_ROLE_KEY" == "null" ]]; then
@@ -102,13 +182,17 @@ jobs:
           echo "SUPABASE_PREVIEW_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
 
       - name: Recriar contas ficticias pelo Supabase Auth
+        if: *deve-reconstruir
         run: node scripts/provision-preview-users.mjs
 
       - name: Ligar perfis e permissoes as contas ficticias
+        if: *deve-reconstruir
         run: supabase db query --linked --file supabase/seed.sql
 
       - name: Confirmar perfis permitidos e bloqueados
+        if: *deve-reconstruir
         run: supabase db query --linked --file supabase/verification/preview_users.sql
 
       - name: Verificar invariantes e seed canonicos
+        if: *deve-reconstruir
         run: supabase test db --linked

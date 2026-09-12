@@ -6,39 +6,151 @@ on:
     branches: [main]
 
 jobs:
+  # Classifica a mudanca ANTES de instalar qualquer dependencia, em tres
+  # perfis (scripts/change-scope.mjs): 'documentation' (so
+  # README.md/AGENTS.md/CLAUDE.md/lessons.md/docs/**/*.md), 'ci-mechanism' (os
+  # oito caminhos do proprio mecanismo de CI cadastrado, combinados ou nao com
+  # documentacao aprovada) ou 'product' (qualquer outra coisa). Falha ou
+  # duvida na classificacao NUNCA vira dispensa: os jobs abaixo continuam
+  # existindo com o mesmo nome e rodam a bateria completa sempre que este job
+  # nao provar um perfil valido explicitamente.
+  classificacao:
+    name: Classificar mudança (documental, mecanismo de CI ou produto)
+    runs-on: ubuntu-latest
+    outputs:
+      perfil: ${{ steps.classificar.outputs.perfil }}
+    steps:
+      # fetch-depth 0 e obrigatorio: o classificador roda `git merge-base` e
+      # `git diff` entre a base e o head do evento, e o checkout raso padrao
+      # (profundidade 1) nem baixa esses commits.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Classificar
+        id: classificar
+        env:
+          # SHAs fixos do proprio evento, nunca a API de arquivos da PR: uma
+          # execucao antiga nao pode ficar sujeita a um commit novo que chegou
+          # depois dela ter comecado (ver scripts/change-scope.mjs). Em PR, a
+          # base/head vem do payload do pull_request; em push, do antes/depois.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/change-scope.mjs >> "$GITHUB_OUTPUT"
+
   verificacao:
     name: Verificação (lint, tipos, testes, build)
+    needs: classificacao
+    # always() e obrigatorio: sem ele, se o job "classificacao" falhar, este
+    # job e PULADO (status "skipped"), nao reprovado — um "needs" sozinho nao
+    # produz falha visivel. O guard abaixo transforma isso em reprovacao
+    # explicita sempre que a classificacao nao concluir com um resultado
+    # valido, em vez de sumir da lista de checks como se tivesse passado.
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Falhar se a classificação não concluiu com um resultado válido
+        if: >-
+          needs.classificacao.result != 'success' ||
+          (needs.classificacao.outputs.perfil != 'documentation' &&
+          needs.classificacao.outputs.perfil != 'ci-mechanism' &&
+          needs.classificacao.outputs.perfil != 'product')
+        run: |
+          echo "::error::Classificacao da mudanca falhou, foi pulada ou nao produziu um perfil valido (perfil=${{ needs.classificacao.outputs.perfil }}). A verificacao completa nao pode ser dispensada silenciosamente."
+          exit 1
+
       - uses: actions/checkout@v4
+        with:
+          # Necessario para o `git diff --check` da verificacao leve abaixo,
+          # que compara o ancestral comum com o head quando a mudanca e
+          # documental ou mecanismo de CI.
+          fetch-depth: 0
 
       - name: Preparar ambiente local seguro
+        if: needs.classificacao.outputs.perfil == 'product'
         run: cp .env.example .env.local
 
       - uses: actions/setup-node@v4
+        if: needs.classificacao.outputs.perfil == 'product'
         with:
           node-version: 22
           cache: npm
 
       - name: Instalar dependências
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm ci
 
       - name: Lint
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm run lint
 
       # tsc e build nunca em paralelo: disputam .next/types (ver lessons.md)
       - name: Tipos
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npx tsc --noEmit
 
       - name: Testes
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm test
 
       - name: Build
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm run build
+
+      # A verificacao dispensada precisa de Node para chamar
+      # scripts/change-scope.mjs --verify-docs e, em ci-mechanism, para o
+      # `node --test` abaixo — mas nao instala dependencia nenhuma do produto
+      # (os dois modulos so usam builtins do Node).
+      - name: Preparar Node (verificação leve)
+        if: needs.classificacao.outputs.perfil != 'product'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Resultado explicito mesmo quando dispensada: o check nao pode
+      # aparecer como "skipped" para quem revisa a PR (ver AGENTS.md). Alem
+      # do aviso, roda uma conferencia leve real — sem instalar dependencia
+      # nenhuma do produto — em vez de so imprimir uma mensagem tranquilizadora.
+      # Roda tambem em ci-mechanism (nao so 'documentation'): a mistura de
+      # workflow/script com documento aprovado ainda precisa da mesma
+      # conferencia leve dos documentos alterados; a funcao filtra por conta
+      # propria e nao acusa problema onde nao ha documento nenhum.
+      #
+      # A logica de verificacao (git diff --check, UTF-8, links relativos
+      # resolvidos contra o diretorio de CADA documento) vive em
+      # scripts/change-scope.mjs (--verify-docs) e e testada em
+      # scripts/change-scope.test.mjs; este passo so chama o mesmo modulo
+      # que decidiu a dispensa, sem pipeline `|| true` escondendo falha do
+      # git.
+      - name: Verificação documental (mudança apenas documental ou mecanismo de CI)
+        if: needs.classificacao.outputs.perfil != 'product'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          echo "Perfil ${{ needs.classificacao.outputs.perfil }}: lint/tipos/testes/build dispensados; conferindo documentos alterados."
+          node scripts/change-scope.mjs --verify-docs
+
+      # Unico passo especifico do perfil ci-mechanism: prova que o proprio
+      # mecanismo de CI (este workflow, os workflows de banco por PR e o
+      # ignoreCommand da Vercel) continua correto, sem instalar nem construir
+      # o ERP. O limite de 3 minutos (180s) e o teto acordado para este
+      # mecanismo isolado — ver AGENTS.md e o seletor local da Portaria.
+      - name: Verificação isolada do mecanismo de CI (sem instalar o ERP)
+        if: needs.classificacao.outputs.perfil == 'ci-mechanism'
+        timeout-minutes: 3
+        run: node --test scripts/change-scope.test.mjs
 
   navegador:
     name: Navegador (login, perfis e lojas)
-    needs: verificacao
+    needs: [classificacao, verificacao]
+    # Mesmo raciocinio do job "verificacao": always() + guard explicito em vez
+    # de deixar o "needs" pular o job em silencio quando algo anterior falhou.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Mesmo grupo do workflow Banco Preview: o smoke le o banco compartilhado e
@@ -47,16 +159,39 @@ jobs:
     # "invalid_credentials" sem ter defeito nenhum — foi medido na PR 259, com
     # o reset de outra PR entre 22:03:45 e 22:04:24 e as tres tentativas de
     # login as 22:04:03, 22:04:08 e 22:04:14. Espera em fila, nunca cancela.
+    #
+    # PR so documental ou so mecanismo de CI nunca precisa do banco: colocar
+    # seu grupo num nome unico por execucao (nunca reutilizado) evita que ela
+    # fique na fila atras de um reset que nao lhe diz respeito, sem abrir mao
+    # da fila real quando a mudanca de fato usa o banco compartilhado.
+    #
+    # So entra na fila REAL quando a classificacao terminou com sucesso,
+    # confirmou perfil 'product' E a verificacao completa (lint/tipos/testes/
+    # build) tambem terminou com sucesso — em qualquer outro caso (perfil
+    # documentation/ci-mechanism, classificacao que falhou/foi pulada/nao
+    # concluiu, OU verificacao que falhou) o grupo tem que ser unico. Sem a
+    # condicao da verificacao, uma PR com lint/teste/build quebrado disputaria
+    # a fila real do Banco Preview so para, alguns segundos depois, reprovar
+    # mesmo assim no proprio guard abaixo — atrasando sem necessidade toda PR
+    # que espera atras dela na fila de verdade por uma execucao que ja estava
+    # fadada a falhar antes de tocar no banco.
     concurrency:
-      group: banco-preview-compartilhado
+      group: ${{ (needs.classificacao.result == 'success' && needs.classificacao.outputs.perfil == 'product' && needs.verificacao.result == 'success') && 'banco-preview-compartilhado' || format('ci-docs-only-{0}', github.run_id) }}
       cancel-in-progress: false
     env:
       PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
     steps:
+      - name: Falhar se classificação ou verificação não concluíram com sucesso
+        if: needs.classificacao.result != 'success' || needs.verificacao.result != 'success'
+        run: |
+          echo "::error::Classificacao ou verificacao anterior falhou, foi pulada ou nao concluiu. O smoke de navegador nao pode ser dispensado silenciosamente."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - name: Confirmar ambiente fictício e credencial de teste
+        if: needs.classificacao.outputs.perfil == 'product'
         run: |
           if ! grep -q "$PREVIEW_SUPABASE_URL" .env.example; then
             echo "Teste de navegador bloqueado: .env.example nao aponta ao PaneERP Preview."
@@ -68,6 +203,7 @@ jobs:
           fi
 
       - name: Confirmar que o Preview está disponível
+        if: needs.classificacao.outputs.perfil == 'product'
         run: |
           set -a
           source .env.example
@@ -88,7 +224,7 @@ jobs:
       # esta, espelhando a main. A espera por etiqueta que existia aqui morreu
       # junto com a fila, nos PRs #287 a #291.
       - name: Esperar a restauracao do Banco Preview na main
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -115,14 +251,17 @@ jobs:
           exit 1
 
       - name: Preparar ambiente local seguro
+        if: needs.classificacao.outputs.perfil == 'product'
         run: cp .env.example .env.local
 
       - uses: actions/setup-node@v4
+        if: needs.classificacao.outputs.perfil == 'product'
         with:
           node-version: 22
           cache: npm
 
       - name: Instalar dependências
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm ci
 
       # O cenario da EX vive de um fio: o pedido do dia e de 8 baguetes e as
@@ -132,6 +271,7 @@ jobs:
       # ontem) faz o smoke reprovar sem defeito no codigo. Conferir aqui troca um
       # vermelho misterioso por uma instrucao.
       - name: Confirmar que o cenario ficticio do dia esta intacto
+        if: needs.classificacao.outputs.perfil == 'product'
         run: |
           set -a
           source .env.example
@@ -186,7 +326,14 @@ jobs:
           echo "Cenario de reposicao da EX intacto para $HOJE."
 
       - name: Smoke tests no navegador
+        if: needs.classificacao.outputs.perfil == 'product'
         run: npm run test:browser
+
+      # Resultado explicito mesmo quando dispensada: ver o mesmo comentario
+      # no job "verificacao".
+      - name: Navegador dispensado (mudança apenas documental ou mecanismo de CI)
+        if: needs.classificacao.outputs.perfil != 'product'
+        run: echo "Perfil ${{ needs.classificacao.outputs.perfil }}; smoke tests no navegador dispensados."
 
       # Quando o smoke reprova, o Playwright grava em test-results a foto da
       # tela no momento exato da falha (error-context.md, a arvore de

@@ -72,11 +72,38 @@ jobs:
     steps:
       - name: Buscar o codigo
         uses: actions/checkout@v4
+        with:
+          # Necessario para a classificacao documental abaixo, que roda
+          # `git merge-base`/`git diff` entre a base e o head do evento.
+          fetch-depth: 0
 
       - name: Preparar o Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # Apontar o preview para o banco isolado e um efeito real (grava
+      # variaveis, dispara redeploy). Uma sincronizacao que so mexeu em
+      # documentacao ou no mecanismo de CI cadastrado (perfil 'ci-mechanism')
+      # nao precisa disso: nada no banco ou no schema mudou nos dois casos.
+      # So roda para evento de PR de verdade — o disparo manual e sempre
+      # explicito e nunca passa por esta classificacao.
+      #
+      # BASE_SHA e SEMPRE a base da PR (igual ao contrato de ci.yml), nunca o
+      # commit anterior ao ultimo push. Classificar so o ultimo commit de um
+      # `synchronize` esconderia codigo nao-documental de commits ANTERIORES
+      # da mesma PR: se o commit 1 mexeu em supabase/ e o commit 2 (este
+      # sync) so mexe em docs, `before..head` pareceria documental mesmo a PR
+      # inteira nao sendo. A classificacao aqui so decide se vale a pena
+      # reapontar o preview nesta sincronizacao — tem que refletir a PR
+      # inteira, nao um commit isolado.
+      - name: Classificar mudança desta sincronização
+        id: classificar
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/change-scope.mjs >> "$GITHUB_OUTPUT"
 
       # Os dois campos do disparo manual sao digitados em separado, e o script
       # aceita casar a ramificacao por numero da PR OU por nome da branch. Se a
@@ -114,6 +141,7 @@ jobs:
       # verde e com mensagem tranquilizadora. Quem sabe se o schema mudou e o
       # diff da PR, nao a ausencia de uma ramificacao.
       - name: Descobrir se esta PR altera o Supabase
+        if: github.event_name == 'workflow_dispatch' || steps.classificar.outputs.perfil == 'product'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_ALVO: ${{ github.event.pull_request.number || inputs.pr_number }}
@@ -155,6 +183,7 @@ jobs:
           fi
 
       - name: Apontar
+        if: github.event_name == 'workflow_dispatch' || steps.classificar.outputs.perfil == 'product'
         env:
           ACAO: apontar
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
