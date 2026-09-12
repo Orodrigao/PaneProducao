@@ -391,12 +391,16 @@ Como a tela decide, na ordem:
    acréscimo maior nos itens do que no total). Acréscimo só no total é aceito:
    é a despesa comum que a fase 3 vai ratear. Entram aqui também o arquivo
    sem o bloco de totais completo e o valor ilegível em campo fiscal.
-   **Esta é a única mudança no que é aceito:** um XML que traga só `vNF` no
-   bloco de totais entrava no banco antes da fase 1 e agora é recusado com a
-   lista do que falta. NF-e autorizada pela SEFAZ sempre traz o bloco inteiro,
-   então nenhuma nota real é afetada; só arquivo montado à mão. A recusa é
-   deliberada: sem o bloco, a composição não é conferível, e supor zero seria
-   o palpite silencioso que este documento proíbe.
+   **Esta é a única mudança no que é aceito:** um XML em que falte qualquer
+   campo do bloco de totais (`vProd`, `vDesc`, `vST`, `vFCPST`, `vIPI`,
+   `vIPIDevol`, `vFrete`, `vSeg`, `vOutro`, `vII`, `vICMSDeson` ou `vNF`), ou
+   em que algum deles não seja número, entrava no banco antes da fase 1 desde
+   que a soma dos itens batesse com `vNF`; agora é recusado com a lista do que
+   falta ou está ilegível. NF-e 4.00 autorizada pela SEFAZ sempre traz o bloco
+   inteiro, então nenhuma nota real é afetada; só arquivo montado à mão ou de
+   layout antigo. A recusa é deliberada: sem o bloco, a composição não é
+   conferível, e supor zero seria o palpite silencioso que este documento
+   proíbe.
 2. **Resíduo diferente de zero** mostra o valor não explicado, a soma lida e o
    total declarado, e a orientação: conferir com o fornecedor; se o XML estiver
    certo, a leitura do ERP está falhando. Nunca há botão de ajuste.

@@ -256,8 +256,20 @@ describe('divergência entre itens e total', () => {
       .toEqual(['O bloco de totais da nota traz valor ilegível em vFrete.'])
     expect(composeNfe({ items: [item(1, 100, { icmsSt: Number.NaN })], totals: totals() }).blockers)
       .toEqual(['O item 1 traz valor ilegível em vICMSST.'])
+    expect(composeNfe({ items: [item(1, 100, { discount: Number.NaN })], totals: totals() }).blockers)
+      .toEqual(['O item 1 traz valor ilegível em vDesc.'])
     expect(composeNfe({ items: [item(1, 100)], totals: totals({ services: Number.NaN }) }).blockers)
       .toEqual(['O bloco de serviços da nota traz valor ilegível em vServ.'])
+  })
+
+  it('total ilegível ou ausente não gera um segundo aviso dizendo que o total informou zero', () => {
+    const unreadable = composeNfe({ items: [item(1, 100, { freight: 4 })], totals: totals({ freight: Number.NaN, total: 104 }) })
+    expect(unreadable.blockers).toEqual(['O bloco de totais da nota traz valor ilegível em vFrete.'])
+    const absent = composeNfe({ items: [item(1, 100, { icmsExempt: 3, deductsExemption: '0' })], totals: totals({ icmsExempt: null, products: Number.NaN }) })
+    expect(absent.blockers).toEqual([
+      'O bloco de totais da nota não informa vICMSDeson. Uma NF-e autorizada sempre traz esses campos; confira se o arquivo está completo.',
+      'O bloco de totais da nota traz valor ilegível em vProd.',
+    ])
   })
 })
 

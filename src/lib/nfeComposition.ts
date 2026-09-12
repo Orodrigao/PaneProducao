@@ -90,9 +90,13 @@ function cents(value: number): number {
   return Math.round((value + Number.EPSILON) * 100)
 }
 
+function isKnown(value: number | null): value is number {
+  return value !== null && !Number.isNaN(value)
+}
+
 /** Depois da validação, ausente e ilegível já estão bloqueados; a conta segue com zero só para mostrar o resto. */
 function known(value: number | null): number {
-  return value === null || Number.isNaN(value) ? 0 : value
+  return isKnown(value) ? value : 0
 }
 
 /**
@@ -145,17 +149,21 @@ export function composeNfe(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeCompos
   const discounts = cents(known(totals.discounts))
   const itemProducts = items.reduce((sum, item) => sum + cents(item.grossLineTotal), 0)
   const itemDiscounts = sumItems(items, 'discount')
-  if (totals.products !== null && itemProducts !== products) {
+  // Comparação só com o que a nota informou de forma legível: ausente e
+  // ilegível já bloquearam acima, e comparar com zero geraria um segundo aviso
+  // enganoso ("o total informa R$ 0,00").
+  if (isKnown(totals.products) && itemProducts !== products) {
     blockers.push(`Os itens somam ${money(reais(itemProducts))} em produtos, mas o total da nota informa ${money(reais(products))}.`)
   }
-  if (totals.discounts !== null && itemDiscounts !== discounts) {
+  if (isKnown(totals.discounts) && itemDiscounts !== discounts) {
     blockers.push(`Os itens somam ${money(reais(itemDiscounts))} de desconto, mas o total da nota informa ${money(reais(discounts))}.`)
   }
 
   const surcharges: NfeCompositionLine[] = []
   let surchargesTotal = 0
   for (const { key, label } of SURCHARGE_ORDER) {
-    const amount = cents(known(totals[key]))
+    if (!isKnown(totals[key])) continue
+    const amount = cents(totals[key])
     const inItems = sumItems(items, key)
     if (amount === 0 && inItems === 0) continue
     if (amount !== 0) {
@@ -192,8 +200,8 @@ export function composeNfe(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeCompos
       blockers.push(`O item ${item.lineNumber} tem ICMS desonerado e o XML não diz se ele abate do total (indDeduzDeson ausente), um caso ainda não esclarecido.`)
     }
   }
-  if (totals.icmsExempt !== null && itemExemption !== cents(known(totals.icmsExempt))) {
-    blockers.push(`Os itens somam ${money(reais(itemExemption))} de ICMS desonerado, mas o total da nota informa ${money(known(totals.icmsExempt))}.`)
+  if (isKnown(totals.icmsExempt) && itemExemption !== cents(totals.icmsExempt)) {
+    blockers.push(`Os itens somam ${money(reais(itemExemption))} de ICMS desonerado, mas o total da nota informa ${money(totals.icmsExempt)}.`)
   }
 
   const expectedTotal = products - discounts + surchargesTotal - exemptionDeducted

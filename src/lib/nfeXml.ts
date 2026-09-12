@@ -435,9 +435,12 @@ function indicator(root: ParentNode, localName: string): '0' | '1' | null {
  * outras despesas em `prod`; ST, FCP-ST, desoneração e seu indicador em
  * `imposto/ICMS`; IPI em `imposto/IPI`; IPI devolvido em `impostoDevol`.
  */
-function readItemFiscal(detail: Element, prod: Element, discountValue: number): NfeItemFiscal {
+function readItemFiscal(detail: Element, prod: Element): NfeItemFiscal {
   return {
-    discount: discountValue,
+    // Lido de novo, e não copiado de `discountValue`: aquele passa por
+    // `numberValue`, que faz conteúdo ilegível virar zero para o total da
+    // linha; aqui o ilegível precisa chegar como tal para a composição recusar.
+    discount: itemNumber(prod, 'vDesc'),
     freight: itemNumber(prod, 'vFrete'),
     insurance: itemNumber(prod, 'vSeg'),
     otherExpenses: itemNumber(prod, 'vOutro'),
@@ -521,7 +524,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       rememberConversion: true,
       factorConfirmed: false,
       recognized: false,
-      fiscal: readItemFiscal(detail, prod, discountValue),
+      fiscal: readItemFiscal(detail, prod),
     }
   })
 
