@@ -374,7 +374,7 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
     <ide><nNF>999991</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>[TESTE] Fornecedor direto XML</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-XML</cProd><xProd>[TESTE] Item XML</xProd><NCM>17019900</NCM><qCom>1.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
-    <total><ICMSTot><vNF>10.00</vNF></ICMSTot></total>
+    <total><ICMSTot><vProd>10.00</vProd><vNF>10.00</vNF></ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`
@@ -385,11 +385,52 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
     buffer: Buffer.from(xml),
   })
   await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
+  // A composição da nota é lida do XML pelo navegador: nota simples fecha e
+  // nenhum aviso de acréscimo aparece.
+  await expect(page.getByText('fecha até o centavo', { exact: true })).toBeVisible()
+  await expect(page.getByText('ainda não entram pelo XML')).toHaveCount(0)
   await page.getByRole('button', { name: 'Cadastrar fornecedor com dados da NF-e' }).click()
   await expect(page.locator('input[placeholder="Nome do fornecedor"]')).toHaveValue('[TESTE] Fornecedor direto XML')
   await expect(page.locator('input[placeholder="CNPJ ou CPF"]')).toHaveValue(uniqueCnpj)
   await page.getByRole('button', { name: 'Cadastrar e usar fornecedor' }).click()
   await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
+})
+
+test('Financeiro JC ve a composicao da NF-e com imposto por fora e a confirmacao explica o bloqueio', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  // Mesmo padrao da fixture st-ipi-outras-despesas: ST e IPI no bloco de
+  // impostos do item, outras despesas em prod, tudo somado no total. Antes, a
+  // pessoa classificava a nota inteira e o banco recusava no fim sem dizer o
+  // que fazer.
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260807999999999999550010000000093000000093" versao="4.00">
+    <ide><nNF>999994</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>99000000000193</CNPJ><xNome>[TESTE] Fornecedor com ST</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-ST</cProd><xProd>[TESTE] Refrigerante lata</xProd><NCM>22021000</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>30.00</vUnCom><vProd>30.00</vProd><vOutro>0.50</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
+    <det nItem="2"><prod><cProd>TESTE-ST2</cProd><xProd>[TESTE] Farinha saco</xProd><NCM>11010010</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>90.00</vUnCom><vProd>90.00</vProd><vOutro>1.00</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
+    <total><ICMSTot><vProd>120.00</vProd><vDesc>0.00</vDesc><vST>3.00</vST><vFCPST>0.00</vFCPST><vIPI>2.00</vIPI><vIPIDevol>0.00</vIPIDevol><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vOutro>1.50</vOutro><vII>0.00</vII><vICMSDeson>0.00</vICMSDeson><vNF>126.50</vNF></ICMSTot></total>
+    <pag><detPag><tPag>01</tPag><vPag>126.50</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'st-inline.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+
+  await expect(page.getByText('fecha até o centavo', { exact: true })).toBeVisible()
+  await expect(page.getByText('produtos R$ 120,00 · acréscimos R$ 6,50 · total R$ 126,50')).toBeVisible()
+  await page.getByText('Ver a conta da nota').click()
+  await expect(page.getByText('ICMS substituição tributária', { exact: true })).toBeVisible()
+  await expect(page.getByText('IPI', { exact: true })).toBeVisible()
+  await expect(page.getByText('Outras despesas', { exact: true })).toBeVisible()
+  await expect(page.getByText('R$ 6,50 de acréscimos ainda não entram pelo XML')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Confirmar NF-e' })).toBeDisabled()
 })
 
 test('Vendas JA nao entra no livro financeiro', async ({ page }) => {
@@ -453,7 +494,7 @@ test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar',
     <ide><nNF>999992</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>99000000000191</CNPJ><xNome>[TESTE] Fornecedor conversao</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-CONV</cProd><xProd>MANJERICAO DESIDRATADO CAIXA 2KG TESTE</xProd><NCM>17019900</NCM><qCom>3.0000</qCom><uCom>CX</uCom><vUnCom>60.00</vUnCom><vProd>180.00</vProd></prod></det>
-    <total><ICMSTot><vNF>180.00</vNF></ICMSTot></total>
+    <total><ICMSTot><vProd>180.00</vProd><vNF>180.00</vNF></ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>180.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`
@@ -495,7 +536,7 @@ test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async
     <ide><nNF>999993</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
     <emit><CNPJ>99000000000192</CNPJ><xNome>[TESTE] Fornecedor parente</xNome></emit>
     <det nItem="1"><prod><cProd>TESTE-PAR</cProd><xProd>MANJERICAO FRESCO MACO TESTE</xProd><NCM>17019900</NCM><qCom>2.0000</qCom><uCom>UN</uCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det>
-    <total><ICMSTot><vNF>10.00</vNF></ICMSTot></total>
+    <total><ICMSTot><vProd>10.00</vProd><vNF>10.00</vNF></ICMSTot></total>
     <pag><detPag><tPag>01</tPag><vPag>10.00</vPag></detPag></pag>
   </infNFe>
 </NFe>`

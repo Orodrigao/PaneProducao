@@ -57,3 +57,35 @@ describe('classificação durante a importação da NF-e', () => {
     expect(source).toContain("mappingStatus: 'nao_aplicavel'")
   })
 })
+
+describe('composição da nota na importação (fase 1 de compras por XML)', () => {
+  it('mostra a composição logo depois do cabeçalho, antes de a pessoa classificar os itens', () => {
+    const header = source.indexOf('Chave: {draft.accessKey}')
+    const composition = source.indexOf('<CompositionCard composition={composition} />')
+    const items = source.indexOf('Itens da NF-e ·')
+
+    expect(header).toBeGreaterThanOrEqual(0)
+    expect(composition).toBeGreaterThan(header)
+    expect(items).toBeGreaterThan(composition)
+  })
+
+  it('a composição trava a confirmação antes dos outros motivos e também no clique', () => {
+    const start = source.indexOf('const blockingReason =')
+    const blocking = source.slice(start, source.indexOf('return (', start))
+    expect(blocking.indexOf('compositionReason')).toBeLessThan(blocking.indexOf('missingDueDate'))
+    expect(source).toContain('const compositionReason = compositionBlockReason(composeNfe(draft))')
+    expect(source).toContain('if (compositionReason) { showToast(compositionReason); return }')
+  })
+
+  it('explica o resíduo e orienta, sem oferecer botão que ajuste a diferença', () => {
+    expect(source).toContain('da nota ficaram sem explicação')
+    expect(source).toContain('Confira o arquivo com o fornecedor. Se o XML estiver correto, é a leitura do ERP que está falhando: avise a equipe técnica.')
+    expect(source).toContain('Não invente item para fechar a conta.')
+    expect(source).not.toMatch(/ajustar|distribuir a diferen|zerar/i)
+  })
+
+  it('resumo na frente e detalhe atrás de um toque', () => {
+    expect(source).toContain('<details style={{ marginTop: 6 }}>')
+    expect(source).toContain('Ver a conta da nota')
+  })
+})

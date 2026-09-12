@@ -10,6 +10,65 @@ export type NfeConversionBasis = 'simple' | 'package' | 'usable'
  */
 export type NfeDueDateSource = 'xml' | 'a-vista' | 'ausente'
 
+/**
+ * Indicador da NF-e (`indDeduzDeson`) sobre o ICMS desonerado do item:
+ * `'0'` não abate do total, `'1'` abate, `null` quando a nota não informou.
+ * Ausência não vira 0 nem 1 em silêncio: é caso para a composição bloquear.
+ */
+export type NfeDeductionIndicator = '0' | '1' | null
+
+/**
+ * Valores fiscais do item, como a NF-e os escreve. Impostos por fora e
+ * despesas de aquisição que a fase 3 vai levar ao custo; nesta fase são só
+ * lidos e mostrados. Zero quando a nota não informa.
+ */
+export interface NfeItemFiscal {
+  /** vDesc do item. */
+  discount: number
+  /** vFrete do item. */
+  freight: number
+  /** vSeg do item. */
+  insurance: number
+  /** vOutro do item. */
+  otherExpenses: number
+  /** vII do item. */
+  importTax: number
+  /** vICMSST do item. */
+  icmsSt: number
+  /** vFCPST do item. */
+  fcpSt: number
+  /** vIPI do item. */
+  ipi: number
+  /** vIPIDevol do item. */
+  ipiReturned: number
+  /** vICMSDeson do item. */
+  icmsExempt: number
+  deductsExemption: NfeDeductionIndicator
+  /** `indTot`: `'1'` compõe o total da nota, `'0'` não; `null` quando ausente. */
+  composesTotal: '0' | '1' | null
+}
+
+/**
+ * Bloco de totais da NF-e (`ICMSTot`, mais `vServ` do `ISSQNtot`). `vProd` e
+ * `vNF` distinguem ausência (`null`) de zero, porque são obrigatórios na nota
+ * e a composição precisa recusar o arquivo que não os traz.
+ */
+export interface NfeTotals {
+  products: number | null
+  discounts: number
+  icmsSt: number
+  fcpSt: number
+  ipi: number
+  ipiReturned: number
+  freight: number
+  insurance: number
+  otherExpenses: number
+  importTax: number
+  icmsExempt: number
+  services: number
+  total: number | null
+}
+
 export interface NfeItemDraft {
   lineNumber: number
   supplierCode: string | null
@@ -37,6 +96,7 @@ export interface NfeItemDraft {
   factorConfirmed: boolean
   /** O histórico do fornecedor reconheceu o item sozinho. */
   recognized: boolean
+  fiscal: NfeItemFiscal
 }
 
 export interface NfeSupplierMappingIdentity {
@@ -65,6 +125,7 @@ export interface NfeDraft {
   dueDateSource: NfeDueDateSource
   items: NfeItemDraft[]
   installments: NfeInstallmentDraft[]
+  totals: NfeTotals
 }
 
 export interface ConversionExplanation {
@@ -343,6 +404,58 @@ function conversionBasis(unit: string): NfeConversionBasis {
   return ['PACOTE', 'PCT', 'FD', 'FARDO', 'CX', 'CAIXA'].includes(unit.toUpperCase()) ? 'package' : 'simple'
 }
 
+/** Número quando a tag existe; `null` quando a nota não a escreveu. */
+function optionalNumber(root: ParentNode, localName: string): number | null {
+  const text = childText(root, localName)
+  return text ? numberValue(text) : null
+}
+
+function indicator(root: ParentNode, localName: string): '0' | '1' | null {
+  const text = childText(root, localName)
+  return text === '0' || text === '1' ? text : null
+}
+
+/**
+ * Os valores por fora ficam espalhados pelo item: frete, seguro, desconto e
+ * outras despesas em `prod`; ST, FCP-ST, desoneração e seu indicador em
+ * `imposto/ICMS`; IPI em `imposto/IPI`; IPI devolvido em `impostoDevol`.
+ */
+function readItemFiscal(detail: Element, prod: Element, discountValue: number): NfeItemFiscal {
+  return {
+    discount: discountValue,
+    freight: numberValue(childText(prod, 'vFrete')),
+    insurance: numberValue(childText(prod, 'vSeg')),
+    otherExpenses: numberValue(childText(prod, 'vOutro')),
+    importTax: numberValue(childText(detail, 'vII')),
+    icmsSt: numberValue(childText(detail, 'vICMSST')),
+    fcpSt: numberValue(childText(detail, 'vFCPST')),
+    ipi: numberValue(childText(detail, 'vIPI')),
+    ipiReturned: numberValue(childText(detail, 'vIPIDevol')),
+    icmsExempt: numberValue(childText(detail, 'vICMSDeson')),
+    deductsExemption: indicator(detail, 'indDeduzDeson'),
+    composesTotal: indicator(prod, 'indTot'),
+  }
+}
+
+function readTotals(document: Document, total: Element): NfeTotals {
+  const services = firstElement(document, 'ISSQNtot')
+  return {
+    products: optionalNumber(total, 'vProd'),
+    discounts: numberValue(childText(total, 'vDesc')),
+    icmsSt: numberValue(childText(total, 'vST')),
+    fcpSt: numberValue(childText(total, 'vFCPST')),
+    ipi: numberValue(childText(total, 'vIPI')),
+    ipiReturned: numberValue(childText(total, 'vIPIDevol')),
+    freight: numberValue(childText(total, 'vFrete')),
+    insurance: numberValue(childText(total, 'vSeg')),
+    otherExpenses: numberValue(childText(total, 'vOutro')),
+    importTax: numberValue(childText(total, 'vII')),
+    icmsExempt: numberValue(childText(total, 'vICMSDeson')),
+    services: services ? numberValue(childText(services, 'vServ')) : 0,
+    total: optionalNumber(total, 'vNF'),
+  }
+}
+
 export function parseNfeXml(xmlText: string): NfeDraft {
   if (typeof DOMParser === 'undefined') throw new Error('Este navegador não consegue ler XML.')
   const document = new DOMParser().parseFromString(xmlText, 'application/xml')
@@ -393,6 +506,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       rememberConversion: true,
       factorConfirmed: false,
       recognized: false,
+      fiscal: readItemFiscal(detail, prod, discountValue),
     }
   })
 
@@ -426,5 +540,6 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     dueDateSource,
     items,
     installments,
+    totals: readTotals(document, total),
   }
 }
