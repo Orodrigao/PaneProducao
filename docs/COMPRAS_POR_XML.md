@@ -14,12 +14,14 @@ pretendido. O que existe de fato está no código, nas migrations e nos testes.
 O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **Status: fase 0 executada parcialmente em 2026-09-10 e ampliada em
-2026-09-12.** Vinte e quatro arquivos reais, correspondentes a 21 NF-e
-distintas, foram conferidos localmente; cinco padrões fiscais viraram fixtures
-reduzidas, inteiramente fictícias. Doze notas contêm desconto e encerram a
-hipótese sobre onde ele aparece. Alguns casos de borda ainda não têm evidência;
-por isso a fase 3 continua limitada aos casos comprovados. Nenhuma regra de
-produção mudou.
+2026-09-12; fase 1 implementada em 2026-09-12.** Vinte e quatro arquivos reais,
+correspondentes a 21 NF-e distintas, foram conferidos localmente; cinco padrões
+fiscais viraram fixtures reduzidas, inteiramente fictícias. Doze notas contêm
+desconto e encerram a hipótese sobre onde ele aparece. Alguns casos de borda
+ainda não têm evidência; por isso a fase 3 continua limitada aos casos
+comprovados. A fase 1 fez o ERP ler a composição inteira e mostrá-la na tela de
+importação (ver o registro na própria fase). Custo, conta a pagar e a trava do
+banco não mudaram.
 
 ## O problema
 
@@ -362,6 +364,62 @@ valor só no item, só no total, e nos dois.
 
 **Rollback.** Reverter o PR. Nenhum dado gravado.
 
+### Registro da fase 1 (2026-09-12)
+
+O que passou a existir:
+
+- `src/lib/nfeXml.ts` lê o bloco de totais inteiro (`vProd`, `vDesc`, `vST`,
+  `vFCPST`, `vIPI`, `vIPIDevol`, `vFrete`, `vSeg`, `vOutro`, `vII`,
+  `vICMSDeson`, `vNF`, mais `vServ`) e, por item, os equivalentes, o `indTot`
+  e o `indDeduzDeson`. No bloco de totais, que a NF-e 4.00 exige inteiro,
+  campo ausente fica registrado como ausência, não como zero; no item, onde
+  esses campos são opcionais, ausente é zero de verdade. Conteúdo que não é
+  número fica marcado como ilegível. Ausência do indicador fica `null`.
+- `src/lib/nfeComposition.ts` recebe a nota lida e devolve a composição:
+  produtos, descontos, cada acréscimo com seu nome, desoneração abatida, a soma
+  do que foi lido, o total declarado, o valor não explicado e a lista de
+  bloqueios. A conta é feita em centavos.
+- A tela de importação mostra a composição logo abaixo do cabeçalho da nota,
+  com resumo na frente e o detalhe atrás de um toque.
+
+Como a tela decide, na ordem:
+
+1. **Caso sem regra validada** bloqueia a confirmação e diz qual é: `vFCPST`,
+   seguro, imposto de importação, IPI devolvido, serviços, item com
+   `indTot=0`, `vICMSDeson` sem indicador ou com indicador `1`, e divergência
+   entre a soma dos itens e o total (produtos, desconto, desoneração, ou
+   acréscimo maior nos itens do que no total). Acréscimo só no total é aceito:
+   é a despesa comum que a fase 3 vai ratear. Entram aqui também o arquivo
+   sem o bloco de totais completo e o valor ilegível em campo fiscal.
+   **Esta é a única mudança no que é aceito:** um XML em que falte qualquer
+   campo do bloco de totais (`vProd`, `vDesc`, `vST`, `vFCPST`, `vIPI`,
+   `vIPIDevol`, `vFrete`, `vSeg`, `vOutro`, `vII`, `vICMSDeson` ou `vNF`), ou
+   em que algum deles não seja número, entrava no banco antes da fase 1 desde
+   que a soma dos itens batesse com `vNF`; agora é recusado com a lista do que
+   falta ou está ilegível. NF-e 4.00 autorizada pela SEFAZ sempre traz o bloco
+   inteiro, então nenhuma nota real é afetada; só arquivo montado à mão ou de
+   layout antigo. A recusa é deliberada: sem o bloco, a composição não é
+   conferível, e supor zero seria o palpite silencioso que este documento
+   proíbe.
+2. **Resíduo diferente de zero** mostra o valor não explicado, a soma lida e o
+   total declarado, e a orientação: conferir com o fornecedor; se o XML estiver
+   certo, a leitura do ERP está falhando. Nunca há botão de ajuste.
+3. **Nota que fecha com acréscimos** continua não entrando pelo XML, porque a
+   trava do banco compara itens com o total e não mudou. A diferença é que a
+   pessoa lê o motivo e a saída (lançar à mão somando imposto e despesa como
+   itens) antes de classificar os itens, e não depois, na recusa do banco.
+4. **Nota que fecha sem acréscimos** segue para o banco exatamente como antes.
+
+O que ficou de fora e por quê: o leitor de XML usa o `DOMParser` do navegador,
+que o Vitest não tem; a composição é testada sobre as fixtures por um leitor
+mínimo do teste, e a leitura real é provada pelo smoke de navegador do CI, que
+importa uma nota simples e a confirma, importa uma nota com ST, IPI e outras
+despesas e confere a composição e o bloqueio, e importa um arquivo sem o bloco
+de totais e confere a recusa explicada. Resíduo diferente de zero e os demais
+casos sem regra só têm teste unitário. A revisão adversarial pediu testes que
+exercitem o leitor real no Vitest; isso exige uma dependência de DOM que não
+existe no projeto e fica como decisão separada.
+
 ## Fase 2: importação pendente de conferência
 
 **Objetivo.** Permitir salvar uma importação sem que ela vire dinheiro.
@@ -475,7 +533,8 @@ entendimento de que o custo dos produtos tocados muda a partir dali.
 ## Onde continuar
 
 - Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md).
-  A decisão sobre o custo está registrada; a implementação continua pendente,
-  começando pela evidência da fase 0 e com aprovação própria por fase.
+  A decisão sobre o custo está registrada; fases 0 e 1 feitas; a fase 2
+  (importação pendente de conferência) e a fase 3 (custo) continuam pendentes,
+  cada uma com aprovação própria.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

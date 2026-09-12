@@ -10,6 +10,68 @@ export type NfeConversionBasis = 'simple' | 'package' | 'usable'
  */
 export type NfeDueDateSource = 'xml' | 'a-vista' | 'ausente'
 
+/**
+ * Indicador da NF-e (`indDeduzDeson`) sobre o ICMS desonerado do item:
+ * `'0'` não abate do total, `'1'` abate, `null` quando a nota não informou.
+ * Ausência não vira 0 nem 1 em silêncio: é caso para a composição bloquear.
+ */
+export type NfeDeductionIndicator = '0' | '1' | null
+
+/**
+ * Valores fiscais do item, como a NF-e os escreve. Impostos por fora e
+ * despesas de aquisição que a fase 3 vai levar ao custo; nesta fase são só
+ * lidos e mostrados. Esses campos são opcionais no item da NF-e: ausente é
+ * zero de verdade; conteúdo ilegível vira `NaN` para a composição recusar.
+ */
+export interface NfeItemFiscal {
+  /** vDesc do item. */
+  discount: number
+  /** vFrete do item. */
+  freight: number
+  /** vSeg do item. */
+  insurance: number
+  /** vOutro do item. */
+  otherExpenses: number
+  /** vII do item. */
+  importTax: number
+  /** vICMSST do item. */
+  icmsSt: number
+  /** vFCPST do item. */
+  fcpSt: number
+  /** vIPI do item. */
+  ipi: number
+  /** vIPIDevol do item. */
+  ipiReturned: number
+  /** vICMSDeson do item. */
+  icmsExempt: number
+  deductsExemption: NfeDeductionIndicator
+  /** `indTot`: `'1'` compõe o total da nota, `'0'` não; `null` quando ausente. */
+  composesTotal: '0' | '1' | null
+}
+
+/**
+ * Bloco de totais da NF-e (`ICMSTot`, mais `vServ` do `ISSQNtot`). Todos os
+ * campos do `ICMSTot` são obrigatórios na NF-e 4.00, por isso cada um
+ * distingue ausência (`null`) de zero, e conteúdo ilegível vira `NaN`: a
+ * composição recusa o arquivo incompleto em vez de supor zero. `services`
+ * vem do `ISSQNtot`, que é opcional; ausente é zero de verdade.
+ */
+export interface NfeTotals {
+  products: number | null
+  discounts: number | null
+  icmsSt: number | null
+  fcpSt: number | null
+  ipi: number | null
+  ipiReturned: number | null
+  freight: number | null
+  insurance: number | null
+  otherExpenses: number | null
+  importTax: number | null
+  icmsExempt: number | null
+  services: number
+  total: number | null
+}
+
 export interface NfeItemDraft {
   lineNumber: number
   supplierCode: string | null
@@ -37,6 +99,7 @@ export interface NfeItemDraft {
   factorConfirmed: boolean
   /** O histórico do fornecedor reconheceu o item sozinho. */
   recognized: boolean
+  fiscal: NfeItemFiscal
 }
 
 export interface NfeSupplierMappingIdentity {
@@ -65,6 +128,7 @@ export interface NfeDraft {
   dueDateSource: NfeDueDateSource
   items: NfeItemDraft[]
   installments: NfeInstallmentDraft[]
+  totals: NfeTotals
 }
 
 export interface ConversionExplanation {
@@ -343,6 +407,73 @@ function conversionBasis(unit: string): NfeConversionBasis {
   return ['PACOTE', 'PCT', 'FD', 'FARDO', 'CX', 'CAIXA'].includes(unit.toUpperCase()) ? 'package' : 'simple'
 }
 
+/** Valor fiscal como está na nota; `NaN` quando o conteúdo não é número. */
+function fiscalNumber(text: string): number {
+  const parsed = Number(text.replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : Number.NaN
+}
+
+/** Número quando a tag existe; `null` quando a nota não a escreveu. */
+function optionalNumber(root: ParentNode, localName: string): number | null {
+  const text = childText(root, localName)
+  return text ? fiscalNumber(text) : null
+}
+
+/** Campo opcional do item: ausente é zero de verdade. */
+function itemNumber(root: ParentNode, localName: string): number {
+  const text = childText(root, localName)
+  return text ? fiscalNumber(text) : 0
+}
+
+function indicator(root: ParentNode, localName: string): '0' | '1' | null {
+  const text = childText(root, localName)
+  return text === '0' || text === '1' ? text : null
+}
+
+/**
+ * Os valores por fora ficam espalhados pelo item: frete, seguro, desconto e
+ * outras despesas em `prod`; ST, FCP-ST, desoneração e seu indicador em
+ * `imposto/ICMS`; IPI em `imposto/IPI`; IPI devolvido em `impostoDevol`.
+ */
+function readItemFiscal(detail: Element, prod: Element): NfeItemFiscal {
+  return {
+    // Lido de novo, e não copiado de `discountValue`: aquele passa por
+    // `numberValue`, que faz conteúdo ilegível virar zero para o total da
+    // linha; aqui o ilegível precisa chegar como tal para a composição recusar.
+    discount: itemNumber(prod, 'vDesc'),
+    freight: itemNumber(prod, 'vFrete'),
+    insurance: itemNumber(prod, 'vSeg'),
+    otherExpenses: itemNumber(prod, 'vOutro'),
+    importTax: itemNumber(detail, 'vII'),
+    icmsSt: itemNumber(detail, 'vICMSST'),
+    fcpSt: itemNumber(detail, 'vFCPST'),
+    ipi: itemNumber(detail, 'vIPI'),
+    ipiReturned: itemNumber(detail, 'vIPIDevol'),
+    icmsExempt: itemNumber(detail, 'vICMSDeson'),
+    deductsExemption: indicator(detail, 'indDeduzDeson'),
+    composesTotal: indicator(prod, 'indTot'),
+  }
+}
+
+function readTotals(document: Document, total: Element): NfeTotals {
+  const services = firstElement(document, 'ISSQNtot')
+  return {
+    products: optionalNumber(total, 'vProd'),
+    discounts: optionalNumber(total, 'vDesc'),
+    icmsSt: optionalNumber(total, 'vST'),
+    fcpSt: optionalNumber(total, 'vFCPST'),
+    ipi: optionalNumber(total, 'vIPI'),
+    ipiReturned: optionalNumber(total, 'vIPIDevol'),
+    freight: optionalNumber(total, 'vFrete'),
+    insurance: optionalNumber(total, 'vSeg'),
+    otherExpenses: optionalNumber(total, 'vOutro'),
+    importTax: optionalNumber(total, 'vII'),
+    icmsExempt: optionalNumber(total, 'vICMSDeson'),
+    services: services ? itemNumber(services, 'vServ') : 0,
+    total: optionalNumber(total, 'vNF'),
+  }
+}
+
 export function parseNfeXml(xmlText: string): NfeDraft {
   if (typeof DOMParser === 'undefined') throw new Error('Este navegador não consegue ler XML.')
   const document = new DOMParser().parseFromString(xmlText, 'application/xml')
@@ -393,6 +524,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       rememberConversion: true,
       factorConfirmed: false,
       recognized: false,
+      fiscal: readItemFiscal(detail, prod),
     }
   })
 
@@ -426,5 +558,6 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     dueDateSource,
     items,
     installments,
+    totals: readTotals(document, total),
   }
 }

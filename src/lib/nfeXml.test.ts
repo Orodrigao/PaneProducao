@@ -42,6 +42,20 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
     rememberConversion: true,
     factorConfirmed: false,
     recognized: false,
+    fiscal: {
+      discount: 0,
+      freight: 0,
+      insurance: 0,
+      otherExpenses: 0,
+      importTax: 0,
+      icmsSt: 0,
+      fcpSt: 0,
+      ipi: 0,
+      ipiReturned: 0,
+      icmsExempt: 0,
+      deductsExemption: null,
+      composesTotal: null,
+    },
     ...overrides,
   }
 }

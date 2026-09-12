@@ -19,6 +19,7 @@ import {
   type PayableProduct,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
+import { composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
 import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
 
 export interface XmlSupplierOption { id: string; name: string; cnpj: string | null }
@@ -101,6 +102,73 @@ function clearProduct(item: NfeItemDraft): NfeItemDraft {
     factorConfirmed: false,
     recognized: false,
   }
+}
+
+/**
+ * A Elis confere a nota contra a DANFE olhando um e outro: produtos, cada
+ * acréscimo com seu nome, descontos e total, como estão na nota. Resumo na
+ * frente, detalhe atrás de um toque. Nunca há botão que feche a diferença.
+ */
+function CompositionCard({ composition }: { composition: NfeComposition }) {
+  const closes = compositionCloses(composition)
+  const summary = [
+    `produtos ${formatCompositionMoney(composition.products)}`,
+    composition.discounts > 0 ? `descontos −${formatCompositionMoney(composition.discounts)}` : null,
+    composition.surchargesTotal > 0 ? `acréscimos ${formatCompositionMoney(composition.surchargesTotal)}` : null,
+    composition.exemptionDeducted > 0 ? `ICMS desonerado −${formatCompositionMoney(composition.exemptionDeducted)}` : null,
+    `total ${formatCompositionMoney(composition.total)}`,
+  ].filter(Boolean).join(' · ')
+  const lineStyle = { display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 } as const
+  return (
+    <div className="ps-card" style={{ marginTop: 10, padding: 10, background: 'var(--cream-raise)', borderLeft: `4px solid ${closes ? 'var(--teal)' : 'var(--berry)'}` }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ flex: 1 }}>Composição da nota</b>
+        <small style={{ color: closes ? 'var(--teal)' : 'var(--berry)', fontWeight: 650 }}>
+          {closes ? 'fecha até o centavo' : composition.blockers.length > 0 ? 'caso sem regra' : `${formatCompositionMoney(Math.abs(composition.unexplained))} sem explicação`}
+        </small>
+      </div>
+      <small style={{ display: 'block', marginTop: 3 }}>{summary}</small>
+      <details style={{ marginTop: 6 }}>
+        <summary><small>Ver a conta da nota</small></summary>
+        <small style={lineStyle}><span>Produtos</span><span>{formatCompositionMoney(composition.products)}</span></small>
+        {composition.discounts > 0 && <small style={lineStyle}><span>Descontos</span><span>−{formatCompositionMoney(composition.discounts)}</span></small>}
+        {composition.surcharges.map(line => (
+          <small key={line.key} style={lineStyle}><span>{line.label}</span><span>{formatCompositionMoney(line.amount)}</span></small>
+        ))}
+        {composition.exemptionDeducted > 0 && <small style={lineStyle}><span>ICMS desonerado abatido</span><span>−{formatCompositionMoney(composition.exemptionDeducted)}</span></small>}
+        <small style={{ ...lineStyle, fontWeight: 650 }}><span>Soma do que foi lido</span><span>{formatCompositionMoney(composition.expectedTotal)}</span></small>
+        <small style={{ ...lineStyle, fontWeight: 650 }}><span>Total declarado na nota</span><span>{formatCompositionMoney(composition.total)}</span></small>
+      </details>
+      {composition.blockers.length > 0 && (
+        <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
+          <b>Esta nota traz um caso que o ERP ainda não sabe conferir</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+            {composition.blockers.map(reason => <li key={reason}><small>{reason}</small></li>)}
+          </ul>
+          <small style={{ display: 'block', marginTop: 4 }}>Lance esta compra à mão até esse caso ser liberado. Não invente item para fechar a conta.</small>
+        </div>
+      )}
+      {composition.blockers.length === 0 && composition.unexplained !== 0 && (
+        <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
+          <b>{formatCompositionMoney(Math.abs(composition.unexplained))} da nota ficaram sem explicação</b>
+          <small style={{ display: 'block', marginTop: 4 }}>
+            Produtos, descontos e acréscimos lidos somam {formatCompositionMoney(composition.expectedTotal)}, mas a nota declara {formatCompositionMoney(composition.total)}.
+          </small>
+          <small style={{ display: 'block', marginTop: 4 }}>
+            Confira o arquivo com o fornecedor. Se o XML estiver correto, é a leitura do ERP que está falhando: avise a equipe técnica.
+          </small>
+        </div>
+      )}
+      {closes && composition.surchargesTotal > 0 && (
+        <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
+          <b>{formatCompositionMoney(composition.surchargesTotal)} de acréscimos ainda não entram pelo XML</b>
+          <small style={{ display: 'block', marginTop: 4 }}>
+            A nota fecha, mas o ERP ainda não importa imposto por fora nem despesa acessória. Lance esta compra à mão, somando o imposto e a despesa como itens, até a próxima fase entrar.
+          </small>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function itemStatus(item: NfeItemDraft): { label: string; color: string } {
@@ -275,6 +343,8 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
     if (draft.installments.some(item => item.dueDate < draft.issueDate)) { showToast('Há vencimento anterior à emissão da nota. Confira a data digitada.'); return }
     if (draft.installments.some(item => item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
     if (draft.items.some(conversionNeedsAttention)) { showToast('Confira quanto vem na embalagem dos itens marcados em vermelho.'); return }
+    const compositionReason = compositionBlockReason(composeNfe(draft))
+    if (compositionReason) { showToast(compositionReason); return }
     setSaving(true)
     try {
       await createXmlPayable(draft, supplierId, requestIdRef.current)
@@ -286,6 +356,10 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   }
 
   const mappedCount = draft?.items.filter(item => item.mappingStatus !== 'pendente').length ?? 0
+  // Os totais são fato do XML e não mudam com a classificação; a composição
+  // só precisa ser refeita quando entra outra nota.
+  const composition = useMemo(() => draft ? composeNfe(draft) : null, [draft])
+  const compositionReason = composition ? compositionBlockReason(composition) : null
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
@@ -294,13 +368,18 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
   const filledByHand = draft?.dueDateSource === 'ausente' && !missingDueDate
   const assumedOnIssueDate = draft?.dueDateSource === 'a-vista'
     && draft.installments.every(item => item.dueDate === draft.issueDate)
-  const blockingReason = missingDueDate
-    ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
-    : dueDateBeforeIssue
-      ? 'Há vencimento anterior à emissão da nota. Confira a data digitada.'
-      : unconfirmedFactors > 0
-        ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
-        : ''
+  // A composição vem antes dos outros motivos: nota que o banco vai recusar não
+  // deve fazer a pessoa classificar tudo para descobrir no fim. A explicação
+  // inteira fica no cartão da composição; aqui só o encaminhamento.
+  const blockingReason = compositionReason
+    ? 'Esta NF-e não pode ser confirmada. Veja o motivo em "Composição da nota", no alto da importação.'
+    : missingDueDate
+      ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
+      : dueDateBeforeIssue
+        ? 'Há vencimento anterior à emissão da nota. Confira a data digitada.'
+        : unconfirmedFactors > 0
+          ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
+          : ''
 
   return (
     <div className="ps-card" style={{ marginTop: 14 }}>
@@ -320,6 +399,7 @@ export default function XmlPayableImport({ suppliers, products, onSaved, onCance
             <small>NF {draft.number}{draft.series ? ` · série ${draft.series}` : ''} · emitida em {draft.issueDate} · {formatBRL(draft.total)}</small>
             <small style={{ display: 'block' }}>Chave: {draft.accessKey}</small>
           </div>
+          {composition && <CompositionCard composition={composition} />}
           {duplicateNfe && (
             <div role="alert" className="ps-card" style={{ marginTop: 10, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
               <b>NF-e já importada</b>
