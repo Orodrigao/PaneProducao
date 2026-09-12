@@ -60,6 +60,7 @@ language plpgsql as $$
 declare v_deadline timestamptz := clock_timestamp() + interval '5 seconds';
 begin
   loop
+    perform pg_catalog.pg_stat_clear_snapshot();
     if exists (
       select 1
       from pg_catalog.pg_stat_activity
