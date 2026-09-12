@@ -28,7 +28,7 @@ import {
   vercelJsonSomenteIgnoreCommand,
   verificarDocumentos,
 } from './change-scope.mjs'
-import { decidirIgnorarBuild, resolverReferencias } from './ignore-documentation-build.mjs'
+import { URL_REPOSITORIO_PUBLICO, decidirIgnorarBuild, resolverReferencias } from './ignore-documentation-build.mjs'
 
 /** Cria um repositorio Git real e descartavel para testar contra o binario git de verdade, nao um mock. */
 function repositorioGitTemporario() {
@@ -1379,16 +1379,15 @@ describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
       assert.equal(execImpl.mock.callCount(), 1)
     })
 
-    // Prova com GIT DE VERDADE, sem mockar `origin/main`: reproduz o clone
-    // raso single-branch que a Vercel usa para a branch de uma PR (so a
-    // branch da PR, nunca `main`) via `file://` local, sem rede externa. Isto
-    // e o que provou o bloqueador real (ver work/git-fetch-probe-result.json,
-    // tarefa 20260912-ci-proporcional-integracao): `git fetch origin main`
-    // termina com exit 0 e atualiza `FETCH_HEAD`, mas
-    // `git rev-parse refs/remotes/origin/main` falha com exit 128 no MESMO
-    // clone, porque `--single-branch` restringe o refspec do remoto aquela
-    // unica branch. So `FETCH_HEAD` e confiavel aqui.
-    describe('prova com clone raso single-branch real (file://, sem rede externa)', () => {
+    // Prova com GIT DE VERDADE, sem mockar a URL fixa: reproduz o clone raso
+    // single-branch SEM REMOTO NENHUM que a Vercel usa para a branch de uma
+    // PR (confirmado em producao na PR #383: `git fetch origin main` falha
+    // com `fatal: 'origin' does not appear to be a git repository`, porque o
+    // clone da Vercel simplesmente nao configura remoto algum). O fallback
+    // busca a URL publica fixa diretamente, sem depender de remoto — o
+    // execImpl deste teste reescreve so essa URL fixa para o `file://` da
+    // origem fixture, para o `git fetch` real acontecer sem rede externa.
+    describe('prova com clone raso single-branch real, SEM remoto (file://, sem rede externa)', () => {
       function paraUrlDeArquivo(caminhoAbsoluto) {
         const posix = caminhoAbsoluto.replace(/\\/g, '/')
         return posix.startsWith('/') ? `file://${posix}` : `file:///${posix}`
@@ -1405,14 +1404,19 @@ describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
         return { dir, shaMain, shaFeature }
       }
 
-      /** Clona SO `branch` (nunca `main`) com profundidade minima — o formato que reproduz o bug. */
-      function cloneRasoSingleBranch(origemDir, branch, profundidade) {
+      /**
+       * Clona SO `branch` (nunca `main`) com profundidade minima e REMOVE o
+       * remoto `origin` logo em seguida — o formato exato que a Vercel usa
+       * (confirmado na PR #383), nao so um refspec restrito.
+       */
+      function cloneRasoSingleBranchSemRemoto(origemDir, branch, profundidade) {
         const destino = mkdtempSync(join(tmpdir(), 'change-scope-clone-'))
         execFileSync(
           'git',
           ['clone', '--quiet', '--single-branch', '--branch', branch, `--depth=${profundidade}`, paraUrlDeArquivo(origemDir), '.'],
           { cwd: destino, encoding: 'utf8' },
         )
+        execFileSync('git', ['remote', 'remove', 'origin'], { cwd: destino, encoding: 'utf8' })
         const exec = (cmd, args, opts = {}) => execFileSync(cmd, args, { ...opts, cwd: destino, encoding: 'utf8' })
         return { dir: destino, exec }
       }
@@ -1427,16 +1431,24 @@ describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
       function rodarCenario(caminhoArquivoAlterado, conteudoAlterado, profundidade = PROFUNDIDADE_REALISTA_VERCEL) {
         const { dir: origemDir, shaFeature } = origemComMainEFeature(caminhoArquivoAlterado, conteudoAlterado)
         try {
-          const { dir: cloneDir, exec: execClone } = cloneRasoSingleBranch(origemDir, 'feature', profundidade)
+          const { dir: cloneDir, exec: execClone } = cloneRasoSingleBranchSemRemoto(origemDir, 'feature', profundidade)
           try {
-            // Confirma a premissa do bloqueador: o proprio clone que a Vercel
-            // usaria ja nao tem `origin/main`, antes mesmo de chamar o
-            // fallback.
+            // Confirma a premissa do bloqueador real (PR #383): o clone da
+            // Vercel nao tem remoto `origin` nenhum, entao buscar por ele
+            // falha exatamente com a mensagem observada em producao.
             assert.throws(
-              () => execClone('git', ['rev-parse', '--verify', 'refs/remotes/origin/main']),
-              'o clone single-branch nao deveria ter refs/remotes/origin/main; a premissa do teste mudou.',
+              () => execClone('git', ['fetch', 'origin', 'main']),
+              /'origin' does not appear to be a git repository/,
+              'o clone sem remoto deveria falhar ao buscar de "origin"; a premissa do teste mudou.',
             )
-            const execImpl = (cmd, args, opts = {}) => execFileSync(cmd, args, { ...opts, cwd: cloneDir, encoding: 'utf8' })
+            // execImpl real, mas reescreve SOMENTE a URL publica fixa (a
+            // mesma constante que o codigo de producao usa) para o file://
+            // desta origem fixture — nenhuma outra chamada e interceptada,
+            // e nenhuma rede externa e tocada.
+            const execImpl = (cmd, args, opts = {}) => {
+              const argsReescritos = args.map((arg) => (arg === URL_REPOSITORIO_PUBLICO ? paraUrlDeArquivo(origemDir) : arg))
+              return execFileSync(cmd, argsReescritos, { ...opts, cwd: cloneDir, encoding: 'utf8' })
+            }
             return decidirIgnorarBuild({
               env: { VERCEL_ENV: 'preview', VERCEL_GIT_COMMIT_SHA: shaFeature },
               execImpl,
@@ -1449,19 +1461,19 @@ describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
         }
       }
 
-      it('CI-only (profundidade 10, igual a Vercel): origin/main nao existe no clone, o fetch de fallback funciona e o preview e dispensado (ci-mechanism)', () => {
+      it('CI-only (profundidade 10, igual a Vercel): sem remoto origin, a busca pela URL fixa funciona e o preview e dispensado (ci-mechanism)', () => {
         const resultado = rodarCenario('scripts/change-scope.mjs', '// mudanca isolada no mecanismo de CI')
         assert.equal(resultado.perfil, 'ci-mechanism')
         assert.equal(resultado.primeiraPreview, true)
       })
 
-      it('docs-only (profundidade 10, igual a Vercel): origin/main nao existe no clone, o fetch de fallback funciona e o preview e dispensado (documentation)', () => {
+      it('docs-only (profundidade 10, igual a Vercel): sem remoto origin, a busca pela URL fixa funciona e o preview e dispensado (documentation)', () => {
         const resultado = rodarCenario('AGENTS.md', '# AGENTS\n\nmudanca isolada de documentacao\n')
         assert.equal(resultado.perfil, 'documentation')
         assert.equal(resultado.documental, true)
       })
 
-      it('produto (profundidade 10, igual a Vercel): origin/main nao existe no clone, o fetch de fallback funciona mas o preview NAO e dispensado (product)', () => {
+      it('produto (profundidade 10, igual a Vercel): sem remoto origin, a busca pela URL fixa funciona mas o preview NAO e dispensado (product)', () => {
         const resultado = rodarCenario('src/app/page.tsx', '// mudanca de produto')
         assert.equal(resultado.perfil, 'product')
       })
@@ -1472,7 +1484,7 @@ describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
       // fechada correta: constroi. Reproduz o resultado independente de
       // Codex em work/git-fetch-depth1-result.json (merge-base sai com
       // codigo 1 nessa mesma configuracao).
-      it('historico insuficiente com git real (profundidade 1): fetch de main funciona, mas o merge-base falha e o preview NAO e dispensado', () => {
+      it('historico insuficiente com git real (profundidade 1): busca pela URL fixa funciona, mas o merge-base falha e o preview NAO e dispensado', () => {
         const resultado = rodarCenario('AGENTS.md', '# AGENTS\n\nmudanca isolada de documentacao\n', 1)
         assert.equal(resultado.perfil, 'product')
         assert.equal(resultado.motivo, 'sem-base-fallback-sem-ancestral')

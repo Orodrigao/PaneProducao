@@ -57,6 +57,17 @@ const PROFUNDIDADE_FETCH_FALLBACK_PREVIEW = 50
 const TIMEOUT_FETCH_FALLBACK_PREVIEW_MS = 15_000
 
 /**
+ * URL HTTPS publica e fixa do repositorio, usada SOMENTE por este fallback.
+ * NAO usa o remoto `origin` do clone da Vercel: reproduzido em producao na
+ * PR #383, o clone da branch da PR nao tem remoto nenhum configurado —
+ * `git fetch origin main` falha com `fatal: 'origin' does not appear to be
+ * a git repository`, antes mesmo de qualquer questao de refspec restrito
+ * (essa era a suposicao errada da versao anterior deste fallback). A URL e
+ * publica, sem token nem credencial embutida.
+ */
+export const URL_REPOSITORIO_PUBLICO = 'https://github.com/Orodrigao/PaneProducao.git'
+
+/**
  * Primeira deployment de uma branch de PREVIEW nunca tem
  * `VERCEL_GIT_PREVIOUS_SHA` (documentado pela Vercel: so existe a partir da
  * segunda deployment bem-sucedida da mesma branch). Sem este fallback, TODA
@@ -64,34 +75,36 @@ const TIMEOUT_FETCH_FALLBACK_PREVIEW_MS = 15_000
  * toca o mecanismo de CI cadastrado ou documentacao aprovada — inclusive a
  * primeira preview desta propria branch.
  *
- * Fallback restrito e de UMA UNICA tentativa (sem retry, sem laço):
- * busca `main` de `origin` com profundidade e timeout limitados e confirma
- * que o SHA resolvido e ANCESTRAL LITERAL do commit atual (mesma tecnica de
- * ancestralidade usada para `VERCEL_GIT_PREVIOUS_SHA` acima) antes de
- * classificar o diff COMPLETO main..head com o mesmo classificador
- * tri-estado. Qualquer falha no meio do caminho — fetch, resolucao do SHA,
- * ausencia de ancestral comum ou ancestral que nao e literalmente o `main`
- * buscado — falha fechado: constroi. Nao usa `HEAD^`, mensagem de commit,
- * nome de branch isolado nem qualquer suposicao sobre a base.
+ * Fallback restrito e de UMA UNICA tentativa (sem retry, sem laço): busca
+ * `main` da URL publica fixa acima (nunca do remoto `origin`, que a Vercel
+ * nao configura no clone da branch da PR) com profundidade e timeout
+ * limitados e confirma que o SHA resolvido e ANCESTRAL LITERAL do commit
+ * atual (mesma tecnica de ancestralidade usada para `VERCEL_GIT_PREVIOUS_SHA`
+ * acima) antes de classificar o diff COMPLETO main..head com o mesmo
+ * classificador tri-estado. Qualquer falha no meio do caminho — fetch,
+ * resolucao do SHA, ausencia de ancestral comum ou ancestral que nao e
+ * literalmente o `main` buscado — falha fechado: constroi. Nao usa `HEAD^`,
+ * mensagem de commit, nome de branch isolado nem qualquer suposicao sobre a
+ * base.
  *
- * ATENCAO — `git rev-parse origin/main` NAO serve aqui: um clone raso
- * single-branch (o formato que a Vercel usa para a branch da PR) restringe
- * o refspec do remoto aquela UNICA branch, entao `refs/remotes/origin/main`
- * simplesmente nao existe nele (confirmado empiricamente: `git fetch origin
- * main` termina com exit 0 e atualiza `FETCH_HEAD`, mas `git rev-parse
- * refs/remotes/origin/main` falha com exit 128 no mesmo clone). A fonte de
+ * ATENCAO — `git rev-parse origin/main` (ou qualquer coisa que dependa de um
+ * remoto configurado) NAO serve aqui: alem de nao haver remoto `origin`
+ * nenhum no clone da Vercel, mesmo COM um remoto configurado um clone raso
+ * single-branch restringe o refspec aquela UNICA branch, entao
+ * `refs/remotes/origin/main` nao existiria de qualquer forma. A fonte de
  * verdade correta e `FETCH_HEAD` — a referencia que o proprio `git fetch`
  * acabou de escrever — resolvida com `--verify` e `^{commit}` para garantir
  * que aponta a um commit de verdade e nao a uma tag anotada ou lixo.
  *
- * Nao usa token, API nem variavel secreta: o repositorio e publico e o
- * comando so nomeia `origin main`, sem credencial embutida. So se aplica
- * quando `VERCEL_GIT_PREVIOUS_SHA` esta literalmente AUSENTE (nao apenas
- * invalido) e `VERCEL_ENV === 'preview'` — producao sem commit anterior
- * segue sem fallback (motivo `sem-base`), e um `VERCEL_GIT_PREVIOUS_SHA`
- * presente porem invalido/divergente tambem segue sem fallback: so a
- * AUSENCIA franca do valor caracteriza "primeira deployment", nunca um
- * valor que a Vercel de fato mandou e que nao serve.
+ * Nao usa token, API nem variavel de ambiente para a URL: o repositorio e
+ * publico e o comando nomeia a URL fixa e `main`, sem credencial embutida e
+ * sem indireção configuravel. So se aplica quando `VERCEL_GIT_PREVIOUS_SHA`
+ * esta literalmente AUSENTE (nao apenas invalido) e `VERCEL_ENV ===
+ * 'preview'` — producao sem commit anterior segue sem fallback (motivo
+ * `sem-base`), e um `VERCEL_GIT_PREVIOUS_SHA` presente porem
+ * invalido/divergente tambem segue sem fallback: so a AUSENCIA franca do
+ * valor caracteriza "primeira deployment", nunca um valor que a Vercel de
+ * fato mandou e que nao serve.
  *
  * A profundidade do fetch (`PROFUNDIDADE_FETCH_FALLBACK_PREVIEW`) precisa
  * cobrir tambem a distancia real ate o ponto de bifurcacao na PROPRIA
@@ -107,7 +120,7 @@ function decidirPrimeiraDeploymentPreview({ head, execImpl }) {
   try {
     execImpl(
       'git',
-      ['fetch', '--quiet', `--depth=${PROFUNDIDADE_FETCH_FALLBACK_PREVIEW}`, 'origin', 'main'],
+      ['fetch', '--quiet', `--depth=${PROFUNDIDADE_FETCH_FALLBACK_PREVIEW}`, URL_REPOSITORIO_PUBLICO, 'main'],
       { encoding: 'utf8', timeout: TIMEOUT_FETCH_FALLBACK_PREVIEW_MS },
     )
     mainRecemBuscado = String(
@@ -141,7 +154,7 @@ function decidirPrimeiraDeploymentPreview({ head, execImpl }) {
       perfil: 'product',
       documental: false,
       motivo: 'sem-base-fallback-nao-ancestral',
-      detalhe: `main buscado de origin (${mainRecemBuscado}) nao e ancestral literal do commit atual (${head}); o ancestral comum real e ${ancestralComum}.`,
+      detalhe: `main buscado da URL publica fixa (${mainRecemBuscado}) nao e ancestral literal do commit atual (${head}); o ancestral comum real e ${ancestralComum}.`,
     }
   }
 
