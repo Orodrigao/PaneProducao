@@ -378,6 +378,17 @@ select ok(not has_table_privilege('authenticated','private.pj_flow_activation_ev
   'histórico de ativação não fica exposto ao navegador');
 select ok(not has_function_privilege('anon','public.enroll_pj_flow(uuid,uuid)','execute'),
   'visitante não inicia jornada real');
+select ok(not has_function_privilege('authenticated','public.enroll_pj_flow(uuid,uuid)','execute'),
+  'corte padrão fecha novas inscrições manuais do piloto');
+select ok(has_function_privilege('authenticated','public.rollback_pj_flow_enrollment(uuid,uuid,text)','execute'),
+  'corte preserva o retorno seguro do pedido controlado já existente');
+
+-- Reabre somente dentro desta transação descartável o cenário histórico do
+-- piloto, para conservar a prova dos contratos anteriores ao corte.
+update private.pj_flow_rollout_settings
+set state='preparing',cutover_at=null,updated_at=clock_timestamp()
+where singleton;
+grant execute on function public.enroll_pj_flow(uuid,uuid) to authenticated;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000003',true);
 select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
@@ -433,6 +444,21 @@ update public.orders set dispatched_quantity=null,dispatched_quantity_reason=nul
   dispatched_quantity_at=null,dispatched_quantity_by=null,dispatched_quantity_by_name=null
 where order_group_id='97000000-0000-4000-8000-000000000203';
 select set_config('pane.pj_check_rpc','',true);
+
+revoke all on function public.enroll_pj_flow(uuid,uuid)
+  from public, anon, authenticated, service_role;
+update private.pj_flow_rollout_settings
+set state='standard',cutover_at=clock_timestamp(),updated_at=clock_timestamp()
+where singleton;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
+select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),
+  '97000000-0000-4000-8000-000000000203')$q$,
+  '42501',null,'depois do corte nem perfil autorizado captura pedido histórico pela RPC direta');
+reset role;
+select is((select count(*)::int from private.pj_flow
+  where order_group_id='97000000-0000-4000-8000-000000000203'),0,
+  'tentativa pós-corte mantém pedido histórico fora da nova jornada');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);

@@ -65,7 +65,9 @@ language sql stable as $$
   where order_group_id = p_group;
 $$;
 
-select is(private.pj_flow_rollout_state(),'preparing','migration instala contrato com virada desligada');
+select is(private.pj_flow_rollout_state(),'standard','migration de corte deixa a jornada padrao ativa');
+select ok((select cutover_at is not null from private.pj_flow_rollout_settings where singleton),
+  'migration registra o instante do corte');
 select ok(not has_table_privilege('authenticated','private.pj_flow_rollout_settings','select'),
   'navegador nao le nem altera a chave de ativacao');
 select ok(not has_table_privilege('authenticated','private.pj_order_write_requests','select'),
@@ -77,6 +79,13 @@ select ok(not has_function_privilege('authenticated','public.replace_pj_order_at
 select ok(not has_function_privilege('authenticated',
   'private.schedule_pj_production_contract_impl(date,jsonb,uuid)','execute'),
   'navegador nao chama diretamente a implementacao interna da producao');
+
+-- Reconstrói o instante imediatamente anterior ao corte dentro da transacao
+-- descartavel para provar que os pedidos historicos nao sao convertidos.
+select pg_advisory_xact_lock(pg_catalog.hashtextextended('pane-pj-standard-cutover',0));
+update private.pj_flow_rollout_settings
+set state='preparing',cutover_at=null,updated_at=clock_timestamp()
+where singleton;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000002',true);
@@ -104,7 +113,7 @@ select is((select count(*)::int from public.orders where order_group_id='9f00000
 select is((select count(*)::int from private.pj_flow where order_group_id='9f000000-0000-4000-8000-000000000202'),
   0,'pedido criado antes da virada permanece legado');
 
--- Simula a futura migration de ativacao sob a mesma trava usada pela criacao.
+-- Simula novamente o corte sob a mesma trava usada pela criacao.
 select pg_advisory_xact_lock(pg_catalog.hashtextextended('pane-pj-standard-cutover',0));
 update private.pj_flow_rollout_settings
 set state='standard',cutover_at=clock_timestamp(),updated_at=clock_timestamp()
