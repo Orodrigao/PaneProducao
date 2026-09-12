@@ -8,6 +8,12 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
+-- Este contrato monta pedidos manualmente para isolar a classificacao dos
+-- produtos; por isso reproduz deliberadamente o caminho anterior ao corte.
+update private.pj_flow_rollout_settings
+set state = 'preparing', cutover_at = null, updated_at = clock_timestamp()
+where singleton;
+
 select plan(21);
 
 -- Fixtures que reproduzem o estado auditado em producao em 2026-09-12.

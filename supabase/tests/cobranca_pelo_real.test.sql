@@ -18,6 +18,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
+-- Este arquivo prova o comportamento historico anterior a virada padrao.
+update private.pj_flow_rollout_settings
+set state = 'preparing', cutover_at = null, updated_at = clock_timestamp()
+where singleton;
+
 select plan(44);
 
 -- Cenario --------------------------------------------------------------------
