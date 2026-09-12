@@ -223,21 +223,25 @@ Regras curtas tiradas de falhas reais entre julho e setembro de 2026. O
 post-mortem de cada uma está na PR correspondente.
 
 - **pgTAP na máquina, pelo container.** `npx supabase start` e depois
-  `docker exec -i supabase_db_<projeto> psql -U postgres -d postgres -f - <
+  `docker exec -i supabase_db_pane-processo psql -U postgres -d postgres -f - <
   supabase/tests/<arquivo>.test.sql`; confira `grep -c "^ ok"` contra o
   `plan(N)` e `grep "^ not ok"` para as falhas. O atalho `supabase test db`
   falha com "No plan found in TAP output" por defeito do container auxiliar; o
   schema aplica normalmente. Cada rodada de CI evitada assim vale minutos.
 - **Reexecutar o navegador em outro dia exige seed novo.** O seed grava a data
-  do dia em que rodou. Antes de reexecutar só o job de navegador, reexecute o
-  workflow do banco da PR (`Banco por PR` quando ela mexe em `supabase/`;
-  `Banco Preview` com `RECONSTRUIR` para o compartilhado).
+  do dia em que rodou. O job de navegador do CI lê sempre o `PaneERP Preview`
+  compartilhado, mesmo em PR que mexe em `supabase/`: reexecute `Banco Preview`
+  com `RECONSTRUIR` e só depois o job. Para o banco isolado da PR (teste humano
+  pelo link), reexecute `Usuarios do Banco por PR`, que recria as contas e
+  reaplica o seed; `Banco por PR` só aponta a Vercel para o banco certo.
 - **Teste humano no preview compartilhado consome cenário.** O smoke exige
   sobras da Geolar por resolver e a tela obriga a resolvê-las. Depois de um
   teste humano no banco compartilhado, reconstrua antes de confiar no semáforo.
-- **Falha de smoke dentro da janela de reconstrução é corrida, não defeito.**
-  Compare o horário da falha com o do job do banco antes de investigar código.
-- **Três PRs abertas geram três links quase iguais no mesmo banco.** Ao
+- **Falha de smoke na janela de reconstrução não é corrida esperada.** O job de
+  navegador divide a fila `banco-preview-compartilhado` com o `Banco Preview` e
+  espera a restauração terminar. Se ainda assim falhar nessa janela, a guarda
+  falhou: investigue, não reexecute por reflexo.
+- **PRs sem `supabase/` abertas juntas geram links quase iguais no mesmo banco.** Ao
   entregar o link, diga o trecho do endereço que identifica a branch e um sinal
   visível na tela. Para confirmar a versão no ar: `curl` na página e `grep` no
   chunk de `/_next/static/chunks/app/<rota>/` por texto que só a versão nova tem.

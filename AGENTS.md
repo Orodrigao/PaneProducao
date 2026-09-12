@@ -113,7 +113,7 @@ Antes de propor uma mudança:
    tocando a mesma área, pare e proponha como isolar ou reconciliar o trabalho
    antes de editar;
 6. leia este arquivo e `docs/CURRENT_STATE.md`;
-7. leia `lessons.md`: regras de uma linha, no máximo 40, sem narrativa;
+7. leia `lessons.md`: regras de uma linha, no máximo 40 linhas, sem narrativa;
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
 10. faça o checkpoint de distribuição descrito em `MASTER.md` e em
@@ -340,18 +340,22 @@ nascimento do worktree; pacote novo só entra pela caixa isolada. O `Diagnose` d
 Portaria reconstrói a caixa inteira a cada chamada e fica reservado à prova que
 exigir isolamento.
 
-A ordem do fechamento é fixa. Ela existe porque selar antes do CI custou até seis
-PRs por entrega em setembro de 2026:
+A ordem do fechamento é fixa. Ela existe porque selar antes do CI custou seis PRs
+para uma entrega (367 a 374) e cinco para outra (376 a 380) em setembro de 2026:
 
 1. diff estável e revisão independente;
 2. push da branch e PR em rascunho;
 3. CI remoto verde. Falha no CI corrige na mesma branch e na mesma PR, com a
-   tarefa da Portaria ainda `running`;
+   tarefa da Portaria ainda `running`; correção que altera comportamento volta
+   ao passo 1; correção que altera comportamento volta
+   ao passo 1; correção que altera comportamento volta
+   ao passo 1;
 4. `Verify` e um único `Check` isolado, que roda a bateria acima e sela o conteúdo;
 5. integração.
 
-O `Check` nunca vem antes do push: testes de banco e de navegador só existem no
-CI, e tarefa selada não volta a `running`. Selo antes do CI obriga a cancelar
+O `Check` nunca vem antes do push: a caixa isolada não executa banco nem
+navegador, parte das provas só existe no CI remoto, e tarefa selada não volta a
+`running`. Selo antes do CI obriga a cancelar
 tarefa, branch e PR a cada falha encontrada lá.
 
 Não repita a bateria completa sem mudança relevante de código, dado ou ambiente,
