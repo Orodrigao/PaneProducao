@@ -1,4 +1,5 @@
 {
   "outputDirectory": "out",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "ignoreCommand": "node scripts/ignore-documentation-build.mjs"
 }
