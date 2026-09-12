@@ -68,6 +68,11 @@ $$;
 select is(private.pj_flow_rollout_state(),'standard','migration de corte deixa a jornada padrao ativa');
 select ok((select cutover_at is not null from private.pj_flow_rollout_settings where singleton),
   'migration registra o instante do corte');
+select is((select count(*)::int from pg_catalog.pg_trigger
+  where tgrelid = 'private.pj_flow'::regclass
+    and tgname = 'guard_pj_controlled_enrollment_after_cutover'
+    and not tgisinternal),1,
+  'migration instala a barreira contra inscricao manual que ja estava em andamento');
 select ok(not has_table_privilege('authenticated','private.pj_flow_rollout_settings','select'),
   'navegador nao le nem altera a chave de ativacao');
 select ok(not has_table_privilege('authenticated','private.pj_order_write_requests','select'),

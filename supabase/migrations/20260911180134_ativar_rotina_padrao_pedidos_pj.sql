@@ -3,6 +3,29 @@
 -- que possa nascer no meio da mudanca sem uma classificacao deterministica.
 begin;
 
+-- O REVOKE abaixo impede chamadas novas, mas nao cancela uma chamada que ja
+-- entrou na funcao e ficou esperando a vaga do piloto. Esta barreira na tabela
+-- fecha tambem essa corrida: depois do corte, nenhuma escrita nova consegue
+-- criar outra inscricao controlled_real, mesmo com o corpo antigo da RPC.
+create function private.guard_pj_controlled_enrollment_after_cutover()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.activation_mode = 'controlled_real'
+     and private.pj_flow_rollout_state() is distinct from 'preparing' then
+    raise exception using
+      errcode = '55000',
+      message = 'A inscricao manual do piloto foi encerrada pela virada padrao.';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.guard_pj_controlled_enrollment_after_cutover()
+  from public, anon, authenticated, service_role;
+
 do $$
 declare
   v_state text;
@@ -44,6 +67,13 @@ begin
   where singleton;
 end;
 $$;
+
+-- As duas travas acima permanecem presas ate o COMMIT. Assim o gatilho passa
+-- a existir antes de qualquer chamada antiga, ja enfileirada, voltar a tocar
+-- private.pj_flow.
+create trigger guard_pj_controlled_enrollment_after_cutover
+before insert or update of activation_mode on private.pj_flow
+for each row execute function private.guard_pj_controlled_enrollment_after_cutover();
 
 -- O piloto deixa de aceitar novas inscricoes. O retorno do unico pedido ja
 -- acompanhado continua disponivel pela funcao separada de rollback.

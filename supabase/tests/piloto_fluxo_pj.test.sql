@@ -1,5 +1,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
+
+-- Os primeiros cenarios deste arquivo reproduzem o piloto antes da virada.
+update private.pj_flow_rollout_settings
+set state = 'preparing', cutover_at = null, updated_at = clock_timestamp()
+where singleton;
+
 select no_plan();
 
 -- Isolado das fixtures do preview e dos testes da cobrança legada.

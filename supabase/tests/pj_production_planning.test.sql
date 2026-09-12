@@ -1,6 +1,12 @@
 -- Programacao diaria PJ: fila, divisao, congelados compartilhados e Forno.
 begin;
 create extension if not exists pgtap with schema extensions;
+
+-- Este arquivo isola as regras de producao existentes antes da virada.
+update private.pj_flow_rollout_settings
+set state = 'preparing', cutover_at = null, updated_at = clock_timestamp()
+where singleton;
+
 select plan(51);
 
 select ok(has_function_privilege('authenticated', 'public.list_pj_production_queue()', 'execute'),

@@ -1,5 +1,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
+
+-- Este arquivo monta manualmente os fluxos do periodo anterior a virada.
+update private.pj_flow_rollout_settings
+set state = 'preparing', cutover_at = null, updated_at = clock_timestamp()
+where singleton;
+
 select no_plan();
 
 insert into auth.users(
