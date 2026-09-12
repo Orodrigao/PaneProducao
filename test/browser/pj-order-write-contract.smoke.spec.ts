@@ -30,6 +30,18 @@ async function addBrioche(page: Page) {
   await search.locator('..').locator('span').filter({ hasText: /^\[TESTE\] Brioche PJ/ }).first().click()
 }
 
+async function openOrderManagement(page: Page, groupId: string) {
+  await page.goto(`/pedidos-pj?legado=1&pedido=${groupId}`)
+  const editLink = page.getByRole('link', { name: 'Editar pedido', exact: true })
+  await expect(editLink).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(editLink).toHaveAttribute('href', new RegExp(`[?&]pedido=${encodeURIComponent(groupId)}(?:&|$)`))
+  await editLink.click()
+  await expect(page).toHaveURL(new RegExp(`[?&]pedido=${encodeURIComponent(groupId)}(?:&|$)`))
+  const ficha = page.getByRole('dialog', { name: 'Ficha do pedido PJ' })
+  await expect(ficha).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  return ficha
+}
+
 test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo pedido', async ({ page, request }) => {
   test.setTimeout(120_000)
   await enterWithPreviewAccount(page)
@@ -82,9 +94,7 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
     expect(createBodies[1]).toMatchObject(createBodies[0])
     groupId = createBodies[0].p_order_group_id
 
-    await page.goto(`/pedidos-pj?legado=1&pedido=${groupId}`)
-    const ficha = page.getByRole('dialog', { name: 'Ficha do pedido PJ' })
-    await expect(ficha).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+    let ficha = await openOrderManagement(page, groupId)
     await expect(ficha).toContainText('Pedido: 12 un')
 
     await ficha.getByRole('button', { name: 'Editar', exact: true }).click()
@@ -114,8 +124,8 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
       ],
     })
 
-    await page.goto(`/pedidos-pj?legado=1&pedido=${groupId}`)
-    await expect(page.getByRole('dialog', { name: 'Ficha do pedido PJ' })).toContainText('Pedido: 24 un', {
+    ficha = await openOrderManagement(page, groupId)
+    await expect(ficha).toContainText('Pedido: 24 un', {
       timeout: slowPreviewDataTimeoutMs,
     })
 
@@ -149,8 +159,8 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
     await expect(page.locator('input[type="date"]')).toHaveCount(0)
     await expect(page.getByPlaceholder('Digite ou clique pra ver produtos da tabela')).toHaveCount(0)
 
-    await page.goto(`/pedidos-pj?legado=1&pedido=${groupId}`)
-    await expect(page.getByRole('dialog', { name: 'Ficha do pedido PJ' })).toContainText('Pedido: 24 un', {
+    ficha = await openOrderManagement(page, groupId)
+    await expect(ficha).toContainText('Pedido: 24 un', {
       timeout: slowPreviewDataTimeoutMs,
     })
 
