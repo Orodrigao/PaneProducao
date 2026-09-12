@@ -13,11 +13,13 @@ o plano em fases.
 pretendido. O que existe de fato está no código, nas migrations e nos testes.
 O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
 
-**Status: fase 0 executada parcialmente em 2026-09-10.** Doze arquivos reais,
-correspondentes a nove NF-e distintas, foram conferidos localmente; quatro
-padrões fiscais viraram fixtures reduzidas,
-inteiramente fictícias. A amostra não contém desconto nem alguns casos de
-borda; por isso ainda não libera a fase 3. Nenhuma regra de produção mudou.
+**Status: fase 0 executada parcialmente em 2026-09-10 e ampliada em
+2026-09-12.** Vinte e quatro arquivos reais, correspondentes a 21 NF-e
+distintas, foram conferidos localmente; cinco padrões fiscais viraram fixtures
+reduzidas, inteiramente fictícias. Doze notas contêm desconto e encerram a
+hipótese sobre onde ele aparece. Alguns casos de borda ainda não têm evidência;
+por isso a fase 3 continua limitada aos casos comprovados. Nenhuma regra de
+produção mudou.
 
 ## O problema
 
@@ -66,7 +68,7 @@ Hoje o ERP lê três desses valores (`vProd` e `vDesc` por item, e `vNF` como
 total) e ignora os outros oito. Por isso toda nota com imposto por fora ou
 despesa acessória é recusada.
 
-## O que ainda é hipótese, não defeito
+## A hipótese do desconto foi encerrada
 
 A primeira versão deste documento afirmava que existia um segundo caso: o
 fornecedor lançar desconto somente no rodapé da nota, deixando a soma dos itens
@@ -82,9 +84,11 @@ rodapé: a nota não seria autorizada.
 
 O que era observação de código (o ERP não lê o `vDesc` do rodapé) virou
 conclusão sobre a operação (existem notas assim) sem nenhum XML que
-sustentasse a passagem. Fica registrado como **hipótese a investigar na fase 0**,
-com uma resposta objetiva: ou aparece uma nota real com desconto de rodapé não
-espelhado nos itens, e o caso existe, ou não aparece, e o caso é descartado.
+sustentasse a passagem. A ampliação da amostra em 2026-09-12 encerrou essa
+hipótese: nas 12 NF-e com desconto, o `vDesc` total corresponde exatamente à
+soma dos descontos dos itens. Não apareceu desconto lançado somente no rodapé.
+O caso foi descartado para o fluxo suportado; uma divergência entre total e
+itens deve continuar bloqueada, não compensada pelo ERP.
 
 ## A decisão sobre o custo
 
@@ -277,12 +281,12 @@ registra a regra aplicável e protege contra alteração indevida das fixtures.
 
 **Rollback.** Trivial, são arquivos de teste.
 
-### Evidência obtida em 2026-09-10
+### Evidência obtida em 2026-09-10 e ampliada em 2026-09-12
 
-A amostra recebida contém 12 arquivos de NF-e versão 4.00. Antes da contagem,
+A amostra combinada contém 24 arquivos de NF-e versão 4.00. Antes da contagem,
 eles foram deduplicados pela identidade fiscal da nota: três cópias foram
-excluídas, restando nove NF-e distintas. Os originais foram movidos para uma
-pasta privada fora do repositório e não foram versionados. As fixtures são exemplos
+excluídas, restando 21 NF-e distintas. Os originais permanecem em uma pasta
+privada fora do repositório e não foram versionados. As fixtures são exemplos
 reduzidos: preservam a posição dos campos fiscais observados, mas substituem
 fornecedor, produtos, documentos, datas, quantidades e valores por conteúdo
 fictício. Assinatura, certificado, protocolo, QR Code, responsável técnico e
@@ -290,33 +294,37 @@ texto livre não foram copiados.
 
 | Campo ou caso | Notas com valor | Onde apareceu | Resultado |
 | --- | ---: | --- | --- |
-| Produtos (`vProd`) | 9 de 9 | itens e total | base presente em toda a amostra |
-| ST (`vST` no total, `vICMSST` no item) | 2 de 9 | itens e total | usar o item e não somar o total novamente |
-| IPI (`vIPI`) | 1 de 9 | itens e total | usar o item e não somar o total novamente |
-| Frete (`vFrete`) | 2 de 9 | item e total | usar o item e não somar o total novamente |
-| Outras despesas (`vOutro`) | 1 de 9 | itens e total | usar o item e não somar o total novamente |
-| ICMS desonerado (`vICMSDeson`) | 1 de 9 | item e total | o indicador era `0`, portanto não reduziu `vNF` |
-| Desconto (`vDesc`) | 0 de 9 | ausente | amostra insuficiente para fechar a hipótese do rodapé |
-| `vFCPST`, seguro, imposto de importação ou serviço | 0 de 9 | ausente | continuam sem evidência real nesta fase |
-| Item fora do total (`indTot=0`) | 0 de 9 | ausente | bonificação e brinde continuam sem caso real |
+| Produtos (`vProd`) | 21 de 21 | itens e total | base presente em toda a amostra |
+| ST (`vST` no total, `vICMSST` no item) | 2 de 21 | itens e total | usar o item e não somar o total novamente |
+| IPI (`vIPI`) | 1 de 21 | itens e total | usar o item e não somar o total novamente |
+| Frete (`vFrete`) | 2 de 21 | item e total | usar o item e não somar o total novamente |
+| Outras despesas (`vOutro`) | 1 de 21 | itens e total | usar o item e não somar o total novamente |
+| ICMS desonerado (`vICMSDeson`) | 1 de 21 | item e total | o indicador era `0`, portanto não reduziu `vNF` |
+| Desconto (`vDesc`) | 12 de 21 | itens e total | o total correspondeu à soma dos itens em todas as 12 notas |
+| `vFCPST`, seguro, imposto de importação ou serviço | 0 de 21 | ausente | continuam sem evidência real nesta fase |
+| Item fora do total (`indTot=0`) | 0 de 21 | ausente | bonificação e brinde continuam sem caso real |
 
-As nove notas distintas fecharam até o centavo pela composição documentada, incluindo o
-caso em que `indDeduzDeson=0`. Essa conferência local ficou preservada, sem
-identificadores nem valores, em `test/fixtures/nfe/evidence-summary.json`; o
-arquivo permite reproduzir as contagens da tabela, enquanto os originais são a
-única fonte para reauditar os números fiscais. Não apareceu
-`indDeduzDeson=1`, indicador misto na mesma nota, desconto, `vServ` ou item com
+As 21 notas distintas fecharam até o centavo pela composição documentada,
+incluindo o caso em que `indDeduzDeson=0` e as 12 notas com desconto. Em todas
+as notas com desconto, o total descontado foi exatamente a soma dos itens.
+Essa conferência local ficou preservada, sem identificadores nem valores, em
+`test/fixtures/nfe/evidence-summary.json`: cada nota registra separadamente se
+o total dos produtos e o total do desconto coincidiram com as respectivas somas
+dos itens. O arquivo permite reproduzir as contagens da tabela, enquanto os
+originais são a única fonte para reauditar os números fiscais. Não apareceu
+`indDeduzDeson=1`, indicador misto na mesma nota, `vServ` ou item com
 `indTot=0`. Esses casos permanecem bloqueados para a futura fase 3 até existir
 evidência real.
 
-Quatro fixtures em `test/fixtures/nfe/` cobrem os padrões encontrados: sem
-acréscimos; ST com desoneração não dedutível; frete atribuído ao item; e ST com
-IPI e outras despesas. O teste automatizado confirma a conta até o centavo e
+Cinco fixtures em `test/fixtures/nfe/` cobrem os padrões encontrados: desconto
+por item; sem acréscimos; ST com desoneração não dedutível; frete atribuído ao
+item; e ST com IPI e outras despesas. O teste automatizado confirma a conta até o centavo e
 recusa assinatura, certificado, protocolo, chave de 44 dígitos e blocos que
 possam carregar identificação do documento original. Além das guardas por
-campo, o conteúdo inteiro de cada fixture fica selado por hash: comentário,
-atributo, série, texto solto, campo duplicado ou qualquer outro byte novo exige
-atualização explícita do teste e nova revisão da anonimização.
+campo, o conteúdo inteiro de cada fixture fica selado por hash, normalizando
+somente a diferença de quebra de linha entre Windows e Linux: comentário,
+atributo, série, texto solto, campo duplicado ou qualquer outro conteúdo novo
+exige atualização explícita do teste e nova revisão da anonimização.
 
 ## Fase 1: o ERP passa a enxergar a nota inteira
 
