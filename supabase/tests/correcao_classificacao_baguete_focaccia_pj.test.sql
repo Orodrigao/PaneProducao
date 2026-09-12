@@ -174,10 +174,10 @@ where id = '95000000-0000-4000-8000-000000000001';
 
 insert into public.orders (
   id, store, bread_id, product_source, product_name, quantity,
-  order_type, pj_client, pj_delivery_date, pricing_unit
+  order_type, pj_client, order_date, pj_delivery_date, pricing_unit
 ) values (
   '95000000-0000-4000-8000-00000000a003', 'jc', '95000000-0000-4000-8000-000000000001', 'product',
-  'Baguete Rocca', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria() + 3, 'un'
+  'Baguete Rocca', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria() + 1, private.data_na_padaria() + 3, 'un'
 );
 
 set local role authenticated;
