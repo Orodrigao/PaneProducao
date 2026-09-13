@@ -274,22 +274,25 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     if (productResult.error || nonCatalogResult.error) { setAutoMappedCount(0); setError('Não foi possível carregar as classificações anteriores deste fornecedor.'); return }
     const nextMappings = (productResult.data ?? []) as ProductMapping[]
     const nonCatalogMappings = (nonCatalogResult.data ?? []) as NonCatalogMapping[]
-    let appliedCount = 0
-    const mappedItems = nextDraft.items.map(item => {
+    const remembered = (item: NfeItemDraft): NfeItemDraft | null => {
       const mapping = findLatestSupplierMapping(item, nextMappings)
       const nonCatalog = findLatestSupplierMapping(item, nonCatalogMappings)
-      if (nonCatalog && (!mapping || nonCatalog.updated_at >= mapping.updated_at)) {
-        appliedCount += 1
-        return withoutProduct(item, true)
-      }
+      if (nonCatalog && (!mapping || nonCatalog.updated_at >= mapping.updated_at)) return withoutProduct(item, true)
       const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
-      if (!product) return item
-      appliedCount += 1
+      if (!product) return null
       const factor = Number(mapping?.conversion_factor) || 1
       return withProduct(item, product, factor, true, Boolean(mapping?.factor_confirmed) || factor !== 1)
+    }
+    setAutoMappedCount(nextDraft.items.filter(item => remembered(item) !== null).length)
+    // A resposta chega depois de a pessoa já ter mexido nos itens: a memória
+    // só preenche o que ainda está pendente e nunca apaga uma decisão feita.
+    setDraft(previous => {
+      if (!previous || previous.accessKey !== nextDraft.accessKey) return previous
+      return {
+        ...previous,
+        items: previous.items.map(item => item.mappingStatus === 'pendente' ? (remembered(item) ?? item) : item),
+      }
     })
-    setAutoMappedCount(appliedCount)
-    setDraft({ ...nextDraft, items: mappedItems })
   }
 
   function updateItem(index: number, next: NfeItemDraft) {
