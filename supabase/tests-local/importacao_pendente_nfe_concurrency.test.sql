@@ -34,6 +34,10 @@ select extensions.dblink_connect(
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
+    delete from public.payable_purchases where nfe_key in (
+      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072');
+    delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
+    delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';
     delete from public.payable_purchases where nfe_key = '35260900000000000000550010000000098000000098';
     delete from public.app_user_permissions where user_id = '98000000-0000-4000-8000-00000000000a';
@@ -55,6 +59,11 @@ select extensions.dblink_exec(
     values ('98000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc');
     insert into public.suppliers(id, name, active)
     values ('98000000-0000-4000-8000-0000000000f1', '[TESTE] Fornecedor rascunho concorrente', true);
+    -- Fase 3A: segundo fornecedor e um insumo disputado por duas notas.
+    insert into public.suppliers(id, name, active)
+    values ('98000000-0000-4000-8000-0000000000f2', '[TESTE] Outro fornecedor concorrente', true);
+    insert into public.products(id, name, category, active, unit, kind, cost_price)
+    values ('98000000-0000-4000-8000-0000000000d1', '[TESTE] Farinha concorrente', 'Insumos', true, 'kg', 'insumo', 5.00);
   $remote$
 );
 
@@ -335,10 +344,97 @@ select is(
   'o rascunho aponta para a conta criada'
 );
 
+-- 6. Fase 3A: duas notas do mesmo insumo ao mesmo tempo -------------------
+-- A nota mais recente do insumo esta sendo confirmada e ainda nao terminou;
+-- outra pessoa, de outro fornecedor, confirma uma nota mais antiga do mesmo
+-- insumo. Fornecedor e chave diferentes nao disputam as travas consultivas. Sem
+-- a trava na linha do insumo, a nota antiga leria "nao ha nota mais nova" e
+-- gravaria o custo velho por cima. Com a trava ela espera e, ao acordar,
+-- enxerga a nota nova e nao troca o custo.
+
+create function pg_temp.wait_for_lock(p_pid integer) returns boolean
+language plpgsql as $$
+declare v_deadline timestamptz := clock_timestamp() + interval '5 seconds';
+begin
+  loop
+    perform pg_catalog.pg_stat_clear_snapshot();
+    if exists (
+      select 1 from pg_catalog.pg_stat_activity
+      where pid = p_pid and wait_event_type = 'Lock'
+    ) then
+      return true;
+    end if;
+    if clock_timestamp() >= v_deadline then
+      return false;
+    end if;
+    perform pg_sleep(0.05);
+  end loop;
+end;
+$$;
+
+create function pg_temp.import_cost_sql(p_request uuid, p_key text, p_supplier uuid, p_issue date, p_value numeric) returns text
+language sql as $$
+  select format(
+    $q$select public.create_xml_payable(%L::uuid, %L, %L::uuid, '71', '1', %L::date, 'boleto', %s, '', %L::jsonb, %L::jsonb)::text$q$,
+    p_request, p_key, p_supplier, p_issue, p_value,
+    jsonb_build_array(jsonb_build_object(
+      'line_number', 1, 'source_description', '[TESTE] FARINHA CONCORRENTE', 'source_unit', 'KG',
+      'source_quantity', 1, 'product_id', '98000000-0000-4000-8000-0000000000d1', 'conversion_basis', 'simple',
+      'conversion_factor', 5, 'usable_quantity', 5, 'line_total', p_value, 'unit_price', p_value,
+      'discount_value', 0, 'factor_confirmed', true, 'remember_conversion', false, 'mapping_status', 'mapeado'
+    )),
+    jsonb_build_array(jsonb_build_object('installment_number', 1, 'due_date', '2026-10-10', 'amount', p_value))
+  )
+$$;
+
+select pg_temp.as_financeiro('draft_holder');
+create temporary table newer_cost_purchase as
+select result::uuid as id
+from extensions.dblink(
+  'draft_holder',
+  pg_temp.import_cost_sql('98000000-0000-4000-8000-000000000071', '35260900000000000000550010000000098000000071',
+    '98000000-0000-4000-8000-0000000000f1', '2026-09-10', 50.00)
+) as response(result text);
+
+select pg_temp.as_financeiro('draft_worker');
+select extensions.dblink_send_query(
+  'draft_worker',
+  pg_temp.import_cost_sql('98000000-0000-4000-8000-000000000072', '35260900000000000000550010000000098000000072',
+    '98000000-0000-4000-8000-0000000000f2', '2026-09-01', 20.00)
+);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a nota antiga espera na trava do insumo enquanto a nota nova do mesmo insumo nao terminou'
+);
+
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table older_cost_result as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a nota antiga prossegue depois da liberacao, sem erro nem deadlock');
+create temporary table older_cost_result_end as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+select is(
+  (select cost_price from public.products where id = '98000000-0000-4000-8000-0000000000d1'),
+  10.00::numeric,
+  'o custo final e o da nota mais recente (50 / 5): a antiga, que acordou depois, nao gravou por cima'
+);
+select is(
+  (select item.cost_applied from public.payable_purchase_items item
+    join public.payable_purchases purchase on purchase.id = item.purchase_id
+    where purchase.nfe_key = '35260900000000000000550010000000098000000072'),
+  false, 'a nota antiga vira conta e registra que nao trocou o custo'
+);
+
 -- Limpeza (as outras sessoes gravaram fora desta transacao).
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
+    delete from public.payable_purchases where nfe_key in (
+      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072');
+    delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
+    delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';
     delete from public.payable_purchases where nfe_key = '35260900000000000000550010000000098000000098';
     delete from public.app_user_permissions where user_id = '98000000-0000-4000-8000-00000000000a';

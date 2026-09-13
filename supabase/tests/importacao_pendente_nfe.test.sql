@@ -88,9 +88,10 @@ select ok(has_function_privilege('authenticated', 'public.discard_xml_import_dra
   'authenticated descarta rascunho mediante validação interna');
 select ok(not has_function_privilege('anon', 'public.discard_xml_import_draft(uuid)', 'execute'),
   'anon não descarta rascunho');
-select ok(has_function_privilege('authenticated', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+-- Desde a fase 3A a confirmação recebe também o bloco de totais da NF-e.
+select ok(has_function_privilege('authenticated', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
   'authenticated confirma rascunho retomado mediante validação interna');
-select ok(not has_function_privilege('anon', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+select ok(not has_function_privilege('anon', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
   'anon não confirma rascunho');
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname in ('save_xml_import_draft', 'discard_xml_import_draft', 'confirm_xml_import_draft')

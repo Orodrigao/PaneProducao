@@ -14,14 +14,16 @@ pretendido. O que existe de fato está no código, nas migrations e nos testes.
 O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **Status: fase 0 executada parcialmente em 2026-09-10 e ampliada em
-2026-09-12; fase 1 implementada em 2026-09-12.** Vinte e quatro arquivos reais,
-correspondentes a 21 NF-e distintas, foram conferidos localmente; cinco padrões
-fiscais viraram fixtures reduzidas, inteiramente fictícias. Doze notas contêm
-desconto e encerram a hipótese sobre onde ele aparece. Alguns casos de borda
-ainda não têm evidência; por isso a fase 3 continua limitada aos casos
-comprovados. A fase 1 fez o ERP ler a composição inteira e mostrá-la na tela de
-importação (ver o registro na própria fase). Custo, conta a pagar e a trava do
-banco não mudaram.
+2026-09-12; fases 1 e 2 implementadas em 2026-09-12; fase 3A implementada em
+2026-09-13.** Vinte e quatro arquivos reais, correspondentes a 21 NF-e
+distintas, foram conferidos localmente; cinco padrões fiscais viraram fixtures
+reduzidas, inteiramente fictícias. Doze notas contêm desconto e encerram a
+hipótese sobre onde ele aparece. Alguns casos de borda ainda não têm evidência;
+por isso a fase 3 ficou limitada aos casos comprovados. A fase 1 fez o ERP ler a
+composição inteira e mostrá-la na tela de importação; a fase 2 criou a
+importação pendente de conferência; a fase 3A fez a nota com ST, IPI, frete e
+outras despesas entrar pelo XML, com esses valores no custo do insumo (ver o
+registro de cada fase).
 
 ## O problema
 
@@ -576,12 +578,94 @@ acontece fora do preview; não enviar dados reais ao ambiente de teste.
 custo já gravado não volta sozinho, a fase precisa ser aprovada com o
 entendimento de que o custo dos produtos tocados muda a partir dali.
 
+### Decisões de 2026-09-13, antes da implementação
+
+Rodrigo aprovou a fase 3A até a publicação, com as decisões abaixo. O plano
+passou antes por revisão adversarial do Sol, que apontou oito lacunas; todas
+foram conferidas no código e incorporadas.
+
+- **Não há rateio de despesa comum.** A SEFAZ recusa a nota quando o total de
+  um acréscimo difere da soma dos itens: ST (534), frete (535), seguro (536),
+  desconto (537), IPI (538), outras despesas (604) e FCP-ST (862), com
+  tolerância de R$ 0,01. Nas 21 notas reais, todo acréscimo veio no item e no
+  total. Fonte: bases de suporte de emissores, concordantes entre si; o manual
+  de orientação da SEFAZ não foi lido. Consequência: acréscimo presente só no
+  total, que a fase 1 aceitava como despesa comum, passou a ser bloqueio. A
+  diferença de até um centavo por campo vai para o item de maior valor líquido
+  (a menos, sai do maior item que tem aquele acréscimo; empate, menor linha).
+- **O custo do insumo é o da NF-e mais recente.** Nota com emissão anterior à
+  última que já gravou custo daquele insumo entra como conta, mas não troca o
+  custo. O mesmo insumo em várias linhas da nota recebe o custo médio da nota.
+  Evidência de que o caso é real: leitura de produção em 2026-09-13, só de
+  totais, encontrou 59 compras por XML desde 2026-08-10, 6 importadas depois
+  de nota mais nova do mesmo insumo e 3 com o mesmo insumo repetido na nota.
+- **Conferência pessoal dispensada.** O critério de aceite que pedia a Rodrigo
+  conferir uma nota real anonimizada foi dispensado por ele; a prova fica com
+  os testes e a conta à mão sobre as fixtures.
+- **Preço de venda fica para a fase 3B:** um aviso na entrada da nota quando o
+  custo de um item sobe, sem mudar preço, com sessão e aprovação próprias.
+- **O que a 3A calcula é o custo desta NF-e, não o custo total de aquisição.**
+  CT-e, frete cobrado em documento separado e DIFAL ou GNRE pagos à parte
+  continuam fora.
+
+### Registro da fase 3A (2026-09-13)
+
+O que passou a existir:
+
+- **Valores fiscais exatos no item.** `payable_purchase_items` guarda o vProd
+  (`fiscal_gross_value`), o ST, o IPI, o frete, as outras despesas e o centavo
+  de tolerância que o item recebeu, cada um em coluna própria, e o banco calcula
+  `acquisition_value` (o que foi pago pelo item). O custo sai dele, e não de
+  quantidade vezes preço guardados com três e quatro casas decimais, que podem
+  perder precisão em relação à nota. Compra anterior à 3A fica com esses campos
+  vazios e segue usando o valor do item.
+- **Conferência campo a campo no banco.** `create_xml_payable` recebe o bloco
+  de totais (`p_nfe_totals`) e `private.validate_nfe_fiscal_composition` exige:
+  todos os campos presentes; casos sem evidência zerados; produtos, desconto e
+  desoneração iguais à soma dos itens; cada acréscimo até um centavo da soma dos
+  itens; composição igual ao total; linha única; vProd menos desconto igual ao
+  valor do item. `private.nfe_cent_adjustments` aplica o centavo com a mesma
+  regra de `allocateItemCosts` em `src/lib/nfeComposition.ts`. Por fim, a soma
+  do valor pago dos itens precisa ser exatamente o total da nota.
+- **Custo por insumo, com trava.** `private.apply_xml_purchase_cost` trava a
+  linha do insumo, confere se existe NF-e mais recente e grava o custo médio da
+  nota; `cost_applied` registra no item se o custo foi trocado. A importação
+  aplica depois de gravar todos os itens, um insumo por vez e em ordem;
+  `classify_payable_item` usa a mesma função.
+- **Rascunho ancorado.** `confirm_xml_import_draft` confere também total e
+  fornecedor com o rascunho salvo.
+- **Convivência.** O site anterior, que não manda o bloco de totais, segue na
+  regra de antes (soma dos itens igual ao total). Valores fiscais sem o bloco
+  são recusados. O site novo diante do banco anterior (CI no banco que espelha
+  a `main` e minutos entre deploy e migration) repete o envio sem o bloco
+  somente para nota sem acréscimo; nota com imposto falha e nada é gravado.
+- **Tela.** Nota com acréscimo comprovado deixa de ser bloqueada; cada item
+  mostra "+ impostos e despesas" e o valor pago; o editor de conversão calcula
+  o custo por unidade sobre o valor pago; "Itens da NF-e" na conta mostra o
+  valor pago e avisa quando o custo do insumo não mudou por existir nota mais
+  recente.
+
+Continua fora: notas já lançadas; FCP-ST, seguro, imposto de importação, IPI
+devolvido, serviços, item fora do total e desoneração que abate do total, que
+seguem recusados com explicação; custos fora da NF-e; desfazer custo ao
+cancelar a conta, que também não acontecia antes; a trava do fator que falha
+aberta, que continua como PR própria; preço de venda.
+
+Provas: Vitest de `allocateItemCosts` sobre as cinco fixtures (a soma do valor
+pago é o total de cada nota) e dos casos de centavo, e do envio ao banco;
+pgTAP `supabase/tests/custo_com_impostos_nfe.test.sql` (custo, recusas,
+convivência, centavo, nota mais recente, média, classificação posterior,
+rascunho, Financeiro JC permitido e Vendas JA barrado); concorrência real no
+cenário 6 de `supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql`
+(nota antiga do mesmo insumo espera a nova e não grava por cima); navegador em
+`test/browser/auth.smoke.spec.ts`, que pula no banco compartilhado antes do
+merge, como os cenários da fase 2.
+
 ## Decisões pendentes
 
-- **Efeito nos preços de venda.** O custo dos insumos sobe quando a fase 3
-  entrar, e alguns preços vão aparecer defasados na formação de preço. Não é
-  defeito novo: é uma conta incompleta ficando completa. Cabe decidir se a
-  revisão de preços acompanha a fase 3 ou vem depois. Ver
+- **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços
+  não acompanha a fase 3A. A fase 3B trará o aviso de alta de custo na entrada
+  da nota, e a decisão de preço segue com Rodrigo, com o número na mão. Ver
   [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).
 
 ## Fora do escopo
@@ -594,8 +678,8 @@ entendimento de que o custo dos produtos tocados muda a partir dali.
 ## Onde continuar
 
 - Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md).
-  A decisão sobre o custo está registrada; fases 0, 1 e 2 feitas (ver o
-  registro de cada uma); a fase 3 (custo) continua pendente, com aprovação
-  própria.
+  A decisão sobre o custo está registrada; fases 0, 1, 2 e 3A feitas (ver o
+  registro de cada uma); a fase 3B (aviso de alta de custo na entrada da nota)
+  tem sessão e aprovação próprias.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

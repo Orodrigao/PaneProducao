@@ -16,9 +16,10 @@ select ok(has_table_privilege('authenticated', 'public.payable_product_mappings'
   'financeiro pode consultar os últimos mapeamentos mediante RLS');
 select ok(not has_table_privilege('anon', 'public.payable_product_mappings', 'select'),
   'anon não consulta mapeamentos');
-select ok(has_function_privilege('authenticated', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+-- Desde a fase 3A a importação recebe também o bloco de totais da NF-e.
+select ok(has_function_privilege('authenticated', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
   'authenticated chama importação XML mediante validação interna');
-select ok(not has_function_privilege('anon', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+select ok(not has_function_privilege('anon', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
   'anon não chama importação XML');
 select ok(has_function_privilege('authenticated', 'public.classify_payable_item(uuid, uuid, text, numeric, numeric, boolean)', 'execute'),
   'authenticated classifica item mediante validação interna');
@@ -38,7 +39,9 @@ select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.proname
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'create_xml_payable') ilike all(array['%nfe_key%', '%request_id%', '%installments%', '%classification_status%']),
   'importação valida idempotência, parcelas e pendências');
-select ok((select bool_or(prosrc ilike all(array['%usable_quantity%', '%cost_price%', '%mapping_status%']))
+-- Desde a fase 3A o custo do insumo sai de private.apply_xml_purchase_cost,
+-- a mesma regra da importação; o comportamento é provado em custo_com_impostos_nfe.
+select ok((select bool_or(prosrc ilike all(array['%usable_quantity%', '%apply_xml_purchase_cost%', '%mapping_status%']))
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'classify_payable_item'),
   'classificação recalcula quantidade útil e custo');

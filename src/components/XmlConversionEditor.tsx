@@ -179,7 +179,12 @@ export function ProductSelector({
   )
 }
 
-export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onChange: (next: NfeItemDraft) => void }) {
+export function ConversionEditor({ item, acquisitionValue, onChange }: {
+  item: NfeItemDraft
+  /** Valor pago pelo item com impostos e despesas (fase 3A); ausente quando a nota não fecha. */
+  acquisitionValue?: number
+  onChange: (next: NfeItemDraft) => void
+}) {
   const suggestion = useMemo(
     () => (item.baseUnit ? suggestConversionFactor(item.description, item.baseUnit) : null),
     [item.description, item.baseUnit],
@@ -190,7 +195,7 @@ export function ConversionEditor({ item, onChange }: { item: NfeItemDraft; onCha
   if (item.mappingStatus === 'nao_aplicavel') return <small style={{ color: 'var(--teal)' }}>Resolvido sem item-base: esta compra não altera custo de receita.</small>
   if (!item.baseProductId) return <small style={{ color: 'var(--honey-deep)' }}>Classifique o item para liberar o custo normalizado.</small>
 
-  const explanation = formatConversionExplanation(item)
+  const explanation = formatConversionExplanation(item, acquisitionValue)
   const basis = item.conversionBasis
   const factor = item.conversionFactor ?? 1
   const usable = item.usableQuantity ?? calculateUsableQuantity(item.quantity, factor)

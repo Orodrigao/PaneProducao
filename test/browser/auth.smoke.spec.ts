@@ -398,9 +398,9 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   })
   await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
   // A composição da nota é lida do XML pelo navegador: nota simples fecha e
-  // nenhum aviso de acréscimo aparece.
+  // nenhum imposto ou despesa aparece.
   await expect(page.getByText('fecha até o centavo', { exact: true })).toBeVisible()
-  await expect(page.getByText('ainda não entram pelo XML')).toHaveCount(0)
+  await expect(page.getByText('de impostos e despesas entram no custo')).toHaveCount(0)
   await page.getByRole('button', { name: 'Cadastrar fornecedor com dados da NF-e' }).click()
   await expect(page.locator('input[placeholder="Nome do fornecedor"]')).toHaveValue('[TESTE] Fornecedor direto XML')
   await expect(page.locator('input[placeholder="CNPJ ou CPF"]')).toHaveValue(uniqueCnpj)
@@ -416,48 +416,46 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   await expect(page.locator('.ps-card', { hasText: '[TESTE] Fornecedor direto XML' }).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })
 
-test('Financeiro JC ve a composicao da NF-e com imposto por fora e a confirmacao explica o bloqueio', async ({ page }) => {
+// Mesmo padrao da fixture st-ipi-outras-despesas: ST e IPI no bloco de impostos
+// do item, outras despesas em prod, tudo somado no total. Chave e CNPJ unicos
+// por rodada, porque desde a fase 3A a nota e confirmada e o banco guarda.
+function nfeXmlComImpostoPorFora(uniqueKey: string, uniqueCnpj: string, numero: string, fornecedor: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe${uniqueKey}" versao="4.00">
+    <ide><nNF>${numero}</nNF><serie>1</serie><dhEmi>2026-09-10T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>${fornecedor}</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-ST</cProd><xProd>[TESTE] Refrigerante lata</xProd><NCM>22021000</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>30.00</vUnCom><vProd>30.00</vProd><vOutro>0.50</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
+    <det nItem="2"><prod><cProd>TESTE-ST2</cProd><xProd>[TESTE] Farinha saco</xProd><NCM>11010010</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>90.00</vUnCom><vProd>90.00</vProd><vOutro>1.00</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
+    <total><ICMSTot><vProd>120.00</vProd><vDesc>0.00</vDesc><vST>3.00</vST><vFCPST>0.00</vFCPST><vIPI>2.00</vIPI><vIPIDevol>0.00</vIPIDevol><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vOutro>1.50</vOutro><vII>0.00</vII><vICMSDeson>0.00</vICMSDeson><vNF>126.50</vNF></ICMSTot></total>
+    <pag><detPag><tPag>15</tPag><vPag>126.50</vPag></detPag></pag>
+    <cobr><dup><nDup>001</nDup><dVenc>2026-10-10</dVenc><vDup>126.50</vDup></dup></cobr>
+  </infNFe>
+</NFe>`
+}
+
+// As colunas fiscais do item nascem na migration da fase 3A. O smoke do CI roda
+// no banco compartilhado que espelha a main: antes do merge elas nao existem la
+// e o cenario pula com o motivo, como os da fase 2. A prova da PR e feita no
+// preview isolado dela.
+async function skipWithoutFiscalCostColumns(page: import('@playwright/test').Page, headers: Record<string, string>) {
+  const probe = await page.request.get(`${previewApi().url}/rest/v1/payable_purchase_items?select=acquisition_value&limit=1`, { headers })
+  const sharedTarget = !process.env.SMOKE_SUPABASE_URL
+  test.skip(sharedTarget && probe.status() === 400, 'As colunas fiscais da fase 3A ainda nao existem neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
+  expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar o valor pago dos itens`).toBe(true)
+}
+
+test('Financeiro JC ve a recusa explicada de NF-e sem o bloco de totais', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
-  // Mesmo padrao da fixture st-ipi-outras-despesas: ST e IPI no bloco de
-  // impostos do item, outras despesas em prod, tudo somado no total. Antes, a
-  // pessoa classificava a nota inteira e o banco recusava no fim sem dizer o
-  // que fazer.
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
-  <infNFe Id="NFe35260807999999999999550010000000093000000093" versao="4.00">
-    <ide><nNF>999994</nNF><serie>1</serie><dhEmi>2026-08-07T10:00:00-03:00</dhEmi></ide>
-    <emit><CNPJ>99000000000193</CNPJ><xNome>[TESTE] Fornecedor com ST</xNome></emit>
-    <det nItem="1"><prod><cProd>TESTE-ST</cProd><xProd>[TESTE] Refrigerante lata</xProd><NCM>22021000</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>30.00</vUnCom><vProd>30.00</vProd><vOutro>0.50</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
-    <det nItem="2"><prod><cProd>TESTE-ST2</cProd><xProd>[TESTE] Farinha saco</xProd><NCM>11010010</NCM><qCom>1.0000</qCom><uCom>UN</uCom><vUnCom>90.00</vUnCom><vProd>90.00</vProd><vOutro>1.00</vOutro><indTot>1</indTot></prod><imposto><ICMS><ICMS10><vICMSST>1.50</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>1.00</vIPI></IPITrib></IPI></imposto></det>
-    <total><ICMSTot><vProd>120.00</vProd><vDesc>0.00</vDesc><vST>3.00</vST><vFCPST>0.00</vFCPST><vIPI>2.00</vIPI><vIPIDevol>0.00</vIPIDevol><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vOutro>1.50</vOutro><vII>0.00</vII><vICMSDeson>0.00</vICMSDeson><vNF>126.50</vNF></ICMSTot></total>
-    <pag><detPag><tPag>01</tPag><vPag>126.50</vPag></detPag></pag>
-  </infNFe>
-</NFe>`
-
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'st-inline.xml',
-    mimeType: 'application/xml',
-    buffer: Buffer.from(xml),
-  })
-
-  await expect(page.getByText('fecha até o centavo', { exact: true })).toBeVisible()
-  await expect(page.getByText('produtos R$ 120,00 · acréscimos R$ 6,50 · total R$ 126,50')).toBeVisible()
-  await page.getByText('Ver a conta da nota').click()
-  await expect(page.getByText('ICMS substituição tributária', { exact: true })).toBeVisible()
-  await expect(page.getByText('IPI', { exact: true })).toBeVisible()
-  await expect(page.getByText('Outras despesas', { exact: true })).toBeVisible()
-  await expect(page.getByText('R$ 6,50 de acréscimos ainda não entram pelo XML')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Confirmar NF-e' })).toBeDisabled()
-
   // O XML minimo que os smokes usavam antes da fase 1 (so vNF no bloco de
-  // totais) nao e uma NF-e autorizada: passa a ser recusado dizendo o que falta,
-  // em vez de deixar a pessoa classificar tudo e descobrir na recusa do banco.
-  const xmlIncompleto = xml
+  // totais) nao e uma NF-e autorizada: e recusado dizendo o que falta, em vez de
+  // deixar a pessoa classificar tudo e descobrir na recusa do banco. Nada e
+  // confirmado aqui, entao chave fixa nao suja o banco.
+  const xmlIncompleto = nfeXmlComImpostoPorFora('35260807999999999999550010000000094000000094', '99000000000194', '999994', '[TESTE] Fornecedor com ST')
     .replace(/<total><ICMSTot>[\s\S]*?<\/ICMSTot><\/total>/, '<total><ICMSTot><vNF>126.50</vNF></ICMSTot></total>')
-    .replace('000000093000000093', '000000094000000094')
   await page.locator('input[type="file"]').setInputFiles({
     name: 'incompleto-inline.xml',
     mimeType: 'application/xml',
@@ -466,6 +464,58 @@ test('Financeiro JC ve a composicao da NF-e com imposto por fora e a confirmacao
   await expect(page.getByText('caso sem regra', { exact: true })).toBeVisible()
   await expect(page.getByText('O bloco de totais da nota não informa vProd, vDesc, vST')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Confirmar NF-e' })).toBeDisabled()
+})
+
+test('Financeiro JC importa NF-e com imposto por fora e cada item guarda o valor pago com ST, IPI e outras despesas', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  const headers = await dataApiHeaders(page)
+  await skipWithoutFiscalCostColumns(page, headers)
+
+  const stamp = Date.now().toString()
+  const uniqueCnpj = `97${stamp.slice(-12)}`
+  const uniqueKey = `37${stamp}`.padEnd(44, '3')
+  const numero = `8${stamp.slice(-5)}`
+  const fornecedor = '[TESTE] Fornecedor com ST'
+  await importarXmlComFornecedorNovo(page, nfeXmlComImpostoPorFora(uniqueKey, uniqueCnpj, numero, fornecedor), 'st-inline.xml', fornecedor)
+
+  await expect(page.getByText('fecha até o centavo', { exact: true })).toBeVisible()
+  await expect(page.getByText('produtos R$ 120,00 · acréscimos R$ 6,50 · total R$ 126,50')).toBeVisible()
+  await page.getByText('Ver a conta da nota').click()
+  await expect(page.getByText('ICMS substituição tributária', { exact: true })).toBeVisible()
+  await expect(page.getByText('IPI', { exact: true })).toBeVisible()
+  await expect(page.getByText('Outras despesas', { exact: true })).toBeVisible()
+  await expect(page.getByText('R$ 6,50 de impostos e despesas entram no custo')).toBeVisible()
+  // Cada item leva so o que a nota atribuiu a ele: 30 + 1,50 + 1 + 0,50 e 90 + 1,50 + 1 + 1.
+  await expect(page.getByText('+ impostos e despesas R$ 3,00 · pago R$ 33,00')).toBeVisible()
+  await expect(page.getByText('+ impostos e despesas R$ 3,50 · pago R$ 93,50')).toBeVisible()
+
+  // Os dois itens viram uso/despesa: a prova do custo do insumo fica no pgTAP;
+  // aqui a prova e que a nota com imposto por fora entra e o valor pago fica gravado.
+  const marcar = page.getByRole('button', { name: 'Marcar como uso ou despesa' })
+  await marcar.first().click()
+  await expect(marcar).toHaveCount(1)
+  await marcar.first().click()
+  await expect(marcar).toHaveCount(0)
+
+  const confirmar = page.getByRole('button', { name: 'Confirmar NF-e' })
+  await expect(confirmar).toBeEnabled()
+  await confirmar.click()
+  await expect(page.locator('.toast', { hasText: 'NF-e importada' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  const purchaseCard = page.locator('.ps-card', { hasText: `NF-e ${numero}` }).first()
+  await expect(purchaseCard).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await purchaseCard.click()
+  await purchaseCard.getByRole('button', { name: 'Ver itens da NF-e' }).click()
+  await expect(purchaseCard.getByText('+ impostos e despesas R$ 3,00 · pago R$ 33,00')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(purchaseCard.getByText('+ impostos e despesas R$ 3,50 · pago R$ 93,50')).toBeVisible()
+
+  // Relido do banco: a conta tem o total da nota e o valor pago dos itens fecha com ele.
+  const contas = await page.request.get(`${previewApi().url}/rest/v1/payable_purchases?select=id,total_value&nfe_key=eq.${uniqueKey}`, { headers })
+  const [conta] = (await contas.json()) as { id: string; total_value: number | string }[]
+  expect(Number(conta.total_value)).toBe(126.5)
+  const itens = await page.request.get(`${previewApi().url}/rest/v1/payable_purchase_items?select=acquisition_value&purchase_id=eq.${conta.id}`, { headers })
+  const pagos = ((await itens.json()) as { acquisition_value: number | string }[]).map(row => Number(row.acquisition_value)).sort((a, b) => a - b)
+  expect(pagos).toEqual([33, 93.5])
 })
 
 test('Vendas JA nao entra no livro financeiro', async ({ page }) => {

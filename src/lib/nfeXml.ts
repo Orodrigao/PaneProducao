@@ -19,8 +19,9 @@ export type NfeDeductionIndicator = '0' | '1' | null
 
 /**
  * Valores fiscais do item, como a NF-e os escreve. Impostos por fora e
- * despesas de aquisição que a fase 3 vai levar ao custo; nesta fase são só
- * lidos e mostrados. Esses campos são opcionais no item da NF-e: ausente é
+ * despesas de aquisição: desde a fase 3A, ST, IPI, frete e outras despesas
+ * entram no custo do item (`allocateItemCosts`); os demais continuam só lidos
+ * e bloqueados. Esses campos são opcionais no item da NF-e: ausente é
  * zero de verdade; conteúdo ilegível vira `NaN` para a composição recusar.
  */
 export interface NfeItemFiscal {
@@ -312,12 +313,16 @@ export function getConversionUnitWarning(purchaseUnit: string, baseUnit: string,
   return `A NF-e informa ${purchaseUnit} e a receita usa ${baseUnit}. Quando as unidades são iguais, o fator 1 é o correto; o nome da embalagem não muda a unidade cobrada.`
 }
 
-export function formatConversionExplanation(item: NfeItemDraft): ConversionExplanation {
+/**
+ * `acquisitionValue` é o que foi pago pelo item com impostos e despesas (fase
+ * 3A). Sem ele, o custo sai do valor líquido do produto, como antes.
+ */
+export function formatConversionExplanation(item: NfeItemDraft, acquisitionValue?: number): ConversionExplanation {
   const factor = item.conversionFactor ?? 0
   const usableQuantity = item.usableQuantity ?? calculateUsableQuantity(item.quantity, factor)
   const baseUnit = item.baseUnit ?? 'unidade'
   const baseName = item.baseProductName ?? 'item-base'
-  const unitCost = calculateNormalizedUnitCost(item.lineTotal, usableQuantity)
+  const unitCost = calculateNormalizedUnitCost(acquisitionValue ?? item.lineTotal, usableQuantity)
   return {
     input: `${formatQuantity(item.quantity)} ${item.purchaseUnit}`,
     operation: `${formatQuantity(item.quantity)} × ${formatQuantity(factor)} = ${formatQuantity(usableQuantity)}`,

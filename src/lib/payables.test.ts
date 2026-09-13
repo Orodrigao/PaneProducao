@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const supabaseMocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { from: supabaseMocks.from, rpc: supabaseMocks.rpc } }))
+import type { NfeDraft, NfeItemDraft } from './nfeXml'
 import {
   buildInstallments,
   classifyPayableItem,
   classifyPayableItemWithoutProduct,
+  createXmlPayable,
+  xmlPayablePayload,
   effectiveDueDate,
   getPayableErrorMessage,
   isDueSoon,
@@ -36,6 +39,35 @@ const baseDraft: PayableDraft = {
     { productId: 'tomate-cereja', itemName: 'Tomate cereja', unit: 'kg', quantity: '3', unitPrice: '50' },
   ],
   installments: [{ number: 1, dueDate: '2026-08-03', amount: '250.00' }],
+}
+
+/** NF-e de um item de R$ 30,00, com os acréscimos pedidos no item e no total. */
+function nfeDraft(surcharges: { icmsSt?: number; ipi?: number } = {}): NfeDraft {
+  const icmsSt = surcharges.icmsSt ?? 0
+  const ipi = surcharges.ipi ?? 0
+  const item: NfeItemDraft = {
+    lineNumber: 1, supplierCode: 'F-1', ean: null, description: 'FARINHA 5KG', ncm: null,
+    quantity: 1, purchaseUnit: 'UN', taxQuantity: null, taxUnit: null, unitPrice: 30,
+    grossLineTotal: 30, discountValue: 0, lineTotal: 30,
+    baseProductId: 'product-1', baseProductName: 'Farinha', baseUnit: 'kg', category: 'Insumos',
+    conversionBasis: 'package', conversionFactor: 5, usableQuantity: 5, mappingStatus: 'mapeado',
+    rememberConversion: false, factorConfirmed: true, recognized: false,
+    fiscal: {
+      discount: 0, freight: 0, insurance: 0, otherExpenses: 0, importTax: 0, icmsSt, fcpSt: 0,
+      ipi, ipiReturned: 0, icmsExempt: 0, deductsExemption: null, composesTotal: '1',
+    },
+  }
+  const total = 30 + icmsSt + ipi
+  return {
+    accessKey: '35260900000000000000550010000000011000000011', number: '1', series: '1',
+    issueDate: '2026-09-10', supplierName: 'Fornecedor', supplierCnpj: '00000000000000', total,
+    paymentMethod: 'boleto', dueDateSource: 'xml', items: [item],
+    installments: [{ number: 1, dueDate: '2026-09-30', amount: total }],
+    totals: {
+      products: 30, discounts: 0, icmsSt, fcpSt: 0, ipi, ipiReturned: 0, freight: 0, insurance: 0,
+      otherExpenses: 0, importTax: 0, icmsExempt: 0, services: 0, total,
+    },
+  }
 }
 
 describe('contas a pagar manual', () => {
@@ -79,9 +111,47 @@ describe('contas a pagar manual', () => {
 
     await expect(loadPayablePurchaseItems('purchase-1')).resolves.toEqual([{ id: 'item-1', item_name: 'Leite', mapping_status: 'completa' }])
     expect(supabaseMocks.from).toHaveBeenCalledWith('payable_purchase_items')
-    expect(select).toHaveBeenCalledWith('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    expect(select).toHaveBeenCalledWith('*')
     expect(eq).toHaveBeenCalledWith('purchase_id', 'purchase-1')
     expect(order).toHaveBeenCalledWith('source_line_number')
+  })
+
+  it('a confirmação da NF-e leva ao banco os valores fiscais de cada item e o bloco de totais inteiro', () => {
+    const payload = xmlPayablePayload(nfeDraft({ icmsSt: 1.5, ipi: 1 }), 'supplier-1', 'request-1')
+    expect(payload.p_items[0]).toMatchObject({
+      line_number: 1, line_total: 30, discount_value: 0, fiscal_gross_value: 30,
+      icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0, insurance: 0,
+      other_expenses: 0, import_tax: 0, icms_exempt: 0, deducts_exemption: null, composes_total: '1',
+    })
+    expect(payload.p_nfe_totals).toEqual({
+      products: 30, discounts: 0, icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0,
+      insurance: 0, other_expenses: 0, import_tax: 0, icms_exempt: 0, services: 0, total: 32.5,
+    })
+  })
+
+  it('banco anterior à fase 3A: nota sem acréscimo repete o envio sem o bloco fiscal', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })
+      .mockResolvedValueOnce({ data: 'purchase-1', error: null })
+
+    await expect(createXmlPayable(nfeDraft(), 'supplier-1', 'request-1')).resolves.toBe('purchase-1')
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(2)
+    expect(supabaseMocks.rpc.mock.calls[0][1]).toHaveProperty('p_nfe_totals')
+    expect(supabaseMocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_nfe_totals')
+  })
+
+  it('banco anterior à fase 3A: nota com imposto não repete o envio e nada é gravado', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })
+
+    await expect(createXmlPayable(nfeDraft({ icmsSt: 1.5 }), 'supplier-1', 'request-1')).rejects.toMatchObject({ code: 'PGRST202' })
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('outro erro do banco não vira nova tentativa sem o bloco fiscal', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: { code: '22023', message: 'A composição da NF-e não fecha.' } })
+
+    await expect(createXmlPayable(nfeDraft(), 'supplier-1', 'request-1')).rejects.toMatchObject({ code: '22023' })
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
   })
 
   it('preserva a mensagem do banco quando a NF-e ja foi importada', () => {

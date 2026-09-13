@@ -8,9 +8,10 @@ import type { NfeDraft, NfeItemFiscal, NfeTotals } from '@/lib/nfeXml'
  *   vNF = vProd - vDesc + vST + vFCPST + vIPI + vIPIDevol
  *         + vFrete + vSeg + vOutro + vII - desoneração efetivamente deduzida
  *
- * Esta fase só LÊ e MOSTRA. Nada daqui muda custo, conta a pagar ou o que o
- * banco aceita. O resíduo nunca é distribuído: quando sobra valor, a tela
- * explica e bloqueia.
+ * A composição decide o que a tela deixa confirmar, e `allocateItemCosts`
+ * mostra o custo de cada item antes da confirmação. O banco refaz as mesmas
+ * contas em `create_xml_payable` e é a autoridade sobre o que vira dinheiro.
+ * O resíduo nunca é distribuído: quando sobra valor, a tela explica e bloqueia.
  */
 
 export type NfeSurchargeKey = 'icmsSt' | 'fcpSt' | 'ipi' | 'ipiReturned' | 'freight' | 'insurance' | 'otherExpenses' | 'importTax'
@@ -173,9 +174,11 @@ export function composeNfe(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeCompos
     if (!VALIDATED_SURCHARGES.has(key)) {
       blockers.push(`A nota traz ${label} (${money(reais(Math.max(amount, inItems)))}), um caso ainda sem evidência real na fase 0.`)
     }
-    // O total é o somatório dos itens; item cobrando mais que o total é divergência.
-    // Valor só no total (sem item) é despesa comum, que a fase 3 vai ratear.
-    if (inItems > amount) {
+    // O total é o somatório dos itens: a SEFAZ recusa a nota quando difere
+    // (rejeições 534, 535, 536, 538, 604 e 862), com tolerância de um centavo.
+    // Por isso não existe despesa comum só no total para ratear: diferença
+    // maior que um centavo, em qualquer sentido, é divergência e bloqueia.
+    if (Math.abs(amount - inItems) > 1) {
       blockers.push(`Os itens somam ${money(reais(inItems))} de ${label.toLocaleLowerCase('pt-BR')}, mas o total da nota informa ${money(reais(amount))}.`)
     }
   }
@@ -226,9 +229,8 @@ export function compositionCloses(composition: NfeComposition): boolean {
 
 /**
  * Motivo, em linguagem da operação, para a confirmação ficar travada. Nulo
- * quando a nota pode seguir para o banco como hoje. A trava do banco
- * (`create_xml_payable` compara itens com o total) não muda nesta fase; o que
- * muda é a pessoa saber ANTES de clicar por que a nota não entra e o que fazer.
+ * quando a nota pode seguir para o banco. A pessoa sabe ANTES de clicar por que
+ * a nota não entra e o que fazer; acréscimo comprovado e explicado entra.
  */
 export function compositionBlockReason(composition: NfeComposition): string | null {
   if (composition.blockers.length > 0) {
@@ -237,13 +239,81 @@ export function compositionBlockReason(composition: NfeComposition): string | nu
   if (composition.unexplained !== 0) {
     return `${money(Math.abs(composition.unexplained))} da nota ficaram sem explicação. Confira o arquivo com o fornecedor; se o XML estiver correto, a leitura do ERP está falhando e a equipe técnica precisa investigar.`
   }
-  if (composition.surchargesTotal !== 0) {
-    const names = composition.surcharges.map(line => line.label.toLocaleLowerCase('pt-BR')).join(', ')
-    return `A nota tem ${money(composition.surchargesTotal)} de acréscimos (${names}). O ERP ainda não importa acréscimos pelo XML: lance esta compra à mão, somando o imposto e a despesa como itens.`
-  }
   return null
 }
 
 export function formatCompositionMoney(value: number): string {
   return money(value)
+}
+
+/** Acréscimos que entram no custo do item, na ordem da composição fiscal. */
+export type NfeCostField = 'icmsSt' | 'ipi' | 'freight' | 'otherExpenses'
+
+const COST_FIELDS: readonly NfeCostField[] = ['icmsSt', 'ipi', 'freight', 'otherExpenses']
+
+export interface NfeItemCost {
+  lineNumber: number
+  /** vProd - vDesc do item. */
+  netValue: number
+  icmsSt: number
+  ipi: number
+  freight: number
+  otherExpenses: number
+  /** Centavos da tolerância da SEFAZ entre total e itens que caíram neste item. */
+  centAdjustment: number
+  surchargeTotal: number
+  /** O que a padaria pagou por este item: líquido mais acréscimos. */
+  acquisitionValue: number
+}
+
+/**
+ * Custo de aquisição de cada item (docs/COMPRAS_POR_XML.md, fase 3A). Cada item
+ * leva o que o XML atribuiu a ele; o total da nota nunca é somado de novo. A
+ * única sobra aceita é a tolerância de um centavo por campo que a SEFAZ admite
+ * entre o total e a soma dos itens: a mais, vai para o item de maior valor
+ * líquido; a menos, sai do maior item que tem aquele acréscimo, para nenhum
+ * acréscimo ficar negativo. Empate vence a menor linha. Um item pode receber
+ * mais de um centavo quando vários campos têm essa diferença.
+ *
+ * Nulo quando a composição não fecha: nota que a tela bloqueia não tem custo.
+ * `create_xml_payable` aplica a mesma regra no banco.
+ */
+export function allocateItemCosts(draft: Pick<NfeDraft, 'items' | 'totals'>): NfeItemCost[] | null {
+  if (!compositionCloses(composeNfe(draft))) return null
+
+  const lines = draft.items.map(item => ({
+    lineNumber: item.lineNumber,
+    net: cents(item.grossLineTotal) - cents(item.fiscal.discount),
+    fields: {
+      icmsSt: cents(item.fiscal.icmsSt),
+      ipi: cents(item.fiscal.ipi),
+      freight: cents(item.fiscal.freight),
+      otherExpenses: cents(item.fiscal.otherExpenses),
+    } satisfies Record<NfeCostField, number>,
+    adjustment: 0,
+  }))
+  const largestFirst = [...lines].sort((a, b) => b.net - a.net || a.lineNumber - b.lineNumber)
+
+  for (const field of COST_FIELDS) {
+    const difference = cents(known(draft.totals[field])) - lines.reduce((sum, line) => sum + line.fields[field], 0)
+    if (difference === 0) continue
+    const recipient = largestFirst.find(line => difference > 0 || line.fields[field] > 0)
+    if (!recipient) return null
+    recipient.adjustment += difference
+  }
+
+  return lines.map(line => {
+    const surcharge = COST_FIELDS.reduce((sum, field) => sum + line.fields[field], 0) + line.adjustment
+    return {
+      lineNumber: line.lineNumber,
+      netValue: reais(line.net),
+      icmsSt: reais(line.fields.icmsSt),
+      ipi: reais(line.fields.ipi),
+      freight: reais(line.fields.freight),
+      otherExpenses: reais(line.fields.otherExpenses),
+      centAdjustment: reais(line.adjustment),
+      surchargeTotal: reais(surcharge),
+      acquisitionValue: reais(line.net + surcharge),
+    }
+  })
 }

@@ -6,7 +6,7 @@ import {
   type NfeItemDraft,
   type NfeMappingStatus,
 } from '@/lib/nfeXml'
-import { xmlPayablePayload, type PayableProduct } from '@/lib/payables'
+import { legacyXmlPayablePayloadFor, xmlPayablePayload, type PayableProduct } from '@/lib/payables'
 
 /**
  * Importação pendente de conferência (fase 2 das compras por XML).
@@ -260,11 +260,12 @@ export async function confirmXmlImportDraft(
   requestId: string,
   resumed: Pick<XmlImportDraftContent, 'id' | 'updated_at'>,
 ): Promise<string> {
-  const { data, error } = await supabase.rpc('confirm_xml_import_draft', {
-    p_draft_id: resumed.id,
-    p_expected_updated_at: resumed.updated_at,
-    ...xmlPayablePayload(draft, supplierId, requestId),
-  })
+  const base = { p_draft_id: resumed.id, p_expected_updated_at: resumed.updated_at }
+  const payload = xmlPayablePayload(draft, supplierId, requestId)
+  let { data, error } = await supabase.rpc('confirm_xml_import_draft', { ...base, ...payload })
+  // Mesma convivência de createXmlPayable com o banco anterior à fase 3A.
+  const legacy = error ? legacyXmlPayablePayloadFor(error, draft, payload) : null
+  if (legacy) ({ data, error } = await supabase.rpc('confirm_xml_import_draft', { ...base, ...legacy }))
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu a conta importada.')
   return data
