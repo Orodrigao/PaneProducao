@@ -13,7 +13,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(47);
+select plan(54);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -29,12 +29,20 @@ insert into auth.users (
   ('97000000-0000-4000-8000-00000000000b', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'vendas-rascunho-test@example.com',
    '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+   now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false),
+  ('97000000-0000-4000-8000-00000000000c', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'admin-rascunho-test@example.com',
+   '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
    now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false);
 
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 values
   ('97000000-0000-4000-8000-00000000000a', 'Financeiro Rascunho', 'financeiro', 'jc', true, '[]'::jsonb),
-  ('97000000-0000-4000-8000-00000000000b', 'Vendas Rascunho', 'vendas', 'ja', true, '[]'::jsonb);
+  ('97000000-0000-4000-8000-00000000000b', 'Vendas Rascunho', 'vendas', 'ja', true, '[]'::jsonb),
+  -- Administrador sem a permissão granular: passa pelo gate por papel, como em
+  -- todo o Contas a pagar (private.current_user_can_payables). Decisão
+  -- transversal preexistente, fixada aqui para não mudar em silêncio.
+  ('97000000-0000-4000-8000-00000000000c', 'Admin Rascunho', 'admin', 'ja', true, '[]'::jsonb);
 
 insert into public.app_user_permissions (user_id, permission_key, scope)
 values ('97000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc');
@@ -76,10 +84,14 @@ select ok(has_function_privilege('authenticated', 'public.discard_xml_import_dra
   'authenticated descarta rascunho mediante validação interna');
 select ok(not has_function_privilege('anon', 'public.discard_xml_import_draft(uuid)', 'execute'),
   'anon não descarta rascunho');
+select ok(has_function_privilege('authenticated', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+  'authenticated confirma rascunho retomado mediante validação interna');
+select ok(not has_function_privilege('anon', 'public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb)', 'execute'),
+  'anon não confirma rascunho');
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname in ('save_xml_import_draft', 'discard_xml_import_draft')
-      and p.prosecdef and p.proconfig @> array['search_path=""']), 2,
-  'as duas RPCs rodam como donas da estrutura com search_path fechado');
+    where n.nspname = 'public' and p.proname in ('save_xml_import_draft', 'discard_xml_import_draft', 'confirm_xml_import_draft')
+      and p.prosecdef and p.proconfig @> array['search_path=""']), 3,
+  'as três RPCs rodam como donas da estrutura com search_path fechado');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'create_xml_payable')
   ilike all(array['%payable_import_drafts%', '%payable-import-draft:%']),
@@ -178,6 +190,20 @@ select throws_ok(
 
 reset role;
 
+-- Comportamento: administrador sem concessão granular ---------------------
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-00000000000c', true);
+
+select lives_ok(
+  $$select public.save_xml_import_draft('35260900000000000000550010000000097000000095', null, 'Fornecedor do admin', '95', '1', '2026-09-10', 10,
+      '<NFe/>', '[]'::jsonb, '[]'::jsonb)$$,
+  'administrador ativo salva rascunho por papel, sem concessão granular (regra de todo o Contas a pagar)');
+select ok((select count(*) from public.payable_import_drafts) >= 2,
+  'administrador ativo enxerga os rascunhos da JC pela RLS');
+
+reset role;
+
 -- Descarte -----------------------------------------------------------------
 
 set local role authenticated;
@@ -210,8 +236,10 @@ select is((select count(*)::int from public.payable_import_drafts where nfe_key 
 
 -- Confirmação --------------------------------------------------------------
 
-select lives_ok(
-  $$select public.create_xml_payable(
+-- Rascunho retomado: a versão que a tela abriu precisa ser a atual.
+select throws_ok(
+  format($$select public.confirm_xml_import_draft(
+      %L::uuid, '2020-01-01T00:00:00Z'::timestamptz,
       '97000000-0000-4000-8000-000000000001'::uuid, '35260900000000000000550010000000097000000097',
       '97000000-0000-4000-8000-0000000000f1'::uuid, '97', '1', '2026-09-10', 'boleto', 100.00, '',
       '[{"line_number":1,"source_description":"FARINHA CAIXA 2KG","source_unit":"CX","source_quantity":1,
@@ -219,7 +247,36 @@ select lives_ok(
          "usable_quantity":2,"line_total":100.00,"unit_price":100.00,"discount_value":0,"factor_confirmed":true,
          "remember_conversion":false,"mapping_status":"mapeado"}]'::jsonb,
       '[{"installment_number":1,"due_date":"2026-09-30","amount":100.00}]'::jsonb)$$,
-  'a confirmação continua criando a conta a pagar');
+    (select id from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'pendente')),
+  'P0001', 'Esta importação foi alterada por outra pessoa depois que você a abriu. Recarregue e confira de novo.',
+  'confirmar com versão antiga do rascunho é recusado');
+select is((select count(*)::int from public.payable_purchases where nfe_key = '35260900000000000000550010000000097000000097'),
+  0, 'a recusa por versão antiga não deixou conta a pagar');
+
+select lives_ok(
+  format($$select public.confirm_xml_import_draft(
+      %L::uuid, %L::timestamptz,
+      '97000000-0000-4000-8000-000000000001'::uuid, '35260900000000000000550010000000097000000097',
+      '97000000-0000-4000-8000-0000000000f1'::uuid, '97', '1', '2026-09-10', 'boleto', 100.00, '',
+      '[{"line_number":1,"source_description":"FARINHA CAIXA 2KG","source_unit":"CX","source_quantity":1,
+         "product_id":"97000000-0000-4000-8000-0000000000d1","conversion_basis":"package","conversion_factor":2,
+         "usable_quantity":2,"line_total":100.00,"unit_price":100.00,"discount_value":0,"factor_confirmed":true,
+         "remember_conversion":false,"mapping_status":"mapeado"}]'::jsonb,
+      '[{"installment_number":1,"due_date":"2026-09-30","amount":100.00}]'::jsonb)$$,
+    (select id from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'pendente'),
+    (select updated_at from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'pendente')),
+  'a confirmação do rascunho retomado, na versão atual, cria a conta a pagar');
+
+select throws_ok(
+  format($$select public.confirm_xml_import_draft(
+      %L::uuid, %L::timestamptz,
+      '97000000-0000-4000-8000-000000000009'::uuid, '35260900000000000000550010000000097000000097',
+      '97000000-0000-4000-8000-0000000000f1'::uuid, '97', '1', '2026-09-10', 'boleto', 100.00, '',
+      '[]'::jsonb, '[]'::jsonb)$$,
+    (select id from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'confirmada'),
+    (select updated_at from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'confirmada')),
+  'P0001', 'Esta importação pendente foi descartada ou confirmada por outra pessoa. Recarregue a lista.',
+  'confirmar de novo um rascunho já confirmado é recusado antes de qualquer gravação');
 select is(
   (select public.create_xml_payable(
       '97000000-0000-4000-8000-000000000001'::uuid, '35260900000000000000550010000000097000000097',

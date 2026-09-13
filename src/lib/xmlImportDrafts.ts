@@ -6,7 +6,7 @@ import {
   type NfeItemDraft,
   type NfeMappingStatus,
 } from '@/lib/nfeXml'
-import type { PayableProduct } from '@/lib/payables'
+import { xmlPayablePayload, type PayableProduct } from '@/lib/payables'
 
 /**
  * Importação pendente de conferência (fase 2 das compras por XML).
@@ -246,6 +246,27 @@ export async function saveXmlImportDraft(draft: NfeDraft, supplierId: string | n
   })
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu a importação pendente.')
+  return data
+}
+
+/**
+ * Confirmar um rascunho retomado passa pelo banco com o id e a versão
+ * (`updated_at`) que a tela abriu: se outra pessoa descartou, confirmou ou
+ * salvou por cima nesse meio-tempo, o banco recusa e nada vira conta.
+ */
+export async function confirmXmlImportDraft(
+  draft: NfeDraft,
+  supplierId: string,
+  requestId: string,
+  resumed: Pick<XmlImportDraftContent, 'id' | 'updated_at'>,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('confirm_xml_import_draft', {
+    p_draft_id: resumed.id,
+    p_expected_updated_at: resumed.updated_at,
+    ...xmlPayablePayload(draft, supplierId, requestId),
+  })
+  if (error) throw error
+  if (typeof data !== 'string') throw new Error('O banco não devolveu a conta importada.')
   return data
 }
 

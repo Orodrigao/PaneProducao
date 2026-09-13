@@ -490,10 +490,14 @@ O que passou a existir:
   nota já importada não vira rascunho. `create_xml_payable` foi copiada da
   versão vigente com duas inserções: a mesma trava por chave e a marcação do
   rascunho pendente como confirmado na transação da conta. O defeito da trava
-  do fator nessa função continua como está, por ser PR própria. Confirmação
-  que chega depois de um descarte concorrente ainda cria a conta: quem
-  confirmou tinha a nota inteira na tela; a tela retomada reconfere se o
-  rascunho segue pendente antes de confirmar, o que fecha o caso comum.
+  do fator nessa função continua como está, por ser PR própria.
+- **Confirmar rascunho retomado é atômico.** `confirm_xml_import_draft`
+  recebe o id e a versão (`updated_at`) que a tela abriu; dentro da mesma
+  fila, exige que o rascunho continue pendente e naquela versão, e só então
+  chama `create_xml_payable`. Descarte, confirmação ou salvamento de outra
+  pessoa no meio-tempo fazem a chamada falhar com explicação, e nada vira
+  conta. A confirmação direta pelo XML (sem rascunho aberto) continua sendo
+  `create_xml_payable`, por convivência com o site no ar.
 - **Quem passa.** O gate é o mesmo de todo o Contas a pagar
   (`private.current_user_can_payables`): permissão granular com escopo `jc`
   ou `*`, ou perfil `admin` ativo. Administrador entra por papel, como nas

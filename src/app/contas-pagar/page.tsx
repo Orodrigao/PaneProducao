@@ -74,6 +74,9 @@ export default function ContasPagarPage() {
   const [importDrafts, setImportDrafts] = useState<XmlImportDraftRow[]>([])
   const [importDraftsError, setImportDraftsError] = useState<string | null>(null)
   const [resumeDraft, setResumeDraft] = useState<XmlImportDraftContent | null>(null)
+  // Retomar reaplica decisões sobre fornecedores e produtos: só com os dois
+  // carregados com sucesso nesta visita. Terminar com erro não conta.
+  const [catalogsReady, setCatalogsReady] = useState(false)
 
   const loadImportDrafts = useCallback(async () => {
     try {
@@ -89,6 +92,7 @@ export default function ContasPagarPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setCatalogsReady(false)
     await loadImportDrafts()
     try {
       const [rows, suppliersResponse, productsResponse, categoryRows, accountRows] = await Promise.all([
@@ -105,6 +109,7 @@ export default function ContasPagarPage() {
       setProducts((productsResponse.data ?? []) as PayableProduct[])
       setFinanceCategories(categoryRows)
       setFinanceAccounts(accountRows)
+      setCatalogsReady(true)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as contas da JC. Confira sua permissão e tente novamente.')
@@ -203,7 +208,7 @@ export default function ContasPagarPage() {
   async function resumeImportDraft(draft: XmlImportDraftRow) {
     // A retomada reaplica decisões sobre o catálogo e o cadastro de
     // fornecedores; antes de eles chegarem, itens ativos pareceriam sumidos.
-    if (loading) { showToast('Aguarde o carregamento dos cadastros para continuar a conferência.'); return }
+    if (!catalogsReady) { showToast('Os cadastros de fornecedores e insumos ainda não carregaram. Atualize a página antes de continuar a conferência.'); return }
     setBusyId(draft.id)
     try {
       setResumeDraft(await loadXmlImportDraft(draft.id))
@@ -314,7 +319,7 @@ export default function ContasPagarPage() {
                   <small style={{ display: 'block', marginTop: 4 }}>{importDraftsError}</small>
                 </div>
               )}
-              {!loading && (
+              {catalogsReady && (
                 <XmlImportDraftList
                   drafts={importDrafts}
                   busyId={busyId}

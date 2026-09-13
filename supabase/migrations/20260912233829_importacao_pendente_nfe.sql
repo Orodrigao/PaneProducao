@@ -201,7 +201,7 @@ begin
         updated_at = now()
     where id = v_draft_id and status = 'pendente';
     if not found then
-      raise exception using errcode = '40001', message = 'O rascunho mudou de estado enquanto era salvo. Recarregue a tela e tente de novo.';
+      raise exception using errcode = 'P0001', message = 'O rascunho mudou de estado enquanto era salvo. Recarregue a tela e tente de novo.';
     end if;
   end if;
   return v_draft_id;
@@ -588,6 +588,77 @@ begin
 end;
 $$;
 
+-- Confirmar um rascunho retomado: a conta só nasce se o rascunho ainda estiver
+-- pendente e na versão que a pessoa abriu na tela. Tudo dentro da mesma fila,
+-- na ordem de create_xml_payable (fornecedor e depois chave), para nenhuma
+-- rota cruzar travas. Descarte ou salvamento concorrente fazem esta chamada
+-- falhar com explicação, em vez de criar conta de rascunho que já morreu.
+create or replace function public.confirm_xml_import_draft(
+  p_draft_id uuid,
+  p_expected_updated_at timestamptz,
+  p_request_id uuid,
+  p_access_key text,
+  p_supplier_id uuid,
+  p_nfe_number text,
+  p_nfe_series text,
+  p_issue_date date,
+  p_payment_method text,
+  p_total_value numeric,
+  p_notes text,
+  p_items jsonb,
+  p_installments jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_status text;
+  v_nfe_key text;
+  v_updated_at timestamptz;
+begin
+  if not private.current_user_can_payables('contas_pagar.importar_xml') then
+    raise exception using errcode = '42501', message = 'Sem permissão para importar XML.';
+  end if;
+  if p_draft_id is null or p_expected_updated_at is null then
+    raise exception using errcode = '22023', message = 'Rascunho de importação inválido.';
+  end if;
+  if p_supplier_id is null or p_access_key !~ '^[0-9]{44}$' then
+    raise exception using errcode = '22023', message = 'Fornecedor e chave da NF-e são obrigatórios.';
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('payable-mapping-supplier:' || p_supplier_id::text, 0)
+  );
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('payable-import-draft:' || p_access_key, 0)
+  );
+  select draft.status, draft.nfe_key, draft.updated_at
+    into v_status, v_nfe_key, v_updated_at
+  from public.payable_import_drafts draft
+  where draft.id = p_draft_id and draft.store = 'jc'
+  for update;
+  if v_nfe_key is null then
+    raise exception using errcode = '22023', message = 'Rascunho de importação não encontrado.';
+  end if;
+  if v_nfe_key <> p_access_key then
+    raise exception using errcode = '22023', message = 'A NF-e enviada não é a do rascunho aberto.';
+  end if;
+  if v_status <> 'pendente' then
+    raise exception using errcode = 'P0001', message = 'Esta importação pendente foi descartada ou confirmada por outra pessoa. Recarregue a lista.';
+  end if;
+  if v_updated_at <> p_expected_updated_at then
+    raise exception using errcode = 'P0001', message = 'Esta importação foi alterada por outra pessoa depois que você a abriu. Recarregue e confira de novo.';
+  end if;
+  return public.create_xml_payable(
+    p_request_id, p_access_key, p_supplier_id, p_nfe_number, p_nfe_series, p_issue_date,
+    p_payment_method, p_total_value, p_notes, p_items, p_installments
+  );
+end;
+$$;
+
+revoke all on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb) from public, anon;
+grant execute on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb) to authenticated;
 revoke all on function public.save_xml_import_draft(text, uuid, text, text, text, date, numeric, text, jsonb, jsonb) from public, anon;
 grant execute on function public.save_xml_import_draft(text, uuid, text, text, text, date, numeric, text, jsonb, jsonb) to authenticated;
 revoke all on function public.discard_xml_import_draft(uuid) from public, anon;
