@@ -12,6 +12,7 @@ import {
   classifyPayableItem,
   classifyPayableItemWithoutProduct,
   createPayableCatalogProduct,
+  formatBRL,
   type PayableProduct,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -50,7 +51,8 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
     setBusy(item.id)
     try {
       await classifyPayableItem(item.id, product.id, value.basis, factor, usable, value.remember, value.factorConfirmed)
-      showToast('Item classificado e custo atualizado.')
+      // Nota mais antiga que a última do mesmo insumo não troca o custo (fase 3A).
+      showToast('Item classificado. O custo do insumo segue a NF-e mais recente.')
       await onChanged()
     } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível classificar o item.') }
     finally { setBusy(null) }
@@ -101,7 +103,7 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
         return (
           <div key={item.id} className="ps-card" style={{ padding: 10, marginTop: 8, background: 'var(--cream-raise)' }}>
             <b>{item.source_description ?? item.item_name}</b>
-            <small style={{ display: 'block', marginTop: 3 }}>{quantity} {item.source_unit ?? item.unit} · {item.source_product_code ?? 'sem código'} · {String(item.line_total)}</small>
+            <small style={{ display: 'block', marginTop: 3 }}>{quantity} {item.source_unit ?? item.unit} · {item.source_product_code ?? 'sem código'} · {formatBRL(item.acquisition_value ?? item.line_total)}{item.acquisition_value != null && Number(item.acquisition_value) !== Number(item.line_total) ? ' com impostos e despesas' : ''}</small>
             <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)' }}>
               <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
               <small>Escolha um dos três caminhos: vincular ao cadastro, cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.</small>

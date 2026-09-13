@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
+import { composeNfe } from '@/lib/nfeComposition'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
 
@@ -115,6 +116,20 @@ export interface PayablePurchaseItemRow {
   source_product_code: string | null
   source_ean: string | null
   conversion_basis: NfeItemDraft['conversionBasis'] | null
+  /** Fase 3A: valores da própria NF-e. Ausentes em compra anterior à fase ou em banco sem a migration. */
+  fiscal_gross_value?: number | string | null
+  discount_value?: number | string | null
+  fiscal_icms_st?: number | string | null
+  fiscal_ipi?: number | string | null
+  fiscal_freight?: number | string | null
+  fiscal_other_expenses?: number | string | null
+  fiscal_cent_adjustment?: number | string | null
+  /** Líquido mais impostos não recuperáveis e despesas; nulo em compra anterior à fase 3A. */
+  acquisition_value?: number | string | null
+  usable_quantity?: number | string | null
+  normalized_unit_cost?: number | string | null
+  /** Falso quando já existia NF-e mais recente do mesmo insumo e o custo não foi trocado. */
+  cost_applied?: boolean | null
 }
 
 export type PendingPayableItemRow = PayablePurchaseItemRow
@@ -319,7 +334,8 @@ export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
 export async function loadPendingPayableItems(purchaseId: string): Promise<PendingPayableItemRow[]> {
   const { data, error } = await supabase
     .from('payable_purchase_items')
-    .select('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    // Todas as colunas pelo mesmo motivo de loadPayablePurchaseItems (fase 3A).
+    .select('*')
     .eq('purchase_id', purchaseId)
     .eq('mapping_status', 'pendente')
     .order('source_line_number')
@@ -331,7 +347,10 @@ export async function loadPendingPayableItems(purchaseId: string): Promise<Pendi
 export async function loadPayablePurchaseItems(purchaseId: string): Promise<PayablePurchaseItemRow[]> {
   const { data, error } = await supabase
     .from('payable_purchase_items')
-    .select('id,purchase_id,item_name,unit,quantity,unit_price,line_total,source_description,source_unit,source_quantity,source_product_code,source_ean,conversion_basis')
+    // Todas as colunas, e não uma lista: as colunas fiscais da fase 3A só
+    // existem depois da migration, e o site novo convive com o banco anterior
+    // (CI no banco que espelha a main e a janela do deploy).
+    .select('*')
     .eq('purchase_id', purchaseId)
     .order('source_line_number')
 
@@ -412,8 +431,13 @@ export async function createPayableSupplier(name: string, cnpj: string): Promise
 /**
  * O que a confirmação da NF-e manda ao banco. A confirmação direta e a de um
  * rascunho retomado (`confirm_xml_import_draft`) enviam exatamente o mesmo.
+ *
+ * Desde a fase 3A vão também os valores fiscais de cada item e o bloco de
+ * totais inteiro: o banco confere a composição campo a campo e calcula o custo
+ * com os impostos não recuperáveis. Nada disso é recalculado aqui.
  */
 export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId: string, notes = '') {
+  const totals = draft.totals
   return {
     p_request_id: requestId,
     p_access_key: draft.accessKey,
@@ -441,17 +465,64 @@ export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId
       factor_confirmed: item.factorConfirmed,
       mapping_status: item.mappingStatus,
       remember_conversion: item.rememberConversion,
+      fiscal_gross_value: item.grossLineTotal,
+      icms_st: item.fiscal.icmsSt,
+      fcp_st: item.fiscal.fcpSt,
+      ipi: item.fiscal.ipi,
+      ipi_returned: item.fiscal.ipiReturned,
+      freight: item.fiscal.freight,
+      insurance: item.fiscal.insurance,
+      other_expenses: item.fiscal.otherExpenses,
+      import_tax: item.fiscal.importTax,
+      icms_exempt: item.fiscal.icmsExempt,
+      deducts_exemption: item.fiscal.deductsExemption,
+      composes_total: item.fiscal.composesTotal,
     })),
     p_installments: draft.installments.map(item => ({
       installment_number: item.number,
       due_date: item.dueDate,
       amount: item.amount,
     })),
+    p_issued_at: draft.issuedAt,
+    p_nfe_totals: {
+      products: totals.products,
+      discounts: totals.discounts,
+      icms_st: totals.icmsSt,
+      fcp_st: totals.fcpSt,
+      ipi: totals.ipi,
+      ipi_returned: totals.ipiReturned,
+      freight: totals.freight,
+      insurance: totals.insurance,
+      other_expenses: totals.otherExpenses,
+      import_tax: totals.importTax,
+      icms_exempt: totals.icmsExempt,
+      services: totals.services,
+      total: totals.total,
+    },
   }
 }
 
+type XmlPayablePayload = ReturnType<typeof xmlPayablePayload>
+
+/**
+ * Convivência com o banco anterior à fase 3A, que não conhece `p_nfe_totals`
+ * (o teste de navegador do CI roda no banco que espelha a `main`, e há alguns
+ * minutos entre o site novo e a migration entrarem no ar). Só a nota sem
+ * nenhum acréscimo pode repetir o envio sem o bloco fiscal: é exatamente o que
+ * o banco antigo já aceitava. Nota com imposto falha e nada é gravado.
+ */
+export function legacyXmlPayablePayloadFor(error: unknown, draft: NfeDraft, payload: XmlPayablePayload): Omit<XmlPayablePayload, 'p_nfe_totals' | 'p_issued_at'> | null {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? (error as { code?: unknown }).code : null
+  if (code !== 'PGRST202' || composeNfe(draft).surchargesTotal !== 0) return null
+  const { p_nfe_totals: _totals, p_issued_at: _issuedAt, ...legacy } = payload
+  return legacy
+}
+
 export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {
-  const { data, error } = await supabase.rpc('create_xml_payable', xmlPayablePayload(draft, supplierId, requestId, notes))
+  const payload = xmlPayablePayload(draft, supplierId, requestId, notes)
+  let { data, error } = await supabase.rpc('create_xml_payable', payload)
+  const legacy = error ? legacyXmlPayablePayloadFor(error, draft, payload) : null
+  if (legacy) ({ data, error } = await supabase.rpc('create_xml_payable', legacy))
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu a conta importada.')
   return data

@@ -162,13 +162,18 @@ Riscos ainda abertos:
   [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md). **Fase 1 no ar desde 2026-09-12
   (PR #386):** o leitor de XML passou a ler o bloco de totais inteiro e a tela
   de importação mostra a composição da nota e explica a recusa antes de a
-  pessoa classificar os itens, com a saída (lançar à mão). A trava do banco
-  não mudou, então o defeito continua aberto para o dinheiro: nota com
-  acréscimo segue não entrando pelo XML até a fase 3. **Fase 2 (2026-09-12):**
-  a importação pode ser salva pendente de conferência, sem conta a pagar nem
-  custo, retomável e descartável, com gate no banco (tabela própria, RLS
-  forçada, mutação só por RPC); ver o registro da fase 2 em
-  [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md);
+  pessoa classificar os itens, com a saída (lançar à mão). **Fase 2
+  (2026-09-12):** a importação pode ser salva pendente de conferência, sem
+  conta a pagar nem custo, retomável e descartável, com gate no banco (tabela
+  própria, RLS forçada, mutação só por RPC). **Fase 3A (2026-09-13):** nota
+  com ICMS-ST, IPI, frete e outras despesas entra pelo XML, e esses valores
+  compõem o custo do insumo sem dupla contagem, com a composição conferida
+  campo a campo no banco; o custo do insumo passa a ser o da NF-e mais recente.
+  O defeito fica fechado para os casos com nota real de exemplo. Continuam
+  recusados, com explicação e contorno de lançar à mão, FCP-ST, seguro, imposto
+  de importação, IPI devolvido, serviços, item fora do total e desoneração que
+  abate do total. Notas lançadas antes não foram reprocessadas; ver o registro
+  de cada fase em [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md);
 - **a trava do fator de conversão na importação de NF-e falha aberta.** Achado
   da revisão adversarial da PR #315: em `create_xml_payable`, `factor_confirmed`
   nulo não dispara a exigência de confirmação, enquanto a função irmã

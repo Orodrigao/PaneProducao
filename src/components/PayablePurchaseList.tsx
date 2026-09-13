@@ -229,7 +229,21 @@ export default function PayablePurchaseList({
                             <><small style={{ display: 'block', color: 'var(--berry)', marginTop: 6 }}>{nfeItemsError}</small><button type="button" className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={() => onOpenNfeItems(purchase.id)}>Tentar novamente</button></>
                           ) : nfeItems.length === 0 ? <small style={{ display: 'block', marginTop: 6 }}>Esta NF-e não tem itens para mostrar.</small> : nfeItems.map(item => (
                             <div key={item.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
-                              <span style={{ flex: 1 }}><b>{item.source_description ?? item.item_name}</b><small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 3 }}>{formatQuantity(item.source_quantity ?? item.quantity)} {item.source_unit ?? item.unit} · {formatBRL(item.unit_price)} cada</small></span>
+                              <span style={{ flex: 1 }}>
+                                <b>{item.source_description ?? item.item_name}</b>
+                                <small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 3 }}>{formatQuantity(item.source_quantity ?? item.quantity)} {item.source_unit ?? item.unit} · {formatBRL(item.unit_price)} cada</small>
+                                {/* Fase 3A: valor da nota à direita, e aqui o que foi pago com impostos e despesas. */}
+                                {item.acquisition_value != null && Number(item.acquisition_value) !== Number(item.line_total) && (
+                                  <small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 2 }}>
+                                    + impostos e despesas {formatBRL(Number(item.acquisition_value) - Number(item.line_total))} · pago {formatBRL(item.acquisition_value)}
+                                  </small>
+                                )}
+                                {item.cost_applied === false && (
+                                  <small style={{ display: 'block', color: 'var(--honey-deep)', marginTop: 2 }}>
+                                    O custo do insumo não mudou: já existe NF-e mais recente deste item.
+                                  </small>
+                                )}
+                              </span>
                               <b>{formatBRL(item.line_total)}</b>
                             </div>
                           ))}

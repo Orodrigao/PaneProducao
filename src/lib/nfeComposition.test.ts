@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { composeNfe, compositionBlockReason, compositionCloses } from '@/lib/nfeComposition'
+import { allocateItemCosts, composeNfe, compositionBlockReason, compositionCloses } from '@/lib/nfeComposition'
 import type { NfeItemDraft, NfeItemFiscal, NfeTotals } from '@/lib/nfeXml'
 
 const fixtureDirectory = join(process.cwd(), 'test', 'fixtures', 'nfe')
@@ -151,7 +151,8 @@ describe('composição das fixtures comprovadas na fase 0', () => {
     const composition = composeNfe(readFixture('frete-por-item.xml'))
     expect(composition.surcharges).toEqual([{ key: 'freight', label: 'Frete', amount: 4 }])
     expect(composition).toMatchObject({ expectedTotal: 104, total: 104, unexplained: 0, blockers: [] })
-    expect(compositionBlockReason(composition)).toContain('R$ 4,00 de acréscimos (frete)')
+    // Fase 3A: acréscimo comprovado e explicado entra pelo XML.
+    expect(compositionBlockReason(composition)).toBeNull()
   })
 
   it('ST com desoneração não dedutível: a desoneração não abate o total', () => {
@@ -168,9 +169,7 @@ describe('composição das fixtures comprovadas na fase 0', () => {
       { key: 'otherExpenses', label: 'Outras despesas', amount: 1.5 },
     ])
     expect(composition).toMatchObject({ surchargesTotal: 6.5, expectedTotal: 126.5, total: 126.5, unexplained: 0, blockers: [] })
-    expect(compositionBlockReason(composition)).toBe(
-      'A nota tem R$ 6,50 de acréscimos (icms substituição tributária, ipi, outras despesas). O ERP ainda não importa acréscimos pelo XML: lance esta compra à mão, somando o imposto e a despesa como itens.',
-    )
+    expect(compositionBlockReason(composition)).toBeNull()
   })
 })
 
@@ -216,11 +215,17 @@ describe('divergência entre itens e total', () => {
     expect(composition.blockers).toEqual(['Os itens somam R$ 3,00 de desconto, mas o total da nota informa R$ 5,00.'])
   })
 
-  it('aceita acréscimo só no total, que é despesa comum a ratear na fase 3', () => {
+  it('bloqueia acréscimo só no total: a SEFAZ não autoriza total diferente da soma dos itens, então não há despesa comum a ratear', () => {
     const composition = composeNfe({ items: [item(1, 60), item(2, 40)], totals: totals({ freight: 4, total: 104 }) })
-    expect(composition.blockers).toEqual([])
-    expect(composition.surcharges).toEqual([{ key: 'freight', label: 'Frete', amount: 4 }])
-    expect(composition.unexplained).toBe(0)
+    expect(composition.blockers).toEqual(['Os itens somam R$ 0,00 de frete, mas o total da nota informa R$ 4,00.'])
+    expect(allocateItemCosts({ items: [item(1, 60), item(2, 40)], totals: totals({ freight: 4, total: 104 }) })).toBeNull()
+  })
+
+  it('aceita a tolerância de um centavo da SEFAZ entre o total e a soma dos itens, nos dois sentidos', () => {
+    expect(composeNfe({ items: [item(1, 60, { freight: 4 }), item(2, 40)], totals: totals({ freight: 4.01, total: 104.01 }) }).blockers).toEqual([])
+    expect(composeNfe({ items: [item(1, 60, { freight: 4 }), item(2, 40)], totals: totals({ freight: 3.99, total: 103.99 }) }).blockers).toEqual([])
+    expect(composeNfe({ items: [item(1, 60, { freight: 4 }), item(2, 40)], totals: totals({ freight: 4.02, total: 104.02 }) }).blockers)
+      .toEqual(['Os itens somam R$ 4,00 de frete, mas o total da nota informa R$ 4,02.'])
   })
 
   it('bloqueia acréscimo só no item, porque o total é o somatório dos itens', () => {
@@ -323,5 +328,83 @@ describe('casos sem regra validada na fase 0 ficam bloqueados', () => {
     const composition = composeNfe({ items: [item(1, 100, { composesTotal: '0' })], totals: totals() })
     expect(composition.unexplained).toBe(0)
     expect(compositionCloses(composition)).toBe(false)
+  })
+})
+
+// Fase 3A: o custo de aquisição de cada item é o valor líquido do produto mais
+// os impostos não recuperáveis e as despesas atribuídos pelo próprio XML àquele
+// item. O total da nota é o somatório dos itens; somá-lo de novo dobraria o
+// imposto. A mesma tabela de casos está no pgTAP da função do banco.
+function costs(draft: { items: NfeItemDraft[]; totals: NfeTotals }) {
+  return allocateItemCosts(draft)?.map(line => ({ line: line.lineNumber, acquisition: line.acquisitionValue, adjustment: line.centAdjustment }))
+}
+
+function acquisitionSum(draft: { items: NfeItemDraft[]; totals: NfeTotals }): number | undefined {
+  const lines = allocateItemCosts(draft)
+  return lines ? lines.reduce((sum, line) => sum + Math.round(line.acquisitionValue * 100), 0) / 100 : undefined
+}
+
+describe('custo de aquisição por item (fase 3A)', () => {
+  it('ST com IPI e outras despesas: cada item leva só o que o XML atribuiu a ele', () => {
+    expect(allocateItemCosts(readFixture('st-ipi-outras-despesas.xml'))).toEqual([
+      { lineNumber: 1, netValue: 30, icmsSt: 1.5, ipi: 1, freight: 0, otherExpenses: 0.5, centAdjustment: 0, surchargeTotal: 3, acquisitionValue: 33 },
+      { lineNumber: 2, netValue: 40, icmsSt: 1.5, ipi: 1, freight: 0, otherExpenses: 0.5, centAdjustment: 0, surchargeTotal: 3, acquisitionValue: 43 },
+      { lineNumber: 3, netValue: 50, icmsSt: 0, ipi: 0, freight: 0, otherExpenses: 0.5, centAdjustment: 0, surchargeTotal: 0.5, acquisitionValue: 50.5 },
+    ])
+  })
+
+  it('frete atribuído ao item não vaza para o item sem frete', () => {
+    expect(costs(readFixture('frete-por-item.xml'))).toEqual([
+      { line: 1, acquisition: 64, adjustment: 0 },
+      { line: 2, acquisition: 40, adjustment: 0 },
+    ])
+  })
+
+  it('desconto abate e ST com desoneração não dedutível não reduz o custo', () => {
+    expect(acquisitionSum(readFixture('desconto-por-item.xml'))).toBe(95)
+    expect(acquisitionSum(readFixture('st-desoneracao-nao-deduz.xml'))).toBe(122)
+    expect(acquisitionSum(readFixture('sem-acrescimos.xml'))).toBe(100)
+  })
+
+  it('a soma dos custos de todas as fixtures é exatamente o total da nota: nenhum imposto contado duas vezes', () => {
+    for (const name of ['sem-acrescimos.xml', 'desconto-por-item.xml', 'frete-por-item.xml', 'st-desoneracao-nao-deduz.xml', 'st-ipi-outras-despesas.xml']) {
+      const draft = readFixture(name)
+      expect(acquisitionSum(draft), name).toBe(composeNfe(draft).total)
+    }
+  })
+
+  it('centavo a mais no total vai para o item de maior valor líquido, empate pela menor linha', () => {
+    const draft = { items: [item(1, 60, { freight: 2 }), item(2, 60, { freight: 2 })], totals: totals({ products: 120, freight: 4.01, total: 124.01 }) }
+    expect(costs(draft)).toEqual([
+      { line: 1, acquisition: 62.01, adjustment: 0.01 },
+      { line: 2, acquisition: 62, adjustment: 0 },
+    ])
+    expect(acquisitionSum(draft)).toBe(124.01)
+  })
+
+  it('centavo a menos no total sai do maior item que tem aquele acréscimo, nunca deixa acréscimo negativo', () => {
+    const draft = { items: [item(1, 100), item(2, 50, { freight: 4 })], totals: totals({ products: 150, freight: 3.99, total: 153.99 }) }
+    expect(costs(draft)).toEqual([
+      { line: 1, acquisition: 100, adjustment: 0 },
+      { line: 2, acquisition: 53.99, adjustment: -0.01 },
+    ])
+  })
+
+  it('dois campos com um centavo cada podem cair no mesmo item, e isso fica explícito', () => {
+    const draft = { items: [item(1, 80, { icmsSt: 1, ipi: 1 }), item(2, 20)], totals: totals({ icmsSt: 1.01, ipi: 1.01, total: 102.02 }) }
+    expect(costs(draft)).toEqual([
+      { line: 1, acquisition: 82.02, adjustment: 0.02 },
+      { line: 2, acquisition: 20, adjustment: 0 },
+    ])
+  })
+
+  it('a tolerância do centavo não esconde sobra no total da nota', () => {
+    const draft = { items: [item(1, 60, { freight: 4 }), item(2, 40)], totals: totals({ freight: 4.01, total: 104 }) }
+    expect(composeNfe(draft).unexplained).toBe(-0.01)
+    expect(allocateItemCosts(draft)).toBeNull()
+  })
+
+  it('nota com caso sem regra validada não recebe custo', () => {
+    expect(allocateItemCosts({ items: [item(1, 100, { insurance: 2 })], totals: totals({ insurance: 2, total: 102 }) })).toBeNull()
   })
 })

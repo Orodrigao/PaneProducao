@@ -32,7 +32,7 @@ import {
   type XmlImportDraftRow,
 } from '@/lib/xmlImportDrafts'
 import { showToast } from '@/lib/utils'
-import { composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
+import { allocateItemCosts, composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
 import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
 
 export interface XmlSupplierOption { id: string; name: string; cnpj: string | null }
@@ -150,10 +150,10 @@ function CompositionCard({ composition }: { composition: NfeComposition }) {
         </div>
       )}
       {closes && composition.surchargesTotal > 0 && (
-        <div role="alert" className="ps-card" style={{ marginTop: 8, borderColor: 'var(--berry)', background: 'var(--berry-tint)' }}>
-          <b>{formatCompositionMoney(composition.surchargesTotal)} de acréscimos ainda não entram pelo XML</b>
+        <div className="ps-banner" style={{ marginTop: 8 }}>
+          <b>{formatCompositionMoney(composition.surchargesTotal)} de impostos e despesas entram no custo</b>
           <small style={{ display: 'block', marginTop: 4 }}>
-            A nota fecha, mas o ERP ainda não importa imposto por fora nem despesa acessória. Lance esta compra à mão, somando o imposto e a despesa como itens, até a próxima fase entrar.
+            Cada item leva o imposto e a despesa que a própria nota atribuiu a ele. Confira abaixo o valor pago por item.
           </small>
         </div>
       )}
@@ -378,7 +378,9 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       // meio-tempo fazem o banco recusar, e nada vira conta.
       if (resumedDraft) await confirmXmlImportDraft(draft, supplierId, requestIdRef.current, resumedDraft)
       else await createXmlPayable(draft, supplierId, requestIdRef.current)
-      showToast(draft.items.some(item => item.mappingStatus === 'pendente') ? 'Conta importada. Há itens aguardando classificação.' : 'NF-e importada e custo atualizado.')
+      // "Custo atualizado" deixou de ser sempre verdade: nota mais antiga que a
+      // última do mesmo insumo entra como conta sem trocar o custo (fase 3A).
+      showToast(draft.items.some(item => item.mappingStatus === 'pendente') ? 'Conta importada. Há itens aguardando classificação.' : 'NF-e importada. Veja o custo de cada item em "Ver itens da NF-e".')
       await onSaved()
     } catch (saveError) {
       showToast(getPayableErrorMessage(saveError, 'Não foi possível importar a NF-e.'))
@@ -423,6 +425,12 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   // só precisa ser refeita quando entra outra nota.
   const composition = useMemo(() => draft ? composeNfe(draft) : null, [draft])
   const compositionReason = composition ? compositionBlockReason(composition) : null
+  // O que foi pago por item, com impostos e despesas. Nulo quando a nota não
+  // fecha: aí a tela já bloqueia e não há custo a mostrar.
+  const itemCosts = useMemo(() => {
+    const lines = draft ? allocateItemCosts(draft) : null
+    return lines ? new Map(lines.map(line => [line.lineNumber, line])) : null
+  }, [draft])
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
@@ -536,6 +544,11 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                 <small style={{ color: itemStatus(item).color, fontWeight: 650 }}>{itemStatus(item).label}</small>
               </div>
               <small style={{ display: 'block', marginTop: 3 }}>{item.quantity} {item.purchaseUnit} · {formatBRL(item.lineTotal)}{item.discountValue > 0 ? ` · bruto ${formatBRL(item.grossLineTotal)} · desconto ${formatBRL(item.discountValue)}` : ''}{item.supplierCode ? ` · código ${item.supplierCode}` : ''}</small>
+              {(itemCosts?.get(item.lineNumber)?.surchargeTotal ?? 0) !== 0 && (
+                <small style={{ display: 'block', marginTop: 2, color: 'var(--ink-soft)' }}>
+                  + impostos e despesas {formatBRL(itemCosts?.get(item.lineNumber)?.surchargeTotal ?? 0)} · pago {formatBRL(itemCosts?.get(item.lineNumber)?.acquisitionValue ?? 0)}
+                </small>
+              )}
               <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
@@ -571,7 +584,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                   <div style={{ marginTop: 8 }}><button className="ps-btn primary sm" disabled={saving} onClick={() => void saveNewProduct(index)}><Save size={14} /> Criar e vincular</button> <button className="ps-btn ghost sm" onClick={() => setCreatingLine(null)}>Cancelar</button></div>
                 </div>
               )}
-              <ConversionEditor item={item} onChange={next => updateItem(index, next)} />
+              <ConversionEditor item={item} acquisitionValue={itemCosts?.get(item.lineNumber)?.acquisitionValue} onChange={next => updateItem(index, next)} />
             </div>
           ))}
           <div className="ps-banner" style={{ marginTop: 10 }}>
