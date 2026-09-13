@@ -604,6 +604,11 @@ test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async
 // compartilhado ganha a tabela e os cenarios passam a rodar de verdade aqui.
 
 function previewApi(): { url: string; anonKey: string } {
+  // Rodando contra o preview isolado de uma PR (banco proprio), o alvo vem do
+  // ambiente; no CI e no dev local vale o PaneERP Preview do .env.example.
+  if (process.env.SMOKE_SUPABASE_URL && process.env.SMOKE_SUPABASE_ANON_KEY) {
+    return { url: process.env.SMOKE_SUPABASE_URL, anonKey: process.env.SMOKE_SUPABASE_ANON_KEY }
+  }
   const env = readFileSync(resolve(process.cwd(), '.env.example'), 'utf8')
   const read = (name: string) => env.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1]?.trim().replace(/^"|"$/g, '') ?? ''
   return { url: read('NEXT_PUBLIC_SUPABASE_URL'), anonKey: read('NEXT_PUBLIC_SUPABASE_ANON_KEY') }
