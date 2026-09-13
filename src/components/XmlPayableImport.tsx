@@ -234,8 +234,11 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
         .maybeSingle()
       if (duplicateError) throw new Error('Não foi possível verificar se esta NF-e já foi importada.')
       // Nota já importada não tem rascunho pendente por regra do banco; só vale
-      // procurar quando a conta ainda não existe.
-      const savedDraft = existingPurchase ? null : await findPendingXmlImportDraft(nextDraft.accessKey)
+      // procurar quando a conta ainda não existe. A busca é conveniência: se
+      // falhar, a leitura da nota segue e o banco continua protegendo a chave.
+      const savedDraft = existingPurchase
+        ? null
+        : await findPendingXmlImportDraft(nextDraft.accessKey).catch((lookupError: unknown) => { console.error(lookupError); return null })
       setDraft(nextDraft)
       setXmlText(text)
       setResumedDraft(null)
