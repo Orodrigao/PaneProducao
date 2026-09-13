@@ -381,6 +381,30 @@ select lives_ok(
 select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 7.00::numeric,
   'sem hora de emissão, no mesmo dia vale a ordem de lançamento, como antes da fase 3A');
 
+select lives_ok(
+  pg_temp.importar_sql(34, '2026-09-11', 30,
+    jsonb_build_array(jsonb_set(pg_temp.item_antigo(1, null, 30, null), '{mapping_status}', '"pendente"')), null),
+  'nota sem hora de emissão entra com item pendente');
+-- Este arquivo roda numa transação só, e created_at nasce de now(), igual para
+-- todas as compras. Na operação cada importação é uma transação: recua-se o
+-- lançamento desta conta para representar que ela entrou antes da próxima.
+update public.payable_purchases set created_at = created_at - interval '1 minute' where id = pg_temp.compra(34);
+select lives_ok(
+  pg_temp.importar_sql(35, '2026-09-11', 60,
+    jsonb_build_array(pg_temp.item(1, '99300000-0000-4000-8000-0000000000d5', 60, 5)), pg_temp.totais(60, 60),
+    '99300000-0000-4000-8000-0000000000f2', '2026-09-11 08:00:00-03'),
+  'nota do mesmo dia, com hora, lançada depois, entra');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 12.00::numeric,
+  'a nota lançada depois grava o custo: 60 / 5');
+select lives_ok(
+  format($q$select public.classify_payable_item(%L::uuid, '99300000-0000-4000-8000-0000000000d5'::uuid, 'simple', 2, 2, false, true)$q$,
+    (select id from public.payable_purchase_items where purchase_id = pg_temp.compra(34))),
+  'o item pendente da nota sem hora é classificado por último');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 12.00::numeric,
+  'sem hora, vale a ordem de lançamento das contas: classificar depois a nota lançada antes não passa por cima (30 / 2 não entra)');
+select is((select cost_applied from public.payable_purchase_items where purchase_id = pg_temp.compra(34)),
+  false, 'o item classificado da nota lançada antes registra que não trocou o custo');
+
 select ok((select position('payable-mapping-supplier' in prosrc) between 1 and position('apply_xml_purchase_cost' in prosrc)
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'classify_payable_item' and p.pronargs = 7),

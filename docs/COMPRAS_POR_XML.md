@@ -632,8 +632,9 @@ O que passou a existir:
   nota; `cost_applied` registra no item se o custo foi trocado. No mesmo dia
   decide a hora de emissão (`dhEmi`, guardada em
   `payable_purchases.nfe_issued_timestamp`); se uma das duas notas não tem hora
-  (compra anterior à 3A ou site anterior), vale a ordem de lançamento, como
-  antes. A importação aplica depois de gravar todos os itens, um insumo por vez
+  (compra anterior à 3A ou site anterior), vale a ordem em que as contas foram
+  lançadas, e não a ordem em que o custo foi aplicado: classificar depois o
+  item de uma nota lançada antes não passa por cima de nota lançada depois. A importação aplica depois de gravar todos os itens, um insumo por vez
   e em ordem; `classify_payable_item` usa a mesma função e trava o fornecedor
   antes do insumo, na mesma ordem da importação, para as duas não se travarem.
 - **Rascunho ancorado.** `confirm_xml_import_draft` confere também total e

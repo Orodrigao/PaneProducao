@@ -35,7 +35,8 @@ select extensions.dblink_exec(
   'draft_holder',
   $remote$
     delete from public.payable_purchases where nfe_key in (
-      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072');
+      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
+      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
     delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
     delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';
@@ -56,7 +57,10 @@ select extensions.dblink_exec(
     insert into public.app_profiles(user_id, display_name, role, store, active, allowed_routes)
     values ('98000000-0000-4000-8000-00000000000a', 'Financeiro rascunho concorrente', 'financeiro', 'jc', true, '["/contas-pagar"]');
     insert into public.app_user_permissions(user_id, permission_key, scope)
-    values ('98000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc');
+    values
+      ('98000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc'),
+      -- Fase 3A: o cenario 7 classifica item pendente, que exige lancar.
+      ('98000000-0000-4000-8000-00000000000a', 'contas_pagar.lancar', 'jc');
     insert into public.suppliers(id, name, active)
     values ('98000000-0000-4000-8000-0000000000f1', '[TESTE] Fornecedor rascunho concorrente', true);
     -- Fase 3A: segundo fornecedor e um insumo disputado por duas notas.
@@ -427,12 +431,80 @@ select is(
   false, 'a nota antiga vira conta e registra que nao trocou o custo'
 );
 
+-- 7. Fase 3A: importar e classificar o mesmo fornecedor e insumo ao mesmo tempo
+-- A importacao trava o fornecedor e depois o insumo. A classificacao posterior
+-- travava o insumo e so depois o fornecedor (quando havia memoria), e as duas
+-- podiam se travar. Agora a classificacao tambem trava o fornecedor antes do
+-- insumo: a importacao que chega no meio espera na trava do FORNECEDOR
+-- (advisory), e nao na linha do insumo. Com a ordem antiga ela esperaria no
+-- insumo, e esta prova falha.
+
+select pg_temp.as_financeiro('draft_holder');
+create temporary table pending_cost_purchase as
+select result::uuid as id
+from extensions.dblink(
+  'draft_holder',
+  format(
+    $q$select public.create_xml_payable('98000000-0000-4000-8000-000000000073'::uuid,
+        '35260900000000000000550010000000098000000073', '98000000-0000-4000-8000-0000000000f1'::uuid,
+        '73', '1', '2026-09-11', 'boleto', 33, '', %L::jsonb, %L::jsonb)::text$q$,
+    jsonb_build_array(jsonb_build_object(
+      'line_number', 1, 'source_description', '[TESTE] FARINHA PENDENTE CONCORRENTE', 'source_unit', 'KG',
+      'source_quantity', 1, 'product_id', null, 'conversion_basis', null, 'conversion_factor', null,
+      'usable_quantity', null, 'line_total', 33, 'unit_price', 33, 'discount_value', 0,
+      'factor_confirmed', false, 'remember_conversion', false, 'mapping_status', 'pendente'
+    )),
+    jsonb_build_array(jsonb_build_object('installment_number', 1, 'due_date', '2026-10-10', 'amount', 33))
+  )
+) as response(result text);
+select extensions.dblink_exec('draft_holder', 'commit');
+
+-- A classificacao comeca e nao termina: segura fornecedor e insumo.
+select pg_temp.as_financeiro('draft_holder');
+create temporary table classify_holder as
+select result
+from extensions.dblink(
+  'draft_holder',
+  format(
+    $q$select 'ok'::text from public.classify_payable_item(%L::uuid, '98000000-0000-4000-8000-0000000000d1'::uuid, 'simple', 3, 3, false, true) as classified$q$,
+    (select item.id from public.payable_purchase_items item
+      join public.payable_purchases purchase on purchase.id = item.purchase_id
+      where purchase.nfe_key = '35260900000000000000550010000000098000000073')
+  )
+) as response(result text);
+
+select pg_temp.as_financeiro('draft_worker');
+select extensions.dblink_send_query(
+  'draft_worker',
+  pg_temp.import_cost_sql('98000000-0000-4000-8000-000000000074', '35260900000000000000550010000000098000000074',
+    '98000000-0000-4000-8000-0000000000f1', '2026-09-12', 60.00)
+);
+select ok(
+  pg_temp.wait_for_advisory((select pid from worker_backend)),
+  'a importacao do mesmo fornecedor espera na trava do fornecedor enquanto a classificacao nao terminou: fornecedor antes do insumo nas duas'
+);
+
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table import_after_classify as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a importacao prossegue depois da classificacao, sem erro nem deadlock');
+create temporary table import_after_classify_end as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+select is(
+  (select cost_price from public.products where id = '98000000-0000-4000-8000-0000000000d1'),
+  12.00::numeric,
+  'o custo final e o da nota de 12/09 (60 / 5), a mais recente'
+);
+
 -- Limpeza (as outras sessoes gravaram fora desta transacao).
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
     delete from public.payable_purchases where nfe_key in (
-      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072');
+      '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
+      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
     delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
     delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';

@@ -277,13 +277,15 @@ as $$
 declare
   v_issue_date date;
   v_issued_at timestamptz;
+  v_created_at timestamptz;
   v_value numeric;
   v_quantity numeric;
   v_newer boolean;
 begin
   perform 1 from public.products product where product.id = p_product_id for update;
 
-  select purchase.nfe_issued_at, purchase.nfe_issued_timestamp into v_issue_date, v_issued_at
+  select purchase.nfe_issued_at, purchase.nfe_issued_timestamp, purchase.created_at
+    into v_issue_date, v_issued_at, v_created_at
   from public.payable_purchases purchase
   where purchase.id = p_purchase_id;
 
@@ -304,10 +306,15 @@ begin
       and (
         other_purchase.nfe_issued_at > v_issue_date
         -- No mesmo dia decide a hora de emissão. Sem a hora de uma das duas
-        -- (compra anterior à fase 3A ou site anterior), a comparação é nula e
-        -- vale a ordem de lançamento, como antes.
+        -- (compra anterior à fase 3A ou site anterior), vale a ordem em que as
+        -- contas foram lançadas, e não a ordem em que o custo foi aplicado:
+        -- classificar depois o item de uma nota lançada antes não passa por cima.
         or (other_purchase.nfe_issued_at = v_issue_date
-            and other_purchase.nfe_issued_timestamp > v_issued_at)
+            and case
+              when other_purchase.nfe_issued_timestamp is not null and v_issued_at is not null
+                then other_purchase.nfe_issued_timestamp > v_issued_at
+              else other_purchase.created_at > v_created_at
+            end)
       )
   ) into v_newer;
 
