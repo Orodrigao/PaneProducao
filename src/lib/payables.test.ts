@@ -60,7 +60,7 @@ function nfeDraft(surcharges: { icmsSt?: number; ipi?: number } = {}): NfeDraft 
   const total = 30 + icmsSt + ipi
   return {
     accessKey: '35260900000000000000550010000000011000000011', number: '1', series: '1',
-    issueDate: '2026-09-10', supplierName: 'Fornecedor', supplierCnpj: '00000000000000', total,
+    issueDate: '2026-09-10', issuedAt: '2026-09-10T16:00:00-03:00', supplierName: 'Fornecedor', supplierCnpj: '00000000000000', total,
     paymentMethod: 'boleto', dueDateSource: 'xml', items: [item],
     installments: [{ number: 1, dueDate: '2026-09-30', amount: total }],
     totals: {
@@ -123,6 +123,8 @@ describe('contas a pagar manual', () => {
       icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0, insurance: 0,
       other_expenses: 0, import_tax: 0, icms_exempt: 0, deducts_exemption: null, composes_total: '1',
     })
+    // A hora de emissão decide qual nota do mesmo dia é a mais recente para o custo.
+    expect(payload.p_issued_at).toBe('2026-09-10T16:00:00-03:00')
     expect(payload.p_nfe_totals).toEqual({
       products: 30, discounts: 0, icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0,
       insurance: 0, other_expenses: 0, import_tax: 0, icms_exempt: 0, services: 0, total: 32.5,
@@ -138,6 +140,7 @@ describe('contas a pagar manual', () => {
     expect(supabaseMocks.rpc).toHaveBeenCalledTimes(2)
     expect(supabaseMocks.rpc.mock.calls[0][1]).toHaveProperty('p_nfe_totals')
     expect(supabaseMocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_nfe_totals')
+    expect(supabaseMocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_issued_at')
   })
 
   it('banco anterior à fase 3A: nota com imposto não repete o envio e nada é gravado', async () => {

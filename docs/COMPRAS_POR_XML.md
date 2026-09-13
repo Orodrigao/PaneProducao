@@ -629,9 +629,13 @@ O que passou a existir:
   do valor pago dos itens precisa ser exatamente o total da nota.
 - **Custo por insumo, com trava.** `private.apply_xml_purchase_cost` trava a
   linha do insumo, confere se existe NF-e mais recente e grava o custo médio da
-  nota; `cost_applied` registra no item se o custo foi trocado. A importação
-  aplica depois de gravar todos os itens, um insumo por vez e em ordem;
-  `classify_payable_item` usa a mesma função.
+  nota; `cost_applied` registra no item se o custo foi trocado. No mesmo dia
+  decide a hora de emissão (`dhEmi`, guardada em
+  `payable_purchases.nfe_issued_timestamp`); se uma das duas notas não tem hora
+  (compra anterior à 3A ou site anterior), vale a ordem de lançamento, como
+  antes. A importação aplica depois de gravar todos os itens, um insumo por vez
+  e em ordem; `classify_payable_item` usa a mesma função e trava o fornecedor
+  antes do insumo, na mesma ordem da importação, para as duas não se travarem.
 - **Rascunho ancorado.** `confirm_xml_import_draft` confere também total e
   fornecedor com o rascunho salvo.
 - **Convivência.** O site anterior, que não manda o bloco de totais, segue na

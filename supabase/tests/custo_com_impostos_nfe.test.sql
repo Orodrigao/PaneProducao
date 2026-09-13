@@ -85,7 +85,8 @@ values
   ('99300000-0000-4000-8000-0000000000d1', '[TESTE] Farinha custo com impostos', 'Insumos', true, 'kg', 'insumo', 5.00),
   ('99300000-0000-4000-8000-0000000000d2', '[TESTE] Refrigerante custo com impostos', 'Insumos', true, 'kg', 'insumo', 3.00),
   ('99300000-0000-4000-8000-0000000000d3', '[TESTE] Leite site antigo', 'Insumos', true, 'kg', 'insumo', 4.00),
-  ('99300000-0000-4000-8000-0000000000d4', '[TESTE] Açúcar pela Data API', 'Insumos', true, 'kg', 'insumo', 1.00);
+  ('99300000-0000-4000-8000-0000000000d4', '[TESTE] Açúcar pela Data API', 'Insumos', true, 'kg', 'insumo', 1.00),
+  ('99300000-0000-4000-8000-0000000000d5', '[TESTE] Manteiga do mesmo dia', 'Insumos', true, 'kg', 'insumo', 1.00);
 
 create function pg_temp.chave(p_numero integer) returns text
 language sql immutable as $$
@@ -142,14 +143,15 @@ $$;
 
 create function pg_temp.importar_sql(
   p_numero integer, p_issue date, p_total numeric, p_items jsonb, p_totals jsonb,
-  p_supplier uuid default '99300000-0000-4000-8000-0000000000f1'
+  p_supplier uuid default '99300000-0000-4000-8000-0000000000f1',
+  p_issued_at timestamptz default null
 ) returns text
 language sql immutable as $$
   select format(
-    $q$select public.create_xml_payable(%L::uuid, %L, %L::uuid, %L, '1', %L::date, 'boleto', %s, '', %L::jsonb, %L::jsonb, %L::jsonb)$q$,
+    $q$select public.create_xml_payable(%L::uuid, %L, %L::uuid, %L, '1', %L::date, 'boleto', %s, '', %L::jsonb, %L::jsonb, %L::jsonb, %L::timestamptz)$q$,
     pg_temp.pedido(p_numero), pg_temp.chave(p_numero), p_supplier, p_numero::text, p_issue, p_total, p_items,
     jsonb_build_array(jsonb_build_object('installment_number', 1, 'due_date', '2026-10-10', 'amount', p_total)),
-    p_totals
+    p_totals, p_issued_at
   )
 $$;
 
@@ -342,6 +344,47 @@ select lives_ok(
   'nota com o mesmo insumo em duas linhas entra');
 select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d1'), 8.00::numeric,
   'o mesmo insumo em duas linhas recebe o custo médio da nota: 40 / 5, e não o da última linha');
+
+-- 5b. Duas notas do mesmo dia: decide a hora de emissão ----------------------
+
+select lives_ok(
+  pg_temp.importar_sql(30, '2026-09-09', 50,
+    jsonb_build_array(pg_temp.item(1, '99300000-0000-4000-8000-0000000000d5', 50, 5)), pg_temp.totais(50, 50),
+    '99300000-0000-4000-8000-0000000000f1', '2026-09-09 16:00:00-03'),
+  'nota emitida às 16h entra');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 10.00::numeric, 'a nota das 16h grava o custo: 50 / 5');
+select is((select nfe_issued_timestamp from public.payable_purchases where id = pg_temp.compra(30)),
+  '2026-09-09 16:00:00-03'::timestamptz, 'a hora de emissão fica guardada na conta');
+
+select lives_ok(
+  pg_temp.importar_sql(31, '2026-09-09', 40,
+    jsonb_build_array(pg_temp.item(1, '99300000-0000-4000-8000-0000000000d5', 40, 5)), pg_temp.totais(40, 40),
+    '99300000-0000-4000-8000-0000000000f2', '2026-09-09 09:00:00-03'),
+  'nota emitida às 9h do mesmo dia, lançada depois, entra como conta');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 10.00::numeric,
+  'a nota das 9h não troca o custo gravado pela das 16h do mesmo dia');
+select is((select cost_applied from public.payable_purchase_items where purchase_id = pg_temp.compra(31)),
+  false, 'a nota das 9h registra que não trocou o custo');
+
+select lives_ok(
+  pg_temp.importar_sql(32, '2026-09-09', 45,
+    jsonb_build_array(pg_temp.item(1, '99300000-0000-4000-8000-0000000000d5', 45, 5)), pg_temp.totais(45, 45),
+    '99300000-0000-4000-8000-0000000000f1', '2026-09-09 18:00:00-03'),
+  'nota emitida às 18h do mesmo dia entra');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 9.00::numeric,
+  'a nota das 18h, a mais recente do dia, troca o custo: 45 / 5');
+
+select lives_ok(
+  pg_temp.importar_sql(33, '2026-09-09', 35,
+    jsonb_build_array(pg_temp.item_antigo(1, '99300000-0000-4000-8000-0000000000d5', 35, 5)), null),
+  'nota do mesmo dia enviada pelo site anterior, sem hora de emissão, entra');
+select is(pg_temp.custo('99300000-0000-4000-8000-0000000000d5'), 7.00::numeric,
+  'sem hora de emissão, no mesmo dia vale a ordem de lançamento, como antes da fase 3A');
+
+select ok((select position('payable-mapping-supplier' in prosrc) between 1 and position('apply_xml_purchase_cost' in prosrc)
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'classify_payable_item' and p.pronargs = 7),
+  'a classificação trava o fornecedor antes do insumo, na mesma ordem da importação: as duas não se travam');
 
 -- 6. Classificação posterior segue a mesma regra -----------------------------
 

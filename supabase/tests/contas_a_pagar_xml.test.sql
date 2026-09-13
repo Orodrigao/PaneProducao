@@ -16,10 +16,10 @@ select ok(has_table_privilege('authenticated', 'public.payable_product_mappings'
   'financeiro pode consultar os últimos mapeamentos mediante RLS');
 select ok(not has_table_privilege('anon', 'public.payable_product_mappings', 'select'),
   'anon não consulta mapeamentos');
--- Desde a fase 3A a importação recebe também o bloco de totais da NF-e.
-select ok(has_function_privilege('authenticated', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
+-- Desde a fase 3A a importação recebe também o bloco de totais e a hora de emissão.
+select ok(has_function_privilege('authenticated', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz)', 'execute'),
   'authenticated chama importação XML mediante validação interna');
-select ok(not has_function_privilege('anon', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb)', 'execute'),
+select ok(not has_function_privilege('anon', 'public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz)', 'execute'),
   'anon não chama importação XML');
 select ok(has_function_privilege('authenticated', 'public.classify_payable_item(uuid, uuid, text, numeric, numeric, boolean)', 'execute'),
   'authenticated classifica item mediante validação interna');

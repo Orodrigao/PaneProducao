@@ -63,6 +63,7 @@ function freshDraft(): NfeDraft {
     number: '97',
     series: '1',
     issueDate: '2026-09-10',
+    issuedAt: '2026-09-10T10:00:00-03:00',
     supplierName: 'FORNECEDOR TESTE',
     supplierCnpj: '00000000000191',
     total: 30,

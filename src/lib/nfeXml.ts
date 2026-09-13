@@ -122,6 +122,8 @@ export interface NfeDraft {
   number: string
   series: string
   issueDate: string
+  /** dhEmi completo, com hora e fuso; nulo quando a nota só traz a data (dEmi). Ordena notas do mesmo dia no custo. */
+  issuedAt: string | null
   supplierName: string
   supplierCnpj: string
   total: number
@@ -556,6 +558,8 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     number: childText(ide, 'nNF'),
     series: childText(ide, 'serie'),
     issueDate: issueDay,
+    // dhEmi traz data, hora e fuso; dEmi (layout antigo) só a data.
+    issuedAt: issueDate.length > 10 ? issueDate : null,
     supplierName: childText(emit, 'xNome'),
     supplierCnpj,
     total: totalValue,

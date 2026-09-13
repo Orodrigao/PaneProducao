@@ -483,6 +483,7 @@ export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId
       due_date: item.dueDate,
       amount: item.amount,
     })),
+    p_issued_at: draft.issuedAt,
     p_nfe_totals: {
       products: totals.products,
       discounts: totals.discounts,
@@ -510,10 +511,10 @@ type XmlPayablePayload = ReturnType<typeof xmlPayablePayload>
  * nenhum acréscimo pode repetir o envio sem o bloco fiscal: é exatamente o que
  * o banco antigo já aceitava. Nota com imposto falha e nada é gravado.
  */
-export function legacyXmlPayablePayloadFor(error: unknown, draft: NfeDraft, payload: XmlPayablePayload): Omit<XmlPayablePayload, 'p_nfe_totals'> | null {
+export function legacyXmlPayablePayloadFor(error: unknown, draft: NfeDraft, payload: XmlPayablePayload): Omit<XmlPayablePayload, 'p_nfe_totals' | 'p_issued_at'> | null {
   const code = typeof error === 'object' && error !== null && 'code' in error ? (error as { code?: unknown }).code : null
   if (code !== 'PGRST202' || composeNfe(draft).surchargesTotal !== 0) return null
-  const { p_nfe_totals: _totals, ...legacy } = payload
+  const { p_nfe_totals: _totals, p_issued_at: _issuedAt, ...legacy } = payload
   return legacy
 }
 

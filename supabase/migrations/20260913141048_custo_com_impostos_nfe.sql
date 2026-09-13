@@ -16,8 +16,10 @@
 --     862), com tolerância de um centavo, que vai para o item de maior valor;
 --   * o custo do insumo passa a ser da NF-e mais recente: nota com emissão
 --     anterior à última que já gravou custo daquele insumo entra como conta,
---     mas não troca o custo (decisão de Rodrigo em 2026-09-13). O mesmo insumo
---     em várias linhas da nota recebe o custo médio da nota;
+--     mas não troca o custo (decisão de Rodrigo em 2026-09-13). No mesmo dia
+--     decide a hora de emissão (dhEmi). O mesmo insumo em várias linhas da nota
+--     recebe o custo médio da nota. Importar e classificar travam fornecedor
+--     antes do insumo, na mesma ordem;
 --   * confirmar um rascunho confere também total e fornecedor com o rascunho.
 --
 -- Convivência: o site anterior não manda o bloco de totais e segue na regra de
@@ -71,6 +73,13 @@ comment on column public.payable_purchase_items.acquisition_value is
 comment on column public.payable_purchase_items.cost_applied is
   'Se esta linha trocou o custo do insumo. Falso quando já havia NF-e mais recente do mesmo insumo; nulo antes da fase 3A.';
 
+-- Data e hora de emissão (dhEmi): duas notas do mesmo dia se ordenam pela hora.
+alter table public.payable_purchases
+  add column if not exists nfe_issued_timestamp timestamptz;
+
+comment on column public.payable_purchases.nfe_issued_timestamp is
+  'dhEmi completo da NF-e. Nulo em compra anterior à fase 3A ou lançada pelo site anterior; aí, no mesmo dia, vale a ordem de lançamento.';
+
 -- ---------------------------------------------------------------------------
 -- 2. Conferência da composição da NF-e, campo a campo.
 -- ---------------------------------------------------------------------------
@@ -108,7 +117,8 @@ declare
     "icms_st": "ICMS substituição tributária", "ipi": "IPI", "freight": "frete",
     "other_expenses": "outras despesas", "fcp_st": "fundo de combate à pobreza (ST)",
     "ipi_returned": "IPI devolvido", "insurance": "seguro", "import_tax": "imposto de importação",
-    "services": "serviços"
+    "services": "serviços", "products": "produtos", "discounts": "desconto",
+    "icms_exempt": "ICMS desonerado"
   }'::jsonb;
   v_key text;
   v_item jsonb;
@@ -187,7 +197,7 @@ begin
     v_declared := round((p_totals ->> split_part(v_key, ':', 1))::numeric, 2);
     if v_items_sum <> v_declared then
       raise exception using errcode = '22023',
-        message = 'Os itens somam ' || private.reais_texto(v_items_sum) || ' em ' || split_part(v_key, ':', 1)
+        message = 'Os itens somam ' || private.reais_texto(v_items_sum) || ' de ' || (v_labels ->> split_part(v_key, ':', 1))
                   || ', mas o total da nota informa ' || private.reais_texto(v_declared) || '.';
     end if;
   end loop;
@@ -266,13 +276,14 @@ set search_path = ''
 as $$
 declare
   v_issue_date date;
+  v_issued_at timestamptz;
   v_value numeric;
   v_quantity numeric;
   v_newer boolean;
 begin
   perform 1 from public.products product where product.id = p_product_id for update;
 
-  select purchase.nfe_issued_at into v_issue_date
+  select purchase.nfe_issued_at, purchase.nfe_issued_timestamp into v_issue_date, v_issued_at
   from public.payable_purchases purchase
   where purchase.id = p_purchase_id;
 
@@ -290,7 +301,14 @@ begin
       and other_purchase.id <> p_purchase_id
       and other_purchase.origin = 'xml'
       and other_purchase.status <> 'cancelada'
-      and other_purchase.nfe_issued_at > v_issue_date
+      and (
+        other_purchase.nfe_issued_at > v_issue_date
+        -- No mesmo dia decide a hora de emissão. Sem a hora de uma das duas
+        -- (compra anterior à fase 3A ou site anterior), a comparação é nula e
+        -- vale a ordem de lançamento, como antes.
+        or (other_purchase.nfe_issued_at = v_issue_date
+            and other_purchase.nfe_issued_timestamp > v_issued_at)
+      )
   ) into v_newer;
 
   if v_newer or v_quantity <= 0 then
@@ -332,7 +350,8 @@ create function public.create_xml_payable(
   p_notes text,
   p_items jsonb,
   p_installments jsonb,
-  p_nfe_totals jsonb default null
+  p_nfe_totals jsonb default null,
+  p_issued_at timestamptz default null
 )
 returns uuid
 language plpgsql
@@ -589,12 +608,13 @@ begin
     insert into public.payable_purchases (
       request_id, store, supplier_id, purchase_date, origin, document_type,
       payment_method, status, total_value, notes, created_by,
-      nfe_key, nfe_number, nfe_series, nfe_issued_at, classification_status
+      nfe_key, nfe_number, nfe_series, nfe_issued_at, classification_status,
+      nfe_issued_timestamp
     ) values (
       p_request_id, 'jc', p_supplier_id, p_issue_date, 'xml', 'nfe',
       p_payment_method, 'aberta', round(p_total_value, 2), nullif(trim(p_notes), ''),
       (select auth.uid()), p_access_key, p_nfe_number, p_nfe_series, p_issue_date,
-      v_classification_status
+      v_classification_status, p_issued_at
     ) returning id into v_purchase_id;
   exception when unique_violation then
     select purchase.id into v_purchase_id
@@ -730,7 +750,8 @@ create function public.confirm_xml_import_draft(
   p_notes text,
   p_items jsonb,
   p_installments jsonb,
-  p_nfe_totals jsonb default null
+  p_nfe_totals jsonb default null,
+  p_issued_at timestamptz default null
 )
 returns uuid
 language plpgsql
@@ -785,7 +806,7 @@ begin
   end if;
   return public.create_xml_payable(
     p_request_id, p_access_key, p_supplier_id, p_nfe_number, p_nfe_series, p_issue_date,
-    p_payment_method, p_total_value, p_notes, p_items, p_installments, p_nfe_totals
+    p_payment_method, p_total_value, p_notes, p_items, p_installments, p_nfe_totals, p_issued_at
   );
 end;
 $$;
@@ -862,6 +883,14 @@ begin
                 ' e a receita usa ' || v_product_unit || '.';
   end if;
 
+  -- Ordem única de travas no fluxo da NF-e: fornecedor antes do insumo.
+  -- create_xml_payable trava o fornecedor e depois o insumo; aqui a trava do
+  -- fornecedor vinha depois do insumo (só com memória), e importar e classificar
+  -- ao mesmo tempo podiam travar uma à outra.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('payable-mapping-supplier:' || v_supplier_id::text, 0)
+  );
+
   update public.payable_purchase_items
   set product_id = p_product_id, item_name = v_product_name, unit = v_product_unit,
       conversion_basis = p_conversion_basis, conversion_factor = p_conversion_factor,
@@ -875,9 +904,7 @@ begin
   perform private.apply_xml_purchase_cost(v_purchase_id, p_product_id);
 
   if coalesce(p_remember_conversion, false) then
-    perform pg_catalog.pg_advisory_xact_lock(
-      pg_catalog.hashtextextended('payable-mapping-supplier:' || v_supplier_id::text, 0)
-    );
+    -- A trava do fornecedor já foi tomada acima, antes do insumo.
     select mapping.id into v_mapping_id
     from public.payable_product_mappings mapping
     where mapping.supplier_id = v_supplier_id
@@ -944,10 +971,10 @@ revoke all on function private.validate_nfe_fiscal_composition(jsonb, jsonb, num
 revoke all on function private.nfe_cent_adjustments(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function private.apply_xml_purchase_cost(uuid, uuid) from public, anon, authenticated;
 
-revoke all on function public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb) from public, anon;
-grant execute on function public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb) to authenticated;
-revoke all on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb) from public, anon;
-grant execute on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb) to authenticated;
+revoke all on function public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz) from public, anon;
+grant execute on function public.create_xml_payable(uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz) to authenticated;
+revoke all on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz) from public, anon;
+grant execute on function public.confirm_xml_import_draft(uuid, timestamptz, uuid, text, uuid, text, text, date, text, numeric, text, jsonb, jsonb, jsonb, timestamptz) to authenticated;
 revoke all on function public.classify_payable_item(uuid, uuid, text, numeric, numeric, boolean, boolean) from public, anon;
 grant execute on function public.classify_payable_item(uuid, uuid, text, numeric, numeric, boolean, boolean) to authenticated;
 
