@@ -44,8 +44,12 @@ values
   -- transversal preexistente, fixada aqui para não mudar em silêncio.
   ('97000000-0000-4000-8000-00000000000c', 'Admin Rascunho', 'admin', 'ja', true, '[]'::jsonb);
 
+-- Como o Financeiro JC real: importa e também enxerga as contas (a leitura de
+-- payable_purchases exige contas_pagar.acessar pela RLS).
 insert into public.app_user_permissions (user_id, permission_key, scope)
-values ('97000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc');
+values
+  ('97000000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', 'jc'),
+  ('97000000-0000-4000-8000-00000000000a', 'contas_pagar.acessar', 'jc');
 
 insert into public.suppliers (id, name, active)
 values ('97000000-0000-4000-8000-0000000000f1', '[TESTE] Fornecedor do rascunho', true);
@@ -305,8 +309,11 @@ select throws_ok(
 
 reset role;
 
-select is((select status from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' order by created_at desc limit 1),
-  'confirmada', 'a confirmação marca o rascunho pendente como confirmado');
+-- created_at é o mesmo now() da transação para todos os rascunhos: conte por estado.
+select is((select count(*)::int from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'confirmada'),
+  1, 'a confirmação marca o rascunho pendente como confirmado');
+select is((select count(*)::int from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'pendente'),
+  0, 'depois da confirmação não sobra rascunho pendente da NF-e');
 select is(
   (select purchase_id from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000097000000097' and status = 'confirmada'),
   (select id from public.payable_purchases where nfe_key = '35260900000000000000550010000000097000000097'),
