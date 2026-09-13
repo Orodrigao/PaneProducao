@@ -688,7 +688,9 @@ test('Financeiro JC salva a NF-e para conferir depois, retoma com a decisao guar
   const stamp = Date.now().toString()
   const uniqueCnpj = `98${stamp.slice(-12)}`
   const uniqueKey = `36${stamp}`.padEnd(44, '1')
-  const numero = '999992'
+  // Numero unico por rodada: um rascunho que sobrou de execucao anterior no
+  // mesmo banco nao pode ser confundido com o desta.
+  const numero = `9${stamp.slice(-5)}`
   const fornecedor = '[TESTE] Fornecedor rascunho'
   await importarXmlComFornecedorNovo(page, nfeXmlDeUmItem(uniqueKey, uniqueCnpj, numero, fornecedor), 'rascunho.xml', fornecedor)
 
@@ -742,7 +744,7 @@ test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica v
   const stamp = Date.now().toString()
   const uniqueCnpj = `97${stamp.slice(-12)}`
   const uniqueKey = `38${stamp}`.padEnd(44, '3')
-  const numero = '999993'
+  const numero = `8${stamp.slice(-5)}`
   const fornecedor = '[TESTE] Fornecedor confirma rascunho'
   await importarXmlComFornecedorNovo(page, nfeXmlDeUmItem(uniqueKey, uniqueCnpj, numero, fornecedor), 'rascunho-confirma.xml', fornecedor)
   await page.getByRole('button', { name: 'Marcar como uso ou despesa' }).click()
