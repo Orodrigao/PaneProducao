@@ -131,14 +131,18 @@ insert into auth.users (
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 values ('95000000-0000-4000-8000-00000000f001', 'Admin Producao PJ Teste', 'admin', null, true, '["/pedidos-pj"]'::jsonb);
 
+-- order_date explicito no dia da padaria: o default da coluna e current_date,
+-- que no CI responde em UTC e, entre 21h e 24h de Brasilia, ja e o dia seguinte.
+-- Sem isso, o pedido do dente (order_date = data_na_padaria() + 1, abaixo)
+-- colide com estes na chave unica (store, bread_id, order_date).
 insert into public.orders (
   id, store, bread_id, product_source, product_name, quantity,
-  order_type, pj_client, pj_delivery_date, pricing_unit
+  order_type, pj_client, order_date, pj_delivery_date, pricing_unit
 ) values
   ('95000000-0000-4000-8000-00000000a001', 'jc', '95000000-0000-4000-8000-000000000001', 'product',
-   'Baguete Rocca', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria() + 3, 'un'),
+   'Baguete Rocca', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria(), private.data_na_padaria() + 3, 'un'),
   ('95000000-0000-4000-8000-00000000a002', 'jc', '95000000-0000-4000-8000-000000000002', 'product',
-   'Focaccia Tomate', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria() + 3, 'un');
+   'Focaccia Tomate', 5, 'pj', 'Cliente Teste PJ', private.data_na_padaria(), private.data_na_padaria() + 3, 'un');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-00000000f001', true);
