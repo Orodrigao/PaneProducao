@@ -484,12 +484,20 @@ O que passou a existir:
   `discard_xml_import_draft`, ambas `SECURITY DEFINER` com `search_path`
   vazio e grants explícitos.
 - **Uma nota, um rascunho pendente.** Índice único parcial por chave da NF-e e
-  trava por chave na função: reenvio e duplo toque atualizam a mesma linha;
+  trava por chave nas três transições (salvar, descartar e confirmar): reenvio
+  e duplo toque atualizam a mesma linha; salvar sobre rascunho que outra
+  sessão acabou de descartar recomeça do zero em vez de gravar no descartado;
   nota já importada não vira rascunho. `create_xml_payable` foi copiada da
-  versão vigente com duas inserções: a mesma trava por chave, que serializa
-  confirmar e salvar da mesma nota, e a marcação do rascunho pendente como
-  confirmado na transação da conta. O defeito da trava do fator nessa função
-  continua como está, por ser PR própria.
+  versão vigente com duas inserções: a mesma trava por chave e a marcação do
+  rascunho pendente como confirmado na transação da conta. O defeito da trava
+  do fator nessa função continua como está, por ser PR própria. Confirmação
+  que chega depois de um descarte concorrente ainda cria a conta: quem
+  confirmou tinha a nota inteira na tela; a tela retomada reconfere se o
+  rascunho segue pendente antes de confirmar, o que fecha o caso comum.
+- **Quem passa.** O gate é o mesmo de todo o Contas a pagar
+  (`private.current_user_can_payables`): permissão granular com escopo `jc`
+  ou `*`, ou perfil `admin` ativo. Administrador entra por papel, como nas
+  demais funções financeiras; não é exceção nova desta fase.
 - **Tela.** Botão "Salvar para conferir depois" na importação; lista
   "Importações pendentes de conferência" em Contas a pagar com "Continuar
   conferência" e "Descartar" (com confirmação); ao abrir um XML cuja nota já
@@ -498,8 +506,11 @@ O que passou a existir:
 Provas: pgTAP `supabase/tests/importacao_pendente_nfe.test.sql` (rascunho não
 produz conta, parcela nem altera `cost_price`; Financeiro JC salva, relê e
 descarta; Vendas JA é barrada e não enxerga; inserção direta negada; reenvio
-não duplica; nota importada não vira rascunho; confirmação fecha o rascunho e
-só ela atualiza o custo) e cenários de navegador em
+não duplica; nota importada não vira rascunho; confirmação fecha o rascunho,
+repetida devolve a mesma conta, e só ela atualiza o custo), concorrência real
+com duas sessões em `supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql`
+(descartar espera salvar, salvar espera descartar e recomeça, confirmar espera
+descartar e nada vira conta antes), e cenários de navegador em
 `test/browser/auth.smoke.spec.ts`. Limite conhecido: o smoke do CI roda no
 `PaneERP Preview` compartilhado, que espelha a `main`; antes do merge a tabela
 não existe lá e os cenários novos pulam com motivo explícito. A prova de
@@ -579,9 +590,8 @@ entendimento de que o custo dos produtos tocados muda a partir dali.
 ## Onde continuar
 
 - Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md).
-  A decisão sobre o custo está registrada; fases 0 e 1 feitas; a fase 2
-  (importação pendente de conferência) está implementada em PR em rascunho,
-  autorizada até o rascunho e sem aval de merge; a fase 3 (custo) continua
-  pendente, com aprovação própria.
+  A decisão sobre o custo está registrada; fases 0, 1 e 2 feitas (ver o
+  registro de cada uma); a fase 3 (custo) continua pendente, com aprovação
+  própria.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

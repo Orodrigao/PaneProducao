@@ -13,7 +13,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(43);
+select plan(47);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -62,8 +62,9 @@ select ok(not has_table_privilege('authenticated', 'public.payable_import_drafts
   'ninguém apaga rascunho direto pela Data API');
 select ok(not has_table_privilege('anon', 'public.payable_import_drafts', 'select'),
   'anon não consulta rascunhos');
-select ok(exists(select 1 from pg_indexes where schemaname = 'public' and indexname = 'payable_import_drafts_pending_key_idx'),
-  'uma NF-e tem no máximo um rascunho pendente');
+select ok((select indexdef from pg_indexes where schemaname = 'public' and indexname = 'payable_import_drafts_pending_key_idx')
+  ilike all(array['CREATE UNIQUE INDEX%', '%(nfe_key)%', '%WHERE%pendente%']),
+  'uma NF-e tem no máximo um rascunho pendente: índice único parcial por chave');
 select ok((select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'payable_import_drafts_select_importer')
   ilike '%contas_pagar.importar_xml%',
   'a leitura de rascunhos exige a permissão de importar XML');
@@ -130,6 +131,16 @@ select throws_ok(
   $$select public.save_xml_import_draft('35260900000000000000550010000000097000000098', null, 'Fornecedor', '1', '1', '2026-09-10', 10,
       '<NFe/>', '[{"line_number":1,"product_id":null,"mapping_status":"mapeado"}]'::jsonb, '[]'::jsonb)$$,
   '22023', 'Item-base selecionado não existe ou está inativo.', 'item marcado como mapeado precisa de produto ativo');
+select throws_ok(
+  $$select public.save_xml_import_draft('35260900000000000000550010000000097000000098', null, 'Fornecedor', '1', '1', '2026-09-10', 10,
+      '<NFe/>', '[{"line_number":1,"product_id":"97000000-0000-4000-8000-0000000000d1","conversion_basis":"package",
+      "conversion_factor":null,"mapping_status":"mapeado","factor_confirmed":true}]'::jsonb, '[]'::jsonb)$$,
+  '22023', 'Item vinculado precisa de base e fator de conversão.', 'item vinculado sem fator não vira decisão guardada');
+select throws_ok(
+  $$select public.save_xml_import_draft('35260900000000000000550010000000097000000098', null, 'Fornecedor', '1', '1', '2026-09-10', 10,
+      '<NFe/>', '[{"line_number":1,"product_id":null,"conversion_basis":"package","conversion_factor":2,
+      "mapping_status":"nao_aplicavel","factor_confirmed":false}]'::jsonb, '[]'::jsonb)$$,
+  '22023', 'Item pendente ou de uso/despesa não possui conversão.', 'uso/despesa não carrega fator escondido');
 select throws_ok(
   $$insert into public.payable_import_drafts (nfe_key, supplier_name, nfe_issued_at, total_value, xml_content, created_by, updated_by)
     values ('35260900000000000000550010000000097000000099', 'Direto', '2026-09-10', 10, '<NFe/>',
@@ -209,6 +220,19 @@ select lives_ok(
          "remember_conversion":false,"mapping_status":"mapeado"}]'::jsonb,
       '[{"installment_number":1,"due_date":"2026-09-30","amount":100.00}]'::jsonb)$$,
   'a confirmação continua criando a conta a pagar');
+select is(
+  (select public.create_xml_payable(
+      '97000000-0000-4000-8000-000000000001'::uuid, '35260900000000000000550010000000097000000097',
+      '97000000-0000-4000-8000-0000000000f1'::uuid, '97', '1', '2026-09-10', 'boleto', 100.00, '',
+      '[{"line_number":1,"source_description":"FARINHA CAIXA 2KG","source_unit":"CX","source_quantity":1,
+         "product_id":"97000000-0000-4000-8000-0000000000d1","conversion_basis":"package","conversion_factor":2,
+         "usable_quantity":2,"line_total":100.00,"unit_price":100.00,"discount_value":0,"factor_confirmed":true,
+         "remember_conversion":false,"mapping_status":"mapeado"}]'::jsonb,
+      '[{"installment_number":1,"due_date":"2026-09-30","amount":100.00}]'::jsonb)),
+  (select id from public.payable_purchases where nfe_key = '35260900000000000000550010000000097000000097'),
+  'confirmar de novo (duplo toque) devolve a mesma conta');
+select is((select count(*)::int from public.payable_purchases where nfe_key = '35260900000000000000550010000000097000000097'),
+  1, 'a confirmação repetida não cria segunda conta');
 
 select throws_ok(
   $$select public.save_xml_import_draft(

@@ -638,8 +638,21 @@ async function dataApiHeaders(page: import('@playwright/test').Page): Promise<Re
 
 async function skipWithoutImportDraftsTable(page: import('@playwright/test').Page, headers: Record<string, string>) {
   const probe = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id&limit=1`, { headers })
-  test.skip(probe.status() === 404, 'A tabela de rascunhos de importacao ainda nao existe neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
+  // So o banco compartilhado (espelho da main) pode nao ter a tabela ainda. Em
+  // alvo isolado, informado por SMOKE_SUPABASE_URL, tabela ausente e defeito.
+  const sharedTarget = !process.env.SMOKE_SUPABASE_URL
+  test.skip(sharedTarget && probe.status() === 404, 'A tabela de rascunhos de importacao ainda nao existe neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
   expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar rascunhos`).toBe(true)
+}
+
+// Memoria de "uso/despesa" do fornecedor criado nesta rodada (o CNPJ e unico
+// por execucao, entao rodadas anteriores nao contaminam a contagem).
+async function nonCatalogMemoryOf(page: import('@playwright/test').Page, headers: Record<string, string>, cnpj: string): Promise<unknown[]> {
+  const supplier = await page.request.get(`${previewApi().url}/rest/v1/suppliers?select=id&cnpj=eq.${cnpj}`, { headers })
+  const rows = (await supplier.json()) as { id: string }[]
+  expect(rows.length, 'o fornecedor criado na importacao precisa existir').toBe(1)
+  const memory = await page.request.get(`${previewApi().url}/rest/v1/payable_non_catalog_mappings?select=id&supplier_id=eq.${rows[0].id}`, { headers })
+  return (await memory.json()) as unknown[]
 }
 
 function nfeXmlDeUmItem(uniqueKey: string, uniqueCnpj: string, numero: string, fornecedor: string): string {
@@ -691,6 +704,8 @@ test('Financeiro JC salva a NF-e para conferir depois, retoma com a decisao guar
   await expect(page.locator('.ps-card', { hasText: `NF-e ${numero}` })).toHaveCount(0)
   const contas = await page.request.get(`${previewApi().url}/rest/v1/payable_purchases?select=id&nfe_key=eq.${uniqueKey}`, { headers })
   expect(await contas.json()).toEqual([])
+  // Nem a memoria do fornecedor: "uso/despesa" so e lembrado na confirmacao.
+  expect(await nonCatalogMemoryOf(page, headers, uniqueCnpj)).toEqual([])
 
   // Sair e voltar: a retomada rele o XML e reaplica a decisao.
   await page.reload()
@@ -736,6 +751,8 @@ test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica v
 
   const draftCard = page.locator('[data-testid="xml-import-draft"]', { hasText: `NF ${numero}` })
   await expect(draftCard).toHaveCount(1, { timeout: slowPreviewDataTimeoutMs })
+  // Salvar nao lembrou a decisao de uso/despesa para o fornecedor.
+  expect(await nonCatalogMemoryOf(page, headers, uniqueCnpj)).toEqual([])
   await draftCard.getByRole('button', { name: 'Continuar conferência' }).click()
   await expect(page.getByText('Importação retomada')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 
@@ -751,6 +768,8 @@ test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica v
   expect(((await contas.json()) as unknown[]).length).toBe(1)
   const pendentes = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id,status&nfe_key=eq.${uniqueKey}`, { headers })
   expect(await pendentes.json()).toEqual([expect.objectContaining({ status: 'confirmada' })])
+  // So agora, na confirmacao, o fornecedor ganhou a memoria de uso/despesa.
+  expect((await nonCatalogMemoryOf(page, headers, uniqueCnpj)).length).toBe(1)
 })
 
 test('Vendas JA nao enxerga nem salva importacao pendente, nem pela Data API', async ({ page }) => {
@@ -777,4 +796,10 @@ test('Vendas JA nao enxerga nem salva importacao pendente, nem pela Data API', a
   })
   expect([401, 403]).toContain(salvar.status())
   expect(JSON.stringify(await salvar.json())).toContain('Sem permissão para importar XML.')
+  const descartar = await page.request.post(`${previewApi().url}/rest/v1/rpc/discard_xml_import_draft`, {
+    headers,
+    data: { p_draft_id: '00000000-0000-4000-8000-000000000000' },
+  })
+  expect([401, 403]).toContain(descartar.status())
+  expect(JSON.stringify(await descartar.json())).toContain('Sem permissão para importar XML.')
 })

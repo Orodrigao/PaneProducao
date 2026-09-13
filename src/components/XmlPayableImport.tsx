@@ -366,6 +366,9 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     if (compositionReason) { showToast(compositionReason); return }
     setSaving(true)
     try {
+      // Importação retomada: se outra pessoa descartou ou confirmou este
+      // rascunho enquanto a tela estava aberta, a confirmação não segue às cegas.
+      if (resumedDraft) await loadXmlImportDraft(resumedDraft.id)
       await createXmlPayable(draft, supplierId, requestIdRef.current)
       showToast(draft.items.some(item => item.mappingStatus === 'pendente') ? 'Conta importada. Há itens aguardando classificação.' : 'NF-e importada e custo atualizado.')
       await onSaved()

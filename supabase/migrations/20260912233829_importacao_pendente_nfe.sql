@@ -136,8 +136,16 @@ begin
       ) then
         raise exception using errcode = '22023', message = 'Item-base selecionado não existe ou está inativo.';
       end if;
+      -- Item vinculado sem fator e base não é decisão: é rascunho de decisão.
+      -- Guardar isso confirmaria na retomada um fator que ninguém escolheu.
+      if v_decision.conversion_basis is null or v_decision.conversion_factor is null then
+        raise exception using errcode = '22023', message = 'Item vinculado precisa de base e fator de conversão.';
+      end if;
     elsif v_decision.product_id is not null then
       raise exception using errcode = '22023', message = 'Item pendente ou de uso/despesa não pode apontar para produto.';
+    elsif v_decision.conversion_basis is not null or v_decision.conversion_factor is not null
+       or coalesce(v_decision.factor_confirmed, false) then
+      raise exception using errcode = '22023', message = 'Item pendente ou de uso/despesa não possui conversão.';
     end if;
   end loop;
 
@@ -161,9 +169,12 @@ begin
     raise exception using errcode = '23505', message = 'Esta NF-e já foi importada. A chave de acesso não pode ser repetida.';
   end if;
 
+  -- Dentro da trava por chave, o único pendente desta nota não muda de estado
+  -- por outra sessão: descartar e confirmar tomam a mesma trava.
   select draft.id into v_draft_id
   from public.payable_import_drafts draft
-  where draft.nfe_key = p_access_key and draft.status = 'pendente';
+  where draft.nfe_key = p_access_key and draft.status = 'pendente'
+  for update;
 
   if v_draft_id is null then
     insert into public.payable_import_drafts (
@@ -188,7 +199,10 @@ begin
         installments = coalesce(p_installments, '[]'::jsonb),
         updated_by = (select auth.uid()),
         updated_at = now()
-    where id = v_draft_id;
+    where id = v_draft_id and status = 'pendente';
+    if not found then
+      raise exception using errcode = '40001', message = 'O rascunho mudou de estado enquanto era salvo. Recarregue a tela e tente de novo.';
+    end if;
   end if;
   return v_draft_id;
 end;
@@ -204,6 +218,7 @@ set search_path = ''
 as $$
 declare
   v_status text;
+  v_nfe_key text;
 begin
   if not private.current_user_can_payables('contas_pagar.importar_xml') then
     raise exception using errcode = '42501', message = 'Sem permissão para importar XML.';
@@ -211,9 +226,20 @@ begin
   if p_draft_id is null then
     raise exception using errcode = '22023', message = 'Rascunho de importação inválido.';
   end if;
+  select draft.nfe_key into v_nfe_key
+  from public.payable_import_drafts draft
+  where draft.id = p_draft_id and draft.store = 'jc';
+  if v_nfe_key is null then
+    raise exception using errcode = '22023', message = 'Rascunho de importação não encontrado.';
+  end if;
+  -- Descartar entra na mesma fila que salvar e confirmar a mesma nota: quem
+  -- chegar depois enxerga o estado já decidido, nunca um meio-termo.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('payable-import-draft:' || v_nfe_key, 0)
+  );
   select draft.status into v_status
   from public.payable_import_drafts draft
-  where draft.id = p_draft_id and draft.store = 'jc'
+  where draft.id = p_draft_id
   for update;
   if v_status is null then
     raise exception using errcode = '22023', message = 'Rascunho de importação não encontrado.';

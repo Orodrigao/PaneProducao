@@ -201,6 +201,9 @@ export default function ContasPagarPage() {
   }
 
   async function resumeImportDraft(draft: XmlImportDraftRow) {
+    // A retomada reaplica decisões sobre o catálogo e o cadastro de
+    // fornecedores; antes de eles chegarem, itens ativos pareceriam sumidos.
+    if (loading) { showToast('Aguarde o carregamento dos cadastros para continuar a conferência.'); return }
     setBusyId(draft.id)
     try {
       setResumeDraft(await loadXmlImportDraft(draft.id))
@@ -311,12 +314,14 @@ export default function ContasPagarPage() {
                   <small style={{ display: 'block', marginTop: 4 }}>{importDraftsError}</small>
                 </div>
               )}
-              <XmlImportDraftList
-                drafts={importDrafts}
-                busyId={busyId}
-                onResume={draft => void resumeImportDraft(draft)}
-                onDiscard={draft => void discardImportDraft(draft)}
-              />
+              {!loading && (
+                <XmlImportDraftList
+                  drafts={importDrafts}
+                  busyId={busyId}
+                  onResume={draft => void resumeImportDraft(draft)}
+                  onDiscard={draft => void discardImportDraft(draft)}
+                />
+              )}
             </>
           )}
 
