@@ -13,7 +13,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(54);
+select plan(55);
 
 -- Cenário ------------------------------------------------------------------
 
