@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('./XmlPayableImport.tsx', import.meta.url), 'utf8')
 const selectorSource = readFileSync(new URL('./XmlConversionEditor.tsx', import.meta.url), 'utf8')
+// Vincular, marcar uso/despesa e limpar vivem na biblioteca desde a fase 2 das
+// compras por XML: a tela e a retomada de rascunho usam as mesmas funções.
+const draftsSource = readFileSync(new URL('../lib/xmlImportDrafts.ts', import.meta.url), 'utf8')
 
 describe('classificação durante a importação da NF-e', () => {
   it('mantém o cadastro acessível sem depender do resultado da busca', () => {
@@ -48,13 +51,15 @@ describe('classificação durante a importação da NF-e', () => {
 
     expect(reminder).toBeGreaterThanOrEqual(0)
     expect(expenseAction).toBeGreaterThan(reminder)
-    expect(source).toContain("mappingStatus: 'nao_aplicavel'")
+    expect(source).toContain('withoutProduct(draft.items[index])')
+    expect(draftsSource).toContain("mappingStatus: 'nao_aplicavel'")
   })
 
   it('reaproveita tanto vínculos de produto quanto decisões sem produto', () => {
     expect(source).toContain("from('payable_non_catalog_mappings')")
     expect(source).toContain('factor_confirmed')
-    expect(source).toContain("mappingStatus: 'nao_aplicavel'")
+    expect(source).toContain('withoutProduct(item, true)')
+    expect(draftsSource).toContain("mappingStatus: 'nao_aplicavel'")
   })
 })
 

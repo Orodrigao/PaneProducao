@@ -154,15 +154,21 @@ Riscos ainda abertos:
   incide imposto por fora, como ICMS substituição e IPI, ou despesa acessória,
   e nelas o valor da nota é maior que a soma dos produtos. A função
   `create_xml_payable` compara a soma dos itens com o total informado e levanta
-  "A soma dos itens da NF-e não fecha com o total informado"; o leitor de XML
-  (`src/lib/nfeXml.ts`) envia `vNF` como total e não lê `vST`, `vIPI`, `vFrete`,
-  `vSeg` nem `vOutro`. Efeito na operação: essas notas não entram e a conta a
-  pagar não nasce. Contorno existente: lançar a compra à mão somando o imposto
-  como item. **Decisão registrada em 2026-09-07:** impostos não recuperáveis
-  e despesas de aquisição compõem o custo, sem dupla contagem e sem ratear
-  diferença desconhecida. Ver [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md).
-  O defeito continua aberto: implementação não iniciada, dependente da fase 0
-  de evidência com XMLs anonimizados e de aprovação própria por fase;
+  "A soma dos itens da NF-e não fecha com o total informado". Efeito na
+  operação: essas notas não entram e a conta a pagar não nasce. Contorno
+  existente: lançar a compra à mão somando o imposto como item. **Decisão
+  registrada em 2026-09-07:** impostos não recuperáveis e despesas de aquisição
+  compõem o custo, sem dupla contagem e sem ratear diferença desconhecida. Ver
+  [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md). **Fase 1 no ar desde 2026-09-12
+  (PR #386):** o leitor de XML passou a ler o bloco de totais inteiro e a tela
+  de importação mostra a composição da nota e explica a recusa antes de a
+  pessoa classificar os itens, com a saída (lançar à mão). A trava do banco
+  não mudou, então o defeito continua aberto para o dinheiro: nota com
+  acréscimo segue não entrando pelo XML até a fase 3. **Fase 2 (2026-09-12):**
+  a importação pode ser salva pendente de conferência, sem conta a pagar nem
+  custo, retomável e descartável, com gate no banco (tabela própria, RLS
+  forçada, mutação só por RPC); ver o registro da fase 2 em
+  [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md);
 - **a trava do fator de conversão na importação de NF-e falha aberta.** Achado
   da revisão adversarial da PR #315: em `create_xml_payable`, `factor_confirmed`
   nulo não dispara a exigência de confirmação, enquanto a função irmã

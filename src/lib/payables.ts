@@ -409,8 +409,12 @@ export async function createPayableSupplier(name: string, cnpj: string): Promise
   }
 }
 
-export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {
-  const { data, error } = await supabase.rpc('create_xml_payable', {
+/**
+ * O que a confirmação da NF-e manda ao banco. A confirmação direta e a de um
+ * rascunho retomado (`confirm_xml_import_draft`) enviam exatamente o mesmo.
+ */
+export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId: string, notes = '') {
+  return {
     p_request_id: requestId,
     p_access_key: draft.accessKey,
     p_supplier_id: supplierId,
@@ -443,7 +447,11 @@ export async function createXmlPayable(draft: NfeDraft, supplierId: string, requ
       due_date: item.dueDate,
       amount: item.amount,
     })),
-  })
+  }
+}
+
+export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {
+  const { data, error } = await supabase.rpc('create_xml_payable', xmlPayablePayload(draft, supplierId, requestId, notes))
   if (error) throw error
   if (typeof data !== 'string') throw new Error('O banco não devolveu a conta importada.')
   return data

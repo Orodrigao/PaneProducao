@@ -45,3 +45,6 @@ jobs:
 
       - name: Provar concorrencia real da programacao PJ
         run: supabase test db supabase/tests-local/pj_production_lock_concurrency.test.sql
+
+      - name: Provar concorrencia real da importacao pendente de NF-e
+        run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql

@@ -8,7 +8,15 @@ import PayablePaymentDialog from '@/components/PayablePaymentDialog'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
 import PayableSupplierStatus from '@/components/PayableSupplierStatus'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
+import XmlImportDraftList from '@/components/XmlImportDraftList'
 import { supabase } from '@/lib/supabase'
+import {
+  discardXmlImportDraft,
+  loadPendingXmlImportDrafts,
+  loadXmlImportDraft,
+  type XmlImportDraftContent,
+  type XmlImportDraftRow,
+} from '@/lib/xmlImportDrafts'
 import {
   cancelPayable,
   isDueSoon,
@@ -61,10 +69,31 @@ export default function ContasPagarPage() {
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryRow[]>([])
   const [financeAccounts, setFinanceAccounts] = useState<FinanceAccountRow[]>([])
   const [focusedPayable, setFocusedPayable] = useState<{ purchaseId: string; installmentId: string } | null>(null)
+  // Importações salvas pela metade: não são contas e por isso ficam fora da lista
+  // de lançamentos. Falha ao carregá-las não derruba o resto da página.
+  const [importDrafts, setImportDrafts] = useState<XmlImportDraftRow[]>([])
+  const [importDraftsError, setImportDraftsError] = useState<string | null>(null)
+  const [resumeDraft, setResumeDraft] = useState<XmlImportDraftContent | null>(null)
+  // Retomar reaplica decisões sobre fornecedores e produtos: só com os dois
+  // carregados com sucesso nesta visita. Terminar com erro não conta.
+  const [catalogsReady, setCatalogsReady] = useState(false)
+
+  const loadImportDrafts = useCallback(async () => {
+    try {
+      setImportDrafts(await loadPendingXmlImportDrafts())
+      setImportDraftsError(null)
+    } catch (loadError) {
+      console.error(loadError)
+      setImportDrafts([])
+      setImportDraftsError('Não foi possível carregar as importações pendentes de conferência.')
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setCatalogsReady(false)
+    await loadImportDrafts()
     try {
       const [rows, suppliersResponse, productsResponse, categoryRows, accountRows] = await Promise.all([
         loadPayablePurchases(),
@@ -80,13 +109,14 @@ export default function ContasPagarPage() {
       setProducts((productsResponse.data ?? []) as PayableProduct[])
       setFinanceCategories(categoryRows)
       setFinanceAccounts(accountRows)
+      setCatalogsReady(true)
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as contas da JC. Confira sua permissão e tente novamente.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadImportDrafts])
 
   async function openPendingItems(purchaseId: string) {
     setBusyId(purchaseId)
@@ -175,6 +205,47 @@ export default function ContasPagarPage() {
     await load()
   }
 
+  async function resumeImportDraft(draft: XmlImportDraftRow) {
+    // A retomada reaplica decisões sobre o catálogo e o cadastro de
+    // fornecedores; antes de eles chegarem, itens ativos pareceriam sumidos.
+    if (!catalogsReady) { showToast('Os cadastros de fornecedores e insumos ainda não carregaram. Atualize a página antes de continuar a conferência.'); return }
+    setBusyId(draft.id)
+    try {
+      setResumeDraft(await loadXmlImportDraft(draft.id))
+      setShowForm(false)
+      setShowXmlImport(true)
+    } catch (loadError) {
+      console.error(loadError)
+      showToast(loadError instanceof Error ? loadError.message : 'Não foi possível reabrir a importação pendente.')
+      await loadImportDrafts()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function discardImportDraft(draft: XmlImportDraftRow) {
+    const confirmed = window.confirm(
+      `Descartar a importação pendente da NF ${draft.nfe_number ?? 'sem número'} de ${draft.supplier_name}? A classificação feita nela será perdida. Nenhuma conta a pagar existe para esta nota.`,
+    )
+    if (!confirmed) return
+    setBusyId(draft.id)
+    try {
+      await discardXmlImportDraft(draft.id)
+      showToast('Importação pendente descartada. Nada foi lançado no financeiro.')
+      await loadImportDrafts()
+    } catch (discardError) {
+      console.error(discardError)
+      showToast(discardError instanceof Error ? discardError.message : 'Não foi possível descartar a importação pendente.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  function closeXmlImport() {
+    setShowXmlImport(false)
+    setResumeDraft(null)
+  }
+
   async function handleCancel(purchaseId: string) {
     const reason = window.prompt('Por que esta conta será cancelada?')?.trim()
     if (!reason) return
@@ -228,17 +299,35 @@ export default function ContasPagarPage() {
             />
           ) : showXmlImport ? (
             <XmlPayableImport
+              key={resumeDraft?.id ?? 'nova-importacao'}
               suppliers={suppliers}
               products={products}
-              onCancel={() => setShowXmlImport(false)}
-              onSaved={async () => { setShowXmlImport(false); await load() }}
+              initialDraft={resumeDraft}
+              onCancel={closeXmlImport}
+              onSaved={async () => { closeXmlImport(); await load() }}
             />
           ) : (
-            <div className="ps-fieldrow" style={{ marginTop: 14 }}>
-              <button className="ps-btn primary block" onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
-              <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
-              <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
-            </div>
+            <>
+              <div className="ps-fieldrow" style={{ marginTop: 14 }}>
+                <button className="ps-btn primary block" onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
+                <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
+                <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
+              </div>
+              {importDraftsError && (
+                <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
+                  <b>Importações pendentes não carregaram</b>
+                  <small style={{ display: 'block', marginTop: 4 }}>{importDraftsError}</small>
+                </div>
+              )}
+              {catalogsReady && (
+                <XmlImportDraftList
+                  drafts={importDrafts}
+                  busyId={busyId}
+                  onResume={draft => void resumeImportDraft(draft)}
+                  onDiscard={draft => void discardImportDraft(draft)}
+                />
+              )}
+            </>
           )}
 
           {error && (
