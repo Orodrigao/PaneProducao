@@ -621,7 +621,9 @@ O que passou a existir:
   vazios e segue usando o valor do item.
 - **Conferência campo a campo no banco.** `create_xml_payable` recebe o bloco
   de totais (`p_nfe_totals`) e `private.validate_nfe_fiscal_composition` exige:
-  todos os campos presentes; casos sem evidência zerados; produtos, desconto e
+  todos os campos presentes; casos sem evidência zerados; item marcado fora do total (`indTot` 0) recusado e
+  marcador ausente aceito, como na tela, porque a composição ainda precisa
+  fechar com o total; produtos, desconto e
   desoneração iguais à soma dos itens; cada acréscimo até um centavo da soma dos
   itens; composição igual ao total; linha única; vProd menos desconto igual ao
   valor do item. `private.nfe_cent_adjustments` aplica o centavo com a mesma

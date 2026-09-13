@@ -251,6 +251,11 @@ select throws_ok(
   '22023', 'O item 1 não está marcado como parte do total da nota (indTot), um caso que o ERP ainda não sabe conferir.',
   'item fora do total da nota continua recusado');
 
+select lives_ok(
+  pg_temp.importar_sql(36, '2026-09-01', 20,
+    jsonb_build_array(jsonb_set(pg_temp.item(1, null, 20, null), '{composes_total}', 'null')), pg_temp.totais(20, 20)),
+  'item sem o marcador indTot é aceito, como na tela: a composição ainda precisa fechar com o total');
+
 select throws_ok(
   pg_temp.importar_sql(9, '2026-09-01', 24,
     jsonb_build_array(pg_temp.item(1, null, 20, null)), pg_temp.totais(20, 24, 0, 0, 4)),
