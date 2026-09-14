@@ -97,7 +97,7 @@ select throws_ok($$select public.record_sales_day_status('cnm','jc',private.data
 set local role authenticated;
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-00000000000b',true);
 select is((select count(*)::int from public.sales_imports),0,'Vendas JA não vê valores');
-select throws_ok($$select public.record_sales_day_status('cnm','jc','2026-09-14','zero_sales','Sem movimento')$$,'42501','Sem permissão para registrar a situação do dia.','Vendas JA não registra situação');
+select throws_ok($$select public.record_sales_day_status('cnm','jc',private.data_na_padaria(),'zero_sales','Sem movimento')$$,'42501','Sem permissão para registrar a situação do dia.','Vendas JA não registra situação');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-00000000000c',true);
