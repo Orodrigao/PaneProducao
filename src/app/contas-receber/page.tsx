@@ -6,6 +6,7 @@ import ReceivableForm from '@/components/ReceivableForm'
 import ReceivableList from '@/components/ReceivableList'
 import ReceivablePaymentDialog from '@/components/ReceivablePaymentDialog'
 import PjOrdersToBillPanel from '@/components/PjOrdersToBillPanel'
+import BuckWeeksToBillPanel from '@/components/BuckWeeksToBillPanel'
 import { loadFinanceAccounts, type FinanceAccountRow } from '@/lib/finance'
 import {
   cancelReceivable,
@@ -23,6 +24,12 @@ import {
   type ReceivableReceiptRow,
   type ReceivableRow,
 } from '@/lib/receivables'
+import {
+  loadBuckReceivableDetails,
+  loadBuckWeeksToBill,
+  type BuckReceivableDetail,
+  type BuckWeekToBillRow,
+} from '@/lib/buckWeeklyBilling'
 import { showToast } from '@/lib/utils'
 import { discoverPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
 
@@ -31,6 +38,8 @@ export default function ContasReceberPage() {
   const [customers, setCustomers] = useState<ReceivableCustomerOption[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
   const [pjOrdersToBill, setPjOrdersToBill] = useState<PjOrderToBillRow[]>([])
+  const [buckWeeks, setBuckWeeks] = useState<BuckWeekToBillRow[]>([])
+  const [buckDetails, setBuckDetails] = useState<Map<string, BuckReceivableDetail>>(new Map())
   const [pjFlows, setPjFlows] = useState<PjFlow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -42,18 +51,22 @@ export default function ContasReceberPage() {
     setLoading(true)
     setError(null)
     try {
-      const [rows, customerRows, accountRows, pjRows, flows] = await Promise.all([
+      const [rows, customerRows, accountRows, pjRows, flows, buckRows] = await Promise.all([
         loadReceivables(),
         loadReceivableCustomers(),
         loadFinanceAccounts(),
         loadPjOrdersToBill(),
         discoverPjFlowPilot(),
+        loadBuckWeeksToBill(),
       ])
       setPjFlows(flows)
       setReceivables(rows)
       setCustomers(customerRows)
       setAccounts(accountRows)
       setPjOrdersToBill(pjRows)
+      setBuckWeeks(buckRows)
+      // De onde saiu o valor de cada cobrança da Buck: romaneios e ajustes.
+      setBuckDetails(await loadBuckReceivableDetails(rows.filter(row => row.origin === 'romaneio_ex').map(row => row.id)))
     } catch (loadError) {
       console.error(loadError)
       setError('Não foi possível carregar as cobranças. Confira sua permissão e tente novamente.')
@@ -158,7 +171,7 @@ export default function ContasReceberPage() {
         <header className="ps-header">
           <div className="ps-wordmark">
             <div className="ps-mark"><HandCoins size={18} /></div>
-            <div className="ps-brand"><b>Contas a receber</b><span>Clientes PJ · quem deve e quanto</span></div>
+            <div className="ps-brand"><b>Contas a receber</b><span>Clientes PJ e Buck · quem deve e quanto</span></div>
           </div>
           <button className="ps-iconbtn" onClick={() => void load()} aria-label="Atualizar cobranças" title="Atualizar"><RefreshCw size={17} /></button>
         </header>
@@ -185,6 +198,8 @@ export default function ContasReceberPage() {
           </div>
 
           <PjOrdersToBillPanel orders={pjOrdersToBill} onBilled={load} />
+
+          <BuckWeeksToBillPanel weeks={buckWeeks} onBilled={load} />
 
           {showForm ? (
             <ReceivableForm
@@ -219,6 +234,7 @@ export default function ContasReceberPage() {
             <ReceivableList
               receivables={ordered}
               busyId={busyId}
+              buckDetails={buckDetails}
               onPay={receivable => setPaymentTarget(receivable)}
               onReverseReceipt={receipt => void handleReverseReceipt(receipt)}
               onCancel={receivable => void handleCancel(receivable)}

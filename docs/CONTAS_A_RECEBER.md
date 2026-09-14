@@ -186,6 +186,31 @@ Não reabrir sem evidência nova.
     - dividir exige cobrança em aberto, sem dinheiro dentro, e que não seja já
       uma parcela.
 
+14. **A semana da Buck nasce para conferência (Rodrigo, 2026-09-13).** A fase 4
+    entregou o botão "Gerar conta a receber" no Fechamento EX, e ele nunca foi
+    usado: medido em produção em 13/09, 94 romaneios da EX desde 14/08 e zero
+    cobranças `romaneio_ex`. A Elis imprime o fechamento, **ajusta o valor à
+    mão** (pão que saiu sem romaneio, preço combinado fora da Tabela BUCK,
+    acerto de saldo) e lança os recebimentos direto no livro-caixa. O cobrado
+    ficou acima da conta do ERP em todas as semanas de agosto, e duas semanas de
+    agosto caíram no resultado de setembro.
+    - a cobrança **não nasce pronta**: cada semana fechada, de segunda a
+      domingo, aparece sozinha no Contas a receber; a Elis soma os ajustes, cada
+      um com motivo, e confirma. Cobrança sem conferência sairia errada quase
+      toda semana;
+    - a lista começa na semana de **31/08/2026**. As anteriores já estão no
+      livro e não entram, para a receita não contar duas vezes;
+    - romaneio sem conferência **não bloqueia**: boa parte dos romaneios da EX
+      nunca é conferida, e a semana nunca apareceria. A tela avisa quantos são;
+    - resto de semana anterior **não é ajuste**: continua em aberto na cobrança
+      antiga, pelo recebimento em pedaços;
+    - a cobrança guarda a **foto** das linhas dos romaneios e dos ajustes;
+    - a receita da Buck **só entra no livro vinda do Contas a receber**. A
+      trava fica na tabela do livro, e o estorno de lançamento antigo continua
+      possível;
+    - cobrança da Buck **não é dividida em parcelas**: a trava de período
+      sobreposto recusaria a segunda parcela, e a Buck paga em pedaços.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
@@ -641,6 +666,43 @@ cobrança; a trava de origem passou a considerar a parcela.
 prendia o parcelamento ao cadastro do cliente. A migration foi **reescrita**, e
 não corrigida por cima, porque a PR ainda não tinha sido integrada — ela só
 existiu no Banco Preview, reconstruído do zero a cada envio.
+
+## Fase 4D: semana da Buck a conferir
+
+Nasceu da decisão 14, depois que a medição mostrou que o botão da fase 4 nunca
+foi usado. Plano revisado de forma adversarial pelo Sol antes da aprovação; as
+lacunas incorporadas estão na PR.
+
+**Escopo, entra:**
+
+- lista `public.list_buck_weeks_to_bill` com as semanas fechadas desde
+  31/08/2026 ainda sem cobrança: valor dos romaneios, romaneios sem
+  conferência, bloqueios e aviso de lançamento direto da Buck no livro;
+- confirmação `public.create_buck_weekly_receivable` com ajustes
+  (`receivable_adjustments`: pão sem romaneio com produto, quantidade e preço;
+  preço combinado; acerto), no máximo 20 por semana e até R$ 5.000,00 cada;
+- foto das linhas em `receivable_romaneio_lines`, com os itens de romaneio de
+  origem e a quantidade usada (aceita ou enviada);
+- uma regra só de soma: `private.calcular_cobranca_buck` passou a ler de
+  `private.calcular_cobranca_buck_detalhada`;
+- trava `finance_entries_guard_receita_buck` na tabela do livro;
+- `split_receivable` recusa a origem `romaneio_ex`;
+- a confirmação exige a impressão digital da composição que a tela mostrou:
+  romaneio alterado depois de a tela abrir, mesmo sem mudar o total, pede nova
+  conferência;
+- recebimento de cobrança da Buck acima do saldo em aberto é recusado (o que
+  passar pertence a outra semana). Clientes PJ seguem como antes;
+- painel "Semanas da Buck a cobrar" em `/contas-receber`; a lista de cobranças
+  mostra romaneios e ajustes da cobrança da Buck; o botão do Fechamento EX
+  saiu; os formulários do Financeiro deixaram de oferecer a categoria da Buck.
+
+**Não entra:** documento impresso da cobrança com os ajustes; aviso de romaneio
+alterado depois de cobrado; desligar no banco a função antiga
+`create_receivable_from_romaneio` (fica para uma PR própria, depois que o site
+novo estiver no ar); corrigir os lançamentos diretos de agosto e setembro.
+
+**Riscos:** receita em dobro entre a decisão e a trava entrar no ar, coberto
+pelo aviso na lista; cliente e tabela da Buck continuam localizados pelo nome.
 
 ## Fase 5 — Extrato por cliente e lista de atrasados
 

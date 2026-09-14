@@ -537,3 +537,14 @@ export async function reverseFinanceEntry(entryId: string, reason: string, reque
   if (error) throw error
   return data as string
 }
+
+/**
+ * Categorias que não aceitam lançamento direto no livro. A receita da Buck só
+ * entra pelo recebimento da cobrança no Contas a receber: o banco recusa o
+ * resto (gatilho `finance_entries_guard_receita_buck`) e a tela nem oferece.
+ */
+export const RECEIVABLE_ONLY_CATEGORY_KEYS: readonly string[] = ['buck_ex']
+
+export function categoryAcceptsManualEntry(category: Pick<FinanceCategoryRow, 'key' | 'nature'>): boolean {
+  return category.nature !== 'transferencia' && !RECEIVABLE_ONLY_CATEGORY_KEYS.includes(category.key)
+}

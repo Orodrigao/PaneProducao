@@ -370,15 +370,24 @@ disputavam um único banco de teste compartilhado.
   recebimento ativo**. Herança conhecida: onze cobranças em aberto criadas
   entre 21/08 e 04/09 nasceram pela estimativa e divergem do conferido, saldo
   de R$ 109,61 cobrados a mais, corrigíveis uma a uma pela tela;
-- conta semanal da Buck (fase 4 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)):
-  na tela de Romaneios, o período faturado vira cobrança da Buck com vencimento
-  em 15 dias e receita em `buck_ex`. **O valor é somado no banco** a partir dos
-  itens do romaneio e da tabela BUCK; o total da tela vai apenas como
-  conferência e divergência recusa a geração mostrando os dois números. As três
-  travas do documento impresso (sem preço, unidade incompatível, peso acima de
-  10 kg) bloqueiam a cobrança, e período sobreposto é barrado por constraint de
-  exclusão. A mesma regra vive em `src/lib/romaneioBilling.ts` e em
-  `private.calcular_cobranca_buck` — dívida assumida, precisam mudar juntas;
+- cobrança semanal da Buck (fases 4 e 4D de
+  [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)): desde a PR desta fase, cada
+  semana fechada da EX, de segunda a domingo, a partir de 31/08/2026, aparece
+  em `/contas-receber` para o financeiro conferir. A Elis soma ajustes com
+  motivo (pão sem romaneio, preço combinado, acerto) e confirma; a cobrança
+  vence em 15 dias, pesa em `buck_ex` no mês em que a semana fecha e guarda a
+  foto das linhas e dos ajustes. **O valor dos romaneios é somado no banco**,
+  e o da tela vai só como conferência. As três travas (sem preço, unidade
+  incompatível, peso acima de 10 kg) bloqueiam a semana com link para onde se
+  resolve; romaneio sem conferência só gera aviso. **A receita da Buck só
+  entra no livro vinda do Contas a receber**: um gatilho na tabela do livro
+  recusa o lançamento direto e deixa passar o estorno dos antigos. Cobrança da
+  Buck não é parcelada nem recebe mais do que falta, e a confirmação exige a
+  mesma composição de romaneios que a tela mostrou. O botão do Fechamento EX saiu da tela, mas a função
+  antiga `create_receivable_from_romaneio` ainda existe no banco até uma PR
+  própria desligá-la. A soma vive em `private.calcular_cobranca_buck_detalhada`
+  (a versão curta lê dela) e em `src/lib/romaneioBilling.ts`, que ainda
+  imprime o Fechamento EX: dívida assumida, precisam mudar juntas;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
