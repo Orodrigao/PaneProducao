@@ -7,6 +7,7 @@ import {
   defaultPaymentDraft,
   formatReceivableMoney,
   getReceivableErrorMessage,
+  receiptExcess,
   recordReceivableReceipt,
   remainingAmount,
   RECEIVABLE_METHOD_LABELS,
@@ -57,6 +58,13 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
     return Math.round((recebido - falta) * 100) / 100
   }, [draft.receivedAmount, falta])
 
+  // O que passa do que falta vira juros no livro, no mês em que o dinheiro
+  // entrou, e não no mês da venda (docs/CONTAS_A_RECEBER.md, decisão 15).
+  const excesso = useMemo(() => receiptExcess(receivable, draft), [receivable, draft])
+  const mesDoRecebimento = draft.receivedDate
+    ? formatCompetenceMonth(draft.receivedDate.slice(0, 7))
+    : mesDeCompetencia
+
   async function save() {
     const validationError = validateReceivablePaymentDraft(draft, receivable, todayKey())
     if (validationError) {
@@ -71,7 +79,10 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
       // é o caso normal, então a receita quase sempre pesa num mês anterior ao
       // de hoje — e o livro abre no mês corrente. Sem este recado, quem baixa
       // vai procurar o valor no mês errado e achar que nada aconteceu.
-      showToast(`Recebimento registrado. Entrou no livro em ${mesDeCompetencia}.`)
+      // Com juros, são dois meses diferentes e os dois precisam ser ditos.
+      showToast(excesso.excess > 0
+        ? `Recebimento registrado. A venda entrou no livro em ${mesDeCompetencia}; ${formatReceivableMoney(excesso.excess)} de juros em ${mesDoRecebimento}.`
+        : `Recebimento registrado. Entrou no livro em ${mesDeCompetencia}.`)
       await onSaved()
     } catch (saveError) {
       console.error(saveError)
@@ -119,14 +130,39 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
           value={draft.receivedAmount}
           onChange={event => update({ receivedAmount: event.target.value })}
         />
-        {diferenca !== 0 && (
+        {diferenca < 0 && (
           <small className="ps-hint">
-            {diferenca > 0
-              ? `Entrou ${formatReceivableMoney(diferenca)} a mais do que faltava. A cobrança fecha.`
-              : `Recebimento parcial: ainda faltarão ${formatReceivableMoney(-diferenca)}.`}
+            Recebimento parcial: ainda faltarão {formatReceivableMoney(-diferenca)}.
+          </small>
+        )}
+        {excesso.excess > 0 && excesso.late && (
+          <small className="ps-hint">
+            Passou {formatReceivableMoney(excesso.excess)} do que faltava: entra como juros recebidos
+            em {mesDoRecebimento}. A venda continua em {mesDeCompetencia} e a cobrança fecha.
           </small>
         )}
       </div>
+
+      {excesso.excess > 0 && !excesso.late && (
+        <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
+          <div className="ps-alert" role="status">
+            O pagamento não está atrasado e passou {formatReceivableMoney(excesso.excess)} do que falta.
+            Confira o valor. Se estiver certo, escreva o motivo: o valor a mais entra como juros
+            recebidos em {mesDoRecebimento}.
+          </div>
+          <label className="ps-fieldlabel" htmlFor="receivable-excess-reason" style={{ marginTop: 10 }}>
+            Motivo do valor a mais *
+          </label>
+          <textarea
+            id="receivable-excess-reason"
+            className="ps-textarea"
+            rows={2}
+            maxLength={300}
+            value={draft.excessReason}
+            onChange={event => update({ excessReason: event.target.value })}
+          />
+        </div>
+      )}
 
       <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
         <label className="ps-fieldlabel" htmlFor="receivable-method">Forma *</label>

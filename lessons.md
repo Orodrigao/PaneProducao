@@ -37,3 +37,4 @@ Regras de uma linha, ate 40 palavras, teto de 40 linhas; passou disso, consolide
 2026-09-07 - onde-aparece-vem-de-quem-organiza - Em que aba ou secao algo aparece vem da funcao que monta a lista (organizePjOrders), nunca de regra reescrita ao lado.
 2026-09-09 - seed-nao-prova-usuario-real - Permissao nova exige matriz permitido x bloqueado no preview e consulta somente leitura provando que o ator real tem a concessao.
 2026-09-12 - selo-depois-do-ci - Check da Portaria so depois do CI remoto verde; selo antes do push custou seis PRs para uma entrega (367 a 374). Falha no CI corrige na mesma branch e PR.
+2026-09-14 - ordem-na-mesma-transacao - Coluna que ordena eventos gravados por RPC recebe clock_timestamp(), nunca o default now(): now() e o inicio da transacao e empata tudo que o teste de banco grava junto.

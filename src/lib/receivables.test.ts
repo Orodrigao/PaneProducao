@@ -24,6 +24,7 @@ import {
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
   type PjOrderBillingBlock,
   podeDividirEm,
+  receiptExcess,
   validateReceivablePaymentDraft,
   vencimentosDaFatura,
   type PjOrderToBillRow,
@@ -41,6 +42,8 @@ function recibo(overrides: Partial<ReceivableReceiptRow> = {}): ReceivableReceip
     receivable_id: 'r1',
     received_date: '2026-08-18',
     amount: 100,
+    interest_amount: 0,
+    excess_reason: null,
     method: 'pix',
     account_id: 'acc1',
     reversed_at: null,
@@ -123,6 +126,38 @@ describe('validateReceivablePaymentDraft', () => {
     const draft = defaultPaymentDraft(alvo)
     expect(draft.receivedAmount).toBe('1200,00')
     expect(draft.receivedMethod).toBe('pix')
+  })
+
+  // A cobrança do teste vence em 19/08 e falta 1.200,00.
+  describe('valor a mais', () => {
+    it('pago com atraso, o valor a mais é juros e não pede justificativa', () => {
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: HOJE, receivedAmount: '1.223,07', accountKey: 'banco_sicredi_jc' }
+      expect(receiptExcess(alvo, draft)).toEqual({ excess: 23.07, late: true })
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE)).toBeNull()
+    })
+
+    it('pago até o vencimento, o valor a mais pede justificativa mas não é barrado com ela', () => {
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: '2026-08-19', receivedAmount: '1210', accountKey: 'banco_sicredi_jc' }
+      expect(receiptExcess(alvo, draft)).toEqual({ excess: 10, late: false })
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE))
+        .toMatch(/^O pagamento não está atrasado e passou R\$\s10,00 do que falta\. Confira o valor ou informe a justificativa\.$/)
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: ' ok ' }, alvo, HOJE))
+        .toBe('Escreva a justificativa com pelo menos 3 letras.')
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: 'x'.repeat(301) }, alvo, HOJE))
+        .toBe('A justificativa passou de 300 caracteres. Resuma o motivo.')
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: 'Cliente arredondou' }, alvo, HOJE)).toBeNull()
+    })
+
+    it('mede o valor a mais contra o que falta, não contra o valor cheio', () => {
+      const parcial = cobranca({ receipts: [recibo({ amount: 1000 })] })
+      expect(receiptExcess(parcial, { receivedDate: HOJE, receivedAmount: '250' })).toEqual({ excess: 50, late: true })
+      expect(receiptExcess(parcial, { receivedDate: HOJE, receivedAmount: '150' })).toEqual({ excess: 0, late: true })
+    })
+
+    it('juros de um pedaço anterior não abatem o que falta', () => {
+      const comJuros = cobranca({ receipts: [recibo({ amount: 600, interest_amount: 30 })] })
+      expect(remainingAmount(comJuros)).toBe(600)
+    })
   })
 })
 

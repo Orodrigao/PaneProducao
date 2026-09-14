@@ -51,7 +51,12 @@ export interface ReceivableReceiptRow {
   id: string
   receivable_id: string
   received_date: string
+  /** Quanto deste pedaço abate a cobrança. */
   amount: number
+  /** Quanto passou do saldo: juros e multa recebidos. O dinheiro que entrou é a soma. */
+  interest_amount: number
+  /** Motivo escrito quando veio a mais sem atraso. */
+  excess_reason: string | null
   method: ReceivableMethod
   account_id: string
   reversed_at: string | null
@@ -65,11 +70,35 @@ export function receivedTotal(receivable: Pick<ReceivableRow, 'receipts'>): numb
     .reduce((sum, receipt) => sum + receipt.amount, 0)
 }
 
-/** O que falta para quitar. Nunca negativo: quem paga a mais quita e pronto. */
+/**
+ * O que falta para quitar. Nunca negativo: recebimentos anteriores a 14/09/2026
+ * guardavam o valor cheio, juros incluídos, e podem ter passado do cobrado.
+ */
 export function remainingAmount(
   receivable: Pick<ReceivableRow, 'amount' | 'receipts'>,
 ): number {
   return Math.max(0, Math.round((receivable.amount - receivedTotal(receivable)) * 100) / 100)
+}
+
+export interface ReceiptExcess {
+  /** Quanto o valor digitado passa do que falta; zero quando não passa. */
+  excess: number
+  /** Recebido depois do vencimento: o valor a mais é juros de atraso. */
+  late: boolean
+}
+
+/**
+ * A mesma conta que o banco faz na baixa: o que passa do que falta vira juros
+ * recebidos. Até o vencimento, valor a mais pede justificativa.
+ */
+export function receiptExcess(
+  receivable: Pick<ReceivableRow, 'amount' | 'receipts' | 'due_date'>,
+  draft: Pick<ReceivablePaymentDraft, 'receivedAmount' | 'receivedDate'>,
+): ReceiptExcess {
+  const late = Boolean(draft.receivedDate) && draft.receivedDate > receivable.due_date
+  const recebido = parseMoneyInput(draft.receivedAmount)
+  if (!(recebido > 0)) return { excess: 0, late }
+  return { excess: Math.max(0, Math.round((recebido - remainingAmount(receivable)) * 100) / 100), late }
 }
 
 export interface ReceivableDraft {
@@ -116,6 +145,8 @@ export interface ReceivablePaymentDraft {
   receivedAmount: string
   receivedMethod: ReceivableMethod
   accountKey: string
+  /** Por que veio a mais sem atraso. Vazio quando não se aplica. */
+  excessReason: string
 }
 
 /**
@@ -132,6 +163,7 @@ export function defaultPaymentDraft(
     receivedAmount: remainingAmount(receivable).toFixed(2).replace('.', ','),
     receivedMethod: 'pix',
     accountKey: '',
+    excessReason: '',
   }
 }
 
@@ -164,7 +196,7 @@ export function validateReceivableDraft(draft: ReceivableDraft, today = todayKey
 
 export function validateReceivablePaymentDraft(
   draft: ReceivablePaymentDraft,
-  receivable: Pick<ReceivableRow, 'invoice_date'>,
+  receivable: Pick<ReceivableRow, 'invoice_date' | 'due_date' | 'amount' | 'receipts'>,
   today = todayKey(),
 ): string | null {
   if (!draft.receivedDate) return 'Informe a data em que o dinheiro entrou.'
@@ -174,6 +206,16 @@ export function validateReceivablePaymentDraft(
   const amount = parseMoneyInput(draft.receivedAmount)
   if (!(amount > 0)) return 'Informe o valor recebido.'
   if (amount > RECEIVABLE_MAX_AMOUNT) return 'Valor acima do limite permitido. Confira o que foi digitado.'
+
+  // Mesma regra do banco: até o vencimento o boleto não cobra juros, então valor
+  // a mais quase sempre é digitação. Não impede, mas exige o porquê.
+  const { excess, late } = receiptExcess(receivable, draft)
+  const motivo = draft.excessReason.trim()
+  if (excess > 0 && !late && !motivo) {
+    return `O pagamento não está atrasado e passou ${formatReceivableMoney(excess)} do que falta. Confira o valor ou informe a justificativa.`
+  }
+  if (excess > 0 && motivo && motivo.length < 3) return 'Escreva a justificativa com pelo menos 3 letras.'
+  if (excess > 0 && motivo.length > 300) return 'A justificativa passou de 300 caracteres. Resuma o motivo.'
 
   if (!draft.accountKey) return 'Escolha a conta em que o dinheiro entrou.'
   return null
@@ -357,7 +399,10 @@ export async function loadReceivableCustomers(): Promise<ReceivableCustomerOptio
 export async function loadReceivables(): Promise<ReceivableRow[]> {
   const { data, error } = await supabase
     .from('receivables')
-    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,installment_number,installment_count,cancel_reason,created_at,customer:customers(name),receipts:receivable_receipts(id,receivable_id,received_date,amount,method,account_id,reversed_at,reversal_reason)')
+    .select('id,customer_id,origin,origin_ref,description,invoice_date,original_due_date,due_date,amount,status,installment_number,installment_count,cancel_reason,created_at,customer:customers(name),receipts:receivable_receipts(*)')
+    // Os pedaços vêm inteiros de propósito: site e banco atualizam separados no
+    // mesmo merge, e pedir as colunas novas pelo nome derrubaria a lista nos
+    // minutos em que o site já estiver no ar e a migration ainda não.
     .order('due_date')
   if (error) throw error
   return (data ?? []).map(row => ({
@@ -386,6 +431,7 @@ export async function recordReceivableReceipt(
   draft: ReceivablePaymentDraft,
   requestId: string,
 ): Promise<string> {
+  const motivo = draft.excessReason.trim()
   const { data, error } = await supabase.rpc('record_receivable_receipt', {
     p_request_id: requestId,
     p_receivable_id: receivableId,
@@ -393,6 +439,9 @@ export async function recordReceivableReceipt(
     p_amount: parseMoneyInput(draft.receivedAmount),
     p_method: draft.receivedMethod,
     p_account_key: draft.accountKey,
+    // Só vai quando existe: sem justificativa a chamada fica igual à anterior e
+    // funciona também com o banco que ainda não recebeu a migration.
+    ...(motivo ? { p_excess_reason: motivo } : {}),
   })
   if (error) throw error
   return data as string
