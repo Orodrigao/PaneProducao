@@ -1,6 +1,7 @@
 -- Fase 2 das vendas do balcao: vinculos manuais e curva ABC.
 -- A linha importada continua imutavel. O vinculo e resolvido na leitura para
 -- que uma correcao reorganize todo o historico analitico sem reescrever venda.
+-- Itens sem equivalente permanecem pendentes ou ignorados, mas conservam receita.
 
 begin;
 
