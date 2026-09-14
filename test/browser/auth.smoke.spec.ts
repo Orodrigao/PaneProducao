@@ -350,15 +350,15 @@ test('Financeiro JC vincula produto vendido, rele e devolve para pendente', asyn
   await cafe.getByRole('button', { name: 'Vincular', exact: true }).click()
   await expect(page.getByText('Produto vinculado. A análise histórica foi reorganizada.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 
-  await page.reload()
   await page.getByRole('tab', { name: /Vinculados/ }).click()
   cafe = page.locator('article', { hasText: '[TESTE ABC] Café do PDV' })
   await expect(cafe.getByText(/Ligado a:.*Bruschetta de Alcachofra/)).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.locator('table.ps-table tr', { hasText: '[TESTE] Bruschetta de Alcachofra' }).getByText('R$ 137,00'))
+    .toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 
   page.once('dialog', dialog => dialog.accept('Fim do teste, voltar ao cenário inicial'))
   await cafe.getByRole('button', { name: 'Voltar a pendente' }).click()
   await expect(page.getByText('Vínculo devolvido para conferência.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-  await page.reload()
   await expect(page.locator('article', { hasText: '[TESTE ABC] Café do PDV' }).getByText('Pendente', { exact: true }))
     .toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(page.getByRole('heading', { name: 'Curva ABC de vendas' })).toBeVisible()

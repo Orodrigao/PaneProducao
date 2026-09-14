@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(53);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin)
 values
@@ -107,6 +107,21 @@ select lives_ok($$select public.set_sales_product_mapping('cnm','jc','A2','pendi
 select is((select count(*)::integer from public.sales_product_mappings),2,'voltar a pendente remove só a decisão atual');
 select is((select count(*)::integer from public.sales_product_mapping_events where event_type='cleared'),1,'retorno a pendente fica auditado');
 select throws_ok($$insert into public.sales_product_mappings(source_system,store,external_product_key,decision,product_id,sale_unit,decided_by,updated_by) values('cnm','jc','direto','ignored',null,null,'98100000-0000-4000-8000-00000000000a','98100000-0000-4000-8000-00000000000a')$$,'42501',null,'cliente não grava vínculo direto');
+
+reset role;
+insert into public.product_sale_options (product_id, name, sale_unit, reference_quantity, unit_weight_kg, is_default, active)
+values ('98100000-0000-4000-8000-000000000101','Quilo','kg',1,null,false,true);
+insert into public.sales_import_items (
+  import_id, line_number, external_product_key, raw_product_name, raw_category,
+  quantity, source_cmv, take_away, net_total, raw_row
+)
+values ('98100000-0000-4000-8000-000000000201',5,'D','Produto ABC Um por quilo','Pães',3,null,false,30,'["D"]');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','98100000-0000-4000-8000-00000000000a',true);
+select lives_ok($$select public.set_sales_product_mapping('cnm','jc','D','mapped','98100000-0000-4000-8000-000000000101','kg')$$,'mesmo produto aceita outra forma de venda cadastrada');
+select is(jsonb_array_length(public.get_sales_abc('cnm','jc','2026-09-01','2026-09-03')->'items'),4,'mesmo produto continua em uma única linha da curva ABC');
+select ok(jsonb_path_exists(public.get_sales_abc('cnm','jc','2026-09-01','2026-09-03'),'$.items[*] ? (@.product_id == "98100000-0000-4000-8000-000000000101" && @.sale_unit == null && @.total_quantity == null && @.average_price == null && @.quantity_by_unit[*].sale_unit == "un" && @.quantity_by_unit[*].total_quantity == 4)'),'quantidade por unidade fica discriminada sem inventar total ou preço médio');
+select ok(jsonb_path_exists(public.get_sales_abc('cnm','jc','2026-09-01','2026-09-03'),'$.items[*] ? (@.product_id == "98100000-0000-4000-8000-000000000101" && @.quantity_by_unit[*].sale_unit == "kg" && @.quantity_by_unit[*].total_quantity == 3)'),'quantidade por quilo fica discriminada na mesma linha do produto');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','98100000-0000-4000-8000-00000000000b',true);

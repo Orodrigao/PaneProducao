@@ -32,7 +32,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Não foi possível concluir a operação.'
 }
 
-export function SalesProductMappingPanel({ canManage }: { canManage: boolean }) {
+export function SalesProductMappingPanel({ canManage, onChanged, refreshKey = 0 }: {
+  canManage: boolean
+  onChanged?: () => void
+  refreshKey?: number
+}) {
   const [rows, setRows] = useState<SalesProductMappingRow[]>([])
   const [products, setProducts] = useState<SalesCatalogProduct[]>([])
   const [drafts, setDrafts] = useState<Record<string, MappingDraft>>({})
@@ -72,7 +76,7 @@ export function SalesProductMappingPanel({ canManage }: { canManage: boolean }) 
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, refreshKey])
 
   const visibleRows = useMemo(() => rows.filter(row => {
     if (filter !== 'all' && row.mapping_status !== filter) return false
@@ -132,6 +136,7 @@ export function SalesProductMappingPanel({ canManage }: { canManage: boolean }) 
         : decision === 'ignored' ? 'Item marcado para permanecer pelo nome do PDV.'
           : 'Vínculo devolvido para conferência.')
       await load()
+      onChanged?.()
     } catch (saveError) {
       setError(errorMessage(saveError))
     } finally {

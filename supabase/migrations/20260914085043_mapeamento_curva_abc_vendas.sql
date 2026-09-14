@@ -314,16 +314,30 @@ begin
     where import.source_system = p_source_system and import.store = p_store
       and import.status = 'confirmed'
       and import.sale_date between p_start_date and p_end_date
+  ), quantity_groups as (
+    select analysis_key, sale_unit, sum(quantity)::numeric as total_quantity
+    from base
+    group by analysis_key, sale_unit
+  ), quantity_breakdowns as (
+    select analysis_key,
+      jsonb_agg(jsonb_build_object(
+        'sale_unit', sale_unit,
+        'total_quantity', round(total_quantity, 4)
+      ) order by sale_unit) filter (where sale_unit is not null) as quantity_by_unit
+    from quantity_groups
+    group by analysis_key
   ), grouped as (
     select analysis_key, max(display_name) as display_name,
       max(mapping_status) as mapping_status,
       (array_agg(product_id) filter (where product_id is not null))[1] as product_id,
-      max(sale_unit) as sale_unit, bool_or(is_fabricacao_propria) as is_fabricacao_propria,
+      case when count(distinct sale_unit) <= 1 then max(sale_unit) end as sale_unit,
+      count(distinct sale_unit)::integer as sale_unit_count,
+      bool_or(is_fabricacao_propria) as is_fabricacao_propria,
       sum(quantity)::numeric as total_quantity, sum(net_total)::numeric as total_net
     from base
     group by analysis_key
   ), ranked as (
-    select grouped.*,
+    select grouped.*, coalesce(quantity_breakdowns.quantity_by_unit, '[]'::jsonb) as quantity_by_unit,
       sum(total_net) over () as grand_total,
       sum(total_net) over (
         order by total_net desc, display_name, analysis_key
@@ -334,6 +348,7 @@ begin
         rows between unbounded preceding and current row
       ) as cumulative_total
     from grouped
+    left join quantity_breakdowns using (analysis_key)
   ), calendar as (
     select day::date as sale_date
     from generate_series(p_start_date, p_end_date, interval '1 day') day
@@ -358,10 +373,11 @@ begin
       'mapping_status', mapping_status,
       'product_id', product_id,
       'sale_unit', sale_unit,
+      'quantity_by_unit', quantity_by_unit,
       'is_fabricacao_propria', coalesce(is_fabricacao_propria, false),
-      'total_quantity', round(total_quantity, 4),
+      'total_quantity', case when sale_unit_count <= 1 then round(total_quantity, 4) end,
       'total_net', round(total_net, 2),
-      'average_price', case when total_quantity > 0 then round(total_net / total_quantity, 2) end,
+      'average_price', case when sale_unit_count <= 1 and total_quantity > 0 then round(total_net / total_quantity, 2) end,
       'share_pct', case when grand_total > 0 then round(total_net * 100 / grand_total, 2) end,
       'cumulative_pct', case when grand_total > 0 then round(cumulative_total * 100 / grand_total, 2) end,
       'abc_class', case when grand_total <= 0 then null

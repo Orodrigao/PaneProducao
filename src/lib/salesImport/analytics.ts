@@ -27,9 +27,10 @@ export interface SalesAbcItem {
   product_id: string | null
   sale_unit: 'un' | 'kg' | null
   is_fabricacao_propria: boolean
-  total_quantity: number
+  total_quantity: number | null
   total_net: number
   average_price: number | null
+  quantity_by_unit: Array<{ sale_unit: 'un' | 'kg'; total_quantity: number }>
   share_pct: number | null
   cumulative_pct: number | null
   abc_class: SalesAbcClass

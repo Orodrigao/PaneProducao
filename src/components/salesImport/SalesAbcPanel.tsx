@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { coverageLabel, salesPeriodForPreset, type SalesAbcResult, type SalesPeriodPreset } from '@/lib/salesImport/analytics'
 import { loadSalesAbc } from '@/lib/salesImport/analyticsClient'
 
@@ -16,13 +16,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Não foi possível calcular a curva ABC.'
 }
 
-export function SalesAbcPanel() {
+export function SalesAbcPanel({ refreshKey = 0 }: { refreshKey?: number }) {
   const initial = salesPeriodForPreset('30')
   const [startDate, setStartDate] = useState(initial.start)
   const [endDate, setEndDate] = useState(initial.end)
   const [result, setResult] = useState<SalesAbcResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const periodRef = useRef({ start: startDate, end: endDate })
+  periodRef.current = { start: startDate, end: endDate }
 
   const load = useCallback(async (start: string, end: string) => {
     setLoading(true)
@@ -37,7 +39,10 @@ export function SalesAbcPanel() {
     }
   }, [])
 
-  useEffect(() => { void load(initial.start, initial.end) }, [initial.end, initial.start, load])
+  useEffect(() => {
+    const period = periodRef.current
+    void load(period.start, period.end)
+  }, [load, refreshKey])
 
   function applyPreset(preset: SalesPeriodPreset) {
     const period = salesPeriodForPreset(preset)
@@ -77,13 +82,17 @@ export function SalesAbcPanel() {
           {result.items.map(item => <tr key={item.analysis_key} style={{ background: item.mapping_status === 'ignored' ? 'var(--cream-raise)' : undefined }}>
             <td><span className="ps-badge">{item.abc_class ?? 'Sem receita'}</span></td>
             <td><b>{item.display_name}</b><br /><small>{item.mapping_status === 'mapped'
-              ? `Vinculado · ${item.sale_unit === 'kg' ? 'kg' : 'un'}`
+              ? `Vinculado · ${item.sale_unit === null ? 'unidades diferentes' : item.sale_unit}`
               : item.mapping_status === 'ignored' ? 'Não mapear · nome do PDV' : 'Pendente · nome do PDV'}</small></td>
             <td>{money.format(Number(item.total_net))}</td>
             <td>{item.share_pct === null ? '—' : `${percent.format(Number(item.share_pct))}%`}</td>
             <td>{item.cumulative_pct === null ? '—' : `${percent.format(Number(item.cumulative_pct))}%`}</td>
-            <td>{quantity.format(Number(item.total_quantity))} {item.sale_unit ?? 'do PDV'}</td>
-            <td>{item.average_price === null ? '—' : `${money.format(Number(item.average_price))}/${item.sale_unit ?? 'quantidade do PDV'}`}</td>
+            <td>{item.quantity_by_unit.length > 1
+              ? item.quantity_by_unit.map(part => `${quantity.format(Number(part.total_quantity))} ${part.sale_unit}`).join(' · ')
+              : `${quantity.format(Number(item.total_quantity))} ${item.sale_unit ?? 'do PDV'}`}</td>
+            <td>{item.average_price === null
+              ? item.quantity_by_unit.length > 1 ? 'Unidades diferentes' : '—'
+              : `${money.format(Number(item.average_price))}/${item.sale_unit ?? 'quantidade do PDV'}`}</td>
           </tr>)}
         </tbody></table>
       </div>}

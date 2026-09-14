@@ -68,6 +68,7 @@ export default function VendasBalcaoPage() {
   const [dayDate, setDayDate] = useState('')
   const [dayStatus, setDayStatus] = useState<'closed' | 'zero_sales'>('closed')
   const [dayReason, setDayReason] = useState('')
+  const [analysisRevision, setAnalysisRevision] = useState(0)
 
   const loadHistory = useCallback(async () => {
     const [importsResult, statusResult] = await Promise.all([
@@ -141,6 +142,7 @@ export default function VendasBalcaoPage() {
     if (completed > 0) {
       setMessage(`${completed} arquivo(s) confirmado(s). O original e os itens ficaram guardados.`)
       await loadHistory()
+      setAnalysisRevision(current => current + 1)
     }
   }
 
@@ -156,6 +158,7 @@ export default function VendasBalcaoPage() {
       setDayDate('')
       setDayReason('')
       await loadHistory()
+      setAnalysisRevision(current => current + 1)
     }
   }
 
@@ -165,7 +168,10 @@ export default function VendasBalcaoPage() {
     if (!window.confirm('A versão atualmente ativa deste dia será substituída. Continuar?')) return
     const { error } = await supabase.rpc('restore_sales_import', { p_import_id: item.id, p_reason: reason.trim() })
     setMessage(error ? error.message : 'Versão anterior restaurada com registro de quem fez e do motivo.')
-    if (!error) await loadHistory()
+    if (!error) {
+      await loadHistory()
+      setAnalysisRevision(current => current + 1)
+    }
   }
 
   if (loadingUser) return <div className="ps-canvas"><div className="ps-shell"><div className="ps-pad">Carregando acesso…</div></div></div>
@@ -224,8 +230,9 @@ export default function VendasBalcaoPage() {
           <button className="ps-btn ghost" onClick={() => void recordDayStatus()} disabled={!dayDate || dayReason.trim().length < 3}>Registrar situação</button>
         </section>}
 
-        <SalesProductMappingPanel canManage={canImportSales(user)} />
-        <SalesAbcPanel />
+        <SalesProductMappingPanel canManage={canImportSales(user)} refreshKey={analysisRevision}
+          onChanged={() => setAnalysisRevision(current => current + 1)} />
+        <SalesAbcPanel refreshKey={analysisRevision} />
 
         <section className="ps-card">
           <div className={styles.historyHeading}>
