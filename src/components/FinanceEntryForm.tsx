@@ -12,6 +12,7 @@ import {
   getFinanceErrorMessage,
   validateFinanceDraft,
   type FinanceAccountRow,
+  categoryAcceptsManualEntry,
   type FinanceCategoryRow,
   type FinanceEntryDraft,
   type FinancePaymentMethod,
@@ -58,7 +59,7 @@ export default function FinanceEntryForm({ categories, accounts, onCancel, onSav
   const grouped = useMemo(() => {
     const groups = new Map<string, FinanceCategoryRow[]>()
     for (const category of categories) {
-      if (category.nature === 'transferencia') continue
+      if (!categoryAcceptsManualEntry(category)) continue
       const list = groups.get(category.dre_group) ?? []
       list.push(category)
       groups.set(category.dre_group, list)

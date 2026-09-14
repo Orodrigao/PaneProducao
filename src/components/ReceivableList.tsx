@@ -19,10 +19,13 @@ import {
   type ReceivableRow,
   type ReceivableSituationFilter,
 } from '@/lib/receivables'
+import { BUCK_ADJUSTMENT_KIND_LABELS, type BuckReceivableDetail } from '@/lib/buckWeeklyBilling'
 
 interface ReceivableListProps {
   receivables: ReceivableRow[]
   busyId: string | null
+  /** Romaneios e ajustes de cada cobrança da Buck, por id da cobrança. */
+  buckDetails?: ReadonlyMap<string, BuckReceivableDetail>
   onPay: (receivable: ReceivableRow) => void
   onReverseReceipt: (receipt: ReceivableReceiptRow) => void
   onCancel: (receivable: ReceivableRow) => void
@@ -45,7 +48,7 @@ function statusLabel(receivable: ReceivableRow): string {
 }
 
 export default function ReceivableList({
-  receivables, busyId, onPay, onReverseReceipt, onCancel, onCorrectDueDate, onSplit,
+  receivables, busyId, buckDetails, onPay, onReverseReceipt, onCancel, onCorrectDueDate, onSplit,
 }: ReceivableListProps) {
   const [search, setSearch] = useState('')
   const [situation, setSituation] = useState<ReceivableSituationFilter>('todas')
@@ -134,6 +137,7 @@ export default function ReceivableList({
           {filteredReceivables.map(receivable => {
         const atrasada = isOverdue(receivable)
         const ocupada = busyId === receivable.id
+        const buckDetail = receivable.origin === 'romaneio_ex' ? buckDetails?.get(receivable.id) : undefined
         return (
           <article
             key={receivable.id}
@@ -184,6 +188,21 @@ export default function ReceivableList({
               </div>
             )}
 
+            {/* A cobrança da Buck mostra de onde saiu o número: os romaneios da
+                semana e cada ajuste com o motivo que foi escrito na confirmação. */}
+            {buckDetail && (
+              <div className="ps-meta" style={{ marginTop: 6, flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span>Romaneios da semana {formatReceivableMoney(buckDetail.romaneiosTotal)}</span>
+                {buckDetail.adjustments.map(ajuste => (
+                  <span key={ajuste.position}>
+                    {BUCK_ADJUSTMENT_KIND_LABELS[ajuste.kind] ?? ajuste.kind} · {ajuste.description}
+                    {ajuste.product_name ? ` (${ajuste.quantity} ${ajuste.unit} de ${ajuste.product_name})` : ''}
+                    {' · '}{ajuste.amount > 0 ? '+' : ''}{formatReceivableMoney(ajuste.amount)}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* Cada pedaco aparece com sua data, forma e valor: e assim que a
                 Elis confere o Pix de terca contra o dinheiro de quinta. */}
             {(receivable.receipts ?? []).filter(receipt => receipt.reversed_at === null).map(receipt => (
@@ -218,7 +237,7 @@ export default function ReceivableList({
                 </button>
                 {/* So a cobranca inteira e sem dinheiro dentro pode ser
                     dividida: e o caso da que nasceu sozinha e saiu alta. */}
-                {receivable.installment_count === 1 && receivedTotal(receivable) === 0 && (
+                {receivable.origin !== 'romaneio_ex' && receivable.installment_count === 1 && receivedTotal(receivable) === 0 && (
                   <button className="ps-btn ghost sm" onClick={() => onSplit(receivable)} disabled={ocupada}>
                     Dividir em parcelas
                   </button>

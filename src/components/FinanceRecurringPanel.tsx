@@ -15,6 +15,7 @@ import {
   getFinanceErrorMessage,
   validateFinanceRecurringRuleDraft,
   type FinanceAccountRow,
+  categoryAcceptsManualEntry,
   type FinanceCategoryRow,
   type FinanceEntryRow,
   type FinancePaymentMethod,
@@ -179,7 +180,7 @@ export default function FinanceRecurringPanel({
               <select id="recurring-category" className="ps-select" value={draft.categoryKey}
                 onChange={event => updateDraft({ categoryKey: event.target.value })}>
                 <option value="">Escolha a categoria</option>
-                {categories.filter(category => category.nature !== 'transferencia').map(category => (
+                {categories.filter(categoryAcceptsManualEntry).map(category => (
                   <option key={category.key} value={category.key}>{category.label}</option>
                 ))}
               </select>
