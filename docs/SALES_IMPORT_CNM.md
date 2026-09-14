@@ -34,10 +34,19 @@ CNM_YYYY-MM-DD_JC.xls
 ### Fase 2 — Mapeamento e curva ABC
 
 - Mapear manualmente por origem + loja + chave externa.
-- Estados: fabricação própria, não mapear e pendente; sem inferir por nome.
+- Estados: vinculado, não mapear e pendente; sem inferir por nome e sem criar
+  produto automaticamente.
+- O vínculo escolhe o produto existente e a forma de venda (`un` ou `kg`).
+  Uma correção exige motivo, fica auditada e reorganiza o histórico analítico
+  sem alterar a linha original importada.
 - Curva ABC pela receita líquida: A até 80%, B até 95%, C restante.
+- Nomes diferentes ligados ao mesmo produto são somados; pendentes e itens
+  marcados para não mapear continuam nos totais pelo nome do PDV.
 - Mostrar quantidade como apoio e preço médio praticado; a unidade só fica
   conhecida depois do mapeamento.
+- Abrir nos últimos 30 dias e mostrar buracos de cobertura sem tratá-los como
+  venda zero. Domingo não é dia esperado da JC; abertura excepcional aparece
+  normalmente quando houver arquivo.
 
 ### Fase 3 — E-mail ou pasta monitorada
 

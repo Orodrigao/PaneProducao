@@ -1,0 +1,146 @@
+.historyHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.historyHeading h2 {
+  margin: 0 0 4px;
+}
+
+.historyHeading p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.historyHeading > span {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid var(--ps-line);
+  border-radius: var(--r-pill);
+  background: var(--cream);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.dayGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(92px, 1fr));
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.dayCard {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--ps-line);
+  border-radius: 12px;
+  background: var(--cream);
+}
+
+.dayDate {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ps-ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.dayLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.imported {
+  border-color: #c5d5ba;
+  background: #eef2e7;
+}
+
+.imported .dayLabel {
+  color: #556341;
+}
+
+.imported .statusDot {
+  background: var(--sage);
+}
+
+.zeroSales {
+  border-color: var(--honey-line);
+  background: var(--honey-tint);
+}
+
+.zeroSales .dayLabel {
+  color: #7a5418;
+}
+
+.zeroSales .statusDot {
+  background: var(--honey-deep);
+}
+
+.closed {
+  background: var(--line-soft);
+}
+
+.missing {
+  border-style: dashed;
+  background: transparent;
+}
+
+.missing .dayDate,
+.missing .dayLabel {
+  color: var(--ink-soft);
+}
+
+.waiting {
+  border-color: var(--honey-line);
+  background: #fffaf0;
+}
+
+.waiting .dayLabel {
+  color: #7a5418;
+}
+
+.waiting .statusDot {
+  background: var(--honey-deep);
+}
+
+@media (max-width: 900px) {
+  .dayGrid {
+    grid-template-columns: repeat(4, minmax(92px, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .historyHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .historyHeading > span {
+    align-self: flex-start;
+  }
+
+  .dayGrid {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+}
