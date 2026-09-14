@@ -222,12 +222,27 @@ vídeos, traces e relatórios com sessão não são gerados.
 Regras curtas tiradas de falhas reais entre julho e setembro de 2026. O
 post-mortem de cada uma está na PR correspondente.
 
-- **pgTAP na máquina, pelo container.** `npx supabase start` e depois
-  `docker exec -i supabase_db_pane-processo psql -U postgres -d postgres -f - <
-  supabase/tests/<arquivo>.test.sql`; confira `grep -c "^ ok"` contra o
-  `plan(N)` e `grep "^ not ok"` para as falhas. O atalho `supabase test db`
-  falha com "No plan found in TAP output" por defeito do container auxiliar; o
-  schema aplica normalmente. Cada rodada de CI evitada assim vale minutos.
+- **pgTAP na máquina, com Docker só sob demanda e só o banco.** Abra o Docker
+  Desktop apenas para testar PR que mexe em `supabase/`. Suba só o Postgres,
+  como o `CI Banco`: `supabase db start`, `supabase db reset --local` (cerca de
+  4 minutos) e `docker exec -i supabase_db_pane-processo psql -U postgres -d
+  postgres -f - < supabase/tests/<arquivo>.test.sql`; confira `grep -c "^ ok"`
+  contra o `plan(N)` e `grep "^ not ok"` para as falhas. O atalho `supabase test
+  db` falha com "No plan found in TAP output" por defeito do container auxiliar;
+  o schema aplica normalmente. Não use `supabase start`: ele sobe 11 serviços
+  que religam sozinhos a cada abertura do Docker. Ao terminar, `supabase stop` e
+  `docker desktop stop`.
+- **Docker Desktop cai ao abrir com "rename ... .sock ... The file cannot be
+  accessed by the system".** Nesta máquina os sockets de
+  `%LOCALAPPDATA%\Docker\run` e `%LOCALAPPDATA%\docker-secrets-engine` ficam
+  ilegíveis toda vez que o Docker fecha (medido em 14/09/2026). Com o Docker
+  fechado, renomeie as duas pastas com sufixo de data antes de abrir; ele recria
+  pastas limpas. Nunca use "Reset to factory defaults".
+- **Máquina esgotada deixa a portaria lenta.** O `Check` abre milhares de
+  processos `git`; com a memória comprometida acima de 90%, cada processo passou
+  de 50 ms para mais de 1 s e o preparo do snapshot foi de 10 minutos para mais
+  de 2 horas (12 a 14/09/2026). Antes de culpar a portaria, confira memória e
+  sessões abertas. Entrega integrada ou encerrada: arquive a sessão.
 - **Reexecutar o navegador em outro dia exige seed novo.** O seed grava a data
   do dia em que rodou. O job de navegador do CI lê sempre o `PaneERP Preview`
   compartilhado, mesmo em PR que mexe em `supabase/`: reexecute `Banco Preview`
