@@ -8,7 +8,7 @@ const receipt: PjReceiptEntry = { id: 'r1', receivable_id: 'b1', amount: 40, rec
 describe('fatos e pendências PJ', () => {
   it('data vencida não comprova entrega nem produção concluída', () => {
     expect(pjOperationalOverview(order, '2026-09-07').status).toBe('Data combinada passou')
-    expect(pjHasPendingFollowup(order, '2026-09-07')).toBe(true)
+    expect(pjHasPendingFollowup(order, '2026-09-07', undefined, 'dispatch')).toBe(true)
   })
   it('zero exige decisão e não cancela automaticamente', () => {
     const state = pjOperationalOverview({ ...order, rows: [{ dispatched_quantity: 0 }] }, '2026-09-07')
@@ -25,7 +25,19 @@ describe('fatos e pendências PJ', () => {
     const ready = { ...order, dispatched_at: '2026-09-02' }
     expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'loaded', bills: [bill], receipts: [receipt] })).toBe(true)
     expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'loaded', bills: [bill], receipts: [{ ...receipt, amount: 100 }] })).toBe(false)
-    expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'unavailable' })).toBe(true)
+    expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'unavailable' })).toBe(false)
+  })
+  it('falha da leitura financeira nao transforma pedido pronto em pendencia', () => {
+    const ready = { ...order, dispatched_at: '2026-09-02' }
+    expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'restricted' })).toBe(false)
+    expect(pjHasPendingFollowup(ready, '2026-09-07', { kind: 'loading' })).toBe(false)
+  })
+  it('fila da Expedicao exclui legado faturado que ela nao consegue conferir', () => {
+    const billedLegacy = { ...order, rows: [{ dispatched_quantity: null, already_billed: true }] }
+    expect(pjHasPendingFollowup(billedLegacy, '2026-09-07', undefined, 'dispatch')).toBe(false)
+  })
+  it('fila da Expedicao conserva pedido vencido que ainda pode ser conferido', () => {
+    expect(pjHasPendingFollowup(order, '2026-09-07', undefined, 'dispatch')).toBe(true)
   })
   it('cancelamento operacional não esconde cobrança vigente', () => {
     expect(pjHasPendingFollowup({ ...order, cancelled_at: '2026-09-03' }, '2026-09-07', { kind: 'loaded', bills: [bill], receipts: [] })).toBe(true)

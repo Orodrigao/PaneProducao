@@ -539,7 +539,7 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/romaneio", "/fechamento-caixa", "/sobras", "/encomendas", "/estoque-congelado"]'::jsonb),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/sobras", "/pedidos-pj"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
-    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha"]'::jsonb),
+    ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha", "/forno"]'::jsonb),
     ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb),
     -- O financeiro carrega as rotas comerciais do cenario PJ: sem
     -- /pedidos-pj e /relatorios o app redireciona antes de mostrar a lista
@@ -600,6 +600,7 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.visualizar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.conferir_recebimento', 'ex'),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'producao_cozinha.lancar', 'jc'),
+    ('rodrigao+teste-cozinha-jc@gmail.com', 'forno.acessar', 'jc'),
     ('rodrigao+teste-geolar-jc@gmail.com', 'producao.acessar', '*'),
     ('rodrigao+teste-geolar-jc@gmail.com', 'producao_pj.programar', 'jc'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'contas_pagar.acessar', 'jc'),

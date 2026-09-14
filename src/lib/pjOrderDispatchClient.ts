@@ -104,17 +104,33 @@ export async function savePjOrderDispatchQuantities(
   if (!orderGroupId) return { ok: false, message: 'Pedido sem identificação para conferir.' }
   if (items.length === 0) return { ok: false, message: 'Nenhum item para conferir.' }
 
-  const { data, error } = await supabase.rpc('save_pj_order_dispatch_quantities', {
-    p_request_id: requestId,
-    p_order_group_id: orderGroupId,
-    p_items: items,
-    p_expected_version: expectedVersion,
-  })
+  let response: Awaited<ReturnType<typeof supabase.rpc>>
+  try {
+    response = await supabase.rpc('save_pj_order_dispatch_quantities', {
+      p_request_id: requestId,
+      p_order_group_id: orderGroupId,
+      p_items: items,
+      p_expected_version: expectedVersion,
+    })
+  } catch {
+    return {
+      ok: false,
+      message: 'A conferência não foi confirmada. Os números continuam na tela. Confira a internet e toque em Salvar conferência novamente.',
+    }
+  }
+  const { data, error } = response
 
   if (error) {
     // 40001 é a recusa por tela desatualizada: a saída é recarregar, não
     // tentar de novo com os mesmos números.
     const stale = error.code === '40001'
+    const communicationFailure = /load failed|failed to fetch|networkerror|network request failed/i.test(error.message)
+    if (communicationFailure) {
+      return {
+        ok: false,
+        message: 'A conferência não foi confirmada. Os números continuam na tela. Confira a internet e toque em Salvar conferência novamente.',
+      }
+    }
     return {
       ok: false,
       stale,

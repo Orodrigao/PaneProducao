@@ -56,10 +56,26 @@ export function pjBillingForOrder(state: PjBillingState, groupId: string | null)
   return { kind: 'loaded', bills, receipts: state.receipts.filter(receipt => ids.has(receipt.receivable_id)) }
 }
 
-export function pjHasPendingFollowup(order: PjOperationalOrder, today: string, billing?: PjBillingState): boolean {
+export function pjHasPendingFollowup(
+  order: PjOperationalOrder,
+  today: string,
+  billing?: PjBillingState,
+  audience: 'commercial' | 'dispatch' = 'commercial',
+): boolean {
+  if (audience === 'dispatch') {
+    if (order.cancelled_at || order.dispatched_at) return false
+    if (order.rows.some(row => row.already_billed)) return false
+    if (!order.delivery_date) return false
+    if (order.rows.length > 0 && order.rows.every(row => row.dispatched_quantity !== null)) {
+      return !order.rows.every(row => Number(row.dispatched_quantity) === 0)
+    }
+    return true
+  }
+
+  // Sem a leitura financeira não sabemos distinguir quitado, em aberto ou
+  // legado já faturado. “Não sei” nunca pode virar centenas de pendências.
+  if (!billing || billing.kind !== 'loaded') return false
   if (pjOperationalOverview(order, today).pending) return true
-  if (!billing) return false
-  if (billing.kind !== 'loaded') return !order.cancelled_at
   const active = billing.bills.filter(bill => bill.status !== 'cancelada')
   if (order.cancelled_at) return active.length > 0
   if (active.length === 0) return true

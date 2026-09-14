@@ -115,16 +115,16 @@ describe('pedido com conferência pendente', () => {
     dispatchedAt: null,
   }
 
-  it('fica na fila mesmo com a entrega vencida, para não virar órfão', () => {
+  it('fica no histórico pela data; a aba Pendências é que evita ficar órfão', () => {
     // Entregue no sábado, conferido na segunda: sem isto, some da tela da
     // Expedição à meia-noite e não há onde terminar a conferência.
     const { open, history, openSections } = organizePjOrders(
       [{ ...base, hasPendingCheck: true }],
       { today: '2026-08-17', query: '' },
     )
-    expect(open).toHaveLength(1)
-    expect(history).toHaveLength(0)
-    expect(openSections[0].id).toBe('overdue')
+    expect(open).toHaveLength(0)
+    expect(history).toHaveLength(1)
+    expect(openSections).toHaveLength(0)
   })
 
   it('vai para o Histórico assim que a conferência termina', () => {
@@ -209,6 +209,18 @@ describe('quando o pedido ainda segura a fila da Expedição', () => {
       dispatchedAt: null,
       rows: [],
     })).toBe(false)
+  })
+})
+
+describe('contagem comum de Em aberto e Fechados', () => {
+  it('pedido vencido fica em Fechados mesmo quando a Expedicao ainda precisa conferi-lo', () => {
+    const overduePending = {
+      ...order('sabado', '2026-09-12', '2026-09-12'),
+      hasPendingCheck: true,
+    }
+    const result = organizePjOrders([overduePending], { today: '2026-09-14', query: '' })
+    expect(result.open).toEqual([])
+    expect(result.history).toEqual([overduePending])
   })
 })
 

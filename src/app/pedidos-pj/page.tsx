@@ -823,11 +823,9 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       deliveryDate: group.delivery_date,
       cancelledAt: group.cancelled_at,
       dispatchedAt: group.dispatched_at,
-      // Enquanto faltar conferir, o pedido nao cai no Historico pela virada do
-      // dia: sem isso, entrega de sabado conferida na segunda vira orfa.
-      //
-      // Mas so enquanto conferir ainda for POSSIVEL: a regra inteira, com o
-      // porque de cada porta, esta em `hasPendingDispatchCheck`.
+      // Identifica se a Expedição ainda consegue e precisa conferir. A data
+      // continua decidindo Em aberto/Fechados; a aba Pendências usa a mesma
+      // regra operacional para o pedido vencido não ficar órfão.
       hasPendingCheck: access.mode === 'dispatch' && hasPendingDispatchCheck({
         cancelledAt: group.cancelled_at,
         dispatchedAt: group.dispatched_at,
@@ -836,7 +834,12 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
           alreadyBilled: row.already_billed,
         })),
       }),
-      pendingAction: pjHasPendingFollowup(group, todayISO(), access.showCommercialValues ? pjBillingForOrder(billingState, group.order_group_id) : undefined),
+      pendingAction: pjHasPendingFollowup(
+        group,
+        todayISO(),
+        access.showCommercialValues ? pjBillingForOrder(billingState, group.order_group_id) : undefined,
+        access.mode === 'dispatch' ? 'dispatch' : 'commercial',
+      ),
       nextAction: pjOperationalOverview(group, todayISO()).next,
       itemCount: group.rows.length,
       total: estimated ? group.totalPedido : group.total,
@@ -1111,6 +1114,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
               }}
               formatDate={fmtBR}
               showCommercialValues={access.showCommercialValues}
+              pendingUnavailable={access.mode === 'commercial' && billingState.kind !== 'loaded'}
             />
           )}
         </div>
