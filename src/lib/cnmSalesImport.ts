@@ -9,6 +9,8 @@ export type CnmSalesParseErrorCode =
   | 'local_nao_mapeado'
   | 'linha_invalida'
   | 'sem_itens'
+  | 'nome_arquivo_invalido'
+  | 'total_divergente'
 
 export interface CnmSalesImportContext {
   cnmLocation: string
@@ -66,6 +68,10 @@ type ColumnKey =
 type ColumnIndexes = Record<ColumnKey, number>
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+const CNM_FILE_PATTERNS = [
+  /^CNM_JC_(\d{4}-\d{2}-\d{2})\.xls$/,
+  /^CNM_(\d{4}-\d{2}-\d{2})_JC\.xls$/,
+] as const
 const MAX_HEADER_SCAN_ROWS = 30
 const MONEY_PRECISION = 100
 const QUANTITY_PRECISION = 10_000
@@ -79,8 +85,29 @@ const HEADER_ALIASES: Record<ColumnKey, ReadonlyArray<string>> = {
   netTotal: [
     'valor total produtos descontos',
     'valor total produtos desconto',
-    'valor',
   ],
+}
+
+export function parseCnmSalesFileName(fileName: string): string {
+  const normalizedName = fileName.trim()
+  const match = CNM_FILE_PATTERNS.map(pattern => pattern.exec(normalizedName)).find(Boolean)
+  if (!match) {
+    throw new CnmSalesParseError(
+      'nome_arquivo_invalido',
+      'Use o arquivo original CNM_JC_AAAA-MM-DD.xls ou CNM_AAAA-MM-DD_JC.xls.',
+    )
+  }
+  return validateIsoDate(match[1])
+}
+
+export function parseCnmSalesFile(
+  fileName: string,
+  fileData: ArrayBuffer | Uint8Array,
+): CnmSalesReport {
+  return parseCnmSalesWorkbook(fileData, {
+    cnmLocation: 'Pane Salute',
+    saleDate: parseCnmSalesFileName(fileName),
+  })
 }
 
 export function mapCnmLocation(cnmLocation: string): CnmStore {
@@ -110,6 +137,11 @@ export function parseCnmSalesWorkbook(
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName]
     if (!sheet) continue
+
+    const dimensions = sheet['!ref'] ? utils.decode_range(sheet['!ref']) : null
+    if (dimensions && (dimensions.e.r + 1 > 5100 || dimensions.e.c + 1 > 100)) {
+      throw new CnmSalesParseError('arquivo_invalido', 'A planilha ultrapassa o limite seguro de linhas ou colunas.')
+    }
 
     const rows = utils.sheet_to_json<unknown[]>(sheet, {
       header: 1,
@@ -187,7 +219,7 @@ function parseRows(input: {
 }): CnmSalesReport {
   const items: CnmSalesItem[] = []
   const warnings: string[] = []
-  let reportedNetTotal: number | null = null
+  const reportedTotalCandidates: number[] = []
 
   for (let rowIndex = input.headerRowIndex + 1; rowIndex < input.rows.length; rowIndex += 1) {
     const row = input.rows[rowIndex] ?? []
@@ -197,7 +229,7 @@ function parseRows(input: {
     if (!rawProductName) {
       const footerTotal = parseNumber(row[input.columns.netTotal])
       if (footerTotal !== null && footerTotal >= 0) {
-        reportedNetTotal = roundMoney(footerTotal)
+        reportedTotalCandidates.push(roundMoney(footerTotal))
       }
       continue
     }
@@ -251,13 +283,18 @@ function parseRows(input: {
   const calculatedNetTotal = roundMoney(
     items.reduce((total, item) => total + item.netTotal, 0),
   )
+  if (reportedTotalCandidates.length > 1) {
+    throw new CnmSalesParseError('total_divergente', 'O arquivo possui mais de um total de fechamento possível.')
+  }
+  const reportedNetTotal = reportedTotalCandidates[0] ?? null
 
   if (
     reportedNetTotal !== null
     && Math.abs(reportedNetTotal - calculatedNetTotal) > 0.01
   ) {
-    warnings.push(
-      `A soma dos produtos (${formatMoney(calculatedNetTotal)}) difere do total informado no arquivo (${formatMoney(reportedNetTotal)}).`,
+    throw new CnmSalesParseError(
+      'total_divergente',
+      `A soma dos produtos (${formatMoney(calculatedNetTotal)}) difere do total informado no arquivo (${formatMoney(reportedNetTotal)}). Baixe o relatório novamente antes de importar.`,
     )
   }
 

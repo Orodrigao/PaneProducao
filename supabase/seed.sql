@@ -551,7 +551,7 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     -- preco", que o Contas a receber oferece quando o pedido esta bloqueado,
     -- caem na tela inicial no preview e nao no de producao, e o teste do
     -- Rodrigo acusa um defeito que so existe no banco de teste.
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/clientes", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios", "/tabelas-preco"]'::jsonb)
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/clientes", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios", "/relatorios/vendas-balcao", "/tabelas-preco"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -634,7 +634,9 @@ with requested_permissions(email, permission_key, scope) as (
     -- romaneios exige permissao de romaneio com escopo da loja. Em producao a
     -- Elis ja tem as duas com escopo global.
     ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.acessar', '*'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.visualizar', '*')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.visualizar', '*'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'vendas_balcao.visualizar', 'jc'),
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'vendas_balcao.importar', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested

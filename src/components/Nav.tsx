@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { getCurrentUser, getCurrentUserAsync, canAccess, logout, roleColor, type AppUser } from '@/lib/auth'
+import { getCurrentUser, getCurrentUserAsync, canAccess, canAccessSalesImport, logout, roleColor, SALES_IMPORT_ROUTE, type AppUser } from '@/lib/auth'
 import { COMPRAS_COTACOES_PAUSADAS, isComprasCotacoesPath } from '@/lib/features'
 import {
   ClipboardList, Flame, Truck, BarChart3, LayoutGrid,
@@ -45,6 +45,7 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
     { href: '/financeiro',         label: 'Financeiro', Icon: BookOpenCheck },
     { href: '/contas-pagar',       label: 'Contas a pagar', Icon: DollarSign },
     { href: '/contas-receber',     label: 'Contas a receber', Icon: HandCoins },
+    { href: '/relatorios/vendas-balcao', label: 'Vendas do balcão', Icon: BarChart3 },
     { href: '/tabelas-preco',      label: 'Tabelas',   Icon: Table2 },
     { href: '/simulador-desconto', label: 'Simulador', Icon: SlidersHorizontal },
   ]},
@@ -75,6 +76,7 @@ export default function Nav() {
     if (COMPRAS_COTACOES_PAUSADAS && isComprasCotacoesPath(l.href)) {
       return false
     }
+    if (l.href === SALES_IMPORT_ROUTE) return canAccessSalesImport(user)
     return canAccess(user, l.href)
   }
   const isActive = (href: string) =>

@@ -11,6 +11,8 @@ export const FINANCE_PERMISSION = 'financeiro.acessar'
 export const FINANCE_ROUTE = '/financeiro'
 export const RECEIVABLES_PERMISSION = 'contas_receber.acessar'
 export const RECEIVABLES_ROUTE = '/contas-receber'
+export const SALES_IMPORT_PERMISSION = 'vendas_balcao.visualizar'
+export const SALES_IMPORT_ROUTE = '/relatorios/vendas-balcao'
 export interface AppUser {
   id: string
   username: string
@@ -20,6 +22,7 @@ export interface AppUser {
   allowedRoutes: string[]
   store: string | null  // jc | ja | ex | null (admins sem loja física)
   email?: string
+  permissions?: AppPermissionRow[]
 }
 
 const AUTH_PROFILE_CACHE_KEY = 'pane_auth_profile_cache'
@@ -108,9 +111,27 @@ export function resolveAllowedRoutes(
       && (permission.scope === '*' || permission.scope === 'jc'),
   )
 
-  if (!canAccessReceivables) return withFinanceRoute.filter(route => route !== RECEIVABLES_ROUTE)
-  if (withFinanceRoute.includes(RECEIVABLES_ROUTE)) return withFinanceRoute
-  return [...withFinanceRoute, RECEIVABLES_ROUTE]
+  const withReceivablesRoute = !canAccessReceivables
+    ? withFinanceRoute.filter(route => route !== RECEIVABLES_ROUTE)
+    : (withFinanceRoute.includes(RECEIVABLES_ROUTE) ? withFinanceRoute : [...withFinanceRoute, RECEIVABLES_ROUTE])
+
+  const canAccessSalesImport = permissions.some(permission =>
+    permission.permission_key === SALES_IMPORT_PERMISSION
+      && (permission.scope === '*' || permission.scope === 'jc'),
+  )
+  if (!canAccessSalesImport) return withReceivablesRoute.filter(route => route !== SALES_IMPORT_ROUTE)
+  if (withReceivablesRoute.includes(SALES_IMPORT_ROUTE)) return withReceivablesRoute
+  return [...withReceivablesRoute, SALES_IMPORT_ROUTE]
+}
+
+export function canAccessSalesImport(user: AppUser): boolean {
+  return user.permissions?.some(permission => permission.permission_key === SALES_IMPORT_PERMISSION
+    && (permission.scope === '*' || permission.scope === 'jc')) ?? false
+}
+
+export function canImportSales(user: AppUser): boolean {
+  return user.permissions?.some(permission => permission.permission_key === 'vendas_balcao.importar'
+    && (permission.scope === '*' || permission.scope === 'jc')) ?? false
 }
 
 export interface AuthActionResult {
@@ -275,6 +296,7 @@ export function buildAppUser(
     allowedRoutes: resolveAllowedRoutes(profile.role, profile.store, baseRoutes, permissions),
     store: profile.store ?? null,
     email: email || undefined,
+    permissions: [...permissions],
   }
 }
 

@@ -4,6 +4,8 @@ import { CNM_SALES_REPORT_ROWS } from '../../test/fixtures/cnmSalesReport'
 import {
   CnmSalesParseError,
   mapCnmLocation,
+  parseCnmSalesFile,
+  parseCnmSalesFileName,
   parseCnmSalesWorkbook,
 } from './cnmSalesImport'
 
@@ -72,9 +74,9 @@ describe('parseCnmSalesWorkbook', () => {
     expect(report.warnings).toEqual([])
   })
 
-  it('aceita as pequenas variações de cabeçalho vistas na tela do CNM', () => {
+  it('aceita as pequenas variações seguras de cabeçalho vistas no CNM', () => {
     const rows: FixtureCell[][] = [
-      ['Produto', 'Categoria', 'Quantidade', 'CMV', 'P/ viagem?', 'Valor'],
+      ['Produto', 'Categoria', 'Quantidade', 'CMV', 'P/ viagem?', 'Valor Total Produtos Descontos'],
       ['Produto Teste', 'Categoria Teste', 1, 0, 'Nao', 12.349999999999998],
     ]
 
@@ -87,17 +89,13 @@ describe('parseCnmSalesWorkbook', () => {
     expect(report.items[0]?.takeAway).toBe(false)
   })
 
-  it('avisa quando o total do rodapé diverge da soma dos produtos', () => {
+  it('bloqueia quando o total do rodapé diverge da soma dos produtos', () => {
     const rows = CNM_SALES_REPORT_ROWS.map((row) => [...row])
     rows[rows.length - 1] = ['', '', '', '', '', 40]
 
-    const report = parseCnmSalesWorkbook(createXls(rows), {
-      cnmLocation: 'Pane Salute',
-      saleDate: '2026-07-10',
-    })
-
-    expect(report.warnings).toHaveLength(1)
-    expect(report.warnings[0]).toContain('difere do total informado')
+    expectParseError(() => parseCnmSalesWorkbook(createXls(rows), {
+      cnmLocation: 'Pane Salute', saleDate: '2026-07-10',
+    }), 'total_divergente')
   })
 
   it('rejeita arquivo que não seja o relatório por produto', () => {
@@ -140,5 +138,27 @@ describe('parseCnmSalesWorkbook', () => {
       'data_invalida',
     )
     expectParseError(() => mapCnmLocation('Pane Julio'), 'local_nao_mapeado')
+  })
+
+  it('tira a data do nome padronizado e fixa a unidade JC', () => {
+    expect(parseCnmSalesFileName('CNM_JC_2026-07-10.xls')).toBe('2026-07-10')
+    expect(parseCnmSalesFileName('CNM_2026-07-10_JC.xls')).toBe('2026-07-10')
+    const report = parseCnmSalesFile('CNM_JC_2026-07-10.xls', createXls(CNM_SALES_REPORT_ROWS))
+    expect(report).toMatchObject({ saleDate: '2026-07-10', store: 'jc' })
+  })
+
+  it('recusa nome que permitiria escolher data ou loja errada', () => {
+    expectParseError(() => parseCnmSalesFileName('vendas.xls'), 'nome_arquivo_invalido')
+    expectParseError(() => parseCnmSalesFileName('CNM_JA_2026-07-10.xls'), 'nome_arquivo_invalido')
+  })
+
+  it('não aceita o cabeçalho genérico Valor como total líquido', () => {
+    const rows: FixtureCell[][] = [
+      ['Produto', 'Categoria', 'Quantidade', 'CMV', 'P/ viagem?', 'Valor'],
+      ['Produto Teste', 'Categoria Teste', 1, 0, 'Nao', 12.35],
+    ]
+    expectParseError(() => parseCnmSalesWorkbook(createXls(rows), {
+      cnmLocation: 'Pane Salute', saleDate: '2026-07-10',
+    }), 'cabecalho_invalido')
   })
 })

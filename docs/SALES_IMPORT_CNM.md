@@ -1,7 +1,12 @@
-# SALES_IMPORT_CNM.md — Importação de vendas Controle Na Mão
+# SALES_IMPORT_CNM.md — Vendas do balcão, independente do PDV
 
-**Natureza:** especificação da funcionalidade. Para saber o que já existe e o
-que ainda falta, consulte [CURRENT_STATE.md](CURRENT_STATE.md).
+**Natureza:** especificação da funcionalidade. O nome histórico do arquivo foi
+mantido para não quebrar referências. Para saber o que já existe e o que ainda
+falta, consulte [CURRENT_STATE.md](CURRENT_STATE.md).
+
+O produto e o banco não dependem do Controle Na Mão: o CNM é somente o primeiro
+adaptador. Cada PDV converte seu XLS ou CSV para o formato comum do ERP; trocar o
+sistema de venda não troca as tabelas, o histórico nem os relatórios.
 
 ## Problema
 
@@ -9,31 +14,39 @@ O ERP ainda não tem integração com o PDV Controle Na Mão. Para calcular CMV,
 
 ## Estratégia em fases
 
-### Fase 1 — Upload manual padronizado
+### Fase 1 — Núcleo seguro e upload manual padronizado
 
 - Exportar CSV/Excel do CNM.
-- Subir no ERP em `/financeiro/importar-vendas`.
-- Escolher loja e data.
-- Mostrar prévia.
-- Mapear produtos não reconhecidos.
+- Subir no ERP em `/relatorios/vendas-balcao`.
+- A data e a loja vêm do nome padronizado, sem digitação.
+- Mostrar prévia e bloquear divergência entre itens e total do relatório.
 - Confirmar importação.
+- Guardar o original em área privada e preservar versões substituídas.
+- Distinguir dia faltante, loja fechada e zero venda.
 
 Nomenclatura sugerida:
 
 ```text
-CNM_YYYY-MM-DD_JULIO.xlsx
-CNM_YYYY-MM-DD_EXPOSICAO.xlsx
-CNM_YYYY-MM-DD_JARDIM_AMERICA.xlsx
+CNM_JC_YYYY-MM-DD.xls
+CNM_YYYY-MM-DD_JC.xls
 ```
 
-### Fase 2 — E-mail ou pasta monitorada
+### Fase 2 — Mapeamento e curva ABC
+
+- Mapear manualmente por origem + loja + chave externa.
+- Estados: fabricação própria, não mapear e pendente; sem inferir por nome.
+- Curva ABC pela receita líquida: A até 80%, B até 95%, C restante.
+- Mostrar quantidade como apoio e preço médio praticado; a unidade só fica
+  conhecida depois do mapeamento.
+
+### Fase 3 — E-mail ou pasta monitorada
 
 - CNM exporta ou usuário salva arquivo em pasta padrão.
 - Automação com n8n/Make/script local pega o arquivo.
 - Arquivo vai para Supabase Storage.
 - ERP cria importação pendente para revisão.
 
-### Fase 3 — RPA
+### Fase 4 — RPA
 
 - Robô local abre CNM, exporta relatório e salva o arquivo.
 - Usar apenas se o CNM não oferecer API/export agendado confiável.
@@ -95,11 +108,18 @@ Variáveis opcionais, sempre locais:
 Falhas salvam uma captura local em `storage/cnm/downloads/errors/`. Essa pasta
 pode conter dados operacionais e não deve ser compartilhada nem versionada.
 
-### Fase 4 — API direta
+### Fase 5 — API direta
 
 - Só implementar se CNM oferecer API/documentação/credenciais oficiais.
 
-## Schema sugerido
+Os dois nomes acima são aceitos porque a automação diária usa o primeiro e o
+coletor local histórico usa o segundo. Ambos carregam a mesma data e loja, sem
+digitação humana.
+
+## Modelo conceitual
+
+O schema real está nas migrations. Este bloco descreve somente os campos de
+negócio e não deve ser usado como fonte literal para nomes de tabela ou coluna.
 
 ```sql
 sales_imports (
@@ -158,6 +178,17 @@ sales_product_aliases (
 - Permitir substituir importação, mas com log.
 - Guardar linha bruta em JSON para auditoria.
 - Nunca usar dados de venda para alterar preço automaticamente.
+- A importação também nunca altera estoque ou custo.
+- Uma origem + loja + tipo + data possui uma versão ativa. Mesmo hash é
+  idempotente; arquivo diferente exige motivo e preserva o anterior.
+- O cabeçalho financeiro precisa ser específico; a coluna genérica `Valor` não
+  é aceita como total líquido.
+- A primeira conferência ocorre no navegador. O banco recalcula totais, valida
+  formato, data, duplicidade e permissões, mas não relê o XLS; essa fronteira de
+  confiança fica explícita até existir processamento controlado no servidor.
+- Se a confirmação falhar depois do envio, o arquivo permanece privado e não
+  cria venda. A limpeza de arquivos órfãos fica para um processo posterior que
+  use a API oficial do Storage; o banco não apaga diretamente sua tabela interna.
 
 ## O preço praticado vem daqui (decisão de 2026-09-03)
 

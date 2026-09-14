@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAppUser,
   canAccess,
+  canAccessSalesImport,
   fetchCurrentAuthUser,
   navigateAfterAuthentication,
   normalizeEmailInput,
@@ -9,6 +10,7 @@ import {
   passwordRecoveryErrorMessage,
   passwordUpdateErrorMessage,
   resolveAllowedRoutes,
+  SALES_IMPORT_ROUTE,
   signInWithEmailPassword,
   validatePasswordSetup,
 } from './auth'
@@ -32,6 +34,26 @@ vi.mock('@/lib/supabase', () => ({
 }))
 
 describe('resolveAllowedRoutes', () => {
+  it('abre vendas do balcão somente com a permissão financeira específica', () => {
+    const base = ['/', '/relatorios']
+    expect(resolveAllowedRoutes('financeiro', 'jc', base, [{
+      permission_key: 'vendas_balcao.visualizar', scope: 'jc',
+    }])).toContain(SALES_IMPORT_ROUTE)
+    expect(resolveAllowedRoutes('financeiro', 'jc', base, [])).not.toContain(SALES_IMPORT_ROUTE)
+  })
+
+  it('não confunde a rota geral de relatórios com acesso aos valores do balcão', () => {
+    const financeiro = {
+      id: '1', username: 'financeiro', displayName: 'Financeiro', role: 'financeiro' as const,
+      active: true, allowedRoutes: ['/', '/relatorios'], store: 'jc',
+    }
+    expect(canAccessSalesImport(financeiro)).toBe(false)
+    expect(canAccessSalesImport({
+      ...financeiro,
+      allowedRoutes: ['/', SALES_IMPORT_ROUTE],
+      permissions: [{ permission_key: 'vendas_balcao.visualizar', scope: 'jc' }],
+    })).toBe(true)
+  })
   it('libera Pedidos PJ quando a permissão de acesso vale para a loja do usuário', () => {
     const routes = resolveAllowedRoutes('expedicao', 'jc', ['/romaneio'], [
       { permission_key: 'pedidos_pj.acessar', scope: 'jc' },
