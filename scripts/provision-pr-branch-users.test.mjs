@@ -211,30 +211,45 @@ describe('condicoes do workflow de usuarios por PR', () => {
   })
 })
 
-const checkSupabase = (conclusion, status = 'completed') => ({ name: 'Supabase Preview', status, conclusion })
+// Formato da API real: o check do Supabase vem com app.slug "supabase".
+const checkSupabase = (conclusion, status = 'completed', app = 'supabase') => ({
+  name: 'Supabase Preview',
+  status,
+  conclusion,
+  app: { slug: app },
+})
 const listaDeChecks = (...checkRuns) => ({ total_count: checkRuns.length, check_runs: checkRuns })
 
 // Responde em sequencia e repete a ultima resposta, que e o que a API faz entre
-// voltas quando nada muda. O relogio anda so quando a espera dorme.
+// voltas quando nada muda. O relogio anda so quando a espera dorme, entao uma
+// regressao que pare de consumir respostas termina no prazo em vez de pendurar.
 function esperarCheckCom(respostas, { timeoutMs = 30_000 } = {}) {
-  let consultas = 0
-  let relogio = 0
+  const urls = []
   const logs = []
+  let esperas = 0
+  let relogio = 0
   const promessa = waitForSupabasePreviewCheck({
     githubRepository: 'Orodrigao/PaneProducao',
     githubToken: 'github-token',
     prHeadSha: 'd'.repeat(40),
     timeoutMs,
     intervalMs: 10_000,
-    fetchImpl: async () => new Response(
-      JSON.stringify(respostas[Math.min(consultas++, respostas.length - 1)]),
-      { status: 200 },
-    ),
+    fetchImpl: async (url) => {
+      urls.push(url)
+      return new Response(JSON.stringify(respostas[Math.min(urls.length - 1, respostas.length - 1)]), { status: 200 })
+    },
     now: () => relogio,
-    sleep: async (ms) => { relogio += ms },
+    sleep: async (ms) => { esperas += 1; relogio += ms },
     log: (mensagem) => logs.push(mensagem),
   })
-  return { promessa, consultas: () => consultas, logs }
+  return {
+    promessa,
+    urls,
+    logs,
+    consultas: () => urls.length,
+    esperas: () => esperas,
+    relogio: () => relogio,
+  }
 }
 
 describe('waitForSupabasePreviewCheck', () => {
@@ -243,7 +258,7 @@ describe('waitForSupabasePreviewCheck', () => {
   // workflow comecou e a primeira consulta so enxergou esse skipped. O check que
   // valia terminou success dois minutos depois, com o workflow ja vermelho.
   it('nao falha no skipped do push anterior a PR: espera o check da PR terminar', async () => {
-    const { promessa, consultas, logs } = esperarCheckCom([
+    const { promessa, consultas, esperas, logs } = esperarCheckCom([
       listaDeChecks(checkSupabase('skipped')),
       listaDeChecks(checkSupabase(null, 'in_progress')),
       listaDeChecks(checkSupabase('success')),
@@ -252,7 +267,58 @@ describe('waitForSupabasePreviewCheck', () => {
     const check = await promessa
     assert.equal(check.conclusion, 'success')
     assert.equal(consultas(), 3)
+    assert.equal(esperas(), 2)
     assert.match(logs[0], /skipped/i)
+  })
+
+  // Os tres parametros decidem o que a regra enxerga: sem check_name entram
+  // checks alheios, sem filter=latest voltam execucoes velhas, e sem per_page=100
+  // a pagina padrao de 30 truncaria antes.
+  it('consulta o commit exato com check_name, filter=latest e per_page=100', async () => {
+    const { promessa, urls } = esperarCheckCom([listaDeChecks(checkSupabase('success'))])
+    await promessa
+    const url = new URL(urls[0])
+    assert.equal(url.pathname, `/repos/Orodrigao/PaneProducao/commits/${'d'.repeat(40)}/check-runs`)
+    assert.equal(url.searchParams.get('check_name'), 'Supabase Preview')
+    assert.equal(url.searchParams.get('filter'), 'latest')
+    assert.equal(url.searchParams.get('per_page'), '100')
+  })
+
+  it('skipped visto antes continua citado no prazo, mesmo que a ultima volta mostre in_progress', async () => {
+    const { promessa, consultas, esperas, relogio } = esperarCheckCom([
+      listaDeChecks(checkSupabase('skipped')),
+      listaDeChecks(checkSupabase(null, 'in_progress')),
+    ])
+    await assert.rejects(promessa, /nao terminou com sucesso em 30s.*skipped/i)
+    assert.equal(consultas(), 4)
+    assert.equal(esperas(), 3)
+    assert.equal(relogio(), 30_000)
+  })
+
+  it('success com outra execucao ainda em andamento libera pelo success', async () => {
+    const { promessa, consultas } = esperarCheckCom([
+      listaDeChecks(checkSupabase(null, 'in_progress'), checkSupabase('success')),
+    ])
+    assert.equal((await promessa).conclusion, 'success')
+    assert.equal(consultas(), 1)
+  })
+
+  // O nome do check nao prova quem o escreveu: qualquer aplicativo com permissao
+  // de checks pode criar um "Supabase Preview". So o do Supabase conta.
+  it('check com o nome certo vindo de outro aplicativo nao libera nem reprova', async () => {
+    const { promessa, consultas } = esperarCheckCom([
+      listaDeChecks(checkSupabase('success', 'completed', 'github-actions')),
+    ])
+    await assert.rejects(promessa, /nao terminou com sucesso em 30s/i)
+    assert.equal(consultas(), 4)
+
+    const semApp = esperarCheckCom([listaDeChecks({ name: 'Supabase Preview', status: 'completed', conclusion: 'success' })])
+    await assert.rejects(semApp.promessa, /nao terminou com sucesso em 30s/i)
+
+    const alheioReprovado = esperarCheckCom([
+      listaDeChecks(checkSupabase('failure', 'completed', 'outro-app'), checkSupabase('success')),
+    ])
+    assert.equal((await alheioReprovado.promessa).conclusion, 'success')
   })
 
   it('aceita o success mesmo com o skipped do push na mesma lista, em qualquer ordem', async () => {
@@ -267,15 +333,20 @@ describe('waitForSupabasePreviewCheck', () => {
   })
 
   it('so skipped nunca libera: espera ate o prazo e barra dizendo o que viu', async () => {
-    const { promessa, consultas } = esperarCheckCom([listaDeChecks(checkSupabase('skipped'))])
+    const { promessa, consultas, esperas, relogio } = esperarCheckCom([listaDeChecks(checkSupabase('skipped'))])
     await assert.rejects(promessa, /nao terminou com sucesso em 30s.*skipped/i)
-    assert.ok(consultas() > 1, 'skipped e espera, nao decisao')
+    // 30s com voltas de 10s: consultas em 0, 10, 20 e 30s, tres esperas.
+    assert.equal(consultas(), 4, 'skipped e espera, nao decisao')
+    assert.equal(esperas(), 3)
+    assert.equal(relogio(), 30_000)
   })
 
-  it('lista vazia espera ate o prazo e barra', async () => {
-    const { promessa, consultas } = esperarCheckCom([listaDeChecks()])
-    await assert.rejects(promessa, /nao terminou com sucesso em 30s/i)
-    assert.ok(consultas() > 1)
+  it('lista vazia espera ate o prazo e barra sem citar skipped', async () => {
+    const { promessa, consultas, esperas } = esperarCheckCom([listaDeChecks()])
+    await assert.rejects(promessa, (erro) => /nao terminou com sucesso em 30s/i.test(erro.message)
+      && !/skipped/i.test(erro.message))
+    assert.equal(consultas(), 4)
+    assert.equal(esperas(), 3)
   })
 
   // Trava de serializacao: na duvida barra na hora. Esperar nao conserta uma
@@ -306,25 +377,14 @@ describe('waitForSupabasePreviewCheck', () => {
   })
 
   it('espera o check do mesmo commit e aceita somente sucesso', async () => {
-    const answers = [
+    const { promessa, consultas, esperas } = esperarCheckCom([
       listaDeChecks(checkSupabase(null, 'in_progress')),
       listaDeChecks(checkSupabase('success')),
-    ]
-    const fetchImpl = mock.fn(async () => new Response(JSON.stringify(answers.shift()), { status: 200 }))
-    const sleep = mock.fn(async () => {})
-    const check = await waitForSupabasePreviewCheck({
-      githubRepository: 'Orodrigao/PaneProducao',
-      githubToken: 'github-token',
-      prHeadSha: 'a'.repeat(40),
-      fetchImpl,
-      sleep,
-      now: () => 1,
-      log: () => {},
-    })
+    ])
 
-    assert.equal(check.conclusion, 'success')
-    assert.equal(fetchImpl.mock.callCount(), 2)
-    assert.match(fetchImpl.mock.calls[0].arguments[0], new RegExp(`/commits/${'a'.repeat(40)}/check-runs`))
+    assert.equal((await promessa).conclusion, 'success')
+    assert.equal(consultas(), 2)
+    assert.equal(esperas(), 1)
   })
 
   it('recusa check vermelho e commit ausente', async () => {
