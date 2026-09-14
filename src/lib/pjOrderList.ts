@@ -8,9 +8,8 @@ export interface PjOrderListItem {
   dispatchedAt: string | null
   /**
    * Há item ainda não conferido pela Expedição **e a conferência ainda é
-   * possível**. Enquanto houver, o pedido não cai no Histórico pela virada do
-   * dia: pedido entregue no sábado e conferido na segunda viraria órfão, sem
-   * fila em que aparecer.
+   * possível**. Este sinal não muda Em aberto/Fechados: a data decide essa
+   * separação, e a aba Pendências mantém visível o pedido vencido acionável.
    *
    * Quem monta este campo precisa excluir o pedido que já virou cobrança: o
    * banco recusa conferência nele, e "Marcar como enviado" exige tudo
