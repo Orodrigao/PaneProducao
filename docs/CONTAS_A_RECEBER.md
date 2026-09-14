@@ -687,6 +687,11 @@ lacunas incorporadas estão na PR.
   `private.calcular_cobranca_buck_detalhada`;
 - trava `finance_entries_guard_receita_buck` na tabela do livro;
 - `split_receivable` recusa a origem `romaneio_ex`;
+- a confirmação exige a impressão digital da composição que a tela mostrou:
+  romaneio alterado depois de a tela abrir, mesmo sem mudar o total, pede nova
+  conferência;
+- recebimento de cobrança da Buck acima do saldo em aberto é recusado (o que
+  passar pertence a outra semana). Clientes PJ seguem como antes;
 - painel "Semanas da Buck a cobrar" em `/contas-receber`; a lista de cobranças
   mostra romaneios e ajustes da cobrança da Buck; o botão do Fechamento EX
   saiu; os formulários do Financeiro deixaram de oferecer a categoria da Buck.

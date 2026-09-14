@@ -45,6 +45,9 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
   // Um identificador por semana aberta: se a conexão cair depois de gravar, a
   // nova tentativa devolve a mesma cobrança em vez de criar outra.
   const requestIdRef = useRef<string>(crypto.randomUUID())
+  // A semana cujos produtos a tela está esperando. Resposta de uma semana que
+  // já foi fechada ou trocada chega atrasada e é descartada.
+  const loadingForRef = useRef<string | null>(null)
 
   const openWeek = weeks.find(week => week.period_start === openStart) ?? null
   const summary = useMemo(() => summarizeBuckWeek(openWeek?.amount ?? 0, drafts), [openWeek, drafts])
@@ -52,25 +55,34 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
 
   if (weeks.length === 0) return null
 
+  async function loadLines(week: BuckWeekToBillRow) {
+    loadingForRef.current = week.period_start
+    setLines([])
+    setLinesState('loading')
+    try {
+      const rows = await loadBuckWeekLines(week)
+      if (loadingForRef.current !== week.period_start) return
+      setLines(rows)
+      setLinesState('ready')
+    } catch (loadError) {
+      console.error(loadError)
+      if (loadingForRef.current !== week.period_start) return
+      setLinesState('error')
+    }
+  }
+
   async function openDetail(week: BuckWeekToBillRow) {
     if (saving) return
     setOpenStart(week.period_start)
     setDrafts([])
     setError(null)
-    setLines([])
-    setLinesState('loading')
     requestIdRef.current = crypto.randomUUID()
-    try {
-      setLines(await loadBuckWeekLines(week))
-      setLinesState('ready')
-    } catch (loadError) {
-      console.error(loadError)
-      setLinesState('error')
-    }
+    await loadLines(week)
   }
 
   function closeDetail() {
     if (saving) return
+    loadingForRef.current = null
     setOpenStart(null)
     setDrafts([])
     setError(null)
@@ -101,6 +113,11 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
 
   async function confirmWeek() {
     if (!openWeek || saving) return
+    // Conferir é ver os produtos: sem eles carregados, não há o que confirmar.
+    if (linesState !== 'ready') {
+      setError('Os produtos da semana precisam aparecer antes de confirmar a cobrança.')
+      return
+    }
     const problem = validateBuckAdjustments(drafts)
     if (problem) {
       setError(problem)
@@ -117,6 +134,7 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
     try {
       await createBuckWeeklyReceivable(openWeek, drafts, requestIdRef.current)
       showToast('Cobrança da Buck gerada. Ela está na lista de cobranças.')
+      loadingForRef.current = null
       setOpenStart(null)
       setDrafts([])
       requestIdRef.current = crypto.randomUUID()
@@ -167,7 +185,7 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
 
               {week.lancamentos_diretos > 0 && (
                 <div className="ps-alert error" role="alert" style={{ marginTop: 8 }}>
-                  Há {week.lancamentos_diretos} lançamento(s) da Buck feito(s) direto no livro-caixa depois desta semana.
+                  Há {week.lancamentos_diretos} lançamento(s) da Buck feito(s) direto no livro-caixa desde 10/09.
                   Confira no Financeiro se esta semana já foi recebida por fora antes de cobrar, para a receita não contar duas vezes.
                 </div>
               )}
@@ -185,7 +203,10 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
                   {linesState === 'loading' && <div className="ps-hint">Carregando os produtos da semana...</div>}
                   {linesState === 'error' && (
                     <div className="ps-alert error" role="alert">
-                      Não foi possível carregar os produtos da semana. O valor acima continua valendo.
+                      Não foi possível carregar os produtos da semana. Sem eles a cobrança não pode ser conferida.{' '}
+                      <button type="button" className="ps-link" onClick={() => void loadLines(week)} disabled={saving}>
+                        Tentar de novo
+                      </button>
                     </div>
                   )}
                   {linesState === 'ready' && lines.length > 0 && (
@@ -365,7 +386,11 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
                   )}
 
                   <div className="ps-fieldrow" style={{ marginTop: 12 }}>
-                    <button className="ps-btn primary block" onClick={() => void confirmWeek()} disabled={saving}>
+                    <button
+                      className="ps-btn primary block"
+                      onClick={() => void confirmWeek()}
+                      disabled={saving || linesState !== 'ready'}
+                    >
                       {saving ? 'Gerando...' : `Confirmar cobrança de ${formatReceivableMoney(summary.total)}`}
                     </button>
                     <button className="ps-btn ghost block" onClick={closeDetail} disabled={saving}>

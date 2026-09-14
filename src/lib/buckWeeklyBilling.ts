@@ -35,6 +35,8 @@ export interface BuckWeekToBillRow {
   amount: number
   problemas: string[]
   lancamentos_diretos: number
+  /** Impressão digital da composição que a tela mostrou; a confirmação a exige de volta. */
+  composicao: string
 }
 
 export interface BuckWeekLine {
@@ -70,41 +72,80 @@ export function emptyBuckAdjustmentDraft(kind: BuckAdjustmentKind = 'acerto'): B
   return { kind, description: '', amount: '', productName: '', quantity: '', unit: 'un', unitPrice: '' }
 }
 
-/** Arredonda para centavos como o Postgres: meio centavo se afasta do zero. */
-export function roundCents(value: number): number {
-  const sinal = value < 0 ? -1 : 1
-  return (sinal * Math.round((Math.abs(value) + Number.EPSILON) * 100)) / 100
+/** Um decimal exato: `units / 10^scale`, com `units` inteiro. */
+interface DecimalParts {
+  units: number
+  scale: number
 }
 
 /**
- * Lê número digitado no jeito brasileiro ("1.234,5", "0,333", "-7,34").
- * Não usa `parseMoneyInput`, que arredonda para centavos: 0,333 kg viraria
- * 0,33 e o ajuste da tela sairia diferente do que o banco calcula.
+ * Lê número digitado no jeito brasileiro ("1.234,5", "0,333", "-7,34") sem
+ * passar por ponto flutuante. Número com mais de 15 dígitos é recusado: não
+ * caberia numa conta exata.
  */
-export function parseDecimal(raw: string): number | null {
+function parseDecimalParts(raw: string): DecimalParts | null {
   const texto = raw.trim().replace(/\s/g, '').replace(/R\$/gi, '')
   if (!texto) return null
   const normalizado = texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto
-  if (!/^-?\d+(\.\d+)?$/.test(normalizado)) return null
-  const valor = Number(normalizado)
-  return Number.isFinite(valor) ? valor : null
+  const partes = /^(-?)(\d+)(?:\.(\d+))?$/.exec(normalizado)
+  if (!partes) return null
+  const fracao = partes[3] ?? ''
+  const digitos = `${partes[2]}${fracao}`.replace(/^0+(?=\d)/, '')
+  if (digitos.length > 15) return null
+  const units = Number(digitos) * (partes[1] === '-' ? -1 : 1)
+  return { units: units === 0 ? 0 : units, scale: fracao.length }
 }
 
-/** O valor que o ajuste soma na cobrança, ou `null` enquanto está incompleto. */
-export function buckAdjustmentAmount(draft: BuckAdjustmentDraft): number | null {
-  if (draft.kind === 'produto_sem_romaneio') {
-    const quantidade = parseDecimal(draft.quantity)
-    const preco = parseDecimal(draft.unitPrice)
-    if (quantidade === null || preco === null) return null
-    return roundCents(quantidade * preco)
+/** O número digitado, para faixas e para o pedido ao banco. */
+export function parseDecimal(raw: string): number | null {
+  const partes = parseDecimalParts(raw)
+  return partes === null ? null : partes.units / 10 ** partes.scale
+}
+
+/**
+ * Centavos inteiros, arredondando como o `numeric` do Postgres: meio centavo
+ * se afasta do zero. Só inteiros exatos entram na conta, então 10,075 vira
+ * 10,08 como no banco, e não 10,07 como o ponto flutuante faria.
+ */
+function centsOf(partes: DecimalParts): number | null {
+  if (!Number.isSafeInteger(partes.units)) return null
+  const sinal = partes.units < 0 ? -1 : 1
+  const absoluto = Math.abs(partes.units)
+  let centavos: number
+  if (partes.scale <= 2) {
+    centavos = absoluto * 10 ** (2 - partes.scale)
+  } else {
+    const divisor = 10 ** (partes.scale - 2)
+    const resto = absoluto % divisor
+    const quociente = (absoluto - resto) / divisor
+    centavos = 2 * resto >= divisor ? quociente + 1 : quociente
   }
-  const valor = parseDecimal(draft.amount)
-  return valor === null ? null : roundCents(valor)
+  if (!Number.isSafeInteger(centavos)) return null
+  return centavos === 0 ? 0 : sinal * centavos
+}
+
+/** Centavos que o ajuste soma na cobrança, ou `null` enquanto está incompleto. */
+export function buckAdjustmentCents(draft: BuckAdjustmentDraft): number | null {
+  if (draft.kind === 'produto_sem_romaneio') {
+    const quantidade = parseDecimalParts(draft.quantity)
+    const preco = parseDecimalParts(draft.unitPrice)
+    if (quantidade === null || preco === null) return null
+    return centsOf({ units: quantidade.units * preco.units, scale: quantidade.scale + preco.scale })
+  }
+  const valor = parseDecimalParts(draft.amount)
+  return valor === null ? null : centsOf(valor)
+}
+
+/** O valor em reais que o ajuste soma na cobrança, ou `null` enquanto está incompleto. */
+export function buckAdjustmentAmount(draft: BuckAdjustmentDraft): number | null {
+  const centavos = buckAdjustmentCents(draft)
+  return centavos === null ? null : centavos / 100
 }
 
 /** Mesmas recusas do banco, com o mesmo texto, para a Elis ver antes de enviar. */
 export function validateBuckAdjustment(draft: BuckAdjustmentDraft, position: number): string | null {
   const prefixo = `Ajuste ${position}:`
+  const limiteCentavos = BUCK_MAX_ADJUSTMENT_AMOUNT * 100
   const descricao = draft.description.trim()
   if (descricao.length < 3 || descricao.length > 200) return `${prefixo} descreva o motivo com 3 a 200 letras.`
 
@@ -116,13 +157,13 @@ export function validateBuckAdjustment(draft: BuckAdjustmentDraft, position: num
     if (draft.unit !== 'un' && draft.unit !== 'kg') return `${prefixo} unidade precisa ser un ou kg.`
     const preco = parseDecimal(draft.unitPrice)
     if (preco === null || preco <= 0 || preco > 10000) return `${prefixo} preço precisa ser maior que zero.`
-    const valor = roundCents(quantidade * preco)
-    if (valor <= 0 || valor > BUCK_MAX_ADJUSTMENT_AMOUNT) return `${prefixo} cada ajuste vai até R$ 5.000,00.`
+    const centavos = buckAdjustmentCents(draft)
+    if (centavos === null || centavos <= 0 || centavos > limiteCentavos) return `${prefixo} cada ajuste vai até R$ 5.000,00.`
     return null
   }
 
-  const valor = buckAdjustmentAmount(draft)
-  if (valor === null || valor === 0 || Math.abs(valor) > BUCK_MAX_ADJUSTMENT_AMOUNT) {
+  const centavos = buckAdjustmentCents(draft)
+  if (centavos === null || centavos === 0 || Math.abs(centavos) > limiteCentavos) {
     return `${prefixo} informe um valor diferente de zero, até R$ 5.000,00 para mais ou para menos.`
   }
   return null
@@ -143,10 +184,15 @@ export interface BuckWeekSummary {
   total: number
 }
 
-/** Romaneios + ajustes já preenchidos. Ajuste incompleto ainda não soma. */
+/** Romaneios + ajustes já preenchidos, somados em centavos inteiros. Ajuste incompleto ainda não soma. */
 export function summarizeBuckWeek(romaneiosAmount: number, drafts: readonly BuckAdjustmentDraft[]): BuckWeekSummary {
-  const ajustes = roundCents(drafts.reduce((soma, draft) => soma + (buckAdjustmentAmount(draft) ?? 0), 0))
-  return { romaneios: roundCents(romaneiosAmount), ajustes, total: roundCents(romaneiosAmount + ajustes) }
+  const romaneiosCentavos = Math.round(romaneiosAmount * 100)
+  const ajustesCentavos = drafts.reduce((soma, draft) => soma + (buckAdjustmentCents(draft) ?? 0), 0)
+  return {
+    romaneios: romaneiosCentavos / 100,
+    ajustes: ajustesCentavos / 100,
+    total: (romaneiosCentavos + ajustesCentavos) / 100,
+  }
 }
 
 export function buckAdjustmentsPayload(drafts: readonly BuckAdjustmentDraft[]): BuckAdjustmentPayload[] {
@@ -232,6 +278,7 @@ export async function loadBuckWeeksToBill(): Promise<BuckWeekToBillRow[]> {
     amount: Number(row.amount ?? 0),
     problemas: Array.isArray(row.problemas) ? (row.problemas as string[]) : [],
     lancamentos_diretos: Number(row.lancamentos_diretos ?? 0),
+    composicao: String(row.composicao ?? ''),
   }))
 }
 
@@ -253,11 +300,11 @@ export async function loadBuckWeekLines(week: Pick<BuckWeekToBillRow, 'period_st
 }
 
 /**
- * Confirma a semana. `week.amount` vai como conferência: o banco soma de novo
- * e recusa se discordar.
+ * Confirma a semana. `week.amount` e `week.composicao` vão como conferência: o
+ * banco soma de novo e recusa se o valor ou a composição mudaram.
  */
 export async function createBuckWeeklyReceivable(
-  week: Pick<BuckWeekToBillRow, 'period_start' | 'period_end' | 'amount'>,
+  week: Pick<BuckWeekToBillRow, 'period_start' | 'period_end' | 'amount' | 'composicao'>,
   drafts: readonly BuckAdjustmentDraft[],
   requestId: string,
 ): Promise<string> {
@@ -266,6 +313,7 @@ export async function createBuckWeeklyReceivable(
     p_de: week.period_start,
     p_ate: week.period_end,
     p_total_romaneios_conferencia: week.amount,
+    p_composicao_conferencia: week.composicao,
     p_ajustes: buckAdjustmentsPayload(drafts),
   })
   if (error) throw error
@@ -311,11 +359,13 @@ export async function loadBuckReceivableDetails(receivableIds: readonly string[]
     return detalhes
   }
 
+  const centavosPorCobranca = new Map<string, number>()
   for (const linha of linhas.data ?? []) {
     const id = linha.receivable_id as string
-    const atual = detalhes.get(id) ?? { romaneiosTotal: 0, adjustments: [] }
-    atual.romaneiosTotal = roundCents(atual.romaneiosTotal + Number(linha.total ?? 0))
-    detalhes.set(id, atual)
+    centavosPorCobranca.set(id, (centavosPorCobranca.get(id) ?? 0) + Math.round(Number(linha.total ?? 0) * 100))
+  }
+  for (const [id, centavos] of centavosPorCobranca) {
+    detalhes.set(id, { romaneiosTotal: centavos / 100, adjustments: [] })
   }
   for (const ajuste of ajustes.data ?? []) {
     const id = ajuste.receivable_id as string

@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// O módulo cria o cliente Supabase ao ser importado; estes testes só exercitam
-// as funções puras.
+// O módulo cria o cliente Supabase ao ser importado; aqui ele é substituído.
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
 import {
   BUCK_MAX_ADJUSTMENT_AMOUNT,
   BUCK_MAX_ADJUSTMENTS,
@@ -13,8 +13,9 @@ import {
   buckAdjustmentsPayload,
   buckWeekBlock,
   buckWeekLabel,
+  createBuckWeeklyReceivable,
   emptyBuckAdjustmentDraft,
-  roundCents,
+  loadBuckWeeksToBill,
   summarizeBuckWeek,
   validateBuckAdjustment,
   validateBuckAdjustments,
@@ -24,6 +25,10 @@ import {
 function ajuste(parcial: Partial<BuckAdjustmentDraft>): BuckAdjustmentDraft {
   return { ...emptyBuckAdjustmentDraft(parcial.kind ?? 'acerto'), ...parcial }
 }
+
+beforeEach(() => {
+  vi.mocked(supabase.rpc).mockReset()
+})
 
 describe('valor do ajuste', () => {
   it('pão sem romaneio vale quantidade vezes preço, em centavos', () => {
@@ -39,11 +44,19 @@ describe('valor do ajuste', () => {
   it('ajuste incompleto ainda não tem valor', () => {
     expect(buckAdjustmentAmount(ajuste({ kind: 'acerto', amount: '' }))).toBeNull()
     expect(buckAdjustmentAmount(ajuste({ kind: 'produto_sem_romaneio', quantity: '2', unitPrice: '' }))).toBeNull()
+    expect(buckAdjustmentAmount(ajuste({ kind: 'acerto', amount: 'dez reais' }))).toBeNull()
   })
 
-  it('meio centavo se afasta do zero, como o round do Postgres', () => {
-    expect(roundCents(0.125)).toBe(0.13)
-    expect(roundCents(-0.125)).toBe(-0.13)
+  it('arredonda como o numeric do Postgres, sem erro de ponto flutuante', () => {
+    // Em ponto flutuante 10,075 x 100 dá 1007,4999..., que arredondaria para 10,07.
+    expect(buckAdjustmentAmount(ajuste({ kind: 'produto_sem_romaneio', quantity: '1', unitPrice: '10,075' }))).toBe(10.08)
+    expect(buckAdjustmentAmount(ajuste({ kind: 'acerto', amount: '-10,075' }))).toBe(-10.08)
+    expect(buckAdjustmentAmount(ajuste({ kind: 'acerto', amount: '1,005' }))).toBe(1.01)
+    expect(buckAdjustmentAmount(ajuste({ kind: 'produto_sem_romaneio', quantity: '0,125', unitPrice: '1' }))).toBe(0.13)
+  })
+
+  it('número que não cabe numa conta exata é recusado em vez de arredondado errado', () => {
+    expect(buckAdjustmentAmount(ajuste({ kind: 'acerto', amount: '1234567890123456' }))).toBeNull()
   })
 })
 
@@ -92,6 +105,14 @@ describe('soma e pedido enviado ao banco', () => {
     expect(summarizeBuckWeek(280, ajustes)).toEqual({ romaneios: 280, ajustes: 20, total: 300 })
   })
 
+  it('soma em centavos não acumula erro de ponto flutuante', () => {
+    const miudos = [
+      ajuste({ description: 'Um', amount: '0,10' }),
+      ajuste({ description: 'Dois', amount: '0,20' }),
+    ]
+    expect(summarizeBuckWeek(0.1, miudos)).toEqual({ romaneios: 0.1, ajustes: 0.3, total: 0.4 })
+  })
+
   it('ajuste incompleto não soma', () => {
     expect(summarizeBuckWeek(280, [...ajustes, ajuste({ description: 'Ainda digitando', amount: '' })]).total).toBe(300)
   })
@@ -102,6 +123,32 @@ describe('soma e pedido enviado ao banco', () => {
       { kind: 'preco_combinado', description: 'Brioche no preço combinado', amount: 12.34 },
       { kind: 'acerto', description: 'Arredondamento', amount: -7.34 },
     ])
+  })
+
+  it('a confirmação envia o valor e a composição que a tela mostrou', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: 'cobranca-1', error: null } as never)
+    const semana = { period_start: '2026-08-31', period_end: '2026-09-06', amount: 280, composicao: 'abc123' }
+    await expect(createBuckWeeklyReceivable(semana, ajustes.slice(2), 'pedido-1')).resolves.toBe('cobranca-1')
+    expect(supabase.rpc).toHaveBeenCalledWith('create_buck_weekly_receivable', {
+      p_request_id: 'pedido-1',
+      p_de: '2026-08-31',
+      p_ate: '2026-09-06',
+      p_total_romaneios_conferencia: 280,
+      p_composicao_conferencia: 'abc123',
+      p_ajustes: [{ kind: 'acerto', description: 'Arredondamento', amount: -7.34 }],
+    })
+  })
+})
+
+describe('janela do deploy', () => {
+  it('sem a função no banco, a lista de semanas vem vazia em vez de derrubar a tela', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } } as never)
+    await expect(loadBuckWeeksToBill()).resolves.toEqual([])
+  })
+
+  it('outro erro continua subindo', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied' } } as never)
+    await expect(loadBuckWeeksToBill()).rejects.toMatchObject({ code: '42501' })
   })
 })
 

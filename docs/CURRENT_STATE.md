@@ -382,7 +382,8 @@ disputavam um único banco de teste compartilhado.
   resolve; romaneio sem conferência só gera aviso. **A receita da Buck só
   entra no livro vinda do Contas a receber**: um gatilho na tabela do livro
   recusa o lançamento direto e deixa passar o estorno dos antigos. Cobrança da
-  Buck não é parcelada. O botão do Fechamento EX saiu da tela, mas a função
+  Buck não é parcelada nem recebe mais do que falta, e a confirmação exige a
+  mesma composição de romaneios que a tela mostrou. O botão do Fechamento EX saiu da tela, mas a função
   antiga `create_receivable_from_romaneio` ainda existe no banco até uma PR
   própria desligá-la. A soma vive em `private.calcular_cobranca_buck_detalhada`
   (a versão curta lê dela) e em `src/lib/romaneioBilling.ts`, que ainda

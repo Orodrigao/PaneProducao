@@ -5,12 +5,13 @@
 --   * a semana vai de segunda a domingo, comeca em 31/08/2026 e so aparece
 --     depois que o domingo passou;
 --   * o valor dos romaneios sai do banco; ajustes somam com motivo e limites;
+--   * a confirmacao exige a composicao que a tela mostrou;
 --   * a cobranca guarda a foto das linhas e dos ajustes;
 --   * repetir o mesmo pedido devolve a mesma cobranca; mudar os ajustes ou
 --     cobrar a semana de novo e recusado;
 --   * a receita da Buck so entra no livro vinda do Contas a receber, e o
 --     estorno de lancamento antigo continua possivel;
---   * cobranca da Buck nao e parcelada.
+--   * cobranca da Buck nao e parcelada nem recebe mais do que falta.
 --
 -- As semanas usadas sao de agosto e setembro de 2026, com datas fixas: o seed
 -- do Preview grava romaneios da EX em "hoje menos 3 e 5 dias", que nao caem
@@ -20,7 +21,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(50);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -149,13 +150,13 @@ select ok(
 
 select ok(
   not has_function_privilege('anon', 'public.list_buck_weeks_to_bill()', 'execute')
-  and not has_function_privilege('anon', 'public.create_buck_weekly_receivable(uuid, date, date, numeric, jsonb)', 'execute'),
+  and not has_function_privilege('anon', 'public.create_buck_weekly_receivable(uuid, date, date, numeric, text, jsonb)', 'execute'),
   'anonimo nao chama a lista nem a confirmacao'
 );
 
 select ok(
   has_function_privilege('authenticated', 'public.list_buck_weeks_to_bill()', 'execute')
-  and has_function_privilege('authenticated', 'public.create_buck_weekly_receivable(uuid, date, date, numeric, jsonb)', 'execute')
+  and has_function_privilege('authenticated', 'public.create_buck_weekly_receivable(uuid, date, date, numeric, text, jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'private.calcular_cobranca_buck_detalhada(date, date)', 'execute'),
   'logado chama as portas publicas, mas nao a conta interna'
 );
@@ -171,7 +172,7 @@ select is(
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x', '[]'::jsonb) $$,
   '42501',
   'Sem permissão para lançar cobranças.',
   'Expedicao da EX nao confirma cobranca'
@@ -188,10 +189,10 @@ select is(
 );
 
 select is(
-  (select romaneios || '/' || romaneios_sem_conferencia || '/' || period_end
+  (select romaneios || '/' || romaneios_sem_conferencia || '/' || period_end || '/' || length(composicao)
      from public.list_buck_weeks_to_bill() where period_start = '2026-08-31'),
-  '2/2/2026-09-06',
-  'o romaneio separado nao conta; os dois enviados aparecem sem conferencia; semana termina no domingo'
+  '2/2/2026-09-06/32',
+  'o romaneio separado nao conta; os dois enviados aparecem sem conferencia; semana termina no domingo e traz a composicao'
 );
 
 select ok(
@@ -219,15 +220,16 @@ select lives_ok(
   'a trava vale so para a Buck: outra receita avulsa continua entrando'
 );
 
--- Um lancamento direto antigo, gravado como antes da trava existir.
+-- Um lancamento direto antigo, gravado como antes da trava existir, pago DENTRO
+-- da propria semana: e o caso que o aviso nao pode perder.
 reset role;
 alter table public.finance_entries disable trigger finance_entries_guard_receita_buck;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001', true);
 
 select lives_ok(
-  $$ select public.create_finance_entry('97000000-0000-4000-8000-0000000000e9', 'buck_ex', 'teste-semana-buck-banco', 'jc', 50, '2026-09-10', 'dinheiro', 'Buck direto no livro antes da trava') $$,
-  'cenario: lancamento direto da Buck gravado antes da trava'
+  $$ select public.create_finance_entry('97000000-0000-4000-8000-0000000000e9', 'buck_ex', 'teste-semana-buck-banco', 'jc', 50, '2026-09-05', 'dinheiro', 'Buck direto no livro antes da trava') $$,
+  'cenario: lancamento direto da Buck gravado antes da trava, pago dentro da semana'
 );
 
 reset role;
@@ -240,7 +242,7 @@ select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001
 select is(
   (select lancamentos_diretos from public.list_buck_weeks_to_bill() where period_start = '2026-08-31'),
   1,
-  'lancamento direto da Buck depois da semana aparece como aviso na lista'
+  'lancamento direto da Buck pago dentro da semana aparece como aviso na lista'
 );
 
 select lives_ok(
@@ -257,14 +259,14 @@ select is(
 -- Recusas da confirmacao -----------------------------------------------------
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-09-01', '2026-09-07', 280.00, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-09-01', '2026-09-07', 280.00, 'x', '[]'::jsonb) $$,
   '22023',
   'A cobrança da Buck vai de segunda a domingo.',
   'semana que nao comeca na segunda e recusada'
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-24', '2026-08-30', 20.00, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-24', '2026-08-30', 20.00, 'x', '[]'::jsonb) $$,
   '22023',
   'Semanas anteriores a 31/08/2026 já foram lançadas no livro-caixa e não entram aqui.',
   'semana antes do corte e recusada'
@@ -272,7 +274,7 @@ select throws_ok(
 
 select throws_ok(
   format(
-    $$ select public.create_buck_weekly_receivable(gen_random_uuid(), %L, %L, 1.00, '[]'::jsonb) $$,
+    $$ select public.create_buck_weekly_receivable(gen_random_uuid(), %L, %L, 1.00, 'x', '[]'::jsonb) $$,
     date_trunc('week', private.data_na_padaria())::date,
     date_trunc('week', private.data_na_padaria())::date + 6
   ),
@@ -295,7 +297,7 @@ select ok(
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x', '[]'::jsonb) $$,
   '22023',
   'Há produto sem preço na tabela BUCK nesta semana. Cadastre o preço antes de cobrar.',
   'semana com produto sem preco e recusada'
@@ -307,14 +309,45 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001', true);
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 279.99, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 279.99, 'x', '[]'::jsonb) $$,
   '22023',
   'A tela mostrou 279.99 nos romaneios e o banco calculou 280.00. Nada foi cobrado. Atualize a tela e confira a semana.',
   'valor dos romaneios diferente do banco e recusado'
 );
 
+-- A composicao que a tela viu. Depois, dois produtos mudam sem mudar o total:
+-- pao sobe 5 unidades (+10,00) e ciabatta desce 0,25 kg (-10,00).
+select set_config('teste.composicao_vista',
+  (select composicao from public.list_buck_weeks_to_bill() where period_start = '2026-08-31'), true);
+
+reset role;
+update public.romaneio_items set qty_accepted = 95 where id = '97000000-0000-4000-8000-0000000000d1';
+update public.romaneio_items set qty_sent = 2.25 where id = '97000000-0000-4000-8000-0000000000d2';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001', true);
+
 select throws_ok(
   $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00,
+       current_setting('teste.composicao_vista'), '[]'::jsonb) $$,
+  '22023',
+  'Os romaneios desta semana mudaram depois que a tela abriu. Nada foi cobrado. Atualize a tela e confira de novo.',
+  'romaneio alterado sem mudar o total exige nova conferencia'
+);
+
+reset role;
+update public.romaneio_items set qty_accepted = 90 where id = '97000000-0000-4000-8000-0000000000d1';
+update public.romaneio_items set qty_sent = 2.5 where id = '97000000-0000-4000-8000-0000000000d2';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000001', true);
+
+select is(
+  (select composicao from public.list_buck_weeks_to_bill() where period_start = '2026-08-31'),
+  current_setting('teste.composicao_vista'),
+  'desfeita a mudanca, a composicao volta a ser a mesma'
+);
+
+select throws_ok(
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x',
        '[{"kind": "acerto", "description": "ok", "amount": 10}]'::jsonb) $$,
   '22023',
   'Ajuste 1: descreva o motivo com 3 a 200 letras.',
@@ -322,7 +355,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x',
        '[{"kind": "preco_combinado", "description": "Preco combinado alto demais", "amount": 5000.01}]'::jsonb) $$,
   '22023',
   'Ajuste 1: informe um valor diferente de zero, até R$ 5.000,00 para mais ou para menos.',
@@ -330,7 +363,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x',
        (select jsonb_agg(jsonb_build_object('kind', 'acerto', 'description', 'Acerto numero ' || n, 'amount', 1))
           from generate_series(1, 21) n)) $$,
   '22023',
@@ -340,6 +373,7 @@ select throws_ok(
 
 select throws_ok(
   $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00,
+       current_setting('teste.composicao_vista'),
        '[{"kind": "acerto", "description": "Devolucao da semana inteira", "amount": -280}]'::jsonb) $$,
   '22023',
   'Com os ajustes, a cobrança ficaria em zero ou negativa. Confira os valores.',
@@ -354,6 +388,7 @@ select isnt(
   set_config('teste.cobranca_id',
     public.create_buck_weekly_receivable(
       '97000000-0000-4000-8000-0000000000c9', '2026-08-31', '2026-09-06', 280.00,
+      current_setting('teste.composicao_vista'),
       '[{"kind": "produto_sem_romaneio", "description": "Pao frances que saiu sem romaneio", "product_name": "Pao frances", "quantity": 10, "unit": "un", "unit_price": 1.5},
         {"kind": "preco_combinado", "description": "Brioche no preco combinado", "amount": 12.34},
         {"kind": "acerto", "description": "Arredondamento combinado", "amount": -7.34}]'::jsonb
@@ -417,6 +452,7 @@ select is(
 select is(
   public.create_buck_weekly_receivable(
     '97000000-0000-4000-8000-0000000000c9', '2026-08-31', '2026-09-06', 280.00,
+    current_setting('teste.composicao_vista'),
     '[{"kind": "produto_sem_romaneio", "description": "Pao frances que saiu sem romaneio", "product_name": "Pao frances", "quantity": 10, "unit": "un", "unit_price": 1.5},
       {"kind": "preco_combinado", "description": "Brioche no preco combinado", "amount": 12.34},
       {"kind": "acerto", "description": "Arredondamento combinado", "amount": -7.34}]'::jsonb
@@ -427,7 +463,7 @@ select is(
 
 select throws_ok(
   $$ select public.create_buck_weekly_receivable(
-       '97000000-0000-4000-8000-0000000000c9', '2026-08-31', '2026-09-06', 280.00,
+       '97000000-0000-4000-8000-0000000000c9', '2026-08-31', '2026-09-06', 280.00, 'x',
        '[{"kind": "acerto", "description": "Outro acerto", "amount": 5}]'::jsonb) $$,
   '22023',
   'Este pedido de cobrança já foi usado com outra semana ou outros ajustes. Atualize a tela e confira as cobranças da Buck.',
@@ -435,7 +471,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, '[]'::jsonb) $$,
+  $$ select public.create_buck_weekly_receivable(gen_random_uuid(), '2026-08-31', '2026-09-06', 280.00, 'x', '[]'::jsonb) $$,
   '22023',
   'Esta semana já tem cobrança da Buck. Confira a lista de cobranças.',
   'cobrar a mesma semana de novo e recusado'
@@ -453,10 +489,34 @@ select throws_ok(
   'cobranca da Buck nao e parcelada'
 );
 
+-- Recebimento em pedacos -----------------------------------------------------
+
 select lives_ok(
   format($$ select public.record_receivable_receipt(gen_random_uuid(), %L, '2026-09-10', 100, 'pix', 'teste-semana-buck-banco') $$,
     current_setting('teste.cobranca_id')),
   'recebimento em pedaco da cobranca da Buck passa pela trava do livro'
+);
+
+select throws_ok(
+  format($$ select public.record_receivable_receipt(gen_random_uuid(), %L, '2026-09-11', 250, 'dinheiro', 'teste-semana-buck-banco') $$,
+    current_setting('teste.cobranca_id')),
+  '22023',
+  'Esta cobrança da Buck tem R$ 200,00 em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.',
+  'pedaco maior que o saldo em aberto da Buck e recusado'
+);
+
+-- Registrar e ler a situacao ficam em instrucoes separadas: na mesma
+-- instrucao, a leitura enxerga a cobranca de antes do recebimento.
+select lives_ok(
+  format($$ select public.record_receivable_receipt(gen_random_uuid(), %L, '2026-09-11', 200, 'dinheiro', 'teste-semana-buck-banco') $$,
+    current_setting('teste.cobranca_id')),
+  'o pedaco exato do saldo em aberto e aceito'
+);
+
+select is(
+  (select status from public.receivables where id = current_setting('teste.cobranca_id')::uuid),
+  'recebida',
+  'com o saldo recebido, a cobranca da Buck fica quitada'
 );
 
 select set_config('request.jwt.claim.sub', '97000000-0000-4000-8000-000000000002', true);
@@ -470,14 +530,14 @@ select is(
 reset role;
 
 select is(
-  (select entrada.source || '|' || entrada.competence_month || '|' || entrada.amount
+  (select string_agg(entrada.source || '|' || entrada.competence_month || '|' || entrada.amount, ',' order by entrada.amount)
      from public.finance_entries entrada
      join public.finance_categories categoria on categoria.id = entrada.category_id
     where categoria.key = 'buck_ex' and entrada.source = 'contas_receber'
       and entrada.source_ref in (select id from public.receivable_receipts
                                   where receivable_id = current_setting('teste.cobranca_id')::uuid)),
-  'contas_receber|2026-09-01|100.00',
-  'o pedaco recebido entra no livro como receita da Buck, no mes do faturamento'
+  'contas_receber|2026-09-01|100.00,contas_receber|2026-09-01|200.00',
+  'os dois pedacos entram no livro como receita da Buck, no mes do faturamento, somando o valor cobrado'
 );
 
 select * from finish();

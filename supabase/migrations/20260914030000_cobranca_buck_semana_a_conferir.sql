@@ -25,6 +25,14 @@
 --   * cobranca da Buck nao e parcelada: a trava de periodo sobreposto recusaria
 --     a segunda parcela, e a Buck paga em pedacos, nao em parcelas.
 --
+-- Revisao adversarial do codigo (Sol), tambem incorporada:
+--   * a confirmacao exige a impressao digital da composicao que a tela mostrou:
+--     romaneio alterado sem mudar o total nao passa sem nova conferencia;
+--   * o aviso de lancamento direto da Buck no livro nao depende da data de
+--     pagamento, porque o lancamento antigo nao diz a que semana pertence;
+--   * cobranca da Buck nao recebe mais do que falta: o que passar e de outra
+--     semana, e virar receita a mais e exatamente o que esta entrega combate.
+--
 -- Deploy aditivo: nada aqui remove o que o site no ar usa. A funcao antiga
 -- `create_receivable_from_romaneio` so e desligada numa fase posterior.
 
@@ -202,6 +210,37 @@ $fn$;
 
 revoke all on function private.buck_primeira_semana_cobravel() from public, anon, authenticated;
 
+-- A impressao digital da composicao de uma semana: produto, unidade,
+-- quantidade, preco e total de cada linha. A lista devolve e a confirmacao
+-- exige a mesma, calculada do mesmo retrato que vira cobranca. Recebe o
+-- detalhe ja lido (to_jsonb das linhas de calcular_cobranca_buck_detalhada)
+-- para as duas pontas produzirem exatamente o mesmo texto.
+create or replace function private.buck_hash_composicao(p_detalhe jsonb)
+returns text
+language sql
+immutable
+set search_path = ''
+as $fn$
+  select md5(coalesce((
+    select jsonb_agg(
+             jsonb_build_array(
+               linha.value ->> 'product_source',
+               linha.value ->> 'product_id',
+               linha.value ->> 'produto',
+               linha.value ->> 'unidade',
+               linha.value ->> 'quantidade',
+               linha.value ->> 'preco_unitario',
+               linha.value ->> 'total'
+             )
+             order by linha.value ->> 'product_source', linha.value ->> 'product_id',
+                      linha.value ->> 'produto', linha.value ->> 'unidade'
+           )
+    from jsonb_array_elements(coalesce(p_detalhe, '[]'::jsonb)) linha
+  ), '[]'::jsonb)::text);
+$fn$;
+
+revoke all on function private.buck_hash_composicao(jsonb) from public, anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 2. A foto da cobranca: linhas dos romaneios e ajustes.
 -- ---------------------------------------------------------------------------
@@ -345,10 +384,15 @@ for each row execute function private.guard_receita_buck_no_livro();
 -- romaneios da EX nunca e conferida (12 de 19 na semana de 31/08). Esperar a
 -- conferencia faria a semana nunca aparecer.
 --
--- `lancamentos_diretos` avisa de receita da Buck lancada direto no livro depois
--- da semana, na janela entre esta decisao e a trava acima entrar no ar.
--- Lancamentos anteriores a 10/09 pertencem a semanas de agosto (conferido em
--- producao em 13/09) e ficam fora do aviso.
+-- `lancamentos_diretos` conta receita da Buck lancada direto no livro, ainda
+-- nao estornada, na janela entre esta decisao e a trava acima entrar no ar. O
+-- lancamento direto nao guarda a semana a que pertence, entao o aviso aparece
+-- em todas as semanas, qualquer que seja a data do pagamento: melhor avisar a
+-- mais do que deixar a mesma semana ser recebida duas vezes. Lancamentos
+-- anteriores a 10/09 pertencem a semanas de agosto (conferido em producao em
+-- 13/09) e ficam fora do aviso.
+--
+-- `composicao` e a impressao digital que a confirmacao exige de volta.
 create or replace function public.list_buck_weeks_to_bill()
 returns table (
   period_start date,
@@ -358,7 +402,8 @@ returns table (
   linhas integer,
   amount numeric,
   problemas text[],
-  lancamentos_diretos integer
+  lancamentos_diretos integer,
+  composicao text
 )
 language sql
 stable
@@ -395,18 +440,27 @@ as $$
          conta.linhas,
          conta.total,
          conta.problemas,
-         diretos.quantidade
+         diretos.quantidade,
+         conta.composicao
   from romaneios_da_semana semana
   cross join lateral (
-    select count(*)::int as linhas,
-           coalesce(sum(detalhe.total), 0)::numeric(12,2) as total,
+    select coalesce(jsonb_agg(to_jsonb(detalhe)), '[]'::jsonb) as detalhe
+    from private.calcular_cobranca_buck_detalhada(semana.de, semana.ate) detalhe
+  ) retrato
+  cross join lateral (
+    select jsonb_array_length(retrato.detalhe) as linhas,
            coalesce(
-             (select array_agg(distinct problema order by problema)
-                from private.calcular_cobranca_buck(semana.de, semana.ate) outra,
-                     unnest(outra.problemas) as problema),
+             (select sum((linha.value ->> 'total')::numeric)
+                from jsonb_array_elements(retrato.detalhe) linha),
+             0
+           )::numeric(12,2) as total,
+           coalesce(
+             (select array_agg(distinct problema.value order by problema.value)
+                from jsonb_array_elements(retrato.detalhe) linha,
+                     jsonb_array_elements_text(linha.value -> 'problemas') problema),
              array[]::text[]
-           ) as problemas
-    from private.calcular_cobranca_buck(semana.de, semana.ate) detalhe
+           ) as problemas,
+           private.buck_hash_composicao(retrato.detalhe) as composicao
   ) conta
   cross join lateral (
     select count(*)::int as quantidade
@@ -417,7 +471,6 @@ as $$
       and entrada.source <> 'contas_receber'
       and entrada.reversed_at is null
       and entrada.created_at >= timestamptz '2026-09-10 00:00:00-03'
-      and entrada.paid_date > semana.ate
   ) diretos
   where private.current_user_can_receivables('contas_receber.acessar')
     and not exists (
@@ -439,6 +492,9 @@ grant execute on function public.list_buck_weeks_to_bill() to authenticated;
 -- `p_total_romaneios_conferencia` e o valor dos romaneios que a tela mostrou.
 -- E conferido, nunca aceito: o banco soma de novo e recusa se discordar.
 --
+-- `p_composicao_conferencia` e a impressao digital que a lista devolveu. Se um
+-- romaneio mudou depois que a tela abriu, mesmo sem mudar o total, recusa.
+--
 -- `p_ajustes` e uma lista de objetos:
 --   {"kind": "produto_sem_romaneio", "description", "product_name",
 --    "quantity", "unit": "un"|"kg", "unit_price"}
@@ -450,6 +506,7 @@ create or replace function public.create_buck_weekly_receivable(
   p_de date,
   p_ate date,
   p_total_romaneios_conferencia numeric,
+  p_composicao_conferencia text,
   p_ajustes jsonb default '[]'::jsonb
 )
 returns uuid
@@ -676,6 +733,12 @@ begin
         || '. Nada foi cobrado. Atualize a tela e confira a semana.';
   end if;
 
+  if p_composicao_conferencia is null
+     or p_composicao_conferencia <> private.buck_hash_composicao(v_detalhe) then
+    raise exception using errcode = '22023',
+      message = 'Os romaneios desta semana mudaram depois que a tela abriu. Nada foi cobrado. Atualize a tela e confira de novo.';
+  end if;
+
   v_total := v_total_romaneios + v_soma_ajustes;
   if v_total <= 0 then
     raise exception using errcode = '22023',
@@ -779,8 +842,8 @@ exception
 end;
 $$;
 
-revoke all on function public.create_buck_weekly_receivable(uuid, date, date, numeric, jsonb) from public, anon;
-grant execute on function public.create_buck_weekly_receivable(uuid, date, date, numeric, jsonb) to authenticated;
+revoke all on function public.create_buck_weekly_receivable(uuid, date, date, numeric, text, jsonb) from public, anon;
+grant execute on function public.create_buck_weekly_receivable(uuid, date, date, numeric, text, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. Cobranca da Buck nao e parcelada.
@@ -915,5 +978,145 @@ $$;
 
 revoke all on function public.split_receivable(uuid, uuid, integer) from public, anon;
 grant execute on function public.split_receivable(uuid, uuid, integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 7. Cobranca da Buck nao recebe mais do que falta.
+-- ---------------------------------------------------------------------------
+-- Corpo copiado de 20260814140631_recebimento_em_pedacos.sql; a unica
+-- diferenca e a recusa, na origem romaneio_ex, de pedaco maior que o saldo em
+-- aberto. A Buck paga em pedacos, e um pagamento que cobre duas semanas
+-- lancado numa so viraria receita a mais nesta e deixaria a outra em aberto.
+-- Clientes PJ seguem como antes: la o valor a mais foi decisao anterior
+-- (decisao 9) e tem tarefa propria de revisao.
+--
+-- A cobranca e travada com `for update` antes de somar o que ja entrou, entao
+-- dois pedacos simultaneos nao passam juntos pelo saldo.
+create or replace function public.record_receivable_receipt(
+  p_request_id uuid,
+  p_receivable_id uuid,
+  p_received_date date,
+  p_amount numeric,
+  p_method text,
+  p_account_key text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_receipt_id uuid;
+  v_cobranca record;
+  v_account record;
+  v_amount numeric(12,2);
+  v_recebido numeric(12,2);
+  v_user_id uuid := (select auth.uid());
+begin
+  if p_request_id is null then
+    raise exception using errcode = '22023', message = 'Identificador do recebimento obrigatório.';
+  end if;
+
+  if not private.current_user_can_receivables('contas_receber.baixar') then
+    raise exception using errcode = '42501', message = 'Sem permissão para registrar recebimentos.';
+  end if;
+
+  -- Idempotência: repetir a mesma requisição devolve o mesmo pedaço.
+  select recibo.id into v_receipt_id
+  from public.receivable_receipts recibo
+  where recibo.request_id = p_request_id;
+  if v_receipt_id is not null then
+    return v_receipt_id;
+  end if;
+
+  select cobranca.* into v_cobranca
+  from public.receivables cobranca
+  where cobranca.id = p_receivable_id
+  for update;
+  if v_cobranca.id is null then
+    raise exception using errcode = 'P0002', message = 'Cobrança não encontrada.';
+  end if;
+  if v_cobranca.status = 'cancelada' then
+    raise exception using errcode = '22023', message = 'Cobrança cancelada não recebe pagamento.';
+  end if;
+
+  v_recebido := private.receivable_recebido(p_receivable_id);
+  if v_recebido >= v_cobranca.amount then
+    raise exception using errcode = '22023',
+      message = 'Esta cobrança já está quitada. Estorne um recebimento antes de registrar outro.';
+  end if;
+
+  if p_received_date is null then
+    raise exception using errcode = '22023', message = 'Informe a data em que o dinheiro entrou.';
+  end if;
+  if p_received_date > private.data_na_padaria() then
+    raise exception using errcode = '22023', message = 'A data do recebimento não pode ser no futuro.';
+  end if;
+  if p_received_date < v_cobranca.invoice_date then
+    raise exception using errcode = '22023', message = 'O recebimento não pode ser anterior ao faturamento.';
+  end if;
+
+  if p_amount is null or p_amount <= 0 then
+    raise exception using errcode = '22023', message = 'Informe o valor recebido.';
+  end if;
+  v_amount := round(p_amount, 2);
+  if v_amount > 1000000 then
+    raise exception using errcode = '22023', message = 'Valor acima do limite permitido. Confira o que foi digitado.';
+  end if;
+
+  if v_cobranca.origin = 'romaneio_ex' and v_amount > v_cobranca.amount - v_recebido then
+    raise exception using errcode = '22023',
+      message = 'Esta cobrança da Buck tem R$ '
+        || replace(to_char(v_cobranca.amount - v_recebido, 'FM999999990.00'), '.', ',')
+        || ' em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.';
+  end if;
+
+  if p_method is null or p_method not in ('dinheiro', 'pix', 'transferencia', 'boleto', 'cartao', 'outro') then
+    raise exception using errcode = '22023', message = 'Forma de recebimento inválida.';
+  end if;
+
+  select account.* into v_account
+  from public.finance_accounts account
+  where account.key = p_account_key and account.active;
+  if v_account.id is null then
+    raise exception using errcode = '22023', message = 'Escolha a conta em que o dinheiro entrou.';
+  end if;
+  if v_account.kind = 'cartao_credito' then
+    raise exception using errcode = '22023', message = 'Cartão de crédito é conta de pagamento, não de recebimento.';
+  end if;
+
+  insert into public.receivable_receipts (
+    request_id, receivable_id, received_date, amount, method, account_id, created_by
+  )
+  values (
+    p_request_id, p_receivable_id, p_received_date, v_amount, p_method, v_account.id, v_user_id
+  )
+  returning id into v_receipt_id;
+
+  insert into public.receivable_events (receivable_id, event_type, details, created_by)
+  values (
+    p_receivable_id, 'baixada',
+    jsonb_build_object(
+      'request_id', p_request_id,
+      'receipt_id', v_receipt_id,
+      'received_date', p_received_date,
+      'amount', v_amount,
+      'method', p_method,
+      'account_key', p_account_key,
+      'recebido_antes', v_recebido
+    ),
+    v_user_id
+  );
+
+  -- O livro é alimentado na mesma transação: ou as duas coisas acontecem, ou
+  -- nenhuma.
+  perform private.lancar_recibo_no_livro(v_receipt_id, v_user_id);
+  perform private.atualizar_situacao_receivable(p_receivable_id);
+
+  return v_receipt_id;
+end;
+$$;
+
+revoke all on function public.record_receivable_receipt(uuid, uuid, date, numeric, text, text) from public, anon;
+grant execute on function public.record_receivable_receipt(uuid, uuid, date, numeric, text, text) to authenticated;
 
 commit;
