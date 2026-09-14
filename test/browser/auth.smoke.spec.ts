@@ -326,6 +326,7 @@ test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
 
 test('Financeiro JC vincula produto vendido, rele e devolve para pendente', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await skipWithoutSalesProductMappings(page, await dataApiHeaders(page))
   await page.goto('/relatorios/vendas-balcao')
 
   await expect(page.getByRole('heading', { name: 'Produtos vendidos' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
@@ -742,6 +743,13 @@ async function skipWithoutImportDraftsTable(page: import('@playwright/test').Pag
   const sharedTarget = !process.env.SMOKE_SUPABASE_URL
   test.skip(sharedTarget && probe.status() === 404, 'A tabela de rascunhos de importacao ainda nao existe neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
   expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar rascunhos`).toBe(true)
+}
+
+async function skipWithoutSalesProductMappings(page: import('@playwright/test').Page, headers: Record<string, string>) {
+  const probe = await page.request.get(`${previewApi().url}/rest/v1/sales_product_mappings?select=id&limit=1`, { headers })
+  const sharedTarget = !process.env.SMOKE_SUPABASE_URL
+  test.skip(sharedTarget && probe.status() === 404, 'O vínculo de produtos vendidos ainda não existe no banco compartilhado; a prova desta PR roda no banco isolado dela.')
+  expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar vínculos de produtos vendidos`).toBe(true)
 }
 
 // Memoria de "uso/despesa" do fornecedor criado nesta rodada (o CNPJ e unico
