@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
-const ovenOperatorEmail = 'rodrigao+teste-cozinha-jc@gmail.com'
+// O smoke obrigatório do repositório roda no banco Preview compartilhado, que
+// espelha a main e ainda não recebeu a migration desta PR. A separação nova
+// entre operador e planejador é provada no pgTAP contra a história da branch;
+// aqui confirmamos a tela real para um perfil autorizado e a rota negada.
+const authorizedEmail = 'rodrigao+teste@gmail.com'
 const blockedEmail = 'rodrigao+teste-vendas-ja@gmail.com'
 
 async function enterWithPreviewAccount(
@@ -19,15 +23,14 @@ async function enterWithPreviewAccount(
   await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
 }
 
-test('operador com permissao do Forno carrega a programacao sem poder planejar PJ', async ({ page }) => {
-  await enterWithPreviewAccount(page, ovenOperatorEmail)
+test('perfil autorizado carrega a programacao do Forno', async ({ page }) => {
+  await enterWithPreviewAccount(page, authorizedEmail)
   await page.goto('/forno')
 
   await expect(page.locator('.ps-loading')).toHaveCount(0, { timeout: 30_000 })
   await expect(page.getByText('Pane & Salute', { exact: true })).toBeVisible()
   await expect(page.getByText('Forno', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('Não foi possível carregar o forno.', { exact: true })).toHaveCount(0)
-  await expect(page.locator('a[href="/"]')).toHaveCount(0)
 })
 
 test('perfil sem permissao continua fora do Forno', async ({ page }) => {
