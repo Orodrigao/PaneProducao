@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { AppUser, getCurrentUser, canAccess, roleColor, roleLabel } from '@/lib/auth'
+import { AppUser, getCurrentUser, canAccess, canAccessSalesImport, roleColor, roleLabel } from '@/lib/auth'
 
 interface ReportCard {
   href: string
@@ -13,6 +13,13 @@ interface ReportCard {
 }
 
 const ALL_REPORTS: ReportCard[] = [
+  {
+    href: '/relatorios/vendas-balcao',
+    title: 'Vendas do balcão',
+    description: 'Conferência e histórico dos arquivos diários do PDV. Inicialmente disponível para JC.',
+    icon: '🧾',
+    status: 'ready',
+  },
   {
     href: '/relatorios/sobras-descartes',
     title: 'Sobras & Descartes',
@@ -75,9 +82,12 @@ export default function RelatoriosIndex() {
 
   if (!user) return null
 
-  const availableReports = ALL_REPORTS.filter(r => r.status === 'ready' && canAccess(user, r.href))
+  const reportAccessible = (report: ReportCard) => report.href === '/relatorios/vendas-balcao'
+    ? canAccessSalesImport(user)
+    : canAccess(user, report.href)
+  const availableReports = ALL_REPORTS.filter(r => r.status === 'ready' && reportAccessible(r))
   const visibleReports = ALL_REPORTS.filter(r => {
-    if (r.status === 'ready') return canAccess(user, r.href)
+    if (r.status === 'ready') return reportAccessible(r)
     return user.role === 'admin' || user.role === 'financeiro'
   })
 
@@ -105,7 +115,7 @@ export default function RelatoriosIndex() {
           <div className="ps-report-grid">
             {visibleReports.map(r => {
               const isReady = r.status === 'ready'
-              const accessible = isReady && canAccess(user, r.href)
+              const accessible = isReady && reportAccessible(r)
               const disabledCls = accessible ? '' : 'disabled'
 
               const body = (
