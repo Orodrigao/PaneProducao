@@ -102,7 +102,7 @@ export function organizePjOrders<T extends PjOrderListItem>(
   const stillOpen = (order: T) => (
     !order.cancelledAt
     && !order.dispatchedAt
-    && (!order.deliveryDate || order.deliveryDate >= options.today || order.hasPendingCheck === true)
+    && (!order.deliveryDate || order.deliveryDate >= options.today)
   )
   const open = orders
     .filter(stillOpen)

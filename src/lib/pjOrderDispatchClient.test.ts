@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { rpc: mocks.rpc },
 }))
 
-import { confirmPjOrderDispatch, loadPjOrdersForDispatch } from './pjOrderDispatchClient'
+import { confirmPjOrderDispatch, loadPjOrdersForDispatch, savePjOrderDispatchQuantities } from './pjOrderDispatchClient'
 
 describe('fila operacional de Pedidos PJ', () => {
   beforeEach(() => mocks.rpc.mockReset())
@@ -79,6 +79,17 @@ describe('fila operacional de Pedidos PJ', () => {
     await expect(confirmPjOrderDispatch('grupo-1')).resolves.toEqual({
       ok: false,
       message: 'Não foi possível liberar o pedido para entrega: Sem permissão',
+    })
+  })
+
+  it('preserva os numeros e orienta repetir quando a comunicacao falha', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '', message: 'TypeError: Load failed' } })
+    const result = await savePjOrderDispatchQuantities('grupo-1', [
+      { order_id: 'linha-1', quantity: 10, reason: null },
+    ], null, '11111111-1111-4111-8111-111111111111')
+    expect(result).toEqual({
+      ok: false,
+      message: 'A conferência não foi confirmada. Os números continuam na tela. Confira a internet e toque em Salvar conferência novamente.',
     })
   })
 })

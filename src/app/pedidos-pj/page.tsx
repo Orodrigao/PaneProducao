@@ -836,7 +836,12 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
           alreadyBilled: row.already_billed,
         })),
       }),
-      pendingAction: pjHasPendingFollowup(group, todayISO(), access.showCommercialValues ? pjBillingForOrder(billingState, group.order_group_id) : undefined),
+      pendingAction: pjHasPendingFollowup(
+        group,
+        todayISO(),
+        access.showCommercialValues ? pjBillingForOrder(billingState, group.order_group_id) : undefined,
+        access.mode === 'dispatch' ? 'dispatch' : 'commercial',
+      ),
       nextAction: pjOperationalOverview(group, todayISO()).next,
       itemCount: group.rows.length,
       total: estimated ? group.totalPedido : group.total,
@@ -1111,6 +1116,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
               }}
               formatDate={fmtBR}
               showCommercialValues={access.showCommercialValues}
+              pendingUnavailable={access.mode === 'commercial' && billingState.kind !== 'loaded'}
             />
           )}
         </div>

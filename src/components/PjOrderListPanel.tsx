@@ -26,6 +26,7 @@ interface PjOrderListPanelProps {
   onOpen: (orderKey: string) => void
   formatDate: (date: string | null) => string
   showCommercialValues: boolean
+  pendingUnavailable?: boolean
 }
 
 function futureSectionLabel(date: string): string {
@@ -117,6 +118,7 @@ export function PjOrderListPanel({
   onOpen,
   formatDate,
   showCommercialValues,
+  pendingUnavailable = false,
 }: PjOrderListPanelProps) {
   const organized = organizePjOrders(orders, { today, query: search })
   const trimmedSearch = search.trim()
@@ -144,7 +146,7 @@ export function PjOrderListPanel({
 
         <div className="pj-order-stage-tabs" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }} aria-label="Situação dos pedidos">
           <button type="button" aria-pressed={activeStage === 'pending'} className={activeStage === 'pending' ? 'active' : ''} onClick={() => onStageChange('pending')}>
-            Pendências <span>{pending.length}</span>
+            Pendências <span>{pendingUnavailable ? '—' : pending.length}</span>
           </button>
           <button
             type="button"
@@ -194,9 +196,15 @@ export function PjOrderListPanel({
         </div>
       ) : activeStage === 'pending' ? (
         <div className="pj-order-results">
-          <p className="pj-order-result-summary">Pedidos para conferir ou acompanhar. Abra a ficha para ver a próxima providência{showCommercialValues ? ' e consultar a cobrança; estar nesta lista não significa dívida em aberto' : ''}.</p>
-          {pending.length === 0 && <div className="ps-empty pj-order-empty">Nenhuma providência identificada nesta lista.</div>}
-          <div className="pj-order-rows">{pending.map(order => <OrderRow key={order.key} order={order} stage={order.dispatchedAt ? 'history' : 'open'} showStage={false} onOpen={onOpen} formatDate={formatDate} showCommercialValues={showCommercialValues} />)}</div>
+          {pendingUnavailable ? (
+            <div className="ps-empty pj-order-empty">Não foi possível conferir as pendências financeiras deste perfil. Os pedidos continuam disponíveis em Em aberto e Fechados.</div>
+          ) : (
+            <>
+              <p className="pj-order-result-summary">Pedidos para conferir ou acompanhar. Abra a ficha para ver a próxima providência{showCommercialValues ? ' e consultar a cobrança; estar nesta lista não significa dívida em aberto' : ''}.</p>
+              {pending.length === 0 && <div className="ps-empty pj-order-empty">Nenhuma providência identificada nesta lista.</div>}
+              <div className="pj-order-rows">{pending.map(order => <OrderRow key={order.key} order={order} stage={order.dispatchedAt ? 'history' : 'open'} showStage={false} onOpen={onOpen} formatDate={formatDate} showCommercialValues={showCommercialValues} />)}</div>
+            </>
+          )}
         </div>
       ) : activeStage === 'open' ? (
         organized.openSections.length === 0 ? (
