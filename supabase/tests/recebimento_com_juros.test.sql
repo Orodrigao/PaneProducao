@@ -17,7 +17,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(55);
+select plan(68);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -361,10 +361,12 @@ select lives_ok(
   'depois disso o pedaco anterior pode ser estornado'
 );
 
--- D: cobrança de pedido PJ reduzida depois de pagamento --------------------
--- A liberação da jornada PJ reduziu a cobrança de 200 para 190 com dinheiro
--- dentro (evento 'valor_corrigido_pj'). O cliente paga o boleto original: os 10
--- da diferença são valor do pedido, tratados na ficha PJ; só o resto é juros.
+-- D: diferença da conferência de pedido PJ ---------------------------------
+-- O cliente pode ter na mão um boleto maior que a cobrança atual. Até essa
+-- diferença a sobra é valor do pedido, tratado na ficha PJ; só o resto é juros.
+-- Os pedidos aqui não estão na jornada: a regra olha só as cobranças do pedido
+-- e seus eventos, e cada caso é montado à mão como a liberação real grava
+-- (transition_pj_flow_pilot, migration 20260908164021).
 
 select lives_ok(
   $$ select public.create_manual_receivable(
@@ -393,18 +395,97 @@ select lives_ok(
   'financeiro lanca outra cobranca corrigida a vencer'
 );
 
--- O evento é o que a liberação real grava no id da própria cobrança
--- (transition_pj_flow_pilot, migration 20260908164021).
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a011'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 40, 180.00, 'Pedido corrigido duas vezes'
+  ) $$,
+  'financeiro lanca a cobranca corrigida duas vezes'
+);
+
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a012'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 40, 95.00, 'Parcela 1 do pedido dividido'
+  ) $$,
+  'financeiro lanca a parcela 1 do pedido dividido'
+);
+
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a013'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 40, 95.00, 'Parcela 2 do pedido dividido'
+  ) $$,
+  'financeiro lanca a parcela 2 do pedido dividido'
+);
+
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a014'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 40, 200.00, 'Emissao substituida'
+  ) $$,
+  'financeiro lanca a emissao que sera substituida'
+);
+
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a015'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 40, 190.00, 'Emissao nova'
+  ) $$,
+  'financeiro lanca a emissao nova'
+);
+
 reset role;
-insert into public.receivable_events (receivable_id, event_type, reason, details, created_by)
-select id, 'valor_corrigido_pj', 'Nova conferencia apos pagamento', '{"de": 200.00, "para": 190.00}'::jsonb,
-       'a2000000-0000-4000-8000-000000000001'
-from public.receivables
-where request_id in ('a2000000-0000-4000-8000-00000000a006'::uuid,
-                     'a2000000-0000-4000-8000-00000000a009'::uuid,
-                     'a2000000-0000-4000-8000-00000000a010'::uuid);
+
+-- A liberação sem pagamento cancela a emissão anterior inteira. Cancelada
+-- antes de entrar no grupo: só uma cobrança viva por parcela do pedido.
+update public.receivables
+set status = 'cancelada',
+    cancelled_at = now(),
+    cancelled_by = 'a2000000-0000-4000-8000-000000000001',
+    cancel_reason = 'Substituida apos nova conferencia e revisao PJ.'
+where request_id = 'a2000000-0000-4000-8000-00000000a014'::uuid;
+
+-- Cada cobrança vira pedido PJ do seu grupo; a divisão e a nova emissão
+-- compartilham o grupo, e as parcelas levam número e quantidade.
+update public.receivables cobranca
+set origin = 'pedido_pj', origin_ref = grupo.ref,
+    installment_number = grupo.parcela, installment_count = grupo.parcelas
+from (values
+  ('a2000000-0000-4000-8000-00000000a006'::uuid, 'a2000000-0000-4000-8000-0000000000f6'::uuid, 1, 1),
+  ('a2000000-0000-4000-8000-00000000a009'::uuid, 'a2000000-0000-4000-8000-0000000000f9'::uuid, 1, 1),
+  ('a2000000-0000-4000-8000-00000000a010'::uuid, 'a2000000-0000-4000-8000-0000000000fa'::uuid, 1, 1),
+  ('a2000000-0000-4000-8000-00000000a011'::uuid, 'a2000000-0000-4000-8000-0000000000fb'::uuid, 1, 1),
+  ('a2000000-0000-4000-8000-00000000a012'::uuid, 'a2000000-0000-4000-8000-0000000000fc'::uuid, 1, 2),
+  ('a2000000-0000-4000-8000-00000000a013'::uuid, 'a2000000-0000-4000-8000-0000000000fc'::uuid, 2, 2),
+  ('a2000000-0000-4000-8000-00000000a014'::uuid, 'a2000000-0000-4000-8000-0000000000fd'::uuid, 1, 1),
+  ('a2000000-0000-4000-8000-00000000a015'::uuid, 'a2000000-0000-4000-8000-0000000000fd'::uuid, 1, 1)
+) grupo(request_id, ref, parcela, parcelas)
+where cobranca.request_id = grupo.request_id;
+
+-- A redução com dinheiro dentro grava o valor anterior no id da cobrança.
+insert into public.receivable_events (receivable_id, event_type, reason, details, created_by, created_at)
+select cobranca.id, 'valor_corrigido_pj', 'Nova conferencia apos pagamento', evento.details,
+       'a2000000-0000-4000-8000-000000000001', evento.quando
+from (values
+  ('a2000000-0000-4000-8000-00000000a006'::uuid, '{"de": 200.00, "para": 190.00}'::jsonb, now() - interval '2 hours'),
+  ('a2000000-0000-4000-8000-00000000a009'::uuid, '{"de": 200.00, "para": 190.00}'::jsonb, now() - interval '2 hours'),
+  ('a2000000-0000-4000-8000-00000000a010'::uuid, '{"de": 200.00, "para": 190.00}'::jsonb, now() - interval '2 hours'),
+  ('a2000000-0000-4000-8000-00000000a011'::uuid, '{"de": 200.00, "para": 190.00}'::jsonb, now() - interval '2 hours'),
+  ('a2000000-0000-4000-8000-00000000a011'::uuid, '{"de": 190.00, "para": 180.00}'::jsonb, now() - interval '1 hour'),
+  ('a2000000-0000-4000-8000-00000000a012'::uuid, '{"de": 200.00, "para": 190.00}'::jsonb, now() - interval '2 hours')
+) evento(request_id, details, quando)
+join public.receivables cobranca on cobranca.request_id = evento.request_id;
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+
+-- Redução com dinheiro dentro: 200 viraram 190.
 
 select is(
   public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a006'::uuid)),
@@ -465,6 +546,64 @@ select throws_ok(
   'O pagamento não está atrasado e passou R$ 5,00 do que falta. Confira o valor ou informe a justificativa.',
   'sem atraso, so a parte que seria juros pede justificativa'
 );
+
+-- Reduções sucessivas: 200 para 190 e depois para 180.
+
+select is(
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a011'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 20}'::jsonb,
+  'com duas reducoes vale o primeiro valor anterior: 200 menos 180'
+);
+
+-- Divisão em parcelas depois da redução: a diferença é do pedido inteiro.
+
+select is(
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a012'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 10}'::jsonb,
+  'dividido em 95 e 95, a diferenca continua sendo 200 menos 190'
+);
+
+select lives_ok(
+  $$ select public.record_receivable_receipt(
+    'a2000000-0000-4000-8000-00000000b019'::uuid,
+    (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a012'::uuid),
+    private.data_na_padaria() - 5, 105.00, 'boleto', 'banco_sicredi_jc'
+  ) $$,
+  'a parcela 1 recebe 105'
+);
+
+select is((select amount || '|' || interest_amount from public.receivable_receipts
+    where request_id = 'a2000000-0000-4000-8000-00000000b019'::uuid),
+  '105.00|0.00',
+  'os 10 a mais da parcela 1 sao a diferenca da conferencia');
+
+select is(
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a013'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 0}'::jsonb,
+  'a parcela 2 nao usa de novo a diferenca que a parcela 1 ja recebeu'
+);
+
+-- Nova emissão sem pagamento: a de 200 foi cancelada e a de 190 emitida.
+
+select is(
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a015'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 10}'::jsonb,
+  'a emissao cancelada por nova conferencia conta como boleto na mao do cliente'
+);
+
+select lives_ok(
+  $$ select public.record_receivable_receipt(
+    'a2000000-0000-4000-8000-00000000b020'::uuid,
+    (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a015'::uuid),
+    private.data_na_padaria() - 5, 200.00, 'boleto', 'banco_sicredi_jc'
+  ) $$,
+  'o cliente paga o boleto antigo de 200 com atraso'
+);
+
+select is((select amount || '|' || interest_amount from public.receivable_receipts
+    where request_id = 'a2000000-0000-4000-8000-00000000b020'::uuid),
+  '200.00|0.00',
+  'os 10 do boleto antigo sao valor do pedido, nao juros');
 
 -- F: cobrança já na categoria de juros sai numa linha só -------------------
 

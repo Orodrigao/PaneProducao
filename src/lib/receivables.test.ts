@@ -8,6 +8,8 @@ const PASTA_MIGRATIONS = join(process.cwd(), 'supabase', 'migrations')
 // as funções puras, então o cliente é dispensado.
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
+
 import {
   daysOverdue,
   defaultPaymentDraft,
@@ -25,6 +27,7 @@ import {
   type PjOrderBillingBlock,
   podeDividirEm,
   fallbackExcessRule,
+  loadReceivableExcessRule,
   receiptExcess,
   splitReceiptExcess,
   validateExcessReason,
@@ -189,6 +192,23 @@ describe('validateReceivablePaymentDraft', () => {
       const draft = { ...defaultPaymentDraft(buck), receivedDate: HOJE, receivedAmount: '1300', accountKey: 'banco_sicredi_jc' }
       expect(validateReceivablePaymentDraft(draft, buck, HOJE))
         .toMatch(/^Esta cobrança da Buck tem R\$\s1\.200,00 em aberto\. Registre no máximo esse valor; o que passar pertence a outra semana\.$/)
+    })
+
+    it('pergunta a regra ao banco e só usa o palpite quando a função não existe', async () => {
+      const rpc = vi.mocked(supabase.rpc)
+      rpc.mockResolvedValueOnce({ data: { modo: 'juros', sobra_do_pedido: 10 }, error: null } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'pedido_pj' }))
+        .resolves.toEqual({ mode: 'juros', orderExcessCap: 10 })
+
+      rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'romaneio_ex' }))
+        .resolves.toEqual({ mode: 'recusa_buck', orderExcessCap: 0 })
+
+      // Outro erro não pode virar palpite: a tela prometeria juros que o banco
+      // não gravaria.
+      rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Sem permissão' } } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'pedido_pj' }))
+        .rejects.toMatchObject({ code: '42501' })
     })
 
     it('motivo pedido pelo banco sem valor a mais visto pela tela', () => {

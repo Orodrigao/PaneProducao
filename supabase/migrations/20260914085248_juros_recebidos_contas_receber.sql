@@ -22,13 +22,14 @@
 --
 -- Quando a sobra NÃO vira juros (private.receivable_excess_rule):
 --   * cobrança da Buck: continua recusado, o que passa pertence a outra semana;
---   * a parte da sobra que é diferença de quantidade. Na jornada PJ, a
---     liberação com pagamento já feito pode reduzir o valor da cobrança
---     (evento 'valor_corrigido_pj', com o valor anterior em details->>'de').
---     O cliente que paga o boleto original entrega essa diferença, que é valor
---     do pedido, tratado na ficha PJ por devolução ou crédito. Só o que passar
---     dela vira juros. É o único caminho que deixa o boleto maior que a
---     cobrança: corrigir antes de pagamento cancela e emite cobrança nova.
+--   * a parte da sobra que é diferença da conferência de um pedido PJ. O
+--     cliente pode ter na mão um boleto maior que a cobrança atual por dois
+--     caminhos da jornada: a liberação com pagamento já feito reduz a cobrança
+--     no mesmo id (evento 'valor_corrigido_pj', valor anterior em
+--     details->>'de'), e a liberação sem pagamento cancela a emissão anterior
+--     e emite outra menor. A diferença entre o maior valor já cobrado do
+--     pedido e o que está em aberto hoje é valor do pedido, tratado na ficha
+--     PJ por devolução ou crédito; só o que passar dela vira juros.
 --
 -- Fora do escopo, por decisão consciente: os 5 recebimentos antigos continuam
 -- como estão (valor cheio em `amount`, `interest_amount` zero).
@@ -78,7 +79,7 @@ alter table public.receivable_receipts
   );
 
 comment on column public.receivable_receipts.amount is
-  'Quanto deste pedaço abate a cobrança. Só passa do saldo em aberto pela diferença de quantidade de pedido PJ corrigido depois de pagamento, ou em recebimentos anteriores a 14/09/2026.';
+  'Quanto deste pedaço abate a cobrança. Só passa do saldo em aberto pela diferença da conferência de pedido PJ, ou em recebimentos anteriores a 14/09/2026.';
 comment on column public.receivable_receipts.interest_amount is
   'Quanto deste pedaço passou do saldo em aberto: juros e multa recebidos. O dinheiro que entrou é amount + interest_amount.';
 comment on column public.receivable_receipts.excess_reason is
@@ -94,31 +95,85 @@ grant select on public.receivable_receipts to authenticated;
 -- Uma regra só, usada pela gravação e perguntada pela tela antes do clique:
 --   modo 'recusa_buck'  a Buck não aceita valor acima do saldo;
 --   modo 'juros'        a sobra vira juros recebidos, exceto
---   sobra_do_pedido     quanto da sobra ainda é valor do pedido: a redução que
---                       a liberação da jornada PJ fez na cobrança depois de
---                       pagamento (primeiro valor anterior menos o valor atual).
+--   sobra_do_pedido     quanto da sobra ainda é diferença da conferência do
+--                       pedido PJ, calculada pelo pedido inteiro (parcelas
+--                       incluídas):
+--                         maior valor já cobrado do pedido
+--                         - valor das cobranças ativas do pedido
+--                         - o que outras parcelas já receberam acima do valor.
+--                       O maior valor já cobrado é o primeiro valor anterior a
+--                       uma redução com dinheiro dentro, ou uma emissão inteira
+--                       cancelada por nova conferência. Numa sequência de
+--                       aumento e depois redução vale o primeiro valor, que
+--                       acerta o caso comum de reduções sucessivas.
 create or replace function private.receivable_excess_rule(p_receivable_id uuid)
 returns jsonb
-language sql
+language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-  select jsonb_build_object(
-    'modo', case when cobranca.origin = 'romaneio_ex' then 'recusa_buck' else 'juros' end,
-    'sobra_do_pedido', greatest(
-      coalesce((
-        select (evento.details->>'de')::numeric
-        from public.receivable_events evento
-        where evento.receivable_id = cobranca.id
-          and evento.event_type = 'valor_corrigido_pj'
-        order by evento.created_at, evento.id
-        limit 1
-      ), cobranca.amount) - cobranca.amount,
-      0)
-  )
+declare
+  v_cobranca record;
+  v_maior_cobrado numeric(12,2);
+  v_ativo numeric(12,2);
+  v_ja_usado numeric(12,2);
+begin
+  select cobranca.id, cobranca.origin, cobranca.origin_ref into v_cobranca
   from public.receivables cobranca
   where cobranca.id = p_receivable_id;
+  if v_cobranca.id is null then
+    return null;
+  end if;
+
+  if v_cobranca.origin = 'romaneio_ex' then
+    return jsonb_build_object('modo', 'recusa_buck', 'sobra_do_pedido', 0);
+  end if;
+  if v_cobranca.origin <> 'pedido_pj' or v_cobranca.origin_ref is null then
+    return jsonb_build_object('modo', 'juros', 'sobra_do_pedido', 0);
+  end if;
+
+  select greatest(
+    coalesce((
+      select case when evento.details->>'de' ~ '^[0-9]+(\.[0-9]+)?$'
+                  then (evento.details->>'de')::numeric end
+      from public.receivable_events evento
+      join public.receivables parcela on parcela.id = evento.receivable_id
+      where parcela.origin = 'pedido_pj'
+        and parcela.origin_ref = v_cobranca.origin_ref
+        and evento.event_type = 'valor_corrigido_pj'
+      order by evento.created_at, evento.id
+      limit 1
+    ), 0),
+    -- A liberação sem pagamento cancela todas as parcelas no mesmo instante:
+    -- somadas por instante, são a emissão inteira que o cliente pode ter.
+    coalesce((
+      select max(emissao.total)
+      from (
+        select sum(parcela.amount) as total
+        from public.receivables parcela
+        where parcela.origin = 'pedido_pj'
+          and parcela.origin_ref = v_cobranca.origin_ref
+          and parcela.status = 'cancelada'
+          and parcela.cancel_reason like 'Substituida apos nova conferencia%'
+        group by parcela.cancelled_at
+      ) emissao
+    ), 0)
+  ) into v_maior_cobrado;
+
+  select coalesce(sum(parcela.amount), 0),
+         coalesce(sum(greatest(private.receivable_recebido(parcela.id) - parcela.amount, 0)), 0)
+    into v_ativo, v_ja_usado
+  from public.receivables parcela
+  where parcela.origin = 'pedido_pj'
+    and parcela.origin_ref = v_cobranca.origin_ref
+    and parcela.status <> 'cancelada';
+
+  return jsonb_build_object(
+    'modo', 'juros',
+    'sobra_do_pedido', greatest(v_maior_cobrado - v_ativo - v_ja_usado, 0)
+  );
+end;
 $$;
 
 revoke all on function private.receivable_excess_rule(uuid) from public, anon, authenticated;
@@ -355,11 +410,11 @@ begin
         || ' em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.';
   end if;
 
-  -- Da sobra, a parte que é diferença de quantidade fica no pedido, como antes;
-  -- só o que passar dela vira juros.
-  v_sobra_pedido := coalesce((private.receivable_excess_rule(p_receivable_id)->>'sobra_do_pedido')::numeric, 0);
-
   if v_amount > v_falta then
+    -- Da sobra, a parte que é diferença da conferência do pedido fica no
+    -- pedido, como antes; só o que passar dela vira juros. A regra só é lida
+    -- quando existe sobra.
+    v_sobra_pedido := coalesce((private.receivable_excess_rule(p_receivable_id)->>'sobra_do_pedido')::numeric, 0);
     v_principal := v_falta + least(v_amount - v_falta, v_sobra_pedido);
     v_juros := v_amount - v_principal;
   else

@@ -226,13 +226,15 @@ Não reabrir sem evidência nova.
     - recebido **até o vencimento**, valor a mais não é juros de boleto e quase
       sempre é digitação. A tela e o banco **avisam e pedem justificativa, mas
       não impedem**; o motivo fica no pedaço e na linha de juros do livro;
-    - **quando parte da sobra não é juros:** a liberação da jornada PJ que
-      **reduz a cobrança depois de pagamento** deixa o boleto original maior que
-      ela. Se o cliente paga esse boleto, a diferença da conferência continua
-      sendo valor do pedido, como antes, e só o que passar dela vira juros. A
-      tela pergunta ao banco essa divisão antes do clique. Depois da saída
-      física, a ficha PJ não oferece tratamento para essa diferença, como já
-      acontecia antes desta decisão;
+    - **quando parte da sobra não é juros:** a nova conferência de um pedido
+      PJ pode deixar na mão do cliente um boleto maior que a cobrança atual,
+      seja porque a liberação **reduziu a cobrança depois de pagamento**, seja
+      porque **cancelou a emissão anterior e emitiu outra menor**. A diferença
+      entre o maior valor já cobrado do pedido e o que está em aberto hoje,
+      contando todas as parcelas, continua sendo valor do pedido, como antes, e
+      só o que passar dela vira juros. A tela pergunta ao banco essa divisão
+      antes do clique. Depois da saída física, a ficha PJ não oferece
+      tratamento para essa diferença, como já acontecia antes desta decisão;
     - o estorno segue desfazendo o pedaço inteiro, juros incluídos. Pedaço
       anterior **não é estornado** enquanto um posterior carregar juros
       calculados sobre ele: a tela diz qual estornar primeiro;
