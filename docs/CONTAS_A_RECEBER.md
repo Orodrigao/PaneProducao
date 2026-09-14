@@ -226,9 +226,12 @@ Não reabrir sem evidência nova.
     - recebido **até o vencimento**, valor a mais não é juros de boleto e quase
       sempre é digitação. A tela e o banco **avisam e pedem justificativa, mas
       não impedem**; o motivo fica no pedaço e na linha de juros do livro;
-    - como o que abate a cobrança nunca passa do que faltava, **juros não viram
-      "valor recebido a mais"** na jornada PJ, que continua tratando por
-      devolução ou crédito só a diferença de quantidade corrigida;
+    - **quando a sobra não é juros:** no pedido PJ da jornada que **ainda não
+      saiu**, uma nova conferência pode mudar o valor; e na cobrança que teve o
+      **valor corrigido depois de pagamento**, a sobra é diferença de quantidade.
+      Nos dois casos o recebimento abate tudo, como antes, e a ficha PJ segue
+      exigindo devolução por Pix ou crédito. A tela pergunta ao banco qual é o
+      caso antes do clique;
     - o estorno segue desfazendo o pedaço inteiro, juros incluídos. Pedaço
       anterior **não é estornado** enquanto um posterior carregar juros
       calculados sobre ele: a tela diz qual estornar primeiro;

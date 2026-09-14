@@ -101,6 +101,42 @@ export function receiptExcess(
   return { excess: Math.max(0, Math.round((recebido - remainingAmount(receivable)) * 100) / 100), late }
 }
 
+/**
+ * O que o banco faz com valor a mais nesta cobrança (private.receivable_excess_mode):
+ * - juros: vira juros recebidos;
+ * - valor_do_pedido: pedido PJ cujo valor segue a conferência; a sobra fica no
+ *   pedido e a ficha PJ trata por devolução ou crédito;
+ * - recusa_buck: a Buck não aceita valor acima do saldo.
+ */
+export type ReceivableExcessMode = 'juros' | 'valor_do_pedido' | 'recusa_buck'
+
+/** Palpite pela origem, para quando o banco não responde ou ainda não tem a regra. */
+export function fallbackExcessMode(origin: ReceivableOrigin): ReceivableExcessMode {
+  return origin === 'romaneio_ex' ? 'recusa_buck' : 'juros'
+}
+
+export type ReceiptExcessKind = 'sem_excesso' | 'juros' | 'juros_com_motivo' | 'valor_do_pedido' | 'recusa_buck'
+
+/** Para onde vai o valor a mais digitado, combinando a conta da tela com a regra do banco. */
+export function receiptExcessKind(excesso: ReceiptExcess, mode: ReceivableExcessMode): ReceiptExcessKind {
+  if (excesso.excess <= 0) return 'sem_excesso'
+  if (mode !== 'juros') return mode
+  return excesso.late ? 'juros' : 'juros_com_motivo'
+}
+
+/** O motivo do valor a mais sem atraso, com os limites do banco. */
+export function validateExcessReason(reason: string, excess: number | null): string | null {
+  const motivo = reason.trim()
+  if (!motivo) {
+    return excess
+      ? `O pagamento não está atrasado e passou ${formatReceivableMoney(excess)} do que falta. Confira o valor ou informe a justificativa.`
+      : 'Escreva o motivo do valor a mais.'
+  }
+  if (motivo.length < 3) return 'Escreva a justificativa com pelo menos 3 letras.'
+  if (motivo.length > 300) return 'A justificativa passou de 300 caracteres. Resuma o motivo.'
+  return null
+}
+
 export interface ReceivableDraft {
   customerId: string
   invoiceDate: string
@@ -196,8 +232,9 @@ export function validateReceivableDraft(draft: ReceivableDraft, today = todayKey
 
 export function validateReceivablePaymentDraft(
   draft: ReceivablePaymentDraft,
-  receivable: Pick<ReceivableRow, 'invoice_date' | 'due_date' | 'amount' | 'receipts'>,
+  receivable: Pick<ReceivableRow, 'invoice_date' | 'due_date' | 'amount' | 'receipts' | 'origin'>,
   today = todayKey(),
+  mode: ReceivableExcessMode = fallbackExcessMode(receivable.origin),
 ): string | null {
   if (!draft.receivedDate) return 'Informe a data em que o dinheiro entrou.'
   if (draft.receivedDate > today) return 'A data do recebimento não pode ser no futuro.'
@@ -207,15 +244,18 @@ export function validateReceivablePaymentDraft(
   if (!(amount > 0)) return 'Informe o valor recebido.'
   if (amount > RECEIVABLE_MAX_AMOUNT) return 'Valor acima do limite permitido. Confira o que foi digitado.'
 
-  // Mesma regra do banco: até o vencimento o boleto não cobra juros, então valor
-  // a mais quase sempre é digitação. Não impede, mas exige o porquê.
-  const { excess, late } = receiptExcess(receivable, draft)
-  const motivo = draft.excessReason.trim()
-  if (excess > 0 && !late && !motivo) {
-    return `O pagamento não está atrasado e passou ${formatReceivableMoney(excess)} do que falta. Confira o valor ou informe a justificativa.`
+  // Mesmas regras do banco. A Buck não aceita valor acima do saldo. Quando a
+  // sobra vira juros, até o vencimento o boleto não cobra juros: valor a mais
+  // quase sempre é digitação, então não impede, mas exige o porquê.
+  const excesso = receiptExcess(receivable, draft)
+  const destino = receiptExcessKind(excesso, mode)
+  if (destino === 'recusa_buck') {
+    return `Esta cobrança da Buck tem ${formatReceivableMoney(remainingAmount(receivable))} em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.`
   }
-  if (excess > 0 && motivo && motivo.length < 3) return 'Escreva a justificativa com pelo menos 3 letras.'
-  if (excess > 0 && motivo.length > 300) return 'A justificativa passou de 300 caracteres. Resuma o motivo.'
+  if (destino === 'juros_com_motivo') {
+    const motivoError = validateExcessReason(draft.excessReason, excesso.excess)
+    if (motivoError) return motivoError
+  }
 
   if (!draft.accountKey) return 'Escolha a conta em que o dinheiro entrou.'
   return null
@@ -445,6 +485,19 @@ export async function recordReceivableReceipt(
   })
   if (error) throw error
   return data as string
+}
+
+/**
+ * Pergunta ao banco o que ele fará com valor a mais nesta cobrança. Nunca
+ * falha: sem resposta (inclusive nos minutos em que o site novo já está no ar e
+ * a migration ainda não), usa o palpite pela origem.
+ */
+export async function loadReceivableExcessMode(
+  receivable: Pick<ReceivableRow, 'id' | 'origin'>,
+): Promise<ReceivableExcessMode> {
+  const { data, error } = await supabase.rpc('receivable_excess_mode', { p_receivable_id: receivable.id })
+  if (!error && (data === 'juros' || data === 'valor_do_pedido' || data === 'recusa_buck')) return data
+  return fallbackExcessMode(receivable.origin)
 }
 
 /** O estorno é de UM pedaço: errar o Pix de terça não desfaz o dinheiro de quinta. */

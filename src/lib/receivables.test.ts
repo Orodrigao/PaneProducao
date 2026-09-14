@@ -24,7 +24,10 @@ import {
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
   type PjOrderBillingBlock,
   podeDividirEm,
+  fallbackExcessMode,
   receiptExcess,
+  receiptExcessKind,
+  validateExcessReason,
   validateReceivablePaymentDraft,
   vencimentosDaFatura,
   type PjOrderToBillRow,
@@ -157,6 +160,35 @@ describe('validateReceivablePaymentDraft', () => {
     it('juros de um pedaço anterior não abatem o que falta', () => {
       const comJuros = cobranca({ receipts: [recibo({ amount: 600, interest_amount: 30 })] })
       expect(remainingAmount(comJuros)).toBe(600)
+    })
+
+    it('segue a regra do banco para decidir o destino da sobra', () => {
+      const atrasado = { excess: 10, late: true }
+      const emDia = { excess: 10, late: false }
+      expect(receiptExcessKind({ excess: 0, late: true }, 'juros')).toBe('sem_excesso')
+      expect(receiptExcessKind(atrasado, 'juros')).toBe('juros')
+      expect(receiptExcessKind(emDia, 'juros')).toBe('juros_com_motivo')
+      expect(receiptExcessKind(emDia, 'valor_do_pedido')).toBe('valor_do_pedido')
+      expect(receiptExcessKind(atrasado, 'recusa_buck')).toBe('recusa_buck')
+      expect(fallbackExcessMode('romaneio_ex')).toBe('recusa_buck')
+      expect(fallbackExcessMode('pedido_pj')).toBe('juros')
+    })
+
+    it('pedido PJ que segue a conferência não pede motivo nem vira juros', () => {
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: '2026-08-19', receivedAmount: '1210', accountKey: 'banco_sicredi_jc' }
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE, 'valor_do_pedido')).toBeNull()
+    })
+
+    it('Buck acima do saldo é recusada já na tela, como no banco', () => {
+      const buck = cobranca({ origin: 'romaneio_ex' })
+      const draft = { ...defaultPaymentDraft(buck), receivedDate: HOJE, receivedAmount: '1300', accountKey: 'banco_sicredi_jc' }
+      expect(validateReceivablePaymentDraft(draft, buck, HOJE))
+        .toMatch(/^Esta cobrança da Buck tem R\$\s1\.200,00 em aberto\. Registre no máximo esse valor; o que passar pertence a outra semana\.$/)
+    })
+
+    it('motivo pedido pelo banco sem valor a mais visto pela tela', () => {
+      expect(validateExcessReason('', null)).toBe('Escreva o motivo do valor a mais.')
+      expect(validateExcessReason('Cliente arredondou', null)).toBeNull()
     })
   })
 })
