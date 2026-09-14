@@ -5,6 +5,9 @@ import { canAccessSalesImport, canImportSales, getCurrentUserAsync, type AppUser
 import { supabase } from '@/lib/supabase'
 import { confirmSalesImport, sha256Hex, type SalesImportOutcome } from '@/lib/salesImport/client'
 import type { NormalizedSalesReport } from '@/lib/salesImport/types'
+import { SalesProductMappingPanel } from '@/components/salesImport/SalesProductMappingPanel'
+import { SalesAbcPanel } from '@/components/salesImport/SalesAbcPanel'
+import styles from './page.module.css'
 
 interface PreparedFile {
   file: File
@@ -65,6 +68,7 @@ export default function VendasBalcaoPage() {
   const [dayDate, setDayDate] = useState('')
   const [dayStatus, setDayStatus] = useState<'closed' | 'zero_sales'>('closed')
   const [dayReason, setDayReason] = useState('')
+  const [analysisRevision, setAnalysisRevision] = useState(0)
 
   const loadHistory = useCallback(async () => {
     const [importsResult, statusResult] = await Promise.all([
@@ -138,6 +142,7 @@ export default function VendasBalcaoPage() {
     if (completed > 0) {
       setMessage(`${completed} arquivo(s) confirmado(s). O original e os itens ficaram guardados.`)
       await loadHistory()
+      setAnalysisRevision(current => current + 1)
     }
   }
 
@@ -153,6 +158,7 @@ export default function VendasBalcaoPage() {
       setDayDate('')
       setDayReason('')
       await loadHistory()
+      setAnalysisRevision(current => current + 1)
     }
   }
 
@@ -162,7 +168,10 @@ export default function VendasBalcaoPage() {
     if (!window.confirm('A versão atualmente ativa deste dia será substituída. Continuar?')) return
     const { error } = await supabase.rpc('restore_sales_import', { p_import_id: item.id, p_reason: reason.trim() })
     setMessage(error ? error.message : 'Versão anterior restaurada com registro de quem fez e do motivo.')
-    if (!error) await loadHistory()
+    if (!error) {
+      await loadHistory()
+      setAnalysisRevision(current => current + 1)
+    }
   }
 
   if (loadingUser) return <div className="ps-canvas"><div className="ps-shell"><div className="ps-pad">Carregando acesso…</div></div></div>
@@ -221,15 +230,29 @@ export default function VendasBalcaoPage() {
           <button className="ps-btn ghost" onClick={() => void recordDayStatus()} disabled={!dayDate || dayReason.trim().length < 3}>Registrar situação</button>
         </section>}
 
+        <SalesProductMappingPanel canManage={canImportSales(user)} refreshKey={analysisRevision}
+          onChanged={() => setAnalysisRevision(current => current + 1)} />
+        <SalesAbcPanel refreshKey={analysisRevision} />
+
         <section className="ps-card">
-          <h2>Histórico importado</h2>
-          <h3>Últimos 14 dias</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+          <div className={styles.historyHeading}>
+            <div>
+              <h2>Histórico importado</h2>
+              <p>Acompanhe rapidamente quais dias já estão completos.</p>
+            </div>
+            <span>Últimos 14 dias</span>
+          </div>
+          <div className={styles.dayGrid} role="list" aria-label="Situação dos últimos 14 dias">
             {recentDayKeys(14).map(date => {
               const recorded = statusByDate.get(date)
-              const label = activeDates.has(date) ? 'Importado' : recorded?.status === 'closed'
-                ? 'Fechada' : recorded?.status === 'zero_sales' ? 'Zero venda' : 'Sem arquivo'
-              return <span key={date} className="ps-badge" title={recorded?.reason}>{date.slice(5).split('-').reverse().join('/')} · {label}</span>
+              const status = activeDates.has(date) ? 'imported' : recorded?.status === 'closed'
+                ? 'closed' : recorded?.status === 'zero_sales' ? 'zeroSales' : date === dayKey.format(new Date()) ? 'waiting' : 'missing'
+              const label = status === 'imported' ? 'Importado' : status === 'closed'
+                ? 'Loja fechada' : status === 'zeroSales' ? 'Zero venda' : status === 'waiting' ? 'Aguardando' : 'Sem arquivo'
+              return <div key={date} className={`${styles.dayCard} ${styles[status]}`} role="listitem" title={recorded?.reason}>
+                <span className={styles.dayDate}>{date.slice(5).split('-').reverse().join('/')}</span>
+                <span className={styles.dayLabel}><span className={styles.statusDot} aria-hidden="true" />{label}</span>
+              </div>
             })}
           </div>
           {imports.length === 0 ? <p>Nenhum arquivo confirmado neste ambiente.</p> : (

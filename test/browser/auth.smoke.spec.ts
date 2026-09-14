@@ -324,6 +324,56 @@ test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Cozinha' })).toHaveCount(0)
 })
 
+test('Financeiro JC vincula produto vendido, rele e devolve para pendente', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await skipWithoutSalesProductMappings(page, await dataApiHeaders(page))
+  await page.goto('/relatorios/vendas-balcao')
+
+  await expect(page.getByRole('heading', { name: 'Produtos vendidos' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await page.getByRole('tab', { name: /Todos/ }).click()
+  let cafe = page.locator('article', { hasText: '[TESTE ABC] Café do PDV' })
+  await expect(cafe).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  // Deixa o cenário repetível mesmo se uma execução anterior parou depois de
+  // gravar: a volta a pendente exige motivo e é relida antes do próximo passo.
+  if (!await cafe.getByText('Pendente', { exact: true }).isVisible()) {
+    page.once('dialog', dialog => dialog.accept('Reinício do teste de navegador'))
+    await cafe.getByRole('button', { name: 'Voltar a pendente' }).click()
+    await expect(page.getByText('Vínculo devolvido para conferência.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+    await page.getByRole('tab', { name: /Pendentes/ }).click()
+    cafe = page.locator('article', { hasText: '[TESTE ABC] Café do PDV' })
+  }
+
+  await cafe.getByLabel('Produto para [TESTE ABC] Café do PDV')
+    .selectOption({ label: '[TESTE] Bruschetta de Alcachofra · fabricação' })
+  await cafe.getByLabel('Forma de venda para [TESTE ABC] Café do PDV').selectOption('un')
+  await cafe.getByRole('button', { name: 'Vincular', exact: true }).click()
+  await expect(page.getByText('Produto vinculado. A análise histórica foi reorganizada.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  await page.getByRole('tab', { name: /Vinculados/ }).click()
+  cafe = page.locator('article', { hasText: '[TESTE ABC] Café do PDV' })
+  await expect(cafe.getByText(/Ligado a:.*Bruschetta de Alcachofra/)).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.locator('table.ps-table tr', { hasText: '[TESTE] Bruschetta de Alcachofra' }).getByText('R$ 137,00'))
+    .toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+
+  page.once('dialog', dialog => dialog.accept('Fim do teste, voltar ao cenário inicial'))
+  await cafe.getByRole('button', { name: 'Voltar a pendente' }).click()
+  await expect(page.getByText('Vínculo devolvido para conferência.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.locator('article', { hasText: '[TESTE ABC] Café do PDV' }).getByText('Pendente', { exact: true }))
+    .toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await expect(page.getByRole('heading', { name: 'Curva ABC de vendas' })).toBeVisible()
+  await expect(page.getByText('R$ 150,00', { exact: false }).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+})
+
+test('Vendas JA nao ve produtos nem curva ABC do balcao', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await page.goto('/relatorios/vendas-balcao')
+
+  await expect(page).toHaveURL(/\/romaneio$/)
+  await expect(page.getByRole('heading', { name: 'Produtos vendidos' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Curva ABC de vendas' })).toHaveCount(0)
+})
+
 test('Financeiro JC registra compra manual paga a vista sem baixar estoque', async ({ page }) => {
   await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
@@ -693,6 +743,13 @@ async function skipWithoutImportDraftsTable(page: import('@playwright/test').Pag
   const sharedTarget = !process.env.SMOKE_SUPABASE_URL
   test.skip(sharedTarget && probe.status() === 404, 'A tabela de rascunhos de importacao ainda nao existe neste banco (PR sem merge); a prova desta PR e feita no preview isolado dela.')
   expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar rascunhos`).toBe(true)
+}
+
+async function skipWithoutSalesProductMappings(page: import('@playwright/test').Page, headers: Record<string, string>) {
+  const probe = await page.request.get(`${previewApi().url}/rest/v1/sales_product_mappings?select=id&limit=1`, { headers })
+  const sharedTarget = !process.env.SMOKE_SUPABASE_URL
+  test.skip(sharedTarget && probe.status() === 404, 'O vínculo de produtos vendidos ainda não existe no banco compartilhado; a prova desta PR roda no banco isolado dela.')
+  expect(probe.ok(), `a Data API respondeu ${probe.status()} ao consultar vínculos de produtos vendidos`).toBe(true)
 }
 
 // Memoria de "uso/despesa" do fornecedor criado nesta rodada (o CNPJ e unico
