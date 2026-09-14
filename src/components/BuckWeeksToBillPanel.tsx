@@ -45,9 +45,10 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
   // Um identificador por semana aberta: se a conexão cair depois de gravar, a
   // nova tentativa devolve a mesma cobrança em vez de criar outra.
   const requestIdRef = useRef<string>(crypto.randomUUID())
-  // A semana cujos produtos a tela está esperando. Resposta de uma semana que
-  // já foi fechada ou trocada chega atrasada e é descartada.
-  const loadingForRef = useRef<string | null>(null)
+  // Número da carga de produtos que a tela está esperando. Cada carga ganha o
+  // seu, e fechar a semana invalida o atual: resposta atrasada, inclusive de
+  // uma abertura anterior da MESMA semana, é descartada.
+  const loadSeqRef = useRef(0)
 
   const openWeek = weeks.find(week => week.period_start === openStart) ?? null
   const summary = useMemo(() => summarizeBuckWeek(openWeek?.amount ?? 0, drafts), [openWeek, drafts])
@@ -56,17 +57,18 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
   if (weeks.length === 0) return null
 
   async function loadLines(week: BuckWeekToBillRow) {
-    loadingForRef.current = week.period_start
+    loadSeqRef.current += 1
+    const carga = loadSeqRef.current
     setLines([])
     setLinesState('loading')
     try {
       const rows = await loadBuckWeekLines(week)
-      if (loadingForRef.current !== week.period_start) return
+      if (loadSeqRef.current !== carga) return
       setLines(rows)
       setLinesState('ready')
     } catch (loadError) {
       console.error(loadError)
-      if (loadingForRef.current !== week.period_start) return
+      if (loadSeqRef.current !== carga) return
       setLinesState('error')
     }
   }
@@ -82,7 +84,7 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
 
   function closeDetail() {
     if (saving) return
-    loadingForRef.current = null
+    loadSeqRef.current += 1
     setOpenStart(null)
     setDrafts([])
     setError(null)
@@ -134,7 +136,7 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
     try {
       await createBuckWeeklyReceivable(openWeek, drafts, requestIdRef.current)
       showToast('Cobrança da Buck gerada. Ela está na lista de cobranças.')
-      loadingForRef.current = null
+      loadSeqRef.current += 1
       setOpenStart(null)
       setDrafts([])
       requestIdRef.current = crypto.randomUUID()
