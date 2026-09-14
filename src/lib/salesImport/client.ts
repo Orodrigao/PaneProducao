@@ -52,7 +52,6 @@ export async function confirmSalesImport(
     })),
   })
   if (error) {
-    await supabase.rpc('discard_unconfirmed_sales_file', { p_storage_path: storagePath })
     throw new Error(error.message)
   }
   if (!data || typeof data !== 'object' || !('id' in data) || !('outcome' in data)) {

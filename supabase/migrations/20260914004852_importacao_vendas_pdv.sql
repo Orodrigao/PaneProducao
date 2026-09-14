@@ -373,26 +373,6 @@ end; $$;
 revoke all on function public.restore_sales_import(uuid,text) from public,anon;
 grant execute on function public.restore_sales_import(uuid,text) to authenticated;
 
-create or replace function public.discard_unconfirmed_sales_file(p_storage_path text)
-returns boolean language plpgsql security definer set search_path = '' as $$
-begin
-  if not private.current_user_can_sales('vendas_balcao.importar', 'jc') then
-    raise exception using errcode='42501', message='Sem permissão para limpar arquivo não confirmado.';
-  end if;
-  if p_storage_path !~ '^[a-z][a-z0-9_]{1,30}/jc/[0-9]{4}-[0-9]{2}-[0-9]{2}/[0-9a-f]{64}\.xls$' then
-    raise exception using errcode='22023', message='Caminho de arquivo inválido.';
-  end if;
-  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-    'sales-import:' || split_part(p_storage_path,'/',1) || ':jc:sales_by_product:' || split_part(p_storage_path,'/',3), 0));
-  if exists(select 1 from public.sales_imports where storage_path=p_storage_path) then
-    return false;
-  end if;
-  delete from storage.objects where bucket_id='sales-imports' and name=p_storage_path;
-  return found;
-end; $$;
-revoke all on function public.discard_unconfirmed_sales_file(text) from public,anon;
-grant execute on function public.discard_unconfirmed_sales_file(text) to authenticated;
-
 create or replace function public.record_sales_day_status(
   p_source_system text,
   p_store text,

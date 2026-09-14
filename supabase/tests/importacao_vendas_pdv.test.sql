@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(45);
+select plan(42);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin)
 values
@@ -61,8 +61,6 @@ select throws_ok($$select public.confirm_sales_import(
   'cnm/jc/2026-09-11/'||repeat('a',64)||'.xls','cnm-sales-v1',38.90,null,
   '[{"line_number":5,"external_product_key":"Pão Teste","raw_product_name":"Pão Teste","raw_category":"Pães","quantity":2,"net_total":20,"raw_row":[]},{"line_number":6,"external_product_key":"Baguete Teste","raw_product_name":"Baguete Teste","raw_category":"Pães","quantity":3,"net_total":18.90,"raw_row":[]}]'::jsonb)$$,
   '23505','Este mesmo arquivo já foi importado em 12/09/2026.','mesmos bytes não podem virar venda de outro dia por renomeação');
-select is((select public.discard_unconfirmed_sales_file('cnm/jc/2026-09-12/'||repeat('a',64)||'.xls')),false,'limpeza não apaga original já confirmado');
-select is((select public.discard_unconfirmed_sales_file('cnm/jc/2026-09-11/'||repeat('a',64)||'.xls')),true,'limpeza remove objeto órfão depois de confirmação recusada');
 select throws_ok($$select public.confirm_sales_import(
   'cnm','jc','sales_by_product',private.data_na_padaria()+1,'CNM_JC_2099-01-01.xls',repeat('c',64),
   'cnm/jc/2099-01-01/'||repeat('c',64)||'.xls','cnm-sales-v1',10,null,
@@ -100,7 +98,6 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-00000000000b',true);
 select is((select count(*)::int from public.sales_imports),0,'Vendas JA não vê valores');
 select throws_ok($$select public.record_sales_day_status('cnm','jc','2026-09-14','zero_sales','Sem movimento')$$,'42501','Sem permissão para registrar a situação do dia.','Vendas JA não registra situação');
-select throws_ok($$select public.discard_unconfirmed_sales_file('cnm/jc/2026-09-11/'||repeat('d',64)||'.xls')$$,'42501','Sem permissão para limpar arquivo não confirmado.','Vendas JA não limpa arquivos privados');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-00000000000c',true);

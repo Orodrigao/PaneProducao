@@ -186,9 +186,9 @@ sales_product_aliases (
 - A primeira conferência ocorre no navegador. O banco recalcula totais, valida
   formato, data, duplicidade e permissões, mas não relê o XLS; essa fronteira de
   confiança fica explícita até existir processamento controlado no servidor.
-- Se a confirmação falhar depois do envio, o ERP tenta apagar somente o objeto
-  que ainda não esteja ligado a uma importação. Falha de limpeza mantém o
-  arquivo privado e não cria venda.
+- Se a confirmação falhar depois do envio, o arquivo permanece privado e não
+  cria venda. A limpeza de arquivos órfãos fica para um processo posterior que
+  use a API oficial do Storage; o banco não apaga diretamente sua tabela interna.
 
 ## O preço praticado vem daqui (decisão de 2026-09-03)
 
