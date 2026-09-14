@@ -497,6 +497,7 @@ Nomes finais podem ser ajustados na fase 0 sem novo plano.
 | Clientes PJ | cobranças do Contas a Receber |
 | Buck (EX) | cobrança semanal do romaneio |
 | Outras receitas | o que não couber acima (com descrição obrigatória) |
+| Juros e multa recebidos | o que o cliente pagou acima do saldo da cobrança; nasce sozinho no Contas a Receber, no mês do recebimento, e fica no grupo Financeiras (decisão 15 de [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)) |
 
 **Despesas (operacional):**
 

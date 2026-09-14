@@ -211,6 +211,37 @@ Não reabrir sem evidência nova.
     - cobrança da Buck **não é dividida em parcelas**: a trava de período
       sobreposto recusaria a segunda parcela, e a Buck paga em pedaços.
 
+15. **O que passa do saldo é juros, não venda (Rodrigo, 2026-09-14).** Até
+    aqui, receber mais do que faltava lançava o valor cheio na categoria da
+    cobrança. Leitura em produção em 14/09: 5 cobranças de pedido PJ recebidas
+    de 1 a 4 dias depois do vencimento, com R$ 2,55 a R$ 23,07 a mais, cerca
+    de R$ 57 somados dentro de Clientes PJ. Era juros de boleto atrasado.
+    - a Elis continua digitando **o que entrou no banco**, sem campo novo;
+    - o pedaço guarda duas partes: o que **abate a cobrança**, com teto no que
+      faltava, e o que **passou**, como juros. O dinheiro é a soma das duas;
+    - no livro, a venda segue na categoria da cobrança e no **mês do
+      faturamento**; os juros vão para **Juros e multa recebidos**, no **mês do
+      recebimento**. É a mesma escolha das compras (juros de boleto pago em
+      Financeiras, PR #244): juro é consequência do atraso, não da venda;
+    - recebido **até o vencimento**, valor a mais não é juros de boleto e quase
+      sempre é digitação. A tela e o banco **avisam e pedem justificativa, mas
+      não impedem**; o motivo fica no pedaço e na linha de juros do livro;
+    - **quando parte da sobra não é juros:** a nova conferência de um pedido
+      PJ pode deixar na mão do cliente um boleto maior que a cobrança atual,
+      seja porque a liberação **reduziu a cobrança depois de pagamento**, seja
+      porque **cancelou a emissão anterior e emitiu outra menor**. A diferença
+      entre o maior valor já cobrado do pedido e o que está em aberto hoje,
+      contando todas as parcelas, continua sendo valor do pedido, como antes, e
+      só o que passar dela vira juros. A tela pergunta ao banco essa divisão
+      antes do clique. Depois da saída física, a ficha PJ não oferece
+      tratamento para essa diferença, como já acontecia antes desta decisão;
+    - o estorno segue desfazendo o pedaço inteiro, juros incluídos. Pedaço
+      anterior **não é estornado** enquanto um posterior carregar juros
+      calculados sobre ele: a tela diz qual estornar primeiro;
+    - a Buck continua **recusando** valor acima do saldo (decisão 14);
+    - os 5 recebimentos antigos **ficam como estão**: corrigir exigiria
+      escrever em produção, e o valor não justifica.
+
 ## Três origens, um único destino
 
 | Origem | O que já existe hoje | O que falta |
@@ -229,9 +260,10 @@ Registrado para o plano não inchar:
 - emitir ou registrar boleto;
 - integração automática com banco, Bling ou CNM;
 - fatura mensal consolidada para clientes PJ;
-- cálculo automático de juros, multa ou correção por atraso — a diferença
-  paga a mais ou a menos fica visível no valor recebido da baixa (decisão 9),
-  sem cálculo;
+- cálculo automático de juros, multa ou correção por atraso. O ERP não calcula
+  quanto o cliente deveria pagar: o que entrou acima do saldo é separado como
+  juros recebidos (decisão 15), e o que entrou abaixo é recebimento parcial
+  (decisão 12);
 - cobrança automática por WhatsApp ou e-mail;
 - ~~pagamento parcial de uma cobrança~~ — **entrou em 2026-08-14** (decisão
   12), quando Rodrigo informou que a Buck paga em pedaços. O que era exclusão

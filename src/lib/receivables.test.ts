@@ -8,6 +8,8 @@ const PASTA_MIGRATIONS = join(process.cwd(), 'supabase', 'migrations')
 // as funções puras, então o cliente é dispensado.
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
+
 import {
   daysOverdue,
   defaultPaymentDraft,
@@ -24,6 +26,11 @@ import {
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
   type PjOrderBillingBlock,
   podeDividirEm,
+  fallbackExcessRule,
+  loadReceivableExcessRule,
+  receiptExcess,
+  splitReceiptExcess,
+  validateExcessReason,
   validateReceivablePaymentDraft,
   vencimentosDaFatura,
   type PjOrderToBillRow,
@@ -41,6 +48,8 @@ function recibo(overrides: Partial<ReceivableReceiptRow> = {}): ReceivableReceip
     receivable_id: 'r1',
     received_date: '2026-08-18',
     amount: 100,
+    interest_amount: 0,
+    excess_reason: null,
     method: 'pix',
     account_id: 'acc1',
     reversed_at: null,
@@ -123,6 +132,89 @@ describe('validateReceivablePaymentDraft', () => {
     const draft = defaultPaymentDraft(alvo)
     expect(draft.receivedAmount).toBe('1200,00')
     expect(draft.receivedMethod).toBe('pix')
+  })
+
+  // A cobrança do teste vence em 19/08 e falta 1.200,00.
+  describe('valor a mais', () => {
+    it('pago com atraso, o valor a mais é juros e não pede justificativa', () => {
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: HOJE, receivedAmount: '1.223,07', accountKey: 'banco_sicredi_jc' }
+      expect(receiptExcess(alvo, draft)).toEqual({ excess: 23.07, late: true })
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE)).toBeNull()
+    })
+
+    it('pago até o vencimento, o valor a mais pede justificativa mas não é barrado com ela', () => {
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: '2026-08-19', receivedAmount: '1210', accountKey: 'banco_sicredi_jc' }
+      expect(receiptExcess(alvo, draft)).toEqual({ excess: 10, late: false })
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE))
+        .toMatch(/^O pagamento não está atrasado e passou R\$\s10,00 do que falta\. Confira o valor ou informe a justificativa\.$/)
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: ' ok ' }, alvo, HOJE))
+        .toBe('Escreva a justificativa com pelo menos 3 letras.')
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: 'x'.repeat(301) }, alvo, HOJE))
+        .toBe('A justificativa passou de 300 caracteres. Resuma o motivo.')
+      expect(validateReceivablePaymentDraft({ ...draft, excessReason: 'Cliente arredondou' }, alvo, HOJE)).toBeNull()
+    })
+
+    it('mede o valor a mais contra o que falta, não contra o valor cheio', () => {
+      const parcial = cobranca({ receipts: [recibo({ amount: 1000 })] })
+      expect(receiptExcess(parcial, { receivedDate: HOJE, receivedAmount: '250' })).toEqual({ excess: 50, late: true })
+      expect(receiptExcess(parcial, { receivedDate: HOJE, receivedAmount: '150' })).toEqual({ excess: 0, late: true })
+    })
+
+    it('juros de um pedaço anterior não abatem o que falta', () => {
+      const comJuros = cobranca({ receipts: [recibo({ amount: 600, interest_amount: 30 })] })
+      expect(remainingAmount(comJuros)).toBe(600)
+    })
+
+    it('divide a sobra como o banco: diferença da conferência primeiro, juros depois', () => {
+      const juros = { mode: 'juros' as const, orderExcessCap: 0 }
+      const corrigido = { mode: 'juros' as const, orderExcessCap: 10 }
+      expect(splitReceiptExcess({ excess: 0, late: true }, juros)).toEqual({ kind: 'sem_excesso', orderPart: 0, interest: 0 })
+      expect(splitReceiptExcess({ excess: 23.07, late: true }, juros)).toEqual({ kind: 'juros', orderPart: 0, interest: 23.07 })
+      expect(splitReceiptExcess({ excess: 10, late: false }, juros)).toEqual({ kind: 'juros_com_motivo', orderPart: 0, interest: 10 })
+      expect(splitReceiptExcess({ excess: 8, late: false }, corrigido)).toEqual({ kind: 'so_pedido', orderPart: 8, interest: 0 })
+      expect(splitReceiptExcess({ excess: 15, late: true }, corrigido)).toEqual({ kind: 'juros', orderPart: 10, interest: 5 })
+      expect(splitReceiptExcess({ excess: 15, late: true }, { mode: 'recusa_buck', orderExcessCap: 0 }))
+        .toEqual({ kind: 'recusa_buck', orderPart: 0, interest: 0 })
+      expect(fallbackExcessRule('romaneio_ex')).toEqual({ mode: 'recusa_buck', orderExcessCap: 0 })
+      expect(fallbackExcessRule('pedido_pj')).toEqual({ mode: 'juros', orderExcessCap: 0 })
+    })
+
+    it('diferença da conferência não pede motivo; só os juros sem atraso pedem', () => {
+      const regra = { mode: 'juros' as const, orderExcessCap: 10 }
+      const draft = { ...defaultPaymentDraft(alvo), receivedDate: '2026-08-19', receivedAmount: '1210', accountKey: 'banco_sicredi_jc' }
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE, regra)).toBeNull()
+      expect(validateReceivablePaymentDraft({ ...draft, receivedAmount: '1215' }, alvo, HOJE, regra))
+        .toMatch(/^O pagamento não está atrasado e passou R\$\s5,00 do que falta\./)
+    })
+
+    it('Buck acima do saldo é recusada já na tela, como no banco', () => {
+      const buck = cobranca({ origin: 'romaneio_ex' })
+      const draft = { ...defaultPaymentDraft(buck), receivedDate: HOJE, receivedAmount: '1300', accountKey: 'banco_sicredi_jc' }
+      expect(validateReceivablePaymentDraft(draft, buck, HOJE))
+        .toMatch(/^Esta cobrança da Buck tem R\$\s1\.200,00 em aberto\. Registre no máximo esse valor; o que passar pertence a outra semana\.$/)
+    })
+
+    it('pergunta a regra ao banco e só usa o palpite quando a função não existe', async () => {
+      const rpc = vi.mocked(supabase.rpc)
+      rpc.mockResolvedValueOnce({ data: { modo: 'juros', sobra_do_pedido: 10 }, error: null } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'pedido_pj' }))
+        .resolves.toEqual({ mode: 'juros', orderExcessCap: 10 })
+
+      rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'romaneio_ex' }))
+        .resolves.toEqual({ mode: 'recusa_buck', orderExcessCap: 0 })
+
+      // Outro erro não pode virar palpite: a tela prometeria juros que o banco
+      // não gravaria.
+      rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Sem permissão' } } as never)
+      await expect(loadReceivableExcessRule({ id: 'r1', origin: 'pedido_pj' }))
+        .rejects.toMatchObject({ code: '42501' })
+    })
+
+    it('motivo pedido pelo banco sem valor a mais visto pela tela', () => {
+      expect(validateExcessReason('', null)).toBe('Escreva o motivo do valor a mais.')
+      expect(validateExcessReason('Cliente arredondou', null)).toBeNull()
+    })
   })
 })
 

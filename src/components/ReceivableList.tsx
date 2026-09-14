@@ -210,6 +210,9 @@ export default function ReceivableList({
                 <span>
                   {formatDate(receipt.received_date)} · {RECEIVABLE_METHOD_LABELS[receipt.method]} ·{' '}
                   {formatReceivableMoney(receipt.amount)}
+                  {/* O que passou do saldo está no livro como juros recebidos. */}
+                  {receipt.interest_amount > 0 && <> + {formatReceivableMoney(receipt.interest_amount)} de juros</>}
+                  {receipt.excess_reason && <> · {receipt.excess_reason}</>}
                 </span>
                 <button
                   className="ps-link"

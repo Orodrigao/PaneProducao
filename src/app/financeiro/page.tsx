@@ -291,11 +291,12 @@ export default function FinanceiroPage() {
                     && ` · pesa em ${formatCompetenceMonth(entry.competence_month.slice(0, 7))}`}
                 </small>
 
+                {/* Juros recebidos de cliente nascem com previsto zero, como os
+                    juros pagos a fornecedor: o verbo e a cor seguem o lado do
+                    dinheiro, não a existência da diferença. */}
                 {difference !== 0 && !isReversal && (
-                  <small style={{ display: 'block', marginTop: 4, color: 'var(--berry)' }}>
-                    {difference > 0
-                      ? `Pagou ${formatFinanceMoney(difference)} a mais que o previsto (juros ou multa).`
-                      : `Pagou ${formatFinanceMoney(-difference)} a menos que o previsto.`}
+                  <small style={{ display: 'block', marginTop: 4, color: isInflow ? 'var(--basil)' : 'var(--berry)' }}>
+                    {`${isInflow ? 'Recebeu' : 'Pagou'} ${formatFinanceMoney(Math.abs(difference))} ${difference > 0 ? 'a mais' : 'a menos'} que o previsto${difference > 0 ? ' (juros ou multa)' : ''}.`}
                   </small>
                 )}
 
