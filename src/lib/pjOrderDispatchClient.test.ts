@@ -92,4 +92,37 @@ describe('fila operacional de Pedidos PJ', () => {
       message: 'A conferência não foi confirmada. Os números continuam na tela. Confira a internet e toque em Salvar conferência novamente.',
     })
   })
+
+  it('repete a tentativa incerta com o mesmo identificador sem duplicar a gravacao', async () => {
+    const requestId = '11111111-1111-4111-8111-111111111111'
+    const items = [{ order_id: 'linha-1', quantity: 10, reason: null }]
+    const summary = {
+      linhas: 1,
+      conferidas: 1,
+      pendentes: 0,
+      nao_enviadas: 0,
+      version: '2026-09-14T15:10:00Z',
+      itens: [],
+    }
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { code: '', message: 'TypeError: Load failed' } })
+      .mockResolvedValueOnce({ data: summary, error: null })
+
+    await savePjOrderDispatchQuantities('grupo-1', items, null, requestId)
+    const retry = await savePjOrderDispatchQuantities('grupo-1', items, null, requestId)
+
+    expect(retry).toEqual({ ok: true, summary })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'save_pj_order_dispatch_quantities', {
+      p_request_id: requestId,
+      p_order_group_id: 'grupo-1',
+      p_items: items,
+      p_expected_version: null,
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'save_pj_order_dispatch_quantities', {
+      p_request_id: requestId,
+      p_order_group_id: 'grupo-1',
+      p_items: items,
+      p_expected_version: null,
+    })
+  })
 })
