@@ -5,18 +5,18 @@ import { X } from 'lucide-react'
 import { formatCompetenceMonth, type FinanceAccountRow } from '@/lib/finance'
 import {
   defaultPaymentDraft,
-  fallbackExcessMode,
+  fallbackExcessRule,
   formatReceivableMoney,
   getReceivableErrorMessage,
-  loadReceivableExcessMode,
+  loadReceivableExcessRule,
   receiptExcess,
-  receiptExcessKind,
   recordReceivableReceipt,
   remainingAmount,
   RECEIVABLE_METHOD_LABELS,
+  splitReceiptExcess,
   validateExcessReason,
   validateReceivablePaymentDraft,
-  type ReceivableExcessMode,
+  type ReceivableExcessRule,
   type ReceivableMethod,
   type ReceivablePaymentDraft,
   type ReceivableRow,
@@ -33,31 +33,40 @@ interface ReceivablePaymentDialogProps {
 
 const METHODS: ReceivableMethod[] = ['pix', 'transferencia', 'boleto', 'dinheiro', 'outro']
 
-// Começo da recusa do banco quando sobra valor sem atraso. Aparece mesmo com a
+// Começo da recusa do banco quando sobram juros sem atraso. Aparece mesmo com a
 // tela achando que não sobra: outro recebimento pode ter entrado depois de a
 // lista abrir.
 const RECUSA_SEM_MOTIVO = 'O pagamento não está atrasado'
+
+type EstadoDaRegra = 'carregando' | 'pronta' | 'erro'
 
 export default function ReceivablePaymentDialog({ receivable, accounts, onClose, onSaved }: ReceivablePaymentDialogProps) {
   const [draft, setDraft] = useState<ReceivablePaymentDraft>(defaultPaymentDraft(receivable))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [modo, setModo] = useState<ReceivableExcessMode>(fallbackExcessMode(receivable.origin))
-  const [modoConferido, setModoConferido] = useState(false)
+  const [regra, setRegra] = useState<ReceivableExcessRule>(fallbackExcessRule(receivable.origin))
+  const [estadoDaRegra, setEstadoDaRegra] = useState<EstadoDaRegra>('carregando')
+  const [tentativa, setTentativa] = useState(0)
   const [bancoPediuMotivo, setBancoPediuMotivo] = useState(false)
   const requestIdRef = useRef<string>(crypto.randomUUID())
 
-  // O destino do valor a mais depende do estado do pedido PJ, que a lista não
-  // traz: quem decide é o banco, antes do clique.
+  // Quanto da sobra é juros depende da história do pedido PJ, que a lista não
+  // traz: quem divide é o banco, e a tela pergunta antes do clique.
   useEffect(() => {
     let ativo = true
-    void loadReceivableExcessMode(receivable).then(resposta => {
-      if (!ativo) return
-      setModo(resposta)
-      setModoConferido(true)
-    })
+    setEstadoDaRegra('carregando')
+    loadReceivableExcessRule(receivable)
+      .then(resposta => {
+        if (!ativo) return
+        setRegra(resposta)
+        setEstadoDaRegra('pronta')
+      })
+      .catch(loadError => {
+        console.error(loadError)
+        if (ativo) setEstadoDaRegra('erro')
+      })
     return () => { ativo = false }
-  }, [receivable])
+  }, [receivable, tentativa])
 
   function update(patch: Partial<ReceivablePaymentDraft>) {
     setDraft(current => ({ ...current, ...patch }))
@@ -87,16 +96,17 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
 
   // O que passa do que falta vira juros no livro, no mês em que o dinheiro
   // entrou, e não no mês da venda (docs/CONTAS_A_RECEBER.md, decisão 15).
-  const excesso = useMemo(() => receiptExcess(receivable, draft), [receivable, draft])
-  const destino = receiptExcessKind(excesso, modo)
-  const pedeMotivo = destino === 'juros_com_motivo' || bancoPediuMotivo
-  const viraJuros = destino === 'juros' || destino === 'juros_com_motivo' || bancoPediuMotivo
+  const sobra = useMemo(
+    () => splitReceiptExcess(receiptExcess(receivable, draft), regra),
+    [receivable, draft, regra],
+  )
+  const pedeMotivo = sobra.kind === 'juros_com_motivo' || bancoPediuMotivo
   const mesDoRecebimento = draft.receivedDate
     ? formatCompetenceMonth(draft.receivedDate.slice(0, 7))
     : mesDeCompetencia
 
   async function save() {
-    const validationError = validateReceivablePaymentDraft(draft, receivable, todayKey(), modo)
+    const validationError = validateReceivablePaymentDraft(draft, receivable, todayKey(), regra)
       ?? (bancoPediuMotivo ? validateExcessReason(draft.excessReason, null) : null)
     if (validationError) {
       setError(validationError)
@@ -115,9 +125,11 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
       // Dizer em qual mês o dinheiro caiu no livro. Cliente que paga atrasado
       // é o caso normal, então a receita quase sempre pesa num mês anterior ao
       // de hoje — e o livro abre no mês corrente. Com juros, são dois meses.
-      showToast(viraJuros && excesso.excess > 0
-        ? `Recebimento registrado. A venda entrou no livro em ${mesDeCompetencia}; ${formatReceivableMoney(excesso.excess)} de juros em ${mesDoRecebimento}.`
-        : `Recebimento registrado. Entrou no livro em ${mesDeCompetencia}.`)
+      showToast(sobra.interest > 0
+        ? `Recebimento registrado. A venda entrou no livro em ${mesDeCompetencia}; ${formatReceivableMoney(sobra.interest)} de juros em ${mesDoRecebimento}.`
+        : bancoPediuMotivo
+          ? `Recebimento registrado. A venda entrou no livro em ${mesDeCompetencia}; os juros, em ${mesDoRecebimento}.`
+          : `Recebimento registrado. Entrou no livro em ${mesDeCompetencia}.`)
       await onSaved()
     } catch (saveError) {
       console.error(saveError)
@@ -172,20 +184,19 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
             Recebimento parcial: ainda faltarão {formatReceivableMoney(-diferenca)}.
           </small>
         )}
-        {destino === 'juros' && (
+        {sobra.orderPart > 0 && (
           <small className="ps-hint">
-            Passou {formatReceivableMoney(excesso.excess)} do que faltava: entra como juros recebidos
-            em {mesDoRecebimento}. A venda continua em {mesDeCompetencia} e a cobrança fecha.
+            {formatReceivableMoney(sobra.orderPart)} do que passou é diferença da conferência do pedido PJ:
+            fica no pedido como valor recebido a mais, tratado na ficha PJ.
           </small>
         )}
-        {destino === 'valor_do_pedido' && (
+        {sobra.kind === 'juros' && (
           <small className="ps-hint">
-            Passou {formatReceivableMoney(excesso.excess)} do que faltava. O valor desta cobrança segue a
-            conferência do pedido PJ, então a sobra fica no pedido e é tratada na ficha PJ, por devolução
-            ou crédito.
+            {formatReceivableMoney(sobra.interest)} entra como juros recebidos em {mesDoRecebimento}.
+            A venda continua em {mesDeCompetencia} e a cobrança fecha.
           </small>
         )}
-        {destino === 'recusa_buck' && (
+        {sobra.kind === 'recusa_buck' && (
           <small className="ps-hint">
             Esta cobrança da Buck tem {formatReceivableMoney(falta)} em aberto. O que passar pertence a outra semana.
           </small>
@@ -195,9 +206,9 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
       {pedeMotivo && (
         <div className="ps-fieldgroup" style={{ marginTop: 12 }}>
           <div className="ps-alert" role="status">
-            {destino === 'juros_com_motivo'
+            {sobra.kind === 'juros_com_motivo'
               ? <>
-                  O pagamento não está atrasado e passou {formatReceivableMoney(excesso.excess)} do que falta.
+                  O pagamento não está atrasado e passou {formatReceivableMoney(sobra.interest)} do que falta.
                   Confira o valor. Se estiver certo, escreva o motivo: o valor a mais entra como juros
                   recebidos em {mesDoRecebimento}.
                 </>
@@ -250,13 +261,28 @@ export default function ReceivablePaymentDialog({ receivable, accounts, onClose,
         <small className="ps-hint">É esta conta que recebe a entrada no livro-caixa.</small>
       </div>
 
+      {estadoDaRegra === 'erro' && (
+        <div className="ps-alert error" role="alert" style={{ marginTop: 12 }}>
+          Não foi possível conferir o que acontece com valor a mais nesta cobrança. Nada foi registrado.
+          <div className="ps-fieldrow" style={{ marginTop: 8 }}>
+            <button type="button" className="ps-btn ghost sm" onClick={() => setTentativa(atual => atual + 1)}>
+              Tentar de novo
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="ps-fieldrow" style={{ marginTop: 16 }}>
-        <button className="ps-btn primary block" onClick={() => void save()} disabled={saving || !modoConferido}>
+        <button
+          className="ps-btn primary block"
+          onClick={() => void save()}
+          disabled={saving || estadoDaRegra !== 'pronta'}
+        >
           {saving ? 'Registrando...' : 'Confirmar recebimento'}
         </button>
         <button className="ps-btn ghost block" onClick={onClose} disabled={saving}>Cancelar</button>
       </div>
-      {!modoConferido && (
+      {estadoDaRegra === 'carregando' && (
         <small className="ps-hint" style={{ display: 'block', marginTop: 6 }}>
           Conferindo o que acontece com valor a mais nesta cobrança...
         </small>

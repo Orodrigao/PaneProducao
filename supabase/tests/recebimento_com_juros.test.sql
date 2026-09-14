@@ -9,15 +9,15 @@
 --     quebra de linha não contam), e ela vai para o pedaço e para a linha de juros;
 --   * em pedaços, só o que passa do saldo vira juros, e o estorno respeita a
 --     ordem: primeiro o pedaço que carrega os juros;
---   * a sobra NÃO vira juros no pedido PJ que ainda segue a conferência
---     (jornada antes da saída, ou valor corrigido depois de pagamento);
+--   * na cobrança de pedido PJ reduzida depois de pagamento, a diferença da
+--     conferência continua sendo valor do pedido e só o resto vira juros;
 --   * cobrança já na categoria de juros sai numa linha só;
 --   * perfil sem permissão não registra nem consulta a regra.
 
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(54);
+select plan(55);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -73,9 +73,9 @@ select lives_ok(
 );
 
 select is(
-  public.receivable_excess_mode((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a001'::uuid)),
-  'juros',
-  'cobranca avulsa: a sobra vira juros'
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a001'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 0}'::jsonb,
+  'cobranca avulsa: toda a sobra vira juros'
 );
 
 select lives_ok(
@@ -361,115 +361,110 @@ select lives_ok(
   'depois disso o pedaco anterior pode ser estornado'
 );
 
--- D: valor corrigido depois de pagamento -----------------------------------
--- A liberação da jornada PJ corrigiu o valor com dinheiro dentro: a sobra é
--- diferença de quantidade, que a ficha PJ trata por devolução ou crédito.
+-- D: cobrança de pedido PJ reduzida depois de pagamento --------------------
+-- A liberação da jornada PJ reduziu a cobrança de 200 para 190 com dinheiro
+-- dentro (evento 'valor_corrigido_pj'). O cliente paga o boleto original: os 10
+-- da diferença são valor do pedido, tratados na ficha PJ; só o resto é juros.
 
 select lives_ok(
   $$ select public.create_manual_receivable(
     'a2000000-0000-4000-8000-00000000a006'::uuid,
     'a2000000-0000-4000-8000-0000000000c1'::uuid,
-    private.data_na_padaria() - 40, 190.00, 'Pedido corrigido'
+    private.data_na_padaria() - 40, 190.00, 'Pedido corrigido e vencido'
   ) $$,
-  'financeiro lanca a cobranca corrigida'
+  'financeiro lanca a cobranca corrigida e vencida'
 );
 
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a009'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 3, 190.00, 'Pedido corrigido a vencer'
+  ) $$,
+  'financeiro lanca a cobranca corrigida a vencer'
+);
+
+select lives_ok(
+  $$ select public.create_manual_receivable(
+    'a2000000-0000-4000-8000-00000000a010'::uuid,
+    'a2000000-0000-4000-8000-0000000000c1'::uuid,
+    private.data_na_padaria() - 3, 190.00, 'Outro pedido corrigido a vencer'
+  ) $$,
+  'financeiro lanca outra cobranca corrigida a vencer'
+);
+
+-- O evento é o que a liberação real grava no id da própria cobrança
+-- (transition_pj_flow_pilot, migration 20260908164021).
 reset role;
 insert into public.receivable_events (receivable_id, event_type, reason, details, created_by)
-select id, 'valor_corrigido_pj', 'Nova conferencia apos pagamento', '{"de":200,"para":190}'::jsonb,
+select id, 'valor_corrigido_pj', 'Nova conferencia apos pagamento', '{"de": 200.00, "para": 190.00}'::jsonb,
        'a2000000-0000-4000-8000-000000000001'
-from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a006'::uuid;
+from public.receivables
+where request_id in ('a2000000-0000-4000-8000-00000000a006'::uuid,
+                     'a2000000-0000-4000-8000-00000000a009'::uuid,
+                     'a2000000-0000-4000-8000-00000000a010'::uuid);
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
 
 select is(
-  public.receivable_excess_mode((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a006'::uuid)),
-  'valor_do_pedido',
-  'cobranca com valor corrigido depois de pagamento: a sobra fica no pedido'
+  public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a006'::uuid)),
+  '{"modo": "juros", "sobra_do_pedido": 10}'::jsonb,
+  'a regra sabe que 10 da sobra sao diferenca da conferencia'
 );
 
 select lives_ok(
   $$ select public.record_receivable_receipt(
     'a2000000-0000-4000-8000-00000000b014'::uuid,
     (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a006'::uuid),
-    private.data_na_padaria() - 5, 200.00, 'boleto', 'banco_sicredi_jc', 'Texto que nao deve ficar'
+    private.data_na_padaria() - 5, 205.00, 'boleto', 'banco_sicredi_jc'
   ) $$,
-  'o resto do boleto original e registrado'
+  'o boleto original pago com atraso e juros e registrado'
 );
 
-select is((select amount || '|' || interest_amount || '|' || coalesce(excess_reason, 'sem motivo') from public.receivable_receipts
+select is((select amount || '|' || interest_amount from public.receivable_receipts
     where request_id = 'a2000000-0000-4000-8000-00000000b014'::uuid),
-  '200.00|0.00|sem motivo',
-  'nada vira juros: o pedaco guarda tudo, como antes');
+  '200.00|5.00',
+  'a diferenca da conferencia fica no pedido e so o resto vira juros');
+
+select is((select count(*)::int || '|' || sum(entry.amount) || '|' || string_agg(category.key, ',' order by category.key)
+    from public.finance_entries entry
+    join public.finance_categories category on category.id = entry.category_id
+    where entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null
+      and entry.source_ref = (select id from public.receivable_receipts where request_id = 'a2000000-0000-4000-8000-00000000b014'::uuid)),
+  '2|205.00|clientes_pj,juros_recebidos',
+  'no livro, 200 na categoria da cobranca e 5 de juros');
+
+select lives_ok(
+  $$ select public.record_receivable_receipt(
+    'a2000000-0000-4000-8000-00000000b017'::uuid,
+    (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a009'::uuid),
+    private.data_na_padaria(), 198.00, 'pix', 'banco_sicredi_jc', 'Texto que nao deve ficar'
+  ) $$,
+  'sobra dentro da diferenca da conferencia, sem atraso, nao pede motivo'
+);
+
+select is((select amount || '|' || interest_amount || '|' || coalesce(excess_reason, 'sem motivo')
+    from public.receivable_receipts where request_id = 'a2000000-0000-4000-8000-00000000b017'::uuid),
+  '198.00|0.00|sem motivo',
+  'sem juros, tudo fica no pedido como antes e o motivo e descartado');
 
 select is((select count(*)::int || '|' || sum(entry.amount) || '|' || min(category.key) from public.finance_entries entry
     join public.finance_categories category on category.id = entry.category_id
     where entry.source = 'contas_receber' and entry.entry_type = 'lancamento' and entry.reversed_at is null
-      and entry.source_ref = (select id from public.receivable_receipts where request_id = 'a2000000-0000-4000-8000-00000000b014'::uuid)),
-  '1|200.00|clientes_pj',
+      and entry.source_ref = (select id from public.receivable_receipts where request_id = 'a2000000-0000-4000-8000-00000000b017'::uuid)),
+  '1|198.00|clientes_pj',
   'o livro recebe uma linha so, na categoria da cobranca');
 
--- E: pedido PJ da jornada antes e depois da saída --------------------------
-
-select lives_ok(
-  $$ select public.create_manual_receivable(
-    'a2000000-0000-4000-8000-00000000a007'::uuid,
-    'a2000000-0000-4000-8000-0000000000c1'::uuid,
-    private.data_na_padaria() - 40, 400.00, 'Pedido da jornada'
-  ) $$,
-  'financeiro lanca a cobranca que vira pedido da jornada'
-);
-
--- A origem muda antes de o grupo existir na jornada: depois disso o gatilho
--- da jornada barra qualquer alteração fora da revisão do pedido.
-reset role;
-update public.receivables
-set origin = 'pedido_pj', origin_ref = 'a2000000-0000-4000-8000-0000000000f1'
-where request_id = 'a2000000-0000-4000-8000-00000000a007'::uuid;
-insert into private.pj_flow (order_group_id) values ('a2000000-0000-4000-8000-0000000000f1');
--- A leitura da cobrança da jornada exige acesso comercial ao pedido PJ, que
--- este perfil de teste não tem; as funções do recebimento a enxergam por
--- dentro. O id é guardado aqui para o teste provar a regra, não a leitura.
-select set_config('teste.cobranca_jornada',
-  (select id::text from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a007'::uuid), true);
-set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
-
-select is(
-  public.receivable_excess_mode(current_setting('teste.cobranca_jornada')::uuid),
-  'valor_do_pedido',
-  'pedido da jornada antes da saida: nova conferencia ainda pode mudar o valor'
-);
-
-reset role;
-update private.pj_flow
-set released_version = version, released_at = now(), departed_at = now()
-where order_group_id = 'a2000000-0000-4000-8000-0000000000f1';
-set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
-
-select is(
-  public.receivable_excess_mode(current_setting('teste.cobranca_jornada')::uuid),
-  'juros',
-  'depois da saida o valor nao muda mais: a sobra vira juros'
-);
-
-select lives_ok(
+select throws_ok(
   $$ select public.record_receivable_receipt(
-    'a2000000-0000-4000-8000-00000000b015'::uuid,
-    current_setting('teste.cobranca_jornada')::uuid,
-    private.data_na_padaria() - 5, 412.00, 'boleto', 'banco_sicredi_jc'
+    'a2000000-0000-4000-8000-00000000b018'::uuid,
+    (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a010'::uuid),
+    private.data_na_padaria(), 205.00, 'pix', 'banco_sicredi_jc'
   ) $$,
-  'boleto atrasado do pedido que ja saiu e registrado com juros'
+  '22023',
+  'O pagamento não está atrasado e passou R$ 5,00 do que falta. Confira o valor ou informe a justificativa.',
+  'sem atraso, so a parte que seria juros pede justificativa'
 );
-
-reset role;
-select is((select amount || '|' || interest_amount from public.receivable_receipts
-    where request_id = 'a2000000-0000-4000-8000-00000000b015'::uuid),
-  '400.00|12.00',
-  'o pedido que ja saiu separa os juros');
-set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
 
 -- F: cobrança já na categoria de juros sai numa linha só -------------------
 
@@ -521,7 +516,7 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ select public.receivable_excess_mode('a2000000-0000-4000-8000-00000000a003'::uuid) $$,
+  $$ select public.receivable_excess_rule('a2000000-0000-4000-8000-00000000a003'::uuid) $$,
   '42501',
   'Sem permissão para registrar recebimentos.',
   'vendas nao consulta a regra do valor a mais'

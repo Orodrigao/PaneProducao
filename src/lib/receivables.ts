@@ -102,26 +102,39 @@ export function receiptExcess(
 }
 
 /**
- * O que o banco faz com valor a mais nesta cobrança (private.receivable_excess_mode):
- * - juros: vira juros recebidos;
- * - valor_do_pedido: pedido PJ cujo valor segue a conferência; a sobra fica no
- *   pedido e a ficha PJ trata por devolução ou crédito;
- * - recusa_buck: a Buck não aceita valor acima do saldo.
+ * O que o banco faz com a sobra nesta cobrança (private.receivable_excess_rule):
+ * a Buck recusa; nas demais, a parte até `orderExcessCap` é diferença da
+ * conferência de pedido PJ corrigido depois de pagamento e fica no pedido, e o
+ * que passar dela vira juros recebidos.
  */
-export type ReceivableExcessMode = 'juros' | 'valor_do_pedido' | 'recusa_buck'
-
-/** Palpite pela origem, para quando o banco não responde ou ainda não tem a regra. */
-export function fallbackExcessMode(origin: ReceivableOrigin): ReceivableExcessMode {
-  return origin === 'romaneio_ex' ? 'recusa_buck' : 'juros'
+export interface ReceivableExcessRule {
+  mode: 'juros' | 'recusa_buck'
+  orderExcessCap: number
 }
 
-export type ReceiptExcessKind = 'sem_excesso' | 'juros' | 'juros_com_motivo' | 'valor_do_pedido' | 'recusa_buck'
+/** Palpite pela origem, para quando o banco ainda não tem a regra. */
+export function fallbackExcessRule(origin: ReceivableOrigin): ReceivableExcessRule {
+  return { mode: origin === 'romaneio_ex' ? 'recusa_buck' : 'juros', orderExcessCap: 0 }
+}
 
-/** Para onde vai o valor a mais digitado, combinando a conta da tela com a regra do banco. */
-export function receiptExcessKind(excesso: ReceiptExcess, mode: ReceivableExcessMode): ReceiptExcessKind {
-  if (excesso.excess <= 0) return 'sem_excesso'
-  if (mode !== 'juros') return mode
-  return excesso.late ? 'juros' : 'juros_com_motivo'
+export type ReceiptExcessKind = 'sem_excesso' | 'recusa_buck' | 'so_pedido' | 'juros' | 'juros_com_motivo'
+
+export interface ReceiptExcessSplit {
+  kind: ReceiptExcessKind
+  /** Parte da sobra que fica no pedido PJ, como valor recebido a mais. */
+  orderPart: number
+  /** Parte da sobra que vira juros recebidos. */
+  interest: number
+}
+
+/** Divide a sobra digitada do mesmo jeito que o banco dividirá na gravação. */
+export function splitReceiptExcess(excesso: ReceiptExcess, rule: ReceivableExcessRule): ReceiptExcessSplit {
+  if (excesso.excess <= 0) return { kind: 'sem_excesso', orderPart: 0, interest: 0 }
+  if (rule.mode === 'recusa_buck') return { kind: 'recusa_buck', orderPart: 0, interest: 0 }
+  const orderPart = Math.min(excesso.excess, Math.max(0, rule.orderExcessCap))
+  const interest = Math.round((excesso.excess - orderPart) * 100) / 100
+  if (interest <= 0) return { kind: 'so_pedido', orderPart, interest: 0 }
+  return { kind: excesso.late ? 'juros' : 'juros_com_motivo', orderPart, interest }
 }
 
 /** O motivo do valor a mais sem atraso, com os limites do banco. */
@@ -234,7 +247,7 @@ export function validateReceivablePaymentDraft(
   draft: ReceivablePaymentDraft,
   receivable: Pick<ReceivableRow, 'invoice_date' | 'due_date' | 'amount' | 'receipts' | 'origin'>,
   today = todayKey(),
-  mode: ReceivableExcessMode = fallbackExcessMode(receivable.origin),
+  rule: ReceivableExcessRule = fallbackExcessRule(receivable.origin),
 ): string | null {
   if (!draft.receivedDate) return 'Informe a data em que o dinheiro entrou.'
   if (draft.receivedDate > today) return 'A data do recebimento não pode ser no futuro.'
@@ -247,13 +260,12 @@ export function validateReceivablePaymentDraft(
   // Mesmas regras do banco. A Buck não aceita valor acima do saldo. Quando a
   // sobra vira juros, até o vencimento o boleto não cobra juros: valor a mais
   // quase sempre é digitação, então não impede, mas exige o porquê.
-  const excesso = receiptExcess(receivable, draft)
-  const destino = receiptExcessKind(excesso, mode)
-  if (destino === 'recusa_buck') {
+  const sobra = splitReceiptExcess(receiptExcess(receivable, draft), rule)
+  if (sobra.kind === 'recusa_buck') {
     return `Esta cobrança da Buck tem ${formatReceivableMoney(remainingAmount(receivable))} em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.`
   }
-  if (destino === 'juros_com_motivo') {
-    const motivoError = validateExcessReason(draft.excessReason, excesso.excess)
+  if (sobra.kind === 'juros_com_motivo') {
+    const motivoError = validateExcessReason(draft.excessReason, sobra.interest)
     if (motivoError) return motivoError
   }
 
@@ -488,16 +500,25 @@ export async function recordReceivableReceipt(
 }
 
 /**
- * Pergunta ao banco o que ele fará com valor a mais nesta cobrança. Nunca
- * falha: sem resposta (inclusive nos minutos em que o site novo já está no ar e
- * a migration ainda não), usa o palpite pela origem.
+ * Pergunta ao banco como ele dividirá a sobra nesta cobrança. O palpite pela
+ * origem só vale quando o banco ainda não tem a regra (os minutos em que o site
+ * novo já está no ar e a migration ainda não); qualquer outro erro sobe, para a
+ * tela oferecer nova tentativa em vez de prometer juros que o banco não gravaria.
  */
-export async function loadReceivableExcessMode(
+export async function loadReceivableExcessRule(
   receivable: Pick<ReceivableRow, 'id' | 'origin'>,
-): Promise<ReceivableExcessMode> {
-  const { data, error } = await supabase.rpc('receivable_excess_mode', { p_receivable_id: receivable.id })
-  if (!error && (data === 'juros' || data === 'valor_do_pedido' || data === 'recusa_buck')) return data
-  return fallbackExcessMode(receivable.origin)
+): Promise<ReceivableExcessRule> {
+  const { data, error } = await supabase.rpc('receivable_excess_rule', { p_receivable_id: receivable.id })
+  if (error) {
+    // PGRST202: a função não existe no banco.
+    if (error.code === 'PGRST202') return fallbackExcessRule(receivable.origin)
+    throw error
+  }
+  const regra = data as { modo?: unknown; sobra_do_pedido?: unknown } | null
+  if (!regra || (regra.modo !== 'juros' && regra.modo !== 'recusa_buck')) {
+    throw new Error('Resposta inesperada ao conferir a cobrança.')
+  }
+  return { mode: regra.modo, orderExcessCap: Math.max(0, Number(regra.sobra_do_pedido ?? 0) || 0) }
 }
 
 /** O estorno é de UM pedaço: errar o Pix de terça não desfaz o dinheiro de quinta. */

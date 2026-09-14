@@ -20,14 +20,15 @@
 --     digitação. Decisão do Rodrigo: avisa e pede justificativa, mas não
 --     impede. A justificativa fica no pedaço e na linha do livro.
 --
--- Quando o valor a mais NÃO vira juros (private.receivable_excess_mode):
+-- Quando a sobra NÃO vira juros (private.receivable_excess_rule):
 --   * cobrança da Buck: continua recusado, o que passa pertence a outra semana;
---   * cobrança de pedido PJ cujo valor ainda segue a conferência. Na jornada
---     PJ, antes da saída, uma nova conferência pode mudar o valor do pedido; e
---     a liberação com pagamento já feito corrige o valor da cobrança
---     (evento 'valor_corrigido_pj'). Nesses casos a sobra é diferença de
---     quantidade, não juros: o pedaço guarda tudo em `amount`, como antes, e a
---     ficha PJ continua exigindo devolução por Pix ou crédito.
+--   * a parte da sobra que é diferença de quantidade. Na jornada PJ, a
+--     liberação com pagamento já feito pode reduzir o valor da cobrança
+--     (evento 'valor_corrigido_pj', com o valor anterior em details->>'de').
+--     O cliente que paga o boleto original entrega essa diferença, que é valor
+--     do pedido, tratado na ficha PJ por devolução ou crédito. Só o que passar
+--     dela vira juros. É o único caminho que deixa o boleto maior que a
+--     cobrança: corrigir antes de pagamento cancela e emite cobrança nova.
 --
 -- Fora do escopo, por decisão consciente: os 5 recebimentos antigos continuam
 -- como estão (valor cheio em `amount`, `interest_amount` zero).
@@ -77,7 +78,7 @@ alter table public.receivable_receipts
   );
 
 comment on column public.receivable_receipts.amount is
-  'Quanto deste pedaço abate a cobrança. Só passa do saldo em aberto quando o valor a mais não vira juros (pedido PJ que segue a conferência) ou em recebimentos anteriores a 14/09/2026.';
+  'Quanto deste pedaço abate a cobrança. Só passa do saldo em aberto pela diferença de quantidade de pedido PJ corrigido depois de pagamento, ou em recebimentos anteriores a 14/09/2026.';
 comment on column public.receivable_receipts.interest_amount is
   'Quanto deste pedaço passou do saldo em aberto: juros e multa recebidos. O dinheiro que entrou é amount + interest_amount.';
 comment on column public.receivable_receipts.excess_reason is
@@ -88,45 +89,42 @@ comment on column public.receivable_receipts.excess_reason is
 grant select on public.receivable_receipts to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3. O que acontece com o valor a mais nesta cobrança.
+-- 3. O que acontece com a sobra nesta cobrança.
 -- ---------------------------------------------------------------------------
 -- Uma regra só, usada pela gravação e perguntada pela tela antes do clique:
---   'recusa_buck'      a Buck não aceita valor acima do saldo;
---   'valor_do_pedido'  pedido PJ cujo valor segue a conferência: a sobra fica
---                      no pedido e a ficha PJ trata por devolução ou crédito;
---   'juros'            o que passa do saldo vira juros recebidos.
-create or replace function private.receivable_excess_mode(p_receivable_id uuid)
-returns text
+--   modo 'recusa_buck'  a Buck não aceita valor acima do saldo;
+--   modo 'juros'        a sobra vira juros recebidos, exceto
+--   sobra_do_pedido     quanto da sobra ainda é valor do pedido: a redução que
+--                       a liberação da jornada PJ fez na cobrança depois de
+--                       pagamento (primeiro valor anterior menos o valor atual).
+create or replace function private.receivable_excess_rule(p_receivable_id uuid)
+returns jsonb
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select case
-    when cobranca.origin = 'romaneio_ex' then 'recusa_buck'
-    -- A liberação com pagamento já feito corrigiu o valor: a sobra é diferença
-    -- de quantidade, que a jornada PJ trata por devolução ou crédito.
-    when exists (
-      select 1 from public.receivable_events evento
-      where evento.receivable_id = cobranca.id
-        and evento.event_type = 'valor_corrigido_pj'
-    ) then 'valor_do_pedido'
-    -- Antes da saída, uma nova conferência ainda pode mudar o valor do pedido.
-    when cobranca.origin = 'pedido_pj' and exists (
-      select 1 from private.pj_flow fluxo
-      where fluxo.order_group_id = cobranca.origin_ref
-        and fluxo.departed_at is null
-    ) then 'valor_do_pedido'
-    else 'juros'
-  end
+  select jsonb_build_object(
+    'modo', case when cobranca.origin = 'romaneio_ex' then 'recusa_buck' else 'juros' end,
+    'sobra_do_pedido', greatest(
+      coalesce((
+        select (evento.details->>'de')::numeric
+        from public.receivable_events evento
+        where evento.receivable_id = cobranca.id
+          and evento.event_type = 'valor_corrigido_pj'
+        order by evento.created_at, evento.id
+        limit 1
+      ), cobranca.amount) - cobranca.amount,
+      0)
+  )
   from public.receivables cobranca
   where cobranca.id = p_receivable_id;
 $$;
 
-revoke all on function private.receivable_excess_mode(uuid) from public, anon, authenticated;
+revoke all on function private.receivable_excess_rule(uuid) from public, anon, authenticated;
 
-create or replace function public.receivable_excess_mode(p_receivable_id uuid)
-returns text
+create or replace function public.receivable_excess_rule(p_receivable_id uuid)
+returns jsonb
 language plpgsql
 stable
 security definer
@@ -136,12 +134,12 @@ begin
   if not private.current_user_can_receivables('contas_receber.baixar') then
     raise exception using errcode = '42501', message = 'Sem permissão para registrar recebimentos.';
   end if;
-  return private.receivable_excess_mode(p_receivable_id);
+  return private.receivable_excess_rule(p_receivable_id);
 end;
 $$;
 
-revoke all on function public.receivable_excess_mode(uuid) from public, anon;
-grant execute on function public.receivable_excess_mode(uuid) to authenticated;
+revoke all on function public.receivable_excess_rule(uuid) from public, anon;
+grant execute on function public.receivable_excess_rule(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. O livro recebe principal e juros em linhas separadas.
@@ -263,9 +261,9 @@ revoke all on function private.lancar_recibo_no_livro(uuid, uuid) from public, a
 -- Redefinição integral a partir da versão vigente (20260914030000, Buck).
 -- Mudanças:
 --   a) parâmetro opcional `p_excess_reason`;
---   b) quando a regra da cobrança é 'juros', o que passa do saldo em aberto
---      vira `interest_amount`, e valor a mais até o vencimento exige
---      justificativa;
+--   b) o que passa do saldo em aberto, descontada a parte que ainda é valor
+--      do pedido (private.receivable_excess_rule), vira `interest_amount`, e
+--      juros com recebimento até o vencimento exigem justificativa;
 --   c) `created_at` com o relógio real.
 -- A assinatura muda, então a função antiga sai antes; os grants são refeitos.
 drop function if exists public.record_receivable_receipt(uuid, uuid, date, numeric, text, text);
@@ -293,6 +291,7 @@ declare
   v_falta numeric(12,2);
   v_principal numeric(12,2);
   v_juros numeric(12,2) := 0;
+  v_sobra_pedido numeric(12,2);
   v_motivo text := nullif(btrim(coalesce(p_excess_reason, ''), E' \t\r\n'), '');
   v_user_id uuid := (select auth.uid());
 begin
@@ -356,9 +355,18 @@ begin
         || ' em aberto. Registre no máximo esse valor; o que passar pertence a outra semana.';
   end if;
 
-  if v_amount > v_falta and private.receivable_excess_mode(p_receivable_id) = 'juros' then
-    v_principal := v_falta;
-    v_juros := v_amount - v_falta;
+  -- Da sobra, a parte que é diferença de quantidade fica no pedido, como antes;
+  -- só o que passar dela vira juros.
+  v_sobra_pedido := coalesce((private.receivable_excess_rule(p_receivable_id)->>'sobra_do_pedido')::numeric, 0);
+
+  if v_amount > v_falta then
+    v_principal := v_falta + least(v_amount - v_falta, v_sobra_pedido);
+    v_juros := v_amount - v_principal;
+  else
+    v_principal := v_amount;
+  end if;
+
+  if v_juros > 0 then
     -- Até o dia do vencimento o banco não cobra juros: valor a mais aqui quase
     -- sempre é digitação. Não impede, mas exige o porquê.
     if p_received_date <= v_cobranca.due_date and v_motivo is null then
@@ -368,9 +376,7 @@ begin
           || ' do que falta. Confira o valor ou informe a justificativa.';
     end if;
   else
-    -- Sem valor a mais, ou valor a mais que pertence ao pedido PJ: tudo abate a
-    -- cobrança, como antes, e não há juros a justificar.
-    v_principal := v_amount;
+    -- Sem juros não há o que justificar.
     v_motivo := null;
   end if;
 

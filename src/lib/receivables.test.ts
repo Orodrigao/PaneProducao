@@ -24,9 +24,9 @@ import {
   PJ_ORDER_BILLING_BLOCK_MESSAGES,
   type PjOrderBillingBlock,
   podeDividirEm,
-  fallbackExcessMode,
+  fallbackExcessRule,
   receiptExcess,
-  receiptExcessKind,
+  splitReceiptExcess,
   validateExcessReason,
   validateReceivablePaymentDraft,
   vencimentosDaFatura,
@@ -162,21 +162,26 @@ describe('validateReceivablePaymentDraft', () => {
       expect(remainingAmount(comJuros)).toBe(600)
     })
 
-    it('segue a regra do banco para decidir o destino da sobra', () => {
-      const atrasado = { excess: 10, late: true }
-      const emDia = { excess: 10, late: false }
-      expect(receiptExcessKind({ excess: 0, late: true }, 'juros')).toBe('sem_excesso')
-      expect(receiptExcessKind(atrasado, 'juros')).toBe('juros')
-      expect(receiptExcessKind(emDia, 'juros')).toBe('juros_com_motivo')
-      expect(receiptExcessKind(emDia, 'valor_do_pedido')).toBe('valor_do_pedido')
-      expect(receiptExcessKind(atrasado, 'recusa_buck')).toBe('recusa_buck')
-      expect(fallbackExcessMode('romaneio_ex')).toBe('recusa_buck')
-      expect(fallbackExcessMode('pedido_pj')).toBe('juros')
+    it('divide a sobra como o banco: diferença da conferência primeiro, juros depois', () => {
+      const juros = { mode: 'juros' as const, orderExcessCap: 0 }
+      const corrigido = { mode: 'juros' as const, orderExcessCap: 10 }
+      expect(splitReceiptExcess({ excess: 0, late: true }, juros)).toEqual({ kind: 'sem_excesso', orderPart: 0, interest: 0 })
+      expect(splitReceiptExcess({ excess: 23.07, late: true }, juros)).toEqual({ kind: 'juros', orderPart: 0, interest: 23.07 })
+      expect(splitReceiptExcess({ excess: 10, late: false }, juros)).toEqual({ kind: 'juros_com_motivo', orderPart: 0, interest: 10 })
+      expect(splitReceiptExcess({ excess: 8, late: false }, corrigido)).toEqual({ kind: 'so_pedido', orderPart: 8, interest: 0 })
+      expect(splitReceiptExcess({ excess: 15, late: true }, corrigido)).toEqual({ kind: 'juros', orderPart: 10, interest: 5 })
+      expect(splitReceiptExcess({ excess: 15, late: true }, { mode: 'recusa_buck', orderExcessCap: 0 }))
+        .toEqual({ kind: 'recusa_buck', orderPart: 0, interest: 0 })
+      expect(fallbackExcessRule('romaneio_ex')).toEqual({ mode: 'recusa_buck', orderExcessCap: 0 })
+      expect(fallbackExcessRule('pedido_pj')).toEqual({ mode: 'juros', orderExcessCap: 0 })
     })
 
-    it('pedido PJ que segue a conferência não pede motivo nem vira juros', () => {
+    it('diferença da conferência não pede motivo; só os juros sem atraso pedem', () => {
+      const regra = { mode: 'juros' as const, orderExcessCap: 10 }
       const draft = { ...defaultPaymentDraft(alvo), receivedDate: '2026-08-19', receivedAmount: '1210', accountKey: 'banco_sicredi_jc' }
-      expect(validateReceivablePaymentDraft(draft, alvo, HOJE, 'valor_do_pedido')).toBeNull()
+      expect(validateReceivablePaymentDraft(draft, alvo, HOJE, regra)).toBeNull()
+      expect(validateReceivablePaymentDraft({ ...draft, receivedAmount: '1215' }, alvo, HOJE, regra))
+        .toMatch(/^O pagamento não está atrasado e passou R\$\s5,00 do que falta\./)
     })
 
     it('Buck acima do saldo é recusada já na tela, como no banco', () => {
