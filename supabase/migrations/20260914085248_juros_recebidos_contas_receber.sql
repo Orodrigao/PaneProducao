@@ -155,7 +155,8 @@ begin
         where parcela.origin = 'pedido_pj'
           and parcela.origin_ref = v_cobranca.origin_ref
           and parcela.status = 'cancelada'
-          and parcela.cancel_reason like 'Substituida apos nova conferencia%'
+          -- Versões anteriores da liberação gravavam o mesmo texto com acento.
+          and parcela.cancel_reason like 'Substitu_da ap_s nova confer_ncia%'
         group by parcela.cancelled_at
       ) emissao
     ), 0)

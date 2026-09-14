@@ -567,15 +567,16 @@ select lives_ok(
   $$ select public.record_receivable_receipt(
     'a2000000-0000-4000-8000-00000000b019'::uuid,
     (select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a012'::uuid),
-    private.data_na_padaria() - 5, 105.00, 'boleto', 'banco_sicredi_jc'
+    private.data_na_padaria() - 5, 110.00, 'boleto', 'banco_sicredi_jc'
   ) $$,
-  'a parcela 1 recebe 105'
+  'a parcela 1 recebe 110 com atraso'
 );
 
+-- Calculada por cobrança, a cota da parcela 1 seria 105 e nada viraria juros.
 select is((select amount || '|' || interest_amount from public.receivable_receipts
     where request_id = 'a2000000-0000-4000-8000-00000000b019'::uuid),
-  '105.00|0.00',
-  'os 10 a mais da parcela 1 sao a diferenca da conferencia');
+  '105.00|5.00',
+  'dos 15 a mais, 10 sao a diferenca do pedido inteiro e 5 sao juros');
 
 select is(
   public.receivable_excess_rule((select id from public.receivables where request_id = 'a2000000-0000-4000-8000-00000000a013'::uuid)),
