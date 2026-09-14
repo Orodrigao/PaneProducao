@@ -654,6 +654,81 @@ union all
 select user_id, permission_key, scope, null::uuid from admin_permissions
 on conflict (user_id, permission_key, scope) do nothing;
 
+-- Curva ABC fictícia para conferir a fase 2 no Preview. A própria faixa é
+-- limpa antes de ser recriada porque as datas acompanham o dia da padaria.
+delete from public.sales_product_mapping_events
+where external_product_key like 'TESTE-ABC-%';
+delete from public.sales_product_mappings
+where external_product_key like 'TESTE-ABC-%';
+delete from public.sales_import_events
+where import_id in (
+  '98200000-0000-4000-8000-000000000201',
+  '98200000-0000-4000-8000-000000000202'
+);
+delete from public.sales_import_items
+where import_id in (
+  '98200000-0000-4000-8000-000000000201',
+  '98200000-0000-4000-8000-000000000202'
+);
+delete from public.sales_imports
+where id in (
+  '98200000-0000-4000-8000-000000000201',
+  '98200000-0000-4000-8000-000000000202'
+);
+
+with actor as (
+  select id from auth.users where lower(email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+), fixture_days as (
+  select private.data_na_padaria() - 2 as first_day,
+    private.data_na_padaria() - 1 as second_day
+)
+insert into public.sales_imports (
+  id, source_system, store, report_type, sale_date, file_name, file_hash,
+  storage_path, parser_version, status, row_count, total_quantity, total_net, confirmed_by
+)
+select values_to_insert.*
+from actor cross join fixture_days
+cross join lateral (values
+  ('98200000-0000-4000-8000-000000000201'::uuid,'cnm','jc','sales_by_product',first_day,
+    'CNM_JC_'||first_day||'.xls',repeat('8',64),'cnm/jc/'||first_day||'/'||repeat('8',64)||'.xls',
+    'fixture-abc','confirmed',3,10::numeric,100::numeric,actor.id),
+  ('98200000-0000-4000-8000-000000000202'::uuid,'cnm','jc','sales_by_product',second_day,
+    'CNM_JC_'||second_day||'.xls',repeat('9',64),'cnm/jc/'||second_day||'/'||repeat('9',64)||'.xls',
+    'fixture-abc','confirmed',3,6::numeric,50::numeric,actor.id)
+) values_to_insert(
+  id, source_system, store, report_type, sale_date, file_name, file_hash,
+  storage_path, parser_version, status, row_count, total_quantity, total_net, confirmed_by
+);
+
+insert into public.sales_import_items (
+  id, import_id, line_number, external_product_key, raw_product_name, raw_category,
+  quantity, source_cmv, take_away, net_total, raw_row
+)
+select * from (values
+  ('98200000-0000-4000-8000-000000000301'::uuid,'98200000-0000-4000-8000-000000000201'::uuid,1,'TESTE-ABC-BRUSCHETTA','[TESTE ABC] Bruschetta do PDV','Lanches',5::numeric,null::numeric,false,70::numeric,'["Bruschetta"]'::jsonb),
+  ('98200000-0000-4000-8000-000000000302'::uuid,'98200000-0000-4000-8000-000000000201'::uuid,2,'TESTE-ABC-CAFE','[TESTE ABC] Café do PDV','Bebidas',3::numeric,null::numeric,false,20::numeric,'["Cafe"]'::jsonb),
+  ('98200000-0000-4000-8000-000000000303'::uuid,'98200000-0000-4000-8000-000000000201'::uuid,3,'TESTE-ABC-TAXA','[TESTE ABC] Taxa do PDV','Outros',2::numeric,null::numeric,false,10::numeric,'["Taxa"]'::jsonb),
+  ('98200000-0000-4000-8000-000000000304'::uuid,'98200000-0000-4000-8000-000000000202'::uuid,1,'TESTE-ABC-BRUSCHETTA','[TESTE ABC] Bruschetta do PDV','Lanches',3::numeric,null::numeric,false,42::numeric,'["Bruschetta"]'::jsonb),
+  ('98200000-0000-4000-8000-000000000305'::uuid,'98200000-0000-4000-8000-000000000202'::uuid,2,'TESTE-ABC-CAFE','[TESTE ABC] Café do PDV','Bebidas',2::numeric,null::numeric,false,5::numeric,'["Cafe"]'::jsonb),
+  ('98200000-0000-4000-8000-000000000306'::uuid,'98200000-0000-4000-8000-000000000202'::uuid,3,'TESTE-ABC-TAXA','[TESTE ABC] Taxa do PDV','Outros',1::numeric,null::numeric,false,3::numeric,'["Taxa"]'::jsonb)
+) fixture(id, import_id, line_number, external_product_key, raw_product_name, raw_category, quantity, source_cmv, take_away, net_total, raw_row)
+where exists (select 1 from public.sales_imports import where import.id = fixture.import_id);
+
+with actor as (
+  select id from auth.users where lower(email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+)
+insert into public.sales_product_mappings (
+  id, source_system, store, external_product_key, decision, product_id, sale_unit,
+  decided_by, updated_by
+)
+select '98200000-0000-4000-8000-000000000401'::uuid,'cnm','jc','TESTE-ABC-BRUSCHETTA',
+  'mapped','10000000-0000-4000-8000-000000000001'::uuid,'un',actor.id,actor.id
+from actor
+union all
+select '98200000-0000-4000-8000-000000000402'::uuid,'cnm','jc','TESTE-ABC-TAXA',
+  'ignored',null::uuid,null,actor.id,actor.id
+from actor;
+
 -- NF-e fictícia somente para conferir a visualização dos itens no Contas a pagar.
 insert into public.payable_purchases (
   id, request_id, store, supplier_id, purchase_date, origin, document_type,

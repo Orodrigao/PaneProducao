@@ -5,6 +5,8 @@ import { canAccessSalesImport, canImportSales, getCurrentUserAsync, type AppUser
 import { supabase } from '@/lib/supabase'
 import { confirmSalesImport, sha256Hex, type SalesImportOutcome } from '@/lib/salesImport/client'
 import type { NormalizedSalesReport } from '@/lib/salesImport/types'
+import { SalesProductMappingPanel } from '@/components/salesImport/SalesProductMappingPanel'
+import { SalesAbcPanel } from '@/components/salesImport/SalesAbcPanel'
 
 interface PreparedFile {
   file: File
@@ -220,6 +222,9 @@ export default function VendasBalcaoPage() {
           </div>
           <button className="ps-btn ghost" onClick={() => void recordDayStatus()} disabled={!dayDate || dayReason.trim().length < 3}>Registrar situação</button>
         </section>}
+
+        <SalesProductMappingPanel canManage={canImportSales(user)} />
+        <SalesAbcPanel />
 
         <section className="ps-card">
           <h2>Histórico importado</h2>
