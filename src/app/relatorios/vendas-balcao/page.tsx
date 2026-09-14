@@ -7,6 +7,7 @@ import { confirmSalesImport, sha256Hex, type SalesImportOutcome } from '@/lib/sa
 import type { NormalizedSalesReport } from '@/lib/salesImport/types'
 import { SalesProductMappingPanel } from '@/components/salesImport/SalesProductMappingPanel'
 import { SalesAbcPanel } from '@/components/salesImport/SalesAbcPanel'
+import styles from './page.module.css'
 
 interface PreparedFile {
   file: File
@@ -227,14 +228,24 @@ export default function VendasBalcaoPage() {
         <SalesAbcPanel />
 
         <section className="ps-card">
-          <h2>Histórico importado</h2>
-          <h3>Últimos 14 dias</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+          <div className={styles.historyHeading}>
+            <div>
+              <h2>Histórico importado</h2>
+              <p>Acompanhe rapidamente quais dias já estão completos.</p>
+            </div>
+            <span>Últimos 14 dias</span>
+          </div>
+          <div className={styles.dayGrid} role="list" aria-label="Situação dos últimos 14 dias">
             {recentDayKeys(14).map(date => {
               const recorded = statusByDate.get(date)
-              const label = activeDates.has(date) ? 'Importado' : recorded?.status === 'closed'
-                ? 'Fechada' : recorded?.status === 'zero_sales' ? 'Zero venda' : 'Sem arquivo'
-              return <span key={date} className="ps-badge" title={recorded?.reason}>{date.slice(5).split('-').reverse().join('/')} · {label}</span>
+              const status = activeDates.has(date) ? 'imported' : recorded?.status === 'closed'
+                ? 'closed' : recorded?.status === 'zero_sales' ? 'zeroSales' : date === dayKey.format(new Date()) ? 'waiting' : 'missing'
+              const label = status === 'imported' ? 'Importado' : status === 'closed'
+                ? 'Loja fechada' : status === 'zeroSales' ? 'Zero venda' : status === 'waiting' ? 'Aguardando' : 'Sem arquivo'
+              return <div key={date} className={`${styles.dayCard} ${styles[status]}`} role="listitem" title={recorded?.reason}>
+                <span className={styles.dayDate}>{date.slice(5).split('-').reverse().join('/')}</span>
+                <span className={styles.dayLabel}><span className={styles.statusDot} aria-hidden="true" />{label}</span>
+              </div>
             })}
           </div>
           {imports.length === 0 ? <p>Nenhum arquivo confirmado neste ambiente.</p> : (
