@@ -359,6 +359,7 @@ test('Financeiro JC vincula produto vendido, rele e devolve para pendente', asyn
   page.once('dialog', dialog => dialog.accept('Fim do teste, voltar ao cenário inicial'))
   await cafe.getByRole('button', { name: 'Voltar a pendente' }).click()
   await expect(page.getByText('Vínculo devolvido para conferência.')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+  await page.getByRole('tab', { name: /Pendentes/ }).click()
   await expect(page.locator('article', { hasText: '[TESTE ABC] Café do PDV' }).getByText('Pendente', { exact: true }))
     .toBeVisible({ timeout: slowPreviewDataTimeoutMs })
   await expect(page.getByRole('heading', { name: 'Curva ABC de vendas' })).toBeVisible()
