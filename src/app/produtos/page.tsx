@@ -5,6 +5,7 @@ import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, Bar
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import BreadWeightManager from '@/components/BreadWeightManager'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
 import { getConversionUnitWarning } from '@/lib/nfeXml'
 import {
@@ -116,6 +117,7 @@ interface Bread {
   id: string; name: string; unit: string|null
   cost_price: number|null; active: boolean; is_pj: boolean
   is_shelf: boolean
+  avg_unit_weight_kg: number|null
 }
 
 interface Component {
@@ -452,6 +454,10 @@ export default function ProdutosPage() {
                 <strong>{fabricacaoWithoutCost}</strong> {fabricacaoWithoutCost === 1 ? 'produto de fabricação própria ativo sem custo cadastrado' : 'produtos de fabricação própria ativos sem custo cadastrado'}.
               </span>
             </div>
+          )}
+
+          {tab==='fabricacao' && (user?.role === 'admin' || user?.role === 'financeiro') && (
+            <BreadWeightManager />
           )}
 
           {loading ? (

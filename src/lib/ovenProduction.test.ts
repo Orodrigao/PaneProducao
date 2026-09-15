@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   aggregateOvenPlan,
+  collectWeightSetupWarnings,
   ovenLotCode,
   ovenProductKey,
   parseOvenQuantity,
@@ -47,6 +48,39 @@ describe('aggregateOvenPlan', () => {
     ])
 
     expect(result.size).toBe(0)
+  })
+})
+
+describe('collectWeightSetupWarnings', () => {
+  it('marca a chave do pão sinalizado pela RPC', () => {
+    const result = collectWeightSetupWarnings([
+      { bread_id: 'baguete', quantity: 35, needs_weight_setup: true },
+      { bread_id: 'italiano', quantity: 10, needs_weight_setup: false },
+    ])
+
+    expect(result.has('baguete')).toBe(true)
+    expect(result.has('italiano')).toBe(false)
+  })
+
+  it('não marca nada quando nenhuma linha precisa de peso', () => {
+    const result = collectWeightSetupWarnings([
+      { bread_id: 'baguete', quantity: 35, needs_weight_setup: false },
+      { bread_id: 'italiano', quantity: 10, needs_weight_setup: null },
+    ])
+
+    expect(result.size).toBe(0)
+  })
+
+  it('lista vazia não quebra e não marca nada', () => {
+    expect(collectWeightSetupWarnings([]).size).toBe(0)
+  })
+
+  it('usa a identidade unificada quando product_id está presente', () => {
+    const result = collectWeightSetupWarnings([
+      { product_source: 'product', product_id: 'abc', quantity: 3, needs_weight_setup: true },
+    ])
+
+    expect(result.has(ovenProductKey('product', 'abc'))).toBe(true)
   })
 })
 

@@ -702,6 +702,8 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .ps-oven-error{ margin-top:18px; border:1px solid #E6B5AC; border-radius:14px; background:var(--berry-tint); color:var(--berry); padding:13px; display:flex; align-items:center; gap:9px; font-size:13px; font-weight:700; }
 .ps-oven-error span{ flex:1; }
 .ps-oven-error button{ border:0; background:transparent; color:inherit; font:inherit; text-decoration:underline; }
+.ps-oven-weight-warning{ margin-bottom:12px; border:1px solid var(--honey-line); border-radius:12px; background:var(--honey-tint); color:#7A5418; padding:10px 12px; display:flex; align-items:flex-start; gap:8px; font-size:12.5px; line-height:1.4; }
+.ps-oven-weight-warning svg{ flex-shrink:0; margin-top:1px; }
 .ps-spin{ animation:ps-spin .8s linear infinite; }
 @keyframes ps-spin{ to{ transform:rotate(360deg); } }
 

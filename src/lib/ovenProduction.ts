@@ -62,6 +62,27 @@ export function aggregateOvenPlan(rows: OvenPlanRow[]): Map<string, number> {
   return result
 }
 
+export interface OvenPlanRowWithWeightFlag extends OvenPlanRow {
+  needs_weight_setup?: boolean | null
+}
+
+// Pedido PJ cobrado por peso de um pão vendido por unidade só entra no
+// previsto convertido por um peso médio cadastrado (breads.avg_unit_weight_kg).
+// Sem esse peso, list_pj_production_for_oven_v2 deixa a parcela em kg fora da
+// soma e marca needs_weight_setup — aqui só juntamos as chaves marcadas para
+// o Forno avisar que o previsto daquele pão pode estar incompleto.
+export function collectWeightSetupWarnings(rows: OvenPlanRowWithWeightFlag[]): Set<string> {
+  const warnings = new Set<string>()
+
+  for (const row of rows) {
+    if (!row.needs_weight_setup) continue
+    const key = ovenPlanRowKey(row)
+    if (key) warnings.add(key)
+  }
+
+  return warnings
+}
+
 export function parseOvenQuantity(value: string, unit: string = 'un'): number | null {
   const normalized = value.trim().replace(',', '.')
   if (!/^\d+(?:\.\d{1,3})?$/.test(normalized)) return null
