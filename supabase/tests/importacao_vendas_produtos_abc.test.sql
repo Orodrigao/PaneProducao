@@ -72,10 +72,10 @@ select set_config('request.jwt.claim.sub','98100000-0000-4000-8000-00000000000a'
 select lives_ok($$select public.set_sales_product_mapping('cnm','jc','A1','mapped','98100000-0000-4000-8000-000000000101','un')$$,'liga o primeiro nome ao catálogo');
 select lives_ok($$select public.set_sales_product_mapping('cnm','jc','A2','mapped','98100000-0000-4000-8000-000000000101','un')$$,'dois nomes podem apontar ao mesmo produto');
 select lives_ok($$select public.set_sales_product_mapping('cnm','jc','C','ignored')$$,'item pode ficar sem vínculo nesta fase');
-select is((select count(*)::integer from public.sales_product_mappings),3,'três decisões ficam memorizadas');
-select is((select count(*)::integer from public.sales_product_mapping_events where event_type='created'),3,'cada decisão inicial deixa auditoria');
+select is((select count(*)::integer from public.sales_product_mappings where source_system='cnm' and store='jc' and external_product_key in ('A1','A2','C') and decided_by='98100000-0000-4000-8000-00000000000a'),3,'três decisões do teste ficam memorizadas');
+select is((select count(*)::integer from public.sales_product_mapping_events where source_system='cnm' and store='jc' and event_type='created' and external_product_key in ('A1','A2','C') and occurred_by='98100000-0000-4000-8000-00000000000a'),3,'cada decisão inicial do teste deixa auditoria');
 select is((public.set_sales_product_mapping('cnm','jc','A1','mapped','98100000-0000-4000-8000-000000000101','un')->>'outcome'),'unchanged','repetir o mesmo vínculo não produz mudança');
-select is((select count(*)::integer from public.sales_product_mapping_events),3,'repetição não cria evento falso');
+select is((select count(*)::integer from public.sales_product_mapping_events where source_system='cnm' and store='jc' and external_product_key in ('A1','A2','C') and occurred_by='98100000-0000-4000-8000-00000000000a'),3,'repetição não cria evento falso');
 select throws_ok($$select public.set_sales_product_mapping('cnm','jc','A1','mapped','98100000-0000-4000-8000-000000000102','un')$$,'22023','Explique o motivo da correção do vínculo.','correção exige motivo');
 select throws_ok($$select public.set_sales_product_mapping('cnm','jc','B','mapped','98100000-0000-4000-8000-000000000103','kg')$$,'22023','Escolha um produto de venda ativo.','insumo não vira produto vendido');
 select throws_ok($$select public.set_sales_product_mapping('cnm','jc','B','mapped','98100000-0000-4000-8000-000000000104','un')$$,'22023','Essa forma de venda não está cadastrada para o produto.','unidade incompatível sem forma cadastrada é bloqueada');
@@ -83,7 +83,7 @@ select throws_ok($$select public.set_sales_product_mapping('cnm','jc','B',null)$
 select throws_ok($$select public.set_sales_product_mapping('cnm','jc','B','mapped','98100000-0000-4000-8000-000000000102',null)$$,'22023','Escolha o produto e se a venda foi por unidade ou quilo.','forma de venda ausente falha fechada');
 select throws_ok($$select public.set_sales_product_mapping('cnm','jc','OLD','mapped','98100000-0000-4000-8000-000000000102','un')$$,'22023','O item vendido não existe nas importações.','arquivo substituído não aceita novo vínculo');
 
-select is(jsonb_array_length(public.get_sales_product_mapping_queue('cnm','jc')),4,'fila devolve todos os nomes ativos');
+select is((select count(*)::integer from jsonb_array_elements(public.get_sales_product_mapping_queue('cnm','jc')) item where item->>'external_product_key' in ('A1','A2','B','C')),4,'fila devolve todos os nomes ativos do teste');
 select ok(jsonb_path_exists(public.get_sales_product_mapping_queue('cnm','jc'),'$[*] ? (@.external_product_key == "A1" && @.mapping_status == "mapped")'),'fila mostra o produto já ligado');
 select ok(jsonb_path_exists(public.get_sales_product_mapping_queue('cnm','jc'),'$[*] ? (@.external_product_key == "B" && @.mapping_status == "pending")'),'fila mantém o produto pendente');
 
@@ -102,10 +102,10 @@ select is(public.get_sales_abc('cnm','jc','2026-09-01','2026-09-03')->'coverage'
 
 select lives_ok($$select public.set_sales_product_mapping('cnm','jc','A2','mapped','98100000-0000-4000-8000-000000000102','un','Nome estava ligado ao produto errado')$$,'vínculo pode ser corrigido com motivo');
 select is(jsonb_array_length(public.get_sales_abc('cnm','jc','2026-09-01','2026-09-03')->'items'),4,'correção reorganiza o histórico analítico');
-select is((select count(*)::integer from public.sales_product_mapping_events where event_type='changed'),1,'correção preserva antes e depois');
+select is((select count(*)::integer from public.sales_product_mapping_events where source_system='cnm' and store='jc' and event_type='changed' and external_product_key='A2' and occurred_by='98100000-0000-4000-8000-00000000000a'),1,'correção preserva antes e depois');
 select lives_ok($$select public.set_sales_product_mapping('cnm','jc','A2','pending',null,null,'Precisa de nova conferência')$$,'vínculo pode voltar a pendente');
-select is((select count(*)::integer from public.sales_product_mappings),2,'voltar a pendente remove só a decisão atual');
-select is((select count(*)::integer from public.sales_product_mapping_events where event_type='cleared'),1,'retorno a pendente fica auditado');
+select is((select count(*)::integer from public.sales_product_mappings where source_system='cnm' and store='jc' and external_product_key in ('A1','A2','C') and decided_by='98100000-0000-4000-8000-00000000000a'),2,'voltar a pendente remove só a decisão atual');
+select is((select count(*)::integer from public.sales_product_mapping_events where source_system='cnm' and store='jc' and event_type='cleared' and external_product_key='A2' and occurred_by='98100000-0000-4000-8000-00000000000a'),1,'retorno a pendente fica auditado');
 select throws_ok($$insert into public.sales_product_mappings(source_system,store,external_product_key,decision,product_id,sale_unit,decided_by,updated_by) values('cnm','jc','direto','ignored',null,null,'98100000-0000-4000-8000-00000000000a','98100000-0000-4000-8000-00000000000a')$$,'42501',null,'cliente não grava vínculo direto');
 
 reset role;
