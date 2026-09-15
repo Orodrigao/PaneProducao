@@ -132,10 +132,7 @@ jobs:
           (github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product') ||
           (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)
         with:
-          # Ponte emergencial da PR 402: permite uma reconstrução com os testes
-          # corrigidos que destravam a própria main. Este trecho será removido
-          # antes do diff final e nunca será integrado.
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'fix/isolar-testes-importacao-vendas' && github.ref_name || 'main' }}
+          ref: main
 
       - uses: supabase/setup-cli@v3
         if: *deve-reconstruir
