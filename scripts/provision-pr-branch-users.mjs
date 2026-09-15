@@ -200,6 +200,43 @@ export async function waitForPreviewBranch({
   }
 }
 
+// Decide, a partir de UMA resposta da API de checks, se o banco isolado pode ser
+// usado. Tres saidas: aprovado, aguardar ou recusar.
+//
+// `skipped` e espera, nao decisao. O Supabase marca skipped o push que chega
+// antes de a PR existir ("branch sem Supabase Branch"). Quando a PR abre logo
+// depois, a primeira consulta do workflow ainda so enxerga esse skipped, e o
+// check que vale termina minutos mais tarde (PR 395, 14/09/2026). Skipped nunca
+// libera: se nada melhor aparecer, o prazo barra.
+//
+// Falha FECHADA no resto: sem a lista, ou com a lista cortada, recusa na hora,
+// porque a pagina que falta pode trazer a reprovacao. Reprovacao vence success
+// na mesma lista, e concluido sem conclusao conta como reprovacao.
+//
+// So conta o check escrito pelo aplicativo do Supabase. O nome sozinho nao prova
+// autoria: outro aplicativo com permissao de checks pode criar um homonimo.
+export function decidirCheckSupabasePreview(body) {
+  if (!Array.isArray(body?.check_runs)) {
+    return { situacao: 'recusar', motivo: 'A resposta do GitHub sobre o Supabase Preview veio sem a lista check_runs.' }
+  }
+  if (body.total_count !== body.check_runs.length) {
+    return {
+      situacao: 'recusar',
+      motivo: `A lista de checks do Supabase Preview veio incompleta (${body.check_runs.length} de ${body.total_count}).`,
+    }
+  }
+  const concluidos = body.check_runs.filter((check) => check?.name === 'Supabase Preview'
+    && check.app?.slug === 'supabase'
+    && check.status === 'completed')
+  const reprovado = concluidos.find((check) => !['success', 'skipped'].includes(check.conclusion))
+  if (reprovado) {
+    return { situacao: 'recusar', motivo: `O Supabase Preview do commit terminou como ${reprovado.conclusion}.` }
+  }
+  const aprovado = concluidos.find((check) => check.conclusion === 'success')
+  if (aprovado) return { situacao: 'aprovado', check: aprovado }
+  return { situacao: 'aguardar', soSkipped: concluidos.length > 0 }
+}
+
 export async function waitForSupabasePreviewCheck({
   githubRepository,
   githubToken,
@@ -219,6 +256,9 @@ export async function waitForSupabasePreviewCheck({
   const endpoint = `https://api.github.com/repos/${githubRepository}/commits/${prHeadSha}/check-runs`
     + '?check_name=Supabase%20Preview&filter=latest&per_page=100'
 
+  // Lembra de qualquer volta, nao so da ultima: skipped seguido de in_progress
+  // eterno ainda merece a pista no erro final.
+  let viuSkipped = false
   while (true) {
     const response = await fetchImpl(endpoint, {
       headers: {
@@ -230,21 +270,22 @@ export async function waitForSupabasePreviewCheck({
     if (!response.ok) {
       throw new Error(`Consulta do check Supabase Preview falhou (${response.status}).`)
     }
-    const body = await response.json()
-    const checks = Array.isArray(body?.check_runs)
-      ? body.check_runs.filter((check) => check?.name === 'Supabase Preview')
-      : []
-    const completed = checks.find((check) => check.status === 'completed')
-    if (completed) {
-      if (completed.conclusion !== 'success') {
-        throw new Error(`O Supabase Preview do commit terminou como ${completed.conclusion}.`)
-      }
-      return completed
-    }
+    const decisao = decidirCheckSupabasePreview(await response.json())
+    if (decisao.situacao === 'recusar') throw new Error(decisao.motivo)
+    if (decisao.situacao === 'aprovado') return decisao.check
+    viuSkipped ||= decisao.soSkipped
     if (now() >= deadline) {
-      throw new Error(`O Supabase Preview do commit ${prHeadSha.slice(0, 7)} nao terminou em ${timeoutMs / 1000}s.`)
+      throw new Error(
+        `O Supabase Preview do commit ${prHeadSha.slice(0, 7)} nao terminou com sucesso em ${timeoutMs / 1000}s.`
+        + (viuSkipped
+          ? ' Apareceu skipped, que o Supabase usa quando a branch Git ainda nao tem PR. '
+            + 'Confira se a PR existe e se o Supabase Preview dela rodou.'
+          : ''),
+      )
     }
-    log('O Supabase ainda esta aplicando este commit; aguardando o check exato.')
+    log(decisao.soSkipped
+      ? 'Supabase Preview apareceu skipped neste commit; aguardando um success.'
+      : 'O Supabase ainda esta aplicando este commit; aguardando o check exato.')
     await sleep(intervalMs)
   }
 }
