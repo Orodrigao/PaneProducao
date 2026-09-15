@@ -527,8 +527,12 @@ export default function RomaneioPage() {
       : []
     const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
     const requestedQtys = { ...orderQtys }
+    // Planejamento de produção ainda em rascunho chega com total 0 para todo
+    // o cardápio: só sobrepõe o pedido real quando a cozinha já planejou de
+    // fato (total > 0), senão o pedido da loja some da tela (ver bug do dia
+    // 15/09: JC e JA zerados, EX certo porque não usa planejamento).
     Object.entries(productionCompositions as Record<string, RomaneioProductionComposition>).forEach(([breadId, composition]) => {
-      requestedQtys[breadId] = composition.total
+      if (composition.total > 0) requestedQtys[breadId] = composition.total
     })
     const previouslySentQtys = sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[])
     const replacementPendingQtys = pendingReplacementQuantitiesByProductId(replacementRows as RomaneioReplacementPendingRow[])
