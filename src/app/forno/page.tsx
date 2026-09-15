@@ -10,6 +10,7 @@ import {
 } from '@/lib/breadLeftovers'
 import {
   aggregateOvenPlan,
+  collectWeightSetupWarnings,
   ovenLotCode,
   ovenProductKey,
   OVEN_LOSS_REASONS,
@@ -31,6 +32,7 @@ interface PjOvenPlanRow {
   product_name: string
   production_unit: string | null
   quantity: number | null
+  needs_weight_setup?: boolean | null
 }
 
 interface ProductionActualRow {
@@ -105,6 +107,7 @@ export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
   const [products, setProducts] = useState<OvenProduct[]>([])
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
+  const [weightWarnings, setWeightWarnings] = useState<Set<string>>(new Set())
   const [actuals, setActuals] = useState<Record<string, ProductionActualRow>>({})
   const [forms, setForms] = useState<Record<string, OvenFormState>>({})
   const [editing, setEditing] = useState<Record<string, boolean>>({})
@@ -237,6 +240,7 @@ export default function FornoPage() {
       if (breadIds.length === 0 && productIds.length === 0) {
         setProducts([])
         setPlannedMap(new Map())
+        setWeightWarnings(new Set())
         setActuals({})
         setForms({})
         setEditing({})
@@ -282,6 +286,7 @@ export default function FornoPage() {
 
       setProducts(loadedProducts)
       setPlannedMap(plan)
+      setWeightWarnings(collectWeightSetupWarnings(pjRows))
       setActuals(actualsByProduct)
       setForms(initialForms)
       setEditing({})
@@ -509,6 +514,7 @@ export default function FornoPage() {
                   const quantityGood = parseOvenQuantity(form?.quantityGood ?? '0', unit) ?? 0
                   const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0', unit) ?? 0
                   const lotCode = actual?.lot_code ?? ovenLotCode(date)
+                  const hasWeightWarning = weightWarnings.has(productKey)
 
                   return (
                     <article
@@ -525,6 +531,16 @@ export default function FornoPage() {
                           <b>{planned}</b>
                         </div>
                       </div>
+
+                      {hasWeightWarning && (
+                        <div className="ps-oven-weight-warning">
+                          <AlertTriangle size={15} />
+                          <span>
+                            Previsto pode estar incompleto: tem pedido PJ por peso desse pão sem peso médio
+                            cadastrado. Cadastre em Produtos → Fabricação própria para o número fechar certo.
+                          </span>
+                        </div>
+                      )}
 
                       {actual && !isEditing && (
                         <div className="ps-oven-confirmed">
