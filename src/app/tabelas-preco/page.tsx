@@ -26,7 +26,7 @@ interface Override {
   product_name:string; unit_price:number; pricing_unit:PricingUnit; pack_size:number; active:boolean; sale_option_id?:string|null
 }
 interface SaleOption {
-  id:string; product_id:string; name:string; sale_unit:PricingUnit; reference_quantity:number;
+  id:string; product_id:string; product_variant_id:string|null; name:string; sale_unit:PricingUnit; reference_quantity:number;
   unit_weight_kg:number|null; active:boolean; is_default:boolean
 }
 interface CatalogItem {
@@ -137,10 +137,13 @@ export default function TabelasPrecoPage() {
       ])
       const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
       if (firstErr) throw firstErr
-      const sRes = await supabase
-        .from('product_sale_options')
-        .select('id,product_id,name,sale_unit,reference_quantity,unit_weight_kg,active,is_default')
-        .eq('active', true)
+      const [sRes, varRes] = await Promise.all([
+        supabase
+          .from('product_sale_options')
+          .select('id,product_id,product_variant_id,name,sale_unit,reference_quantity,unit_weight_kg,active,is_default')
+          .eq('active', true),
+        supabase.from('product_variants').select('id,name'),
+      ])
       setTiers((tRes.data || []) as PriceTier[])
       setItems((iRes.data || []) as TierItem[])
       setCustomers((cRes.data || []) as Customer[])
@@ -151,6 +154,9 @@ export default function TabelasPrecoPage() {
       setProductCosts(productRows)
       const optionRows = sRes.error ? [] : (sRes.data || []) as SaleOption[]
       setSaleOptions(optionRows)
+      const variantNameById = new Map<string, string>(
+        varRes.error ? [] : ((varRes.data || []) as Array<{ id:string; name:string }>).map(v => [v.id, v.name])
+      )
       const optionsByProduct = new Map<string, SaleOption[]>()
       optionRows.forEach(option => {
         const current = optionsByProduct.get(option.product_id) || []
@@ -170,16 +176,19 @@ export default function TabelasPrecoPage() {
           _source:'product' as const,
           legacy_bread_id:p.legacy_bread_id,
         }]
-        return options.map(option => ({
-          id:p.id,
-          name:p.name,
-          unit:p.unit,
-          _source:'product' as const,
-          sale_option_id: option.id,
-          sale_option_name: option.name,
-          sale_unit: inferPricingUnit(p.unit, option),
-          legacy_bread_id: p.legacy_bread_id,
-        }))
+        return options.map(option => {
+          const variantName = option.product_variant_id ? variantNameById.get(option.product_variant_id) : null
+          return {
+            id:p.id,
+            name: variantName ? `${p.name} · ${variantName}` : p.name,
+            unit:p.unit,
+            _source:'product' as const,
+            sale_option_id: option.id,
+            sale_option_name: option.name,
+            sale_unit: inferPricingUnit(p.unit, option),
+            legacy_bread_id: p.legacy_bread_id,
+          }
+        })
       })
       setCatalog([...breads, ...prods].sort((a,b) => a.name.localeCompare(b.name)))
     } catch (e: unknown) {
@@ -233,6 +242,7 @@ export default function TabelasPrecoPage() {
     _source: item._source,
     pricing_unit: inferPricingUnit(item.unit, item.sale_unit ? { sale_unit: item.sale_unit } : null),
     legacy_bread_id: item.legacy_bread_id,
+    sale_option_id: item.sale_option_id,
   }, itemsOfSel), [itemsOfSel])
   const saleOptionsById = useMemo(() => {
     const map = new Map<string, SaleOption>()

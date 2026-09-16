@@ -42,4 +42,30 @@ describe('catálogo das tabelas de preço', () => {
       pricing_unit: 'kg',
     }, tierItems)).toBe(true)
   })
+
+  it('não confunde duas variantes do mesmo produto vendidas na mesma unidade', () => {
+    // Brioche Forma e Brioche Hamburguer são variantes distintas do mesmo
+    // produto-receita, ambas vendidas por "un". Precificar a Forma não pode
+    // esconder o Hamburguer do catálogo como se ele já estivesse precificado.
+    const tierItems = [{
+      product_id: 'brioche',
+      product_source: 'product' as const,
+      pricing_unit: 'un' as const,
+      sale_option_id: 'opcao-forma-un',
+    }]
+
+    expect(isCatalogItemAlreadyPriced({
+      id: 'brioche',
+      _source: 'product',
+      pricing_unit: 'un',
+      sale_option_id: 'opcao-hamburguer-un',
+    }, tierItems)).toBe(false)
+
+    expect(isCatalogItemAlreadyPriced({
+      id: 'brioche',
+      _source: 'product',
+      pricing_unit: 'un',
+      sale_option_id: 'opcao-forma-un',
+    }, tierItems)).toBe(true)
+  })
 })
