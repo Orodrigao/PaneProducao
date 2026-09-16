@@ -62,8 +62,9 @@ concurrency:
   #
   # Cada trabalho que sobra neste grupo termina com um passo de recuperacao
   # que roda em falha ou cancelamento (inclusive o disparo manual invalido) e
-  # reconcilia o estado. O que ele nao cobre: falha antes do checkout, que
-  # deixa a execucao vermelha; reexecuta-la reconcilia. Gravacao pela metade
+  # reconcilia o estado, buscando o codigo de novo se o primeiro checkout
+  # falhou. O que ele nao cobre: GitHub fora do ar ou runner perdido, que
+  # deixam a execucao vermelha; reexecuta-la reconcilia. Gravacao pela metade
   # falha fechado: endereco de um banco com chave de outro nao conecta, e
   # qualquer uma das duas variaveis inertes sozinha ja reprova o build.
   #
@@ -279,8 +280,13 @@ jobs:
       # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
       # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
       # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
-      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
-      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
       - name: Reconciliar depois de falha
         if: failure() || cancelled()
         env:
@@ -330,8 +336,13 @@ jobs:
       # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
       # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
       # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
-      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
-      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
       - name: Reconciliar depois de falha
         if: failure() || cancelled()
         env:
@@ -373,8 +384,13 @@ jobs:
       # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
       # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
       # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
-      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
-      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
       - name: Reconciliar depois de falha
         if: failure() || cancelled()
         env:

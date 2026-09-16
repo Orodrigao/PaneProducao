@@ -1255,6 +1255,11 @@ describe('condicoes do workflow Banco por PR', () => {
       const passos = bloco.split(/\r?\n {6}- name: /).slice(1)
       const ultimo = passos.at(-1)
       assert.match(
+        passos.at(-2) ?? '',
+        /^Buscar o codigo para reconciliar\r?\n {8}if: \(failure\(\) \|\| cancelled\(\)\) && hashFiles\('scripts\/preview-branch-env\.mjs'\) == ''\r?\n {8}uses: actions\/checkout@v4\r?\n/,
+        `${nome}: a recuperacao precisa buscar o codigo de novo se o checkout falhou.`,
+      )
+      assert.match(
         ultimo,
         new RegExp(`^Reconciliar depois de falha\\r?\\n {8}if: failure\\(\\) \\|\\| cancelled\\(\\)\\r?\\n {8}env:\\r?\\n {10}ACAO: ${trabalhos[nome]}\\r?\\n`),
         `${nome}: o ultimo passo precisa ser a recuperacao com ACAO ${trabalhos[nome]}.`,
