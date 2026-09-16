@@ -174,9 +174,10 @@ Riscos ainda abertos:
   de importação, IPI devolvido, serviços, item fora do total e desoneração que
   abate do total. Notas lançadas antes não foram reprocessadas; ver o registro
   de cada fase em [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md);
-- **fechada em 2026-09-16 a trava do fator de conversão que falhava aberta**
-  (achado da revisão adversarial da PR #315, correção adiada por decisão de
-  Rodrigo em 2026-09-02 até a tela nova de importação entrar no ar, o que
+- **fechada em 2026-09-16 (PR #407) a trava do fator de conversão que
+  falhava aberta** (achado da revisão adversarial da PR #315, correção
+  adiada por decisão de Rodrigo em 2026-09-02 até a tela nova de importação
+  entrar no ar, o que
   ocorreu no mesmo dia). `create_xml_payable` só bloqueava quando
   `factor_confirmed` chegava explicitamente `false`; item sem o campo (NULL)
   passava sem conferência mesmo com a unidade da NF-e em família diferente da
