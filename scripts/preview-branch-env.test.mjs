@@ -12,13 +12,17 @@ import {
   apontarPreviewParaRamificacao,
   bloquearPreviewDaBranch,
   conferirReleitura,
+  decidirPeloEstado,
   escolherChavePublica,
   escolherRamificacao,
+  executarAcao,
+  lerEstadoDaBranch,
   limparVariaveisDaBranch,
   planejarBloqueio,
   planejarVariaveis,
   ramificacaoEstaPronta,
 } from './preview-branch-env.mjs'
+import { enderecoDeBancoForaDoPadrao } from './ignore-documentation-build.mjs'
 
 const BRANCH = 'feat/programacao-producao-pj'
 
@@ -706,6 +710,15 @@ describe('bloquearPreviewDaBranch', () => {
     const trava = readFileSync(new URL('../src/lib/environmentSafety.ts', import.meta.url), 'utf8')
     assert.ok(trava.includes("const suffix = '.supabase.co'"), 'A trava do build mudou o sufixo aceito.')
     assert.ok(trava.includes('NEXT_PUBLIC_SUPABASE_URL invalida'), 'A trava do build parou de recusar endereco desconhecido.')
+
+    // O ignoreCommand da Vercel precisa construir a branch travada, senao a
+    // trava nunca roda num envio so de documentacao.
+    assert.equal(enderecoDeBancoForaDoPadrao(DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL), true)
+    const copia = readFileSync(new URL('./change-scope.test.mjs', import.meta.url), 'utf8')
+    assert.ok(
+      copia.includes(`NEXT_PUBLIC_SUPABASE_URL: '${DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL}'`),
+      'A copia do destino inerte em change-scope.test.mjs ficou para tras.',
+    )
   })
 })
 
@@ -741,6 +754,257 @@ describe('conferirReleitura', () => {
       () => conferirReleitura([envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'x')], []),
       /continua gravada/,
     )
+  })
+})
+
+const GITHUB = { repositorio: 'Orodrigao/PaneProducao', githubToken: 'token-github-de-teste' }
+
+function prAberta(numero, ref = BRANCH, repo = GITHUB.repositorio) {
+  return { number: numero, head: { ref, repo: { full_name: repo } } }
+}
+
+describe('lerEstadoDaBranch', () => {
+  it('le a branch pela referencia exata e as PRs abertas da casa', async () => {
+    const respostas = [
+      resposta({ ref: `refs/heads/${BRANCH}` }),
+      resposta([
+        prAberta(285),
+        // Mesmo nome de branch vindo de fork nao conta.
+        prAberta(900, BRANCH, 'estranho/PaneProducao'),
+        // Filtro do servidor e casamento, nao igualdade: confere de novo.
+        prAberta(901, `${BRANCH}-outra`),
+      ]),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    const estado = await lerEstadoDaBranch({ ...GITHUB, gitBranch: BRANCH, fetchImpl })
+
+    assert.deepEqual(estado, { branchExiste: true, prsAbertas: [285] })
+    assert.equal(
+      fetchImpl.mock.calls[0].arguments[0],
+      'https://api.github.com/repos/Orodrigao/PaneProducao/git/ref/heads/feat/programacao-producao-pj',
+    )
+    const busca = new URL(fetchImpl.mock.calls[1].arguments[0])
+    assert.equal(busca.searchParams.get('state'), 'open')
+    assert.equal(busca.searchParams.get('head'), `Orodrigao:${BRANCH}`)
+    assert.equal(busca.searchParams.get('per_page'), '100')
+  })
+
+  it('so 404 quer dizer branch apagada', async () => {
+    const respostas = [new Response('{}', { status: 404 }), resposta([])]
+    const estado = await lerEstadoDaBranch({
+      ...GITHUB,
+      gitBranch: BRANCH,
+      fetchImpl: mock.fn(async () => respostas.shift()),
+    })
+    assert.deepEqual(estado, { branchExiste: false, prsAbertas: [] })
+
+    for (const status of [401, 403, 500]) {
+      // So a leitura da branch falha; a de PRs responde, para o erro nao vir
+      // de carona da segunda chamada.
+      const fetchImpl = mock.fn(async (url) => (
+        url.includes('/git/ref/') ? new Response('{}', { status }) : resposta([])
+      ))
+      await assert.rejects(
+        lerEstadoDaBranch({ ...GITHUB, gitBranch: BRANCH, fetchImpl }),
+        new RegExp(`GET da branch no GitHub respondeu ${status}`),
+      )
+    }
+  })
+
+  it('falha fechado com referencia que nao e exatamente a branch', async () => {
+    // Formato antigo de casamento parcial: lista em vez de objeto.
+    for (const corpo of [[{ ref: `refs/heads/${BRANCH}` }], { ref: `refs/heads/${BRANCH}-2` }, {}]) {
+      await assert.rejects(lerEstadoDaBranch({
+        ...GITHUB,
+        gitBranch: BRANCH,
+        fetchImpl: mock.fn(async () => resposta(corpo)),
+      }), /nao e exatamente esta branch/, JSON.stringify(corpo))
+    }
+  })
+
+  it('falha fechado com lista de PRs ausente ou truncada', async () => {
+    const cheia = Array.from({ length: 100 }, (_, i) => prAberta(1000 + i, `outra-${i}`))
+    for (const [corpo, erro] of [[{}, /nao veio como lista/], [cheia, /limite da pagina/]]) {
+      const respostas = [resposta({ ref: `refs/heads/${BRANCH}` }), resposta(corpo)]
+      await assert.rejects(lerEstadoDaBranch({
+        ...GITHUB,
+        gitBranch: BRANCH,
+        fetchImpl: mock.fn(async () => respostas.shift()),
+      }), erro)
+    }
+  })
+
+  it('exige token, repositorio e branch antes de qualquer chamada', async () => {
+    const fetchImpl = mock.fn()
+    await assert.rejects(lerEstadoDaBranch({ ...GITHUB, githubToken: '', gitBranch: BRANCH, fetchImpl }), /GITHUB_TOKEN/)
+    for (const repositorio of [undefined, '', 'sem-barra', 'a/b/c', 'a/b?x=1']) {
+      await assert.rejects(lerEstadoDaBranch({ ...GITHUB, repositorio, gitBranch: BRANCH, fetchImpl }), /GITHUB_REPOSITORY/)
+    }
+    await assert.rejects(lerEstadoDaBranch({ ...GITHUB, gitBranch: '', fetchImpl }), /branch ausente/)
+    assert.equal(fetchImpl.mock.callCount(), 0)
+  })
+})
+
+describe('decidirPeloEstado', () => {
+  const viva = (prsAbertas) => ({ branchExiste: true, prsAbertas })
+
+  it('branch apagada esquece e branch sem PR aberta trava, venha o pedido de onde vier', () => {
+    for (const acao of ['apontar', 'destravar', 'bloquear', 'esquecer']) {
+      assert.equal(decidirPeloEstado({ acao, prNumber: '285', branchExiste: false, prsAbertas: [] }), 'esquecer', acao)
+      assert.equal(decidirPeloEstado({ acao, prNumber: '285', ...viva([]) }), 'bloquear', acao)
+    }
+  })
+
+  it('com PR aberta, travar e esquecer nao mexem; apontar e destravar seguem so para a PR aberta', () => {
+    assert.equal(decidirPeloEstado({ acao: 'bloquear', ...viva([285]) }), 'nada')
+    assert.equal(decidirPeloEstado({ acao: 'esquecer', ...viva([285]) }), 'nada')
+    assert.equal(decidirPeloEstado({ acao: 'apontar', prNumber: '285', ...viva([285]) }), 'apontar')
+    assert.equal(decidirPeloEstado({ acao: 'destravar', prNumber: 285, ...viva([285]) }), 'destravar')
+    // Evento de uma PR ja fechada, com outra PR aberta na mesma branch.
+    assert.equal(decidirPeloEstado({ acao: 'apontar', prNumber: '284', ...viva([285]) }), 'nada')
+  })
+
+  it('falha fechado com estado incompleto, numero invalido ou acao desconhecida', () => {
+    assert.throws(() => decidirPeloEstado({ acao: 'apontar', prNumber: '285', branchExiste: undefined, prsAbertas: [285] }), /existencia/)
+    assert.throws(() => decidirPeloEstado({ acao: 'apontar', prNumber: '285', branchExiste: true }), /lista de PRs/)
+    for (const prNumber of [undefined, '', '0', 'abc', '2.5']) {
+      assert.throws(() => decidirPeloEstado({ acao: 'apontar', prNumber, ...viva([285]) }), /PR_NUMBER/, String(prNumber))
+    }
+    assert.throws(() => decidirPeloEstado({ acao: 'limpar', ...viva([]) }), /ACAO desconhecida/)
+  })
+})
+
+// Mundo falso: GitHub e Vercel respondendo a partir de um estado em memoria.
+// Serve para provar que a ULTIMA execucao deixa o certo, seja qual for o
+// evento que a disparou e o que as anteriores deixaram gravado.
+function mundoFalso({ branchExiste, prsAbertas, ramificacao = null, variaveis = [] }) {
+  const loja = variaveis.map((v, i) => ({ id: `env_${i}`, ...v }))
+  let proximo = loja.length
+  const fetchImpl = async (url, { method = 'GET', body } = {}) => {
+    const u = new URL(url)
+    if (u.hostname === 'api.github.com') {
+      if (u.pathname.includes('/git/ref/heads/')) {
+        return branchExiste ? resposta({ ref: `refs/heads/${BRANCH}` }) : new Response('{}', { status: 404 })
+      }
+      if (u.pathname.endsWith('/pulls')) return resposta(prsAbertas.map((n) => prAberta(n)))
+    }
+    if (u.hostname === 'api.supabase.com') {
+      if (u.pathname.endsWith('/branches')) return resposta(ramificacao ? [RAMIFICACAO_MAIN, ramificacao] : [RAMIFICACAO_MAIN])
+      if (u.pathname.endsWith('/api-keys')) {
+        return resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }])
+      }
+    }
+    if (u.hostname === 'api.vercel.com') {
+      if (method === 'GET' && u.pathname.endsWith('/env')) {
+        return resposta({ envs: [GENERICA_URL, ...loja], pagination: { count: loja.length + 1, next: null, prev: null } })
+      }
+      if (method === 'POST' && u.pathname.endsWith('/env')) {
+        const nova = JSON.parse(body)
+        const existente = loja.find((v) => v.key === nova.key && v.gitBranch === nova.gitBranch)
+        if (existente) Object.assign(existente, nova)
+        else loja.push({ id: `env_${proximo++}`, ...nova })
+        return resposta({})
+      }
+      if (method === 'DELETE') {
+        const id = decodeURIComponent(u.pathname.split('/env/')[1])
+        loja.splice(loja.findIndex((v) => v.id === id), 1)
+        return new Response(null, { status: 204 })
+      }
+      if (u.pathname.endsWith('/deployments') && method === 'GET') return resposta({ deployments: [{ uid: 'dpl_da_branch' }] })
+      if (u.pathname.endsWith('/deployments') && method === 'POST') return resposta({ id: 'dpl_novo' })
+    }
+    throw new Error(`chamada inesperada: ${method} ${url}`)
+  }
+  const valores = () => Object.fromEntries(loja.map((v) => [v.key, v.value]))
+  return { fetchImpl, valores }
+}
+
+const TRAVADA = [
+  { key: 'NEXT_PUBLIC_SUPABASE_URL', value: DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL, type: 'plain', target: ['preview'], gitBranch: BRANCH },
+  { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', value: DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_ANON_KEY, type: 'plain', target: ['preview'], gitBranch: BRANCH },
+]
+const DA_PR = [
+  { key: 'NEXT_PUBLIC_SUPABASE_URL', value: 'https://axpkaqpqrvpdfwoozrmy.supabase.co', type: 'plain', target: ['preview'], gitBranch: BRANCH },
+  { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', value: 'sb_publishable_da_pr', type: 'plain', target: ['preview'], gitBranch: BRANCH },
+]
+const SO_URL_TRAVADA = [TRAVADA[0]] // execucao cancelada entre as duas gravacoes
+const ANTERIORES = { vazio: [], travada: TRAVADA, 'da PR': DA_PR, 'meio travada': SO_URL_TRAVADA }
+const valoresDe = (lista) => Object.fromEntries(lista.map((v) => [v.key, v.value]))
+
+describe('executarAcao: a ultima execucao deixa o certo em qualquer ordem', () => {
+  const rodar = (mundo, acao) => executarAcao({
+    ...CREDENCIAIS,
+    ...GITHUB,
+    acao,
+    prNumber: '285',
+    gitBranch: BRANCH,
+    esperarRamificacaoSegundos: 0,
+    dormir: async () => {},
+    fetchImpl: mundo.fetchImpl,
+    registrar: () => {},
+  })
+
+  const cenarios = [
+    ['PR fechada, branch viva: travada', { branchExiste: true, prsAbertas: [] }, valoresDe(TRAVADA)],
+    ['branch apagada: sem variavel da branch', { branchExiste: false, prsAbertas: [] }, {}],
+  ]
+  for (const [nome, mundoFinal, esperado] of cenarios) {
+    for (const acao of ['apontar', 'destravar', 'bloquear', 'esquecer']) {
+      for (const [antes, variaveis] of Object.entries(ANTERIORES)) {
+        it(`${nome} | ultima: ${acao} | antes: ${antes}`, async () => {
+          const mundo = mundoFalso({ ...mundoFinal, variaveis })
+          await rodar(mundo, acao)
+          assert.deepEqual(mundo.valores(), esperado)
+        })
+      }
+    }
+  }
+
+  for (const [antes, variaveis] of Object.entries(ANTERIORES)) {
+    it(`PR aberta sem banco proprio | ultima: apontar ou destravar | antes: ${antes}`, async () => {
+      for (const acao of ['apontar', 'destravar']) {
+        const mundo = mundoFalso({ branchExiste: true, prsAbertas: [285], variaveis })
+        await rodar(mundo, acao)
+        assert.deepEqual(mundo.valores(), {}, acao)
+      }
+    })
+
+    it(`PR aberta com banco proprio | ultima: apontar | antes: ${antes}`, async () => {
+      const mundo = mundoFalso({ branchExiste: true, prsAbertas: [285], ramificacao: RAMIFICACAO_DA_PR, variaveis })
+      const resultado = await rodar(mundo, 'apontar')
+      assert.equal(resultado.situacao, 'apontado')
+      assert.deepEqual(mundo.valores(), valoresDe(DA_PR))
+    })
+
+    // O limite declarado: com PR aberta, um fechar ou apagar atrasado nao
+    // mexe, porque so a execucao da PR conhece a classificacao dela. Se ele
+    // for o ultimo, fica o que estava; travada continua falhando fechado ate
+    // o proximo envio da PR.
+    it(`PR aberta | ultima: bloquear ou esquecer atrasado | antes: ${antes} | nao mexe`, async () => {
+      for (const acao of ['bloquear', 'esquecer']) {
+        const mundo = mundoFalso({ branchExiste: true, prsAbertas: [285], variaveis })
+        const resultado = await rodar(mundo, acao)
+        assert.equal(resultado.decisao, 'nada', acao)
+        assert.deepEqual(mundo.valores(), valoresDe(variaveis), acao)
+      }
+    })
+  }
+
+  it('fechar, reabrir e fechar de novo, com execucoes em qualquer ordem', async () => {
+    // O mundo final e "fechada"; so importa a execucao que roda por ultimo.
+    for (const ultima of ['bloquear', 'apontar', 'bloquear']) {
+      const mundo = mundoFalso({ branchExiste: true, prsAbertas: [], variaveis: DA_PR })
+      await rodar(mundo, ultima)
+      assert.deepEqual(mundo.valores(), valoresDe(TRAVADA), ultima)
+    }
+  })
+
+  it('nao chama ninguem com acao desconhecida ou sem credencial da Vercel', async () => {
+    const fetchImpl = mock.fn()
+    await assert.rejects(executarAcao({ ...CREDENCIAIS, ...GITHUB, acao: 'limpar', gitBranch: BRANCH, fetchImpl }), /ACAO desconhecida/)
+    await assert.rejects(executarAcao({ ...GITHUB, acao: 'bloquear', gitBranch: BRANCH, vercelProject: 'p', fetchImpl }), /VERCEL_TOKEN/)
+    assert.equal(fetchImpl.mock.callCount(), 0)
   })
 })
 
@@ -921,10 +1185,17 @@ describe('condicoes do workflow Banco por PR', () => {
       'ACAO: esquecer',
       'GIT_BRANCH: ${{ github.event.ref }}',
       'name: Travar o preview da PR fechada',
+      'cancel-in-progress: false',
     ]) {
       assert.ok(workflow.includes(trecho), `"${trecho}" saiu do workflow.`)
     }
     const cru = readFileSync(new URL('../.github/workflows/banco-por-pr.yml', import.meta.url), 'utf8')
+    // Os quatro passos que chamam o script conferem o estado atual no GitHub.
+    const chamadas = cru.split('run: node scripts/preview-branch-env.mjs').length - 1
+    const comToken = cru.split('GITHUB_TOKEN: ${{ github.token }}').length - 1
+    assert.equal(chamadas, 4)
+    assert.equal(comToken, chamadas, 'Todo passo que chama o script precisa do GITHUB_TOKEN.')
+    assert.doesNotMatch(cru, /cancel-in-progress: true/)
     assert.match(cru, /^on:\r?\n(?:(?: {2}.*)?\r?\n)*? {2}delete:\r?\n/m, 'O gatilho de branch apagada saiu do workflow.')
   })
 

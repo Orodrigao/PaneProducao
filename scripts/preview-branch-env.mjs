@@ -16,6 +16,8 @@ import { pathToFileURL } from 'node:url'
  * - PR FECHADA tem a branch travada num destino inerte. Sem isso, um push novo
  *   na branch geraria preview no banco compartilhado, sem ninguem ter
  *   reservado aquele banco. Reabrir destrava; apagar a branch esquece.
+ * - Toda execucao decide pelo estado ATUAL da branch no GitHub, nao pelo
+ *   evento que a disparou (ver lerEstadoDaBranch).
  *
  * Na duvida este script falha FECHADO: preview vermelho e melhor que preview
  * verde conversando com o banco errado.
@@ -634,31 +636,152 @@ export async function limparVariaveisDaBranch({
   return { removidas: alvos.length }
 }
 
+const ACOES = new Set(['apontar', 'destravar', 'bloquear', 'esquecer'])
+
+/**
+ * O que o GitHub diz AGORA sobre a branch: se ela existe e quais PRs abertas
+ * da propria casa saem dela.
+ *
+ * Existe porque o evento que disparou esta execucao pode estar velho. O
+ * GitHub nao garante a ordem das execucoes: um "enviou commit" atrasado pode
+ * rodar depois do "fechou", e um "fechou" atrasado depois do "apagou a
+ * branch". Quem decide pelo estado atual, e nao pelo evento, deixa o certo
+ * mesmo rodando fora de ordem, desde que as execucoes da mesma branch facam
+ * fila (ver concurrency no workflow).
+ */
+export async function lerEstadoDaBranch({ repositorio, gitBranch, githubToken, fetchImpl = fetch }) {
+  if (!githubToken) throw new Error('GITHUB_TOKEN ausente: sem ele nao da para conferir o estado atual da branch.')
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repositorio ?? '')) {
+    throw new Error('GITHUB_REPOSITORY ausente ou invalido: nao da para conferir o estado atual da branch.')
+  }
+  if (!gitBranch) throw new Error('Nome da branch ausente: nao da para conferir o estado atual.')
+
+  const base = `https://api.github.com/repos/${repositorio}`
+  const caminhoDaRef = gitBranch.split('/').map(encodeURIComponent).join('/')
+
+  // `git/ref` (singular) devolve a referencia exata ou 404. So 404 quer dizer
+  // "nao existe"; qualquer outra falha interrompe, porque concluir "apagada"
+  // por engano apagaria a trava de uma branch viva.
+  const respostaDaRef = await fetchImpl(`${base}/git/ref/heads/${caminhoDaRef}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github+json' },
+  })
+  let branchExiste
+  if (respostaDaRef.status === 404) {
+    branchExiste = false
+  } else if (respostaDaRef.ok) {
+    const corpo = await respostaDaRef.json()
+    if (corpo?.ref !== `refs/heads/${gitBranch}`) {
+      throw new Error('O GitHub devolveu uma referencia que nao e exatamente esta branch; recusado por seguranca.')
+    }
+    branchExiste = true
+  } else {
+    throw new Error(`GET da branch no GitHub respondeu ${respostaDaRef.status}.`)
+  }
+
+  const dono = repositorio.split('/')[0]
+  const abertas = await pedir(
+    `${base}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${dono}:${gitBranch}`)}`,
+    { token: githubToken, fetchImpl },
+  )
+  if (!Array.isArray(abertas)) {
+    throw new Error('A listagem de PRs abertas do GitHub nao veio como lista.')
+  }
+  if (abertas.length >= 100) {
+    throw new Error('A listagem de PRs abertas veio no limite da pagina; nao da para afirmar o estado da branch.')
+  }
+
+  const prsAbertas = abertas
+    .filter((pr) => pr?.head?.ref === gitBranch && pr?.head?.repo?.full_name === repositorio)
+    .map((pr) => Number(pr.number))
+
+  return { branchExiste, prsAbertas }
+}
+
+/**
+ * O que fazer, dado o que o evento pediu e o estado atual da branch.
+ *
+ * - branch apagada: esquecer (nao ha mais push a proteger);
+ * - branch viva sem PR aberta: travar, venha o pedido de onde vier;
+ * - branch com PR aberta: travar e esquecer nao mexem (quem decide e o
+ *   trabalho da PR aberta, que conhece a classificacao dela);
+ * - apontar e destravar so seguem se a PR do evento e a que esta aberta. Se
+ *   a aberta for outra PR na mesma branch, a execucao dela decide.
+ */
+export function decidirPeloEstado({ acao, branchExiste, prsAbertas, prNumber }) {
+  if (!ACOES.has(acao)) throw new Error(`ACAO desconhecida (${acao ?? 'ausente'}); nada foi alterado.`)
+  if (!Array.isArray(prsAbertas)) throw new Error('Estado da branch sem a lista de PRs abertas.')
+  if (branchExiste === false) return 'esquecer'
+  if (branchExiste !== true) throw new Error('Estado da branch sem a informacao de existencia.')
+  if (prsAbertas.length === 0) return 'bloquear'
+  if (acao === 'bloquear' || acao === 'esquecer') return 'nada'
+
+  const numero = Number(prNumber)
+  if (!Number.isInteger(numero) || numero <= 0) {
+    throw new Error('PR_NUMBER ausente ou invalido: nao da para saber se a PR do evento continua aberta.')
+  }
+  return prsAbertas.includes(numero) ? acao : 'nada'
+}
+
+/** Confere o estado atual e executa a decisao. */
+export async function executarAcao({
+  acao,
+  prNumber,
+  gitBranch,
+  repositorio,
+  githubToken,
+  supabaseToken,
+  prAlteraSupabase,
+  vercelToken,
+  vercelProject,
+  vercelTeamId,
+  registrar = console.log,
+  fetchImpl = fetch,
+  ...opcoes
+}) {
+  // Acao desconhecida falha antes de qualquer chamada: cair no caminho de
+  // apontar por engano gravaria variaveis numa branch que devia ficar travada.
+  if (!ACOES.has(acao)) throw new Error(`ACAO desconhecida (${acao ?? 'ausente'}); nada foi alterado.`)
+  const comum = { gitBranch, vercelToken, vercelProject, vercelTeamId, registrar, fetchImpl }
+  exigirVercel(comum)
+
+  const estado = await lerEstadoDaBranch({ repositorio, gitBranch, githubToken, fetchImpl })
+  const decisao = decidirPeloEstado({ acao, prNumber, ...estado })
+  registrar(
+    `O evento pediu "${acao}". No GitHub agora a branch ${estado.branchExiste ? 'existe' : 'nao existe'} `
+    + `e tem ${estado.prsAbertas.length} PR(s) aberta(s) (${estado.prsAbertas.join(', ') || 'nenhuma'}). Decisao: ${decisao}.`,
+  )
+
+  if (decisao === 'nada') return { decisao }
+  if (decisao === 'bloquear') return { decisao, ...(await bloquearPreviewDaBranch(comum)) }
+  if (decisao === 'esquecer' || decisao === 'destravar') {
+    return { decisao, ...(await limparVariaveisDaBranch(comum)) }
+  }
+  return {
+    decisao,
+    ...(await apontarPreviewParaRamificacao({
+      ...comum,
+      ...opcoes,
+      prNumber,
+      supabaseToken,
+      prAlteraSupabase,
+    })),
+  }
+}
+
 async function main() {
-  const acao = process.env.ACAO
-  const comum = {
+  await executarAcao({
+    acao: process.env.ACAO,
+    prNumber: process.env.PR_NUMBER,
     gitBranch: process.env.GIT_BRANCH,
+    repositorio: process.env.GITHUB_REPOSITORY,
+    githubToken: process.env.GITHUB_TOKEN,
+    supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
+    prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
     vercelToken: process.env.VERCEL_TOKEN,
     vercelProject: process.env.VERCEL_PROJECT,
     vercelTeamId: process.env.VERCEL_TEAM_ID,
-  }
-
-  // Acao desconhecida falha: cair no caminho de apontar por engano gravaria
-  // variaveis numa branch que devia ficar travada.
-  if (acao === 'bloquear') {
-    await bloquearPreviewDaBranch(comum)
-  } else if (acao === 'destravar' || acao === 'esquecer') {
-    await limparVariaveisDaBranch(comum)
-  } else if (acao === 'apontar') {
-    await apontarPreviewParaRamificacao({
-      ...comum,
-      prNumber: process.env.PR_NUMBER,
-      supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
-      prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
-    })
-  } else {
-    throw new Error(`ACAO desconhecida (${acao ?? 'ausente'}); nada foi alterado.`)
-  }
+  })
 }
 
 const execucaoDireta = process.argv[1]

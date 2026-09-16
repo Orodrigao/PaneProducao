@@ -40,19 +40,24 @@ on:
         type: string
 
 concurrency:
-  # O grupo e a BRANCH, porque e ela que as variaveis da Vercel seguem, e so
-  # assim fechar e apagar a mesma branch fazem fila em vez de correr juntos: a
-  # trava gravada depois do esquecimento ficaria sobrando para sempre. Cada
+  # O grupo e a BRANCH, porque e ela que as variaveis da Vercel seguem. Cada
   # evento traz a branch num lugar: PR no head.ref, disparo manual no campo
-  # digitado e branch apagada em event.ref. Sem os `||` eventos diferentes
-  # cairiam no mesmo grupo e, com cancel-in-progress, um cancelaria o outro.
+  # digitado e branch apagada em event.ref. Sem os `||` eventos de branches
+  # diferentes cairiam no mesmo grupo.
+  #
+  # SEM cancel-in-progress: cancelar no meio deixaria endereco e chave de
+  # estados diferentes, e uma execucao cancelada ainda pode estar gravando
+  # quando a seguinte comeca. Com fila, as execucoes da mesma branch rodam uma
+  # de cada vez. O GitHub mantem so a mais nova pendente e NAO garante a
+  # ordem; por isso o script decide pelo estado atual da branch, e a ultima a
+  # rodar deixa o certo, seja qual for o evento que a disparou.
   group: banco-por-pr-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
+  # Somente leitura: conferir se a branch existe e quais PRs abertas saem dela,
+  # e se a branch digitada no disparo manual e mesmo a daquela PR.
   contents: read
-  # Somente leitura, e so para conferir se a branch digitada no disparo manual
-  # e mesmo a daquela PR.
   pull-requests: read
 
 env:
@@ -217,6 +222,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.classificar.outputs.perfil == 'product'
         env:
           ACAO: apontar
+          GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -241,6 +247,8 @@ jobs:
           steps.classificar.outputs.perfil == 'ci-mechanism')
         env:
           ACAO: destravar
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
@@ -276,6 +284,7 @@ jobs:
       - name: Travar
         env:
           ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
@@ -303,6 +312,7 @@ jobs:
       - name: Esquecer
         env:
           ACAO: esquecer
+          GITHUB_TOKEN: ${{ github.token }}
           GIT_BRANCH: ${{ github.event.ref }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}

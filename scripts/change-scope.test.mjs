@@ -28,7 +28,12 @@ import {
   vercelJsonSomenteIgnoreCommand,
   verificarDocumentos,
 } from './change-scope.mjs'
-import { URL_REPOSITORIO_PUBLICO, decidirIgnorarBuild, resolverReferencias } from './ignore-documentation-build.mjs'
+import {
+  URL_REPOSITORIO_PUBLICO,
+  decidirIgnorarBuild,
+  enderecoDeBancoForaDoPadrao,
+  resolverReferencias,
+} from './ignore-documentation-build.mjs'
 
 /** Cria um repositorio Git real e descartavel para testar contra o binario git de verdade, nao um mock. */
 function repositorioGitTemporario() {
@@ -1118,7 +1123,45 @@ describe('resolverReferencias (ignoreCommand da Vercel)', () => {
   })
 })
 
+// Copia do destino inerte de scripts/preview-branch-env.mjs. Nao importado de
+// proposito: o perfil ci-mechanism da portaria roda este arquivo com so os oito
+// caminhos do mecanismo. preview-branch-env.test.mjs confere que os dois batem.
+const DESTINO_INERTE = { NEXT_PUBLIC_SUPABASE_URL: 'https://pr-fechada-sem-banco.invalid' }
+
 describe('decidirIgnorarBuild (ignoreCommand da Vercel)', () => {
+  it('constroi a branch travada de PR fechada mesmo com diff so documental, para a trava aparecer', () => {
+    const execImpl = mock.fn((_cmd, args) => (
+      args[0] === 'merge-base' ? 'antigo\n' : ['M', 'docs/PLAN.md', ''].join('\0')
+    ))
+    const resultado = decidirIgnorarBuild({
+      env: {
+        VERCEL_GIT_PREVIOUS_SHA: 'antigo',
+        VERCEL_GIT_COMMIT_SHA: 'novo',
+        NEXT_PUBLIC_SUPABASE_URL: DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL,
+      },
+      execImpl,
+    })
+    assert.equal(resultado.documental, false)
+    assert.equal(resultado.perfil, 'product')
+    assert.equal(resultado.motivo, 'banco-fora-do-padrao')
+    assert.equal(execImpl.mock.callCount(), 0)
+  })
+
+  it('so endereco preenchido e fora de https://*.supabase.co obriga o build', () => {
+    for (const url of [
+      DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL,
+      'http://tuqzhjsbodoycjbmwuqm.supabase.co',
+      'https://supabase.co.invalid',
+      'nao-e-url',
+      ' ',
+    ]) {
+      assert.equal(enderecoDeBancoForaDoPadrao(url), true, url)
+    }
+    for (const url of [undefined, null, '', 'https://tuqzhjsbodoycjbmwuqm.supabase.co', 'https://AXPK.Supabase.co/']) {
+      assert.equal(enderecoDeBancoForaDoPadrao(url), false, String(url))
+    }
+  })
+
   it('constroi (documental=false) na primeira deployment de uma branch, sem VERCEL_GIT_PREVIOUS_SHA', () => {
     const execImpl = mock.fn()
     const resultado = decidirIgnorarBuild({ env: { VERCEL_GIT_COMMIT_SHA: 'novo' }, execImpl })
