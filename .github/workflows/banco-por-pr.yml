@@ -45,13 +45,22 @@ concurrency:
   # digitado e branch apagada em event.ref. Sem os `||` eventos de branches
   # diferentes cairiam no mesmo grupo.
   #
+  # O grupo leva tambem o REPOSITORIO de origem. PR de fork com o mesmo nome de
+  # branch cairia no grupo da branch da casa, tomaria o lugar da execucao
+  # pendente dela e depois pularia os trabalhos pela guarda contra fork: a
+  # trava de uma PR fechada nunca seria gravada. Disparo manual e branch
+  # apagada so existem na casa, entao usam github.repository. PR cujo fork foi
+  # apagado vem sem head.repo e cai num grupo proprio, nunca no da casa. Os
+  # parenteses nao sao estilo: a documentacao nao declara precedencia entre
+  # `&&` e `||`.
+  #
   # SEM cancel-in-progress: cancelar no meio deixaria endereco e chave de
   # estados diferentes, e uma execucao cancelada ainda pode estar gravando
   # quando a seguinte comeca. Com fila, as execucoes da mesma branch rodam uma
   # de cada vez. O GitHub mantem so a mais nova pendente e NAO garante a
   # ordem; por isso o script decide pelo estado atual da branch, e a ultima a
   # rodar deixa o certo, seja qual for o evento que a disparou.
-  group: banco-por-pr-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}
+  group: banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}
   cancel-in-progress: false
 
 permissions:

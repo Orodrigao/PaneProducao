@@ -1032,7 +1032,7 @@ const CONDICAO_APONTAR = "github.event_name == 'workflow_dispatch' || (github.ev
 const CONDICAO_DESTRAVAR = "github.event_name == 'pull_request' && (steps.classificar.outputs.perfil == 'documentation' || steps.classificar.outputs.perfil == 'ci-mechanism')"
 const CONDICAO_TRAVAR = "github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
 const CONDICAO_ESQUECER = "github.event_name == 'delete' && github.event.ref_type == 'branch'"
-const GRUPO = "banco-por-pr-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}"
+const GRUPO = "banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}"
 const AMBIENTE_PR = "${{ github.event.pull_request.number || inputs.pr_number }}"
 const AMBIENTE_BRANCH = "${{ github.event.pull_request.head.ref || inputs.git_branch }}"
 
@@ -1057,8 +1057,12 @@ const esquecerRoda = (evento, nomeDoEvento) =>
 // JavaScript para o que interessa aqui: campo ausente e texto vazio sao falsos.
 const numeroDaPr = (evento, inputs) => evento.pull_request?.number || inputs?.pr_number
 const branchDaPr = (evento, inputs) => evento.pull_request?.head?.ref || inputs?.git_branch
-const grupoDeConcorrencia = (evento, inputs) =>
-  `banco-por-pr-${evento.pull_request?.head?.ref || inputs?.git_branch || evento.ref || ''}`
+// Em expressao do GitHub, `a && b` devolve b quando a e verdadeiro, e objeto
+// e verdadeiro: o mesmo que o JavaScript faz aqui.
+const grupoDeConcorrencia = (evento, inputs, repositorio = REPO) => {
+  const origem = (evento.pull_request && (evento.pull_request.head?.repo?.full_name || 'fork-apagado')) || repositorio
+  return `banco-por-pr-${origem}-${evento.pull_request?.head?.ref || inputs?.git_branch || evento.ref || ''}`
+}
 
 const REPO = 'Orodrigao/PaneProducao'
 const daCasa = (action, ref = BRANCH) => ({
@@ -1141,8 +1145,10 @@ describe('condicoes do workflow Banco por PR', () => {
   it('fechar e apagar a mesma branch fazem fila; branches diferentes nao', () => {
     const fechar = grupoDeConcorrencia(daCasa('closed'), {})
     const apagar = grupoDeConcorrencia({ ref: BRANCH, ref_type: 'branch' }, {})
-    assert.equal(fechar, `banco-por-pr-${BRANCH}`)
+    const manual = grupoDeConcorrencia({ ref: 'refs/heads/main' }, { pr_number: '285', git_branch: BRANCH })
+    assert.equal(fechar, `banco-por-pr-${REPO}-${BRANCH}`)
     assert.equal(apagar, fechar)
+    assert.equal(manual, fechar)
 
     // Sem os `||` os disparos manuais e as branches apagadas virariam todos
     // `banco-por-pr-` e, com cancel-in-progress, um cancelaria o outro.
@@ -1154,11 +1160,25 @@ describe('condicoes do workflow Banco por PR', () => {
       grupoDeConcorrencia({ ref: 'fix/a', ref_type: 'branch' }, {}),
       grupoDeConcorrencia({ ref: 'fix/b', ref_type: 'branch' }, {}),
     )
-    // No disparo manual o evento traz ref da main; o campo digitado vem antes.
-    assert.equal(
-      grupoDeConcorrencia({ ref: 'refs/heads/main' }, { git_branch: BRANCH }),
-      `banco-por-pr-${BRANCH}`,
-    )
+  })
+
+  it('PR de fork com o mesmo nome de branch nunca cai no grupo da casa', () => {
+    // O fork tomaria o lugar da execucao pendente da casa e depois pularia os
+    // trabalhos: a trava da PR fechada nunca seria gravada.
+    const daCasaFechada = grupoDeConcorrencia(daCasa('closed'), {})
+    const deFork = grupoDeConcorrencia({
+      action: 'opened',
+      pull_request: { number: 999, head: { ref: BRANCH, repo: { full_name: 'estranho/PaneProducao' } } },
+    }, {})
+    // Fork apagado: o GitHub manda head.repo nulo.
+    const deForkApagado = grupoDeConcorrencia({
+      action: 'synchronize',
+      pull_request: { number: 998, head: { ref: BRANCH, repo: null } },
+    }, {})
+
+    assert.notEqual(deFork, daCasaFechada)
+    assert.notEqual(deForkApagado, daCasaFechada)
+    assert.equal(deForkApagado, `banco-por-pr-fork-apagado-${BRANCH}`)
   })
 
   it('a transcricao acima continua igual ao workflow de verdade', () => {
