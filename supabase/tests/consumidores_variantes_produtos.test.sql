@@ -66,5 +66,40 @@ select is((select finished_weight_kg from public.product_recipe_yields
   where product_id = 'c9100000-0000-4000-8000-000000000002' and product_variant_id is null),
   2::numeric, 'a atualização explícita realmente gravou o novo peso do produto legado');
 
+-- O índice único de product_variants chama private.normalize_product_category_name
+-- na expressão, e o Postgres avalia essa expressão com o privilégio de quem
+-- faz o INSERT de verdade (não do dono da tabela). A função tinha EXECUTE
+-- revogado de authenticated desde a migration de origem (só era chamada por
+-- trás de RPC SECURITY DEFINER); sem conceder de novo, até o admin autorizado
+-- pela policy de INSERT falhava com "permission denied for function".
+select ok(has_function_privilege('authenticated',
+  'private.normalize_product_category_name(text)', 'execute'),
+  'authenticated recebeu EXECUTE na função usada pelo índice de product_variants');
+select ok(not has_function_privilege('anon',
+  'private.normalize_product_category_name(text)', 'execute'),
+  'anon continua sem EXECUTE nessa função, sem grant amplo por engano');
+
+insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,
+  created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_super_admin)
+values
+ ('9c100000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000',
+  'authenticated','authenticated','variantes-fase2-admin@example.com','',now(),now(),now(),
+  '{"provider":"email","providers":["email"]}','{}',false);
+
+insert into public.app_profiles(user_id,display_name,role,store,active,allowed_routes)
+values
+ ('9c100000-0000-4000-8000-000000000001','[TESTE] Admin Consumidores','admin','jc',true,'["/produtos"]');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','9c100000-0000-4000-8000-000000000001',true);
+-- Prova de ponta a ponta do defeito relatado pelo CI: um admin autorizado
+-- consegue de verdade criar variante com nome novo, exercitando RLS e o
+-- privilégio da função na mesma chamada, não só a checagem isolada acima.
+select lives_ok(
+  $$insert into public.product_variants (product_id, name) values
+    ('c9100000-0000-4000-8000-000000000001', 'Mini')$$,
+  'admin com a rota /produtos cria variante mesmo com o índice chamando a função de normalização');
+reset role;
+
 select * from finish();
 rollback;
