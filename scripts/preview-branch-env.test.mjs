@@ -759,8 +759,8 @@ describe('conferirReleitura', () => {
 
 const GITHUB = { repositorio: 'Orodrigao/PaneProducao', githubToken: 'token-github-de-teste' }
 
-function prAberta(numero, ref = BRANCH, repo = GITHUB.repositorio) {
-  return { number: numero, head: { ref, repo: { full_name: repo } } }
+function prAberta(numero, ref = BRANCH, repo = GITHUB.repositorio, base = 'main') {
+  return { number: numero, head: { ref, repo: { full_name: repo } }, base: { ref: base } }
 }
 
 describe('lerEstadoDaBranch', () => {
@@ -773,6 +773,8 @@ describe('lerEstadoDaBranch', () => {
         prAberta(900, BRANCH, 'estranho/PaneProducao'),
         // Filtro do servidor e casamento, nao igualdade: confere de novo.
         prAberta(901, `${BRANCH}-outra`),
+        // PR da mesma branch contra outra base nao e da conta do workflow.
+        prAberta(902, BRANCH, GITHUB.repositorio, 'release'),
       ]),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
@@ -786,6 +788,7 @@ describe('lerEstadoDaBranch', () => {
     )
     const busca = new URL(fetchImpl.mock.calls[1].arguments[0])
     assert.equal(busca.searchParams.get('state'), 'open')
+    assert.equal(busca.searchParams.get('base'), 'main')
     assert.equal(busca.searchParams.get('head'), `Orodrigao:${BRANCH}`)
     assert.equal(busca.searchParams.get('per_page'), '100')
   })
@@ -1032,7 +1035,7 @@ const CONDICAO_APONTAR = "github.event_name == 'workflow_dispatch' || (github.ev
 const CONDICAO_DESTRAVAR = "github.event_name == 'pull_request' && (steps.classificar.outputs.perfil == 'documentation' || steps.classificar.outputs.perfil == 'ci-mechanism')"
 const CONDICAO_TRAVAR = "github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
 const CONDICAO_ESQUECER = "github.event_name == 'delete' && github.event.ref_type == 'branch'"
-const GRUPO = "banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}"
+const GRUPO = "banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}:${{ github.event.pull_request.head.ref || inputs.git_branch || (github.event.ref_type == 'tag' && format('tag:{0}', github.event.ref)) || github.event.ref }}"
 const AMBIENTE_PR = "${{ github.event.pull_request.number || inputs.pr_number }}"
 const AMBIENTE_BRANCH = "${{ github.event.pull_request.head.ref || inputs.git_branch }}"
 
@@ -1061,7 +1064,12 @@ const branchDaPr = (evento, inputs) => evento.pull_request?.head?.ref || inputs?
 // e verdadeiro: o mesmo que o JavaScript faz aqui.
 const grupoDeConcorrencia = (evento, inputs, repositorio = REPO) => {
   const origem = (evento.pull_request && (evento.pull_request.head?.repo?.full_name || 'fork-apagado')) || repositorio
-  return `banco-por-pr-${origem}-${evento.pull_request?.head?.ref || inputs?.git_branch || evento.ref || ''}`
+  const nome = evento.pull_request?.head?.ref
+    || inputs?.git_branch
+    || (evento.ref_type === 'tag' && `tag:${evento.ref}`)
+    || evento.ref
+    || ''
+  return `banco-por-pr-${origem}:${nome}`
 }
 
 const REPO = 'Orodrigao/PaneProducao'
@@ -1146,7 +1154,7 @@ describe('condicoes do workflow Banco por PR', () => {
     const fechar = grupoDeConcorrencia(daCasa('closed'), {})
     const apagar = grupoDeConcorrencia({ ref: BRANCH, ref_type: 'branch' }, {})
     const manual = grupoDeConcorrencia({ ref: 'refs/heads/main' }, { pr_number: '285', git_branch: BRANCH })
-    assert.equal(fechar, `banco-por-pr-${REPO}-${BRANCH}`)
+    assert.equal(fechar, `banco-por-pr-${REPO}:${BRANCH}`)
     assert.equal(apagar, fechar)
     assert.equal(manual, fechar)
 
@@ -1178,7 +1186,24 @@ describe('condicoes do workflow Banco por PR', () => {
 
     assert.notEqual(deFork, daCasaFechada)
     assert.notEqual(deForkApagado, daCasaFechada)
-    assert.equal(deForkApagado, `banco-por-pr-fork-apagado-${BRANCH}`)
+    assert.equal(deForkApagado, `banco-por-pr-fork-apagado:${BRANCH}`)
+  })
+
+  it('tag apagada com o nome da branch nunca cai no grupo da branch', () => {
+    const daBranch = grupoDeConcorrencia({ ref: BRANCH, ref_type: 'branch' }, {})
+    const daTag = grupoDeConcorrencia({ ref: BRANCH, ref_type: 'tag' }, {})
+    assert.notEqual(daTag, daBranch)
+    assert.equal(daTag, `banco-por-pr-${REPO}:tag:${BRANCH}`)
+  })
+
+  it('o separador nao deixa repositorio e branch diferentes darem o mesmo grupo', () => {
+    // Com hifen, "dono/repo" + "x-y" e "dono/repo-x" + "y" davam o mesmo texto.
+    const umaBranch = grupoDeConcorrencia(daCasa('closed', 'x-y'), {})
+    const forkParecido = grupoDeConcorrencia({
+      action: 'closed',
+      pull_request: { head: { ref: 'y', repo: { full_name: `${REPO}-x` } } },
+    }, {})
+    assert.notEqual(umaBranch, forkParecido)
   })
 
   it('a transcricao acima continua igual ao workflow de verdade', () => {
@@ -1210,12 +1235,22 @@ describe('condicoes do workflow Banco por PR', () => {
       assert.ok(workflow.includes(trecho), `"${trecho}" saiu do workflow.`)
     }
     const cru = readFileSync(new URL('../.github/workflows/banco-por-pr.yml', import.meta.url), 'utf8')
-    // Os quatro passos que chamam o script conferem o estado atual no GitHub.
+    // Os cinco passos que chamam o script conferem o estado atual no GitHub.
     const chamadas = cru.split('run: node scripts/preview-branch-env.mjs').length - 1
     const comToken = cru.split('GITHUB_TOKEN: ${{ github.token }}').length - 1
-    assert.equal(chamadas, 4)
+    assert.equal(chamadas, 5)
     assert.equal(comToken, chamadas, 'Todo passo que chama o script precisa do GITHUB_TOKEN.')
     assert.doesNotMatch(cru, /cancel-in-progress: true/)
+    assert.match(cru, /^ {2}pull_request:\r?\n {4}types: \[opened, reopened, synchronize, closed\]\r?\n(?: {4}#.*\r?\n)* {4}branches: \[main\]\r?\n/m, 'O filtro de base main saiu do workflow.')
+
+    // Falha antes de reconciliar (disparo manual invalido, por exemplo) ainda
+    // confere o estado: o passo final roda so em falha e so trava ou esquece.
+    const final = cru.slice(cru.indexOf('- name: Reconciliar depois de falha'))
+    assert.match(final, /^- name: Reconciliar depois de falha\r?\n {8}if: failure\(\)\r?\n {8}env:\r?\n {10}ACAO: bloquear\r?\n/)
+    assert.ok(
+      cru.indexOf('- name: Reconciliar depois de falha') < cru.indexOf('\n  limpar:'),
+      'O passo de reconciliacao precisa ficar no trabalho apontar.',
+    )
     assert.match(cru, /^on:\r?\n(?:(?: {2}.*)?\r?\n)*? {2}delete:\r?\n/m, 'O gatilho de branch apagada saiu do workflow.')
   })
 

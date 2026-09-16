@@ -22,6 +22,10 @@ name: Banco por PR
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
+    # So PR contra a main aponta, trava ou destrava. PR da casa contra outra
+    # base dividiria as variaveis da mesma branch com a PR contra a main, e a
+    # classificacao de uma desfaria o que a outra precisa.
+    branches: [main]
   # Branch apagada: a trava da PR fechada deixa de ter o que proteger.
   delete:
   # Disparo manual para PR que ja existia antes desta ponte. Sem ele, apontar o
@@ -50,9 +54,16 @@ concurrency:
   # pendente dela e depois pularia os trabalhos pela guarda contra fork: a
   # trava de uma PR fechada nunca seria gravada. Disparo manual e branch
   # apagada so existem na casa, entao usam github.repository. PR cujo fork foi
-  # apagado vem sem head.repo e cai num grupo proprio, nunca no da casa. Os
-  # parenteses nao sao estilo: a documentacao nao declara precedencia entre
-  # `&&` e `||`.
+  # apagado vem sem head.repo e cai num grupo proprio, nunca no da casa. Tag
+  # apagada com o nome de uma branch vira `tag:<nome>`. O separador `:` nao
+  # existe em nome de branch nem de repositorio, entao dois grupos diferentes
+  # nunca se confundem. Os parenteses nao sao estilo: a documentacao nao
+  # declara precedencia entre `&&` e `||`.
+  #
+  # Todo evento que sobra neste grupo termina conferindo o estado atual: o
+  # disparo manual invalido e qualquer falha antes do passo Apontar caem no
+  # passo final de reconciliacao. Uma execucao que tomou o lugar de outra
+  # pendente nunca sai sem deixar o certo.
   #
   # SEM cancel-in-progress: cancelar no meio deixaria endereco e chave de
   # estados diferentes, e uma execucao cancelada ainda pode estar gravando
@@ -60,7 +71,7 @@ concurrency:
   # de cada vez. O GitHub mantem so a mais nova pendente e NAO garante a
   # ordem; por isso o script decide pelo estado atual da branch, e a ultima a
   # rodar deixa o certo, seja qual for o evento que a disparou.
-  group: banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}
+  group: banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}:${{ github.event.pull_request.head.ref || inputs.git_branch || (github.event.ref_type == 'tag' && format('tag:{0}', github.event.ref)) || github.event.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -259,6 +270,21 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+      # Esta execucao pode ter tomado o lugar de um fechamento pendente (o
+      # GitHub guarda so a mais nova). Se falhou antes de reconciliar, por
+      # exemplo num disparo manual de PR ja fechada, confere o estado mesmo
+      # assim: branch apagada esquece, branch sem PR aberta trava, PR aberta
+      # fica como esta.
+      - name: Reconciliar depois de falha
+        if: failure()
+        env:
+          ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs

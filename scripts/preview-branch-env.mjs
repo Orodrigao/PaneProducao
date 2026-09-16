@@ -679,9 +679,10 @@ export async function lerEstadoDaBranch({ repositorio, gitBranch, githubToken, f
     throw new Error(`GET da branch no GitHub respondeu ${respostaDaRef.status}.`)
   }
 
+  // So PR contra a main conta: e so ela que o workflow aponta e trava.
   const dono = repositorio.split('/')[0]
   const abertas = await pedir(
-    `${base}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${dono}:${gitBranch}`)}`,
+    `${base}/pulls?state=open&base=main&per_page=100&head=${encodeURIComponent(`${dono}:${gitBranch}`)}`,
     { token: githubToken, fetchImpl },
   )
   if (!Array.isArray(abertas)) {
@@ -692,7 +693,9 @@ export async function lerEstadoDaBranch({ repositorio, gitBranch, githubToken, f
   }
 
   const prsAbertas = abertas
-    .filter((pr) => pr?.head?.ref === gitBranch && pr?.head?.repo?.full_name === repositorio)
+    .filter((pr) => pr?.head?.ref === gitBranch
+      && pr?.head?.repo?.full_name === repositorio
+      && pr?.base?.ref === 'main')
     .map((pr) => Number(pr.number))
 
   return { branchExiste, prsAbertas }
