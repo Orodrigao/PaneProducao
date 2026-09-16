@@ -193,7 +193,15 @@ select is((select quantity from public.bread_movements
       where import.sale_date = '2026-02-02' and item.external_product_key = 'Kit Brioche')),
   -6::numeric, 'a mesma correção alcança todas as vendas confirmadas, não só a mais recente (dia 2)');
 
+-- Cadastrar pão é gate de /produtos (breads_insert_catalog_managers exige
+-- allowed_routes ? '/produtos'), que este usuário de teste não tem — a
+-- fixture não está testando essa RLS, então grava fora do papel autenticado
+-- e volta pro perfil vigente do teste logo em seguida.
+reset role;
 insert into public.breads (id, name) values ('teste-saco-kit-a2', '[TESTE] Saco Kit A2');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','b5000000-0000-4000-8000-00000000000a',true);
+
 insert into public.product_components (parent_product_id, component_source, component_id, quantity)
 values ('b5000000-0000-4000-8000-000000000002', 'bread', 'teste-saco-kit-a2', 5);
 select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 6,
@@ -258,7 +266,7 @@ select is((select count(*)::int from public.bread_movements mv
   0, 'versão substituída (agora replaced) não carrega baixa nenhuma');
 
 -- 9. Vínculo removido apaga a baixa em todas as datas; remapear regenera.
-select lives_ok($$select public.set_sales_product_mapping('cnm','jc','Kit Brioche','pending')$$,
+select lives_ok($$select public.set_sales_product_mapping('cnm','jc','Kit Brioche','pending',null,null,'Katálogo trocou: não é mais kit vendido separado')$$,
   'vínculo do kit é removido');
 select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 0,
   'sem vínculo, nenhuma venda confirmada carrega baixa de kit');
