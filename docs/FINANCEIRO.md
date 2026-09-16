@@ -177,12 +177,6 @@ esquecimento:
    decidir o destino do imposto: compor o custo do insumo por rateio, o que
    muda custo unitário e CMV, ou virar linha própria de despesa. Detalhe e
    contorno em [CURRENT_STATE.md](CURRENT_STATE.md), Riscos ainda abertos.
-9. **A trava do fator de conversão da NF-e falha aberta** (achado da revisão da
-   PR #315, adiado por decisão de Rodrigo em 2026-09-02). `factor_confirmed`
-   nulo não exige confirmação em `create_xml_payable`, enquanto
-   `classify_payable_item` usa `coalesce` e falha fechada. A correção esperava a
-   tela nova entrar no ar, o que aconteceu em 2026-09-02, e agora cabe em PR
-   própria.
 
 ## Gate técnico (herdado do Contas a Receber, reforçado)
 
