@@ -11,6 +11,7 @@ export interface PjDispatchOrderRow {
   production_date: string | null
   bread_id: string
   product_source: string | null
+  product_variant_id: string | null
   product_name: string | null
   quantity: number
   pack_size: number | null

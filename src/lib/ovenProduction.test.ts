@@ -18,6 +18,19 @@ describe('ovenLotCode', () => {
   })
 })
 
+describe('ovenProductKey', () => {
+  it('sem variante reproduz a chave antiga (compatibilidade)', () => {
+    expect(ovenProductKey('product', 'brioche')).toBe('product:brioche')
+    expect(ovenProductKey('product', 'brioche', null)).toBe('product:brioche')
+  })
+
+  it('com variante gera uma chave distinta por variante', () => {
+    expect(ovenProductKey('product', 'brioche', 'hamburguer')).toBe('product:brioche:hamburguer')
+    expect(ovenProductKey('product', 'brioche', 'forma'))
+      .not.toBe(ovenProductKey('product', 'brioche', 'hamburguer'))
+  })
+})
+
 describe('aggregateOvenPlan', () => {
   it('soma as demandas do mesmo pão em origens diferentes', () => {
     const result = aggregateOvenPlan([
@@ -38,6 +51,26 @@ describe('aggregateOvenPlan', () => {
 
     expect(result.get(ovenProductKey('bread', 'mesmo-id'))).toBe(2)
     expect(result.get(ovenProductKey('product', 'mesmo-id'))).toBe(3)
+  })
+
+  it('não soma variantes diferentes do mesmo produto', () => {
+    const result = aggregateOvenPlan([
+      { product_source: 'product', product_id: 'brioche', product_variant_id: 'forma', quantity: 3 },
+      { product_source: 'product', product_id: 'brioche', product_variant_id: 'hamburguer', quantity: 12 },
+    ])
+
+    expect(result.get(ovenProductKey('product', 'brioche', 'forma'))).toBe(3)
+    expect(result.get(ovenProductKey('product', 'brioche', 'hamburguer'))).toBe(12)
+    expect(result.size).toBe(2)
+  })
+
+  it('pão legado nunca carrega variante mesmo que a linha traga o campo', () => {
+    const result = aggregateOvenPlan([
+      { product_source: 'bread', product_id: 'integral', product_variant_id: 'ignorada', quantity: 5 },
+    ])
+
+    expect(result.get(ovenProductKey('bread', 'integral'))).toBe(5)
+    expect(result.has(ovenProductKey('bread', 'integral', 'ignorada'))).toBe(false)
   })
 
   it('ignora quantidades vazias, inválidas ou não positivas', () => {

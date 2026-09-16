@@ -29,6 +29,7 @@ interface OrderRow {
 interface PjOvenPlanRow {
   product_source: 'bread' | 'product'
   product_id: string
+  product_variant_id?: string | null
   product_name: string
   production_unit: string | null
   quantity: number | null
@@ -40,6 +41,7 @@ interface ProductionActualRow {
   bread_id: string | null
   product_source: 'bread' | 'product'
   product_id: string
+  product_variant_id?: string | null
   product_name: string
   production_unit: string | null
   record_date: string
@@ -50,9 +52,13 @@ interface ProductionActualRow {
   obs: string | null
 }
 
+// key já inclui a variante quando ela existe (ver ovenProductKey): duas
+// variantes do mesmo produto viram duas entradas aqui, nunca uma só.
 interface OvenProduct {
+  key: string
   id: string
   source: 'bread' | 'product'
+  variantId: string | null
   name: string
   unit: string | null
 }
@@ -182,7 +188,7 @@ export default function FornoPage() {
 
       const actualsResult = await supabase
         .from('production_actuals')
-        .select('id,bread_id,product_source,product_id,product_name,production_unit,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
+        .select('id,bread_id,product_source,product_id,product_variant_id,product_name,production_unit,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
         .eq('record_date', date)
       let actualsError = actualsResult.error
       let actualRows: ProductionActualRow[]
@@ -227,15 +233,30 @@ export default function FornoPage() {
         (reuseResult.data ?? []) as ConfirmedReuseRow[],
       )).map(([breadId, quantity]) => [ovenProductKey('bread', breadId), quantity]))
       const plan = subtractConfirmedReuse(originalPlan, confirmedReuse)
-      const identities = [
-        ...Array.from(plan.keys()).map(key => {
-          const separator = key.indexOf(':')
-          return { source: key.slice(0, separator), id: key.slice(separator + 1) }
-        }),
-        ...actualRows.map(row => ({ source: row.product_source, id: row.product_id })),
+
+      // Identidade vem direto das linhas de origem, nunca reconstruída a
+      // partir da chave textual: assim uma variante nova não depende de
+      // manter o parsing da chave em sincronia com ovenProductKey.
+      type OvenIdentity = { source: 'bread' | 'product'; id: string; variantId: string | null }
+      const identities: OvenIdentity[] = [
+        ...regularRows.map(row => ({ source: 'bread' as const, id: row.product_id, variantId: null })),
+        ...customRows.map(row => ({ source: 'bread' as const, id: row.product_id, variantId: null })),
+        ...pjRows.map(row => ({
+          source: (row.product_source === 'product' ? 'product' : 'bread') as 'bread' | 'product',
+          id: row.product_id,
+          variantId: row.product_source === 'product' ? (row.product_variant_id ?? null) : null,
+        })),
+        ...actualRows.map(row => ({
+          source: row.product_source,
+          id: row.product_id,
+          variantId: row.product_source === 'product' ? (row.product_variant_id ?? null) : null,
+        })),
       ]
       const breadIds = Array.from(new Set(identities.filter(item => item.source === 'bread').map(item => item.id)))
       const productIds = Array.from(new Set(identities.filter(item => item.source === 'product').map(item => item.id)))
+      const variantIds = Array.from(new Set(
+        identities.map(item => item.variantId).filter((id): id is string => Boolean(id)),
+      ))
 
       if (breadIds.length === 0 && productIds.length === 0) {
         setProducts([])
@@ -247,35 +268,71 @@ export default function FornoPage() {
         return
       }
 
-      const [breadsResult, productsResult] = await Promise.all([
+      const [breadsResult, productsResult, variantsResult] = await Promise.all([
         breadIds.length > 0
           ? supabase.from('breads').select('id,name,unit').in('id', breadIds)
           : Promise.resolve({ data: [], error: null }),
         productIds.length > 0
           ? supabase.from('products').select('id,name,unit').in('id', productIds)
           : Promise.resolve({ data: [], error: null }),
+        variantIds.length > 0
+          ? supabase.from('product_variants').select('id,name').in('id', variantIds)
+          : Promise.resolve({ data: [], error: null }),
       ])
       if (breadsResult.error) throw breadsResult.error
       if (productsResult.error) throw productsResult.error
+      if (variantsResult.error) throw variantsResult.error
 
-      const loadedProducts: OvenProduct[] = [
-        ...((breadsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>).map(item => ({
-          ...item,
-          source: 'bread' as const,
-        })),
-        ...((productsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>).map(item => ({
-          ...item,
-          source: 'product' as const,
-        })),
-      ].sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
+      const breadById = new Map(
+        ((breadsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>)
+          .map(item => [item.id, item] as const),
+      )
+      const productById = new Map(
+        ((productsResult.data ?? []) as Array<{ id: string; name: string; unit: string | null }>)
+          .map(item => [item.id, item] as const),
+      )
+      const variantNameById = new Map(
+        ((variantsResult.data ?? []) as Array<{ id: string; name: string }>)
+          .map(item => [item.id, item.name] as const),
+      )
+
+      // Uma entrada por (produto, variante): duas variantes do mesmo produto
+      // viram duas linhas, cada uma com seu próprio previsto e realizado.
+      const seenProductKeys = new Set<string>()
+      const loadedProducts: OvenProduct[] = []
+      for (const identity of identities) {
+        const key = ovenProductKey(identity.source, identity.id, identity.variantId)
+        if (seenProductKeys.has(key)) continue
+        seenProductKeys.add(key)
+        if (identity.source === 'bread') {
+          const bread = breadById.get(identity.id)
+          if (!bread) continue
+          loadedProducts.push({ key, id: identity.id, source: 'bread', variantId: null, name: bread.name, unit: bread.unit })
+        } else {
+          const product = productById.get(identity.id)
+          if (!product) continue
+          const variantName = identity.variantId ? variantNameById.get(identity.variantId) ?? null : null
+          loadedProducts.push({
+            key, id: identity.id, source: 'product', variantId: identity.variantId,
+            name: variantName ? `${product.name} — ${variantName}` : product.name,
+            unit: product.unit,
+          })
+        }
+      }
+      loadedProducts.sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'))
+
       const actualsByProduct: Record<string, ProductionActualRow> = {}
       const initialForms: Record<string, OvenFormState> = {}
 
       for (const actual of actualRows) {
-        actualsByProduct[ovenProductKey(actual.product_source, actual.product_id)] = actual
+        const key = ovenProductKey(
+          actual.product_source, actual.product_id,
+          actual.product_source === 'product' ? actual.product_variant_id : null,
+        )
+        actualsByProduct[key] = actual
       }
       for (const product of loadedProducts) {
-        const key = ovenProductKey(product.source, product.id)
+        const key = product.key
         const actual = actualsByProduct[key]
         initialForms[key] = {
           quantityGood: String(actual?.quantity_baked ?? plan.get(key) ?? 0),
@@ -315,7 +372,7 @@ export default function FornoPage() {
     field: 'quantityGood' | 'quantityLoss',
     delta: number,
   ) {
-    const product = products.find(item => ovenProductKey(item.source, item.id) === productKey)
+    const product = products.find(item => item.key === productKey)
     const unit = product?.unit === 'kg' ? 'kg' : 'un'
     const current = parseOvenQuantity(forms[productKey]?.[field] ?? '0', unit) ?? 0
     updateForm(productKey, {
@@ -342,7 +399,7 @@ export default function FornoPage() {
   }
 
   async function confirmProduct(product: OvenProduct, quickConfirmation = false) {
-    const productKey = ovenProductKey(product.source, product.id)
+    const productKey = product.key
     const planned = plannedMap.get(productKey) ?? 0
     const form = quickConfirmation
       ? {
@@ -380,6 +437,7 @@ export default function FornoPage() {
         p_quantity_loss: quantityLoss,
         p_loss_reason: quantityLoss > 0 ? form.lossReason : null,
         p_obs: null,
+        p_product_variant_id: product.variantId,
       })
       if (confirmationResult.error
         && product.source === 'bread'
@@ -405,6 +463,7 @@ export default function FornoPage() {
         bread_id: product.source === 'bread' ? product.id : null,
         product_source: product.source,
         product_id: product.id,
+        product_variant_id: product.variantId,
         product_name: product.name,
         production_unit: product.unit,
         record_date: date,
@@ -434,7 +493,7 @@ export default function FornoPage() {
   }
 
   const dateOptions = Array.from({ length: 8 }, (_, index) => dateKeyOffset(index))
-  const confirmedCount = products.filter(product => Boolean(actuals[ovenProductKey(product.source, product.id)])).length
+  const confirmedCount = products.filter(product => Boolean(actuals[product.key])).length
   const userInitial = user?.displayName.trim().charAt(0).toUpperCase() ?? ''
   const avatarColor = user ? roleColor(user.role) : 'var(--crust)'
 
@@ -503,7 +562,7 @@ export default function FornoPage() {
 
               <div className="ps-grid">
                 {products.map(product => {
-                  const productKey = ovenProductKey(product.source, product.id)
+                  const productKey = product.key
                   const planned = plannedMap.get(productKey) ?? 0
                   const actual = actuals[productKey]
                   const form = forms[productKey]
