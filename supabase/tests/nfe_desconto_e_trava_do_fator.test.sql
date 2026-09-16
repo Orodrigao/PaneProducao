@@ -7,8 +7,9 @@
 --     família que a da receita — foi assim que farinha em saco de 25 kg
 --     ficou gravada a R$ 74,00 o quilo;
 --   * a trava é do BANCO, não da tela: o site fala direto com o Supabase;
---   * o site que está no ar (sem os campos novos) continua importando,
---     porque site e banco atualizam independentes no mesmo merge;
+--   * item sem o campo de confirmação (NULL) é tratado como não confirmado,
+--     igual a `false` — a folga para o site antigo sem esse campo acabou em
+--     2026-09-16, porque a tela nova está no ar desde 2026-09-02;
 --   * valor de item que não bate com quantidade, preço e desconto é recusado;
 --   * quem não tem a permissão de importar continua barrado.
 
@@ -147,20 +148,22 @@ select isnt(
   null,
   'fica registrado quando o fator foi conferido');
 
--- O site que está no ar não manda os campos novos e precisa seguir funcionando.
+-- Payload sem o campo factor_confirmed (a folga do site antigo) agora barra
+-- igual a factor_confirmed:false, porque essa tela não está mais em produção.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '95000000-0000-4000-8000-00000000000a', true);
 
-select lives_ok(
+select throws_ok(
   $$select public.create_xml_payable(
       '95000000-0000-4000-8000-000000000005'::uuid, '35260800000000000000550010000000051000000051',
       '95000000-0000-4000-8000-0000000000f1'::uuid, '5', '1', current_date, 'boleto', 100.00, '',
-      '[{"line_number":1,"source_description":"FARINHA SITE ANTIGO","source_unit":"CX","source_quantity":1,
+      '[{"line_number":1,"source_description":"FARINHA SEM CAMPO NOVO","source_unit":"CX","source_quantity":1,
          "product_id":"95000000-0000-4000-8000-0000000000d1","conversion_basis":"simple","conversion_factor":1,
          "usable_quantity":1,"line_total":100.00,"unit_price":100.00,
          "remember_conversion":false}]'::jsonb,
       '[{"installment_number":1,"due_date":"2026-09-09","amount":100.00}]'::jsonb)$$,
-  'site anterior, sem os campos novos, continua importando na janela do deploy');
+  '22023', 'Confira quanto vem na embalagem: a NF-e cobra em CX e a receita usa kg.',
+  'payload sem factor_confirmed nao confirma o fator e a trava barra');
 
 select * from finish();
 rollback;

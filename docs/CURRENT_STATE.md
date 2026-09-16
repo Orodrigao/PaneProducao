@@ -174,15 +174,16 @@ Riscos ainda abertos:
   de importação, IPI devolvido, serviços, item fora do total e desoneração que
   abate do total. Notas lançadas antes não foram reprocessadas; ver o registro
   de cada fase em [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md);
-- **a trava do fator de conversão na importação de NF-e falha aberta.** Achado
-  da revisão adversarial da PR #315: em `create_xml_payable`, `factor_confirmed`
-  nulo não dispara a exigência de confirmação, enquanto a função irmã
-  `classify_payable_item` usa `coalesce` e falha fechada. A correção de uma
-  linha foi tentada e reprovada no `CI Banco`, porque quebrava a convivência com
-  a versão do site que estava no ar, caso `FARINHA SITE ANTIGO` do teste
-  `nfe_desconto_e_trava_do_fator`. Rodrigo decidiu em 2026-09-02 adiar para PR
-  própria, depois de a tela nova estar no ar. A tela entrou no ar naquele mesmo
-  dia, então a PR de correção está liberada para acontecer;
+- **fechada em 2026-09-16 (PR #407) a trava do fator de conversão que
+  falhava aberta** (achado da revisão adversarial da PR #315, correção
+  adiada por decisão de Rodrigo em 2026-09-02 até a tela nova de importação
+  entrar no ar, o que
+  ocorreu no mesmo dia). `create_xml_payable` só bloqueava quando
+  `factor_confirmed` chegava explicitamente `false`; item sem o campo (NULL)
+  passava sem conferência mesmo com a unidade da NF-e em família diferente da
+  receita. Agora usa `coalesce(factor_confirmed, false)`, igual a
+  `classify_payable_item`. Leitura live em 2026-09-16 confirmou zero rascunhos
+  de importação pendentes no momento da correção;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
