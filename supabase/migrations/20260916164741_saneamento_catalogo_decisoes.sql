@@ -104,8 +104,9 @@ insert into catalog_saneamento_map (source,source_id,source_name,source_active,m
   ('bread','paozinhodeabobora1780252052248','Pãozinho de Abóbora',false,'944e4952-fae1-4c7b-abb5-64113e8f5acf','Pãozinho de Abóbora',null,array['un']),
   ('product','944e4952-fae1-4c7b-abb5-64113e8f5acf','Mini Abobora',true,'944e4952-fae1-4c7b-abb5-64113e8f5acf','Pãozinho de Abóbora',null,array['un']);
 
--- O retrato inteiro, e não só os itens que serão unidos, protege esta
--- migration contra qualquer alteração posterior à auditoria.
+-- Somente as identidades que esta migration vai unir protegem a operação.
+-- Produtos e insumos fora deste conjunto continuam sendo administrados pela
+-- operação e não podem tornar o saneamento incompatível com a produção.
 create temp table catalog_saneamento_expected_identity (source text not null, source_id text not null, source_name text not null, source_active boolean not null, primary key (source,source_id)) on commit drop;
 
 insert into catalog_saneamento_expected_identity(source,source_id,source_name,source_active) values
@@ -432,12 +433,14 @@ begin
   where (e.source = 'bread' and exists (select 1 from public.breads b where b.id=e.source_id and b.name=e.source_name and b.active is not distinct from e.source_active))
      or (e.source = 'product' and exists (select 1 from public.products p where p.id::text=e.source_id and p.name=e.source_name and p.active is not distinct from e.source_active));
   if v_found = 0 then return; end if;
-  if v_found <> v_expected
-     or (select count(*) from public.breads) + (select count(*) from public.products) <> 99
-     or (select count(*) from public.breads where active) + (select count(*) from public.products where active) <> 88 then
+  if v_found <> v_expected then
     raise exception using errcode='22023', message='O catálogo mudou desde a auditoria de 15/09/2026. O saneamento foi interrompido sem alterar dados.';
   end if;
 
+  -- Preço, situação e linhas novas fora da fotografia podem mudar no dia a
+  -- dia. A trava conserva a estrutura das linhas auditadas, mas usa os
+  -- valores atuais como fonte de verdade: eles serão fotografados antes da
+  -- consolidação e a regra abaixo ainda falha fechada se houver conflito.
   select count(*) into v_expected from catalog_saneamento_expected_price;
   select count(*) into v_found
   from catalog_saneamento_expected_price e
@@ -446,19 +449,16 @@ begin
     join public.price_tiers t on t.id=i.tier_id
     where i.product_source=e.source and i.product_id=e.source_id
       and t.name=e.context_name and i.pricing_unit=e.pricing_unit
-      and i.pack_size=e.pack_size and i.unit_price=e.unit_price
-      and i.active is not distinct from e.price_active
+      and i.pack_size=e.pack_size
   )) or (e.price_kind='Exceção cliente' and exists (
     select 1 from public.customer_price_overrides i
     join public.customers c on c.id=i.customer_id
     where i.product_source=e.source and i.product_id=e.source_id
       and c.name=e.context_name and i.pricing_unit=e.pricing_unit
-      and i.pack_size=e.pack_size and i.unit_price=e.unit_price
-      and i.active is not distinct from e.price_active
+      and i.pack_size=e.pack_size
   ));
-  if v_found <> v_expected
-     or (select count(*) from public.price_tier_items) + (select count(*) from public.customer_price_overrides) <> 207 then
-    raise exception using errcode='22023', message='Os preços mudaram desde a auditoria de 15/09/2026. O saneamento foi interrompido sem alterar dados.';
+  if v_found <> v_expected then
+    raise exception using errcode='22023', message='A estrutura dos preços auditados mudou desde 15/09/2026. O saneamento foi interrompido sem alterar dados.';
   end if;
 end $$;
 
