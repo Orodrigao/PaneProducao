@@ -188,7 +188,7 @@ export default function FornoPage() {
 
       const actualsResult = await supabase
         .from('production_actuals')
-        .select('id,bread_id,product_source,product_id,product_name,production_unit,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
+        .select('id,bread_id,product_source,product_id,product_variant_id,product_name,production_unit,record_date,lot_code,quantity_baked,quantity_loss,loss_reason,obs')
         .eq('record_date', date)
       let actualsError = actualsResult.error
       let actualRows: ProductionActualRow[]
