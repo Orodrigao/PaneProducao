@@ -14,6 +14,7 @@ import { getCurrentUser, roleColor, RECEIVABLES_ROUTE, type AppUser } from '@/li
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
+import { pjPackPhysicalSize, resolvePjPackRule, roundPjPackQuantity, type PjPackRule } from '@/lib/pjPackRules'
 import { pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
@@ -66,13 +67,25 @@ interface Override {
 interface CatalogItem {
   product_id:string; product_source:'bread'|'product'; product_name:string;
   unit_price:number; pricing_unit:PricingUnit; pack_size:number; isOverride:boolean; sale_option_id?:string|null
+  product_variant_id?:string|null
 }
 
 interface OrderLine {
   key:string
   product_id:string; product_source:'bread'|'product'; product_name:string
   unit_price:number; pricing_unit:PricingUnit; pack_size:number; sale_option_id?:string|null
+  product_variant_id?:string|null
   packs:number
+}
+// Metadados de fabricação lidos do catálogo (não da tabela de preço) só para
+// resolver a regra de pacote fechado: a que variante uma opção de venda
+// pertence, e o peso de uma unidade quando o preço é por kg.
+interface PjPackSaleOption {
+  id:string; product_id:string; product_variant_id:string|null; sale_unit:string; unit_weight_kg:number|null
+}
+interface PjPackRuleRow {
+  product_id:string; product_variant_id:string|null
+  pack_size_units:number; min_order_packs:number; order_multiple_packs:number
 }
 
 interface OrderRow {
@@ -191,6 +204,8 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   const [tiers, setTiers]         = useState<PriceTier[]>([])
   const [items, setItems]         = useState<TierItem[]>([])
   const [overrides, setOverrides] = useState<Override[]>([])
+  const [packSaleOptions, setPackSaleOptions] = useState<PjPackSaleOption[]>([])
+  const [packRules, setPackRules] = useState<PjPackRuleRow[]>([])
   const [orders, setOrders]       = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -262,6 +277,8 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
         setTiers([])
         setItems([])
         setOverrides([])
+        setPackSaleOptions([])
+        setPackRules([])
         setOrders(result.orders.map(operationalRowToOrderRow))
         return
       }
@@ -272,16 +289,20 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
         return
       }
 
-      const [cRes, tRes, iRes, oRes, ordRes, billingResult] = await Promise.all([
+      const [cRes, tRes, iRes, oRes, psoRes, pprRes, ordRes, billingResult] = await Promise.all([
         supabase.from('customers').select('*').eq('active',true).order('name'),
         supabase.from('price_tiers').select('id,name').eq('active',true),
         supabase.from('price_tier_items').select('*').eq('active',true),
         supabase.from('customer_price_overrides').select('*').eq('active',true),
+        // Só para resolver variante e peso unitário da opção de venda: a
+        // tabela de preço em si continua sendo a única fonte de preço.
+        supabase.from('product_sale_options').select('id,product_id,product_variant_id,sale_unit,unit_weight_kg').eq('active',true),
+        supabase.from('product_pj_pack_rules').select('product_id,product_variant_id,pack_size_units,min_order_packs,order_multiple_packs'),
         loadAllCommercialPjOrders<OrderRow>().then(data => ({ data, error: null })),
         currentUser ? loadPjBilling(currentUser.id) : Promise.resolve<PjBillingState>({ kind: 'restricted' }),
       ])
       if (round !== loadingRound.current) return
-      const firstError = [cRes.error, tRes.error, iRes.error, oRes.error, ordRes.error].find(Boolean)
+      const firstError = [cRes.error, tRes.error, iRes.error, oRes.error, psoRes.error, pprRes.error, ordRes.error].find(Boolean)
       if (firstError) {
         setLoadError(`Não foi possível carregar os Pedidos PJ: ${firstError.message}`)
         return
@@ -291,6 +312,8 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       setTiers((tRes.data||[]) as PriceTier[])
       setItems((iRes.data||[]) as TierItem[])
       setOverrides((oRes.data||[]) as Override[])
+      setPackSaleOptions((psoRes.data||[]) as PjPackSaleOption[])
+      setPackRules((pprRes.data||[]) as PjPackRuleRow[])
       setOrders((ordRes.data||[]) as OrderRow[])
     } catch {
       if (round !== loadingRound.current) return
@@ -328,12 +351,39 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   const cust = customers.find(c => c.id === custId) || null
   const custTier = cust && tiers.find(t => t.id === cust.default_tier_id) || null
 
+  // Variante e peso unitário resolvidos da opção de venda, só para aplicar a
+  // regra de pacote fechado (product_pj_pack_rules). A tabela de preço
+  // continua sem guardar product_variant_id; a identidade real da linha é
+  // resolvida de novo no servidor a partir do sale_option_id.
+  const variantBySaleOption = useMemo(() => {
+    const map = new Map<string, string|null>()
+    packSaleOptions.forEach(s => map.set(s.id, s.product_variant_id))
+    return map
+  }, [packSaleOptions])
+  const unitWeightByVariant = useMemo(() => {
+    const map = new Map<string, number>()
+    packSaleOptions.forEach(s => {
+      if (s.sale_unit === 'un' && s.unit_weight_kg && s.unit_weight_kg > 0) {
+        map.set(`${s.product_id}_${s.product_variant_id ?? 'legacy'}`, s.unit_weight_kg)
+      }
+    })
+    return map
+  }, [packSaleOptions])
+  const pjPackRulesList = useMemo<PjPackRule[]>(() => packRules.map(r => ({
+    productId: r.product_id, productVariantId: r.product_variant_id,
+    packSizeUnits: r.pack_size_units, minOrderPacks: r.min_order_packs, orderMultiplePacks: r.order_multiple_packs,
+  })), [packRules])
+  const resolveLineRule = useCallback((line: { product_id:string; product_variant_id?:string|null }) =>
+    resolvePjPackRule(pjPackRulesList, line.product_id, line.product_variant_id ?? null), [pjPackRulesList])
+
   const custCatalog = useMemo<CatalogItem[]>(() => {
     if (!cust) return []
     const ovMap = new Map<string, Override>()
     overrides.filter(o => o.customer_id === cust.id).forEach(o => ovMap.set(saleOptionKey(o.product_source, o.product_id, o.sale_option_id), o))
     const tierItemsMap = new Map<string, TierItem>()
     if (custTier) items.filter(i => i.tier_id === custTier.id).forEach(i => tierItemsMap.set(saleOptionKey(i.product_source, i.product_id, i.sale_option_id), i))
+
+    const variantFor = (saleOptionId?: string|null) => saleOptionId ? (variantBySaleOption.get(saleOptionId) ?? null) : null
 
     const seen = new Set<string>()
     const result: CatalogItem[] = []
@@ -342,6 +392,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       result.push({
         product_id:o.product_id, product_source:o.product_source, product_name:o.product_name,
         unit_price:o.unit_price, pricing_unit:o.pricing_unit, pack_size:o.pack_size, isOverride:true, sale_option_id:o.sale_option_id,
+        product_variant_id: variantFor(o.sale_option_id),
       })
     })
     tierItemsMap.forEach((t, k) => {
@@ -350,10 +401,11 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       result.push({
         product_id:t.product_id, product_source:t.product_source, product_name:t.product_name,
         unit_price:Number(finalPrice.toFixed(2)), pricing_unit:t.pricing_unit, pack_size:t.pack_size, isOverride:false, sale_option_id:t.sale_option_id,
+        product_variant_id: variantFor(t.sale_option_id),
       })
     })
     return result.sort((a,b) => a.product_name.localeCompare(b.product_name))
-  }, [cust, custTier, items, overrides])
+  }, [cust, custTier, items, overrides, variantBySaleOption])
 
   const selectCustomer = (id:string) => {
     setCustId(id)
@@ -384,7 +436,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       key: `${c.product_source}_${c.product_id}_${Date.now()}`,
       product_id:c.product_id, product_source:c.product_source, product_name:c.product_name,
       unit_price:c.unit_price, pricing_unit:c.pricing_unit, pack_size:c.pack_size,
-      sale_option_id:c.sale_option_id,
+      sale_option_id:c.sale_option_id, product_variant_id:c.product_variant_id,
       packs: 1,
     }])
     setSearch('')
@@ -393,17 +445,48 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   const updateLine = (key:string, patch:Partial<OrderLine>) => {
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
   }
+  // Pacote fechado nunca aceita fração nem arredonda para baixo. Em 'un' a
+  // quantidade digitada é convertida em pacotes inteiros (pack_size fica
+  // travado no valor da tabela); em 'kg' o próprio peso pedido é arredondado
+  // para o múltiplo do peso físico do pacote (ex.: 12 x 80g = 0,96kg).
+  const applyPackRounding = useCallback((line: OrderLine, typedQuantity: number) => {
+    const rule = resolveLineRule(line)
+    if (!rule) return null
+    if (line.pricing_unit === 'un') {
+      const physical = pjPackPhysicalSize(rule, 'un', null)
+      if (physical === null) return null
+      const requestedUnits = typedQuantity * (line.pack_size || 1)
+      const result = roundPjPackQuantity(requestedUnits, rule, physical)
+      return { packs: result.packs, rounded: result.rounded, label: `${result.packs} pacote(s) de ${physical} un` }
+    }
+    const unitWeightKg = unitWeightByVariant.get(`${line.product_id}_${line.product_variant_id ?? 'legacy'}`) ?? null
+    const physical = pjPackPhysicalSize(rule, 'kg', unitWeightKg)
+    if (physical === null) return null
+    const result = roundPjPackQuantity(typedQuantity, rule, physical)
+    return { packs: result.quantity, rounded: result.rounded, label: `pacotes de ${physical} kg` }
+  }, [resolveLineRule, unitWeightByVariant])
   const updateQuantityInput = (line: OrderLine, rawValue: string) => {
     setQuantityInputs(prev => ({ ...prev, [line.key]: rawValue }))
     const quantity = parseOrderLinePacksInput(rawValue, line.pricing_unit)
     if (quantity !== null) updateLine(line.key, { packs: quantity })
   }
   const resetInvalidQuantityInput = (line: OrderLine) => {
-    if (quantityInputs[line.key] !== undefined && parseOrderLinePacksInput(quantityInputs[line.key], line.pricing_unit) === null) {
+    const raw = quantityInputs[line.key]
+    if (raw === undefined) return
+    const quantity = parseOrderLinePacksInput(raw, line.pricing_unit)
+    if (quantity === null) {
       setQuantityInputs(prev => {
         const { [line.key]: _removed, ...rest } = prev
         return rest
       })
+      return
+    }
+    const rounding = applyPackRounding(line, quantity)
+    if (!rounding) return
+    updateLine(line.key, { packs: rounding.packs })
+    setQuantityInputs(prev => ({ ...prev, [line.key]: String(rounding.packs) }))
+    if (rounding.rounded) {
+      showToast(`Quantidade fecha só em pacotes: ajustado para ${rounding.label}`)
     }
   }
   const removeLine = (key:string) => {
@@ -1035,6 +1118,11 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                       {lines.map(l => {
                         const totalQty = l.packs * l.pack_size
                         const totalVal = l.unit_price * totalQty
+                        const packRule = resolveLineRule(l)
+                        const packPhysical = packRule
+                          ? pjPackPhysicalSize(packRule, l.pricing_unit,
+                              unitWeightByVariant.get(`${l.product_id}_${l.product_variant_id ?? 'legacy'}`) ?? null)
+                          : null
                         return (
                           <div key={l.key} className="ps-card" style={{padding:'12px 14px', gap:8}}>
                             <div className="ps-card-head" style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', gap:8}}>
@@ -1051,6 +1139,8 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                               <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
                                 Pack:
                                 <input type="number" min={1} step={1} value={l.pack_size}
+                                  disabled={!!packRule}
+                                  title={packRule ? 'Este produto só vende em pacote fechado; o tamanho não pode ser alterado.' : undefined}
                                   onChange={e=>updateLine(l.key, { pack_size: Math.max(1, Number(e.target.value)||1) })}
                                   className="ps-input" style={{width:60, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
                               </label>
@@ -1068,6 +1158,18 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                                 R$ {totalVal.toFixed(2)}
                               </span>
                             </div>
+                            {packRule && packPhysical !== null && (
+                              <div style={{fontSize:11, color:'var(--ink-faint)'}}>
+                                Vende só em pacote fechado de {packPhysical} {l.pricing_unit}
+                                {packRule.orderMultiplePacks > 1 ? `, múltiplos de ${packRule.orderMultiplePacks} pacotes` : ''}.
+                                Quantidade digitada é arredondada para cima, nunca para baixo.
+                              </div>
+                            )}
+                            {packRule && packPhysical === null && (
+                              <div className="ps-warning" style={{fontSize:11}}>
+                                ⚠️ Falta cadastrar o peso da unidade para fechar o pacote por kg deste produto.
+                              </div>
+                            )}
                           </div>
                         )
                       })}
