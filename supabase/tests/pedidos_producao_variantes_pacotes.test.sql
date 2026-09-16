@@ -41,10 +41,10 @@ values ('9a200000-0000-4000-8000-0000000000c1','[TESTE] Cliente Pacotes PJ','000
 -- Produto legado, sem variante: o caminho antigo continua igual.
 insert into public.products(
   id, name, kind, is_fabricacao_propria, production_process, production_area,
-  allows_planned_production, unit, active
+  allows_planned_production, allows_unplanned_production, unit, active
 ) values (
   '9a200000-0000-4000-8000-00000000a0a1','[TESTE] Baguete Pacotes PJ','final',true,
-  'forno','padaria',true,'un',true
+  'forno','padaria',true,false,'un',true
 );
 insert into public.product_sale_options(id, product_id, name, sale_unit, reference_quantity, is_default, active)
 values ('9a200000-0000-4000-8000-00000000b0b1','9a200000-0000-4000-8000-00000000a0a1','Unidade','un',1,true,true);
@@ -60,10 +60,10 @@ insert into public.customer_price_overrides(
 -- (pacote fechado de 12, 80 g/unidade).
 insert into public.products(
   id, name, kind, is_fabricacao_propria, production_process, production_area,
-  allows_planned_production, unit, active
+  allows_planned_production, allows_unplanned_production, unit, active
 ) values (
   '9a200000-0000-4000-8000-00000000a0a2','[TESTE] Brioche Pacotes PJ','final',true,
-  'forno','padaria',true,'un',true
+  'forno','padaria',true,false,'un',true
 );
 insert into public.product_variants(id, product_id, name, sort_order)
 values
