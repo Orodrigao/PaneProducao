@@ -66,18 +66,24 @@ select is((select finished_weight_kg from public.product_recipe_yields
   where product_id = 'c9100000-0000-4000-8000-000000000002' and product_variant_id is null),
   2::numeric, 'a atualização explícita realmente gravou o novo peso do produto legado');
 
--- O índice único de product_variants chama private.normalize_product_category_name
--- na expressão, e o Postgres avalia essa expressão com o privilégio de quem
--- faz o INSERT de verdade (não do dono da tabela). A função tinha EXECUTE
--- revogado de authenticated desde a migration de origem (só era chamada por
--- trás de RPC SECURITY DEFINER); sem conceder de novo, até o admin autorizado
--- pela policy de INSERT falhava com "permission denied for function".
+-- O índice único de product_variants precisa normalizar o nome, mas
+-- private.normalize_product_category_name tem EXECUTE revogado de
+-- authenticated de propósito (invariante testada em
+-- catalogo_tipos_categorias.test.sql: só é chamada por trás de RPC
+-- SECURITY DEFINER). Um índice, ao contrário de uma RPC, avalia sua
+-- expressão com o privilégio de quem faz o INSERT/UPDATE de verdade — por
+-- isso a normalização passa por private.product_variant_name_key, uma
+-- ponte SECURITY DEFINER: só ela recebe EXECUTE de authenticated, e a
+-- função original continua tão fechada quanto sempre foi.
+select ok(not has_function_privilege('authenticated',
+  'private.normalize_product_category_name(text)', 'execute'),
+  'authenticated continua sem EXECUTE direto na função original de normalização, mesma invariante de sempre');
 select ok(has_function_privilege('authenticated',
-  'private.normalize_product_category_name(text)', 'execute'),
-  'authenticated recebeu EXECUTE na função usada pelo índice de product_variants');
+  'private.product_variant_name_key(text)', 'execute'),
+  'authenticated recebeu EXECUTE só na ponte usada pelo índice de product_variants');
 select ok(not has_function_privilege('anon',
-  'private.normalize_product_category_name(text)', 'execute'),
-  'anon continua sem EXECUTE nessa função, sem grant amplo por engano');
+  'private.product_variant_name_key(text)', 'execute'),
+  'anon continua sem EXECUTE na ponte, sem grant amplo por engano');
 
 insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,
   created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_super_admin)
