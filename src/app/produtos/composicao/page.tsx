@@ -42,6 +42,7 @@ interface Component {
   parent_product_id: string
   component_source: 'bread' | 'product'
   component_id: string
+  component_variant_id: string | null
   quantity: number
 }
 interface BreadLite   { id: string; name: string; cost_price: number | null; unit: string | null; active: boolean | null }
@@ -222,6 +223,8 @@ function ComposicaoInner() {
   const [newQty, setNewQty]       = useState('1')
   const [newQtyMode, setNewQtyMode] = useState<QuantityInputMode>('weight')
   const [qtyEdits, setQtyEdits]   = useState<Record<string, string>>({})
+  const [kitVariantChoice, setKitVariantChoice] = useState<{ componentId: string; name: string; qty: number; variants: ProductVariant[] } | null>(null)
+  const [componentVariantNames, setComponentVariantNames] = useState<Record<string, string>>({})
   const [flourPctEdits, setFlourPctEdits] = useState<Record<string, string>>({})
   const [savingProductCost, setSavingProductCost] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -247,9 +250,23 @@ function ComposicaoInner() {
       ])
       if (pRes.error) throw pRes.error
       setParent(pRes.data as ParentProduct)
-      setComponents((cRes.data || []) as Component[])
+      const loadedComponents = (cRes.data || []) as Component[]
+      setComponents(loadedComponents)
       setBreads((bRes.data || []) as BreadLite[])
       setProducts((prRes.data || []) as ProductLite[])
+
+      // Nome da variante do componente (pode pertencer a outro produto, fora
+      // da lista de variantes do produto atual) — só pra exibir na lista.
+      const componentVariantIds = Array.from(new Set(
+        loadedComponents.map(c => c.component_variant_id).filter((id): id is string => !!id)
+      ))
+      if (componentVariantIds.length > 0) {
+        const { data: variantNameRows } = await supabase
+          .from('product_variants').select('id,name').in('id', componentVariantIds)
+        setComponentVariantNames(Object.fromEntries((variantNameRows ?? []).map(v => [v.id as string, v.name as string])))
+      } else {
+        setComponentVariantNames({})
+      }
       const [yRes, soRes, vRes] = await Promise.all([
         supabase.from('product_recipe_yields').select('*').eq('product_id', parentId),
         supabase.from('product_sale_options').select('id,product_id,product_variant_id,name,sale_unit,reference_quantity,unit_weight_kg,is_default,active').eq('product_id', parentId).order('sale_unit'),
@@ -444,6 +461,33 @@ function ComposicaoInner() {
     }
   }
 
+  async function insertComponent(source: 'bread' | 'product', componentId: string, qty: number, variantId: string | null) {
+    try {
+      const { data, error } = await supabase
+        .from('product_components')
+        .insert({ parent_product_id: parentId, component_source: source, component_id: componentId, component_variant_id: variantId, quantity: qty })
+        .select()
+        .single()
+      if (error) throw error
+      setComponents(prev => [...prev, data as Component])
+      setSearch('')
+      setNewQty('1')
+      setKitVariantChoice(null)
+      showToast(newQtyMode === 'baker_pct'
+        ? `Componente adicionado: ${formatQty(qty)} kg`
+        : 'Componente adicionado')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao adicionar'))
+    }
+  }
+
+  async function chooseKitComponentVariant(variantId: string | null) {
+    if (!kitVariantChoice) return
+    const variant = variantId ? kitVariantChoice.variants.find(v => v.id === variantId) : null
+    if (variant) setComponentVariantNames(prev => ({ ...prev, [variant.id]: variant.name }))
+    await insertComponent('product', kitVariantChoice.componentId, kitVariantChoice.qty, variantId)
+  }
+
   async function addComponent(source: 'bread' | 'product', componentId: string) {
     const parsedQty = parsePositiveDecimal(newQty)
     if (parsedQty === null) {
@@ -472,22 +516,26 @@ function ComposicaoInner() {
       showToast('Adicione primeiro uma farinha ou lance a própria farinha em %')
       return
     }
-    try {
-      const { data, error } = await supabase
-        .from('product_components')
-        .insert({ parent_product_id: parentId, component_source: source, component_id: componentId, quantity: qty })
-        .select()
-        .single()
-      if (error) throw error
-      setComponents(prev => [...prev, data as Component])
-      setSearch('')
-      setNewQty('1')
-      showToast(newQtyMode === 'baker_pct'
-        ? `Componente adicionado: ${formatQty(qty)} kg`
-        : 'Componente adicionado')
-    } catch (error: unknown) {
-      showToast(getErrorMessage(error, 'Erro ao adicionar'))
+
+    // Kit apontando pra um produto com variantes precisa escolher qual — sem
+    // isso, "Kit Brioche Hambúrguer" debitaria a receita genérica do Brioche,
+    // não a variante Hambúrguer 80 g especificamente.
+    if (source === 'product' && parent?.kind === 'kit') {
+      const { data: productVariants, error: variantsError } = await supabase
+        .from('product_variants')
+        .select('id,product_id,name,sort_order,active')
+        .eq('product_id', componentId)
+        .eq('active', true)
+        .order('sort_order')
+        .order('name')
+      if (variantsError) { showToast(getErrorMessage(variantsError, 'Erro ao conferir variantes do componente')); return }
+      if ((productVariants ?? []).length > 0) {
+        setKitVariantChoice({ componentId, name: item?.name ?? '', qty, variants: productVariants as ProductVariant[] })
+        return
+      }
     }
+
+    await insertComponent(source, componentId, qty, null)
   }
 
   async function updateQty(componentId: string, raw: string) {
@@ -572,23 +620,25 @@ function ComposicaoInner() {
     try {
       const { data, error } = await supabase
         .from('product_components')
-        .select('component_source,component_id,quantity')
+        .select('component_source,component_id,component_variant_id,quantity')
         .eq('parent_product_id', sourceProduct.id)
       if (error) throw error
 
-      const sourceComponents = (data || []) as Array<Pick<Component, 'component_source' | 'component_id' | 'quantity'>>
+      const sourceComponents = (data || []) as Array<Pick<Component, 'component_source' | 'component_id' | 'component_variant_id' | 'quantity'>>
       if (sourceComponents.length === 0) {
         showToast('Essa receita ainda não tem componentes')
         return
       }
 
-      const existingKeys = new Set(components.map(component => `${component.component_source}-${component.component_id}`))
+      const componentKey = (source: string, id: string, variantId: string | null) => `${source}-${id}-${variantId ?? ''}`
+      const existingKeys = new Set(components.map(component => componentKey(component.component_source, component.component_id, component.component_variant_id)))
       const rowsToInsert = sourceComponents
-        .filter(component => !existingKeys.has(`${component.component_source}-${component.component_id}`))
+        .filter(component => !existingKeys.has(componentKey(component.component_source, component.component_id, component.component_variant_id)))
         .map(component => ({
           parent_product_id: parentId,
           component_source: component.component_source,
           component_id: component.component_id,
+          component_variant_id: component.component_variant_id,
           quantity: component.quantity,
         }))
 
@@ -795,8 +845,9 @@ function ComposicaoInner() {
       hasCost: cost !== null && Number.isFinite(Number(cost)),
       unit: item?.unit ?? '',
       category,
+      variantName: c.component_variant_id ? componentVariantNames[c.component_variant_id] ?? null : null,
     }
-  }), [components, breads, products])
+  }), [components, breads, products, componentVariantNames])
 
   const recipeTotals = useMemo(() => calculateRecipeTotals(enriched), [enriched])
   const isKit = parent?.kind === 'kit'
@@ -1454,6 +1505,7 @@ function ComposicaoInner() {
                           <div style={{fontSize:14, fontWeight:600, color:'var(--ps-ink)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                             {e.name}
                             <span className={`ps-store-chip ${e.component_source==='bread'?'jc':'ja'}`}>{e.component_source==='bread'?'PÃO':'PRODUTO'}</span>
+                            {e.variantName && <span className="ps-store-chip jc">{e.variantName}</span>}
                             {isFlour && <span className="ps-store-chip jc">FARINHA</span>}
                             {!isKit && isPackaging && <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>EMBALAGEM</span>}
                             {(isKit || !isPackaging) && !e.hasCost && <span className="ps-store-chip" style={{background:'var(--berry-tint)', color:'var(--berry)'}}>SEM CUSTO</span>}
@@ -1595,7 +1647,28 @@ function ComposicaoInner() {
                     )}
                   </div>
 
-                  {q.length >= 2 && (
+                  {kitVariantChoice && (
+                    <div className="ps-card" style={{padding:12, marginBottom:8, border:'1px solid var(--honey-deep)'}}>
+                      <div style={{fontSize:13, fontWeight:600, marginBottom:8}}>
+                        Qual variante de <strong>{kitVariantChoice.name}</strong> entra no kit?
+                      </div>
+                      <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                        {kitVariantChoice.variants.map(v => (
+                          <button key={v.id} onClick={() => chooseKitComponentVariant(v.id)} className="ps-btn sm ghost" style={{justifyContent:'flex-start'}}>
+                            {v.name}
+                          </button>
+                        ))}
+                        <button onClick={() => chooseKitComponentVariant(null)} className="ps-btn sm ghost" style={{justifyContent:'flex-start', color:'var(--ink-faint)'}}>
+                          Produto inteiro (não distinguir variante)
+                        </button>
+                        <button onClick={() => setKitVariantChoice(null)} className="ps-btn sm ghost" style={{justifyContent:'flex-start'}}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!kitVariantChoice && q.length >= 2 && (
                     <div style={{maxHeight:300, overflowY:'auto', border:'1px solid var(--line-soft)', borderRadius:8}}>
                       {candidates.length === 0 ? (
                         <div style={{padding:14, textAlign:'center', color:'var(--ink-faint)', fontSize:13}}>

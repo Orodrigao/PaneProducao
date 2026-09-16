@@ -441,7 +441,7 @@ export default function SobrasPage() {
       if (error) throw error
 
       // Stock movements pra DESCARTE (precisa de loja atribuída ao user)
-      let cascadeBreadCount = 0
+      let cascadeComponentCount = 0
       if (mode === 'descarte' && user.store && inserted) {
         const directMovements = (inserted as any[])
           .filter(r => r.product_source === 'bread' && Number(r.quantity) > 0)
@@ -466,20 +466,19 @@ export default function SobrasPage() {
           const kitProductIds = kitRows.map(r => r.product_id)
           const { data: comps } = await supabase
             .from('product_components')
-            .select('parent_product_id,component_source,component_id,quantity')
+            .select('parent_product_id,component_source,component_id,component_variant_id,quantity')
             .in('parent_product_id', kitProductIds)
-            .eq('component_source', 'bread')
           const cascadeMovements = buildKitCascadeMovements(
             kitRows, (comps ?? []) as KitComponent[], user.store, user.displayName
           )
           if (cascadeMovements.length > 0) {
             await supabase.from('bread_movements').insert(cascadeMovements)
-            cascadeBreadCount = cascadeMovements.length
+            cascadeComponentCount = cascadeMovements.length
           }
         }
       }
 
-      const cascadeNote = cascadeBreadCount > 0 ? ` (+${cascadeBreadCount} pães debitados via kit)` : ''
+      const cascadeNote = cascadeComponentCount > 0 ? ` (+${cascadeComponentCount} componentes debitados via kit)` : ''
       showToast(`✅ Descartes salvos!${cascadeNote}`)
       setMode(null); setQtys({})
     } catch(e:any) {
