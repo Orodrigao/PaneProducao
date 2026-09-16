@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pjPackPhysicalSize, resolvePjPackRule, roundPjPackQuantity, type PjPackRule } from './pjPackRules'
+import { parseWholePjPackCount, pjPackPhysicalSize, resolvePjPackRule, type PjPackRule } from './pjPackRules'
 
 const hamburguer: PjPackRule = {
   productId: 'brioche',
@@ -50,53 +50,16 @@ describe('pjPackPhysicalSize', () => {
   })
 })
 
-describe('roundPjPackQuantity', () => {
-  it('quantidade já em pacote fechado não muda (12 un)', () => {
-    const result = roundPjPackQuantity(12, hamburguer, 12)
-    expect(result).toEqual({ packs: 1, quantity: 12, packSizePhysical: 12, rounded: false })
+describe('parseWholePjPackCount', () => {
+  it('aceita somente pacotes inteiros positivos', () => {
+    expect(parseWholePjPackCount('2')).toBe(2)
+    expect(parseWholePjPackCount(' 12 ')).toBe(12)
   })
 
-  it('quantidade não múltipla arredonda para cima, nunca para baixo (10 -> 12 un)', () => {
-    const result = roundPjPackQuantity(10, hamburguer, 12)
-    expect(result.packs).toBe(1)
-    expect(result.quantity).toBe(12)
-    expect(result.rounded).toBe(true)
-  })
-
-  it('conversão 12 unidades x 80g fecha em 0,96kg quando o preço é por kg', () => {
-    const physical = pjPackPhysicalSize(hamburguer, 'kg', 0.08) as number
-    const result = roundPjPackQuantity(0.5, hamburguer, physical)
-    expect(result.packs).toBe(1)
-    expect(result.quantity).toBe(0.96)
-    expect(result.rounded).toBe(true)
-  })
-
-  it('quantidade exatamente igual ao pacote em kg não arredonda', () => {
-    const physical = pjPackPhysicalSize(hamburguer, 'kg', 0.08) as number
-    const result = roundPjPackQuantity(0.96, hamburguer, physical)
-    expect(result.quantity).toBe(0.96)
-    expect(result.rounded).toBe(false)
-  })
-
-  it('abaixo do pedido mínimo sobe até o mínimo em pacotes', () => {
-    const result = roundPjPackQuantity(3, semVariante, 6)
-    expect(result.packs).toBe(2)
-    expect(result.quantity).toBe(12)
-    expect(result.rounded).toBe(true)
-  })
-
-  it('respeita o múltiplo comercial de pacotes', () => {
-    const rule: PjPackRule = { ...hamburguer, orderMultiplePacks: 2 }
-    const result = roundPjPackQuantity(12, rule, 12)
-    expect(result.packs).toBe(2)
-    expect(result.quantity).toBe(24)
-    expect(result.rounded).toBe(true)
-  })
-
-  it('quantidade inválida cai no pedido mínimo', () => {
-    const result = roundPjPackQuantity(0, hamburguer, 12)
-    expect(result.packs).toBe(1)
-    expect(result.quantity).toBe(12)
-    expect(result.rounded).toBe(true)
+  it('recusa fração, peso, zero e texto sem arredondar silenciosamente', () => {
+    expect(parseWholePjPackCount('1.5')).toBeNull()
+    expect(parseWholePjPackCount('0,96')).toBeNull()
+    expect(parseWholePjPackCount('0')).toBeNull()
+    expect(parseWholePjPackCount('dois')).toBeNull()
   })
 })
