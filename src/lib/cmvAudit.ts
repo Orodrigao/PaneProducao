@@ -42,6 +42,7 @@ export interface AuditCatalogItem {
 
 export interface AuditYield {
   product_id: string
+  product_variant_id?: string | null
   basis: string | null
   dough_weight_kg: number | null
   finished_weight_kg: number | null
@@ -185,7 +186,17 @@ function statusFromAudit(
 export function buildProductCmvAudits(input: BuildCmvAuditInput): ProductCmvAudit[] {
   const productsById = new Map(input.productCatalog.map(product => [product.id, product]))
   const breadsById = new Map(input.breadCatalog.map(bread => [bread.id, bread]))
-  const yieldsByProduct = new Map(input.yields.map(yieldRow => [yieldRow.product_id, yieldRow]))
+  // Um produto pode ter mais de um rendimento quando tem variante (um por
+  // variante, product_variant_id preenchido). Esta auditoria ainda enxerga o
+  // produto inteiro, não a variante; por isso só usa o rendimento legado
+  // (sem variante). Quando só existem rendimentos por variante, nenhum
+  // representa corretamente "o produto inteiro" — cai em sem_rendimento em
+  // vez de escolher um arbitrariamente.
+  const yieldsByProduct = new Map<string, AuditYield>()
+  for (const yieldRow of input.yields) {
+    if (yieldRow.product_variant_id) continue
+    yieldsByProduct.set(yieldRow.product_id, yieldRow)
+  }
   const tiersById = new Map(input.priceTiers.filter(tier => tier.active !== false).map(tier => [tier.id, tier]))
   const activePriceLines = input.priceLines.filter(line => line.active !== false && tiersById.has(line.tier_id))
 

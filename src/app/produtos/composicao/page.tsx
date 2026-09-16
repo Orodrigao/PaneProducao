@@ -61,6 +61,7 @@ type QuantityInputMode = 'weight' | 'baker_pct'
 interface RecipeYield {
   id: string
   product_id: string
+  product_variant_id: string | null
   basis: RecipeYieldBasis
   batch_name: string | null
   dough_weight_kg: number | null
@@ -73,11 +74,19 @@ interface RecipeYield {
 interface SaleOption {
   id: string
   product_id: string
+  product_variant_id: string | null
   name: string
   sale_unit: PricingUnit
   reference_quantity: number
   unit_weight_kg: number | null
   is_default: boolean
+  active: boolean
+}
+interface ProductVariant {
+  id: string
+  product_id: string
+  name: string
+  sort_order: number
   active: boolean
 }
 interface YieldDraft {
@@ -135,7 +144,7 @@ function isMissingRelationError(error: unknown): boolean {
   const err = error as { code?: unknown; message?: unknown }
   const code = typeof err.code === 'string' ? err.code : ''
   const message = typeof err.message === 'string' ? err.message : ''
-  const mentionsRecipeTables = message.includes('product_sale_options') || message.includes('product_recipe_yields')
+  const mentionsRecipeTables = message.includes('product_sale_options') || message.includes('product_recipe_yields') || message.includes('product_variants')
   return code === '42P01'
     || code === 'PGRST205'
     || (mentionsRecipeTables && (message.includes('does not exist') || message.includes('Could not find')))
@@ -172,6 +181,12 @@ function isRecipeYieldBasis(value: string | null | undefined): value is RecipeYi
   return value === 'dough' || value === 'baked' || value === 'unit'
 }
 
+function isDuplicateVariantNameError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const err = error as { code?: unknown }
+  return err.code === '23505'
+}
+
 function costPerUnit(totalCost: number, basis: RecipeYieldBasis, yieldUnits: number | null): number | null {
   if (basis === 'unit') return totalCost
   return yieldUnits !== null ? totalCost / yieldUnits : null
@@ -192,9 +207,14 @@ function ComposicaoInner() {
   const [components, setComponents] = useState<Component[]>([])
   const [breads, setBreads]       = useState<BreadLite[]>([])
   const [products, setProducts]   = useState<ProductLite[]>([])
-  const [recipeYield, setRecipeYield] = useState<RecipeYield | null>(null)
+  const [recipeYields, setRecipeYields] = useState<RecipeYield[]>([])
   const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
+  const [variants, setVariants] = useState<ProductVariant[]>([])
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
+  const [newVariantName, setNewVariantName] = useState('')
+  const [savingVariant, setSavingVariant] = useState(false)
+  const [variantNameEdits, setVariantNameEdits] = useState<Record<string, string>>({})
   const [recipeMetaAvailable, setRecipeMetaAvailable] = useState(true)
   const [recipeMetaMessage, setRecipeMetaMessage] = useState('')
   const [loading, setLoading]     = useState(true)
@@ -230,39 +250,41 @@ function ComposicaoInner() {
       setComponents((cRes.data || []) as Component[])
       setBreads((bRes.data || []) as BreadLite[])
       setProducts((prRes.data || []) as ProductLite[])
-      const [yRes, soRes] = await Promise.all([
-        supabase.from('product_recipe_yields').select('*').eq('product_id', parentId).maybeSingle(),
-        supabase.from('product_sale_options').select('id,product_id,name,sale_unit,reference_quantity,unit_weight_kg,is_default,active').eq('product_id', parentId).order('sale_unit'),
+      const [yRes, soRes, vRes] = await Promise.all([
+        supabase.from('product_recipe_yields').select('*').eq('product_id', parentId),
+        supabase.from('product_sale_options').select('id,product_id,product_variant_id,name,sale_unit,reference_quantity,unit_weight_kg,is_default,active').eq('product_id', parentId).order('sale_unit'),
+        supabase.from('product_variants').select('id,product_id,name,sort_order,active').eq('product_id', parentId).order('sort_order').order('name'),
       ])
-      if (yRes.error || soRes.error) {
-        const err = yRes.error || soRes.error
+      if (yRes.error || soRes.error || vRes.error) {
+        const err = yRes.error || soRes.error || vRes.error
         if (isMissingRelationError(err)) {
           setRecipeMetaAvailable(false)
           setRecipeMetaMessage('Estrutura de rendimento ainda não aplicada no banco. A ficha continua disponível.')
-          setRecipeYield(null)
-          setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+          setRecipeYields([])
           setSaleOptions([])
+          setVariants([])
+          setSelectedVariantId(null)
         } else if (isRecipeMetaAccessError(err)) {
           setRecipeMetaAvailable(false)
           setRecipeMetaMessage('Entre com e-mail e senha para carregar rendimento e formas de venda.')
-          setRecipeYield(null)
-          setYieldDraft({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+          setRecipeYields([])
           setSaleOptions([])
+          setVariants([])
+          setSelectedVariantId(null)
         } else {
           throw err
         }
       } else {
-        const yieldRow = yRes.data as RecipeYield | null
         setRecipeMetaAvailable(true)
         setRecipeMetaMessage('')
-        setRecipeYield(yieldRow)
-        setYieldDraft({
-          basis: isRecipeYieldBasis(yieldRow?.basis) ? yieldRow.basis : 'dough',
-          dough_weight_kg: draftValue(yieldRow?.dough_weight_kg),
-          finished_weight_kg: draftValue(yieldRow?.average_unit_weight_kg ?? yieldRow?.finished_weight_kg),
-          yield_units: draftValue(yieldRow?.yield_units),
-        })
+        setRecipeYields((yRes.data || []) as RecipeYield[])
         setSaleOptions((soRes.data || []) as SaleOption[])
+        const loadedVariants = (vRes.data || []) as ProductVariant[]
+        setVariants(loadedVariants)
+        // Escolhido só aqui, uma vez por carregamento — nunca reage a criar,
+        // renomear ou ativar/desativar variante depois, senão sobrescreveria
+        // a escolha explícita de "produto (sem variante)" do usuário.
+        setSelectedVariantId(loadedVariants.length === 0 ? null : (loadedVariants.find(v => v.active)?.id ?? loadedVariants[0].id))
       }
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao carregar'))
@@ -272,6 +294,102 @@ function ComposicaoInner() {
   }, [parentId])
 
   useEffect(() => { setUser(getCurrentUser()); if (parentId) load() }, [parentId, load])
+
+  const recipeYield = useMemo(
+    () => recipeYields.find(y => (y.product_variant_id ?? null) === selectedVariantId) ?? null,
+    [recipeYields, selectedVariantId],
+  )
+
+  const saleOptionsForSelected = useMemo(
+    () => saleOptions.filter(o => (o.product_variant_id ?? null) === selectedVariantId),
+    [saleOptions, selectedVariantId],
+  )
+
+  // Sincroniza o rascunho de rendimento com a variante selecionada: troca de
+  // variante, chegada dos dados ou salvamento reabastecem o mesmo efeito.
+  useEffect(() => {
+    setYieldDraft({
+      basis: isRecipeYieldBasis(recipeYield?.basis) ? recipeYield.basis : 'dough',
+      dough_weight_kg: draftValue(recipeYield?.dough_weight_kg),
+      finished_weight_kg: draftValue(recipeYield?.average_unit_weight_kg ?? recipeYield?.finished_weight_kg),
+      yield_units: draftValue(recipeYield?.yield_units),
+    })
+  }, [recipeYield])
+
+  const yieldDraftIsDirty =
+    yieldDraft.basis !== (isRecipeYieldBasis(recipeYield?.basis) ? recipeYield.basis : 'dough')
+    || yieldDraft.finished_weight_kg !== draftValue(recipeYield?.average_unit_weight_kg ?? recipeYield?.finished_weight_kg)
+
+  function confirmDiscardYieldDraftIfDirty(): boolean {
+    if (!yieldDraftIsDirty) return true
+    return confirm('Há rendimento editado e não salvo nesta variante. Trocar descarta essa edição sem salvar. Continuar?')
+  }
+
+  function selectVariant(variantId: string | null) {
+    if (variantId === selectedVariantId) return
+    if (!confirmDiscardYieldDraftIfDirty()) return
+    setSelectedVariantId(variantId)
+  }
+
+  async function createVariant() {
+    const name = newVariantName.trim()
+    if (!name) { showToast('Informe o nome da variante'); return }
+    if (savingVariant) return
+    setSavingVariant(true)
+    try {
+      const { data, error } = await supabase
+        .from('product_variants')
+        .insert({ product_id: parentId, name, sort_order: variants.length })
+        .select()
+        .single()
+      if (error) throw error
+      const created = data as ProductVariant
+      setVariants(prev => [...prev, created])
+      if (confirmDiscardYieldDraftIfDirty()) setSelectedVariantId(created.id)
+      setNewVariantName('')
+      showToast('Variante criada')
+    } catch (error: unknown) {
+      showToast(isDuplicateVariantNameError(error)
+        ? 'Já existe uma variante com esse nome neste produto'
+        : getErrorMessage(error, 'Erro ao criar variante'))
+    } finally {
+      setSavingVariant(false)
+    }
+  }
+
+  async function renameVariant(variant: ProductVariant, rawName: string) {
+    const name = rawName.trim()
+    setVariantNameEdits(prev => { const next = { ...prev }; delete next[variant.id]; return next })
+    if (!name || name === variant.name) return
+    try {
+      const { error } = await supabase
+        .from('product_variants')
+        .update({ name, updated_at: new Date().toISOString() })
+        .eq('id', variant.id)
+      if (error) throw error
+      setVariants(prev => prev.map(v => v.id === variant.id ? { ...v, name } : v))
+      showToast('Variante renomeada')
+    } catch (error: unknown) {
+      showToast(isDuplicateVariantNameError(error)
+        ? 'Já existe uma variante com esse nome neste produto'
+        : getErrorMessage(error, 'Erro ao renomear variante'))
+    }
+  }
+
+  async function toggleVariantActive(variant: ProductVariant) {
+    try {
+      const nextActive = !variant.active
+      const { error } = await supabase
+        .from('product_variants')
+        .update({ active: nextActive, updated_at: new Date().toISOString() })
+        .eq('id', variant.id)
+      if (error) throw error
+      setVariants(prev => prev.map(v => v.id === variant.id ? { ...v, active: nextActive } : v))
+      showToast(nextActive ? 'Variante ativada' : 'Variante desativada')
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, 'Erro ao atualizar variante'))
+    }
+  }
 
   async function addFlourComponentByShare(source: 'bread' | 'product', componentId: string, sharePct: number) {
     const isFirstFlour = flourComponents.length === 0
@@ -518,36 +636,42 @@ function ComposicaoInner() {
     if (bakedUnitWeight !== null && units === null) { showToast('Informe a massa da receita para calcular o rendimento'); return }
 
     try {
-      const { data, error } = await supabase
-        .from('product_recipe_yields')
-        .upsert({
-          product_id: parentId,
-          basis: yieldDraft.basis,
-          dough_weight_kg: dough,
-          finished_weight_kg: finished,
-          yield_units: units,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'product_id' })
-        .select()
-        .single()
+      const payload = {
+        product_id: parentId,
+        product_variant_id: selectedVariantId,
+        basis: yieldDraft.basis,
+        dough_weight_kg: dough,
+        finished_weight_kg: finished,
+        yield_units: units,
+        updated_at: new Date().toISOString(),
+      }
+      // A fase 1 trocou o UNIQUE(product_id) por dois índices únicos parciais
+      // (com e sem variante). Upsert por onConflict de uma única coluna não
+      // encontra índice parcial como árbitro sem repetir o predicado da
+      // parcial, e falharia com "no unique or exclusion constraint" mesmo
+      // para produto legado. Grava explícito por id em vez de upsert.
+      const { data, error } = recipeYield
+        ? await supabase.from('product_recipe_yields').update(payload).eq('id', recipeYield.id).select().single()
+        : await supabase.from('product_recipe_yields').insert(payload).select().single()
       if (error) throw error
       const nextYield = data as RecipeYield
-      setRecipeYield(nextYield)
-      setYieldDraft({
-        basis: isRecipeYieldBasis(nextYield.basis) ? nextYield.basis : yieldDraft.basis,
-        dough_weight_kg: draftValue(nextYield.dough_weight_kg),
-        finished_weight_kg: draftValue(nextYield.average_unit_weight_kg ?? bakedUnitWeight),
-        yield_units: draftValue(nextYield.yield_units),
-      })
+      setRecipeYields(prev => recipeYield
+        ? prev.map(y => y.id === nextYield.id ? nextYield : y)
+        : [...prev, nextYield])
       if (nextYield.average_unit_weight_kg !== null) {
-        const { error: optionError } = await supabase
+        const optionUpdate = supabase
           .from('product_sale_options')
           .update({ unit_weight_kg: nextYield.average_unit_weight_kg, updated_at: new Date().toISOString() })
           .eq('product_id', parentId)
           .eq('sale_unit', 'un')
+        const { error: optionError } = selectedVariantId
+          ? await optionUpdate.eq('product_variant_id', selectedVariantId)
+          : await optionUpdate.is('product_variant_id', null)
         if (optionError) throw optionError
         setSaleOptions(prev => prev.map(option =>
-          option.sale_unit === 'un' ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg } : option
+          option.sale_unit === 'un' && (option.product_variant_id ?? null) === selectedVariantId
+            ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg }
+            : option
         ))
       }
       showToast('Rendimento salvo')
@@ -559,7 +683,7 @@ function ComposicaoInner() {
   async function createSaleOption(saleUnit: PricingUnit) {
     if (!parentId || !recipeMetaAvailable) return
     if (parent?.kind === 'kit' && saleUnit === 'kg') { showToast('Kit deve ser vendido por unidade'); return }
-    const alreadyExists = saleOptions.some(option => option.sale_unit === saleUnit)
+    const alreadyExists = saleOptionsForSelected.some(option => option.sale_unit === saleUnit)
     if (alreadyExists) { showToast('Essa forma de venda já existe'); return }
     const averageWeight = recipeYield?.average_unit_weight_kg ?? null
     try {
@@ -567,11 +691,12 @@ function ComposicaoInner() {
         .from('product_sale_options')
         .insert({
           product_id: parentId,
+          product_variant_id: selectedVariantId,
           name: saleUnit === 'kg' ? 'Quilo' : 'Unidade',
           sale_unit: saleUnit,
           reference_quantity: 1,
           unit_weight_kg: saleUnit === 'un' ? averageWeight : null,
-          is_default: saleOptions.length === 0,
+          is_default: saleOptionsForSelected.length === 0,
           active: true,
         })
         .select()
@@ -586,14 +711,21 @@ function ComposicaoInner() {
 
   async function setDefaultSaleOption(option: SaleOption) {
     try {
-      const { error: clearError } = await supabase
+      const clearQuery = supabase
         .from('product_sale_options')
         .update({ is_default: false })
         .eq('product_id', option.product_id)
+      const { error: clearError } = option.product_variant_id
+        ? await clearQuery.eq('product_variant_id', option.product_variant_id)
+        : await clearQuery.is('product_variant_id', null)
       if (clearError) throw clearError
       const { error } = await supabase.from('product_sale_options').update({ is_default: true }).eq('id', option.id)
       if (error) throw error
-      setSaleOptions(prev => prev.map(item => ({ ...item, is_default: item.id === option.id })))
+      setSaleOptions(prev => prev.map(item =>
+        (item.product_variant_id ?? null) === (option.product_variant_id ?? null)
+          ? { ...item, is_default: item.id === option.id }
+          : item
+      ))
       showToast('Forma padrão atualizada')
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao atualizar forma padrão'))
@@ -734,9 +866,10 @@ function ComposicaoInner() {
     return null
   })()
   const productCostDiff = productCostCandidate && manualCost !== null ? productCostCandidate.value - manualCost : null
-  const canSaveProductCost = canEditFicha && recipeMetaAvailable && partialCount === 0 && productCostCandidate !== null && !savingProductCost
-  const hasUnitOption = saleOptions.some(option => option.sale_unit === 'un')
-  const hasKgOption = saleOptions.some(option => option.sale_unit === 'kg')
+  const activeVariantCount = variants.filter(v => v.active).length
+  const canSaveProductCost = canEditFicha && recipeMetaAvailable && partialCount === 0 && productCostCandidate !== null && !savingProductCost && activeVariantCount <= 1
+  const hasUnitOption = saleOptionsForSelected.some(option => option.sale_unit === 'un')
+  const hasKgOption = saleOptionsForSelected.some(option => option.sale_unit === 'kg')
 
   // Candidatos novos priorizam products. Breads legados só aparecem quando ainda não há produto migrado.
   const addedKeys = new Set(components.map(c => `${c.component_source}-${c.component_id}`))
@@ -877,6 +1010,67 @@ function ComposicaoInner() {
                         </>
                       ) : (
                         <>
+                          <div style={{borderBottom:'1px solid var(--line-soft)', paddingBottom:12, marginBottom:12}}>
+                            <div className="ps-flabel" style={{marginBottom:8}}>Variantes</div>
+                            {variants.length === 0 ? (
+                              <div style={{fontSize:12, color:'var(--ink-faint)', marginBottom:8}}>
+                                Produto simples, sem variante. Rendimento e formas de venda abaixo valem para o produto inteiro.
+                              </div>
+                            ) : (
+                              <div style={{display:'grid', gap:6, marginBottom:8}}>
+                                <div style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderTop:'1px solid var(--line-soft)'}}>
+                                  <div style={{flex:1, minWidth:0, fontSize:13, color:'var(--ink-soft)'}}>
+                                    Produto (sem variante) — rendimento e formas de venda legados
+                                  </div>
+                                  {selectedVariantId === null ? (
+                                    <span className="ps-store-chip ja">editando</span>
+                                  ) : (
+                                    <button onClick={() => selectVariant(null)} className="ps-btn sm ghost">
+                                      editar
+                                    </button>
+                                  )}
+                                </div>
+                                {variants.map(variant => (
+                                  <div key={variant.id} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderTop:'1px solid var(--line-soft)', opacity:variant.active?1:.55}}>
+                                    <input
+                                      value={variantNameEdits[variant.id] ?? variant.name}
+                                      onChange={e => setVariantNameEdits(prev => ({...prev, [variant.id]: e.target.value}))}
+                                      onBlur={e => renameVariant(variant, e.target.value)}
+                                      className="ps-input"
+                                      style={{flex:1, minWidth:0, padding:'6px 8px', fontSize:13}}
+                                    />
+                                    {variant.id === selectedVariantId ? (
+                                      <span className="ps-store-chip ja">editando</span>
+                                    ) : (
+                                      <button onClick={() => selectVariant(variant.id)} className="ps-btn sm ghost">
+                                        editar
+                                      </button>
+                                    )}
+                                    <button onClick={() => toggleVariantActive(variant)} className={`ps-status ${variant.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
+                                      {variant.active ? 'ativa' : 'inativa'}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{display:'flex', gap:8}}>
+                              <input
+                                value={newVariantName}
+                                onChange={e => setNewVariantName(e.target.value)}
+                                placeholder="Nova variante (ex.: Forma, Hamburguer, Mini)"
+                                className="ps-input"
+                                style={{flex:1}}
+                              />
+                              <button onClick={createVariant} disabled={savingVariant} className="ps-btn sm ghost">
+                                + Variante
+                              </button>
+                            </div>
+                            {variants.length > 0 && (
+                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:6}}>
+                                Rendimento e formas de venda abaixo são de: <strong>{variants.find(v => v.id === selectedVariantId)?.name ?? 'Produto (sem variante)'}</strong>
+                              </div>
+                            )}
+                          </div>
                           <div className="ps-fieldgroup" style={{marginBottom:10}}>
                             <div className="ps-fieldlabel">Base da ficha</div>
                             <select
@@ -990,12 +1184,14 @@ function ComposicaoInner() {
                             {isKit ? 'Composição' : 'Ficha'}: <strong style={{color:'var(--ps-ink)'}}>{productCostCandidate ? formatBRL(productCostCandidate.value) : '—'}</strong>
                             {productCostCandidate && `/${productCostCandidate.label}`}
                           </div>
-                          <div style={{fontSize:11, color:partialCount > 0 ? 'var(--berry)' : 'var(--ink-faint)', marginTop:2}}>
+                          <div style={{fontSize:11, color:partialCount > 0 || activeVariantCount > 1 ? 'var(--berry)' : 'var(--ink-faint)', marginTop:2}}>
                             {partialCount > 0
                               ? 'Complete os custos dos componentes antes de atualizar.'
-                              : productCostDiff === null
-                                ? 'Salva o CMV calculado no cadastro do produto.'
-                                : `${productCostDiff >= 0 ? '+' : ''}${formatBRL(productCostDiff)} vs custo atual`}
+                              : activeVariantCount > 1
+                                ? 'Produto com mais de uma variante ativa: o custo de cada uma se ajusta pela tabela de preço, não por este botão único.'
+                                : productCostDiff === null
+                                  ? 'Salva o CMV calculado no cadastro do produto.'
+                                  : `${productCostDiff >= 0 ? '+' : ''}${formatBRL(productCostDiff)} vs custo atual`}
                           </div>
                         </div>
                         <button
@@ -1132,13 +1328,13 @@ function ComposicaoInner() {
                           )}
                         </div>
                       </div>
-                      {saleOptions.length === 0 ? (
+                      {saleOptionsForSelected.length === 0 ? (
                         <div style={{fontSize:13, color:'var(--ink-faint)'}}>
                           Nenhuma forma cadastrada ainda.
                         </div>
                       ) : (
                         <div style={{display:'grid', gap:8}}>
-                          {saleOptions.map(option => (
+                          {saleOptionsForSelected.map(option => (
                             <div key={option.id} style={{display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderTop:'1px solid var(--line-soft)', opacity:option.active?1:.55}}>
                               <div style={{flex:1, minWidth:0}}>
                                 <div style={{fontSize:14, fontWeight:700, color:'var(--ps-ink)'}}>

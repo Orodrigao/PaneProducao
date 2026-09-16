@@ -75,6 +75,86 @@ describe('buildProductCmvAudits', () => {
     expect(audit?.status).toBe('sem_custo')
   })
 
+  it('não escolhe arbitrariamente um rendimento de variante quando não há rendimento legado do produto', () => {
+    const [audit] = buildProductCmvAudits({
+      products: [baseProduct],
+      productCatalog: [
+        { id: 'farinha', name: 'Farinha de Trigo', category: 'INSUMOS', unit: 'kg', cost_price: 4 },
+      ],
+      breadCatalog: [],
+      components: [
+        { parent_product_id: 'baguete', component_source: 'product', component_id: 'farinha', quantity: 1 },
+      ],
+      yields: [
+        // Só existem rendimentos por variante (Forma e Mini); nenhum representa
+        // "o produto inteiro" — antes da correção, o Map colapsava para o
+        // último da lista e atribuía o rendimento da Mini ao produto inteiro.
+        {
+          product_id: 'baguete',
+          product_variant_id: 'variante-forma',
+          basis: 'dough',
+          dough_weight_kg: 1,
+          finished_weight_kg: 1,
+          yield_units: 4,
+          average_unit_weight_kg: 0.25,
+        },
+        {
+          product_id: 'baguete',
+          product_variant_id: 'variante-mini',
+          basis: 'dough',
+          dough_weight_kg: 1,
+          finished_weight_kg: 1,
+          yield_units: 20,
+          average_unit_weight_kg: 0.05,
+        },
+      ],
+      priceTiers: [],
+      priceLines: [],
+    })
+
+    expect(audit?.cmvUnit).toBeNull()
+    expect(audit?.cmvKgBaked).toBeNull()
+    expect(audit?.status).toBe('sem_rendimento')
+  })
+
+  it('usa o rendimento legado do produto e ignora rendimentos de variante quando os dois existem', () => {
+    const [audit] = buildProductCmvAudits({
+      products: [baseProduct],
+      productCatalog: [
+        { id: 'farinha', name: 'Farinha de Trigo', category: 'INSUMOS', unit: 'kg', cost_price: 4 },
+      ],
+      breadCatalog: [],
+      components: [
+        { parent_product_id: 'baguete', component_source: 'product', component_id: 'farinha', quantity: 1 },
+      ],
+      yields: [
+        {
+          product_id: 'baguete',
+          product_variant_id: null,
+          basis: 'dough',
+          dough_weight_kg: 1,
+          finished_weight_kg: 1,
+          yield_units: 4,
+          average_unit_weight_kg: 0.25,
+        },
+        {
+          product_id: 'baguete',
+          product_variant_id: 'variante-mini',
+          basis: 'dough',
+          dough_weight_kg: 1,
+          finished_weight_kg: 1,
+          yield_units: 20,
+          average_unit_weight_kg: 0.05,
+        },
+      ],
+      priceTiers: [],
+      priceLines: [],
+    })
+
+    expect(audit?.cmvUnit).toBe(1)
+    expect(audit?.yieldUnits).toBe(4)
+  })
+
   it('ignora revenda, insumo e produto inativo', () => {
     const audits = buildProductCmvAudits({
       products: [

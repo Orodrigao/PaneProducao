@@ -117,7 +117,7 @@ export default function ProdutosCmvPage() {
           .select('id,name,unit,cost_price'),
         supabase
           .from('product_recipe_yields')
-          .select('product_id,basis,dough_weight_kg,finished_weight_kg,yield_units,average_unit_weight_kg'),
+          .select('product_id,product_variant_id,basis,dough_weight_kg,finished_weight_kg,yield_units,average_unit_weight_kg'),
         supabase
           .from('price_tiers')
           .select('id,name,active'),
