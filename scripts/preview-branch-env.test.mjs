@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { describe, it, mock } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
+  DESTINO_INERTE,
   LIMITE_PAGINA_RAMIFICACOES,
   PRODUCTION_PROJECT_REF,
   apontarPreviewParaRamificacao,
+  bloquearPreviewDaBranch,
+  conferirReleitura,
   escolherChavePublica,
   escolherRamificacao,
   limparVariaveisDaBranch,
+  planejarBloqueio,
   planejarVariaveis,
   ramificacaoEstaPronta,
 } from './preview-branch-env.mjs'
@@ -230,9 +238,46 @@ const CREDENCIAIS = {
   vercelProject: 'pane-producao',
 }
 
+// Variavel de branch no formato da listagem v9 da Vercel.
+function envDaBranch(key, value, extra = {}) {
+  return { id: `env_${key}`, key, value, type: 'plain', target: ['preview'], gitBranch: BRANCH, ...extra }
+}
+
+// A listagem filtrada por branch devolve TAMBEM as genericas de Preview. Elas
+// entram em toda releitura fabricada para provar que nao contam.
+const GENERICA_URL = {
+  id: 'env_generica_url',
+  key: 'NEXT_PUBLIC_SUPABASE_URL',
+  value: 'https://tuqzhjsbodoycjbmwuqm.supabase.co',
+  type: 'plain',
+  target: ['preview'],
+}
+
+const releituraDaPr = () => resposta({
+  envs: [
+    envDaBranch('NEXT_PUBLIC_SUPABASE_URL', 'https://axpkaqpqrvpdfwoozrmy.supabase.co'),
+    envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'sb_publishable_da_pr'),
+    GENERICA_URL,
+  ],
+})
+
+const releituraTravada = () => resposta({
+  envs: [
+    envDaBranch('NEXT_PUBLIC_SUPABASE_URL', DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL),
+    envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    GENERICA_URL,
+  ],
+})
+
+const ehListagemVercel = (url) => /api\.vercel\.com\/v9\/projects\/.+\/env\?gitBranch=/.test(url)
+
 describe('apontarPreviewParaRamificacao', () => {
-  it('nao encosta na Vercel quando a PR nao tem banco proprio', async () => {
-    const fetchImpl = mock.fn(async () => resposta({ branches: [] }))
+  it('sem banco proprio, so confere que a branch nao ficou travada', async () => {
+    const respostas = [
+      resposta({ branches: [] }),
+      resposta({ envs: [GENERICA_URL] }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
 
     const resultado = await apontarPreviewParaRamificacao({
       ...CREDENCIAIS,
@@ -242,8 +287,68 @@ describe('apontarPreviewParaRamificacao', () => {
     })
 
     assert.equal(resultado.situacao, 'sem-ramificacao')
-    assert.equal(fetchImpl.mock.callCount(), 1)
+    assert.equal(fetchImpl.mock.callCount(), 2)
     assert.match(fetchImpl.mock.calls[0].arguments[0], /api\.supabase\.com/)
+    assert.ok(ehListagemVercel(fetchImpl.mock.calls[1].arguments[0]))
+    // A generica e o banco compartilhado de todo mundo: nunca e apagada.
+    assert.equal(fetchImpl.mock.calls.some((c) => c.arguments[1]?.method !== 'GET'), false)
+  })
+
+  it('PR reaberta sem banco proprio: tira a trava e confere que sumiu', async () => {
+    const respostas = [
+      resposta([RAMIFICACAO_MAIN]),
+      releituraTravada(),
+      new Response(null, { status: 204 }),
+      new Response(null, { status: 204 }),
+      resposta({ envs: [GENERICA_URL] }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    const resultado = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      fetchImpl,
+      registrar: () => {},
+    })
+
+    assert.equal(resultado.situacao, 'sem-ramificacao')
+    assert.equal(respostas.length, 0)
+    const apagadas = fetchImpl.mock.calls
+      .filter((c) => c.arguments[1]?.method === 'DELETE')
+      .map((c) => c.arguments[0].split('/env/')[1])
+    assert.deepEqual(apagadas, ['env_NEXT_PUBLIC_SUPABASE_URL', 'env_NEXT_PUBLIC_SUPABASE_ANON_KEY'])
+    // Sem banco proprio nao ha o que gravar nem preview a refazer.
+    assert.equal(fetchImpl.mock.calls.some((c) => c.arguments[1]?.method === 'POST'), false)
+  })
+
+  it('nao manda refazer o preview quando a releitura nao bate com o que foi gravado', async () => {
+    const respostas = [
+      resposta([RAMIFICACAO_DA_PR]),
+      resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
+      resposta({}),
+      resposta({}),
+      resposta({
+        envs: [
+          // Outra PR gravou por cima: o endereco nao e o desta.
+          envDaBranch('NEXT_PUBLIC_SUPABASE_URL', 'https://aaaaaaaaaaaaaaaaaaaa.supabase.co'),
+          envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'sb_publishable_da_pr'),
+        ],
+      }),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    const erro = await apontarPreviewParaRamificacao({
+      ...CREDENCIAIS,
+      ...alvo,
+      fetchImpl,
+      registrar: () => {},
+    }).then(() => null, (e) => e)
+
+    assert.match(erro?.message ?? '', /NEXT_PUBLIC_SUPABASE_URL.*nao tem o valor/)
+    // Nem o valor esperado nem o encontrado vao para o log.
+    assert.ok(!erro.message.includes('supabase.co'), erro.message)
+    assert.ok(!erro.message.includes('sb_publishable'), erro.message)
+    assert.equal(fetchImpl.mock.calls.some((c) => /deployments/.test(c.arguments[0])), false)
   })
 
   it('espera o banco ficar pronto, grava as duas variaveis e manda refazer o preview', async () => {
@@ -258,6 +363,7 @@ describe('apontarPreviewParaRamificacao', () => {
       resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_URL
       resposta({}), // grava NEXT_PUBLIC_SUPABASE_ANON_KEY
+      releituraDaPr(), // confere o que ficou gravado
       // Ja filtrado pelo servidor: o endpoint aceita `branch`.
       resposta({ deployments: [{ uid: 'dpl_desta_branch' }] }),
       resposta({ id: 'dpl_novo' }), // redeploy
@@ -313,6 +419,7 @@ describe('apontarPreviewParaRamificacao', () => {
       resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
       resposta({}),
       resposta({}),
+      releituraDaPr(),
       resposta({ deployments: [] }),
       resposta({ deployments: [{ uid: 'dpl_que_demorou' }] }),
       resposta({ id: 'dpl_novo' }),
@@ -338,6 +445,7 @@ describe('apontarPreviewParaRamificacao', () => {
       resposta([{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }]),
       resposta({}),
       resposta({}),
+      releituraDaPr(),
       resposta({ deployments: [{ uid: 'dpl_producao', target: 'production' }] }),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
@@ -361,6 +469,7 @@ describe('apontarPreviewParaRamificacao', () => {
       resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
       resposta({}),
       resposta({}),
+      releituraDaPr(),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift() ?? resposta({ deployments: [] }))
 
@@ -431,6 +540,8 @@ describe('limparVariaveisDaBranch', () => {
       }),
       new Response(null, { status: 204 }),
       new Response(null, { status: 204 }),
+      // Releitura: sobraram so as que nao sao desta branch.
+      resposta({ envs: [{ id: 'env_generica_url', key: 'NEXT_PUBLIC_SUPABASE_URL', gitBranch: null }] }),
     ]
     const fetchImpl = mock.fn(async () => respostas.shift())
     const intocaveis = ['env_generica_url', 'env_generica_chave', 'env_outra_branch', 'env_alheia']
@@ -477,15 +588,187 @@ describe('limparVariaveisDaBranch', () => {
     assert.equal(resultado.removidas, 0)
     assert.equal(fetchImpl.mock.callCount(), 1)
   })
+
+  it('falha quando a variavel continua la depois de apagada', async () => {
+    const respostas = [
+      releituraTravada(),
+      new Response(null, { status: 204 }),
+      new Response(null, { status: 204 }),
+      releituraTravada(),
+    ]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+
+    await assert.rejects(limparVariaveisDaBranch({
+      ...CREDENCIAIS,
+      gitBranch: BRANCH,
+      fetchImpl,
+      registrar: () => {},
+    }), /continua gravada/)
+  })
+
+  it('falha fechado com listagem sem campo envs ou com pagina seguinte', async () => {
+    for (const corpo of [{}, { envs: null }, { envs: [], pagination: { next: 1726500000000 } }]) {
+      const fetchImpl = mock.fn(async () => resposta(corpo))
+      await assert.rejects(limparVariaveisDaBranch({
+        ...CREDENCIAIS,
+        gitBranch: BRANCH,
+        fetchImpl,
+        registrar: () => {},
+      }), /listagem de variaveis/, JSON.stringify(corpo))
+      assert.equal(fetchImpl.mock.calls.some((c) => c.arguments[1]?.method === 'DELETE'), false)
+    }
+  })
+
+  it('exige o nome da branch, senao tocaria nas genericas', async () => {
+    const fetchImpl = mock.fn()
+    await assert.rejects(limparVariaveisDaBranch({ ...CREDENCIAIS, gitBranch: '', fetchImpl }), /branch ausente/)
+    assert.equal(fetchImpl.mock.callCount(), 0)
+  })
+})
+
+describe('bloquearPreviewDaBranch', () => {
+  it('grava o destino inerte so para Preview daquela branch e rele', async () => {
+    const respostas = [resposta({}), resposta({}), releituraTravada()]
+    const fetchImpl = mock.fn(async () => respostas.shift())
+    const log = []
+
+    const resultado = await bloquearPreviewDaBranch({
+      ...CREDENCIAIS,
+      gitBranch: BRANCH,
+      fetchImpl,
+      registrar: (linha) => log.push(linha),
+    })
+
+    assert.equal(resultado.situacao, 'bloqueado')
+    assert.equal(respostas.length, 0)
+    const gravadas = fetchImpl.mock.calls
+      .filter((c) => c.arguments[1]?.method === 'POST')
+      .map((c) => JSON.parse(c.arguments[1].body))
+    assert.deepEqual(gravadas, planejarBloqueio({ gitBranch: BRANCH }))
+    for (const variavel of gravadas) {
+      assert.deepEqual(variavel.target, ['preview'])
+      assert.equal(variavel.gitBranch, BRANCH)
+    }
+    // Travar nao apaga nada e nao mexe em deploy.
+    assert.equal(fetchImpl.mock.calls.some((c) => c.arguments[1]?.method === 'DELETE'), false)
+    assert.equal(fetchImpl.mock.calls.some((c) => /deployments/.test(c.arguments[0])), false)
+    assert.ok(log.some((linha) => /tem o valor gravado/.test(linha)), log.join('\n'))
+  })
+
+  it('aceita releitura sem valor em claro, e diz que so conferiu a existencia', async () => {
+    const semValor = (key) => envDaBranch(key, undefined, { type: 'encrypted', decrypted: false })
+    const respostas = [
+      resposta({}),
+      resposta({}),
+      resposta({ envs: [semValor('NEXT_PUBLIC_SUPABASE_URL'), semValor('NEXT_PUBLIC_SUPABASE_ANON_KEY')] }),
+    ]
+    const log = []
+
+    await bloquearPreviewDaBranch({
+      ...CREDENCIAIS,
+      gitBranch: BRANCH,
+      fetchImpl: mock.fn(async () => respostas.shift()),
+      registrar: (linha) => log.push(linha),
+    })
+
+    assert.ok(log.some((linha) => /0 conferida\(s\) por valor/.test(linha)), log.join('\n'))
+  })
+
+  it('falha quando a trava nao aparece na releitura', async () => {
+    // Lista vazia: a gravacao respondeu 200 mas nada ficou.
+    const respostas = [resposta({}), resposta({}), resposta({ envs: [GENERICA_URL] })]
+
+    await assert.rejects(bloquearPreviewDaBranch({
+      ...CREDENCIAIS,
+      gitBranch: BRANCH,
+      fetchImpl: mock.fn(async () => respostas.shift()),
+      registrar: () => {},
+    }), /esperava uma NEXT_PUBLIC_SUPABASE_URL.*devolveu 0/)
+  })
+
+  it('exige credenciais e branch antes de qualquer chamada', async () => {
+    const fetchImpl = mock.fn()
+    await assert.rejects(bloquearPreviewDaBranch({ gitBranch: BRANCH, vercelProject: 'p', fetchImpl }), /VERCEL_TOKEN/)
+    await assert.rejects(bloquearPreviewDaBranch({ gitBranch: BRANCH, vercelToken: 'v', fetchImpl }), /Projeto da Vercel/)
+    await assert.rejects(bloquearPreviewDaBranch({ vercelToken: 'v', vercelProject: 'p', fetchImpl }), /branch ausente/)
+    assert.equal(fetchImpl.mock.callCount(), 0)
+  })
+
+  it('o destino inerte nao e banco nenhum e a trava do build o recusa', () => {
+    const endereco = new URL(DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_URL)
+    // `.invalid` e reservado (RFC 2606) e nunca resolve.
+    assert.ok(endereco.hostname.endsWith('.invalid'), endereco.hostname)
+    assert.ok(!endereco.hostname.endsWith('.supabase.co'))
+    assert.doesNotMatch(DESTINO_INERTE.NEXT_PUBLIC_SUPABASE_ANON_KEY, /^sb_publishable_|^[\w-]+\.[\w-]+\.[\w-]+$/)
+
+    // A trava de next.config.ts so aceita `*.supabase.co`; se ela deixar de
+    // exigir isso, o destino inerte precisa ser revisto.
+    const trava = readFileSync(new URL('../src/lib/environmentSafety.ts', import.meta.url), 'utf8')
+    assert.ok(trava.includes("const suffix = '.supabase.co'"), 'A trava do build mudou o sufixo aceito.')
+    assert.ok(trava.includes('NEXT_PUBLIC_SUPABASE_URL invalida'), 'A trava do build parou de recusar endereco desconhecido.')
+  })
+})
+
+describe('conferirReleitura', () => {
+  const esperadas = planejarVariaveis({ projectRef: 'axpkaqpqrvpdfwoozrmy', chavePublica: 'sb_publishable_da_pr', gitBranch: BRANCH })
+
+  it('conta por valor o que a Vercel devolve em claro', () => {
+    const listadas = [
+      envDaBranch('NEXT_PUBLIC_SUPABASE_URL', 'https://axpkaqpqrvpdfwoozrmy.supabase.co'),
+      envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'sb_publishable_da_pr'),
+    ]
+    assert.deepEqual(conferirReleitura(listadas, esperadas), { porValor: 2 })
+  })
+
+  it('recusa duplicada, ausente, fora de Preview e lista que nao e lista', () => {
+    const url = envDaBranch('NEXT_PUBLIC_SUPABASE_URL', 'https://axpkaqpqrvpdfwoozrmy.supabase.co')
+    const chave = envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'sb_publishable_da_pr')
+
+    assert.throws(() => conferirReleitura([url, url, chave], esperadas), /devolveu 2/)
+    assert.throws(() => conferirReleitura([url], esperadas), /ANON_KEY.*devolveu 0/)
+    assert.throws(() => conferirReleitura([], esperadas), /devolveu 0/)
+    assert.throws(
+      () => conferirReleitura([{ ...url, target: ['preview', 'production'] }, chave], esperadas),
+      /restrita a Preview/,
+    )
+    assert.throws(() => conferirReleitura([{ ...url, target: undefined }, chave], esperadas), /restrita a Preview/)
+    assert.throws(() => conferirReleitura(undefined, esperadas), /nao veio como lista/)
+  })
+
+  it('depois de remover, qualquer sobra reprova', () => {
+    assert.deepEqual(conferirReleitura([], []), { porValor: 0 })
+    assert.throws(
+      () => conferirReleitura([envDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'x')], []),
+      /continua gravada/,
+    )
+  })
+})
+
+describe('acao do script', () => {
+  const script = fileURLToPath(new URL('./preview-branch-env.mjs', import.meta.url))
+
+  it('acao desconhecida ou ausente falha sem chamar ninguem', () => {
+    // `limpar` era o nome antigo: cair no caminho de apontar por engano
+    // gravaria variaveis numa branch que devia ficar travada.
+    for (const acao of ['limpar', '', undefined]) {
+      const env = { PATH: process.env.PATH ?? process.env.Path ?? '' }
+      if (acao !== undefined) env.ACAO = acao
+      const execucao = spawnSync(process.execPath, [script], { env, encoding: 'utf8' })
+      assert.equal(execucao.status, 1, String(acao))
+      assert.match(execucao.stderr, /ACAO desconhecida/, String(acao))
+    }
+  })
 })
 
 // Um passo de workflow que DECIDE alguma coisa so era exercitado abrindo PR e
-// esperando o semaforo. As duas condicoes abaixo sao transcricao ao pe da letra
-// do que esta em .github/workflows/banco-por-pr.yml; so a fonte dos dados muda.
-// O teste final confere que a transcricao nao envelheceu em silencio.
+// esperando o semaforo. As condicoes abaixo sao transcricao ao pe da letra do
+// que esta em .github/workflows/banco-por-pr.yml; so a fonte dos dados muda.
+// O ultimo teste do bloco confere que a transcricao nao envelheceu em silencio.
 const CONDICAO_APONTAR = "github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)"
-const CONDICAO_LIMPAR = "github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
-const GRUPO = "banco-por-pr-${{ github.event.pull_request.number || inputs.pr_number }}"
+const CONDICAO_DESTRAVAR = "github.event_name == 'pull_request' && (steps.classificar.outputs.perfil == 'documentation' || steps.classificar.outputs.perfil == 'ci-mechanism')"
+const CONDICAO_TRAVAR = "github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository"
+const CONDICAO_ESQUECER = "github.event_name == 'delete' && github.event.ref_type == 'branch'"
+const GRUPO = "banco-por-pr-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}"
 const AMBIENTE_PR = "${{ github.event.pull_request.number || inputs.pr_number }}"
 const AMBIENTE_BRANCH = "${{ github.event.pull_request.head.ref || inputs.git_branch }}"
 
@@ -494,56 +777,86 @@ const apontarRoda = (evento, repositorio, nomeDoEvento) =>
   || (evento.action !== 'closed'
     && evento.pull_request?.head?.repo?.full_name === repositorio)
 
-// O `||` do GitHub devolve o primeiro operando verdadeiro, igual ao do
-// JavaScript para o que interessa aqui: numero ausente e texto vazio sao falsos.
-const numeroDaPr = (evento, inputs) => evento.pull_request?.number || inputs?.pr_number
-const branchDaPr = (evento, inputs) => evento.pull_request?.head?.ref || inputs?.git_branch
-const grupoDeConcorrencia = (evento, inputs) => `banco-por-pr-${numeroDaPr(evento, inputs) ?? ''}`
+const destravarRoda = (nomeDoEvento, perfil) =>
+  nomeDoEvento === 'pull_request'
+  && (perfil === 'documentation' || perfil === 'ci-mechanism')
 
-const limparRoda = (evento, repositorio) =>
+const travarRoda = (evento, repositorio) =>
   evento.action === 'closed'
   && evento.pull_request?.head?.repo?.full_name === repositorio
 
+const esquecerRoda = (evento, nomeDoEvento) =>
+  nomeDoEvento === 'delete'
+  && evento.ref_type === 'branch'
+
+// O `||` do GitHub devolve o primeiro operando verdadeiro, igual ao do
+// JavaScript para o que interessa aqui: campo ausente e texto vazio sao falsos.
+const numeroDaPr = (evento, inputs) => evento.pull_request?.number || inputs?.pr_number
+const branchDaPr = (evento, inputs) => evento.pull_request?.head?.ref || inputs?.git_branch
+const grupoDeConcorrencia = (evento, inputs) =>
+  `banco-por-pr-${evento.pull_request?.head?.ref || inputs?.git_branch || evento.ref || ''}`
+
 const REPO = 'Orodrigao/PaneProducao'
-const daCasa = (action) => ({
+const daCasa = (action, ref = BRANCH) => ({
   action,
-  pull_request: { head: { repo: { full_name: REPO } } },
+  pull_request: { number: 285, head: { ref, repo: { full_name: REPO } } },
 })
 
-describe('condicoes do workflow Banco por PR', () => {
-  it('aponta ao abrir, reabrir e a cada envio, e nunca ao fechar', () => {
-    for (const action of ['opened', 'reopened', 'synchronize']) {
-      assert.equal(apontarRoda(daCasa(action), REPO, 'pull_request'), true, action)
-      assert.equal(limparRoda(daCasa(action), REPO), false, action)
-    }
+const trabalhosQueRodam = (evento, nomeDoEvento) => [
+  apontarRoda(evento, REPO, nomeDoEvento) && 'apontar',
+  travarRoda(evento, REPO) && 'limpar',
+  esquecerRoda(evento, nomeDoEvento) && 'esquecer',
+].filter(Boolean)
 
-    assert.equal(apontarRoda(daCasa('closed'), REPO, 'pull_request'), false)
-    assert.equal(limparRoda(daCasa('closed'), REPO), true)
+describe('condicoes do workflow Banco por PR', () => {
+  it('cada evento liga exatamente um trabalho, e o certo', () => {
+    for (const action of ['opened', 'reopened', 'synchronize']) {
+      assert.deepEqual(trabalhosQueRodam(daCasa(action), 'pull_request'), ['apontar'], action)
+    }
+    assert.deepEqual(trabalhosQueRodam(daCasa('closed'), 'pull_request'), ['limpar'])
+    assert.deepEqual(trabalhosQueRodam({ ref: BRANCH, ref_type: 'branch' }, 'delete'), ['esquecer'])
   })
 
   // A armadilha que quase passou: em disparo manual nao existe
   // `github.event.pull_request`, entao a guarda contra fork viraria falsa e o
   // trabalho simplesmente nao rodaria, sem dizer por que.
-  it('o disparo manual roda, mesmo sem existir pull_request no evento', () => {
-    const manual = {}
-    assert.equal(apontarRoda(manual, REPO, 'workflow_dispatch'), true)
-    assert.equal(limparRoda(manual, REPO), false)
+  it('o disparo manual so aponta, mesmo sem existir pull_request no evento', () => {
+    assert.deepEqual(trabalhosQueRodam({}, 'workflow_dispatch'), ['apontar'])
   })
 
-  it('nao roda em PR de fork, que nao recebe segredo e falharia sem explicacao', () => {
-    const deFora = {
-      action: 'opened',
-      pull_request: { head: { repo: { full_name: 'estranho/PaneProducao' } } },
-    }
-    assert.equal(apontarRoda(deFora, REPO, 'pull_request'), false)
-    assert.equal(limparRoda({ ...deFora, action: 'closed' }, REPO), false)
+  it('tag apagada e PR de fork nao ligam nada', () => {
+    assert.deepEqual(trabalhosQueRodam({ ref: 'v1.0', ref_type: 'tag' }, 'delete'), [])
+    const deFora = (action) => ({
+      action,
+      pull_request: { head: { ref: BRANCH, repo: { full_name: 'estranho/PaneProducao' } } },
+    })
+    assert.deepEqual(trabalhosQueRodam(deFora('opened'), 'pull_request'), [])
+    assert.deepEqual(trabalhosQueRodam(deFora('closed'), 'pull_request'), [])
   })
 
-  it('campo ausente no evento nao liga nenhum dos dois trabalhos', () => {
-    // Payload capado: se o caminho ate full_name sumir, a comparacao vira
-    // undefined e os dois lados ficam desligados. Falha fechado.
-    assert.equal(apontarRoda({ action: 'opened' }, REPO, 'pull_request'), false)
-    assert.equal(limparRoda({ action: 'closed', pull_request: {} }, REPO), false)
+  it('campo ausente no evento nao liga nenhum trabalho', () => {
+    // Payload capado: se o caminho ate full_name ou ref_type sumir, a
+    // comparacao vira undefined e tudo fica desligado. Falha fechado.
+    assert.deepEqual(trabalhosQueRodam({ action: 'opened' }, 'pull_request'), [])
+    assert.deepEqual(trabalhosQueRodam({ action: 'closed', pull_request: {} }, 'pull_request'), [])
+    assert.deepEqual(trabalhosQueRodam({ ref: BRANCH }, 'delete'), [])
+  })
+
+  it('destrava so evento de PR sem mudanca de produto, por lista fechada de perfis', () => {
+    // O trabalho inteiro so roda em PR aberta (abrir, reabrir, enviar); o
+    // fechamento vai para outro trabalho.
+    assert.equal(destravarRoda('pull_request', 'documentation'), true)
+    assert.equal(destravarRoda('pull_request', 'ci-mechanism'), true)
+    // Produto passa pelo passo Apontar, que ja destrava ou aponta.
+    assert.equal(destravarRoda('pull_request', 'product'), false)
+    // Classificacao ausente ou estranha nao destrava: falha fechado.
+    assert.equal(destravarRoda('pull_request', undefined), false)
+    assert.equal(destravarRoda('pull_request', ''), false)
+    assert.equal(destravarRoda('pull_request', 'Documentation'), false)
+    // Disparo manual: a classificacao nao roda e o passo Apontar acabou de
+    // gravar o banco da PR. Destravar ali apagaria o que foi gravado.
+    assert.equal(destravarRoda('workflow_dispatch', undefined), false)
+    assert.equal(destravarRoda('workflow_dispatch', 'documentation'), false)
   })
 
   it('em disparo manual, numero e branch vem dos campos preenchidos a mao', () => {
@@ -555,25 +868,33 @@ describe('condicoes do workflow Banco por PR', () => {
   })
 
   it('em evento de PR, o evento manda e os campos manuais nao atrapalham', () => {
-    const evento = {
-      action: 'synchronize',
-      pull_request: { number: 999, head: { ref: BRANCH, repo: { full_name: REPO } } },
-    }
     const inputs = { pr_number: '286', git_branch: 'outra' }
 
-    assert.equal(numeroDaPr(evento, inputs), 999)
-    assert.equal(branchDaPr(evento, inputs), BRANCH)
+    assert.equal(numeroDaPr(daCasa('synchronize'), inputs), 285)
+    assert.equal(branchDaPr(daCasa('synchronize'), inputs), BRANCH)
   })
 
-  it('dois disparos manuais de PRs diferentes nao caem no mesmo grupo', () => {
-    // Sem o `|| inputs.pr_number` os dois virariam `banco-por-pr-` e, com
-    // cancel-in-progress, um cancelaria o outro em silencio.
-    const manual = {}
-    const grupo286 = grupoDeConcorrencia(manual, { pr_number: '286' })
-    const grupo287 = grupoDeConcorrencia(manual, { pr_number: '287' })
+  it('fechar e apagar a mesma branch fazem fila; branches diferentes nao', () => {
+    const fechar = grupoDeConcorrencia(daCasa('closed'), {})
+    const apagar = grupoDeConcorrencia({ ref: BRANCH, ref_type: 'branch' }, {})
+    assert.equal(fechar, `banco-por-pr-${BRANCH}`)
+    assert.equal(apagar, fechar)
 
-    assert.notEqual(grupo286, grupo287)
-    assert.equal(grupo286, 'banco-por-pr-286')
+    // Sem os `||` os disparos manuais e as branches apagadas virariam todos
+    // `banco-por-pr-` e, com cancel-in-progress, um cancelaria o outro.
+    assert.notEqual(
+      grupoDeConcorrencia({}, { pr_number: '286', git_branch: 'fix/a' }),
+      grupoDeConcorrencia({}, { pr_number: '287', git_branch: 'fix/b' }),
+    )
+    assert.notEqual(
+      grupoDeConcorrencia({ ref: 'fix/a', ref_type: 'branch' }, {}),
+      grupoDeConcorrencia({ ref: 'fix/b', ref_type: 'branch' }, {}),
+    )
+    // No disparo manual o evento traz ref da main; o campo digitado vem antes.
+    assert.equal(
+      grupoDeConcorrencia({ ref: 'refs/heads/main' }, { git_branch: BRANCH }),
+      `banco-por-pr-${BRANCH}`,
+    )
   })
 
   it('a transcricao acima continua igual ao workflow de verdade', () => {
@@ -582,22 +903,44 @@ describe('condicoes do workflow Banco por PR', () => {
       'utf8',
     ).replace(/\s+/g, ' ')
 
-    assert.ok(
-      workflow.includes(CONDICAO_APONTAR),
-      'A condicao do trabalho "apontar" mudou no workflow e este teste ficou para tras.',
-    )
-    assert.ok(
-      workflow.includes(CONDICAO_LIMPAR),
-      'A condicao do trabalho "limpar" mudou no workflow e este teste ficou para tras.',
-    )
-    assert.ok(
-      workflow.includes(GRUPO),
-      'O grupo de concorrencia mudou no workflow e este teste ficou para tras.',
-    )
-    assert.ok(
-      workflow.includes(AMBIENTE_PR) && workflow.includes(AMBIENTE_BRANCH),
-      'A origem do numero da PR ou da branch mudou no workflow e este teste ficou para tras.',
-    )
+    for (const [nome, trecho] of Object.entries({
+      CONDICAO_APONTAR,
+      CONDICAO_DESTRAVAR,
+      CONDICAO_TRAVAR,
+      CONDICAO_ESQUECER,
+      GRUPO,
+      AMBIENTE_PR,
+      AMBIENTE_BRANCH,
+    })) {
+      assert.ok(workflow.includes(trecho), `${nome} mudou no workflow e este teste ficou para tras.`)
+    }
+    for (const trecho of [
+      'ACAO: apontar',
+      'ACAO: destravar',
+      'ACAO: bloquear',
+      'ACAO: esquecer',
+      'GIT_BRANCH: ${{ github.event.ref }}',
+      'name: Travar o preview da PR fechada',
+    ]) {
+      assert.ok(workflow.includes(trecho), `"${trecho}" saiu do workflow.`)
+    }
+    const cru = readFileSync(new URL('../.github/workflows/banco-por-pr.yml', import.meta.url), 'utf8')
+    assert.match(cru, /^on:\r?\n(?:(?: {2}.*)?\r?\n)*? {2}delete:\r?\n/m, 'O gatilho de branch apagada saiu do workflow.')
+  })
+
+  // A portaria (ConfirmPrDatabase) so libera o banco da PR lendo estes nomes.
+  // Renomear aqui exige mudar preview_database_policy.pr_database_workflows na
+  // portaria na mesma entrega.
+  it('mantem os nomes de trabalho e passo cadastrados na portaria', () => {
+    const cadastro = [
+      ['banco-por-pr.yml', 'Apontar o preview para o banco desta PR', 'Apontar'],
+      ['usuarios-banco-por-pr.yml', 'Criar contas ficticias e conferir perfis', 'Criar contas, ligar perfis e verificar o banco isolado'],
+    ]
+    for (const [arquivo, trabalho, passo] of cadastro) {
+      const linhas = readFileSync(new URL(`../.github/workflows/${arquivo}`, import.meta.url), 'utf8').split(/\r?\n/)
+      assert.ok(linhas.includes(`    name: ${trabalho}`), `${arquivo}: trabalho "${trabalho}" sumiu.`)
+      assert.ok(linhas.includes(`      - name: ${passo}`), `${arquivo}: passo "${passo}" sumiu.`)
+    }
   })
 })
 
@@ -605,59 +948,162 @@ describe('condicoes do workflow Banco por PR', () => {
 // nada garante que combinem. Como o casamento da ramificacao aceita numero OU
 // branch, uma branch errada sem ramificacao propria deixaria uma candidata so,
 // pelo numero, e o preview de uma PR receberia o banco de outra: verde,
-// silencioso e no banco errado. O workflow confere antes, e a regra e esta.
-const REGRA_DA_CONFERENCIA = 'if [ "$BRANCH_DA_PR" != "$BRANCH_INFORMADA" ]; then'
+// silencioso e no banco errado. No workflow de usuarios, o seed de uma branch
+// iria para o banco de outra PR. Os dois workflows conferem antes.
+//
+// Aqui nao ha transcricao: o bloco `run` DE VERDADE e recortado do YAML e
+// executado no bash, com um `gh` falso no PATH. So a fonte dos dados muda.
+const PASSO_DA_CONFERENCIA = 'Conferir que a branch informada e mesmo a da PR'
 
-function branchConfere(branchDaPr, branchInformada) {
-  if (branchDaPr === null || branchDaPr === undefined) return { ok: false, motivo: 'leitura-falhou' }
-  if (branchDaPr === '') return { ok: false, motivo: 'sem-branch' }
-  if (branchDaPr !== branchInformada) return { ok: false, motivo: 'nao-bate' }
-  return { ok: true, motivo: null }
+function blocoRunDoPasso(arquivo, nomeDoPasso) {
+  const linhas = readFileSync(new URL(`../.github/workflows/${arquivo}`, import.meta.url), 'utf8').split(/\r?\n/)
+  const recuo = (linha) => linha.length - linha.trimStart().length
+  const inicio = linhas.findIndex((linha) => linha.trim() === `- name: ${nomeDoPasso}`)
+  assert.ok(inicio >= 0, `${arquivo}: passo "${nomeDoPasso}" nao encontrado.`)
+
+  let i = inicio + 1
+  while (i < linhas.length && linhas[i].trim() !== 'run: |') {
+    assert.ok(!linhas[i].trim() || recuo(linhas[i]) > recuo(linhas[inicio]), `${arquivo}: passo sem bloco run.`)
+    i += 1
+  }
+  assert.ok(i < linhas.length, `${arquivo}: passo sem bloco run.`)
+
+  const recuoDoRun = recuo(linhas[i])
+  const corpo = []
+  for (i += 1; i < linhas.length; i += 1) {
+    if (linhas[i].trim() && recuo(linhas[i]) <= recuoDoRun) break
+    corpo.push(linhas[i])
+  }
+  const base = Math.min(...corpo.filter((linha) => linha.trim()).map(recuo))
+  return corpo.map((linha) => linha.slice(base)).join('\n').trimEnd() + '\n'
+}
+
+function rodarConferencia(bloco, { pr, branch, gh = {} }) {
+  const pasta = mkdtempSync(join(tmpdir(), 'gh-falso-'))
+  try {
+    const registro = join(pasta, 'chamadas.txt')
+    const falso = join(pasta, 'gh')
+    writeFileSync(falso, [
+      '#!/usr/bin/env bash',
+      'printf "%s\\n" "$*" >> "$GH_FALSO_REGISTRO"',
+      'case "$*" in',
+      '  *headRefName*) [ -n "${GH_FALSO_FALHA_BRANCH:-}" ] && exit 1; printf "%s\\n" "${GH_FALSO_BRANCH:-}" ;;',
+      '  *state*) [ -n "${GH_FALSO_FALHA_ESTADO:-}" ] && exit 1; printf "%s\\n" "${GH_FALSO_ESTADO:-}" ;;',
+      '  *) exit 99 ;;',
+      'esac',
+      '',
+    ].join('\n'))
+    chmodSync(falso, 0o755)
+
+    // No Windows a variavel se chama `Path`; duas grafias no mesmo ambiente
+    // deixariam a escolha para o sistema.
+    const env = {}
+    for (const [chave, valor] of Object.entries(process.env)) {
+      if (chave.toUpperCase() !== 'PATH') env[chave] = valor
+    }
+    const caminho = process.env.PATH ?? process.env.Path ?? ''
+    Object.assign(env, {
+      PATH: `${pasta}${delimiter}${caminho}`,
+      GITHUB_REPOSITORY: REPO,
+      GH_FALSO_REGISTRO: registro,
+      PR_INFORMADA: pr,
+      BRANCH_INFORMADA: branch,
+      GH_FALSO_BRANCH: gh.branch ?? '',
+      GH_FALSO_ESTADO: gh.estado ?? '',
+      GH_FALSO_FALHA_BRANCH: gh.falhaBranch ? '1' : '',
+      GH_FALSO_FALHA_ESTADO: gh.falhaEstado ? '1' : '',
+    })
+
+    const execucao = spawnSync('bash', ['-c', bloco], { env, encoding: 'utf8' })
+    assert.ifError(execucao.error)
+    return {
+      status: execucao.status,
+      saida: `${execucao.stdout}${execucao.stderr}`,
+      chamadas: existsSync(registro) ? readFileSync(registro, 'utf8').split('\n').filter(Boolean) : [],
+    }
+  } finally {
+    rmSync(pasta, { recursive: true, force: true })
+  }
 }
 
 describe('conferencia da branch no disparo manual', () => {
-  it('aceita quando a branch informada e mesmo a da PR', () => {
-    assert.deepEqual(branchConfere(BRANCH, BRANCH), { ok: true, motivo: null })
+  const BLOCOS = {
+    'banco-por-pr.yml': blocoRunDoPasso('banco-por-pr.yml', PASSO_DA_CONFERENCIA),
+    'usuarios-banco-por-pr.yml': blocoRunDoPasso('usuarios-banco-por-pr.yml', PASSO_DA_CONFERENCIA),
+  }
+  const ABERTA = { branch: BRANCH, estado: 'OPEN' }
+
+  it('os dois workflows usam a mesma conferencia, letra por letra', () => {
+    assert.equal(BLOCOS['usuarios-banco-por-pr.yml'], BLOCOS['banco-por-pr.yml'])
+    assert.match(BLOCOS['banco-por-pr.yml'], /set -euo pipefail/)
   })
 
-  it('recusa quando o numero e de uma PR e a branch e de outra', () => {
-    // O caso perigoso de verdade: a branch digitada nao tem ramificacao
-    // propria, entao o script acharia uma candidata so, pelo numero, e
-    // seguiria feliz gravando o banco errado.
-    assert.deepEqual(
-      branchConfere(BRANCH, 'chore/outra-coisa-qualquer'),
-      { ok: false, motivo: 'nao-bate' },
-    )
-  })
-
-  it('recusa diferenca de caixa, porque nome de branch diferencia maiuscula', () => {
-    assert.equal(branchConfere(BRANCH, BRANCH.toUpperCase()).ok, false)
-  })
-
-  // Os dois casos que a realidade nao oferece de bandeja.
-  it('recusa quando a leitura da PR falha', () => {
-    assert.deepEqual(branchConfere(null, BRANCH), { ok: false, motivo: 'leitura-falhou' })
-    assert.deepEqual(branchConfere(undefined, BRANCH), { ok: false, motivo: 'leitura-falhou' })
-  })
-
-  it('recusa quando a PR nao devolve nome de branch', () => {
-    assert.deepEqual(branchConfere('', BRANCH), { ok: false, motivo: 'sem-branch' })
-  })
-
-  it('a regra acima continua igual ao workflow de verdade', () => {
-    const workflow = readFileSync(
-      new URL('../.github/workflows/banco-por-pr.yml', import.meta.url),
-      'utf8',
-    )
+  it('os dois so rodam a conferencia no disparo manual e podem ler a PR', () => {
+    for (const arquivo of Object.keys(BLOCOS)) {
+      const texto = readFileSync(new URL(`../.github/workflows/${arquivo}`, import.meta.url), 'utf8')
+      const trecho = texto.slice(texto.indexOf(`- name: ${PASSO_DA_CONFERENCIA}`))
+      assert.match(trecho, /^- name: [^\n]+\r?\n\s+if: github\.event_name == 'workflow_dispatch'\r?\n/, arquivo)
+      assert.ok(texto.includes('pull-requests: read'), `${arquivo}: sem permissao de leitura de PR.`)
+    }
+    // Em usuarios, a conferencia vem antes de buscar qualquer codigo da PR.
+    const usuarios = readFileSync(new URL('../.github/workflows/usuarios-banco-por-pr.yml', import.meta.url), 'utf8')
     assert.ok(
-      workflow.includes(REGRA_DA_CONFERENCIA),
-      'A conferencia da branch mudou no workflow e este teste ficou para tras.',
-    )
-    assert.ok(
-      workflow.includes('pull-requests: read'),
-      'Sem permissao de leitura de PR a conferencia nao consegue rodar.',
+      usuarios.indexOf(`- name: ${PASSO_DA_CONFERENCIA}`) < usuarios.indexOf('- name: Buscar migrations e seed da PR'),
+      'A conferencia precisa rodar antes do checkout da PR.',
     )
   })
+
+  for (const [arquivo, bloco] of Object.entries(BLOCOS)) {
+    describe(arquivo, () => {
+      it('aceita PR aberta com a branch certa', () => {
+        const r = rodarConferencia(bloco, { pr: '285', branch: BRANCH, gh: ABERTA })
+        assert.equal(r.status, 0, r.saida)
+        assert.match(r.saida, /Confere: a PR 285 esta aberta/)
+        assert.equal(r.chamadas.length, 2)
+        assert.ok(r.chamadas.every((c) => c.includes(`--repo ${REPO}`) && c.startsWith('pr view 285 ')), r.chamadas.join('|'))
+      })
+
+      it('recusa quando o numero e de uma PR e a branch e de outra, inclusive por caixa', () => {
+        for (const informada of ['chore/outra-coisa-qualquer', BRANCH.toUpperCase(), '', `${BRANCH} `]) {
+          const r = rodarConferencia(bloco, { pr: '285', branch: informada, gh: ABERTA })
+          assert.equal(r.status, 1, informada)
+          assert.match(r.saida, /nao pertence a PR 285/, informada)
+        }
+      })
+
+      it('recusa quando a leitura da PR falha ou vem sem branch', () => {
+        let r = rodarConferencia(bloco, { pr: '285', branch: BRANCH, gh: { ...ABERTA, falhaBranch: true } })
+        assert.equal(r.status, 1)
+        assert.match(r.saida, /Nao consegui ler a PR 285/)
+
+        r = rodarConferencia(bloco, { pr: '285', branch: BRANCH, gh: { ...ABERTA, branch: '' } })
+        assert.equal(r.status, 1)
+        assert.match(r.saida, /nao devolveu nome de branch/)
+      })
+
+      it('recusa PR fechada, mesclada, de estado ilegivel ou ausente', () => {
+        for (const estado of ['CLOSED', 'MERGED', 'open', '']) {
+          const r = rodarConferencia(bloco, { pr: '285', branch: BRANCH, gh: { branch: BRANCH, estado } })
+          assert.equal(r.status, 1, estado)
+          assert.match(r.saida, /nao esta aberta/, estado)
+        }
+        const r = rodarConferencia(bloco, { pr: '285', branch: BRANCH, gh: { ...ABERTA, falhaEstado: true } })
+        assert.equal(r.status, 1)
+        assert.match(r.saida, /Nao consegui ler o estado/)
+      })
+
+      it('recusa numero que nao seja so digitos, sem nem consultar o GitHub', () => {
+        // `gh pr view` aceitaria nome de branch ou URL no lugar do numero, e o
+        // nome digitado se conferiria consigo mesmo.
+        for (const pr of [BRANCH, '285a', '', '0', '0285', ' 285', '285\n286', '#285']) {
+          const r = rodarConferencia(bloco, { pr, branch: BRANCH, gh: ABERTA })
+          assert.equal(r.status, 1, JSON.stringify(pr))
+          assert.match(r.saida, /Numero de PR invalido/, JSON.stringify(pr))
+          assert.deepEqual(r.chamadas, [], JSON.stringify(pr))
+        }
+      })
+    })
+  }
 })
 
 // A ponte concluia "nao achei ramificacao, logo esta PR nao mexe no banco".
@@ -720,6 +1166,7 @@ describe('PR que altera supabase/ exige banco proprio', () => {
       resposta({ keys: [{ name: 'default', type: 'publishable', api_key: 'sb_publishable_da_pr' }] }),
       resposta({}),
       resposta({}),
+      releituraDaPr(),
       resposta({ deployments: [{ uid: 'dpl_desta_branch' }] }),
       resposta({ id: 'dpl_novo' }),
     ]
@@ -741,7 +1188,9 @@ describe('PR que altera supabase/ exige banco proprio', () => {
   })
 
   it('PR que nao toca supabase/ segue no compartilhado, sem esperar', async () => {
-    const fetchImpl = mock.fn(async () => resposta([RAMIFICACAO_MAIN]))
+    const fetchImpl = mock.fn(async (url) => (
+      ehListagemVercel(url) ? resposta({ envs: [] }) : resposta([RAMIFICACAO_MAIN])
+    ))
 
     const resultado = await apontarPreviewParaRamificacao({
       ...CREDENCIAIS,
@@ -752,7 +1201,8 @@ describe('PR que altera supabase/ exige banco proprio', () => {
     })
 
     assert.equal(resultado.situacao, 'sem-ramificacao')
-    assert.equal(fetchImpl.mock.callCount(), 1)
+    // Uma consulta ao Supabase e uma leitura das variaveis da branch, sem espera.
+    assert.equal(fetchImpl.mock.callCount(), 2)
   })
 
   // O terceiro caso que a realidade nao oferece: a lista truncada. A API de

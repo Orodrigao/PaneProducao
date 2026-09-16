@@ -11,12 +11,19 @@ name: Banco por PR
 # nenhuma PR reescreve mais aquele banco, ele espelha a main, que e exatamente
 # o certo para quem nao mexe em schema.
 #
+# PR fechada tem a branch travada num endereco inerte, nao apenas limpa: sem
+# variavel propria, um push novo na branch geraria preview no banco
+# compartilhado sem reserva nenhuma. Reabrir destrava; apagar a branch esquece
+# a trava, para nao acumular variavel de branch morta na Vercel.
+#
 # A regra de decisao vive em scripts/preview-branch-env.mjs e e testada por
 # scripts/preview-branch-env.test.mjs, que roda no `npm test` de toda PR.
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
+  # Branch apagada: a trava da PR fechada deixa de ter o que proteger.
+  delete:
   # Disparo manual para PR que ja existia antes desta ponte. Sem ele, apontar o
   # preview de uma PR antiga exigiria empurrar commit na branch dela, que pode
   # ser frente reservada por outro agente. Mesmo formato ja usado em
@@ -33,10 +40,13 @@ on:
         type: string
 
 concurrency:
-  # No disparo manual nao existe `github.event.pull_request`, entao o numero
-  # vem dos inputs. Sem esse `||` todos os disparos manuais cairiam no mesmo
-  # grupo e, com cancel-in-progress, um cancelaria o outro.
-  group: banco-por-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  # O grupo e a BRANCH, porque e ela que as variaveis da Vercel seguem, e so
+  # assim fechar e apagar a mesma branch fazem fila em vez de correr juntos: a
+  # trava gravada depois do esquecimento ficaria sobrando para sempre. Cada
+  # evento traz a branch num lugar: PR no head.ref, disparo manual no campo
+  # digitado e branch apagada em event.ref. Sem os `||` eventos diferentes
+  # cairiam no mesmo grupo e, com cancel-in-progress, um cancelaria o outro.
+  group: banco-por-pr-${{ github.event.pull_request.head.ref || inputs.git_branch || github.event.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -111,6 +121,13 @@ jobs:
       # so, pelo numero, e o script gravaria as credenciais do banco de uma PR
       # nas variaveis da branch de outra. Verde, silencioso e no banco errado,
       # que e exatamente a falha que esta ponte existe para matar.
+      #
+      # PR fechada tambem e recusada: disparar a mao numa delas destravaria o
+      # preview que o fechamento travou.
+      #
+      # ESTE PASSO E COPIA LITERAL do passo de mesmo nome em
+      # usuarios-banco-por-pr.yml; o teste executa os dois e exige que sejam
+      # iguais. Mudou aqui, mude la.
       - name: Conferir que a branch informada e mesmo a da PR
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -119,6 +136,12 @@ jobs:
           BRANCH_INFORMADA: ${{ inputs.git_branch }}
         run: |
           set -euo pipefail
+          # So digitos: `gh pr view` tambem aceita nome de branch e URL no lugar
+          # do numero, e ai o nome digitado se conferiria consigo mesmo.
+          if ! [[ "$PR_INFORMADA" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Numero de PR invalido: informe so os digitos."
+            exit 1
+          fi
           if ! BRANCH_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)"; then
             echo "Nao consegui ler a PR $PR_INFORMADA neste repositorio."
             exit 1
@@ -133,7 +156,15 @@ jobs:
             echo "  da PR:     $BRANCH_DA_PR"
             exit 1
           fi
-          echo "Confere: a PR $PR_INFORMADA esta na branch $BRANCH_DA_PR."
+          if ! ESTADO_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json state --jq .state)"; then
+            echo "Nao consegui ler o estado da PR $PR_INFORMADA."
+            exit 1
+          fi
+          if [ "$ESTADO_DA_PR" != "OPEN" ]; then
+            echo "A PR $PR_INFORMADA nao esta aberta (estado: ${ESTADO_DA_PR:-ausente}); o preview dela fica travado."
+            exit 1
+          fi
+          echo "Confere: a PR $PR_INFORMADA esta aberta na branch $BRANCH_DA_PR."
 
       # A ponte concluia "nao ha ramificacao, logo esta PR nao mexe no banco".
       # Sao coisas diferentes: a PR 303 alterava migration e mesmo assim ficou
@@ -193,17 +224,41 @@ jobs:
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs
 
+      # PR reaberta (ou aberta de novo com o nome de uma branch ja fechada) sem
+      # mudanca de produto nao chega ao passo acima, e a trava do fechamento
+      # ficaria para sempre. Sem mudanca de produto nao ha banco proprio, entao
+      # o destino certo e o compartilhado. Roda a cada evento, e nao so ao
+      # reabrir, porque isso custa uma leitura e nao depende de acertar o
+      # momento.
+      #
+      # Lista FECHADA de perfis: perfil ausente ou desconhecido nao destrava. E
+      # nunca no disparo manual, em que a classificacao nao roda e o passo
+      # acima acabou de gravar o banco da PR.
+      - name: Destravar a branch reaberta
+        if: >-
+          github.event_name == 'pull_request' &&
+          (steps.classificar.outputs.perfil == 'documentation' ||
+          steps.classificar.outputs.perfil == 'ci-mechanism')
+        env:
+          ACAO: destravar
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  # O id continua `limpar` porque change-scope.test.mjs o procura por esse
+  # nome; o que o trabalho faz agora e travar.
   limpar:
     # Em disparo manual `github.event.action` nao existe, e a comparacao com
-    # 'closed' e falsa, entao a limpeza nao roda. Isso depende de 'closed' NAO
+    # 'closed' e falsa, entao a trava nao roda. Isso depende de 'closed' NAO
     # ser numerico: a conversao do GitHub transforma nulo em 0 e texto em
     # numero, e comparar aquele campo com '' ou '0' daria VERDADEIRO no disparo
-    # manual, apagando as variaveis em vez de grava-las. Nao troque a
+    # manual, travando o preview em vez de aponta-lo. Nao troque a
     # comparacao por um valor numerico ou vazio.
     if: >-
       github.event.action == 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    name: Devolver o preview ao banco compartilhado
+    name: Travar o preview da PR fechada
     runs-on: ubuntu-latest
     steps:
       - name: Buscar o codigo
@@ -214,13 +269,41 @@ jobs:
         with:
           node-version: 22
 
-      # O Supabase apaga o banco da PR sozinho quando ela fecha. Sobraria a
-      # variavel apontando para um endereco morto, que envenenaria qualquer
-      # preview futuro que reaproveitasse o mesmo nome de branch.
-      - name: Limpar
+      # O Supabase apaga o banco da PR sozinho quando ela fecha. Apagar as
+      # variaveis nao basta: o proximo push na branch cairia nas genericas, que
+      # sao o banco compartilhado. A branch vai para um destino inerte e o
+      # build desse preview falha a vista.
+      - name: Travar
         env:
-          ACAO: limpar
+          ACAO: bloquear
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  esquecer:
+    # Branch apagada nao recebe mais push, entao a trava dela so ocuparia
+    # espaco na Vercel. Evento `delete` so nasce de quem tem escrita no
+    # repositorio e `event.ref` traz o nome curto da branch. Tag apagada nao
+    # conta.
+    if: >-
+      github.event_name == 'delete' &&
+      github.event.ref_type == 'branch'
+    name: Esquecer a trava da branch apagada
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Esquecer
+        env:
+          ACAO: esquecer
+          GIT_BRANCH: ${{ github.event.ref }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs
