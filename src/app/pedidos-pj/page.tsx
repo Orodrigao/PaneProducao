@@ -14,7 +14,7 @@ import { getCurrentUser, roleColor, RECEIVABLES_ROUTE, type AppUser } from '@/li
 import { showToast } from '@/lib/utils'
 import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
-import { pjPackPhysicalSize, resolvePjPackRule, roundPjPackQuantity, type PjPackRule } from '@/lib/pjPackRules'
+import { parseWholePjPackCount, pjPackPhysicalSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
 import { pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
@@ -96,6 +96,7 @@ interface OrderRow {
   order_date:string; delivery_date:string|null; production_date:string|null
   bread_id:string; product_source:string|null; product_name:string|null
   quantity:number; unit_price:number|null; pack_size:number|null; pricing_unit:string|null; sale_option_id:string|null
+  product_variant_id:string|null
   obs:string|null
   cancelled_at:string|null; cancelled_by:string|null; cancel_reason:string|null
   dispatched_at:string|null; dispatched_by:string|null; dispatched_by_name:string|null
@@ -375,6 +376,13 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   })), [packRules])
   const resolveLineRule = useCallback((line: { product_id:string; product_variant_id?:string|null }) =>
     resolvePjPackRule(pjPackRulesList, line.product_id, line.product_variant_id ?? null), [pjPackRulesList])
+  const physicalQuantityForLine = useCallback((line: OrderLine) => {
+    const rule = resolveLineRule(line)
+    if (!rule) return line.packs * line.pack_size
+    const unitWeightKg = unitWeightByVariant.get(`${line.product_id}_${line.product_variant_id ?? 'legacy'}`) ?? null
+    const physical = pjPackPhysicalSize(rule, line.pricing_unit, unitWeightKg)
+    return physical === null ? null : line.packs * physical
+  }, [resolveLineRule, unitWeightByVariant])
 
   const custCatalog = useMemo<CatalogItem[]>(() => {
     if (!cust) return []
@@ -445,34 +453,26 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   const updateLine = (key:string, patch:Partial<OrderLine>) => {
     setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
   }
-  // Pacote fechado nunca aceita fração nem arredonda para baixo. Em 'un' a
-  // quantidade digitada é convertida em pacotes inteiros (pack_size fica
-  // travado no valor da tabela); em 'kg' o próprio peso pedido é arredondado
-  // para o múltiplo do peso físico do pacote (ex.: 12 x 80g = 0,96kg).
-  const applyPackRounding = useCallback((line: OrderLine, typedQuantity: number) => {
-    const rule = resolveLineRule(line)
-    if (!rule) return null
-    if (line.pricing_unit === 'un') {
-      const physical = pjPackPhysicalSize(rule, 'un', null)
-      if (physical === null) return null
-      const requestedUnits = typedQuantity * (line.pack_size || 1)
-      const result = roundPjPackQuantity(requestedUnits, rule, physical)
-      return { packs: result.packs, rounded: result.rounded, label: `${result.packs} pacote(s) de ${physical} un` }
-    }
-    const unitWeightKg = unitWeightByVariant.get(`${line.product_id}_${line.product_variant_id ?? 'legacy'}`) ?? null
-    const physical = pjPackPhysicalSize(rule, 'kg', unitWeightKg)
-    if (physical === null) return null
-    const result = roundPjPackQuantity(typedQuantity, rule, physical)
-    return { packs: result.quantity, rounded: result.rounded, label: `pacotes de ${physical} kg` }
-  }, [resolveLineRule, unitWeightByVariant])
   const updateQuantityInput = (line: OrderLine, rawValue: string) => {
     setQuantityInputs(prev => ({ ...prev, [line.key]: rawValue }))
+    if (resolveLineRule(line)) {
+      const packs = parseWholePjPackCount(rawValue)
+      if (packs !== null) updateLine(line.key, { packs })
+      return
+    }
     const quantity = parseOrderLinePacksInput(rawValue, line.pricing_unit)
     if (quantity !== null) updateLine(line.key, { packs: quantity })
   }
   const resetInvalidQuantityInput = (line: OrderLine) => {
     const raw = quantityInputs[line.key]
     if (raw === undefined) return
+    if (resolveLineRule(line)) {
+      if (parseWholePjPackCount(raw) === null) {
+        setQuantityInputs(prev => ({ ...prev, [line.key]: String(line.packs) }))
+        showToast('Informe pacotes inteiros; a quantidade não foi alterada.')
+      }
+      return
+    }
     const quantity = parseOrderLinePacksInput(raw, line.pricing_unit)
     if (quantity === null) {
       setQuantityInputs(prev => {
@@ -480,13 +480,6 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
         return rest
       })
       return
-    }
-    const rounding = applyPackRounding(line, quantity)
-    if (!rounding) return
-    updateLine(line.key, { packs: rounding.packs })
-    setQuantityInputs(prev => ({ ...prev, [line.key]: String(rounding.packs) }))
-    if (rounding.rounded) {
-      showToast(`Quantidade fecha só em pacotes: ajustado para ${rounding.label}`)
     }
   }
   const removeLine = (key:string) => {
@@ -497,7 +490,10 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
     })
   }
 
-  const totalValue = useMemo(() => lines.reduce((sum,l) => sum + (l.unit_price * l.pack_size * l.packs), 0), [lines])
+  const totalValue = useMemo(() => lines.reduce((sum, line) => {
+    const quantity = physicalQuantityForLine(line)
+    return sum + (line.unit_price * (quantity ?? 0))
+  }, 0), [lines, physicalQuantityForLine])
 
   const savePedido = async () => {
     if (!access.canManage) { showToast('Seu perfil não pode criar ou editar Pedidos PJ'); return }
@@ -505,14 +501,21 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
     if (!delivery) { showToast('Data de entrega obrigatória'); return }
     if (isSunday(delivery)) { showToast('Entrega não pode ser em domingo'); return }
     if (lines.length === 0) { showToast('Adicione ao menos 1 produto'); return }
-    if (lines.some(line => quantityInputs[line.key] !== undefined && parseOrderLinePacksInput(quantityInputs[line.key], line.pricing_unit) === null)) { showToast('Digite uma quantidade válida'); return }
+    if (lines.some(line => {
+      const raw = quantityInputs[line.key]
+      if (raw === undefined) return false
+      return resolveLineRule(line)
+        ? parseWholePjPackCount(raw) === null
+        : parseOrderLinePacksInput(raw, line.pricing_unit) === null
+    })) { showToast('Digite uma quantidade válida'); return }
     if (lines.some(l => l.packs <= 0)) { showToast('Quantidade inválida'); return }
+    if (lines.some(line => physicalQuantityForLine(line) === null)) { showToast('Este pacote precisa do peso da unidade cadastrado'); return }
 
     const rows: PjOrderWriteRow[] = lines.map(l => ({
       bread_id: l.product_id,
       product_source: l.product_source,
       product_name: l.product_name,
-      quantity: l.packs * l.pack_size,
+      quantity: physicalQuantityForLine(l)!,
       unit_price: l.unit_price,
       pack_size: l.pack_size,
       pricing_unit: l.pricing_unit,
@@ -614,7 +617,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
     setLines(g.rows.map((r, i) => {
       const pack = Number(r.pack_size) || 1
       const qty  = Number(r.quantity) || 1
-      return {
+      const line: OrderLine = {
         key: `${r.product_source}_${r.bread_id}_${i}`,
         product_id: r.bread_id,
         product_source: (r.product_source === 'bread' ? 'bread' : 'product') as 'bread'|'product',
@@ -623,8 +626,13 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
         pricing_unit: (r.pricing_unit === 'kg' ? 'kg' : 'un') as PricingUnit,
         pack_size: pack,
         sale_option_id: r.sale_option_id,
+        product_variant_id: r.product_variant_id,
         packs: orderLinePacksFromStoredQuantity(qty, pack, r.pricing_unit === 'kg' ? 'kg' : 'un'),
       }
+      const rule = resolveLineRule(line)
+      const unitWeightKg = unitWeightByVariant.get(`${line.product_id}_${line.product_variant_id ?? 'legacy'}`) ?? null
+      const physical = rule ? pjPackPhysicalSize(rule, line.pricing_unit, unitWeightKg) : null
+      return rule && physical !== null ? { ...line, packs: qty / physical } : line
     }))
     setQuantityInputs({})
     setEditing({
@@ -1116,13 +1124,16 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                   ) : (
                     <div style={{display:'grid', gap:10, marginTop:14}}>
                       {lines.map(l => {
-                        const totalQty = l.packs * l.pack_size
-                        const totalVal = l.unit_price * totalQty
                         const packRule = resolveLineRule(l)
+                        const totalQty = physicalQuantityForLine(l)
+                        const totalVal = l.unit_price * (totalQty ?? 0)
+                        const unitWeightKg = unitWeightByVariant.get(`${l.product_id}_${l.product_variant_id ?? 'legacy'}`) ?? null
                         const packPhysical = packRule
-                          ? pjPackPhysicalSize(packRule, l.pricing_unit,
-                              unitWeightByVariant.get(`${l.product_id}_${l.product_variant_id ?? 'legacy'}`) ?? null)
+                          ? pjPackPhysicalSize(packRule, l.pricing_unit, unitWeightKg)
                           : null
+                        const packageWeightKg = packRule && unitWeightKg !== null
+                          ? packRule.packSizeUnits * unitWeightKg : null
+                        const totalUnits = packRule ? l.packs * packRule.packSizeUnits : null
                         return (
                           <div key={l.key} className="ps-card" style={{padding:'12px 14px', gap:8}}>
                             <div className="ps-card-head" style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', gap:8}}>
@@ -1136,23 +1147,27 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                               </button>
                             </div>
                             <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                              {packRule ? (
+                                <span style={{fontSize:12, color:'var(--ink-soft)'}}>Pacote PJ: {packRule.packSizeUnits} unidades</span>
+                              ) : (
+                                <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
+                                  Pack:
+                                  <input type="number" min={1} step={1} value={l.pack_size}
+                                    onChange={e=>updateLine(l.key, { pack_size: Math.max(1, Number(e.target.value)||1) })}
+                                    className="ps-input" style={{width:60, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
+                                </label>
+                              )}
                               <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
-                                Pack:
-                                <input type="number" min={1} step={1} value={l.pack_size}
-                                  disabled={!!packRule}
-                                  title={packRule ? 'Este produto só vende em pacote fechado; o tamanho não pode ser alterado.' : undefined}
-                                  onChange={e=>updateLine(l.key, { pack_size: Math.max(1, Number(e.target.value)||1) })}
-                                  className="ps-input" style={{width:60, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
-                              </label>
-                              <label style={{fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:6}}>
-                                Qtd:
-                                <input type="text" inputMode="decimal" value={quantityInputs[l.key] ?? String(l.packs)}
+                                {packRule ? 'Pacotes:' : 'Qtd:'}
+                                <input type="text" inputMode={packRule ? 'numeric' : 'decimal'} value={quantityInputs[l.key] ?? String(l.packs)}
                                   onChange={e=>updateQuantityInput(l, e.target.value)} onBlur={()=>resetInvalidQuantityInput(l)}
-                                  aria-label={`Quantidade de ${l.product_name}`} className="ps-input" style={{width:92, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
-                                pacotes
+                                  aria-label={packRule ? `Pacotes de ${l.product_name}` : `Quantidade de ${l.product_name}`} className="ps-input" style={{width:92, padding:'4px 8px', textAlign:'center', fontSize:13}}/>
+                                {!packRule && ' pacotes'}
                               </label>
                               <span style={{fontSize:13, color:'var(--ps-ink)', fontWeight:700}}>
-                                = {totalQty} {l.pricing_unit}
+                                = {packRule && totalUnits !== null && packageWeightKg !== null
+                                  ? `${totalUnits} un · ${(l.packs * packageWeightKg).toFixed(2)} kg`
+                                  : `${totalQty ?? '—'} ${l.pricing_unit}`}
                               </span>
                               <span style={{marginLeft:'auto', fontSize:14, fontWeight:700, color:'var(--crust)', fontVariantNumeric:'tabular-nums'}}>
                                 R$ {totalVal.toFixed(2)}
@@ -1160,9 +1175,9 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                             </div>
                             {packRule && packPhysical !== null && (
                               <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                                Vende só em pacote fechado de {packPhysical} {l.pricing_unit}
+                                Cada pacote fecha em {packRule.packSizeUnits} unidades e {packageWeightKg?.toFixed(2)} kg.
+                                {l.pricing_unit === 'kg' ? ` O preço usa os ${packPhysical} kg equivalentes.` : ' O preço usa as unidades.'}
                                 {packRule.orderMultiplePacks > 1 ? `, múltiplos de ${packRule.orderMultiplePacks} pacotes` : ''}.
-                                Quantidade digitada é arredondada para cima, nunca para baixo.
                               </div>
                             )}
                             {packRule && packPhysical === null && (

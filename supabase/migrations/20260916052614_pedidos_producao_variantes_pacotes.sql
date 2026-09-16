@@ -265,11 +265,10 @@ begin
     end if;
 
     if v_has_rule then
-      -- O tamanho fisico do pacote fica fora de pack_size de propósito:
-      -- customer_price_overrides/price_tier_items.pack_size tem CHECK (>= 1)
-      -- de uma tabela que esta fase nao toca, e um pacote de 12 unidades de
-      -- 80 g pesa 0,96 kg — menor que 1. A regra de pacote fechado valida
-      -- direto contra a quantidade, nunca contra pack_size.
+      -- Em unidade, pack_size repete o tamanho físico para que a conferência
+      -- de preço também proteja o pacote fechado. Em kg, ele permanece o
+      -- pacote comercial da tabela (>= 1): 12 unidades de 80 g pesam 0,96 kg,
+      -- e essa equivalência é validada diretamente contra a quantidade.
       if v_pricing_unit = 'un' then
         v_expected_pack_physical := v_pack_rule_size;
         if v_pack_size <> v_expected_pack_physical then

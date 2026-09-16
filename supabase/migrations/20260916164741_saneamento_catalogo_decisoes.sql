@@ -578,7 +578,9 @@ do $$ begin
   insert into catalog_saneamento_price_plan
     (source_table,source_row_id,owner_id,target_product_id,target_product_name,target_sale_option_id,unit_price,pricing_unit,pack_size,desired_active,original_row)
   select 'price_tier_items',i.id,i.tier_id,canonical.product_id,canonical.product_name,o.id,
-         i.unit_price,i.pricing_unit,i.pack_size,
+         i.unit_price,i.pricing_unit,
+         case when canonical.product_id='41aecca6-fb3e-4ab9-90fd-ad2884a31cc3'
+                   and m.variant_name='Hambúrguer' and i.pricing_unit='un' then 12 else i.pack_size end,
          case
            when i.unit_price <= .01 then false
            when m.source='bread' and m.source_id='b_brasil1775678384540'
@@ -610,7 +612,9 @@ do $$ begin
   insert into catalog_saneamento_price_plan
     (source_table,source_row_id,owner_id,target_product_id,target_product_name,target_sale_option_id,unit_price,pricing_unit,pack_size,desired_active,original_row)
   select 'customer_price_overrides',i.id,i.customer_id,canonical.product_id,canonical.product_name,o.id,
-         i.unit_price,i.pricing_unit,i.pack_size,
+         i.unit_price,i.pricing_unit,
+         case when canonical.product_id='41aecca6-fb3e-4ab9-90fd-ad2884a31cc3'
+                   and m.variant_name='Hambúrguer' and i.pricing_unit='un' then 12 else i.pack_size end,
          case
            when i.unit_price <= .01 then false
            when m.source='bread' and m.source_id='b_brasil1775678384540'
