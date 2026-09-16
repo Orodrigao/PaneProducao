@@ -1235,22 +1235,31 @@ describe('condicoes do workflow Banco por PR', () => {
       assert.ok(workflow.includes(trecho), `"${trecho}" saiu do workflow.`)
     }
     const cru = readFileSync(new URL('../.github/workflows/banco-por-pr.yml', import.meta.url), 'utf8')
-    // Os cinco passos que chamam o script conferem o estado atual no GitHub.
+    // Os sete passos que chamam o script conferem o estado atual no GitHub.
     const chamadas = cru.split('run: node scripts/preview-branch-env.mjs').length - 1
     const comToken = cru.split('GITHUB_TOKEN: ${{ github.token }}').length - 1
-    assert.equal(chamadas, 5)
+    assert.equal(chamadas, 7)
     assert.equal(comToken, chamadas, 'Todo passo que chama o script precisa do GITHUB_TOKEN.')
     assert.doesNotMatch(cru, /cancel-in-progress: true/)
     assert.match(cru, /^ {2}pull_request:\r?\n {4}types: \[opened, reopened, synchronize, closed\]\r?\n(?: {4}#.*\r?\n)* {4}branches: \[main\]\r?\n/m, 'O filtro de base main saiu do workflow.')
 
-    // Falha antes de reconciliar (disparo manual invalido, por exemplo) ainda
-    // confere o estado: o passo final roda so em falha e so trava ou esquece.
-    const final = cru.slice(cru.indexOf('- name: Reconciliar depois de falha'))
-    assert.match(final, /^- name: Reconciliar depois de falha\r?\n {8}if: failure\(\)\r?\n {8}env:\r?\n {10}ACAO: bloquear\r?\n/)
-    assert.ok(
-      cru.indexOf('- name: Reconciliar depois de falha') < cru.indexOf('\n  limpar:'),
-      'O passo de reconciliacao precisa ficar no trabalho apontar.',
-    )
+    // Falha ou cancelamento antes de reconciliar (disparo manual invalido, por
+    // exemplo) ainda confere o estado: cada trabalho termina num passo que so
+    // roda nesses casos e so trava ou esquece.
+    const trabalhos = { apontar: 'bloquear', limpar: 'bloquear', esquecer: 'esquecer' }
+    const inicios = Object.keys(trabalhos).map((nome) => [nome, cru.indexOf(`\n  ${nome}:`)])
+    for (const [i, [nome, inicio]] of inicios.entries()) {
+      assert.ok(inicio > -1, `trabalho ${nome} sumiu`)
+      const fim = inicios[i + 1]?.[1] ?? cru.length
+      const bloco = cru.slice(inicio, fim)
+      const passos = bloco.split(/\r?\n {6}- name: /).slice(1)
+      const ultimo = passos.at(-1)
+      assert.match(
+        ultimo,
+        new RegExp(`^Reconciliar depois de falha\\r?\\n {8}if: failure\\(\\) \\|\\| cancelled\\(\\)\\r?\\n {8}env:\\r?\\n {10}ACAO: ${trabalhos[nome]}\\r?\\n`),
+        `${nome}: o ultimo passo precisa ser a recuperacao com ACAO ${trabalhos[nome]}.`,
+      )
+    }
     assert.match(cru, /^on:\r?\n(?:(?: {2}.*)?\r?\n)*? {2}delete:\r?\n/m, 'O gatilho de branch apagada saiu do workflow.')
   })
 

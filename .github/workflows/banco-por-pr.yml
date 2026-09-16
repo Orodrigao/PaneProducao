@@ -60,10 +60,12 @@ concurrency:
   # nunca se confundem. Os parenteses nao sao estilo: a documentacao nao
   # declara precedencia entre `&&` e `||`.
   #
-  # Todo evento que sobra neste grupo termina conferindo o estado atual: o
-  # disparo manual invalido e qualquer falha antes do passo Apontar caem no
-  # passo final de reconciliacao. Uma execucao que tomou o lugar de outra
-  # pendente nunca sai sem deixar o certo.
+  # Cada trabalho que sobra neste grupo termina com um passo de recuperacao
+  # que roda em falha ou cancelamento (inclusive o disparo manual invalido) e
+  # reconcilia o estado. O que ele nao cobre: falha antes do checkout, que
+  # deixa a execucao vermelha; reexecuta-la reconcilia. Gravacao pela metade
+  # falha fechado: endereco de um banco com chave de outro nao conecta, e
+  # qualquer uma das duas variaveis inertes sozinha ja reprova o build.
   #
   # SEM cancel-in-progress: cancelar no meio deixaria endereco e chave de
   # estados diferentes, e uma execucao cancelada ainda pode estar gravando
@@ -274,13 +276,13 @@ jobs:
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs
 
-      # Esta execucao pode ter tomado o lugar de um fechamento pendente (o
-      # GitHub guarda so a mais nova). Se falhou antes de reconciliar, por
-      # exemplo num disparo manual de PR ja fechada, confere o estado mesmo
-      # assim: branch apagada esquece, branch sem PR aberta trava, PR aberta
-      # fica como esta.
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
+      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
       - name: Reconciliar depois de falha
-        if: failure()
+        if: failure() || cancelled()
         env:
           ACAO: bloquear
           GITHUB_TOKEN: ${{ github.token }}
@@ -325,6 +327,21 @@ jobs:
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs
 
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
+      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Reconciliar depois de falha
+        if: failure() || cancelled()
+        env:
+          ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
   esquecer:
     # Branch apagada nao recebe mais push, entao a trava dela so ocuparia
     # espaco na Vercel. Evento `delete` so nasce de quem tem escrita no
@@ -345,6 +362,21 @@ jobs:
           node-version: 22
 
       - name: Esquecer
+        env:
+          ACAO: esquecer
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Nao cobre falha no checkout (sem codigo
+      # nao ha o que rodar): a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Reconciliar depois de falha
+        if: failure() || cancelled()
         env:
           ACAO: esquecer
           GITHUB_TOKEN: ${{ github.token }}
