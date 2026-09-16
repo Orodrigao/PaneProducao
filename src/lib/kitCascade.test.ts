@@ -44,7 +44,7 @@ describe('filterKitDiscards — quais linhas de descarte disparam cascata', () =
   })
 })
 
-describe('buildKitCascadeMovements — débito dos pães-componentes', () => {
+describe('buildKitCascadeMovements — débito dos componentes físicos', () => {
   it('multiplica qtd do kit × qtd do componente e debita (negativo): 3 kits × 4 pães = -12', () => {
     const movements = buildKitCascadeMovements([discard()], [comp()], 'jc', 'Suélen')
     expect(movements).toHaveLength(1)
@@ -56,10 +56,13 @@ describe('buildKitCascadeMovements — débito dos pães-componentes', () => {
       reference_id: 'descarte-1',
       reference_type: 'descarte_kit',
       recorded_by: 'Suélen',
+      product_source: 'bread',
+      product_id: 'pao-hamburguer',
+      product_variant_id: null,
     })
   })
 
-  it('gera um movimento por componente-pão do kit', () => {
+  it('gera um movimento por componente do kit', () => {
     const comps = [comp({ component_id: 'pao-1' }), comp({ component_id: 'pao-2', quantity: 1 })]
     const movements = buildKitCascadeMovements([discard()], comps, 'jc', 'Suélen')
     expect(movements).toHaveLength(2)
@@ -73,10 +76,43 @@ describe('buildKitCascadeMovements — débito dos pães-componentes', () => {
     expect(movements[0].bread_id).toBe('pao-hamburguer')
   })
 
-  it('ignora componente que não é pão (component_source=product) — só pão cascateia', () => {
-    const compProduto = comp({ component_source: 'product', component_id: 'molho' })
+  it('componente component_source=product também cascateia, sem bread_id', () => {
+    const compProduto = comp({ component_source: 'product', component_id: 'molho', quantity: 2 })
     const movements = buildKitCascadeMovements([discard()], [compProduto], 'jc', 'Suélen')
-    expect(movements).toHaveLength(0)
+    expect(movements).toHaveLength(1)
+    expect(movements[0]).toMatchObject({
+      bread_id: null,
+      product_source: 'product',
+      product_id: 'molho',
+      product_variant_id: null,
+      quantity: -6,
+    })
+  })
+
+  it('componente de produto com variante específica preserva a variante no movimento — caso do Kit Brioche Hambúrguer', () => {
+    const compVariante = comp({
+      component_source: 'product',
+      component_id: 'brioche',
+      component_variant_id: 'brioche-hamburguer-80g',
+      quantity: 4,
+    })
+    const movements = buildKitCascadeMovements([discard({ quantity: 1 })], [compVariante], 'jc', 'Suélen')
+    expect(movements).toHaveLength(1)
+    expect(movements[0]).toMatchObject({
+      bread_id: null,
+      product_source: 'product',
+      product_id: 'brioche',
+      product_variant_id: 'brioche-hamburguer-80g',
+      quantity: -4,
+    })
+  })
+
+  it('kit com componente-pão e componente-produto gera os dois movimentos, distintos e rastreáveis', () => {
+    const comps = [comp(), comp({ component_source: 'product', component_id: 'saquinho', quantity: 1 })]
+    const movements = buildKitCascadeMovements([discard({ quantity: 1 })], comps, 'jc', 'Suélen')
+    expect(movements).toHaveLength(2)
+    expect(movements.every(m => m.reference_id === 'descarte-1')).toBe(true)
+    expect(movements.map(m => m.product_id).sort()).toEqual(['pao-hamburguer', 'saquinho'])
   })
 
   it('kit sem composição cadastrada vira no-op (nenhum débito)', () => {
