@@ -165,6 +165,7 @@ function operationalRowToOrderRow(row: PjDispatchOrderRow): OrderRow {
     pack_size: row.pack_size,
     pricing_unit: row.pricing_unit,
     sale_option_id: row.sale_option_id,
+    product_variant_id: row.product_variant_id,
     obs: row.obs,
     cancelled_at: row.cancelled_at,
     cancelled_by: null,
