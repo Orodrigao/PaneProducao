@@ -43,17 +43,17 @@ insert into public.products(
   id, name, kind, is_fabricacao_propria, production_process, production_area,
   allows_planned_production, unit, active
 ) values (
-  '9a200000-0000-4000-8000-0000000000p1','[TESTE] Baguete Pacotes PJ','final',true,
+  '9a200000-0000-4000-8000-00000000a0a1','[TESTE] Baguete Pacotes PJ','final',true,
   'forno','padaria',true,'un',true
 );
 insert into public.product_sale_options(id, product_id, name, sale_unit, reference_quantity, is_default, active)
-values ('9a200000-0000-4000-8000-0000000000s1','9a200000-0000-4000-8000-0000000000p1','Unidade','un',1,true,true);
+values ('9a200000-0000-4000-8000-00000000b0b1','9a200000-0000-4000-8000-00000000a0a1','Unidade','un',1,true,true);
 insert into public.customer_price_overrides(
   customer_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size,
   sale_option_id, active
 ) values (
-  '9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-0000000000p1','product',
-  '[TESTE] Baguete Pacotes PJ',10,'un',1,'9a200000-0000-4000-8000-0000000000s1',true
+  '9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-00000000a0a1','product',
+  '[TESTE] Baguete Pacotes PJ',10,'un',1,'9a200000-0000-4000-8000-00000000b0b1',true
 );
 
 -- Produto com duas variantes: Forma (sem regra de pacote) e Hamburguer
@@ -62,36 +62,36 @@ insert into public.products(
   id, name, kind, is_fabricacao_propria, production_process, production_area,
   allows_planned_production, unit, active
 ) values (
-  '9a200000-0000-4000-8000-0000000000p2','[TESTE] Brioche Pacotes PJ','final',true,
+  '9a200000-0000-4000-8000-00000000a0a2','[TESTE] Brioche Pacotes PJ','final',true,
   'forno','padaria',true,'un',true
 );
 insert into public.product_variants(id, product_id, name, sort_order)
 values
-  ('9a200000-0000-4000-8000-0000000000v1','9a200000-0000-4000-8000-0000000000p2','Forma',1),
-  ('9a200000-0000-4000-8000-0000000000v2','9a200000-0000-4000-8000-0000000000p2','Hamburguer',2);
+  ('9a200000-0000-4000-8000-00000000d0d1','9a200000-0000-4000-8000-00000000a0a2','Forma',1),
+  ('9a200000-0000-4000-8000-00000000d0d2','9a200000-0000-4000-8000-00000000a0a2','Hamburguer',2);
 
 insert into public.product_sale_options(id, product_id, product_variant_id, name, sale_unit, reference_quantity, unit_weight_kg, is_default, active)
 values
-  ('9a200000-0000-4000-8000-0000000000s2','9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000v1','Forma un','un',1,null,true,true),
-  ('9a200000-0000-4000-8000-0000000000s3','9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000v1','Forma kg','kg',1,null,false,true),
-  ('9a200000-0000-4000-8000-0000000000s4','9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000v2','Hamburguer un','un',1,0.08,true,true),
-  ('9a200000-0000-4000-8000-0000000000s5','9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000v2','Hamburguer kg','kg',1,null,false,true);
+  ('9a200000-0000-4000-8000-00000000b0b2','9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d1','Forma un','un',1,null,true,true),
+  ('9a200000-0000-4000-8000-00000000b0b3','9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d1','Forma kg','kg',1,null,false,true),
+  ('9a200000-0000-4000-8000-00000000b0b4','9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d2','Hamburguer un','un',1,0.08,true,true),
+  ('9a200000-0000-4000-8000-00000000b0b5','9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d2','Hamburguer kg','kg',1,null,false,true);
 
 insert into public.product_pj_pack_rules(product_id, product_variant_id, pack_size_units, min_order_packs, order_multiple_packs)
-values ('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000v2',12,1,1);
+values ('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d2',12,1,1);
 
 insert into public.customer_price_overrides(
   customer_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size,
   sale_option_id, active
 ) values
-  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-0000000000p2','product',
-   '[TESTE] Brioche Pacotes PJ · Forma',8,'un',1,'9a200000-0000-4000-8000-0000000000s2',true),
-  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-0000000000p2','product',
-   '[TESTE] Brioche Pacotes PJ · Forma',30,'kg',1,'9a200000-0000-4000-8000-0000000000s3',true),
-  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-0000000000p2','product',
-   '[TESTE] Brioche Pacotes PJ · Hamburguer',5,'un',12,'9a200000-0000-4000-8000-0000000000s4',true),
-  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-0000000000p2','product',
-   '[TESTE] Brioche Pacotes PJ · Hamburguer',60,'kg',1,'9a200000-0000-4000-8000-0000000000s5',true);
+  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-00000000a0a2','product',
+   '[TESTE] Brioche Pacotes PJ · Forma',8,'un',1,'9a200000-0000-4000-8000-00000000b0b2',true),
+  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-00000000a0a2','product',
+   '[TESTE] Brioche Pacotes PJ · Forma',30,'kg',1,'9a200000-0000-4000-8000-00000000b0b3',true),
+  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-00000000a0a2','product',
+   '[TESTE] Brioche Pacotes PJ · Hamburguer',5,'un',12,'9a200000-0000-4000-8000-00000000b0b4',true),
+  ('9a200000-0000-4000-8000-0000000000c1','9a200000-0000-4000-8000-00000000a0a2','product',
+   '[TESTE] Brioche Pacotes PJ · Hamburguer',60,'kg',1,'9a200000-0000-4000-8000-00000000b0b5',true);
 
 create function pg_temp.linha(
   p_product_id text, p_sale_option uuid, p_name text, p_quantity numeric,
@@ -114,7 +114,7 @@ select set_config('request.jwt.claim.sub','9a200000-0000-4000-8000-000000000001'
 select lives_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000101','9a200000-0000-4000-8000-000000000201',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p1','9a200000-0000-4000-8000-0000000000s1',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a1','9a200000-0000-4000-8000-00000000b0b1',
       '[TESTE] Baguete Pacotes PJ',5,10,1,'un')
   )
 $$, 'produto legado sem variante continua criando pedido normalmente');
@@ -125,18 +125,18 @@ select is((select product_variant_id from public.orders where order_group_id='9a
 select lives_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000102','9a200000-0000-4000-8000-000000000202',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s2',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b2',
       '[TESTE] Brioche Pacotes PJ · Forma',3,8,1,'un')
   )
 $$, 'variante Forma em un, sem regra de pacote, cria pedido normalmente');
 select is((select product_variant_id from public.orders where order_group_id='9a200000-0000-4000-8000-000000000202'),
-  '9a200000-0000-4000-8000-0000000000v1'::uuid, 'a linha grava a variante Forma resolvida da opcao de venda');
+  '9a200000-0000-4000-8000-00000000d0d1'::uuid, 'a linha grava a variante Forma resolvida da opcao de venda');
 
 -- 3. Variante em 'kg' sem regra de pacote.
 select lives_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000103','9a200000-0000-4000-8000-000000000203',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s3',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b3',
       '[TESTE] Brioche Pacotes PJ · Forma',1.5,30,1,'kg')
   )
 $$, 'variante Forma em kg, sem regra de pacote, cria pedido normalmente');
@@ -145,18 +145,18 @@ $$, 'variante Forma em kg, sem regra de pacote, cria pedido normalmente');
 select lives_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000104','9a200000-0000-4000-8000-000000000204',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s4',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b4',
       '[TESTE] Brioche Pacotes PJ · Hamburguer',12,5,12,'un')
   )
 $$, 'pacote inteiro de 12 unidades do Hamburguer e aceito');
 select is((select product_variant_id from public.orders where order_group_id='9a200000-0000-4000-8000-000000000204'),
-  '9a200000-0000-4000-8000-0000000000v2'::uuid, 'a linha grava a variante Hamburguer');
+  '9a200000-0000-4000-8000-00000000d0d2'::uuid, 'a linha grava a variante Hamburguer');
 
 -- 5. Quantidade que nao fecha pacote inteiro (10 de 12) e recusada.
 select throws_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000105','9a200000-0000-4000-8000-000000000205',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s4',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b4',
       '[TESTE] Brioche Pacotes PJ · Hamburguer',10,5,12,'un')
   )
 $$, '22023', 'A quantidade precisa fechar em pacotes inteiros deste produto.',
@@ -168,18 +168,18 @@ select ok(not exists(select 1 from public.orders where order_group_id='9a200000-
 select lives_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000106','9a200000-0000-4000-8000-000000000206',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s5',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b5',
       '[TESTE] Brioche Pacotes PJ · Hamburguer',0.96,60,1,'kg')
   )
 $$, 'pacote fechado tambem fecha quando o preco e por kg (12 x 80g = 0,96kg)');
 select is((select product_variant_id from public.orders where order_group_id='9a200000-0000-4000-8000-000000000206'),
-  '9a200000-0000-4000-8000-0000000000v2'::uuid, 'pedido por kg tambem grava a variante Hamburguer');
+  '9a200000-0000-4000-8000-00000000d0d2'::uuid, 'pedido por kg tambem grava a variante Hamburguer');
 
 -- 7. Peso que nao fecha pacote (0,5kg de 0,96kg) tambem e recusado.
 select throws_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000107','9a200000-0000-4000-8000-000000000207',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s5',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b5',
       '[TESTE] Brioche Pacotes PJ · Hamburguer',0.5,60,1,'kg')
   )
 $$, '22023', 'A quantidade precisa fechar em pacotes inteiros deste produto.',
@@ -189,7 +189,7 @@ $$, '22023', 'A quantidade precisa fechar em pacotes inteiros deste produto.',
 select throws_ok($$
   select public.create_pj_order_atomic(
     '9a200000-0000-4000-8000-000000000108','9a200000-0000-4000-8000-000000000208',
-    pg_temp.linha('9a200000-0000-4000-8000-0000000000p2','9a200000-0000-4000-8000-0000000000s4',
+    pg_temp.linha('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000b0b4',
       '[TESTE] Brioche Pacotes PJ · Hamburguer',12,999,12,'un')
   )
 $$, '22023', 'O preco ou a forma de venda mudou. Reabra o pedido para usar o catalogo atual.',
@@ -200,7 +200,7 @@ select results_eq($$
   select product_variant_id, quantity, pack_size, pricing_unit, unit_price
   from public.orders where order_group_id = '9a200000-0000-4000-8000-000000000204'
 $$, $$
-  values ('9a200000-0000-4000-8000-0000000000v2'::uuid, 12::numeric, 12::numeric, 'un'::text, 5::numeric)
+  values ('9a200000-0000-4000-8000-00000000d0d2'::uuid, 12::numeric, 12::numeric, 'un'::text, 5::numeric)
 $$, 'reler o pedido em pacotes devolve exatamente a variante, quantidade, pacote, unidade e preco gravados');
 
 reset role;
@@ -226,19 +226,19 @@ select lives_ok($$
 $$, 'Geolar programa Forma e Hamburguer do mesmo Brioche no mesmo dia');
 
 select is((select count(*)::int from public.list_pj_production_for_oven_v2(private.data_na_padaria())
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'), 2,
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'), 2,
   'Forno recebe duas linhas separadas para o mesmo produto, uma por variante');
 select is((select quantity from public.list_pj_production_for_oven_v2(private.data_na_padaria())
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v1'), 3::numeric,
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d1'), 3::numeric,
   'previsto da Forma fica em unidades, sem conversao (vendida em un)');
 select is((select quantity from public.list_pj_production_for_oven_v2(private.data_na_padaria())
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v2'), 12::numeric,
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'), 12::numeric,
   'previsto da Hamburguer converte 0,96kg em 12 pecas pelo peso unitario de 80g');
 select is((select needs_weight_setup from public.list_pj_production_for_oven_v2(private.data_na_padaria())
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v2'), false,
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'), false,
   'com peso cadastrado na opcao de venda, nenhum aviso pendente sobra para a Hamburguer');
 
 reset role;
@@ -253,51 +253,51 @@ select set_config('request.jwt.claim.sub','9a200000-0000-4000-8000-000000000001'
 
 select lives_ok($$
   select * from public.confirm_oven_product_output(
-    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-0000000000p2',
-    3, 0, null, null, '9a200000-0000-4000-8000-0000000000v1'
+    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-00000000a0a2',
+    3, 0, null, null, '9a200000-0000-4000-8000-00000000d0d1'
   )
 $$, 'confirma o Forno da variante Forma');
 select lives_ok($$
   select * from public.confirm_oven_product_output(
-    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-0000000000p2',
-    12, 0, null, null, '9a200000-0000-4000-8000-0000000000v2'
+    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-00000000a0a2',
+    12, 0, null, null, '9a200000-0000-4000-8000-00000000d0d2'
   )
 $$, 'confirma o Forno da variante Hamburguer no mesmo dia, mesmo produto');
 
 select is((select count(*)::int from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
     and record_date = private.data_na_padaria()), 2,
   'as duas variantes gravam duas linhas de realizado, nunca uma so');
 select is((select quantity_baked from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v1'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d1'
     and record_date = private.data_na_padaria()), 3::numeric,
   'realizado da Forma gravou 3');
 select is((select quantity_baked from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v2'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'
     and record_date = private.data_na_padaria()), 12::numeric,
   'realizado da Hamburguer gravou 12, sem se misturar com o da Forma');
 select is((select production_unit from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v2'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'
     and record_date = private.data_na_padaria()), 'un'::text,
   'confirmacao da Hamburguer grava em pecas (un), nao em kg, mesmo agendada por peso');
 
 -- Corrigir a Hamburguer substitui só o saldo dela; a Forma continua intacta.
 select lives_ok($$
   select * from public.confirm_oven_product_output(
-    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-0000000000p2',
-    11, 1, 'Queimou', 'Correcao', '9a200000-0000-4000-8000-0000000000v2'
+    private.data_na_padaria(), 'product', '9a200000-0000-4000-8000-00000000a0a2',
+    11, 1, 'Queimou', 'Correcao', '9a200000-0000-4000-8000-00000000d0d2'
   )
 $$, 'corrige o realizado da Hamburguer no mesmo dia');
 select is((select count(*)::int from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
     and record_date = private.data_na_padaria()), 2,
   'a correcao substitui o saldo da Hamburguer, sem duplicar linha nem criar uma terceira');
 select is((select quantity_baked from public.production_actuals
-  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-0000000000p2'
-    and product_variant_id = '9a200000-0000-4000-8000-0000000000v1'
+  where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
+    and product_variant_id = '9a200000-0000-4000-8000-00000000d0d1'
     and record_date = private.data_na_padaria()), 3::numeric,
   'a correcao da Hamburguer nao alterou o realizado da Forma');
 
@@ -308,7 +308,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','9a200000-0000-4000-8000-000000000002',true);
 select is((select product_variant_id from public.list_pj_orders_for_dispatch()
   where order_group_id = '9a200000-0000-4000-8000-000000000206'),
-  '9a200000-0000-4000-8000-0000000000v2'::uuid,
+  '9a200000-0000-4000-8000-00000000d0d2'::uuid,
   'a fila de expedicao carrega a mesma variante gravada na criacao do pedido');
 reset role;
 

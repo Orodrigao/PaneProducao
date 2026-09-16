@@ -11,6 +11,7 @@ export interface OvenPlanRow {
   bread_id?: string | null
   product_source?: string | null
   product_id?: string | null
+  product_variant_id?: string | null
   quantity: number | null
 }
 
@@ -36,13 +37,20 @@ export function ovenLotCode(isoDate: string): string {
   return `L${month}${day}`
 }
 
-export function ovenProductKey(productSource: string, productId: string): string {
-  return `${productSource}:${productId}`
+// productVariantId só se aplica a product_source = 'product'; pão legado
+// nunca tem variante. Omitir o terceiro argumento reproduz a chave antiga,
+// então consumidores que nunca lidam com variante não precisam mudar.
+export function ovenProductKey(productSource: string, productId: string, productVariantId?: string | null): string {
+  return productVariantId ? `${productSource}:${productId}:${productVariantId}` : `${productSource}:${productId}`
 }
 
 export function ovenPlanRowKey(row: OvenPlanRow): string | null {
   if (row.product_id) {
-    return ovenProductKey(row.product_source === 'product' ? 'product' : 'bread', row.product_id)
+    return ovenProductKey(
+      row.product_source === 'product' ? 'product' : 'bread',
+      row.product_id,
+      row.product_source === 'product' ? row.product_variant_id : null,
+    )
   }
   // Consumidores antigos agregam apenas por bread_id. Manter essa forma evita
   // alterar relatórios que ainda não trabalham com duas origens de identidade.
