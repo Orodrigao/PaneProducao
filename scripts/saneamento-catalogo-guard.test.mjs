@@ -44,6 +44,13 @@ test('a ponte do Pão de Hotdog só muda depois de validar e aposentar o cadastr
     `update public.products set active=false, legacy_bread_id=null\n    where id='${legacyProductId}'`,
   )
   const assignBridge = migration.indexOf(`where id='${masterProductId}'`)
+  const lockBridge = migration.indexOf(
+    'lock table public.orders, public.price_tier_items, public.customer_price_overrides in share row exclusive mode',
+  )
+  const validateBridge = migration.indexOf(
+    `where id='${legacyProductId}'\n      and name='Pão de Hotdog' and active`,
+  )
+  assert.ok(lockBridge >= 0 && validateBridge > lockBridge, 'as gravações ficam bloqueadas antes da validação da ponte')
   assert.ok(retireBridge >= 0 && assignBridge > retireBridge, 'a ponte duplicada sai antes de ser atribuída ao item mestre')
   assert.match(migration, /Pão de Hotdog mudou desde a auditoria/)
   assert.match(migration, /pedido aberto ligado ao cadastro duplicado/)
