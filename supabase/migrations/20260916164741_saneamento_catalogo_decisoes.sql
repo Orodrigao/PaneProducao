@@ -782,6 +782,17 @@ do $$ begin
   -- lista FROM; por isso a condição de unidade de venda fica no WHERE, onde
   -- "r" está em escopo. Como a junção com product_sale_options é interna,
   -- mover essa condição para o WHERE não muda o resultado.
+  --
+  -- Pedido da nova jornada PJ é protegido por uma trava que só libera escrita
+  -- direta na tabela dentro do corredor atômico oficial (pane.pj_order_write
+  -- igual ao order_group_id da própria linha, o mesmo usado pelas rotinas de
+  -- gravação de pedido PJ). Pedido fora desse fluxo segue no lote de sempre;
+  -- os do fluxo novo entram nesse corredor um grupo por vez.
+  --
+  -- Pedido que já entrou na programação de produção (Forno) é protegido por
+  -- outra trava, sem exceção nenhuma: uma vez programado, produto e nome não
+  -- podem mais mudar. Esses pedidos ficam de fora desta consolidação e
+  -- continuam com a identidade antiga (que não é apagada) até despachar.
   update public.orders r
   set product_source='product',bread_id=m.master_product_id::text,product_name=m.master_name,
       sale_option_id=o.id,product_variant_id=v.id
@@ -791,7 +802,37 @@ do $$ begin
     and o.product_variant_id is not distinct from v.id
   where r.product_source=m.source and r.bread_id=m.source_id
     and r.cancelled_at is null and r.dispatched_at is null
-    and o.sale_unit=coalesce(r.pricing_unit,'un');
+    and o.sale_unit=coalesce(r.pricing_unit,'un')
+    and not private.is_pj_flow(r.order_group_id)
+    and not exists (select 1 from public.pj_production_schedules ps where ps.order_id=r.id);
+
+  declare
+    v_group uuid;
+  begin
+    for v_group in
+      select distinct r.order_group_id
+      from public.orders r
+      join catalog_saneamento_map m on m.source=r.product_source and m.source_id=r.bread_id
+      where r.cancelled_at is null and r.dispatched_at is null
+        and private.is_pj_flow(r.order_group_id)
+        and not exists (select 1 from public.pj_production_schedules ps where ps.order_id=r.id)
+    loop
+      perform set_config('pane.pj_order_write', v_group::text, true);
+      update public.orders r
+      set product_source='product',bread_id=m.master_product_id::text,product_name=m.master_name,
+          sale_option_id=o.id,product_variant_id=v.id
+      from catalog_saneamento_map m
+      left join public.product_variants v on v.product_id=m.master_product_id and v.name=m.variant_name
+      join public.product_sale_options o on o.product_id=m.master_product_id
+        and o.product_variant_id is not distinct from v.id
+      where r.product_source=m.source and r.bread_id=m.source_id
+        and r.cancelled_at is null and r.dispatched_at is null
+        and o.sale_unit=coalesce(r.pricing_unit,'un')
+        and r.order_group_id=v_group
+        and not exists (select 1 from public.pj_production_schedules ps where ps.order_id=r.id);
+      perform set_config('pane.pj_order_write', '', true);
+    end loop;
+  end;
 
   if exists (
     select 1
