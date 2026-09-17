@@ -163,11 +163,33 @@ function decidirPrimeiraDeploymentPreview({ head, execImpl }) {
 }
 
 /**
+ * Endereco de banco preenchido que nao e `https://<ref>.supabase.co`.
+ *
+ * E como fica a branch de uma PR fechada (scripts/preview-branch-env.mjs grava
+ * nela um destino inerte). A trava de next.config.ts recusa esse endereco, mas
+ * so se o build rodar: dispensar aqui escondia a trava, e a nova deployment
+ * aparecia como cancelada em vez de vermelha. Variavel ausente nao conta, para
+ * nao construir tudo caso a Vercel nao entregue as variaveis a este passo.
+ */
+export function enderecoDeBancoForaDoPadrao(url) {
+  if (url === undefined || url === null || url === '') return false
+  try {
+    const endereco = new URL(url)
+    return !(endereco.protocol === 'https:' && endereco.hostname.toLowerCase().endsWith('.supabase.co'))
+  } catch {
+    return true
+  }
+}
+
+/**
  * Devolve `perfil` ('documentation' | 'ci-mechanism' | 'product') e, por
  * compatibilidade com quem ja consumia o campo booleano historico,
  * `documental` (`true` somente quando `perfil === 'documentation'`).
  */
 export function decidirIgnorarBuild({ env = process.env, execImpl = execFileSync } = {}) {
+  if (enderecoDeBancoForaDoPadrao(env.NEXT_PUBLIC_SUPABASE_URL)) {
+    return { perfil: 'product', documental: false, motivo: 'banco-fora-do-padrao' }
+  }
   const { base, head } = resolverReferencias(env)
   try {
     if (!referenciaGitValida(head)) {

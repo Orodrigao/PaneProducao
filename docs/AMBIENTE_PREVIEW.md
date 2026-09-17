@@ -32,9 +32,19 @@ ou documentos de produção.
    **e** `Usuarios do Banco por PR` quando a PR mexe em `supabase/`, mais
    `CI Banco` quando ele dispara. Sem o de usuários, o link abre num banco sem
    nenhuma conta para entrar.
-5. Fechar a PR apaga o banco isolado dela e as variáveis daquela branch. Push na
-   `main`, e PR fechada sem merge, reconstroem o `PaneERP Preview` compartilhado
-   a partir da `main`.
+5. Fechar a PR apaga o banco isolado dela e trava a branch na Vercel num
+   endereço inválido (`pr-fechada-sem-banco.invalid`): um push depois do
+   fechamento gera preview com build vermelho, inclusive quando o push é só de
+   documentação, nunca um preview no banco compartilhado sem reserva. Previews
+   já publicados não mudam: variável nova só vale para deployment nova.
+   Reabrir a PR destrava (aponta de novo para o banco dela, ou devolve ao
+   compartilhado se ela não mexe em `supabase/`); apagar a branch remove a
+   trava. Cada execução do `Banco por PR` confere no GitHub se a branch existe
+   e se tem PR aberta antes de mexer, e as execuções da mesma branch fazem
+   fila, porque o GitHub não garante a ordem dos eventos. O disparo manual dos
+   dois workflows recusa PR fechada e branch que não seja a da PR. Push na
+   `main`, e PR fechada sem merge, reconstroem o `PaneERP Preview`
+   compartilhado a partir da `main`.
 
 O reset do passo 5 não é limpeza opcional. Ele remove migrations de uma PR
 descartada, impedindo que o próximo preview converse com um schema que nunca

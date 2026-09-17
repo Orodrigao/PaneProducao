@@ -28,6 +28,9 @@ concurrency:
 permissions:
   contents: read
   checks: read
+  # Somente leitura, e so para conferir se a branch digitada no disparo manual
+  # e mesmo a daquela PR.
+  pull-requests: read
 
 jobs:
   provisionar:
@@ -44,6 +47,52 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
     steps:
+      # Os dois campos do disparo manual sao digitados em separado, e nada
+      # garantia que combinassem: o numero de uma PR com a branch de outra
+      # criaria contas e aplicaria o seed de uma branch no banco de outra PR.
+      # Confere antes de qualquer checkout, e recusa PR fechada, cujo banco ja
+      # foi apagado.
+      #
+      # ESTE PASSO E COPIA LITERAL do passo de mesmo nome em banco-por-pr.yml;
+      # o teste executa os dois e exige que sejam iguais. Mudou aqui, mude la.
+      - name: Conferir que a branch informada e mesmo a da PR
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_INFORMADA: ${{ inputs.pr_number }}
+          BRANCH_INFORMADA: ${{ inputs.git_branch }}
+        run: |
+          set -euo pipefail
+          # So digitos: `gh pr view` tambem aceita nome de branch e URL no lugar
+          # do numero, e ai o nome digitado se conferiria consigo mesmo.
+          if ! [[ "$PR_INFORMADA" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Numero de PR invalido: informe so os digitos."
+            exit 1
+          fi
+          if ! BRANCH_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)"; then
+            echo "Nao consegui ler a PR $PR_INFORMADA neste repositorio."
+            exit 1
+          fi
+          if [ -z "$BRANCH_DA_PR" ]; then
+            echo "A PR $PR_INFORMADA nao devolveu nome de branch."
+            exit 1
+          fi
+          if [ "$BRANCH_DA_PR" != "$BRANCH_INFORMADA" ]; then
+            echo "A branch informada nao pertence a PR $PR_INFORMADA."
+            echo "  informada: $BRANCH_INFORMADA"
+            echo "  da PR:     $BRANCH_DA_PR"
+            exit 1
+          fi
+          if ! ESTADO_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json state --jq .state)"; then
+            echo "Nao consegui ler o estado da PR $PR_INFORMADA."
+            exit 1
+          fi
+          if [ "$ESTADO_DA_PR" != "OPEN" ]; then
+            echo "A PR $PR_INFORMADA nao esta aberta (estado: ${ESTADO_DA_PR:-ausente}); o preview dela fica travado."
+            exit 1
+          fi
+          echo "Confere: a PR $PR_INFORMADA esta aberta na branch $BRANCH_DA_PR."
+
       # A automacao vem sempre da main. Assim uma PR nao pode alterar o script
       # que recebe os segredos e executa sua propria versao maliciosa.
       - name: Buscar a automacao confiavel

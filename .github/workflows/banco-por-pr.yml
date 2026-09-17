@@ -11,12 +11,23 @@ name: Banco por PR
 # nenhuma PR reescreve mais aquele banco, ele espelha a main, que e exatamente
 # o certo para quem nao mexe em schema.
 #
+# PR fechada tem a branch travada num endereco inerte, nao apenas limpa: sem
+# variavel propria, um push novo na branch geraria preview no banco
+# compartilhado sem reserva nenhuma. Reabrir destrava; apagar a branch esquece
+# a trava, para nao acumular variavel de branch morta na Vercel.
+#
 # A regra de decisao vive em scripts/preview-branch-env.mjs e e testada por
 # scripts/preview-branch-env.test.mjs, que roda no `npm test` de toda PR.
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
+    # So PR contra a main aponta, trava ou destrava. PR da casa contra outra
+    # base dividiria as variaveis da mesma branch com a PR contra a main, e a
+    # classificacao de uma desfaria o que a outra precisa.
+    branches: [main]
+  # Branch apagada: a trava da PR fechada deixa de ter o que proteger.
+  delete:
   # Disparo manual para PR que ja existia antes desta ponte. Sem ele, apontar o
   # preview de uma PR antiga exigiria empurrar commit na branch dela, que pode
   # ser frente reservada por outro agente. Mesmo formato ja usado em
@@ -33,16 +44,43 @@ on:
         type: string
 
 concurrency:
-  # No disparo manual nao existe `github.event.pull_request`, entao o numero
-  # vem dos inputs. Sem esse `||` todos os disparos manuais cairiam no mesmo
-  # grupo e, com cancel-in-progress, um cancelaria o outro.
-  group: banco-por-pr-${{ github.event.pull_request.number || inputs.pr_number }}
-  cancel-in-progress: true
+  # O grupo e a BRANCH, porque e ela que as variaveis da Vercel seguem. Cada
+  # evento traz a branch num lugar: PR no head.ref, disparo manual no campo
+  # digitado e branch apagada em event.ref. Sem os `||` eventos de branches
+  # diferentes cairiam no mesmo grupo.
+  #
+  # O grupo leva tambem o REPOSITORIO de origem. PR de fork com o mesmo nome de
+  # branch cairia no grupo da branch da casa, tomaria o lugar da execucao
+  # pendente dela e depois pularia os trabalhos pela guarda contra fork: a
+  # trava de uma PR fechada nunca seria gravada. Disparo manual e branch
+  # apagada so existem na casa, entao usam github.repository. PR cujo fork foi
+  # apagado vem sem head.repo e cai num grupo proprio, nunca no da casa. Tag
+  # apagada com o nome de uma branch vira `tag:<nome>`. O separador `:` nao
+  # existe em nome de branch nem de repositorio, entao dois grupos diferentes
+  # nunca se confundem. Os parenteses nao sao estilo: a documentacao nao
+  # declara precedencia entre `&&` e `||`.
+  #
+  # Cada trabalho que sobra neste grupo termina com um passo de recuperacao
+  # que roda em falha ou cancelamento (inclusive o disparo manual invalido) e
+  # reconcilia o estado, buscando o codigo de novo se o primeiro checkout
+  # falhou. O que ele nao cobre: GitHub fora do ar ou runner perdido, que
+  # deixam a execucao vermelha; reexecuta-la reconcilia. Gravacao pela metade
+  # falha fechado: endereco de um banco com chave de outro nao conecta, e
+  # qualquer uma das duas variaveis inertes sozinha ja reprova o build.
+  #
+  # SEM cancel-in-progress: cancelar no meio deixaria endereco e chave de
+  # estados diferentes, e uma execucao cancelada ainda pode estar gravando
+  # quando a seguinte comeca. Com fila, as execucoes da mesma branch rodam uma
+  # de cada vez. O GitHub mantem so a mais nova pendente e NAO garante a
+  # ordem; por isso o script decide pelo estado atual da branch, e a ultima a
+  # rodar deixa o certo, seja qual for o evento que a disparou.
+  group: banco-por-pr-${{ (github.event.pull_request && (github.event.pull_request.head.repo.full_name || 'fork-apagado')) || github.repository }}:${{ github.event.pull_request.head.ref || inputs.git_branch || (github.event.ref_type == 'tag' && format('tag:{0}', github.event.ref)) || github.event.ref }}
+  cancel-in-progress: false
 
 permissions:
+  # Somente leitura: conferir se a branch existe e quais PRs abertas saem dela,
+  # e se a branch digitada no disparo manual e mesmo a daquela PR.
   contents: read
-  # Somente leitura, e so para conferir se a branch digitada no disparo manual
-  # e mesmo a daquela PR.
   pull-requests: read
 
 env:
@@ -111,6 +149,13 @@ jobs:
       # so, pelo numero, e o script gravaria as credenciais do banco de uma PR
       # nas variaveis da branch de outra. Verde, silencioso e no banco errado,
       # que e exatamente a falha que esta ponte existe para matar.
+      #
+      # PR fechada tambem e recusada: disparar a mao numa delas destravaria o
+      # preview que o fechamento travou.
+      #
+      # ESTE PASSO E COPIA LITERAL do passo de mesmo nome em
+      # usuarios-banco-por-pr.yml; o teste executa os dois e exige que sejam
+      # iguais. Mudou aqui, mude la.
       - name: Conferir que a branch informada e mesmo a da PR
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -119,6 +164,12 @@ jobs:
           BRANCH_INFORMADA: ${{ inputs.git_branch }}
         run: |
           set -euo pipefail
+          # So digitos: `gh pr view` tambem aceita nome de branch e URL no lugar
+          # do numero, e ai o nome digitado se conferiria consigo mesmo.
+          if ! [[ "$PR_INFORMADA" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Numero de PR invalido: informe so os digitos."
+            exit 1
+          fi
           if ! BRANCH_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)"; then
             echo "Nao consegui ler a PR $PR_INFORMADA neste repositorio."
             exit 1
@@ -133,7 +184,15 @@ jobs:
             echo "  da PR:     $BRANCH_DA_PR"
             exit 1
           fi
-          echo "Confere: a PR $PR_INFORMADA esta na branch $BRANCH_DA_PR."
+          if ! ESTADO_DA_PR="$(gh pr view "$PR_INFORMADA" --repo "$GITHUB_REPOSITORY" --json state --jq .state)"; then
+            echo "Nao consegui ler o estado da PR $PR_INFORMADA."
+            exit 1
+          fi
+          if [ "$ESTADO_DA_PR" != "OPEN" ]; then
+            echo "A PR $PR_INFORMADA nao esta aberta (estado: ${ESTADO_DA_PR:-ausente}); o preview dela fica travado."
+            exit 1
+          fi
+          echo "Confere: a PR $PR_INFORMADA esta aberta na branch $BRANCH_DA_PR."
 
       # A ponte concluia "nao ha ramificacao, logo esta PR nao mexe no banco".
       # Sao coisas diferentes: a PR 303 alterava migration e mesmo assim ficou
@@ -186,6 +245,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.classificar.outputs.perfil == 'product'
         env:
           ACAO: apontar
+          GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -193,17 +253,63 @@ jobs:
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs
 
+      # PR reaberta (ou aberta de novo com o nome de uma branch ja fechada) sem
+      # mudanca de produto nao chega ao passo acima, e a trava do fechamento
+      # ficaria para sempre. Sem mudanca de produto nao ha banco proprio, entao
+      # o destino certo e o compartilhado. Roda a cada evento, e nao so ao
+      # reabrir, porque isso custa uma leitura e nao depende de acertar o
+      # momento.
+      #
+      # Lista FECHADA de perfis: perfil ausente ou desconhecido nao destrava. E
+      # nunca no disparo manual, em que a classificacao nao roda e o passo
+      # acima acabou de gravar o banco da PR.
+      - name: Destravar a branch reaberta
+        if: >-
+          github.event_name == 'pull_request' &&
+          (steps.classificar.outputs.perfil == 'documentation' ||
+          steps.classificar.outputs.perfil == 'ci-mechanism')
+        env:
+          ACAO: destravar
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
+      - name: Reconciliar depois de falha
+        if: failure() || cancelled()
+        env:
+          ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  # O id continua `limpar` porque change-scope.test.mjs o procura por esse
+  # nome; o que o trabalho faz agora e travar.
   limpar:
     # Em disparo manual `github.event.action` nao existe, e a comparacao com
-    # 'closed' e falsa, entao a limpeza nao roda. Isso depende de 'closed' NAO
+    # 'closed' e falsa, entao a trava nao roda. Isso depende de 'closed' NAO
     # ser numerico: a conversao do GitHub transforma nulo em 0 e texto em
     # numero, e comparar aquele campo com '' ou '0' daria VERDADEIRO no disparo
-    # manual, apagando as variaveis em vez de grava-las. Nao troque a
+    # manual, travando o preview em vez de aponta-lo. Nao troque a
     # comparacao por um valor numerico ou vazio.
     if: >-
       github.event.action == 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    name: Devolver o preview ao banco compartilhado
+    name: Travar o preview da PR fechada
     runs-on: ubuntu-latest
     steps:
       - name: Buscar o codigo
@@ -214,13 +320,83 @@ jobs:
         with:
           node-version: 22
 
-      # O Supabase apaga o banco da PR sozinho quando ela fecha. Sobraria a
-      # variavel apontando para um endereco morto, que envenenaria qualquer
-      # preview futuro que reaproveitasse o mesmo nome de branch.
-      - name: Limpar
+      # O Supabase apaga o banco da PR sozinho quando ela fecha. Apagar as
+      # variaveis nao basta: o proximo push na branch cairia nas genericas, que
+      # sao o banco compartilhado. A branch vai para um destino inerte e o
+      # build desse preview falha a vista.
+      - name: Travar
         env:
-          ACAO: limpar
+          ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
+      - name: Reconciliar depois de falha
+        if: failure() || cancelled()
+        env:
+          ACAO: bloquear
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+  esquecer:
+    # Branch apagada nao recebe mais push, entao a trava dela so ocuparia
+    # espaco na Vercel. Evento `delete` so nasce de quem tem escrita no
+    # repositorio e `event.ref` traz o nome curto da branch. Tag apagada nao
+    # conta.
+    if: >-
+      github.event_name == 'delete' &&
+      github.event.ref_type == 'branch'
+    name: Esquecer a trava da branch apagada
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Esquecer
+        env:
+          ACAO: esquecer
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.ref }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+        run: node scripts/preview-branch-env.mjs
+
+      # Recuperacao: esta execucao pode ter tomado o lugar de outra pendente (o
+      # GitHub guarda so a mais nova). Se falhou ou foi cancelada antes de
+      # reconciliar, confere o estado mesmo assim. So trava ou esquece; com PR
+      # aberta contra a main nao mexe. Se o checkout do inicio falhou, busca o
+      # codigo de novo so para isto. Sem o GitHub no ar nem essa segunda busca
+      # funciona; nesse caso a execucao fica vermelha e reexecuta-la reconcilia.
+      - name: Buscar o codigo para reconciliar
+        if: (failure() || cancelled()) && hashFiles('scripts/preview-branch-env.mjs') == ''
+        uses: actions/checkout@v4
+
+      - name: Reconciliar depois de falha
+        if: failure() || cancelled()
+        env:
+          ACAO: esquecer
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_BRANCH: ${{ github.event.ref }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
         run: node scripts/preview-branch-env.mjs

@@ -13,6 +13,11 @@ import { pathToFileURL } from 'node:url'
  *   compartilhado, pelas variaveis genericas de Preview. Nada a fazer aqui.
  * - PR COM ramificacao ganha variaveis amarradas ao nome da branch. Na Vercel,
  *   variavel de branch manda por cima da generica.
+ * - PR FECHADA tem a branch travada num destino inerte. Sem isso, um push novo
+ *   na branch geraria preview no banco compartilhado, sem ninguem ter
+ *   reservado aquele banco. Reabrir destrava; apagar a branch esquece.
+ * - Toda execucao decide pelo estado ATUAL da branch no GitHub, nao pelo
+ *   evento que a disparou (ver lerEstadoDaBranch).
  *
  * Na duvida este script falha FECHADO: preview vermelho e melhor que preview
  * verde conversando com o banco errado.
@@ -24,6 +29,21 @@ export const VARIAVEIS_DO_BANCO = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
 ]
+
+/**
+ * Para onde vai a branch de uma PR fechada.
+ *
+ * Apagar as variaveis da branch nao basta: sem elas, a Vercel usa as
+ * genericas de Preview, que apontam para o banco compartilhado. Um push depois
+ * do fechamento ganharia preview verde num banco que ninguem reservou. Estes
+ * valores nao sao um banco: o dominio `.invalid` e reservado e nunca resolve, e
+ * a trava de next.config.ts recusa endereco que nao seja `*.supabase.co`. O
+ * build desse preview falha, e falha a vista.
+ */
+export const DESTINO_INERTE = Object.freeze({
+  NEXT_PUBLIC_SUPABASE_URL: 'https://pr-fechada-sem-banco.invalid',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: 'pr-fechada-sem-banco',
+})
 
 /**
  * A partir de quantas ramificacoes a listagem do Supabase passa a ser suspeita
@@ -174,23 +194,77 @@ export function planejarVariaveis({ projectRef, chavePublica, gitBranch }) {
   if (!gitBranch) throw new Error('Nome da branch ausente ao montar as variaveis.')
 
   return [
-    {
-      key: 'NEXT_PUBLIC_SUPABASE_URL',
-      value: `https://${projectRef}.supabase.co`,
-      // `plain` porque tudo que comeca com NEXT_PUBLIC_ viaja no navegador: a
-      // propria Vercel recusa marcar essas variaveis como secretas.
-      type: 'plain',
-      target: ['preview'],
-      gitBranch,
-    },
-    {
-      key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-      value: chavePublica,
-      type: 'plain',
-      target: ['preview'],
-      gitBranch,
-    },
+    variavelDaBranch('NEXT_PUBLIC_SUPABASE_URL', `https://${projectRef}.supabase.co`, gitBranch),
+    variavelDaBranch('NEXT_PUBLIC_SUPABASE_ANON_KEY', chavePublica, gitBranch),
   ]
+}
+
+/** O par de variaveis que trava a branch de uma PR fechada. */
+export function planejarBloqueio({ gitBranch }) {
+  if (!gitBranch) throw new Error('Nome da branch ausente ao montar o bloqueio.')
+
+  return VARIAVEIS_DO_BANCO.map((chave) => variavelDaBranch(chave, DESTINO_INERTE[chave], gitBranch))
+}
+
+function variavelDaBranch(key, value, gitBranch) {
+  return {
+    key,
+    value,
+    // `plain` porque tudo que comeca com NEXT_PUBLIC_ viaja no navegador: a
+    // propria Vercel recusa marcar essas variaveis como secretas.
+    type: 'plain',
+    target: ['preview'],
+    gitBranch,
+  }
+}
+
+/**
+ * Confere a releitura das variaveis de banco daquela branch.
+ *
+ * `listadas` ja vem filtrada para a branch; `esperadas` e o que acabou de ser
+ * gravado (lista vazia depois de remover). Cada chave esperada precisa aparecer
+ * uma vez so e valer para Preview. O valor e comparado quando a Vercel o
+ * devolve em claro; quando nao devolve, fica conferida so a existencia, e o
+ * retorno diz isso. A mensagem de erro nunca carrega o valor.
+ */
+export function conferirReleitura(listadas, esperadas) {
+  if (!Array.isArray(listadas)) {
+    throw new Error('A releitura das variaveis da branch nao veio como lista.')
+  }
+
+  let porValor = 0
+  for (const chave of VARIAVEIS_DO_BANCO) {
+    const achadas = listadas.filter((variavel) => variavel?.key === chave)
+    const esperada = esperadas.find((variavel) => variavel.key === chave)
+
+    if (!esperada) {
+      if (achadas.length > 0) {
+        throw new Error(`Releitura: ${chave} continua gravada nesta branch depois de removida.`)
+      }
+      continue
+    }
+    if (achadas.length !== 1) {
+      throw new Error(`Releitura: esperava uma ${chave} nesta branch e a Vercel devolveu ${achadas.length}.`)
+    }
+
+    const [achada] = achadas
+    const alvos = Array.isArray(achada.target) ? achada.target : [achada.target]
+    if (!alvos.includes('preview') || alvos.includes('production')) {
+      throw new Error(`Releitura: ${chave} desta branch nao esta restrita a Preview.`)
+    }
+
+    const valorLegivel = typeof achada.value === 'string'
+      && achada.type === 'plain'
+      && achada.decrypted !== false
+    if (valorLegivel) {
+      if (achada.value !== esperada.value) {
+        throw new Error(`Releitura: ${chave} desta branch nao tem o valor que acabou de ser gravado.`)
+      }
+      porValor += 1
+    }
+  }
+
+  return { porValor }
 }
 
 async function pedir(url, { token, method = 'GET', body, fetchImpl = fetch } = {}) {
@@ -292,6 +366,17 @@ export async function apontarPreviewParaRamificacao({
   }
 
   if (escolha.situacao === 'sem-ramificacao') {
+    // Sem banco proprio, qualquer variavel de banco desta branch esta sobrando:
+    // e a trava de uma PR fechada que foi reaberta, ou o endereco de um banco
+    // que ja morreu. Tirar as duas e o que devolve o preview ao compartilhado.
+    await limparVariaveisDaBranch({
+      gitBranch,
+      vercelToken,
+      vercelProject,
+      vercelTeamId,
+      registrar,
+      fetchImpl,
+    })
     registrar(
       'Esta PR nao altera supabase/ e nao tem banco proprio, que e o esperado. '
       + 'O preview segue no Banco Preview compartilhado, que espelha a main.',
@@ -331,15 +416,7 @@ export async function apontarPreviewParaRamificacao({
     gitBranch,
   })
 
-  for (const variavel of variaveis) {
-    await pedir(
-      comEscopo(
-        `https://api.vercel.com/v10/projects/${encodeURIComponent(vercelProject)}/env?upsert=true`,
-        vercelTeamId,
-      ),
-      { token: vercelToken, method: 'POST', body: variavel, fetchImpl },
-    )
-  }
+  await gravarEReler({ variaveis, gitBranch, vercelToken, vercelProject, vercelTeamId, registrar, fetchImpl })
 
   registrar(`Preview desta PR apontado para o banco ${refDaRamificacao}.`)
 
@@ -437,11 +514,92 @@ export async function reconstruirPreview({
   return { situacao: 'refeito', deploymentId: daBranch.uid }
 }
 
+/** As variaveis de banco gravadas para aquela branch, e so elas. */
+async function listarVariaveisDaBranch({ gitBranch, vercelToken, vercelProject, vercelTeamId, fetchImpl }) {
+  const lista = await pedir(
+    comEscopo(
+      `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProject)}/env?gitBranch=${encodeURIComponent(gitBranch)}`,
+      vercelTeamId,
+    ),
+    { token: vercelToken, fetchImpl },
+  )
+
+  if (!Array.isArray(lista?.envs)) {
+    throw new Error('A listagem de variaveis da Vercel nao veio como lista.')
+  }
+  // Com pagina seguinte, a trava ou a sobra desta branch podem ter ficado fora
+  // do que veio, e "nao achei" deixaria de significar "nao existe".
+  if (lista.pagination?.next != null) {
+    throw new Error('A listagem de variaveis da Vercel veio paginada; nao da para afirmar o que a branch tem.')
+  }
+
+  // A listagem filtrada por branch devolve TAMBEM as genericas de Preview. A
+  // comparacao exata de gitBranch e o que impede tocar nelas.
+  return lista.envs.filter(
+    (variavel) => VARIAVEIS_DO_BANCO.includes(variavel?.key) && variavel.gitBranch === gitBranch,
+  )
+}
+
+async function gravarEReler({ variaveis, gitBranch, vercelToken, vercelProject, vercelTeamId, registrar, fetchImpl }) {
+  for (const variavel of variaveis) {
+    await pedir(
+      comEscopo(
+        `https://api.vercel.com/v10/projects/${encodeURIComponent(vercelProject)}/env?upsert=true`,
+        vercelTeamId,
+      ),
+      { token: vercelToken, method: 'POST', body: variavel, fetchImpl },
+    )
+  }
+
+  const releitura = conferirReleitura(
+    await listarVariaveisDaBranch({ gitBranch, vercelToken, vercelProject, vercelTeamId, fetchImpl }),
+    variaveis,
+  )
+  registrar(
+    releitura.porValor === variaveis.length
+      ? 'Releitura na Vercel: as duas variaveis da branch tem o valor gravado.'
+      : `Releitura na Vercel: as duas variaveis existem; ${releitura.porValor} conferida(s) por valor, `
+        + 'as demais a Vercel nao devolveu em claro.',
+  )
+}
+
+function exigirVercel({ gitBranch, vercelToken, vercelProject }) {
+  if (!vercelToken) throw new Error('VERCEL_TOKEN ausente.')
+  if (!vercelProject) throw new Error('Projeto da Vercel ausente.')
+  if (!gitBranch) throw new Error('Nome da branch ausente: nao da para saber quais variaveis mexer.')
+}
+
 /**
- * Apaga as variaveis daquela branch quando a PR fecha.
+ * Trava a branch de uma PR fechada no destino inerte.
  *
- * O Supabase apaga o banco sozinho; sobra a variavel apontando para um
- * endereco morto, que confundiria qualquer preview futuro do mesmo nome.
+ * O Supabase apaga o banco da PR sozinho quando ela fecha. Os previews ja
+ * publicados ficam com o endereco morto, o que e inofensivo: o build e
+ * estatico e so falha ao conectar. O perigo e o proximo push na branch, que
+ * nasceria no banco compartilhado se as variaveis simplesmente sumissem.
+ */
+export async function bloquearPreviewDaBranch({
+  gitBranch,
+  vercelToken,
+  vercelProject,
+  vercelTeamId,
+  registrar = console.log,
+  fetchImpl = fetch,
+}) {
+  exigirVercel({ gitBranch, vercelToken, vercelProject })
+
+  const variaveis = planejarBloqueio({ gitBranch })
+  await gravarEReler({ variaveis, gitBranch, vercelToken, vercelProject, vercelTeamId, registrar, fetchImpl })
+
+  registrar('Branch da PR fechada travada: um preview novo dela falha no build em vez de usar o banco compartilhado.')
+  return { situacao: 'bloqueado' }
+}
+
+/**
+ * Apaga as variaveis de banco daquela branch e confere que sumiram.
+ *
+ * Serve a dois momentos: a PR foi reaberta sem banco proprio (destravar, e o
+ * preview volta ao compartilhado) e a branch foi apagada (esquecer a trava,
+ * para nao acumular variavel de branch que nao existe mais).
  */
 export async function limparVariaveisDaBranch({
   gitBranch,
@@ -453,21 +611,9 @@ export async function limparVariaveisDaBranch({
 }) {
   // Mesma exigencia do outro caminho: sem isto a falta de token so aparecia
   // como um 401 no meio do log, em vez de uma frase dizendo o que falta.
-  if (!vercelToken) throw new Error('VERCEL_TOKEN ausente.')
-  if (!vercelProject) throw new Error('Projeto da Vercel ausente.')
-  if (!gitBranch) throw new Error('Nome da branch ausente ao limpar as variaveis.')
+  exigirVercel({ gitBranch, vercelToken, vercelProject })
 
-  const lista = await pedir(
-    comEscopo(
-      `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProject)}/env?gitBranch=${encodeURIComponent(gitBranch)}`,
-      vercelTeamId,
-    ),
-    { token: vercelToken, fetchImpl },
-  )
-
-  const alvos = (lista?.envs ?? []).filter(
-    (variavel) => VARIAVEIS_DO_BANCO.includes(variavel?.key) && variavel.gitBranch === gitBranch,
-  )
+  const alvos = await listarVariaveisDaBranch({ gitBranch, vercelToken, vercelProject, vercelTeamId, fetchImpl })
 
   for (const alvo of alvos) {
     await pedir(
@@ -479,29 +625,165 @@ export async function limparVariaveisDaBranch({
     )
   }
 
-  registrar(`${alvos.length} variavel(is) desta branch removida(s) da Vercel.`)
+  if (alvos.length > 0) {
+    conferirReleitura(
+      await listarVariaveisDaBranch({ gitBranch, vercelToken, vercelProject, vercelTeamId, fetchImpl }),
+      [],
+    )
+  }
+
+  registrar(`${alvos.length} variavel(is) de banco desta branch removida(s) da Vercel.`)
   return { removidas: alvos.length }
 }
 
+const ACOES = new Set(['apontar', 'destravar', 'bloquear', 'esquecer'])
+
+/**
+ * O que o GitHub diz AGORA sobre a branch: se ela existe e quais PRs abertas
+ * da propria casa saem dela.
+ *
+ * Existe porque o evento que disparou esta execucao pode estar velho. O
+ * GitHub nao garante a ordem das execucoes: um "enviou commit" atrasado pode
+ * rodar depois do "fechou", e um "fechou" atrasado depois do "apagou a
+ * branch". Quem decide pelo estado atual, e nao pelo evento, deixa o certo
+ * mesmo rodando fora de ordem, desde que as execucoes da mesma branch facam
+ * fila (ver concurrency no workflow).
+ */
+export async function lerEstadoDaBranch({ repositorio, gitBranch, githubToken, fetchImpl = fetch }) {
+  if (!githubToken) throw new Error('GITHUB_TOKEN ausente: sem ele nao da para conferir o estado atual da branch.')
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repositorio ?? '')) {
+    throw new Error('GITHUB_REPOSITORY ausente ou invalido: nao da para conferir o estado atual da branch.')
+  }
+  if (!gitBranch) throw new Error('Nome da branch ausente: nao da para conferir o estado atual.')
+
+  const base = `https://api.github.com/repos/${repositorio}`
+  const caminhoDaRef = gitBranch.split('/').map(encodeURIComponent).join('/')
+
+  // `git/ref` (singular) devolve a referencia exata ou 404. So 404 quer dizer
+  // "nao existe"; qualquer outra falha interrompe, porque concluir "apagada"
+  // por engano apagaria a trava de uma branch viva.
+  const respostaDaRef = await fetchImpl(`${base}/git/ref/heads/${caminhoDaRef}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github+json' },
+  })
+  let branchExiste
+  if (respostaDaRef.status === 404) {
+    branchExiste = false
+  } else if (respostaDaRef.ok) {
+    const corpo = await respostaDaRef.json()
+    if (corpo?.ref !== `refs/heads/${gitBranch}`) {
+      throw new Error('O GitHub devolveu uma referencia que nao e exatamente esta branch; recusado por seguranca.')
+    }
+    branchExiste = true
+  } else {
+    throw new Error(`GET da branch no GitHub respondeu ${respostaDaRef.status}.`)
+  }
+
+  // So PR contra a main conta: e so ela que o workflow aponta e trava.
+  const dono = repositorio.split('/')[0]
+  const abertas = await pedir(
+    `${base}/pulls?state=open&base=main&per_page=100&head=${encodeURIComponent(`${dono}:${gitBranch}`)}`,
+    { token: githubToken, fetchImpl },
+  )
+  if (!Array.isArray(abertas)) {
+    throw new Error('A listagem de PRs abertas do GitHub nao veio como lista.')
+  }
+  if (abertas.length >= 100) {
+    throw new Error('A listagem de PRs abertas veio no limite da pagina; nao da para afirmar o estado da branch.')
+  }
+
+  const prsAbertas = abertas
+    .filter((pr) => pr?.head?.ref === gitBranch
+      && pr?.head?.repo?.full_name === repositorio
+      && pr?.base?.ref === 'main')
+    .map((pr) => Number(pr.number))
+
+  return { branchExiste, prsAbertas }
+}
+
+/**
+ * O que fazer, dado o que o evento pediu e o estado atual da branch.
+ *
+ * - branch apagada: esquecer (nao ha mais push a proteger);
+ * - branch viva sem PR aberta: travar, venha o pedido de onde vier;
+ * - branch com PR aberta: travar e esquecer nao mexem (quem decide e o
+ *   trabalho da PR aberta, que conhece a classificacao dela);
+ * - apontar e destravar so seguem se a PR do evento e a que esta aberta. Se
+ *   a aberta for outra PR na mesma branch, a execucao dela decide.
+ */
+export function decidirPeloEstado({ acao, branchExiste, prsAbertas, prNumber }) {
+  if (!ACOES.has(acao)) throw new Error(`ACAO desconhecida (${acao ?? 'ausente'}); nada foi alterado.`)
+  if (!Array.isArray(prsAbertas)) throw new Error('Estado da branch sem a lista de PRs abertas.')
+  if (branchExiste === false) return 'esquecer'
+  if (branchExiste !== true) throw new Error('Estado da branch sem a informacao de existencia.')
+  if (prsAbertas.length === 0) return 'bloquear'
+  if (acao === 'bloquear' || acao === 'esquecer') return 'nada'
+
+  const numero = Number(prNumber)
+  if (!Number.isInteger(numero) || numero <= 0) {
+    throw new Error('PR_NUMBER ausente ou invalido: nao da para saber se a PR do evento continua aberta.')
+  }
+  return prsAbertas.includes(numero) ? acao : 'nada'
+}
+
+/** Confere o estado atual e executa a decisao. */
+export async function executarAcao({
+  acao,
+  prNumber,
+  gitBranch,
+  repositorio,
+  githubToken,
+  supabaseToken,
+  prAlteraSupabase,
+  vercelToken,
+  vercelProject,
+  vercelTeamId,
+  registrar = console.log,
+  fetchImpl = fetch,
+  ...opcoes
+}) {
+  // Acao desconhecida falha antes de qualquer chamada: cair no caminho de
+  // apontar por engano gravaria variaveis numa branch que devia ficar travada.
+  if (!ACOES.has(acao)) throw new Error(`ACAO desconhecida (${acao ?? 'ausente'}); nada foi alterado.`)
+  const comum = { gitBranch, vercelToken, vercelProject, vercelTeamId, registrar, fetchImpl }
+  exigirVercel(comum)
+
+  const estado = await lerEstadoDaBranch({ repositorio, gitBranch, githubToken, fetchImpl })
+  const decisao = decidirPeloEstado({ acao, prNumber, ...estado })
+  registrar(
+    `O evento pediu "${acao}". No GitHub agora a branch ${estado.branchExiste ? 'existe' : 'nao existe'} `
+    + `e tem ${estado.prsAbertas.length} PR(s) aberta(s) (${estado.prsAbertas.join(', ') || 'nenhuma'}). Decisao: ${decisao}.`,
+  )
+
+  if (decisao === 'nada') return { decisao }
+  if (decisao === 'bloquear') return { decisao, ...(await bloquearPreviewDaBranch(comum)) }
+  if (decisao === 'esquecer' || decisao === 'destravar') {
+    return { decisao, ...(await limparVariaveisDaBranch(comum)) }
+  }
+  return {
+    decisao,
+    ...(await apontarPreviewParaRamificacao({
+      ...comum,
+      ...opcoes,
+      prNumber,
+      supabaseToken,
+      prAlteraSupabase,
+    })),
+  }
+}
+
 async function main() {
-  const acao = process.env.ACAO
-  const comum = {
+  await executarAcao({
+    acao: process.env.ACAO,
+    prNumber: process.env.PR_NUMBER,
     gitBranch: process.env.GIT_BRANCH,
+    repositorio: process.env.GITHUB_REPOSITORY,
+    githubToken: process.env.GITHUB_TOKEN,
+    supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
+    prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
     vercelToken: process.env.VERCEL_TOKEN,
     vercelProject: process.env.VERCEL_PROJECT,
     vercelTeamId: process.env.VERCEL_TEAM_ID,
-  }
-
-  if (acao === 'limpar') {
-    await limparVariaveisDaBranch(comum)
-    return
-  }
-
-  await apontarPreviewParaRamificacao({
-    ...comum,
-    prNumber: process.env.PR_NUMBER,
-    supabaseToken: process.env.SUPABASE_ACCESS_TOKEN,
-    prAlteraSupabase: process.env.PR_ALTERA_SUPABASE === 'true',
   })
 }
 
