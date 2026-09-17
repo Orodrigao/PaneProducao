@@ -778,15 +778,20 @@ do $$ begin
     raise exception using errcode='22023', message='Há pedido aberto sem opção de venda compatível. O saneamento foi interrompido sem alterar dados.';
   end if;
 
+  -- O alvo do UPDATE não pode ser referenciado dentro do ON de um JOIN da
+  -- lista FROM; por isso a condição de unidade de venda fica no WHERE, onde
+  -- "r" está em escopo. Como a junção com product_sale_options é interna,
+  -- mover essa condição para o WHERE não muda o resultado.
   update public.orders r
   set product_source='product',bread_id=m.master_product_id::text,product_name=m.master_name,
       sale_option_id=o.id,product_variant_id=v.id
   from catalog_saneamento_map m
   left join public.product_variants v on v.product_id=m.master_product_id and v.name=m.variant_name
-  join public.product_sale_options o on o.product_id=m.master_product_id and o.sale_unit=coalesce(r.pricing_unit,'un')
+  join public.product_sale_options o on o.product_id=m.master_product_id
     and o.product_variant_id is not distinct from v.id
   where r.product_source=m.source and r.bread_id=m.source_id
-    and r.cancelled_at is null and r.dispatched_at is null;
+    and r.cancelled_at is null and r.dispatched_at is null
+    and o.sale_unit=coalesce(r.pricing_unit,'un');
 
   if exists (
     select 1
