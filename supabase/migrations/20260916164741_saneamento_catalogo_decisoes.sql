@@ -467,6 +467,41 @@ end $$;
 do $$ begin
   if not exists (select 1 from catalog_saneamento_map m join public.products p on p.id::text=m.source_id where m.source='product') then return; end if;
 
+  -- A ponte e os preços/pedidos que a sustentam mudam como um retrato único:
+  -- novas gravações aguardam o término desta transação, enquanto leituras
+  -- continuam disponíveis. Sem este lock, uma nova linha poderia surgir entre
+  -- a validação abaixo e a aposentadoria do cadastro duplicado.
+  lock table public.orders, public.price_tier_items, public.customer_price_overrides in share row exclusive mode;
+
+  -- Ponte do Pão de Hotdog: o cadastro antigo já usa a ligação temporária com
+  -- o pão legado. Ele não tem preço nem pedido aberto, portanto é aposentado
+  -- antes de a ponte passar ao produto mestre. Qualquer uso novo interrompe a
+  -- transação para que essa decisão seja revista, sem reescrever a operação.
+  if not exists (
+    select 1 from public.products
+    where id='a4f323b7-16cb-4454-8e66-d2c98ccef960'
+      and name='Pão de Hotdog' and active
+      and legacy_bread_id='paodehotdog1779743021606'
+  ) then
+    raise exception using errcode='22023', message='O cadastro duplicado do Pão de Hotdog mudou desde a auditoria. O saneamento foi interrompido sem alterar dados.';
+  end if;
+  if exists (
+    select 1 from public.orders
+    where product_source='product' and bread_id='a4f323b7-16cb-4454-8e66-d2c98ccef960'
+      and cancelled_at is null and dispatched_at is null
+  ) then
+    raise exception using errcode='22023', message='Há pedido aberto ligado ao cadastro duplicado do Pão de Hotdog. O saneamento foi interrompido sem alterar dados.';
+  end if;
+  if exists (
+    select 1 from public.price_tier_items
+    where product_source='product' and product_id='a4f323b7-16cb-4454-8e66-d2c98ccef960' and active
+    union all
+    select 1 from public.customer_price_overrides
+    where product_source='product' and product_id='a4f323b7-16cb-4454-8e66-d2c98ccef960' and active
+  ) then
+    raise exception using errcode='22023', message='Há preço ativo ligado ao cadastro duplicado do Pão de Hotdog. O saneamento foi interrompido sem alterar dados.';
+  end if;
+
   update public.products p
   set name=m.master_name, active=true, kind=coalesce(p.kind,'final'), is_fabricacao_propria=true
   from (select distinct master_product_id, master_name from catalog_saneamento_map) m
@@ -486,6 +521,8 @@ do $$ begin
   update public.products set name='Grand Arome' where id='3e47332b-8be2-42c8-8106-57f5a06ee041';
   update public.products set active=false where id in ('febd339f-520b-4e70-bdc6-b2331ff6f54b','5f81ab79-9d57-4eb2-aeee-63f927b333d1');
   update public.breads set name='Multigrãos de Forma' where id='multi_de_forma1775678271869';
+  update public.products set active=false, legacy_bread_id=null
+    where id='a4f323b7-16cb-4454-8e66-d2c98ccef960';
   update public.products set name='Pão de Cachorro Quente', legacy_bread_id='paodehotdog1779743021606'
     where id='888f9a70-ff75-45eb-b5fc-add486dc287c';
   update public.products set kind='kit', active=true where id in (
