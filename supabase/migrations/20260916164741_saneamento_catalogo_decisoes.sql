@@ -562,6 +562,23 @@ do $$ begin
   on conflict (product_id,sale_unit) where product_variant_id is null do update
     set active=true, name=excluded.name, updated_at=now();
 
+  -- Pão de Cachorro Quente também é vendido por unidade na operação real
+  -- (pedidos e preço de cliente já existentes), mesmo a ponte só ter
+  -- declarado quilo. Sem essa opção, esses registros ficam sem venda
+  -- compatível e travam o restante do saneamento. Quilo continua a opção
+  -- padrão, por ser a unidade que a ponte declara como principal; o padrão
+  -- é normalizado de forma explícita para não depender do estado anterior.
+  update public.product_sale_options set is_default=false, updated_at=now()
+  where product_id='888f9a70-ff75-45eb-b5fc-add486dc287c' and product_variant_id is null;
+
+  insert into public.product_sale_options(product_id,name,sale_unit,reference_quantity,is_default,active)
+  values ('888f9a70-ff75-45eb-b5fc-add486dc287c','Unidade','un',1,false,true)
+  on conflict (product_id,sale_unit) where product_variant_id is null do update
+    set active=true, name=excluded.name, is_default=false, updated_at=now();
+
+  update public.product_sale_options set is_default=true, updated_at=now()
+  where product_id='888f9a70-ff75-45eb-b5fc-add486dc287c' and product_variant_id is null and sale_unit='kg';
+
   -- Brioche é a única receita que ganha variantes reais nesta entrega.
   insert into public.product_variants(product_id,name,sort_order,active)
   values
