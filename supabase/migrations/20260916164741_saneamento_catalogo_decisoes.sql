@@ -467,6 +467,12 @@ end $$;
 do $$ begin
   if not exists (select 1 from catalog_saneamento_map m join public.products p on p.id::text=m.source_id where m.source='product') then return; end if;
 
+  -- A ponte e os preços/pedidos que a sustentam mudam como um retrato único:
+  -- novas gravações aguardam o término desta transação, enquanto leituras
+  -- continuam disponíveis. Sem este lock, uma nova linha poderia surgir entre
+  -- a validação abaixo e a aposentadoria do cadastro duplicado.
+  lock table public.orders, public.price_tier_items, public.customer_price_overrides in share row exclusive mode;
+
   -- Ponte do Pão de Hotdog: o cadastro antigo já usa a ligação temporária com
   -- o pão legado. Ele não tem preço nem pedido aberto, portanto é aposentado
   -- antes de a ponte passar ao produto mestre. Qualquer uso novo interrompe a

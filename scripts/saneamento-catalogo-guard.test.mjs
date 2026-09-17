@@ -32,6 +32,10 @@ test('a ponte do Pão de Hotdog só muda depois de validar e aposentar o cadastr
   const legacyBreadId = 'paodehotdog1779743021606'
 
   assert.match(migration, /Ponte do Pão de Hotdog/)
+  assert.match(
+    migration,
+    /lock table public\.orders, public\.price_tier_items, public\.customer_price_overrides in share row exclusive mode/,
+  )
   assert.match(migration, new RegExp(`id='${legacyProductId}'`))
   assert.match(migration, new RegExp(`legacy_bread_id='${legacyBreadId}'`))
   assert.match(migration, new RegExp(`id='${masterProductId}'`))
