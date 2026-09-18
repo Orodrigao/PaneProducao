@@ -66,10 +66,11 @@ test('Forno avisa falta potencial sem criar reposicao para o PJ', async ({ page 
 
   await page.goto('/forno')
 
-  await expect(page.getByRole('alert')).toContainText('tem 4 un na programação PJ')
-  await expect(page.getByRole('alert')).toContainText('faltaram 2 un no total confirmado')
-  await expect(page.getByRole('alert')).toContainText('O sistema não cria reposição')
-  await expect(page.getByRole('alert')).toContainText('será necessário um novo pedido PJ')
+  const pjShortageAlert = page.getByRole('alert', { name: /Atenção: este produto tem/ })
+  await expect(pjShortageAlert).toContainText('tem 4 un na programação PJ')
+  await expect(pjShortageAlert).toContainText('faltaram 2 un no total confirmado')
+  await expect(pjShortageAlert).toContainText('O sistema não cria reposição')
+  await expect(pjShortageAlert).toContainText('será necessário um novo pedido PJ')
 })
 
 test('perfil sem permissao continua fora do Forno', async ({ page }) => {
