@@ -1116,7 +1116,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                             <span>
                               {c.product_name}
                               {c.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
-                              {c.sale_option_id
+                              {c.sale_option_id && saleOptionsById.get(c.sale_option_id)
                                 ? <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(saleOptionsById.get(c.sale_option_id))}</span>
                                 : <span className="ps-store-chip ja" style={{marginLeft:6}}>{c.pricing_unit}</span>}
                               {c.isOverride && <span className="ps-store-chip ex" style={{marginLeft:6}}>override</span>}
@@ -1151,7 +1151,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                               <div className="ps-pname" style={{fontSize:14, flex:1, minWidth:0}}>
                                 {l.product_name}
                                 {l.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
-                                {l.sale_option_id && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(saleOptionsById.get(l.sale_option_id))}</span>}
+                                {l.sale_option_id && saleOptionsById.get(l.sale_option_id) && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(saleOptionsById.get(l.sale_option_id))}</span>}
                                 <span style={{marginLeft:8, fontSize:12, color:'var(--ink-faint)', fontWeight:500}}>R$ {l.unit_price.toFixed(2)}/{l.pricing_unit}</span>
                               </div>
                               <button onClick={()=>removeLine(l.key)} title="Remover" className="ps-iconbtn" style={{width:30, height:30, color:'var(--berry)'}}>
