@@ -11,7 +11,9 @@ import {
 import {
   aggregateOvenPlan,
   collectWeightSetupWarnings,
+  formatOvenQuantity,
   ovenLotCode,
+  ovenPjShortageWarning,
   ovenProductKey,
   OVEN_LOSS_REASONS,
   parseOvenQuantity,
@@ -113,6 +115,7 @@ export default function FornoPage() {
   const [date, setDate] = useState(todayKey())
   const [products, setProducts] = useState<OvenProduct[]>([])
   const [plannedMap, setPlannedMap] = useState<Map<string, number>>(new Map())
+  const [pjPlannedMap, setPjPlannedMap] = useState<Map<string, number>>(new Map())
   const [weightWarnings, setWeightWarnings] = useState<Set<string>>(new Set())
   const [actuals, setActuals] = useState<Record<string, ProductionActualRow>>({})
   const [forms, setForms] = useState<Record<string, OvenFormState>>({})
@@ -261,6 +264,7 @@ export default function FornoPage() {
       if (breadIds.length === 0 && productIds.length === 0) {
         setProducts([])
         setPlannedMap(new Map())
+        setPjPlannedMap(new Map())
         setWeightWarnings(new Set())
         setActuals({})
         setForms({})
@@ -343,6 +347,7 @@ export default function FornoPage() {
 
       setProducts(loadedProducts)
       setPlannedMap(plan)
+      setPjPlannedMap(aggregateOvenPlan(pjRows))
       setWeightWarnings(collectWeightSetupWarnings(pjRows))
       setActuals(actualsByProduct)
       setForms(initialForms)
@@ -574,6 +579,15 @@ export default function FornoPage() {
                   const quantityLoss = parseOvenQuantity(form?.quantityLoss ?? '0', unit) ?? 0
                   const lotCode = actual?.lot_code ?? ovenLotCode(date)
                   const hasWeightWarning = weightWarnings.has(productKey)
+                  const pjPlanned = pjPlannedMap.get(productKey) ?? 0
+                  const pjShortage = actual
+                    ? ovenPjShortageWarning(
+                        planned,
+                        pjPlanned,
+                        Number(actual.quantity_baked),
+                        pjPlanned > 0 || hasWeightWarning,
+                      )
+                    : null
 
                   return (
                     <article
@@ -610,6 +624,21 @@ export default function FornoPage() {
                               <span>{actual.quantity_loss} de perda · {actual.loss_reason}</span>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {pjShortage && !isEditing && (
+                        <div className="ps-oven-weight-warning" role="alert">
+                          <AlertTriangle size={15} />
+                          <span>
+                            Atenção: este produto tem{' '}
+                            {pjShortage.pjQuantity === null
+                              ? 'pedido PJ por peso ainda sem conversão para o Forno'
+                              : `${formatOvenQuantity(pjShortage.pjQuantity, unit)} na programação PJ`}
+                            {' '}e faltaram {formatOvenQuantity(pjShortage.totalShortage, unit)} no total
+                            confirmado. Confirme com a Expedição quanto será entregue. O sistema não cria
+                            reposição. Se o cliente quiser o restante, será necessário um novo pedido PJ.
+                          </span>
                         </div>
                       )}
 

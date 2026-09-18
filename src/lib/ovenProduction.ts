@@ -70,6 +70,42 @@ export function aggregateOvenPlan(rows: OvenPlanRow[]): Map<string, number> {
   return result
 }
 
+export interface OvenPjShortageWarning {
+  pjQuantity: number | null
+  totalShortage: number
+}
+
+// O Forno confirma o produto agregado, sem decidir qual canal recebeu cada
+// unidade. Por isso o resultado avisa que existe PJ envolvido, mas não atribui
+// automaticamente a falta a um cliente nem recria programação.
+export function ovenPjShortageWarning(
+  plannedQuantity: number,
+  pjQuantity: number,
+  quantityGood: number,
+  hasPjInvolvement: boolean = pjQuantity > 0,
+): OvenPjShortageWarning | null {
+  if (![plannedQuantity, pjQuantity, quantityGood].every(Number.isFinite)) return null
+  if (
+    plannedQuantity <= 0
+    || pjQuantity < 0
+    || quantityGood < 0
+    || !hasPjInvolvement
+    || quantityGood >= plannedQuantity
+  ) return null
+
+  return {
+    pjQuantity: pjQuantity > 0 ? pjQuantity : null,
+    totalShortage: Math.round((plannedQuantity - quantityGood) * 1_000) / 1_000,
+  }
+}
+
+export function formatOvenQuantity(quantity: number, unit: 'un' | 'kg'): string {
+  const value = unit === 'kg'
+    ? quantity.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+    : String(Math.trunc(quantity))
+  return `${value} ${unit}`
+}
+
 export interface OvenPlanRowWithWeightFlag extends OvenPlanRow {
   needs_weight_setup?: boolean | null
 }

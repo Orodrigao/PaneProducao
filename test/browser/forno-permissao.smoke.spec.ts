@@ -33,6 +33,46 @@ test('perfil autorizado carrega a programacao do Forno', async ({ page }) => {
   await expect(page.getByText('Não foi possível carregar o forno.', { exact: true })).toHaveCount(0)
 })
 
+test('Forno avisa falta potencial sem criar reposicao para o PJ', async ({ page }) => {
+  await enterWithPreviewAccount(page, authorizedEmail)
+
+  await page.route('**/rest/v1/rpc/list_pj_production_for_oven_v2', route => route.fulfill({
+    json: [{
+      product_source: 'bread', product_id: 'teste-alerta-pj', product_variant_id: null,
+      product_name: '[TESTE] Alerta PJ', production_unit: 'un', quantity: 4,
+      needs_weight_setup: false,
+    }],
+  }))
+  await page.route('**/rest/v1/orders*', route => {
+    const url = decodeURIComponent(route.request().url())
+    return route.fulfill({
+      json: url.includes('order_type=eq.producao')
+        ? [{ id: 'pedido-loja', bread_id: 'teste-alerta-pj', quantity: 6 }]
+        : [],
+    })
+  })
+  await page.route('**/rest/v1/bread_reuse_plans*', route => route.fulfill({ json: [] }))
+  await page.route('**/rest/v1/production_actuals*', route => route.fulfill({
+    json: [{
+      id: 'realizado-alerta', bread_id: 'teste-alerta-pj', product_source: 'bread',
+      product_id: 'teste-alerta-pj', product_variant_id: null, product_name: '[TESTE] Alerta PJ',
+      production_unit: 'un', record_date: '2026-09-18', lot_code: 'L0918',
+      quantity_baked: 8, quantity_loss: 2, loss_reason: 'Queimou', obs: null,
+    }],
+  }))
+  await page.route('**/rest/v1/breads*', route => route.fulfill({
+    json: [{ id: 'teste-alerta-pj', name: '[TESTE] Alerta PJ', unit: 'un' }],
+  }))
+
+  await page.goto('/forno')
+
+  const pjShortageAlert = page.getByRole('alert').filter({ hasText: 'Atenção: este produto tem' })
+  await expect(pjShortageAlert).toContainText('tem 4 un na programação PJ')
+  await expect(pjShortageAlert).toContainText('faltaram 2 un no total confirmado')
+  await expect(pjShortageAlert).toContainText('O sistema não cria reposição')
+  await expect(pjShortageAlert).toContainText('será necessário um novo pedido PJ')
+})
+
 test('perfil sem permissao continua fora do Forno', async ({ page }) => {
   await enterWithPreviewAccount(page, blockedEmail)
   await page.goto('/forno')
