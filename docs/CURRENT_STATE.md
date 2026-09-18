@@ -187,15 +187,18 @@ Riscos ainda abertos:
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
-- **os perfis `admin` não enxergam as telas financeiras.** Auditoria live de
-  2026-08-12: `allowed_routes` de Rodrigão e Suélen é uma lista fixa que não
-  inclui `/contas-pagar` nem `/financeiro`, e `resolveAllowedRoutes` devolve
-  `allowed_routes` sem alterações quando o papel é `admin` — a permissão
-  granular não acrescenta rota para esse papel. Não é regressão da fase 0 do
-  Financeiro (o mesmo já valia para Contas a pagar); é a face visível do
-  descompasso entre os planos de permissão. Só a Elis (`financeiro`, escopo
-  `*`) enxerga as duas telas hoje. Corrigir exige decisão do Rodrigo sobre
-  quem deve ver o quê;
+- **corrigido: o registro de que perfis `admin` não enxergam as telas
+  financeiras estava desatualizado e foi removido em 2026-09-18.** A
+  entrada citava uma auditoria de 2026-08-12 (allowed_routes de Rodrigão e
+  Suélen sem `/contas-pagar` nem `/financeiro`). Hoje `canAccess`
+  (`src/lib/auth.ts`) libera qualquer rota do menu para o papel `admin`
+  independente de `allowed_routes`, e `DEFAULT_ROUTES_BY_ROLE.admin` já
+  lista `/contas-pagar` e `/financeiro`. Rodrigão confirmou ao vivo em
+  2026-09-18 (print do próprio menu) que Financeiro, Contas a pagar e
+  Contas a receber aparecem no seu login. Não há registro de quando o
+  código passou a permitir isso nem de por que este documento não foi
+  atualizado junto — cada sessão que lia este arquivo repetia a alegação
+  errada como risco aberto;
 - o `npm audit --omit=dev` ainda sinaliza o PostCSS e o Sharp transitivos do
   Next.js 15.5.21. O app estático não processa CSS nem imagens enviados por
   usuários, portanto os caminhos descritos pelos avisos não são alcançáveis
