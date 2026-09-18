@@ -2,11 +2,54 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateOvenPlan,
   collectWeightSetupWarnings,
+  formatOvenQuantity,
+  ovenPjShortageWarning,
   ovenLotCode,
   ovenProductKey,
   parseOvenQuantity,
   validateOvenConfirmation,
 } from './ovenProduction'
+
+describe('ovenPjShortageWarning', () => {
+  it('avisa quando o produto tem parcela PJ e saem menos bons que o previsto total', () => {
+    expect(ovenPjShortageWarning(20, 6, 17)).toEqual({
+      pjQuantity: 6,
+      totalShortage: 3,
+    })
+  })
+
+  it('não atribui falta ao PJ quando não existe parcela PJ', () => {
+    expect(ovenPjShortageWarning(20, 0, 17)).toBeNull()
+  })
+
+  it('avisa quando o PJ por peso existe, mas ainda não pôde ser convertido', () => {
+    expect(ovenPjShortageWarning(20, 0, 17, true)).toEqual({
+      pjQuantity: null,
+      totalShortage: 3,
+    })
+  })
+
+  it('some quando a correção alcança ou supera o previsto', () => {
+    expect(ovenPjShortageWarning(20, 6, 20)).toBeNull()
+    expect(ovenPjShortageWarning(20, 6, 21)).toBeNull()
+  })
+
+  it('falha fechado para números inválidos', () => {
+    expect(ovenPjShortageWarning(Number.NaN, 6, 2)).toBeNull()
+    expect(ovenPjShortageWarning(20, -1, 17)).toBeNull()
+    expect(ovenPjShortageWarning(20, 6, -1)).toBeNull()
+  })
+})
+
+describe('formatOvenQuantity', () => {
+  it('mostra unidades inteiras com a unidade operacional', () => {
+    expect(formatOvenQuantity(4, 'un')).toBe('4 un')
+  })
+
+  it('mostra quilos no formato brasileiro e preserva até três casas', () => {
+    expect(formatOvenQuantity(1.125, 'kg')).toBe('1,125 kg')
+  })
+})
 
 describe('ovenLotCode', () => {
   it('gera o código operacional LMMDD', () => {
