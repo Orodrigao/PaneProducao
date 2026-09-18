@@ -12,7 +12,7 @@ import { PjOrderListPanel, type PjOrderListDisplayItem } from '@/components/PjOr
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, RECEIVABLES_ROUTE, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
-import { saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
+import { formatSaleOptionLabel, saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
 import { parseWholePjPackCount, pjPackPhysicalSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
 import { pjOrderGroupKey } from '@/lib/orderGrouping'
@@ -81,7 +81,7 @@ interface OrderLine {
 // resolver a regra de pacote fechado: a que variante uma opção de venda
 // pertence, e o peso de uma unidade quando o preço é por kg.
 interface PjPackSaleOption {
-  id:string; product_id:string; product_variant_id:string|null; sale_unit:string; unit_weight_kg:number|null
+  id:string; product_id:string; product_variant_id:string|null; name:string; sale_unit:string; unit_weight_kg:number|null
 }
 interface PjPackRuleRow {
   product_id:string; product_variant_id:string|null
@@ -296,9 +296,10 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
         supabase.from('price_tiers').select('id,name').eq('active',true),
         supabase.from('price_tier_items').select('*').eq('active',true),
         supabase.from('customer_price_overrides').select('*').eq('active',true),
-        // Só para resolver variante e peso unitário da opção de venda: a
-        // tabela de preço em si continua sendo a única fonte de preço.
-        supabase.from('product_sale_options').select('id,product_id,product_variant_id,sale_unit,unit_weight_kg').eq('active',true),
+        // Só para resolver variante, peso unitário e o nome que distingue a
+        // opção de venda na tela: a tabela de preço em si continua sendo a
+        // única fonte de preço.
+        supabase.from('product_sale_options').select('id,product_id,product_variant_id,name,sale_unit,unit_weight_kg').eq('active',true),
         supabase.from('product_pj_pack_rules').select('product_id,product_variant_id,pack_size_units,min_order_packs,order_multiple_packs'),
         loadAllCommercialPjOrders<OrderRow>().then(data => ({ data, error: null })),
         currentUser ? loadPjBilling(currentUser.id) : Promise.resolve<PjBillingState>({ kind: 'restricted' }),
@@ -360,6 +361,13 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
   const variantBySaleOption = useMemo(() => {
     const map = new Map<string, string|null>()
     packSaleOptions.forEach(s => map.set(s.id, s.product_variant_id))
+    return map
+  }, [packSaleOptions])
+  // Nome da opção de venda (ex.: "Flor Unidade"), só para distinguir na tela
+  // produtos com a mesma receita e mais de uma variante, como o Brioche.
+  const saleOptionsById = useMemo(() => {
+    const map = new Map<string, PjPackSaleOption>()
+    packSaleOptions.forEach(s => map.set(s.id, s))
     return map
   }, [packSaleOptions])
   const unitWeightByVariant = useMemo(() => {
@@ -1108,7 +1116,9 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                             <span>
                               {c.product_name}
                               {c.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
-                              {c.sale_option_id && <span className="ps-store-chip ja" style={{marginLeft:6}}>{c.pricing_unit}</span>}
+                              {c.sale_option_id
+                                ? <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(saleOptionsById.get(c.sale_option_id))}</span>
+                                : <span className="ps-store-chip ja" style={{marginLeft:6}}>{c.pricing_unit}</span>}
                               {c.isOverride && <span className="ps-store-chip ex" style={{marginLeft:6}}>override</span>}
                             </span>
                             <span style={{fontSize:12, color:'var(--ink-faint)', whiteSpace:'nowrap'}}>R$ {c.unit_price.toFixed(2)}/{c.pricing_unit} · pack {c.pack_size}</span>
@@ -1141,6 +1151,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                               <div className="ps-pname" style={{fontSize:14, flex:1, minWidth:0}}>
                                 {l.product_name}
                                 {l.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
+                                {l.sale_option_id && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(saleOptionsById.get(l.sale_option_id))}</span>}
                                 <span style={{marginLeft:8, fontSize:12, color:'var(--ink-faint)', fontWeight:500}}>R$ {l.unit_price.toFixed(2)}/{l.pricing_unit}</span>
                               </div>
                               <button onClick={()=>removeLine(l.key)} title="Remover" className="ps-iconbtn" style={{width:30, height:30, color:'var(--berry)'}}>
