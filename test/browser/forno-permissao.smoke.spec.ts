@@ -66,7 +66,7 @@ test('Forno avisa falta potencial sem criar reposicao para o PJ', async ({ page 
 
   await page.goto('/forno')
 
-  const pjShortageAlert = page.getByRole('alert', { name: /Atenção: este produto tem/ })
+  const pjShortageAlert = page.getByRole('alert').filter({ hasText: 'Atenção: este produto tem' })
   await expect(pjShortageAlert).toContainText('tem 4 un na programação PJ')
   await expect(pjShortageAlert).toContainText('faltaram 2 un no total confirmado')
   await expect(pjShortageAlert).toContainText('O sistema não cria reposição')
