@@ -5,7 +5,7 @@ import test from 'node:test'
 const migration = readFileSync(
   new URL('../supabase/migrations/20260916164741_saneamento_catalogo_decisoes.sql', import.meta.url),
   'utf8',
-)
+).replace(/\r\n?/g, '\n')
 const guardStart = migration.indexOf('do $$')
 const guardEnd = migration.indexOf('end $$;', guardStart)
 const guard = migration.slice(guardStart, guardEnd + 'end $$;'.length)
