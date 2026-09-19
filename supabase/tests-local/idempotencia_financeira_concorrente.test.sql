@@ -49,10 +49,15 @@ select extensions.dblink_exec('fin_setup', $remote$
 
   create function private.test_issue_424_insert_gate() returns trigger
   language plpgsql set search_path='' as $trigger$
+  declare
+    v_connection text := pg_catalog.current_setting('application_name');
   begin
     if new.request_id='92400000-0000-4000-8000-000000000001'::uuid then
       perform pg_catalog.pg_advisory_xact_lock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate',0));
+        pg_catalog.hashtextextended(
+          'test:issue-424-insert-gate:' || v_connection,
+          0
+        ));
     end if;
     return new;
   end;
@@ -85,17 +90,20 @@ union all
 select 'second',pid from extensions.dblink(
   'fin_second','select pg_backend_pid()') as response(pid integer);
 
-select extensions.dblink_exec('fin_gate','begin');
 select extensions.dblink_exec('fin_gate', $command$
   do $gate$
     begin
-      perform pg_catalog.pg_advisory_xact_lock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate',0));
+      perform pg_catalog.pg_advisory_lock(
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
+      perform pg_catalog.pg_advisory_lock(
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
     end
   $gate$;
 $command$);
 
 select extensions.dblink_exec('fin_first','begin');
+select extensions.dblink_exec('fin_first',
+  $$set local application_name='issue424-first'$$);
 select extensions.dblink_exec('fin_first','set local role authenticated');
 select extensions.dblink_exec('fin_first',
   $$set local "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
@@ -110,6 +118,8 @@ select ok(pg_temp.wait_for_advisory(
   'a primeira sessao chegou ao portao anterior ao INSERT');
 
 select extensions.dblink_exec('fin_second','begin');
+select extensions.dblink_exec('fin_second',
+  $$set local application_name='issue424-second'$$);
 select extensions.dblink_exec('fin_second','set local role authenticated');
 select extensions.dblink_exec('fin_second',
   $$set local "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
@@ -123,7 +133,14 @@ select ok(pg_temp.wait_for_advisory(
   (select pid from fin_backends where connection='second')),
   'a segunda sessao tambem fica comprovadamente em espera');
 
-select extensions.dblink_exec('fin_gate','commit');
+select extensions.dblink_exec('fin_gate', $command$
+  do $gate$
+    begin
+      perform pg_catalog.pg_advisory_unlock(
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
+    end
+  $gate$;
+$command$);
 create temporary table fin_first_result as
 select result::uuid id from extensions.dblink_get_result(
   'fin_first',false) as response(result text);
@@ -133,6 +150,15 @@ create temporary table fin_first_end as
 select result from extensions.dblink_get_result(
   'fin_first',false) as response(result text);
 select extensions.dblink_exec('fin_first','commit');
+
+select extensions.dblink_exec('fin_gate', $command$
+  do $gate$
+    begin
+      perform pg_catalog.pg_advisory_unlock(
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
+    end
+  $gate$;
+$command$);
 
 create temporary table fin_second_result as
 select result::uuid id from extensions.dblink_get_result(
