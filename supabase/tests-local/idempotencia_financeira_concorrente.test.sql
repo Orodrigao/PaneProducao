@@ -87,8 +87,12 @@ select 'second',pid from extensions.dblink(
 
 select extensions.dblink_exec('fin_gate','begin');
 select extensions.dblink_exec('fin_gate',
-  $$select pg_catalog.pg_advisory_xact_lock(
-      pg_catalog.hashtextextended('test:issue-424-insert-gate',0))$$);
+  $$do $gate$
+    begin
+      perform pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended('test:issue-424-insert-gate',0));
+    end
+  $gate$$$);
 
 select extensions.dblink_exec('fin_first','begin');
 select extensions.dblink_exec('fin_first','set local role authenticated');
