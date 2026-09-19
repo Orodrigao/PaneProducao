@@ -37,3 +37,28 @@ para service role, senha, token administrativo ou qualquer segredo.
 
 O push na `main` publica pela Vercel. Fluxo de branch, PR e aprovações:
 [AGENTS.md](AGENTS.md).
+
+## Revisão automática de PRs
+
+O repositório público `Orodrigao/PaneProducao` usa o CodeRabbit para revisar
+automaticamente PRs novas. A instalação está restrita a este repositório; nenhum
+repositório privado, inclusive o Rotineo, faz parte dela.
+
+Na configuração adotada, o serviço atua como parecerista. Aprovação automática está
+desligada, e correções, testes ou commits gerados exigem pedido explícito. Como a
+revisão acontece depois do push, ela é evidência adicional e não substitui a revisão
+independente anterior à PR, CI, testes nem as regras de integração descritas em
+[AGENTS.md](AGENTS.md).
+
+Embora o uso adotado seja de revisão, o aplicativo pediu ao GitHub leitura e escrita
+em código, status de commits, issues e PRs, além de leitura de actions, checks,
+discussões, filas de merge e metadados. O risco foi limitado autorizando o aplicativo
+somente neste repositório público.
+
+Na tela de cadastro conferida em 19/09/2026, não havia cartão, fatura nem produto
+cobrado por uso habilitado; o painel atual do fornecedor sempre prevalece sobre este
+registro datado. As revisões do repositório público seguem a modalidade gratuita
+divulgada na [página oficial de preços](https://www.coderabbit.ai/pricing). A conta
+pode exibir um teste temporário de plano pago; antes de adicionar repositório privado,
+assento, agente, varredura ou consumo adicional, confira o preço vigente e obtenha
+autorização explícita do Rodrigo.
