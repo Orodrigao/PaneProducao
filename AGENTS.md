@@ -323,9 +323,12 @@ o ganho ou quando ela dividir artificialmente o mesmo problema.
 
 **CodeRabbit nas PRs:** o aplicativo do GitHub está autorizado somente no
 repositório público `Orodrigao/PaneProducao` e faz revisão automática das PRs
-novas. Como ele só atua depois do push, é evidência adicional e não substitui a
-revisão adversarial anterior à PR, testes, CI, Check da Portaria nem decisão do
-agente responsável.
+novas elegíveis. Como o fluxo deste projeto abre toda PR em rascunho, o check
+pode responder `Review skipped: draft pull request`; nesse caso, com o diff
+estável, publique o comentário `@coderabbitai full review` e aguarde o parecer.
+Como ele só atua depois do push, é evidência adicional e não substitui a revisão
+adversarial anterior à PR, testes, CI, Check da Portaria nem decisão do agente
+responsável.
 
 - aguarde o check do CodeRabbit quando ele aparecer e classifique cada achado;
   sugestão genérica ou incompatível com o projeto deve ser descartada por escrito,

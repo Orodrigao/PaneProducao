@@ -41,7 +41,9 @@ O push na `main` publica pela Vercel. Fluxo de branch, PR e aprovações:
 ## Revisão automática de PRs
 
 O repositório público `Orodrigao/PaneProducao` usa o CodeRabbit para revisar
-automaticamente PRs novas. A instalação está restrita a este repositório; nenhum
+PRs novas elegíveis. PR em rascunho pode ser ignorada automaticamente; nesse caso,
+o responsável pede a leitura completa com `@coderabbitai full review` depois que o
+diff estiver estável. A instalação está restrita a este repositório; nenhum
 repositório privado, inclusive o Rotineo, faz parte dela.
 
 Na configuração adotada, o serviço atua como parecerista. Aprovação automática está
