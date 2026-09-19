@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(28);
 
 select ok(exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = 'payable_purchases'),
   'tabela principal de contas a pagar existe');
@@ -101,11 +101,34 @@ select throws_ok(
   'a porta antiga recusa conta ja paga para quem so pode lancar'
 );
 
+select throws_ok(
+  $$ select public.create_and_pay_manual_payable(
+    '99100000-0000-4000-8000-0000000000a5'::uuid,
+    '99100000-0000-4000-8000-0000000000f1'::uuid,
+    date '2026-09-19', 'sem_nota', 'boleto', '[TESTE] baixa sem permissao',
+    '[{"product_id":null,"item_name":"Farinha teste","unit":"kg","quantity":1,"unit_price":10}]'::jsonb,
+    '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb,
+    date '2026-09-19', 10, 'boleto', null,
+    'banco_sicredi_jc', '[{"category_key":"cmv_materia_prima","amount":10}]'::jsonb
+  ) $$,
+  '42501',
+  'Sem permissao para lancar e baixar contas da JC.',
+  'quem so pode lancar e bloqueado na operacao completa de baixa'
+);
+
 reset role;
 
 select is((select count(*)::int from public.payable_purchases
   where request_id = '99100000-0000-4000-8000-0000000000a2'), 0,
   'tentativa recusada nao grava compra');
+select is((select count(*)::int from public.payable_purchases
+  where request_id = '99100000-0000-4000-8000-0000000000a5'), 0,
+  'operacao completa sem permissao nao grava compra');
+select is((select count(*)::int from public.finance_entries entry
+  join public.payable_installments installment on installment.id = entry.source_ref
+  join public.payable_purchases purchase on purchase.id = installment.purchase_id
+  where purchase.request_id = '99100000-0000-4000-8000-0000000000a5'), 0,
+  'operacao completa sem permissao nao grava no livro-caixa');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '99100000-0000-4000-8000-000000000002', true);

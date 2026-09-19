@@ -144,7 +144,7 @@ Riscos ainda abertos:
   caracteres exigido pelo servidor — alinhado ao `PASSWORD_MIN_LENGTH` do
   app. Isso satisfaz o item 1 do gate técnico dos planos de Contas a Receber
   e Financeiro;
-- **em correção na PR #423 a separação incompleta entre lançar e baixar
+- **corrigida pela PR #423 a separação incompleta entre lançar e baixar
   conta.** `create_manual_payable` aceitava `p_paid = true` e marcava compra e
   parcela como quitadas sem registrar a baixa no livro-caixa. A porta antiga
   passa a aceitar somente conta em aberto, ainda protegida por

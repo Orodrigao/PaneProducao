@@ -355,7 +355,7 @@ Levantados na descoberta, com evidência nos dados de produção:
    Daí a decisão 8 e a rede de proteção que ela exige: se o hábito da Expedição
    não mudar, a cobrança para de nascer. Esse é o principal risco operacional
    do módulo, e ele não é técnico.
-8. **Em correção na tarefa própria de Contas a Pagar (PR #423, 2026-09-19):**
+8. **Corrigido na tarefa própria de Contas a Pagar (PR #423, 2026-09-19):**
    `create_manual_payable` aceitava `p_paid = true`, marcava a conta como
    quitada e não alimentava o livro-caixa. A porta antiga passa a aceitar
    somente conta em aberto. Conta já paga precisa usar a operação completa,
