@@ -144,11 +144,15 @@ Riscos ainda abertos:
   caracteres exigido pelo servidor — alinhado ao `PASSWORD_MIN_LENGTH` do
   app. Isso satisfaz o item 1 do gate técnico dos planos de Contas a Receber
   e Financeiro;
-- `create_manual_payable` aceita `p_paid = true` validando apenas
-  `contas_pagar.lancar`, sem exigir `contas_pagar.baixar`. Quem lança consegue
-  criar conta já quitada. Achado do Sol em 2026-08-07; conferido em 2026-08-13
-  e **ainda aberto** — a função não foi redefinida desde então. Correção
-  prevista em tarefa própria de contas a pagar;
+- **corrigida pela PR #423 a separação incompleta entre lançar e baixar
+  conta.** `create_manual_payable` aceitava `p_paid = true` e marcava compra e
+  parcela como quitadas sem registrar a baixa no livro-caixa. A porta antiga
+  passa a aceitar somente conta em aberto, ainda protegida por
+  `contas_pagar.lancar`; conta já paga precisa usar a operação completa
+  `create_and_pay_manual_payable`, que exige também `contas_pagar.baixar`,
+  classifica e registra a baixa no livro. O teste de banco cobre os dois
+  perfis, bloqueia a porta incompleta sem gravar e confirma o lançamento no
+  livro pelo caminho completo;
 - **a entrada de NF-e recusa toda nota em que a soma dos produtos não fecha com
   o valor total.** Relatado por Rodrigo em 2026-09-03: há muitas notas em que
   incide imposto por fora, como ICMS substituição e IPI, ou despesa acessória,

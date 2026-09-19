@@ -355,15 +355,15 @@ Levantados na descoberta, com evidência nos dados de produção:
    Daí a decisão 8 e a rede de proteção que ela exige: se o hábito da Expedição
    não mudar, a cobrança para de nascer. Esse é o principal risco operacional
    do módulo, e ele não é técnico.
-8. **`create_manual_payable` separa mal as permissões — achado do Sol (Codex),
-   2026-08-07, fora do escopo deste plano.** A função aceita `p_paid = true`
-   mas valida somente `contas_pagar.lancar`. Quem pode lançar consegue criar
-   uma conta já quitada sem ter `contas_pagar.baixar`. Hoje isso é invisível
-   porque a mesma pessoa faz as duas coisas; no dia em que lançar e dar baixa
-   forem de gente diferente, a separação não se sustenta. **Não corrigir junto
-   com este módulo** — é tarefa própria, em contas a pagar. Aqui serve como
-   prova de que "a função valida permissão" não equivale a "as
-   responsabilidades estão separadas": ver o item 7 do gate técnico.
+8. **Corrigido na tarefa própria de Contas a Pagar (PR #423, 2026-09-19):**
+   `create_manual_payable` aceitava `p_paid = true`, marcava a conta como
+   quitada e não alimentava o livro-caixa. A porta antiga passa a aceitar
+   somente conta em aberto. Conta já paga precisa usar a operação completa,
+   que exige `contas_pagar.lancar` e `contas_pagar.baixar`, classifica e
+   registra a baixa no livro. O teste de banco prova os dois perfis, a ausência
+   de gravação pelas tentativas recusadas e o lançamento financeiro pelo
+   caminho correto. O achado permanece aqui como exemplo de que "a função
+   valida permissão" não equivale a "as responsabilidades estão separadas".
 9. **`request_id` protege contra repetição, mas não contra simultaneidade** —
    também achado do Sol. Duas chamadas ao mesmo tempo produzem erro de
    unicidade em vez de devolver o mesmo registro. O módulo novo trata isso no
