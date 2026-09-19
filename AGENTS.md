@@ -321,6 +321,32 @@ Essa autorização não é passiva: o checkpoint do preflight deve ser cumprido 
 Rodrigo precisar lembrar. Não crie uma frente quando a separação custar mais que
 o ganho ou quando ela dividir artificialmente o mesmo problema.
 
+**CodeRabbit nas PRs:** o aplicativo do GitHub está autorizado somente no
+repositório público `Orodrigao/PaneProducao` e faz revisão automática das PRs
+novas elegíveis. Como o fluxo deste projeto abre toda PR em rascunho, o check
+pode responder `Review skipped: draft pull request`; nesse caso, com o diff
+estável, publique o comentário `@coderabbitai full review` e aguarde o parecer.
+Como ele só atua depois do push, é evidência adicional e não substitui a revisão
+adversarial anterior à PR, testes, CI, Check da Portaria nem decisão do agente
+responsável.
+
+- aguarde o check do CodeRabbit quando ele aparecer e classifique cada achado;
+  sugestão genérica ou incompatível com o projeto deve ser descartada por escrito,
+  problema real causado ou exposto pelo diff deve ser corrigido antes do
+  fechamento, e achado fora do escopo deve ser registrado e tratado conforme as
+  demais regras deste arquivo;
+- o CodeRabbit não pode aprovar PR, aplicar correção, gerar teste, criar commit ou
+  abrir PR derivada por iniciativa própria. Comandos como `@coderabbitai autofix`,
+  caixas de *Finishing Touches* e recursos de agente só podem ser acionados quando
+  fizerem parte do escopo autorizado e continuam sujeitos à revisão normal;
+- para uma PR aberta que nasceu antes da instalação, `@coderabbitai full review`
+  pede uma leitura completa. Não dispare revisão em massa nem reabra PR encerrada;
+- não amplie a instalação para outro repositório, especialmente um privado, nem
+  habilite produto cobrado por uso sem conferir preço, dados enviados, permissões
+  e obter autorização explícita do Rodrigo;
+- comentário ou check verde do CodeRabbit é evidência auxiliar. Nunca é autorização
+  para merge, publicação, mudança de permissão ou operação em produção.
+
 ### 4. Verificação
 
 Toda mudança de código, antes de declarar pronto:
