@@ -29,10 +29,6 @@ begin
   if not private.current_user_can_payables('contas_pagar.lancar') then
     raise exception using errcode = '42501', message = 'Sem permissão para lançar contas da JC.';
   end if;
-  if p_paid then
-    raise exception using errcode = '22023',
-      message = 'Conta já paga deve usar a operação completa de lançamento e baixa.';
-  end if;
   if p_request_id is null then
     raise exception using errcode = '22023', message = 'Identificador do lançamento obrigatório.';
   end if;
@@ -41,6 +37,10 @@ begin
   where existing.request_id = p_request_id;
   if v_purchase_id is not null then
     return v_purchase_id;
+  end if;
+  if p_paid then
+    raise exception using errcode = '22023',
+      message = 'Conta já paga deve usar a operação completa de lançamento e baixa.';
   end if;
   if p_purchase_date is null then
     raise exception using errcode = '22023', message = 'Data da compra obrigatória.';

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(28);
+select plan(29);
 
 select ok(exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = 'payable_purchases'),
   'tabela principal de contas a pagar existe');
@@ -86,6 +86,19 @@ select lives_ok(
     '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb
   ) $$,
   'quem pode lancar cria conta em aberto'
+);
+
+select is(
+  public.create_manual_payable(
+    '99100000-0000-4000-8000-0000000000a1'::uuid,
+    '99100000-0000-4000-8000-0000000000f1'::uuid,
+    date '2026-09-19', 'sem_nota', 'boleto', '[TESTE] repeticao segura', true,
+    '[{"product_id":null,"item_name":"Farinha teste","unit":"kg","quantity":1,"unit_price":10}]'::jsonb,
+    '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb
+  ),
+  (select id from public.payable_purchases
+   where request_id = '99100000-0000-4000-8000-0000000000a1'),
+  'repetir o mesmo pedido devolve a conta existente antes de avaliar o modo pago'
 );
 
 select throws_ok(
