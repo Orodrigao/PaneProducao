@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(25);
 
 select ok(exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = 'payable_purchases'),
   'tabela principal de contas a pagar existe');
@@ -96,9 +96,9 @@ select throws_ok(
     '[{"product_id":null,"item_name":"Farinha teste","unit":"kg","quantity":1,"unit_price":10}]'::jsonb,
     '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb
   ) $$,
-  '42501',
-  'Sem permissão para baixar contas da JC.',
-  'quem so pode lancar nao cria conta ja paga'
+  '22023',
+  'Conta já paga deve usar a operação completa de lançamento e baixa.',
+  'a porta antiga recusa conta ja paga para quem so pode lancar'
 );
 
 reset role;
@@ -110,7 +110,7 @@ select is((select count(*)::int from public.payable_purchases
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '99100000-0000-4000-8000-000000000002', true);
 
-select lives_ok(
+select throws_ok(
   $$ select public.create_manual_payable(
     '99100000-0000-4000-8000-0000000000a3'::uuid,
     '99100000-0000-4000-8000-0000000000f1'::uuid,
@@ -118,18 +118,48 @@ select lives_ok(
     '[{"product_id":null,"item_name":"Farinha teste","unit":"kg","quantity":1,"unit_price":10}]'::jsonb,
     '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb
   ) $$,
-  'quem pode lancar e baixar cria conta ja paga'
+  '22023',
+  'Conta já paga deve usar a operação completa de lançamento e baixa.',
+  'a porta antiga recusa conta ja paga mesmo com permissao de baixa'
+);
+
+reset role;
+
+select is((select count(*)::int from public.payable_purchases
+  where request_id = '99100000-0000-4000-8000-0000000000a3'), 0,
+  'porta antiga recusada nao grava compra mesmo para quem pode baixar');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '99100000-0000-4000-8000-000000000002', true);
+
+select lives_ok(
+  $$ select public.create_and_pay_manual_payable(
+    '99100000-0000-4000-8000-0000000000a4'::uuid,
+    '99100000-0000-4000-8000-0000000000f1'::uuid,
+    date '2026-09-19', 'sem_nota', 'boleto', '[TESTE] paga completa',
+    '[{"product_id":null,"item_name":"Farinha teste","unit":"kg","quantity":1,"unit_price":10}]'::jsonb,
+    '[{"installment_number":1,"due_date":"2026-09-20","amount":10}]'::jsonb,
+    date '2026-09-19', 10, 'boleto', null,
+    'banco_sicredi_jc', '[{"category_key":"cmv_materia_prima","amount":10}]'::jsonb
+  ) $$,
+  'operacao completa cria, classifica e baixa para quem tem as duas permissoes'
 );
 
 reset role;
 
 select is((select status from public.payable_purchases
-  where request_id = '99100000-0000-4000-8000-0000000000a3'), 'paga',
-  'compra autorizada nasce paga');
+  where request_id = '99100000-0000-4000-8000-0000000000a4'), 'paga',
+  'operacao completa deixa a compra paga');
 select is((select installment.status from public.payable_installments installment
   join public.payable_purchases purchase on purchase.id = installment.purchase_id
-  where purchase.request_id = '99100000-0000-4000-8000-0000000000a3'), 'paga',
-  'parcela autorizada nasce paga');
+  where purchase.request_id = '99100000-0000-4000-8000-0000000000a4'), 'paga',
+  'operacao completa deixa a parcela paga');
+select is((select count(*)::int from public.finance_entries entry
+  join public.payable_installments installment on installment.id = entry.source_ref
+  join public.payable_purchases purchase on purchase.id = installment.purchase_id
+  where purchase.request_id = '99100000-0000-4000-8000-0000000000a4'
+    and entry.source = 'contas_pagar' and entry.reversed_at is null), 1,
+  'operacao completa registra a baixa no livro-caixa');
 
 select * from finish();
 rollback;

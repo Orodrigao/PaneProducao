@@ -1,7 +1,8 @@
 begin;
 
--- Criar uma conta ja paga registra uma baixa financeira. A funcao antiga
--- protegia apenas o lancamento, embora gravasse compra e parcela como pagas.
+-- A porta antiga nao recebe classificacao, conta de origem nem os dados reais
+-- da baixa. Por isso ela so pode criar conta em aberto; conta ja paga precisa
+-- passar pela operacao atomica create_and_pay_manual_payable.
 create or replace function public.create_manual_payable(
   p_request_id uuid,
   p_supplier_id uuid,
@@ -28,8 +29,9 @@ begin
   if not private.current_user_can_payables('contas_pagar.lancar') then
     raise exception using errcode = '42501', message = 'Sem permissão para lançar contas da JC.';
   end if;
-  if p_paid and not private.current_user_can_payables('contas_pagar.baixar') then
-    raise exception using errcode = '42501', message = 'Sem permissão para baixar contas da JC.';
+  if p_paid then
+    raise exception using errcode = '22023',
+      message = 'Conta já paga deve usar a operação completa de lançamento e baixa.';
   end if;
   if p_request_id is null then
     raise exception using errcode = '22023', message = 'Identificador do lançamento obrigatório.';
