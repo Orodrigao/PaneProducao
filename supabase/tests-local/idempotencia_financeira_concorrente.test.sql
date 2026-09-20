@@ -1,4 +1,5 @@
 begin;
+set local statement_timeout = '20s';
 create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink with schema extensions;
 select no_plan();
@@ -186,8 +187,9 @@ select is((select count(*)::integer from public.finance_entries
   where request_id='92400000-0000-4000-8000-000000000001'),1,
   'a corrida grava um unico lancamento financeiro');
 
-select extensions.dblink_disconnect('fin_second');
-select extensions.dblink_disconnect('fin_first');
+-- As conexoes assincronas terminam junto com esta sessao. Nao as reutilizamos:
+-- isso evita que o fechamento espere um resultado de protocolo sem valor para
+-- a prova. O banco inteiro e descartado ao final deste job.
 select extensions.dblink_disconnect('fin_gate');
 select extensions.dblink_exec('fin_setup',$remote$
   drop trigger if exists test_issue_424_insert_gate on public.finance_entries;
