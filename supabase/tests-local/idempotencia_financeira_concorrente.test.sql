@@ -103,6 +103,8 @@ $command$);
 
 select extensions.dblink_exec('fin_first','begin');
 select extensions.dblink_exec('fin_first',
+  $$set local statement_timeout='15s'$$);
+select extensions.dblink_exec('fin_first',
   $$set local application_name='issue424-first'$$);
 select extensions.dblink_exec('fin_first','set local role authenticated');
 select extensions.dblink_exec('fin_first',
@@ -118,6 +120,8 @@ select ok(pg_temp.wait_for_advisory(
   'a primeira sessao chegou ao portao anterior ao INSERT');
 
 select extensions.dblink_exec('fin_second','begin');
+select extensions.dblink_exec('fin_second',
+  $$set local statement_timeout='15s'$$);
 select extensions.dblink_exec('fin_second',
   $$set local application_name='issue424-second'$$);
 select extensions.dblink_exec('fin_second','set local role authenticated');
