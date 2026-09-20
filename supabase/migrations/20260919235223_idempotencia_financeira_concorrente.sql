@@ -93,8 +93,8 @@ begin
 
     v_patched_definition := pg_catalog.regexp_replace(
       v_definition,
-      E'\\n([[:space:]]*)begin\\n',
-      E'\\n\\1begin\\n  perform private.lock_financial_request(p_request_id);\\n',
+      E'\nbegin\n',
+      E'\nbegin\n  perform private.lock_financial_request(p_request_id);\n',
       'i'
     );
 
