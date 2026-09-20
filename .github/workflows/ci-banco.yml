@@ -20,6 +20,8 @@ jobs:
   ensaio:
     name: Aplicar história completa num banco limpo
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
