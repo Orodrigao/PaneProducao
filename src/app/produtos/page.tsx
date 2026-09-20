@@ -13,6 +13,7 @@ import {
   requiresCompleteOperationalClassification,
   type ProductionProcess,
 } from '@/lib/productOperationalClassification'
+import { canonicalInventoryUnit } from '@/lib/inventoryReadiness'
 
 type Kind = 'kit' | 'insumo' | 'final'
 
@@ -22,6 +23,7 @@ interface Product {
   kind: Kind | null
   is_revenda: boolean
   is_shelf: boolean
+  weekly_count_enabled: boolean
   is_fabricacao_propria: boolean
   is_pj: boolean
   production_days: number[]
@@ -243,6 +245,10 @@ export default function ProdutosPage() {
       ...rest,
       ...operationalClassification.value,
       cost_price: normalizeCostPrice(rawCostPrice),
+      // A trava do banco exige unidade reconhecida para contagem semanal; se a
+      // pessoa mudou a unidade depois de marcar, desmarca em vez de deixar o
+      // banco recusar o salvamento inteiro com um erro cru.
+      weekly_count_enabled: Boolean(rest.weekly_count_enabled) && Boolean(canonicalInventoryUnit(rest.unit)),
     }
     try {
       if (isNew) {
@@ -266,15 +272,18 @@ export default function ProdutosPage() {
   }
 
   async function toggleActive(p: Product) {
+    const willActivate = !p.active
+    // Insumo inativo não pode ficar marcado para a contagem semanal (regra do banco).
+    const nextWeeklyCountEnabled = willActivate ? p.weekly_count_enabled : false
     try {
       const { error } = await supabase
         .from('products')
-        .update({ active: !p.active })
+        .update({ active: willActivate, weekly_count_enabled: nextWeeklyCountEnabled })
         .eq('id', p.id)
         .select('id')
         .single()
       if (error) throw error
-      setProducts(prev => prev.map(x => x.id===p.id ? {...x,active:!p.active} : x))
+      setProducts(prev => prev.map(x => x.id===p.id ? {...x, active: willActivate, weekly_count_enabled: nextWeeklyCountEnabled} : x))
     } catch (error: unknown) {
       showToast('Erro: '+getErrorMessage(error, 'não foi possível alterar o produto'))
     }
@@ -288,6 +297,7 @@ export default function ProdutosPage() {
       kind: 'final',
       is_revenda: false,
       is_shelf: false,
+      weekly_count_enabled: false,
       is_fabricacao_propria: fabricacaoPropria,
       is_pj: false,
       production_days: [],
@@ -689,12 +699,35 @@ export default function ProdutosPage() {
               )}
               <div className="ps-fieldgroup">
                 <div className="ps-fieldlabel">Tipo</div>
-                <select value={editItem.kind || 'final'} onChange={e=>setEditItem(prev=>({...prev, kind: e.target.value as Kind}))} className="ps-select">
+                <select value={editItem.kind || 'final'} onChange={e=>{
+                  const nextKind = e.target.value as Kind
+                  setEditItem(prev=>({...prev, kind: nextKind, weekly_count_enabled: nextKind === 'insumo' ? prev?.weekly_count_enabled : false}))
+                }} className="ps-select">
                   <option value="final">✨ Produto final (venda direta)</option>
                   <option value="kit">🍞 Kit (composto por pães/insumos)</option>
                   <option value="insumo">🥚 Insumo (matéria-prima)</option>
                 </select>
               </div>
+              {editItem.kind === 'insumo' && (
+                <label style={{display:'flex', alignItems:'center', gap:8, cursor: canonicalInventoryUnit(editItem.unit) ? 'pointer' : 'not-allowed', padding:'8px 4px'}}>
+                  <input
+                    type="checkbox"
+                    checked={!!editItem.weekly_count_enabled}
+                    disabled={!canonicalInventoryUnit(editItem.unit)}
+                    onChange={e => setEditItem(prev => ({...prev, weekly_count_enabled: e.target.checked}))}
+                    style={{width:18, height:18, cursor: canonicalInventoryUnit(editItem.unit) ? 'pointer' : 'not-allowed'}}
+                  />
+                  <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                    📋 <b>Contagem semanal</b> — entra na contagem física de estoque da JC
+                    {!canonicalInventoryUnit(editItem.unit) && (
+                      <><br/><small style={{color:'var(--berry)'}}>Unidade não reconhecida para contagem; corrija antes de marcar.</small></>
+                    )}
+                    {canonicalInventoryUnit(editItem.unit) && !normalizeCostPrice(editItem.cost_price) && (
+                      <><br/><small style={{color:'var(--honey-deep)'}}>Sem custo cadastrado ainda; pode marcar, mas o CMV só fecha depois de preencher.</small></>
+                    )}
+                  </span>
+                </label>
+              )}
               <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:'8px 4px'}}>
                 <input
                   type="checkbox"
