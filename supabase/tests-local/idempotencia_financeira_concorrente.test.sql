@@ -91,13 +91,14 @@ declare v_deadline timestamptz := clock_timestamp() + interval '5 seconds';
 begin
   loop
     perform pg_catalog.pg_stat_clear_snapshot();
+    if extensions.dblink_is_busy('fin_second') = 0 then
+      return true;
+    end if;
     if exists (
       select 1 from pg_catalog.pg_stat_activity
       where pid=p_pid
-        and (
-          state='idle'
-          or (wait_event_type='Lock' and wait_event='advisory')
-        )
+        and wait_event_type='Lock'
+        and wait_event='advisory'
     ) then
       return true;
     end if;
@@ -187,23 +188,10 @@ select is((select count(*)::integer from public.finance_entries
   where request_id='92400000-0000-4000-8000-000000000001'),1,
   'a corrida grava um unico lancamento financeiro');
 
--- As conexoes assincronas terminam junto com esta sessao. Nao as reutilizamos:
--- isso evita que o fechamento espere um resultado de protocolo sem valor para
--- a prova. O banco inteiro e descartado ao final deste job.
-select extensions.dblink_disconnect('fin_gate');
-select extensions.dblink_exec('fin_setup',$remote$
-  drop trigger if exists test_issue_424_insert_gate on public.finance_entries;
-  drop function if exists private.test_issue_424_insert_gate();
-  delete from public.finance_entries
-    where request_id='92400000-0000-4000-8000-000000000001';
-  delete from public.app_user_permissions
-    where user_id='92400000-0000-4000-8000-000000000001';
-  delete from public.app_profiles
-    where user_id='92400000-0000-4000-8000-000000000001';
-  delete from auth.users
-    where id='92400000-0000-4000-8000-000000000001';
-$remote$);
-select extensions.dblink_disconnect('fin_setup');
+-- O teste e o ultimo consumidor deste banco local e o CI descarta o container
+-- em seguida. As conexoes e os dados externos terminam com ele. Tentar remover
+-- o gatilho daqui exigiria uma trava exclusiva que a propria transacao pgTAP
+-- ainda segura ate o rollback abaixo.
 
 select * from finish();
 rollback;
