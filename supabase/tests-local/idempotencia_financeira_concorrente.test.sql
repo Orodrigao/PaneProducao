@@ -178,6 +178,12 @@ select result::uuid id from extensions.dblink_get_result(
 create temporary table fin_second_error as
 select extensions.dblink_error_message('fin_second') message;
 
+select extensions.dblink_exec('fin_setup', $cleanup$
+  drop trigger if exists test_issue_424_insert_gate
+    on public.finance_entries;
+  drop function if exists private.test_issue_424_insert_gate();
+$cleanup$);
+
 select is((select message from fin_first_error),'OK',
   'a primeira chamada concorrente termina sem erro');
 select is((select message from fin_second_error),'OK',
@@ -188,10 +194,9 @@ select is((select count(*)::integer from public.finance_entries
   where request_id='92400000-0000-4000-8000-000000000001'),1,
   'a corrida grava um unico lancamento financeiro');
 
--- O teste e o ultimo consumidor deste banco local e o CI descarta o container
--- em seguida. As conexoes e os dados externos terminam com ele. Tentar remover
--- o gatilho daqui exigiria uma trava exclusiva que a propria transacao pgTAP
--- ainda segura ate o rollback abaixo.
+-- Os dados ficticios externos terminam com o banco descartavel. O gatilho e a
+-- funcao de pausa ja foram removidos antes da leitura final da tabela, pois
+-- depois dela a propria transacao pgTAP seguraria uma trava ate este rollback.
 
 select * from finish();
 rollback;
