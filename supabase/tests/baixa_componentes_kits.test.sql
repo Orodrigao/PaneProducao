@@ -3,9 +3,10 @@
 -- 2 kits -> 8 un, kit com dois componentes gera movimentos distintos,
 -- reprocessar a mesma importação não duplica, substituição reverte o antigo
 -- e gera o novo, restauração reverte/regenera, mudar o vínculo (remover,
--- remapear, trocar de kit, trocar pra não-kit) resincroniza, venda não-kit
--- não sofre efeito, composição inválida falha fechada, e RLS/grants
--- (perfil permitido e bloqueado).
+-- remapear, trocar de kit, trocar pra não-kit) resincroniza, editar a
+-- composição do kit NÃO mexe na baixa de vendas já confirmadas (migration
+-- 20260920152945), venda não-kit não sofre efeito, composição inválida
+-- falha fechada, e RLS/grants (perfil permitido e bloqueado).
 begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
@@ -175,8 +176,11 @@ select is((select count(*)::int from public.bread_movements
 select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 4,
   'total esperado: 2 componentes x 2 vendas confirmadas (dia 1 e dia 2)');
 
--- 5.1 Editar a composição de um kit já vendido resincroniza as vendas já
--- confirmadas, sem esperar por outro evento de venda ou de vínculo.
+-- 5.1 Editar a composição de um kit já vendido NÃO mexe na baixa das vendas
+-- já confirmadas (decisão de Rodrigo, 2026-09-20, migration
+-- 20260920152945): a baixa fica fixada no momento em que foi gerada e só
+-- muda de novo por confirmação, substituição, restauração ou troca de
+-- vínculo — nunca por edição de receita feita à parte.
 update public.product_components
 set quantity = 3
 where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_id = 'teste-saco-kit-a';
@@ -185,13 +189,19 @@ select is((select quantity from public.bread_movements
     and reference_id = (select item.id::text from public.sales_import_items item
       join public.sales_imports import on import.id = item.import_id
       where import.sale_date = '2026-02-01' and item.external_product_key = 'Kit Brioche')),
-  -3::numeric, 'corrigir a quantidade do componente atualiza a baixa da venda já confirmada (dia 1)');
+  -1::numeric, 'corrigir a quantidade do componente NÃO mexe na baixa da venda já confirmada (dia 1)');
 select is((select quantity from public.bread_movements
   where reference_type = 'venda_kit' and bread_id = 'teste-saco-kit-a'
     and reference_id = (select item.id::text from public.sales_import_items item
       join public.sales_imports import on import.id = item.import_id
       where import.sale_date = '2026-02-02' and item.external_product_key = 'Kit Brioche')),
-  -6::numeric, 'a mesma correção alcança todas as vendas confirmadas, não só a mais recente (dia 2)');
+  -2::numeric, 'a mesma correção também não alcança nenhuma outra venda confirmada (dia 2)');
+
+-- Volta a quantidade original, pra não desalinhar o resto da suíte com uma
+-- receita diferente da que foi semeada.
+update public.product_components
+set quantity = 1
+where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_id = 'teste-saco-kit-a';
 
 -- Cadastrar pão é gate de /produtos (breads_insert_catalog_managers exige
 -- allowed_routes ? '/produtos'), que este usuário de teste não tem — a
@@ -204,15 +214,37 @@ select set_config('request.jwt.claim.sub','b5000000-0000-4000-8000-00000000000a'
 
 insert into public.product_components (parent_product_id, component_source, component_id, quantity)
 values ('b5000000-0000-4000-8000-000000000002', 'bread', 'teste-saco-kit-a2', 5);
-select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 6,
-  'adicionar um terceiro componente ao kit gera a baixa dele nas vendas já confirmadas');
+select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 4,
+  'adicionar um componente novo ao kit NÃO gera baixa nenhuma nas vendas já confirmadas');
+
+delete from public.product_components
+where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_id = 'teste-saco-kit-a2';
+select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 4,
+  'remover esse componente recém-criado também não mexe em venda nenhuma (ele nunca teve baixa)');
 
 delete from public.product_components
 where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_id = 'teste-saco-kit-a';
-select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit' and bread_id = 'teste-saco-kit-a'), 0,
-  'remover um componente do kit apaga a baixa dele nas vendas já confirmadas, sem deixar órfão');
+select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit' and bread_id = 'teste-saco-kit-a'), 2,
+  'remover um componente do cadastro NÃO apaga a baixa que as vendas já confirmadas já tinham gerado com ele');
+
+-- Recadastra o componente original, deixando o kit exatamente como a
+-- fixture semeou, pra não desalinhar o resto da suíte.
+insert into public.product_components (parent_product_id, component_source, component_id, quantity)
+values ('b5000000-0000-4000-8000-000000000002', 'bread', 'teste-saco-kit-a', 1);
 select is((select count(*)::int from public.bread_movements where reference_type = 'venda_kit'), 4,
-  'kit volta a ter dois componentes (variante + saco A2): 2 componentes x 2 vendas confirmadas');
+  'recadastrar o componente também não duplica nem mexe na baixa das vendas já confirmadas');
+
+-- Confere explicitamente que o Kit A voltou a ter a composição exata da
+-- fixture original, pra proteger o resto da suíte (seções 6 a 11) de uma
+-- regressão silenciosa nesta seção.
+select is((select count(*)::int from public.product_components where parent_product_id = 'b5000000-0000-4000-8000-000000000002'), 2,
+  'Kit A volta a ter exatamente dois componentes, como a fixture semeou');
+select is((select quantity from public.product_components
+  where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_source = 'product'),
+  4::numeric, 'componente variante do Kit A permanece com quantidade 4, nunca alterada nesta seção');
+select is((select quantity from public.product_components
+  where parent_product_id = 'b5000000-0000-4000-8000-000000000002' and component_id = 'teste-saco-kit-a'),
+  1::numeric, 'componente saco do Kit A volta à quantidade original 1');
 
 -- 6. Reprocessar a mesma importação (mesmo hash) não duplica.
 select is((select public.confirm_sales_import(
