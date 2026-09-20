@@ -1,9 +1,17 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Search } from 'lucide-react'
+import Link from 'next/link'
+import { AlertTriangle, CheckCircle2, Search, Settings2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import { getCurrentUser, PAYABLES_PERMISSION, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
+import {
+  buildInventoryReadiness,
+  summarizeInventoryReadiness,
+  type InventoryPurchaseConversionRow,
+  type InventoryReadinessItem,
+  type InventoryProductRow,
+} from '@/lib/inventoryReadiness'
 
 interface StockBalance {
   id: string
@@ -25,16 +33,26 @@ interface Movement {
   products: { name: string; unit: string }
 }
 
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+}
+
 export default function EstoquePage() {
   const [user, setUser]         = useState<AppUser | null>(null)
-  const [tab, setTab]           = useState<'saldo'|'movimentos'>('saldo')
+  const [tab, setTab]           = useState<'preparacao'|'saldo'|'movimentos'>('preparacao')
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
+  const [readiness, setReadiness] = useState<InventoryReadinessItem[]>([])
+  const [readinessError, setReadinessError] = useState<string | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(true)
+  const [conversionCoverageKnown, setConversionCoverageKnown] = useState(false)
   const [search, setSearch]     = useState('')
   const [loading, setLoading]   = useState(false)
   const [filter, setFilter]     = useState<'todos'|'com_saldo'|'zerado'>('com_saldo')
-
-  useEffect(() => { setUser(getCurrentUser()) }, [])
+  const [readinessFilter, setReadinessFilter] = useState<'todos'|'prontos'|'pendentes'>('pendentes')
 
   const loadBalances = async () => {
     setLoading(true)
@@ -56,8 +74,58 @@ export default function EstoquePage() {
     setMovements(data || [])
   }
 
+  const loadReadiness = async (currentUser: AppUser | null) => {
+    setReadinessError(null)
+    setReadinessLoading(true)
+    const canInspectConversions = Boolean(currentUser && (
+      currentUser.permissions?.some(permission =>
+        permission.permission_key === PAYABLES_PERMISSION
+        && (permission.scope === '*' || permission.scope === 'jc'),
+      )
+      || ((currentUser.role === 'admin' || currentUser.role === 'financeiro') && currentUser.allowedRoutes.includes('/produtos'))
+    ))
+    setConversionCoverageKnown(canInspectConversions)
+    try {
+      const productsRequest = canInspectConversions
+        ? supabase
+          .from('products')
+          .select('id,name,category,unit,cost_price,active,kind')
+          .eq('active', true)
+        : supabase
+          .from('products')
+          .select('id,name,category,unit,active,kind')
+          .eq('active', true)
+      const [productsResult, conversionsResult] = await Promise.all([
+        productsRequest,
+        canInspectConversions
+          ? supabase
+            .from('payable_product_mappings')
+            .select('base_product_id,purchase_unit,base_unit,conversion_factor,factor_confirmed,active')
+            .eq('active', true)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (productsResult.error) throw productsResult.error
+      if (canInspectConversions && conversionsResult.error) throw conversionsResult.error
+      const coverageKnown = canInspectConversions
+      setConversionCoverageKnown(coverageKnown)
+      setReadiness(buildInventoryReadiness(
+        (productsResult.data || []) as unknown as InventoryProductRow[],
+        (conversionsResult.data || []) as InventoryPurchaseConversionRow[],
+        { conversionCoverageKnown: coverageKnown, costCoverageKnown: canInspectConversions },
+      ))
+    } catch (error) {
+      console.error(error)
+      setReadinessError('Não foi possível conferir os insumos e suas conversões.')
+      setReadiness([])
+    } finally {
+      setReadinessLoading(false)
+    }
+  }
+
   useEffect(() => {
-    loadBalances(); loadMovements()
+    const currentUser = getCurrentUser()
+    setUser(currentUser)
+    loadBalances(); loadMovements(); loadReadiness(currentUser)
   }, [])
 
   const filtered = balances.filter(b => {
@@ -69,6 +137,14 @@ export default function EstoquePage() {
   const totalValue = balances.reduce((sum, b) => sum + (b.quantity * b.average_cost), 0)
   const inStock    = balances.filter(b => b.quantity > 0).length
   const total      = balances.length
+  const readinessSummary = summarizeInventoryReadiness(readiness)
+  const filteredReadiness = readiness.filter(item => {
+    const matchesSearch = normalizeSearchText(item.product.name).includes(normalizeSearchText(search))
+    const matchesStatus = readinessFilter === 'todos'
+      || (readinessFilter === 'prontos' && item.ready)
+      || (readinessFilter === 'pendentes' && !item.ready)
+    return matchesSearch && matchesStatus
+  })
 
   const mvTypeLabel: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Ajuste', descarte: 'Descarte' }
   const mvSign: Record<string, string>      = { entrada: '+', saida: '−', ajuste: '±', descarte: '−' }
@@ -93,30 +169,111 @@ export default function EstoquePage() {
         </header>
 
         <div className="ps-scroll ps-pad">
-          {/* KPIs */}
-          <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
-            <KPICard label="Com saldo" value={inStock} accent="sage"/>
-            <KPICard label="Zerados"   value={total - inStock}/>
-            <KPICard label="Est. custo" value={`R$ ${totalValue.toFixed(0)}`} accent="honey"/>
-          </div>
-
-          {/* Aviso: entrada de matéria-prima ainda não disponível */}
+          {/* Aviso: esta fase não movimenta estoque */}
           <div className="ps-card" style={{marginTop:14, padding:'12px 14px', background:'var(--cream)', borderColor:'var(--border-soft)'}}>
-            <div style={{fontSize:13, color:'var(--ps-ink)', fontWeight:600, marginBottom:4}}>📸 Entrada de matéria-prima — em breve</div>
+            <div style={{fontSize:13, color:'var(--ps-ink)', fontWeight:600, marginBottom:4}}>Preparação para a primeira contagem</div>
             <div style={{fontSize:12, color:'var(--ink-soft)', lineHeight:1.5}}>
-              O registro de entrada será feito tirando foto da nota fiscal — a IA lê os itens, quantidades e custos.
-              Enquanto não está pronto, os saldos abaixo ficam zerados.
+              Esta tela ainda não movimenta estoque. Primeiro ela confere quais insumos da JC têm unidade, custo e conversões confiáveis.
+              A contagem semanal só será liberada quando essas pendências estiverem visíveis e corrigíveis.
             </div>
           </div>
 
           {/* Tabs */}
           <div className="ps-tabs" role="tablist" style={{marginTop:16}}>
+            <button className="ps-tab" role="tab" aria-selected={tab==='preparacao'} onClick={() => setTab('preparacao')}>Preparação</button>
             <button className="ps-tab" role="tab" aria-selected={tab==='saldo'} onClick={() => setTab('saldo')}>Saldo atual</button>
             <button className="ps-tab" role="tab" aria-selected={tab==='movimentos'} onClick={() => setTab('movimentos')}>Movimentações</button>
           </div>
 
+          {tab === 'preparacao' && (
+            <>
+              <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
+                <KPICard label="Insumos ativos" value={readinessSummary.total}/>
+                <KPICard label="Prontos para contar" value={readinessSummary.ready} accent="sage"/>
+                <KPICard label="Com pendência" value={readinessSummary.total - readinessSummary.ready} accent="honey"/>
+              </div>
+
+              {readinessLoading ? (
+                <div className="ps-empty">Conferindo insumos, custos e conversões...</div>
+              ) : readinessError ? (
+                <div className="ps-warning" style={{marginTop:14}}>
+                  <AlertTriangle size={18}/><span>{readinessError}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="ps-card" style={{marginTop:14, padding:'12px 14px'}}>
+                    <div style={{fontSize:12, color:'var(--ink-soft)', lineHeight:1.6}}>
+                      <b>{readinessSummary.invalidUnit}</b> sem unidade reconhecida ·{' '}
+                      <b>{readinessSummary.missingCost}</b> sem custo cadastrado ·{' '}
+                      {conversionCoverageKnown
+                        ? <><b>{readinessSummary.conversionIssues}</b> com conversão de compra pendente</>
+                        : <>custos e conversões visíveis somente para perfis financeiros autorizados</>}
+                    </div>
+                  </div>
+
+                  <div className="ps-filters" style={{marginTop:14}}>
+                    <div style={{flex:1, minWidth:180, position:'relative'}}>
+                      <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
+                      <input type="text" placeholder="Buscar insumo..." value={search} onChange={event => setSearch(event.target.value)}
+                        className="ps-input" style={{width:'100%', padding:'8px 12px 8px 30px', fontSize:13}}/>
+                    </div>
+                    <div className="ps-presets">
+                      {(['pendentes', 'prontos', 'todos'] as const).map(status => (
+                        <button key={status} onClick={() => setReadinessFilter(status)} className={`ps-preset ${readinessFilter === status ? 'active' : ''}`}>
+                          {status === 'pendentes' ? 'Pendentes' : status === 'prontos' ? 'Prontos' : 'Todos'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {filteredReadiness.length === 0 ? (
+                    <div className="ps-empty">
+                      {readiness.length === 0 ? 'Nenhum insumo ativo foi classificado no catálogo.' : 'Nenhum insumo neste filtro.'}
+                    </div>
+                  ) : (
+                    <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                      {filteredReadiness.map(item => (
+                        <article key={item.product.id} className="ps-card" style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex', justifyContent:'space-between', gap:12, alignItems:'flex-start'}}>
+                            <div style={{minWidth:0}}>
+                              <div className="ps-pname" style={{fontSize:14.5}}>{item.product.name}</div>
+                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:2}}>
+                                {item.product.category || 'Sem categoria'} · unidade para contagem: {item.stockUnit || item.product.unit || 'não informada'} ·{' '}
+                                {conversionCoverageKnown ? `${item.conversionCount} conversão(ões) de compra` : 'conversões restritas'}
+                              </div>
+                            </div>
+                            <span className={`ps-status ${item.ready ? 'ok' : 'pendente'}`} style={{display:'inline-flex', alignItems:'center', gap:4, flexShrink:0}}>
+                              {item.ready ? <CheckCircle2 size={13}/> : <AlertTriangle size={13}/>} {item.ready ? 'Pronto para contar' : 'Pendente'}
+                            </span>
+                          </div>
+                          {item.blockingIssues.map(issue => (
+                            <div key={issue} style={{fontSize:12, color:'var(--berry)', marginTop:7}}>• {issue}</div>
+                          ))}
+                          {item.warnings.map(warning => (
+                            <div key={warning} style={{fontSize:12, color:'var(--ink-soft)', marginTop:7}}>• {warning}</div>
+                          ))}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{display:'flex', justifyContent:'flex-end', marginTop:14}}>
+                    {user?.allowedRoutes.includes('/produtos')
+                      ? <Link href="/produtos" className="ps-btn ghost"><Settings2 size={14}/> Corrigir no catálogo</Link>
+                      : <span style={{fontSize:12, color:'var(--ink-soft)'}}>As correções devem ser feitas por Rodrigo ou por um perfil com acesso ao catálogo.</span>}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
           {tab === 'saldo' && (
             <>
+              <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
+                <KPICard label="Com saldo" value={inStock} accent="sage"/>
+                <KPICard label="Zerados" value={total - inStock}/>
+                <KPICard label="Est. custo" value={`R$ ${totalValue.toFixed(0)}`} accent="honey"/>
+              </div>
               <div className="ps-filters" style={{marginTop:14}}>
                 <div style={{flex:1, minWidth:180, position:'relative'}}>
                   <Search size={14} style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-faint)', pointerEvents:'none'}}/>
