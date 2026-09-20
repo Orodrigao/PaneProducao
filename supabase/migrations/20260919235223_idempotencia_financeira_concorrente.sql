@@ -108,7 +108,12 @@ begin
   if v_all_found_names is distinct from v_classified_names then
     raise exception using
       errcode = 'P0001',
-      message = 'O universo de RPCs com request_id mudou; classifique a nova rotina antes de continuar.';
+      message = 'O universo de RPCs com request_id mudou; classifique a nova rotina antes de continuar.',
+      detail = format(
+        'Classificadas: %s. Encontradas: %s.',
+        v_classified_names,
+        v_all_found_names
+      );
   end if;
 
   select array_agg(proc.proname order by proc.proname)
