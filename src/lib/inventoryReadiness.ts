@@ -82,20 +82,8 @@ function normalizeUnitText(value: string | null | undefined): string {
     .replace(/[^a-z]/g, '')
 }
 
-function normalizeSearchText(value: string | null | undefined): string {
-  return (value ?? '')
-    .trim()
-    .toLocaleLowerCase('pt-BR')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
 function isInventoryInputCandidate(product: InventoryProductRow): boolean {
-  const category = normalizeSearchText(product.category)
-  return product.kind === null
-    || product.kind === 'insumo'
-    || category.includes('insumo')
-    || category.includes('embalag')
+  return product.kind === null || product.kind === 'insumo'
 }
 
 export function canonicalInventoryUnit(value: string | null | undefined): CanonicalInventoryUnit | null {

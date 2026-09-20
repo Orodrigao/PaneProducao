@@ -33,6 +33,13 @@ interface Movement {
   products: { name: string; unit: string }
 }
 
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+}
+
 export default function EstoquePage() {
   const [user, setUser]         = useState<AppUser | null>(null)
   const [tab, setTab]           = useState<'preparacao'|'saldo'|'movimentos'>('preparacao')
@@ -132,7 +139,7 @@ export default function EstoquePage() {
   const total      = balances.length
   const readinessSummary = summarizeInventoryReadiness(readiness)
   const filteredReadiness = readiness.filter(item => {
-    const matchesSearch = item.product.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR'))
+    const matchesSearch = normalizeSearchText(item.product.name).includes(normalizeSearchText(search))
     const matchesStatus = readinessFilter === 'todos'
       || (readinessFilter === 'prontos' && item.ready)
       || (readinessFilter === 'pendentes' && !item.ready)

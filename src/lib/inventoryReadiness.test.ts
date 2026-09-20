@@ -122,7 +122,7 @@ describe('prontidão para a contagem de estoque', () => {
   it('ignora produtos finais, inativos e kits', () => {
     const items = buildInventoryReadiness([
       baseProduct,
-      { ...baseProduct, id: 'final', kind: 'final', category: 'Pães' },
+      { ...baseProduct, id: 'final', kind: 'final', category: 'INSUMOS antigos' },
       { ...baseProduct, id: 'kit', kind: 'kit', category: 'Kits' },
       { ...baseProduct, id: 'inativo', active: false },
     ], [])
