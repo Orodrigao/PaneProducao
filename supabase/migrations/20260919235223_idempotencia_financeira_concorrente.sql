@@ -49,11 +49,64 @@ declare
     'reverse_finance_transfer',
     'split_receivable'
   ];
+  -- Universo fechado das RPCs publicas PL/pgSQL que recebem p_request_id.
+  -- As 16 financeiras acima recebem a trava comum. As demais usam identidade,
+  -- versao ou trava de linha do proprio fluxo e ficam classificadas aqui para
+  -- que uma RPC nova nao escape silenciosamente desta revisao.
+  v_classified_names constant text[] := array[
+    'cancel_pj_order_atomic',
+    'cancel_receivable',
+    'change_pj_flow_terms',
+    'confirm_finance_recurring_rule',
+    'confirm_xml_import_draft',
+    'correct_receivable_due_date',
+    'corrigir_quantidade_enviada_pj',
+    'create_and_pay_manual_payable',
+    'create_buck_weekly_receivable',
+    'create_finance_entry',
+    'create_finance_transfer',
+    'create_manual_payable',
+    'create_manual_receivable',
+    'create_pj_order_atomic',
+    'create_receivable_from_pj_order',
+    'create_receivable_from_romaneio',
+    'create_xml_payable',
+    'enroll_pj_flow',
+    'record_receivable_receipt',
+    'replace_pj_order_atomic',
+    'replace_pj_order_atomic_v2',
+    'resolve_pj_flow_excess',
+    'reverse_finance_entry',
+    'reverse_finance_transfer',
+    'reverse_receivable_receipt',
+    'rollback_pj_flow_enrollment',
+    'save_pj_order_dispatch_quantities',
+    'schedule_pj_production',
+    'split_receivable',
+    'transition_pj_flow_pilot'
+  ];
   v_found_names text[];
+  v_all_found_names text[];
   v_function record;
   v_definition text;
   v_patched_definition text;
 begin
+  select array_agg(proc.proname order by proc.proname)
+    into v_all_found_names
+  from pg_catalog.pg_proc proc
+  join pg_catalog.pg_namespace namespace on namespace.oid = proc.pronamespace
+  join pg_catalog.pg_language language on language.oid = proc.prolang
+  where namespace.nspname = 'public'
+    and 'p_request_id' = any(proc.proargnames)
+    and language.lanname = 'plpgsql'
+    and proc.prosecdef;
+
+  if v_all_found_names is distinct from v_classified_names then
+    raise exception using
+      errcode = 'P0001',
+      message = 'O universo de RPCs com request_id mudou; classifique a nova rotina antes de continuar.';
+  end if;
+
   select array_agg(proc.proname order by proc.proname)
     into v_found_names
   from pg_catalog.pg_proc proc
