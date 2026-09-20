@@ -73,8 +73,9 @@ const UNIT_ALIASES: Record<string, CanonicalInventoryUnit> = {
 }
 
 function normalizeUnitText(value: string | null | undefined): string {
-  return (value ?? '')
-    .trim()
+  const trimmed = (value ?? '').trim()
+  if (/\d/.test(trimmed)) return ''
+  return trimmed
     .toLocaleLowerCase('pt-BR')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -140,12 +141,17 @@ export function buildInventoryReadiness(
           blockingIssues.push(`Conversão de ${conversion.purchase_unit || 'compra'} aponta para outra unidade-base`)
           continue
         }
-        if (positiveNumber(conversion.conversion_factor) === null) {
+        const conversionFactor = positiveNumber(conversion.conversion_factor)
+        if (conversionFactor === null) {
           blockingIssues.push(`Conversão de ${conversion.purchase_unit || 'compra'} sem fator válido`)
           continue
         }
         if (!purchaseUnit) {
           blockingIssues.push(`Unidade de compra ${conversion.purchase_unit || 'não informada'} não reconhecida`)
+          continue
+        }
+        if (purchaseUnit === stockUnit && conversionFactor !== 1) {
+          blockingIssues.push(`Conversão de ${conversion.purchase_unit || 'compra'} com fator incompatível com a mesma unidade`)
           continue
         }
         if (purchaseUnit !== stockUnit && conversion.factor_confirmed !== true) {

@@ -22,6 +22,8 @@ describe('prontidão para a contagem de estoque', () => {
     expect(canonicalInventoryUnit(' Litros ')).toBe('l')
     expect(canonicalInventoryUnit('Peça')).toBe('un')
     expect(canonicalInventoryUnit('12')).toBeNull()
+    expect(canonicalInventoryUnit('kg2')).toBeNull()
+    expect(canonicalInventoryUnit('12 kg')).toBeNull()
   })
 
   it('deixa o insumo pronto para contar mesmo sem compra XML anterior', () => {
@@ -103,6 +105,18 @@ describe('prontidão para a contagem de estoque', () => {
     expect(item.ready).toBe(false)
     expect(item.blockingIssues).toContain('Unidade de compra 12 não reconhecida')
     expect(summarizeInventoryReadiness([item]).conversionIssues).toBe(1)
+  })
+
+  it('bloqueia fator diferente de um quando compra e estoque usam a mesma unidade', () => {
+    const [item] = buildInventoryReadiness([baseProduct], [{
+      base_product_id: 'farinha',
+      purchase_unit: 'kg',
+      base_unit: 'kg',
+      conversion_factor: 1000,
+      factor_confirmed: true,
+    }])
+    expect(item.ready).toBe(false)
+    expect(item.blockingIssues).toContain('Conversão de kg com fator incompatível com a mesma unidade')
   })
 
   it('ignora produtos finais, inativos e kits', () => {
