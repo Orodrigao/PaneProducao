@@ -79,11 +79,17 @@ export default function EstoquePage() {
     ))
     setConversionCoverageKnown(canInspectConversions)
     try {
-      const [productsResult, conversionsResult] = await Promise.all([
-        supabase
+      const productsRequest = canInspectConversions
+        ? supabase
           .from('products')
           .select('id,name,category,unit,cost_price,active,kind')
-          .eq('active', true),
+          .eq('active', true)
+        : supabase
+          .from('products')
+          .select('id,name,category,unit,active,kind')
+          .eq('active', true)
+      const [productsResult, conversionsResult] = await Promise.all([
+        productsRequest,
         canInspectConversions
           ? supabase
             .from('payable_product_mappings')
@@ -92,12 +98,13 @@ export default function EstoquePage() {
           : Promise.resolve({ data: [], error: null }),
       ])
       if (productsResult.error) throw productsResult.error
-      const coverageKnown = canInspectConversions && !conversionsResult.error
+      if (canInspectConversions && conversionsResult.error) throw conversionsResult.error
+      const coverageKnown = canInspectConversions
       setConversionCoverageKnown(coverageKnown)
       setReadiness(buildInventoryReadiness(
-        (productsResult.data || []) as InventoryProductRow[],
+        (productsResult.data || []) as unknown as InventoryProductRow[],
         (conversionsResult.data || []) as InventoryPurchaseConversionRow[],
-        { conversionCoverageKnown: coverageKnown },
+        { conversionCoverageKnown: coverageKnown, costCoverageKnown: canInspectConversions },
       ))
     } catch (error) {
       console.error(error)
@@ -193,7 +200,7 @@ export default function EstoquePage() {
                       <b>{readinessSummary.missingCost}</b> sem custo cadastrado ·{' '}
                       {conversionCoverageKnown
                         ? <><b>{readinessSummary.conversionIssues}</b> com conversão de compra pendente</>
-                        : <>conversões de fornecedor visíveis somente para perfis financeiros autorizados</>}
+                        : <>custos e conversões visíveis somente para perfis financeiros autorizados</>}
                     </div>
                   </div>
 

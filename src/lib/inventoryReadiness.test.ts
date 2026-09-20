@@ -31,9 +31,13 @@ describe('prontidão para a contagem de estoque', () => {
   })
 
   it('não libera o item quando o perfil não pode conferir as conversões', () => {
-    const [item] = buildInventoryReadiness([baseProduct], [], { conversionCoverageKnown: false })
+    const [item] = buildInventoryReadiness([baseProduct], [], {
+      conversionCoverageKnown: false,
+      costCoverageKnown: false,
+    })
     expect(item.ready).toBe(false)
     expect(item.blockingIssues).toContain('Conversões de compra não conferidas neste perfil')
+    expect(item.blockingIssues).toContain('Custo não conferido neste perfil')
     expect(item.warnings).toEqual([])
   })
 
@@ -86,6 +90,19 @@ describe('prontidão para a contagem de estoque', () => {
       'Conversão de KG aponta para outra unidade-base',
       'Conversão de KG sem fator válido',
     ]))
+  })
+
+  it('bloqueia unidade de compra não reconhecida mesmo quando o fator foi confirmado', () => {
+    const [item] = buildInventoryReadiness([baseProduct], [{
+      base_product_id: 'farinha',
+      purchase_unit: '12',
+      base_unit: 'kg',
+      conversion_factor: 12,
+      factor_confirmed: true,
+    }])
+    expect(item.ready).toBe(false)
+    expect(item.blockingIssues).toContain('Unidade de compra 12 não reconhecida')
+    expect(summarizeInventoryReadiness([item]).conversionIssues).toBe(1)
   })
 
   it('ignora produtos finais, inativos e kits', () => {

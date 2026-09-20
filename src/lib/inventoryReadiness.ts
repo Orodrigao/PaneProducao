@@ -3,7 +3,7 @@ export interface InventoryProductRow {
   name: string
   category: string | null
   unit: string | null
-  cost_price: number | string | null
+  cost_price?: number | string | null
   active: boolean
   kind: string | null
 }
@@ -111,9 +111,10 @@ function positiveNumber(value: number | string | null | undefined): number | nul
 export function buildInventoryReadiness(
   products: InventoryProductRow[],
   conversions: InventoryPurchaseConversionRow[],
-  options: { conversionCoverageKnown?: boolean } = {},
+  options: { conversionCoverageKnown?: boolean; costCoverageKnown?: boolean } = {},
 ): InventoryReadinessItem[] {
   const conversionCoverageKnown = options.conversionCoverageKnown !== false
+  const costCoverageKnown = options.costCoverageKnown !== false
   return products
     .filter(product => product.active && isInventoryInputCandidate(product))
     .map(product => {
@@ -123,7 +124,8 @@ export function buildInventoryReadiness(
 
       if (product.kind !== 'insumo') blockingIssues.push('Classificação de insumo pendente no catálogo')
       if (!stockUnit) blockingIssues.push('Unidade de estoque ausente ou não reconhecida')
-      if (positiveNumber(product.cost_price) === null) blockingIssues.push('Sem custo unitário cadastrado')
+      if (!costCoverageKnown) blockingIssues.push('Custo não conferido neste perfil')
+      else if (positiveNumber(product.cost_price) === null) blockingIssues.push('Sem custo unitário cadastrado')
       if (!conversionCoverageKnown) blockingIssues.push('Conversões de compra não conferidas neste perfil')
 
       const productConversions = conversions.filter(conversion =>
@@ -140,6 +142,10 @@ export function buildInventoryReadiness(
         }
         if (positiveNumber(conversion.conversion_factor) === null) {
           blockingIssues.push(`Conversão de ${conversion.purchase_unit || 'compra'} sem fator válido`)
+          continue
+        }
+        if (!purchaseUnit) {
+          blockingIssues.push(`Unidade de compra ${conversion.purchase_unit || 'não informada'} não reconhecida`)
           continue
         }
         if (purchaseUnit !== stockUnit && conversion.factor_confirmed !== true) {
@@ -165,6 +171,8 @@ export function summarizeInventoryReadiness(items: InventoryReadinessItem[]): In
     ready: items.filter(item => item.ready).length,
     missingCost: items.filter(item => item.blockingIssues.includes('Sem custo unitário cadastrado')).length,
     invalidUnit: items.filter(item => item.blockingIssues.includes('Unidade de estoque ausente ou não reconhecida')).length,
-    conversionIssues: items.filter(item => item.blockingIssues.some(issue => issue.startsWith('Conversão de '))).length,
+    conversionIssues: items.filter(item => item.blockingIssues.some(issue =>
+      issue.startsWith('Conversão de ') || issue.startsWith('Unidade de compra '),
+    )).length,
   }
 }
