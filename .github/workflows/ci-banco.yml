@@ -20,6 +20,8 @@ jobs:
   ensaio:
     name: Aplicar história completa num banco limpo
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -48,3 +50,6 @@ jobs:
 
       - name: Provar concorrencia real da importacao pendente de NF-e
         run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql
+
+      - name: Provar idempotencia financeira sob concorrencia real
+        run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql
