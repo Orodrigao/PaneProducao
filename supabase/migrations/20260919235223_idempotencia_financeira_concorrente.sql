@@ -83,9 +83,7 @@ declare
     'reverse_receivable_receipt',
     'rollback_pj_flow_enrollment',
     'save_pj_order_dispatch_quantities',
-    'save_pj_order_dispatch_quantities_lock_order_impl',
     'schedule_pj_production',
-    'schedule_pj_production_contract_impl',
     'split_receivable',
     'transition_pj_flow_pilot'
   ];
