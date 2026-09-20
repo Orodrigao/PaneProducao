@@ -97,7 +97,7 @@ select extensions.dblink_exec('fin_gate', $command$
         pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
       perform pg_catalog.pg_advisory_lock(
         pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
-    end
+    end;
   $gate$;
 $command$);
 
@@ -138,7 +138,7 @@ select extensions.dblink_exec('fin_gate', $command$
     begin
       perform pg_catalog.pg_advisory_unlock(
         pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
-    end
+    end;
   $gate$;
 $command$);
 create temporary table fin_first_result as
@@ -156,7 +156,7 @@ select extensions.dblink_exec('fin_gate', $command$
     begin
       perform pg_catalog.pg_advisory_unlock(
         pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
-    end
+    end;
   $gate$;
 $command$);
 
