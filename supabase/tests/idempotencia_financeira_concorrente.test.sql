@@ -42,7 +42,7 @@ select ok(
 
 select is(
   (
-    select array_agg(proc.proname order by proc.proname)
+    select array_agg(proc.proname::text order by proc.proname)
     from pg_proc proc
     join pg_namespace namespace on namespace.oid = proc.pronamespace
     join pg_language language on language.oid = proc.prolang
