@@ -52,10 +52,11 @@ select extensions.dblink_exec('fin_setup', $remote$
   declare
     v_connection text := pg_catalog.current_setting('application_name');
   begin
-    if new.request_id='92400000-0000-4000-8000-000000000001'::uuid then
+    if new.request_id='92400000-0000-4000-8000-000000000001'::uuid
+       and v_connection='issue424-first' then
       perform pg_catalog.pg_advisory_xact_lock(
         pg_catalog.hashtextextended(
-          'test:issue-424-insert-gate:' || v_connection,
+          'test:issue-424-insert-gate:first',
           0
         ));
     end if;
@@ -83,6 +84,28 @@ begin
 end;
 $$;
 
+create function pg_temp.wait_for_second_ready(p_pid integer) returns boolean
+language plpgsql as $$
+declare v_deadline timestamptz := clock_timestamp() + interval '5 seconds';
+begin
+  loop
+    perform pg_catalog.pg_stat_clear_snapshot();
+    if exists (
+      select 1 from pg_catalog.pg_stat_activity
+      where pid=p_pid
+        and (
+          state='idle'
+          or (wait_event_type='Lock' and wait_event='advisory')
+        )
+    ) then
+      return true;
+    end if;
+    if clock_timestamp() >= v_deadline then return false; end if;
+    perform pg_sleep(0.05);
+  end loop;
+end;
+$$;
+
 create temporary table fin_backends as
 select 'first'::text connection,pid from extensions.dblink(
   'fin_first','select pg_backend_pid()') as response(pid integer)
@@ -94,21 +117,18 @@ select extensions.dblink_exec('fin_gate', $command$
   do $gate$
     begin
       perform pg_catalog.pg_advisory_lock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
-      perform pg_catalog.pg_advisory_lock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:first',0));
     end;
   $gate$;
 $command$);
 
-select extensions.dblink_exec('fin_first','begin');
 select extensions.dblink_exec('fin_first',
-  $$set local statement_timeout='15s'$$);
+  $$set statement_timeout='15s'$$);
 select extensions.dblink_exec('fin_first',
-  $$set local application_name='issue424-first'$$);
-select extensions.dblink_exec('fin_first','set local role authenticated');
+  $$set application_name='issue424-first'$$);
+select extensions.dblink_exec('fin_first','set role authenticated');
 select extensions.dblink_exec('fin_first',
-  $$set local "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
+  $$set "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
 select extensions.dblink_send_query('fin_first',$q$
   select public.create_finance_entry(
     '92400000-0000-4000-8000-000000000001','mao_obra_diarias',
@@ -119,29 +139,28 @@ select ok(pg_temp.wait_for_advisory(
   (select pid from fin_backends where connection='first')),
   'a primeira sessao chegou ao portao anterior ao INSERT');
 
-select extensions.dblink_exec('fin_second','begin');
 select extensions.dblink_exec('fin_second',
-  $$set local statement_timeout='15s'$$);
+  $$set statement_timeout='15s'$$);
 select extensions.dblink_exec('fin_second',
-  $$set local application_name='issue424-second'$$);
-select extensions.dblink_exec('fin_second','set local role authenticated');
+  $$set application_name='issue424-second'$$);
+select extensions.dblink_exec('fin_second','set role authenticated');
 select extensions.dblink_exec('fin_second',
-  $$set local "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
+  $$set "request.jwt.claim.sub"='92400000-0000-4000-8000-000000000001'$$);
 select extensions.dblink_send_query('fin_second',$q$
   select public.create_finance_entry(
     '92400000-0000-4000-8000-000000000001','mao_obra_diarias',
     'caixa_fisico_jc','jc',150,private.data_na_padaria(),'dinheiro',
     'diaria concorrente issue 424')::text
 $q$);
-select ok(pg_temp.wait_for_advisory(
+select ok(pg_temp.wait_for_second_ready(
   (select pid from fin_backends where connection='second')),
-  'a segunda sessao tambem fica comprovadamente em espera');
+  'a segunda sessao termina no codigo antigo ou espera na trava corrigida');
 
 select extensions.dblink_exec('fin_gate', $command$
   do $gate$
     begin
       perform pg_catalog.pg_advisory_unlock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-first',0));
+        pg_catalog.hashtextextended('test:issue-424-insert-gate:first',0));
     end;
   $gate$;
 $command$);
@@ -150,29 +169,12 @@ select result::uuid id from extensions.dblink_get_result(
   'fin_first',false) as response(result text);
 create temporary table fin_first_error as
 select extensions.dblink_error_message('fin_first') message;
-create temporary table fin_first_end as
-select result from extensions.dblink_get_result(
-  'fin_first',false) as response(result text);
-select extensions.dblink_exec('fin_first','commit');
-
-select extensions.dblink_exec('fin_gate', $command$
-  do $gate$
-    begin
-      perform pg_catalog.pg_advisory_unlock(
-        pg_catalog.hashtextextended('test:issue-424-insert-gate:issue424-second',0));
-    end;
-  $gate$;
-$command$);
 
 create temporary table fin_second_result as
 select result::uuid id from extensions.dblink_get_result(
   'fin_second',false) as response(result text);
 create temporary table fin_second_error as
 select extensions.dblink_error_message('fin_second') message;
-create temporary table fin_second_end as
-select result from extensions.dblink_get_result(
-  'fin_second',false) as response(result text);
-select extensions.dblink_exec('fin_second','rollback');
 
 select is((select message from fin_first_error),'OK',
   'a primeira chamada concorrente termina sem erro');
