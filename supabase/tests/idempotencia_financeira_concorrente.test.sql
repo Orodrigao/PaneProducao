@@ -44,8 +44,8 @@ with expected(name) as (
   select unnest(array[
     'confirm_finance_recurring_rule',
     'confirm_xml_import_draft',
-    'corrigir_quantidade_enviada_pj',
     'correct_receivable_due_date',
+    'corrigir_quantidade_enviada_pj',
     'create_and_pay_manual_payable',
     'create_buck_weekly_receivable',
     'create_finance_entry',
