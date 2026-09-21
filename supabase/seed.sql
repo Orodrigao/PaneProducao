@@ -1811,16 +1811,17 @@ on conflict (id) do update set
   name = excluded.name, category = excluded.category, active = excluded.active,
   unit = excluded.unit, kind = excluded.kind, cost_price = excluded.cost_price;
 
-update public.products set weekly_count_enabled = true
-where id in ('96200000-0000-4000-8000-000000000011','96200000-0000-4000-8000-000000000012',
-             '96200000-0000-4000-8000-000000000013','96200000-0000-4000-8000-000000000014');
+-- Os insumos NAO ficam marcados para contagem: as contagens abaixo ja trazem
+-- a lista fotografada, e marcar aqui mudaria a lista esperada pelo teste da
+-- fase 2 (contagem_semanal_estoque.test.sql).
 
 -- O seed roda de novo sobre banco que persiste: apaga o proprio espaco
 -- (contagens e notas de identidade fixa) antes de recriar nas semanas certas.
 delete from public.inventory_weekly_counts
 where id in ('96200000-0000-4000-8000-0000000000a1','96200000-0000-4000-8000-0000000000a2');
 delete from public.payable_purchases
-where id in ('96200000-0000-4000-8000-0000000000b1','96200000-0000-4000-8000-0000000000b2');
+where id in ('96200000-0000-4000-8000-0000000000b1','96200000-0000-4000-8000-0000000000b2',
+             '96200000-0000-4000-8000-0000000000b3');
 
 with semana as (
   select date_trunc('week', private.data_na_padaria())::date as atual
@@ -1855,12 +1856,14 @@ from fixture
 where exists (select 1 from public.inventory_weekly_counts count_row where count_row.id = fixture.count_id);
 
 -- b1: nota antiga (antes do primeiro sabado) so para o custo de referencia.
--- b2: nota dentro do periodo, na quarta-feira entre os dois sabados.
+-- b2: compra a mao dentro do periodo, na quarta-feira entre os dois sabados.
+-- b3: NF-e ficticia no mesmo dia, pendente de conferencia (manteiga sem
+--     conversao e um item sem insumo), corrigivel pela tela do Contas a pagar.
 with semana as (
   select date_trunc('week', private.data_na_padaria())::date as atual
 ), fixture(id, request_id, dias, total) as (
   values ('96200000-0000-4000-8000-0000000000b1'::uuid,'96200000-0000-4000-8000-0000000000c1'::uuid,-18,300::numeric),
-         ('96200000-0000-4000-8000-0000000000b2','96200000-0000-4000-8000-0000000000c2',-5,1840)
+         ('96200000-0000-4000-8000-0000000000b2','96200000-0000-4000-8000-0000000000c2',-5,1600)
 )
 insert into public.payable_purchases (
   id, request_id, store, supplier_id, purchase_date, origin, document_type,
@@ -1875,13 +1878,29 @@ cross join semana
 join auth.users user_account on lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
 where exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');
 
+insert into public.payable_purchases (
+  id, request_id, store, supplier_id, purchase_date, origin, document_type,
+  payment_method, status, total_value, notes, nfe_key, nfe_number, nfe_series,
+  nfe_issued_at, classification_status, created_by, created_at
+)
+select '96200000-0000-4000-8000-0000000000b3', '96200000-0000-4000-8000-0000000000c3', 'jc',
+       '40000000-0000-4000-8000-000000000001',
+       date_trunc('week', private.data_na_padaria())::date - 5, 'xml', 'nfe', 'boleto', 'aberta', 240,
+       '[TESTE] NF-e pendente para o consumo semanal de insumos.',
+       '35260912345678000195550010009620011009620011', '962001', '1',
+       date_trunc('week', private.data_na_padaria())::date - 5, 'pendente', user_account.id,
+       ((date_trunc('week', private.data_na_padaria())::date - 5)::timestamp + time '11:00') at time zone 'America/Sao_Paulo'
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  and exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');
+
 with fixture(purchase_id, product_id, item_name, unit, quantity, unit_price, usable_quantity, normalized_unit_cost, mapping_status) as (
   values
     ('96200000-0000-4000-8000-0000000000b1'::uuid,'96200000-0000-4000-8000-000000000011'::uuid,'[TESTE] Farinha 25kg','sc',4::numeric,75::numeric,100::numeric,3.00::numeric,'mapeado'),
     ('96200000-0000-4000-8000-0000000000b2','96200000-0000-4000-8000-000000000011','[TESTE] Farinha 25kg','sc',8,87.5,200,3.50,'mapeado'),
     ('96200000-0000-4000-8000-0000000000b2','96200000-0000-4000-8000-000000000012','[TESTE] Mussarela forma','kg',25,36,25,36.00,'mapeado'),
-    ('96200000-0000-4000-8000-0000000000b2','96200000-0000-4000-8000-000000000013','[TESTE] Manteiga caixa','cx',1,200,null,null,'mapeado'),
-    ('96200000-0000-4000-8000-0000000000b2',null,'[TESTE] Item sem classificacao','un',1,40,null,null,'pendente')
+    ('96200000-0000-4000-8000-0000000000b3','96200000-0000-4000-8000-000000000013','[TESTE] Manteiga caixa','cx',1,200,null,null,'mapeado'),
+    ('96200000-0000-4000-8000-0000000000b3',null,'[TESTE] Item sem classificacao','un',1,40,null,null,'pendente')
 )
 insert into public.payable_purchase_items(purchase_id,product_id,item_name,unit,quantity,unit_price,usable_quantity,normalized_unit_cost,mapping_status)
 select fixture.*

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, AlertTriangle, Clock } from 'lucide-react'
@@ -38,24 +38,31 @@ export default function ConsumoSemanalPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [items, setItems] = useState<InventoryConsumptionItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [itemsError, setItemsError] = useState<string | null>(null)
+  // Troca rapida de semana dispara leituras concorrentes; so a resposta do
+  // ultimo pedido pode ocupar a tela (achado da revisao do Sol).
+  const itemsRequest = useRef(0)
 
   const allowed = canViewInventoryConsumption(user)
 
   const loadItems = async (endCountId: string) => {
+    const requestId = ++itemsRequest.current
     setItemsLoading(true)
-    setError(null)
+    setItemsError(null)
+    setItems([])
     try {
       const { data, error: rpcError } = await supabase.rpc('inventory_consumption_items', {
         p_store: CONSUMPTION_STORE,
         p_end_count_id: endCountId,
       })
+      if (requestId !== itemsRequest.current) return
       if (rpcError) throw rpcError
       setItems((data || []) as InventoryConsumptionItem[])
     } catch {
-      setItems([])
-      setError('Não foi possível carregar o consumo desta semana.')
+      if (requestId !== itemsRequest.current) return
+      setItemsError('Não foi possível carregar o consumo desta semana.')
     } finally {
-      setItemsLoading(false)
+      if (requestId === itemsRequest.current) setItemsLoading(false)
     }
   }
 
@@ -86,7 +93,13 @@ export default function ConsumoSemanalPage() {
   }, [])
 
   const period = periods.find(row => row.period_end_count_id === selectedId) ?? null
-  const summary = useMemo(() => (period ? summarizeConsumption(period, items) : null), [period, items])
+  // Sem os itens carregados nao existe total: erro ou carregamento nunca
+  // viram "R$ 0,00" na tela.
+  const itemsReady = !itemsLoading && !itemsError
+  const summary = useMemo(
+    () => (period && itemsReady ? summarizeConsumption(period, items) : null),
+    [period, items, itemsReady],
+  )
   const sortedItems = useMemo(() => sortConsumptionItems(items), [items])
 
   const selectPeriod = (endCountId: string) => {
@@ -143,11 +156,23 @@ export default function ConsumoSemanalPage() {
                 ))}
               </div>
 
+              {period && itemsLoading && (
+                <div className="ps-empty">Calculando o consumo da semana...</div>
+              )}
+
+              {period && itemsError && (
+                <div className="ps-warning" style={{marginTop:14}}>
+                  <AlertTriangle size={18}/>
+                  <span>{itemsError}</span>
+                  <button className="ps-btn ghost sm" onClick={() => loadItems(period.period_end_count_id)}>Tentar de novo</button>
+                </div>
+              )}
+
               {period && summary && (
                 <div className="ps-card" style={{marginTop:14, padding:'14px 16px'}}>
                   <div style={{fontSize:12, color:'var(--ink-soft)'}}>{periodLabel(period)} · {period.period_days} dias</div>
                   <div style={{fontSize:24, fontWeight:700, marginTop:4}}>
-                    {itemsLoading ? '…' : formatMoney(summary.totalValue)}
+                    {formatMoney(summary.totalValue)}
                   </div>
                   <div style={{fontSize:12, color:'var(--ink-soft)'}}>
                     consumidos em {summary.itemsWithValue} insumo(s) contado(s){summary.isPartial ? ' · total parcial' : ''}
@@ -185,16 +210,12 @@ export default function ConsumoSemanalPage() {
                 </div>
               )}
 
-              {error && (
-                <div className="ps-warning" style={{marginTop:14}}><AlertTriangle size={18}/><span>{error}</span></div>
-              )}
-
-              {!itemsLoading && !error && sortedItems.length === 0 && (
+              {itemsReady && sortedItems.length === 0 && (
                 <div className="ps-empty" style={{padding:'24px 0'}}>Nenhum insumo nas contagens desta semana.</div>
               )}
 
               <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:14, marginBottom:20}}>
-                {!itemsLoading && sortedItems.map(row => {
+                {itemsReady && sortedItems.map(row => {
                   const info = consumptionStatusInfo(row.status)
                   return (
                     <div key={row.product_id} className="ps-card" style={{padding:'12px 14px'}}>
@@ -214,7 +235,10 @@ export default function ConsumoSemanalPage() {
                         <div style={{fontSize:12, marginTop:8, color:TONE_COLOR[info.tone]}}>
                           <b>{info.label}.</b> {info.hint}
                           {row.status === 'incompleto' && (
-                            <> {row.lines_without_quantity} nota(s). <Link href={PAYABLES_ROUTE}>Confirmar no Contas a pagar</Link>.</>
+                            <>
+                              {' '}{row.lines_without_quantity} item(ns) de nota. Nota XML: <Link href={PAYABLES_ROUTE}>confirmar a conversão no Contas a pagar</Link>.
+                              {' '}Lançamento à mão em outra unidade não tem conversão: relance pela nota XML.
+                            </>
                           )}
                         </div>
                       )}

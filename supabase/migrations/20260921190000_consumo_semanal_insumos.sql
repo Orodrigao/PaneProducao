@@ -21,8 +21,9 @@
 -- entradas e o estoque final daquele insumo:
 --   (estoque inicial x custo de referencia + valor das entradas)
 --   / (estoque inicial + quantidade das entradas)
--- O custo de referencia e o custo normalizado da nota mais recente emitida ate
--- o sabado anterior (ou o custo do cadastro, se nunca houve nota). Assim, a
+-- O custo de referencia e o custo da nota mais recente emitida ate o sabado
+-- anterior (valor de aquisicao / quantidade de estoque, ponderado se o insumo
+-- vier em varias linhas), ou o custo do cadastro se nunca houve nota. Assim, a
 -- variacao de preco de uma nota nova nao aparece como consumo.
 --
 -- Falha fechada: o insumo so ganha numero quando todos os dados que o compoem
@@ -48,6 +49,35 @@ as $$
 $$;
 
 revoke all on function private.valor_linha_compra(numeric, numeric, numeric, numeric) from public, anon, authenticated;
+
+-- Quantidade da linha na unidade de estoque. Linha de nota XML usa a
+-- quantidade utilizavel confirmada na conferencia. Lancamento a mao nunca
+-- recebe conversao (a conferencia so existe para XML); quando a unidade da
+-- linha e a mesma do cadastro (kg com kg), a quantidade lancada ja e a de
+-- estoque. Qualquer outro caso fica nulo e bloqueia o insumo.
+create or replace function private.quantidade_estoque_linha(
+  p_usable_quantity numeric,
+  p_origin text,
+  p_item_unit text,
+  p_product_unit text,
+  p_quantity numeric
+)
+returns numeric
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    p_usable_quantity,
+    case
+      when p_origin = 'manual'
+       and pg_catalog.lower(pg_catalog.btrim(p_item_unit)) = pg_catalog.lower(pg_catalog.btrim(p_product_unit))
+        then p_quantity
+    end
+  );
+$$;
+
+revoke all on function private.quantidade_estoque_linha(numeric, text, text, text, numeric) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Pares de contagens fechadas seguidas: cada par e um periodo de consumo.
@@ -255,42 +285,83 @@ begin
            referencia.custo as custo_referencia
     from produto_periodo pp
     cross join lateral (
-      select coalesce(sum(item.usable_quantity), 0) as qtd_entrada,
-             coalesce(sum(private.valor_linha_compra(item.acquisition_value, item.line_total, item.quantity, item.unit_price)), 0) as valor_entrada,
-             count(item.id)::integer as linhas,
-             (count(item.id) filter (where item.usable_quantity is null))::integer as linhas_sem_quantidade,
-             (count(item.id) filter (where purchase.purchase_date >= pp.end_date - 1))::integer as linhas_no_corte,
-             (count(item.id) filter (where purchase.created_at > pp.end_closed_at))::integer as linhas_atrasadas
+      select coalesce(sum(linha.qtd), 0) as qtd_entrada,
+             coalesce(sum(linha.valor), 0) as valor_entrada,
+             count(*)::integer as linhas,
+             (count(*) filter (where linha.qtd is null))::integer as linhas_sem_quantidade,
+             (count(*) filter (where linha.purchase_date >= pp.end_date - 1))::integer as linhas_no_corte,
+             (count(*) filter (where linha.created_at > pp.end_closed_at))::integer as linhas_atrasadas
+      from (
+        select private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit,
+                 coalesce(pp.unidade_fim, pp.unidade_inicio), item.quantity) as qtd,
+               private.valor_linha_compra(item.acquisition_value, item.line_total, item.quantity, item.unit_price) as valor,
+               purchase.purchase_date,
+               purchase.created_at
+        from public.payable_purchases purchase
+        join public.payable_purchase_items item on item.purchase_id = purchase.id
+        where purchase.store = p_store
+          and purchase.status <> 'cancelada'
+          and item.product_id = pp.product_id
+          and purchase.purchase_date > pp.start_date
+          and purchase.purchase_date <= pp.end_date
+      ) linha
+    ) entradas
+    -- Custo de referencia: a nota mais recente do insumo ate o sabado
+    -- anterior, inteira (media ponderada se o insumo vier em varias linhas).
+    -- Se essa nota ainda nao tem conversao confirmada, o custo fica nulo e o
+    -- valor bloqueia; nunca cai silenciosamente para uma nota mais velha.
+    -- Lancamento a mao sem conversao possivel e pulado, porque nao tem como
+    -- ser corrigido. O custo do cadastro so vale se nunca houve nota.
+    cross join lateral (
+      select count(*) as linhas_anteriores
       from public.payable_purchases purchase
       join public.payable_purchase_items item on item.purchase_id = purchase.id
       where purchase.store = p_store
         and purchase.status <> 'cancelada'
         and item.product_id = pp.product_id
-        and purchase.purchase_date > pp.start_date
-        and purchase.purchase_date <= pp.end_date
-    ) entradas
+        and purchase.purchase_date <= pp.start_date
+    ) historico
     left join lateral (
-      select coalesce(
-        (
-          select item.normalized_unit_cost
-          from public.payable_purchases purchase
-          join public.payable_purchase_items item on item.purchase_id = purchase.id
-          where purchase.store = p_store
-            and purchase.status <> 'cancelada'
-            and item.product_id = pp.product_id
-            and item.usable_quantity is not null
-            and item.normalized_unit_cost > 0
-            and purchase.purchase_date <= pp.start_date
-          order by purchase.purchase_date desc, purchase.created_at desc, item.id
-          limit 1
-        ),
-        (
-          select nullif(product_row.cost_price, 0)
-          from public.products product_row
-          where product_row.id = pp.product_id
+      select purchase.id as purchase_id
+      from public.payable_purchases purchase
+      join public.payable_purchase_items item on item.purchase_id = purchase.id
+      join public.products product_row on product_row.id = item.product_id
+      where purchase.store = p_store
+        and purchase.status <> 'cancelada'
+        and item.product_id = pp.product_id
+        and purchase.purchase_date <= pp.start_date
+        and not (
+          purchase.origin = 'manual'
+          and private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) is null
         )
-      ) as custo
-    ) referencia on true
+      order by purchase.purchase_date desc, purchase.created_at desc, purchase.id
+      limit 1
+    ) nota_referencia on true
+    cross join lateral (
+      select case
+               when historico.linhas_anteriores = 0 then (
+                 select nullif(product_row.cost_price, 0)
+                 from public.products product_row
+                 where product_row.id = pp.product_id
+               )
+               when nota_referencia.purchase_id is null then null
+               else (
+                 select case
+                          when bool_and(linha.qtd is not null) and sum(linha.qtd) > 0
+                            then sum(linha.valor) / sum(linha.qtd)
+                        end
+                 from (
+                   select private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) as qtd,
+                          private.valor_linha_compra(item.acquisition_value, item.line_total, item.quantity, item.unit_price) as valor
+                   from public.payable_purchases purchase
+                   join public.payable_purchase_items item on item.purchase_id = purchase.id
+                   join public.products product_row on product_row.id = item.product_id
+                   where purchase.id = nota_referencia.purchase_id
+                     and item.product_id = pp.product_id
+                 ) linha
+               )
+             end as custo
+    ) referencia
   ),
   classificado as (
     select base.*,
@@ -310,12 +381,11 @@ begin
            end as consumo,
            case
              when classificado.bloqueio is not null then null
-             when classificado.custo_referencia is not null
-                  and classificado.qtd_inicio + classificado.qtd_entrada > 0
-               then (classificado.qtd_inicio * classificado.custo_referencia + classificado.valor_entrada)
+             -- Estoque inicial sem custo conhecido: nao inventa valor.
+             when classificado.qtd_inicio > 0 and classificado.custo_referencia is null then null
+             when classificado.qtd_inicio + classificado.qtd_entrada > 0
+               then (classificado.qtd_inicio * coalesce(classificado.custo_referencia, 0) + classificado.valor_entrada)
                     / (classificado.qtd_inicio + classificado.qtd_entrada)
-             when classificado.qtd_entrada > 0
-               then classificado.valor_entrada / classificado.qtd_entrada
              else classificado.custo_referencia
            end as custo_medio
     from classificado
