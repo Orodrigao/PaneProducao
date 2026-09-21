@@ -302,6 +302,7 @@ begin
         where purchase.store = p_store
           and purchase.status <> 'cancelada'
           and item.product_id = pp.product_id
+          and item.mapping_status is distinct from 'nao_aplicavel'
           and purchase.purchase_date > pp.start_date
           and purchase.purchase_date <= pp.end_date
       ) linha
@@ -319,6 +320,7 @@ begin
       where purchase.store = p_store
         and purchase.status <> 'cancelada'
         and item.product_id = pp.product_id
+        and item.mapping_status is distinct from 'nao_aplicavel'
         and purchase.purchase_date <= pp.start_date
     ) historico
     -- A nota manual so serve de referencia se TODAS as linhas do insumo nela
@@ -335,16 +337,18 @@ begin
           from public.payable_purchase_items item
           where item.purchase_id = purchase.id
             and item.product_id = pp.product_id
+            and item.mapping_status is distinct from 'nao_aplicavel'
         )
         and not (
           purchase.origin = 'manual'
           and exists (
             select 1
             from public.payable_purchase_items item
-            join public.products product_row on product_row.id = item.product_id
             where item.purchase_id = purchase.id
               and item.product_id = pp.product_id
-              and private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) is null
+              and item.mapping_status is distinct from 'nao_aplicavel'
+              and private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit,
+                    coalesce(pp.unidade_fim, pp.unidade_inicio), item.quantity) is null
           )
         )
       order by purchase.purchase_date desc, purchase.created_at desc, purchase.id
@@ -364,13 +368,14 @@ begin
                             then sum(linha.valor) / sum(linha.qtd)
                         end
                  from (
-                   select private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) as qtd,
+                   select private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit,
+                            coalesce(pp.unidade_fim, pp.unidade_inicio), item.quantity) as qtd,
                           private.valor_linha_compra(item.acquisition_value, item.line_total, item.quantity, item.unit_price) as valor
                    from public.payable_purchases purchase
                    join public.payable_purchase_items item on item.purchase_id = purchase.id
-                   join public.products product_row on product_row.id = item.product_id
                    where purchase.id = nota_referencia.purchase_id
                      and item.product_id = pp.product_id
+                     and item.mapping_status is distinct from 'nao_aplicavel'
                  ) linha
                )
              end as custo

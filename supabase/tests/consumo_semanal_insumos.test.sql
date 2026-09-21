@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(45);
 
 select ok(has_function_privilege('authenticated',
   'public.inventory_consumption_periods(text)', 'execute'), 'resumo do consumo e executavel por autenticado');
@@ -116,6 +116,8 @@ insert into public.payable_purchase_items(purchase_id,product_id,item_name,unit,
   ('96100000-0000-4000-8000-0000000000b3','96100000-0000-4000-8000-000000000016','Sacola','pct',1,80,100,0.80,'mapeado'),
   ('96100000-0000-4000-8000-0000000000b3',null,'Item sem classificacao','un',1,40,null,null,'pendente'),
   ('96100000-0000-4000-8000-0000000000b3',null,'Frete','un',1,15,null,null,'nao_aplicavel'),
+  -- linha marcada como nao aplicavel mesmo com a farinha preenchida: nunca e estoque
+  ('96100000-0000-4000-8000-0000000000b3','96100000-0000-4000-8000-000000000011','Taxa farinha','un',1,12,null,null,'nao_aplicavel'),
   ('96100000-0000-4000-8000-0000000000b4','96100000-0000-4000-8000-000000000011','Farinha 25kg','sc',2,87.5,50,3.50,'mapeado'),
   ('96100000-0000-4000-8000-0000000000b5','96100000-0000-4000-8000-000000000011','Farinha 25kg','sc',10,100,250,4.00,'mapeado'),
   ('96100000-0000-4000-8000-0000000000b6','96100000-0000-4000-8000-000000000011','Farinha 25kg','sc',5,100,125,4.00,'mapeado'),
@@ -165,9 +167,9 @@ select is((select purchases_outside_count from public.inventory_consumption_peri
   'compras de insumo fora da lista contada aparecem separadas');
 select is((select purchases_unclassified from public.inventory_consumption_periods('jc')),40.00::numeric,
   'item sem classificacao aparece separado');
-select is((select purchases_not_stock from public.inventory_consumption_periods('jc')),15.00::numeric,
-  'linha nao aplicavel (frete) nao vira estoque');
-select is((select purchases_total from public.inventory_consumption_periods('jc')),1310.00::numeric,
+select is((select purchases_not_stock from public.inventory_consumption_periods('jc')),27.00::numeric,
+  'linhas nao aplicaveis (frete e taxa) nao viram estoque, mesmo com insumo preenchido');
+select is((select purchases_total from public.inventory_consumption_periods('jc')),1322.00::numeric,
   'total da janela fecha com as quatro partes');
 select is((select unclassified_lines from public.inventory_consumption_periods('jc')),1,
   'conta as linhas sem classificacao para a tela avisar que o total e parcial');
@@ -189,6 +191,8 @@ select is((select value_consumed from resultado where product_id = '96100000-000
   'valor consumido da farinha: 220 x custo medio');
 select is((select status from resultado where product_id = '96100000-0000-4000-8000-000000000011'),'ok',
   'farinha completa fica ok');
+select is((select purchase_lines from resultado where product_id = '96100000-0000-4000-8000-000000000011'),2,
+  'a linha nao aplicavel com a farinha preenchida nao conta como nota do insumo');
 select is((select row(purchase_lines, edge_lines, late_lines)::text from resultado
   where product_id = '96100000-0000-4000-8000-000000000011'),
   row(2, 1, 1)::text,
