@@ -242,6 +242,23 @@ post-mortem de cada uma está na PR correspondente.
   o schema aplica normalmente. Não use `supabase start`: ele sobe 11 serviços
   que religam sozinhos a cada abertura do Docker. Ao terminar, `supabase stop` e
   `docker desktop stop`.
+- **Migration com regex `\nbegin\n` trava `db reset --local` por CRLF, não é
+  bug da migration.** Sem `.gitattributes` para `.sql`, `core.autocrlf=true`
+  no Windows converte as migrations para CRLF no checkout (`git ls-files
+  --eol` mostra `w/crlf`). Migration que reconstrói função via
+  `pg_get_functiondef` e casa `\n` puro — caso de
+  `20260919235223_idempotencia_financeira_concorrente.sql`, que busca
+  `E'\nbegin\n'` — recebe `\r\nbegin\r\n` e não bate, travando `supabase db
+  reset --local` com "Nao foi possivel localizar o inicio da RPC
+  confirm_finance_recurring_rule". Produção e `CI Banco` rodam em
+  `ubuntu-latest`, checkout em LF, e não sofrem. Confirmado vermelho/verde com
+  Postgres descartável em 20/09/2026 (ver a lição
+  `postgres-descartavel-sem-docker` na memória): recriar a função com o texto
+  exato do disco reproduz o erro; normalizar `\r\n` para `\n` antes de criar a
+  função faz o mesmo regex casar. Contorno local: `git config core.autocrlf
+  input` e recheckout de `supabase/` antes do reset. Um `.gitattributes`
+  fixando LF em `supabase/**/*.sql` resolveria de vez, mas é decisão pendente
+  do Rodrigo por afetar o checkout de todo mundo.
 - **Docker Desktop cai ao abrir com "rename ... .sock ... The file cannot be
   accessed by the system".** Nesta máquina os sockets de
   `%LOCALAPPDATA%\Docker\run` e `%LOCALAPPDATA%\docker-secrets-engine` ficam
