@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CheckCircle2, Search, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ClipboardList, Search, Settings2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, PAYABLES_PERMISSION, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
@@ -187,7 +187,10 @@ export default function EstoquePage() {
 
           {tab === 'preparacao' && (
             <>
-              <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
+              <div style={{display:'flex', justifyContent:'flex-end', marginTop:14}}>
+                <Link href="/estoque/contagem" className="ps-btn ghost sm"><ClipboardList size={14}/> Contagem semanal</Link>
+              </div>
+              <div style={{display:'flex', gap:10, marginTop:10, flexWrap:'wrap'}}>
                 <KPICard label="Insumos ativos" value={readinessSummary.total}/>
                 <KPICard label="Prontos para contar" value={readinessSummary.ready} accent="sage"/>
                 <KPICard label="Com pendência" value={readinessSummary.total - readinessSummary.ready} accent="honey"/>
