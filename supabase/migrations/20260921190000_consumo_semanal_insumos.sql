@@ -321,18 +321,31 @@ begin
         and item.product_id = pp.product_id
         and purchase.purchase_date <= pp.start_date
     ) historico
+    -- A nota manual so serve de referencia se TODAS as linhas do insumo nela
+    -- forem conversiveis; senao ela inteira e pulada. Nota XML e sempre
+    -- elegivel: incompleta, ela bloqueia o valor ate a conferencia.
     left join lateral (
       select purchase.id as purchase_id
       from public.payable_purchases purchase
-      join public.payable_purchase_items item on item.purchase_id = purchase.id
-      join public.products product_row on product_row.id = item.product_id
       where purchase.store = p_store
         and purchase.status <> 'cancelada'
-        and item.product_id = pp.product_id
         and purchase.purchase_date <= pp.start_date
+        and exists (
+          select 1
+          from public.payable_purchase_items item
+          where item.purchase_id = purchase.id
+            and item.product_id = pp.product_id
+        )
         and not (
           purchase.origin = 'manual'
-          and private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) is null
+          and exists (
+            select 1
+            from public.payable_purchase_items item
+            join public.products product_row on product_row.id = item.product_id
+            where item.purchase_id = purchase.id
+              and item.product_id = pp.product_id
+              and private.quantidade_estoque_linha(item.usable_quantity, purchase.origin, item.unit, product_row.unit, item.quantity) is null
+          )
         )
       order by purchase.purchase_date desc, purchase.created_at desc, purchase.id
       limit 1

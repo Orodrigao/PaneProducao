@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(43);
+select plan(44);
 
 select ok(has_function_privilege('authenticated',
   'public.inventory_consumption_periods(text)', 'execute'), 'resumo do consumo e executavel por autenticado');
@@ -42,7 +42,8 @@ insert into public.products(id,name,category,active,unit,kind,cost_price) values
   ('96100000-0000-4000-8000-000000000017','[TESTE] Sal sem custo','INSUMOS',true,'kg','insumo',null),
   ('96100000-0000-4000-8000-000000000018','[TESTE] Queijo nota sem conversao','INSUMOS',true,'kg','insumo',30.00),
   ('96100000-0000-4000-8000-000000000019','[TESTE] Leite lancado a mao','INSUMOS',true,'kg','insumo',4.00),
-  ('96100000-0000-4000-8000-000000000020','[TESTE] Acucar duas linhas','INSUMOS',true,'kg','insumo',9.00);
+  ('96100000-0000-4000-8000-000000000020','[TESTE] Acucar duas linhas','INSUMOS',true,'kg','insumo',9.00),
+  ('96100000-0000-4000-8000-000000000021','[TESTE] Cacau nota mista','INSUMOS',true,'kg','insumo',50.00);
 
 -- Duas contagens fechadas seguidas (sabados 26/09 e 03/10) e uma aberta
 -- depois, que nunca entra no calculo.
@@ -60,6 +61,7 @@ insert into public.inventory_weekly_count_items(count_id,product_id,quantity,uni
   ('96100000-0000-4000-8000-0000000000a1','96100000-0000-4000-8000-000000000018',5,'kg'),
   ('96100000-0000-4000-8000-0000000000a1','96100000-0000-4000-8000-000000000019',10,'kg'),
   ('96100000-0000-4000-8000-0000000000a1','96100000-0000-4000-8000-000000000020',10,'kg'),
+  ('96100000-0000-4000-8000-0000000000a1','96100000-0000-4000-8000-000000000021',2,'kg'),
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000011',150,'kg'),
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000012',8,'kg'),
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000014',null,'kg'),
@@ -68,6 +70,7 @@ insert into public.inventory_weekly_count_items(count_id,product_id,quantity,uni
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000018',3,'kg'),
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000019',4,'kg'),
   ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000020',10,'kg'),
+  ('96100000-0000-4000-8000-0000000000a2','96100000-0000-4000-8000-000000000021',1,'kg'),
   ('96100000-0000-4000-8000-0000000000a3','96100000-0000-4000-8000-000000000011',999,'kg');
 
 insert into public.suppliers(id,name,active)
@@ -93,7 +96,11 @@ insert into public.payable_purchases(id,request_id,store,supplier_id,purchase_da
   -- leite lancado a mao, mesma unidade do cadastro, dentro do periodo
   ('96100000-0000-4000-8000-0000000000ba','96100000-0000-4000-8000-0000000000ca','jc','96100000-0000-4000-8000-0000000000f1',date '2026-09-30','manual','sem_nota','boleto','aberta',100,'96100000-0000-4000-8000-000000000001',timestamptz '2026-09-30 10:00-03'),
   -- acucar: a nota de referencia traz o insumo em duas linhas de precos diferentes
-  ('96100000-0000-4000-8000-0000000000bb','96100000-0000-4000-8000-0000000000cb','jc','96100000-0000-4000-8000-0000000000f1',date '2026-09-25','manual','sem_nota','boleto','paga',110,'96100000-0000-4000-8000-000000000001',timestamptz '2026-09-25 10:00-03');
+  ('96100000-0000-4000-8000-0000000000bb','96100000-0000-4000-8000-0000000000cb','jc','96100000-0000-4000-8000-0000000000f1',date '2026-09-25','manual','sem_nota','boleto','paga',110,'96100000-0000-4000-8000-000000000001',timestamptz '2026-09-25 10:00-03'),
+  -- cacau: nota a mao antiga, toda em kg (vale como referencia: 40/kg), e
+  -- uma mais recente misturando kg e caixa (inteira pulada)
+  ('96100000-0000-4000-8000-0000000000bc','96100000-0000-4000-8000-0000000000cc','jc','96100000-0000-4000-8000-0000000000f1',date '2026-09-15','manual','sem_nota','boleto','paga',80,'96100000-0000-4000-8000-000000000001',timestamptz '2026-09-15 10:00-03'),
+  ('96100000-0000-4000-8000-0000000000bd','96100000-0000-4000-8000-0000000000cd','jc','96100000-0000-4000-8000-0000000000f1',date '2026-09-22','manual','sem_nota','boleto','paga',160,'96100000-0000-4000-8000-000000000001',timestamptz '2026-09-22 10:00-03');
 
 insert into public.payable_purchases(id,request_id,store,supplier_id,purchase_date,origin,document_type,payment_method,status,total_value,created_by,created_at,
   nfe_key,nfe_number,nfe_series,nfe_issued_at,classification_status) values
@@ -116,7 +123,10 @@ insert into public.payable_purchase_items(purchase_id,product_id,item_name,unit,
   ('96100000-0000-4000-8000-0000000000b9','96100000-0000-4000-8000-000000000018','Queijo forma','cx',1,160,null,null,'mapeado'),
   ('96100000-0000-4000-8000-0000000000ba','96100000-0000-4000-8000-000000000019','Leite','KG',20,5,null,null,'mapeado'),
   ('96100000-0000-4000-8000-0000000000bb','96100000-0000-4000-8000-000000000020','Acucar fardo','kg',10,2,null,null,'mapeado'),
-  ('96100000-0000-4000-8000-0000000000bb','96100000-0000-4000-8000-000000000020','Acucar fardo','kg',30,3,null,null,'mapeado');
+  ('96100000-0000-4000-8000-0000000000bb','96100000-0000-4000-8000-000000000020','Acucar fardo','kg',30,3,null,null,'mapeado'),
+  ('96100000-0000-4000-8000-0000000000bc','96100000-0000-4000-8000-000000000021','Cacau','kg',2,40,null,null,'mapeado'),
+  ('96100000-0000-4000-8000-0000000000bd','96100000-0000-4000-8000-000000000021','Cacau','kg',1,60,null,null,'mapeado'),
+  ('96100000-0000-4000-8000-0000000000bd','96100000-0000-4000-8000-000000000021','Cacau caixa','cx',1,100,null,null,'mapeado');
 
 -- Permissoes -----------------------------------------------------------------
 set local role authenticated;
@@ -168,7 +178,7 @@ select is((select late_lines from public.inventory_consumption_periods('jc')),1,
 create temporary table resultado on commit drop as
 select * from public.inventory_consumption_items('jc');
 
-select is((select count(*)::int from resultado),9,
+select is((select count(*)::int from resultado),10,
   'todo insumo de qualquer das duas contagens aparece, e so eles');
 select ok((select qty_start = 120 and qty_in = 250 and qty_end = 150 and qty_consumed = 220 from resultado
   where product_id = '96100000-0000-4000-8000-000000000011'),
@@ -227,7 +237,11 @@ select ok((select qty_in = 20 and qty_consumed = 26 and value_consumed = 121.33 
 select is((select unit_cost from resultado where product_id = '96100000-0000-4000-8000-000000000020'),2.7500::numeric,
   'acucar: custo de referencia pondera as duas linhas da mesma nota (110 / 40), sem escolher uma ao acaso');
 
-select is((select count(*)::int from public.inventory_consumption_items('jc','96100000-0000-4000-8000-0000000000a2')),9,
+select ok((select status = 'ok' and unit_cost = 40 and value_consumed = 40 from resultado
+  where product_id = '96100000-0000-4000-8000-000000000021'),
+  'cacau: nota a mao com linha sem conversao e pulada inteira; vale a anterior (40/kg)');
+
+select is((select count(*)::int from public.inventory_consumption_items('jc','96100000-0000-4000-8000-0000000000a2')),10,
   'filtro pelo periodo devolve o mesmo periodo');
 select is((select count(*)::int from public.inventory_consumption_items('jc','96100000-0000-4000-8000-0000000000a1')),0,
   'a primeira contagem nao fecha periodo: e so o ponto de partida');
