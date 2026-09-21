@@ -10,6 +10,10 @@ on:
     branches: [main]
     paths:
       - 'supabase/**'
+      # A Supabase nao cria ramificacao so por causa deste arquivo (medido na
+      # PR 430, 21/09/2026): sem exclusao, este workflow ligava e esperava
+      # para sempre um "Supabase Preview" que nunca ia existir.
+      - '!supabase/.gitattributes'
   workflow_dispatch:
     inputs:
       pr_number:
