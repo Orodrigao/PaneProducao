@@ -1454,11 +1454,15 @@ describe('conferencia da branch no disparo manual', () => {
 //
 // Quem sabe se o schema mudou e o diff da PR. O workflow decide por esta regra,
 // transcrita ao pe da letra:
-const REGRA_DA_DETECCAO = "grep -q '^supabase/' <<<\"$ARQUIVOS\""
+const REGRA_DA_DETECCAO = "grep '^supabase/' <<<\"$ARQUIVOS\" | grep -v -E '/\\.gitattributes$'"
 const REGRA_DA_TRUNCAGEM = 'if [ "$RECEBIDOS" != "$DECLARADOS" ]; then'
 
+// .gitattributes nao conta: medido na PR 430 (21/09/2026), que so adicionava
+// supabase/.gitattributes e nunca ganhou ramificacao da Supabase, com ou sem
+// cota livre, com ou sem a PR em rascunho. A plataforma reconhece tipos de
+// arquivo de schema, nao "qualquer coisa em supabase/".
 const alteraSupabase = (arquivos) =>
-  arquivos.some((caminho) => caminho.startsWith('supabase/'))
+  arquivos.some((caminho) => caminho.startsWith('supabase/') && !caminho.endsWith('/.gitattributes'))
 
 // A API de arquivos para em 3000 e nao avisa. So a comparacao com o numero
 // que a propria PR declara transforma truncagem silenciosa em vermelho.
@@ -1479,6 +1483,14 @@ describe('PR que altera supabase/ exige banco proprio', () => {
     assert.equal(alteraSupabase(['docs/migrations/leia.md']), false)
     assert.equal(alteraSupabase(['src/lib/supabase/cliente.ts']), false)
     assert.equal(alteraSupabase([]), false)
+  })
+
+  it('.gitattributes sozinho nao exige banco proprio, mas nao esconde migration junto', () => {
+    assert.equal(alteraSupabase(['supabase/.gitattributes']), false)
+    assert.equal(
+      alteraSupabase(['supabase/.gitattributes', 'supabase/migrations/20260921_x.sql']),
+      true,
+    )
   })
 
   it('falha fechado quando a PR mexe em supabase/ e nenhum banco aparece', async () => {
