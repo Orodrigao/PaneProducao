@@ -199,6 +199,29 @@ sales_product_aliases (
   cria venda. A limpeza de arquivos órfãos fica para um processo posterior que
   use a API oficial do Storage; o banco não apaga diretamente sua tabela interna.
 
+## Baixa de estoque para kits (exceção estreita)
+
+A importação em si nunca altera estoque ou custo. Mas quando um item vendido
+é vinculado a um produto `kind='kit'` (PR #406, 2026-09-16), o sistema passa a
+debitar automaticamente os componentes físicos do kit (`bread_movements`,
+`reference_type='venda_kit'`), rastreável até a venda de origem. Nenhum outro
+caminho (encomenda, PJ, romaneio) tem baixa própria.
+
+Essa baixa é **controle operacional do que foi vendido e descartado**, não
+insumo do CMV: o custo real continua vindo só do inventário periódico (ver
+`lessons.md`). Desde 2026-09-20 (migration `20260920152945`), a baixa também
+fica **fixada no momento em que foi gerada**: editar a composição de um kit
+por si só (`product_components`) não reescreve mais os movimentos de vendas
+já confirmadas. Antes disso, corrigir uma receita reescrevia o histórico de
+todas as vendas daquele kit e podia mudar o saldo mostrado em
+`/estoque-paes` sem nenhuma venda ou produção nova.
+
+A baixa de uma venda ainda muda de novo quando o **evento da própria venda**
+muda: confirmar uma substituição, restaurar uma versão anterior do dia ou
+trocar o vínculo produto↔venda continuam regerando a baixa com a composição
+vigente naquele momento. Só a edição isolada da receita, sem nenhum desses
+eventos, é que deixou de tocar vendas já confirmadas.
+
 ## O preço praticado vem daqui (decisão de 2026-09-03)
 
 O ERP não guarda preço de venda de varejo e **não vai passar a guardar**: o

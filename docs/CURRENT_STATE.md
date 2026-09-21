@@ -188,6 +188,20 @@ Riscos ainda abertos:
   receita. Agora usa `coalesce(factor_confirmed, false)`, igual a
   `classify_payable_item`. Leitura live em 2026-09-16 confirmou zero rascunhos
   de importação pendentes no momento da correção;
+- **corrigida em 2026-09-20 a baixa de estoque de kit vendido pelo CNM que
+  reescrevia histórico.** A PR #406 (16/09) ligou venda de kit importada do
+  CNM à baixa automática dos componentes físicos (`bread_movements`,
+  `reference_type='venda_kit'`, ver [SALES_IMPORT_CNM.md](SALES_IMPORT_CNM.md)).
+  Um gatilho em `product_components` recalculava essa baixa para *todas* as
+  vendas já confirmadas do kit sempre que a receita mudava depois, usando a
+  composição atual em vez da vigente na venda — o que podia mudar o saldo
+  mostrado em `/estoque-paes` sem nenhuma venda ou produção nova. Rodrigo
+  confirmou que essa baixa é só controle operacional, não insumo do CMV (o
+  custo real segue vindo do inventário periódico), e autorizou fixar a baixa
+  no momento da venda: a migration `20260920152945` remove o gatilho, e editar
+  a composição de um kit deixa de tocar vendas já confirmadas. Nenhuma venda
+  de kit real existe em produção até esta correção (tabelas de importação e
+  vínculo vazias, conferido por leitura direta em 19 e 20/09/2026);
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
