@@ -233,11 +233,20 @@ jobs:
           # Criterio em supabase/ inteiro, e nao so migrations, porque e assim
           # que a plataforma decide criar ramificacao: medido na PR 292, que
           # mexeu so em seed e testes e ganhou a sua.
-          if grep -q '^supabase/' <<<"$ARQUIVOS"; then
+          #
+          # Excecao: .gitattributes nao conta. Medido na PR 430 (21/09/2026),
+          # que so adicionava supabase/.gitattributes: a Supabase nunca criou
+          # ramificacao para ela, com ou sem cota livre, com ou sem a PR em
+          # rascunho. O app da Supabase reconhece tipos de arquivo de schema
+          # (migrations, config.toml, seed, tests, functions), nao "qualquer
+          # coisa em supabase/"; exigir banco proprio para essa PR e cobranca
+          # que a propria plataforma nunca vai satisfazer.
+          ARQUIVOS_SUPABASE="$(grep '^supabase/' <<<"$ARQUIVOS" | grep -v -E '/\.gitattributes$' || true)"
+          if [ -n "$ARQUIVOS_SUPABASE" ]; then
             echo "Esta PR altera supabase/ ($RECEBIDOS arquivos): banco proprio passa a ser obrigatorio."
             echo "PR_ALTERA_SUPABASE=true" >> "$GITHUB_ENV"
           else
-            echo "Esta PR nao altera supabase/ ($RECEBIDOS arquivos)."
+            echo "Esta PR nao altera supabase/ ($RECEBIDOS arquivos), ou so mexe em .gitattributes."
             echo "PR_ALTERA_SUPABASE=false" >> "$GITHUB_ENV"
           fi
 
