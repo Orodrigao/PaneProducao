@@ -28,17 +28,6 @@ function canCountInventory(user: AppUser | null): boolean {
   ))
 }
 
-// Aproximação de exibição da semana operacional (segunda a segunda), só para
-// decidir qual botão mostrar. A regra que vale de verdade é a do banco
-// (private.data_na_padaria() + date_trunc), aplicada dentro da RPC.
-function isoWeekStart(date: Date): string {
-  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = utc.getUTCDay()
-  const diffToMonday = day === 0 ? -6 : 1 - day
-  utc.setUTCDate(utc.getUTCDate() + diffToMonday)
-  return utc.toISOString().slice(0, 10)
-}
-
 function formatDateTime(value: string | null): string {
   if (!value) return '—'
   return new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -122,8 +111,11 @@ export default function ContagemSemanalPage() {
 
   const board = useMemo(() => buildInventoryCountBoard(items, productsById), [items, productsById])
   const summary = useMemo(() => summarizeInventoryCountBoard(board), [board])
+  // Editabilidade e "existe contagem aberta" vêm só do status gravado pelo
+  // banco -- nunca de contas de semana feitas no navegador (achado do
+  // CodeRabbit: o relógio/fuso do aparelho podia divergir do servidor e
+  // bloquear uma contagem que estava genuinamente aberta).
   const editable = isInventoryWeeklyCountEditable(count)
-  const isCurrentWeek = count ? count.week_start === isoWeekStart(new Date()) : false
 
   const openCount = async () => {
     setOpening(true)
@@ -141,13 +133,15 @@ export default function ContagemSemanalPage() {
     }
   }
 
-  const saveQuantity = async (productId: string, rawValue: string) => {
-    if (!count) return
+  // Devolve se salvou de verdade: closeCount depende disso para nunca fechar
+  // por cima de uma gravação pendente que falhou (achado do CodeRabbit).
+  const saveQuantity = async (productId: string, rawValue: string): Promise<boolean> => {
+    if (!count) return false
     const trimmed = rawValue.trim()
     const quantity = trimmed === '' ? null : Number(trimmed.replace(',', '.'))
     if (quantity !== null && (!Number.isFinite(quantity) || quantity < 0)) {
       showToast('Quantidade inválida.')
-      return
+      return false
     }
     setSavingProductIds(prev => new Set(prev).add(productId))
     try {
@@ -160,9 +154,11 @@ export default function ContagemSemanalPage() {
       setItems(prev => prev.map(item => item.product_id === productId
         ? { ...item, quantity, updated_at: new Date().toISOString(), updated_by_name: user?.displayName || null }
         : item))
+      return true
     } catch (rpcError: unknown) {
       showToast('Erro: ' + (rpcError instanceof Error ? rpcError.message : 'não foi possível salvar'))
       await load()
+      return false
     } finally {
       setSavingProductIds(prev => { const next = new Set(prev); next.delete(productId); return next })
     }
@@ -173,13 +169,20 @@ export default function ContagemSemanalPage() {
     // Descarrega qualquer valor digitado que ainda não venceu a corrida com o
     // salvamento no blur, para fechar nunca apagar o último número digitado.
     setFlushingBeforeClose(true)
+    let flushedOk = true
     try {
       const dirty = collectDirtyQuantityEdits(board, inputs)
       if (dirty.length > 0) {
-        await Promise.all(dirty.map(edit => saveQuantity(edit.productId, edit.rawValue)))
+        const results = await Promise.all(dirty.map(edit => saveQuantity(edit.productId, edit.rawValue)))
+        flushedOk = results.every(Boolean)
       }
     } finally {
       setFlushingBeforeClose(false)
+    }
+
+    if (!flushedOk) {
+      showToast('Não deu para salvar tudo que faltava. Confira os campos e tente fechar de novo.')
+      return
     }
 
     setClosing(true)
@@ -248,28 +251,28 @@ export default function ContagemSemanalPage() {
             </div>
           ) : (
             <>
-              {(!count || !isCurrentWeek) && (
+              {!editable && (
                 <div className="ps-card" style={{marginTop:14, padding:16, textAlign:'center'}}>
                   <div style={{fontSize:13, color:'var(--ink-soft)', marginBottom:12}}>
                     {count
-                      ? `A última contagem é da semana de ${formatDateTime(count.opened_at)}. Ainda não há contagem para esta semana.`
+                      ? `A última contagem foi fechada em ${formatDateTime(count.closed_at)}.`
                       : 'Nenhuma contagem foi feita ainda.'}
                     {' '}{hasEligibleProducts ? '' : 'Nenhum insumo marcado para contar no momento.'}
                   </div>
                   {hasEligibleProducts && (
                     <button className="ps-btn" onClick={openCount} disabled={opening}>
-                      {opening ? 'Abrindo...' : 'Iniciar contagem desta semana'}
+                      {opening ? 'Abrindo...' : count ? 'Iniciar nova contagem' : 'Iniciar contagem desta semana'}
                     </button>
                   )}
                 </div>
               )}
 
-              {count && (!editable || !isCurrentWeek) && (
+              {count && !editable && (
                 <div className="ps-card" style={{marginTop:14, padding:'12px 14px', background:'var(--cream)'}}>
                   <div style={{display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:600}}>
-                    {!editable && <><Lock size={16}/> Contagem fechada em {formatDateTime(count.closed_at)}{count.closed_by_name ? ` por ${count.closed_by_name}` : ''}</>}
+                    <Lock size={16}/> Contagem fechada em {formatDateTime(count.closed_at)}{count.closed_by_name ? ` por ${count.closed_by_name}` : ''}
                   </div>
-                  {!editable && user?.role === 'admin' && (
+                  {user?.role === 'admin' && (
                     <div style={{display:'flex', gap:8, marginTop:10, flexWrap:'wrap'}}>
                       {!confirmingReopen ? (
                         <button className="ps-btn ghost sm" onClick={() => setConfirmingReopen(true)}>
@@ -298,7 +301,6 @@ export default function ContagemSemanalPage() {
                   <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:14}}>
                     {board.map(row => {
                       const value = inputs[row.productId] ?? (row.quantity === null ? '' : String(row.quantity))
-                      const rowEditable = editable && isCurrentWeek
                       return (
                         <div key={row.itemId} className="ps-card" style={{padding:'12px 14px'}}>
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
@@ -317,7 +319,7 @@ export default function ContagemSemanalPage() {
                                 step="0.001"
                                 placeholder="0"
                                 value={value}
-                                disabled={!rowEditable}
+                                disabled={!editable}
                                 onChange={event => setInputs(prev => ({...prev, [row.productId]: event.target.value}))}
                                 onBlur={event => {
                                   const current = event.target.value
@@ -337,7 +339,7 @@ export default function ContagemSemanalPage() {
                     })}
                   </div>
 
-                  {editable && isCurrentWeek && (
+                  {editable && (
                     <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:16, marginBottom:20}}>
                       {!confirmingClose ? (
                         <button className="ps-btn" onClick={() => setConfirmingClose(true)} disabled={anySaving}>

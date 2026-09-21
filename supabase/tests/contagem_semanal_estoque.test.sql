@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(43);
+select plan(44);
 
 select ok(exists(select 1 from public.app_permissions where key = 'estoque.contar_semanal'),
   'permissao explicita de contar estoque semanal existe');
@@ -65,6 +65,8 @@ insert into public.products(id,name,category,active,unit,kind) values
   ('97000000-0000-4000-8000-000000000013','[TESTE] Pao final','Paes',true,'un','final'),
   ('97000000-0000-4000-8000-000000000014','[TESTE] Insumo unidade estranha','INSUMOS',true,'saco-de-30kg','insumo'),
   ('97000000-0000-4000-8000-000000000015','[TESTE] Marcado depois de abrir','INSUMOS',true,'kg','insumo');
+insert into public.products(id,name,category,active,unit,kind) values
+  ('97000000-0000-4000-8000-000000000016','[TESTE] Insumo sem unidade','INSUMOS',true,null,'insumo');
 update public.products set weekly_count_enabled = true
   where id in ('97000000-0000-4000-8000-000000000011','97000000-0000-4000-8000-000000000012');
 
@@ -74,6 +76,9 @@ select throws_ok($$update public.products set weekly_count_enabled = true
 select throws_ok($$update public.products set weekly_count_enabled = true
   where id = '97000000-0000-4000-8000-000000000014'$$,
   '23514', null, 'unidade nao reconhecida nao entra na contagem semanal');
+select throws_ok($$update public.products set weekly_count_enabled = true
+  where id = '97000000-0000-4000-8000-000000000016'$$,
+  '23514', null, 'unidade nula nao entra na contagem semanal (NULL nao dribla o CHECK)');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);

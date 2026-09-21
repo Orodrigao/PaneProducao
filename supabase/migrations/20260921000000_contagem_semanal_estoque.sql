@@ -50,7 +50,12 @@ alter table public.products
   add constraint products_weekly_count_requer_unidade_reconhecida
     check (
       not weekly_count_enabled
-      or lower(trim(unit)) = any(array[
+      or (
+        -- unit is not null é obrigatório aqui: um CHECK com NULL no meio da
+        -- expressão passa (nem true nem false), então "unit is null" driblava
+        -- a trava inteira sem essa checagem explícita (achado do CodeRabbit).
+        unit is not null
+        and lower(trim(unit)) = any(array[
         'kg','kilo','quilo','quilos','quilograma','quilogramas',
         'g','gr','grama','gramas',
         'l','lt','litro','litros',
@@ -59,7 +64,8 @@ alter table public.products
         'pct','pacote','pacotes',
         'cx','caixa','caixas',
         'fd','fardo','fardos'
-      ])
+        ])
+      )
     );
 
 comment on column public.products.weekly_count_enabled is
