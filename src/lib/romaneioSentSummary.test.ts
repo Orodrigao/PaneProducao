@@ -64,6 +64,19 @@ describe('buildSentSummary', () => {
     expect(s.totals[0].byStore.JC.total).toBe(40)
   })
 
+  it('mesmo pão por unidade e por quilo vira duas linhas', () => {
+    const s = buildSentSummary(roms, [item('r1', 'p9', 'Ciabatta (un)', 20), item('r3', 'p9', 'Ciabatta (kg)', '1,5')])
+    expect(s.rows.map(r => [r.productName, r.unit, r.total.total])).toEqual([
+      ['Ciabatta (kg)', 'kg', 1.5],
+      ['Ciabatta (un)', 'un', 20],
+    ])
+  })
+
+  it('pão sem id não é marcado como extra', () => {
+    const s = buildSentSummary(roms, [item('r1', null, 'Pão sem id', 3)])
+    expect(s.rows[0].isExtra).toBe(false)
+  })
+
   it('junta o mesmo extra de viagens diferentes e lista extras depois dos pães', () => {
     const extra = (rom: string, id: string, qty: number): SentSummaryItem =>
       ({ romaneio_id: rom, product_id: id, product_source: 'extra', product_name: 'Bolo de cenoura', qty_sent: qty })

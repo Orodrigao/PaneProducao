@@ -92,10 +92,14 @@ export function buildSentSummary(romaneios: SentSummaryRomaneio[], items: SentSu
     const pending = rom.status === NOT_SENT_STATUS
 
     // Extra ganha id novo a cada romaneio; o mesmo extra se junta pelo nome.
-    const isExtra = item.product_source === 'extra' || !item.product_id
+    // O mesmo pão pode sair por unidade e por quilo (Ciabatta): a unidade
+    // entra na chave para a linha nunca misturar as duas.
+    const isExtra = item.product_source === 'extra'
     const name = item.product_name.trim()
     const unit = billingUnitForRomaneioProduct(name)
-    const key = isExtra ? `extra:${unit}:${name.toLowerCase()}` : `${item.product_source || ''}:${item.product_id}`
+    const key = isExtra || !item.product_id
+      ? `nome:${isExtra ? 'extra' : 'item'}:${unit}:${name.toLowerCase()}`
+      : `${item.product_source || ''}:${item.product_id}:${unit}`
     let row = rows.get(key)
     if (!row) {
       row = { key, productName: name, unit, isExtra, byStore: {}, total: emptyCell() }

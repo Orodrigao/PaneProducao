@@ -71,6 +71,12 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
     return () => { cancelled = true }
   }, [date, reloadKey])
 
+  // Troca o dia já em "carregando" para nunca exibir números do dia anterior.
+  const changeDate = (next: string) => {
+    setState({ kind: 'loading' })
+    setDate(next)
+  }
+
   // Sem data completa no campo, não mostra números de outro dia.
   const shown: LoadState | null = date ? state : null
   const summary = shown?.kind === 'ready' ? shown.summary : null
@@ -86,11 +92,11 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
             type="date"
             value={date}
             max={todayKey()}
-            onChange={e => setDate(e.target.value)}
+            onChange={e => changeDate(e.target.value)}
           />
         </label>
         {date !== todayKey() && date !== '' && (
-          <button className="ps-btn ghost sm" onClick={() => setDate(todayKey())}>Voltar para hoje</button>
+          <button className="ps-btn ghost sm" onClick={() => changeDate(todayKey())}>Voltar para hoje</button>
         )}
       </div>
 
