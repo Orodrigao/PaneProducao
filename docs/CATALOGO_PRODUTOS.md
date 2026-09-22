@@ -111,13 +111,48 @@ fonte para a mesma pergunta é como as grafias repetidas nasceram. Os tipos
 
 ### Fase 2B — A tela de produto passa a usar a lista controlada
 
-O cadastro de produto escolhe tipo e categoria da lista, em vez de digitar
-texto, e o texto legado passa a ser gravado com o nome da categoria escolhida,
-para as telas que ainda leem o texto continuarem certas. As duas informações
-convivem até a fase 4.
+Entregue em 2026-09-22, sem migration: as colunas já existiam desde a fase 1 e
+a tela de produto é a única que grava em `products.category`.
 
-Decisão do Rodrigo, 2026-09-22: tipo e categoria são **obrigatórios para
-produto novo** já nesta fase. Produto antigo continua salvando sem travar.
+- o campo Categoria virou uma lista das 21 categorias controladas, agrupadas
+  pelo tipo de item. Escolher a categoria grava os três campos no mesmo
+  salvamento: `category_id`, `catalog_type` e o texto legado com o nome dela,
+  para Sobras, Itens JC, Tabelas de preço e a contagem de estoque continuarem
+  agrupando certo;
+- **o salvamento deixou de sair de `select('*')`.** O corpo agora é uma lista
+  explícita de colunas (`PRODUCT_SAVE_COLUMNS`, em
+  `src/lib/productCatalogForm.ts`). Era a linha inteira voltando ao banco que
+  reescrevia tipo e categoria com o valor antigo a cada edição de categoria;
+- tipo e categoria são **obrigatórios para produto novo** (decisão do Rodrigo,
+  2026-09-22), e produto novo nasce sem categoria escolhida, para a escolha ser
+  consciente em vez de aceitar um padrão. Produto antigo continua salvando sem
+  travar, e ganha na tela a frase de que o texto livre atual ainda não virou
+  categoria;
+- **quem manda sobre revenda é a categoria** (decisão do Rodrigo, 2026-09-22).
+  A caixinha `is_revenda` ficou visível mas travada, mostrando de onde vem a
+  resposta: categoria do tipo `produto_revenda` marca, qualquer outra desmarca.
+  Produto sem categoria controlada mantém a marcação antiga, que nesse caso é a
+  única resposta existente. A escolha se apoiou nos dados: os 33 produtos que
+  discordavam estavam todos na categoria `Revenda` sem a marcação — inclusive
+  `Ouro Branco Bombom` sem marca ao lado de `BOMBOM OURO BRANCO UNIDADE` com
+  marca —, o que mostra caixinha esquecida, não decisão consciente;
+- produto já classificado não tem mais como voltar a ficar sem classificação
+  pela tela, e categoria inativa só aparece na lista para o produto que já a
+  usa;
+- todo salvamento reescreve o texto legado a partir do nome da categoria, e não
+  só quando a pessoa mexe no campo. É o que cura o produto que ficou divergente
+  na janela entre a 2A e esta fase.
+
+**Consequência aceita:** o `Tele` (categoria `Serviços`, tipo `servico`) está
+marcado como revenda hoje e perde a marcação no primeiro salvamento, saindo das
+listas de compra, entrada de estoque e contas a pagar. É onde ele não deveria
+estar: é taxa de tele-entrega, não item comprado. Os outros 33 ganham a marcação
+no primeiro salvamento de cada um; nada muda em massa.
+
+**Kit continua sem aviso na tela** (decisão do Rodrigo, 2026-09-22): explicar
+relatório que ainda não existe a quem cadastra é ruído. A regra fica registrada
+aqui e nos riscos abaixo, e o primeiro relatório por família (fase 5) nasce
+excluindo `kind = 'kit'`.
 
 ### Fase 3 — Famílias de insumo
 
@@ -185,13 +220,13 @@ pergunta aberta, maior que o catálogo.
 
 ## Riscos e dívidas registradas
 
-- **Entre a fase 2A e a 2B, os dois campos divergem no primeiro salvamento.**
-  A tela antiga monta o corpo do salvamento a partir de `select('*')`, então
-  reescreve `catalog_type` e `category_id` com o valor antigo enquanto muda o
-  texto livre. Nenhuma trava do banco reclama, porque a categoria antiga
-  continua válida. Não é "pode divergir" um dia: é toda edição de categoria
-  feita antes da 2B. A correção é a própria 2B; enquanto ela não vem, reclassificar
-  exige uma migration nova, nunca comando manual em produção.
+- ~~**Entre a fase 2A e a 2B, os dois campos divergem no primeiro salvamento.**~~
+  Resolvido pela fase 2B: o salvamento passou a enviar uma lista explícita de
+  colunas e o texto legado passou a sair do nome da categoria. Produto que
+  divergiu na janela entre as duas fases se acerta no próximo salvamento pela
+  tela. Nada no banco força a coerência: a garantia é a tela ser a única que
+  grava em `products.category`, `catalog_type` e `category_id`, o que vale
+  enquanto a coluna de texto existir.
 - **Produto criado depois da migration nasce sem classificação.** É o caso dos
   produtos fictícios do seed no banco de teste, que roda depois das migrations,
   e o de qualquer produto cadastrado antes de a 2B exigir a escolha. A função
@@ -208,11 +243,14 @@ pergunta aberta, maior que o catálogo.
   `kind = 'kit'`, senão conta o kit e de novo os pães que o compõem, já que
   existe baixa de componentes de kit no projeto. Nada no banco força isso hoje;
   a regra é esta linha.
-- **`is_revenda` é a outra fonte que ninguém conciliou.** A classificação deriva
-  `produto_revenda` do texto da categoria, não da marcação `is_revenda`, que
-  está viva em seis telas. Um produto marcado como revenda dentro de Insumos
-  vira matéria-prima e as duas leituras discordam. A fase 2B precisa decidir
-  quem manda antes de qualquer relatório somar por tipo.
+- **`is_revenda` agora é espelho, não fonte.** A fase 2B decidiu que quem manda
+  é a categoria controlada, e a tela de produto só grava a marcação derivada do
+  tipo de item. A dívida que sobra é a leitura: seis telas ainda filtram por
+  `is_revenda` em vez de por `catalog_type` — em quatro delas o filtro é
+  `kind = 'insumo' OR is_revenda`, e é por isso que os 33 produtos sem marcação
+  nunca sumiram das telas de compra. Trocar essas leituras por tipo de item é
+  trabalho da fase 5, junto com os relatórios, e até lá a marcação precisa
+  continuar sendo gravada.
 - **Duas implementações da normalização de nome**, uma no navegador
   (`src/lib/productCategories.ts`) e uma no banco
   (`private.normalize_product_category_name`). Elas precisam mudar juntas. Hoje
