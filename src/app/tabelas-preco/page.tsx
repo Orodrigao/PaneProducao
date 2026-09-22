@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { ChevronLeft, Plus, Copy, Trash2, Save, AlertTriangle, RotateCw, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { INSUMOS_CATEGORY } from '@/lib/productCategories'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
 import {
@@ -133,7 +134,7 @@ export default function TabelasPrecoPage() {
         supabase.from('customers').select('id,name,default_tier_id,discount_pct,active').eq('active',true).order('name'),
         supabase.from('customer_price_overrides').select('*').eq('active', true),
         supabase.from('breads').select('id,name,unit,cost_price').eq('active', true),
-        supabase.from('products').select('id,name,unit,cost_price,legacy_bread_id').eq('active', true).neq('category', 'INSUMOS'),
+        supabase.from('products').select('id,name,unit,cost_price,legacy_bread_id').eq('active', true).not('category', 'ilike', INSUMOS_CATEGORY),
       ])
       const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
       if (firstErr) throw firstErr

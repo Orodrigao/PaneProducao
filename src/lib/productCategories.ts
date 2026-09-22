@@ -51,6 +51,16 @@ export function normalizeProductCategoryName(value: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+// Categoria em texto livre (products.category) que separa insumo de produto
+// vendável. A unificação de 2026-09-22 deixou uma grafia só; as telas comparam
+// pela chave normalizada para uma variação de maiúscula não vazar de novo.
+export const INSUMOS_CATEGORY = 'Insumos'
+
+export function isSameProductCategory(value: string | null | undefined, category: string): boolean {
+  if (!value) return false
+  return normalizeProductCategoryName(value) === normalizeProductCategoryName(category)
+}
+
 export function validateProductCategoryDraft(draft: ProductCategoryDraft): string | null {
   const name = draft.name.trim()
   if (name.length < 2 || name.length > 80) return 'Informe um nome entre 2 e 80 caracteres.'

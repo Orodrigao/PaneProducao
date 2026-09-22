@@ -137,9 +137,10 @@ interface SaleOption {
   active: boolean
 }
 
-const CATEGORIES = ['Bolos','Brownie','Bruschettas','Confeitaria','Cookies','Croissant','Doce',
-  'Focaccias','Folhados & Doces','Lanches','Muffins','Pastas & Pesto','Pizza Redonda',
-  'Pizza Romana','Pães - Migrado','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados','Salgados','Sopas & Cremes','INSUMOS']
+// Nomes unificados em 2026-09-22 (migration unificar_categorias_produtos).
+const CATEGORIES = ['Bruschettas','Confeitaria','Croissant','Embalagens','Escritório','Focaccias',
+  'Higiene e limpeza','Insumos','Lanches','Manutenção','Pastas & Pesto','Pizza Redonda',
+  'Pizza Romana','Pães','Pães Branco','Pães Integ.','Pães Recheados','Revenda','Salgados','Sopas & Cremes']
 
 export default function ProdutosPage() {
   const [user, setUser]         = useState<AppUser | null>(null)
@@ -292,7 +293,7 @@ export default function ProdutosPage() {
   function newProductDefaults(fabricacaoPropria: boolean): EditableProduct {
     return {
       active: true,
-      category: fabricacaoPropria ? 'Pães - Migrado' : CATEGORIES[0],
+      category: fabricacaoPropria ? 'Pães' : 'Confeitaria',
       unit: 'un',
       kind: 'final',
       is_revenda: false,
