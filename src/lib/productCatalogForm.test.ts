@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyCategoryChoice,
+  describeCategoryPickerProblem,
   groupCategoriesForPicker,
+  needsCurrentCategoryFallback,
   pickProductSaveColumns,
   resolveLegacyCategoryText,
   resolveIsRevenda,
@@ -26,7 +28,7 @@ const confeitaria = category({ id: 'cat-confeitaria', name: 'Confeitaria', catal
 const servicos = category({ id: 'cat-servicos', name: 'Serviços', catalog_type: 'servico', sort_order: 10 })
 
 describe('groupCategoriesForPicker', () => {
-  it('agrupa por tipo de item na ordem do catálogo e ordena dentro do grupo', () => {
+  it('agrupa por tipo de item na ordem de quem cadastra e ordena dentro do grupo', () => {
     const groups = groupCategoriesForPicker([paes, revenda, insumos, confeitaria])
 
     expect(groups.map(group => group.catalogType)).toEqual(['materia_prima', 'produto_fabricado', 'produto_revenda'])
@@ -45,6 +47,71 @@ describe('groupCategoriesForPicker', () => {
     const groups = groupCategoriesForPicker([insumos, inativa], 'cat-revenda')
 
     expect(groups.flatMap(group => group.categories.map(item => item.id))).toContain('cat-revenda')
+  })
+})
+
+describe('ordem dos grupos na tela', () => {
+  const embalagem = category({ id: 'cat-emb', name: 'Embalagens', catalog_type: 'embalagem' })
+  const escritorio = category({ id: 'cat-esc', name: 'Escritório', catalog_type: 'escritorio_administrativo' })
+  const servico = category({ id: 'cat-serv', name: 'Serviços', catalog_type: 'servico' })
+
+  it('põe produto fabricado e revenda antes das gavetas de um produto só', () => {
+    const groups = groupCategoriesForPicker([escritorio, servico, embalagem, paes, revenda, insumos])
+
+    expect(groups.map(group => group.catalogType)).toEqual([
+      'materia_prima',
+      'produto_fabricado',
+      'produto_revenda',
+      'embalagem',
+      'escritorio_administrativo',
+      'servico',
+    ])
+  })
+})
+
+describe('needsCurrentCategoryFallback', () => {
+  it('não pede opção de segurança quando a categoria atual está na lista', () => {
+    const groups = groupCategoriesForPicker([insumos, revenda], 'cat-insumos')
+
+    expect(needsCurrentCategoryFallback(groups, 'cat-insumos')).toBe(false)
+  })
+
+  it('pede opção de segurança quando a lista não carregou', () => {
+    expect(needsCurrentCategoryFallback([], 'cat-insumos')).toBe(true)
+  })
+
+  it('pede opção de segurança para categoria de tipo que o navegador não conhece', () => {
+    // Tipo novo cadastrado no banco e ainda ausente de CATALOG_TYPES: o
+    // agrupamento descarta a categoria, e sem a opção de segurança o campo
+    // mostraria outra categoria enquanto o produto aponta para esta.
+    const tipoDesconhecido = { ...revenda, id: 'cat-nova', catalog_type: 'tipo_que_nao_existe' as never }
+    const groups = groupCategoriesForPicker([insumos, tipoDesconhecido], 'cat-nova')
+
+    expect(groups.flatMap(group => group.categories.map(item => item.id))).not.toContain('cat-nova')
+    expect(needsCurrentCategoryFallback(groups, 'cat-nova')).toBe(true)
+  })
+
+  it('não pede nada para produto sem categoria', () => {
+    expect(needsCurrentCategoryFallback([], null)).toBe(false)
+  })
+})
+
+describe('describeCategoryPickerProblem', () => {
+  it('não reclama de lista utilizável', () => {
+    expect(describeCategoryPickerProblem({ loadError: null, categoryCount: 21 })).toBeNull()
+  })
+
+  it('explica a falha de carga e manda recarregar', () => {
+    expect(describeCategoryPickerProblem({ loadError: 'Falha de rede.', categoryCount: 0 }))
+      .toBe('Falha de rede. Recarregue a tela para escolher a categoria.')
+  })
+
+  it('trata lista vazia sem erro como problema, porque o banco devolve zero linhas com sucesso', () => {
+    // Policy que filtra por linha, tabela ainda sem dado ou perfil inativo
+    // devolvem lista vazia e nenhum erro. Sem esta frase, a tela cobraria uma
+    // escolha que não oferece.
+    expect(describeCategoryPickerProblem({ loadError: null, categoryCount: 0 }))
+      .toContain('chegou vazia')
   })
 })
 
@@ -105,6 +172,10 @@ describe('resolveLegacyCategoryText', () => {
   it('acerta o texto de produto que ficou divergente antes desta fase', () => {
     // Editado entre a fase 2A e a 2B: texto de uma categoria, gaveta de outra.
     expect(resolveLegacyCategoryText('cat-revenda', [insumos, revenda], 'Insumos')).toBe('Revenda')
+  })
+
+  it('preserva o texto atual quando a categoria não está na lista carregada', () => {
+    expect(resolveLegacyCategoryText('cat-que-saiu-da-lista', [insumos], 'Revenda')).toBe('Revenda')
   })
 
   it('preserva o texto atual quando a lista não carregou', () => {
@@ -189,25 +260,17 @@ describe('pickProductSaveColumns', () => {
     expect(payload).toEqual({ name: 'Sopa', cost_price: null, production_process: null })
   })
 
-  it('cobre todos os campos que o formulário de produto edita', () => {
-    expect([...PRODUCT_SAVE_COLUMNS]).toEqual([
-      'name',
-      'category',
-      'category_id',
-      'catalog_type',
-      'unit',
-      'cost_price',
-      'kind',
-      'is_revenda',
-      'is_shelf',
-      'weekly_count_enabled',
-      'is_fabricacao_propria',
-      'is_pj',
-      'production_days',
-      'production_area',
-      'production_process',
-      'allows_planned_production',
-      'allows_unplanned_production',
-    ])
+  it('não deixa a classificação de fora da lista de colunas salvas', () => {
+    // A cobertura de campo esquecido é estática, na guarda de compilação da tela
+    // (ColunasEditaveisForaDoSalvamento). Aqui fica só o que este módulo promete.
+    for (const column of ['category', 'category_id', 'catalog_type', 'is_revenda'] as const) {
+      expect(PRODUCT_SAVE_COLUMNS).toContain(column)
+    }
+  })
+
+  it('não envia coluna que não existe no formulário nem por engano de digitação', () => {
+    const payload = pickProductSaveColumns({ name: 'Ciabatta', categoria: 'Pães' } as never)
+
+    expect(Object.keys(payload)).toEqual(['name'])
   })
 })

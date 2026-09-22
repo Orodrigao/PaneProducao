@@ -111,8 +111,10 @@ fonte para a mesma pergunta é como as grafias repetidas nasceram. Os tipos
 
 ### Fase 2B — A tela de produto passa a usar a lista controlada
 
-Entregue em 2026-09-22, sem migration: as colunas já existiam desde a fase 1 e
-a tela de produto é a única que grava em `products.category`.
+Entregue em 2026-09-22, sem migration: as colunas já existiam desde a fase 1, e
+a tela de produto é a única que **edita** `products.category`. Cadastrar produto
+por ali não é o único jeito de criar produto, e isso deixa uma brecha registrada
+no fim desta seção.
 
 - o campo Categoria virou uma lista das 21 categorias controladas, agrupadas
   pelo tipo de item. Escolher a categoria grava os três campos no mesmo
@@ -148,6 +150,28 @@ marcado como revenda hoje e perde a marcação no primeiro salvamento, saindo da
 listas de compra, entrada de estoque e contas a pagar. É onde ele não deveria
 estar: é taxa de tele-entrega, não item comprado. Os outros 33 ganham a marcação
 no primeiro salvamento de cada um; nada muda em massa.
+
+**Brecha que sobra, achada pela revisão independente:** a RPC
+`public.create_payable_catalog_product`, usada pelas telas de contas a pagar e de
+importação de XML (`src/components/PendingPayableItems.tsx` e
+`src/components/XmlPayableImport.tsx`), cria produto com categoria em **texto
+livre digitado** e sem `category_id` nem `catalog_type`. Quem cadastra um insumo
+novo direto da nota continua podendo inventar uma grafia e nasce sem
+classificação, e a obrigatoriedade da tela de produto não alcança esse caminho
+porque ela só vale para produto novo criado por ela. Conferido em produção em
+22/09/2026: a função não tem as duas colunas e nenhum produto está sem
+classificação hoje, então a brecha ainda não foi usada. Fechar exige migration
+na RPC, reaproveitando o casamento por nome normalizado que
+`private.assign_controlled_product_categories` já faz, mais a escolha da
+categoria nessas duas telas. Ficou fora desta fase de propósito: é banco e outra
+área do sistema, e entra como fase 2C antes dos relatórios da fase 5.
+
+**Dentro da própria tela, a listagem passou a usar a mesma resposta da gaveta.**
+O chip de revenda e o filtro liam a marcação gravada, então os 33 produtos da
+categoria Revenda sem marcação apareciam sem chip enquanto a gaveta dizia que
+eram revenda. Agora os dois derivam do tipo de item. As telas de fornecedores,
+compras, entrada de estoque e contas a pagar continuam lendo a marcação gravada,
+porque não carregam o tipo de item; é o que a fase 5 troca.
 
 **Kit continua sem aviso na tela** (decisão do Rodrigo, 2026-09-22): explicar
 relatório que ainda não existe a quem cadastra é ruído. A regra fica registrada
@@ -224,9 +248,9 @@ pergunta aberta, maior que o catálogo.
   Resolvido pela fase 2B: o salvamento passou a enviar uma lista explícita de
   colunas e o texto legado passou a sair do nome da categoria. Produto que
   divergiu na janela entre as duas fases se acerta no próximo salvamento pela
-  tela. Nada no banco força a coerência: a garantia é a tela ser a única que
-  grava em `products.category`, `catalog_type` e `category_id`, o que vale
-  enquanto a coluna de texto existir.
+  tela. Nada no banco força a coerência, e a tela de produto é a única que
+  **edita** as três colunas juntas; criar produto pela RPC de contas a pagar
+  continua gravando só o texto (ver a brecha registrada na fase 2B).
 - **Produto criado depois da migration nasce sem classificação.** É o caso dos
   produtos fictícios do seed no banco de teste, que roda depois das migrations,
   e o de qualquer produto cadastrado antes de a 2B exigir a escolha. A função
@@ -257,6 +281,17 @@ pergunta aberta, maior que o catálogo.
   produzem a mesma chave, provado em teste dos dois lados; se divergirem, o
   banco aceita categoria duplicada, que é exatamente o que esta estrutura
   existe para impedir.
+- **Renomear uma categoria não reescreve o texto legado dos produtos.** A tela
+  de produto sincroniza `products.category` com o nome da categoria a cada
+  salvamento, um produto por vez. Se o nome de uma categoria mudar em
+  `/produtos/categorias`, os produtos ficam com o nome antigo escrito até que
+  alguém salve cada um, e as telas que agrupam pelo texto passam a mostrar dois
+  grupos para a mesma categoria. Risco levantado pela revisão independente da
+  fase 2B e deixado de fora de propósito: resolver exige migration ou gatilho no
+  banco, fora do escopo desta fase, e a fase 4 aposenta a coluna de texto. Até
+  lá, renomear categoria com produtos dentro pede uma migration que reescreva o
+  texto na mesma entrega.
+
 - **O nome de uma categoria inativa continua reservado.** Não dá para criar
   outra com o mesmo nome sem reativar a antiga. É intencional, para não mascarar
   duplicata.

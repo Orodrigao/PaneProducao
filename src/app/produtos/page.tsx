@@ -22,9 +22,12 @@ import {
 } from '@/lib/productCategories'
 import {
   applyCategoryChoice,
+  describeCategoryPickerProblem,
   groupCategoriesForPicker,
+  needsCurrentCategoryFallback,
   pickProductSaveColumns,
   resolveIsRevenda,
+  type ProductSaveColumn,
   resolveLegacyCategoryText,
   validateProductCatalogChoice,
 } from '@/lib/productCatalogForm'
@@ -80,6 +83,20 @@ type EditableProduct = Partial<Omit<Product, 'cost_price'>> & {
   cost_price?: number | string | null
 }
 
+// Campo que a tela edita e não está em PRODUCT_SAVE_COLUMNS não viaja no
+// salvamento, e o defeito é silencioso: a pessoa muda, salva e nada acontece.
+// Se este tipo acusar erro, acrescente a coluna à lista do salvamento — ou, se
+// ela realmente não deve ser gravada por aqui, à exceção abaixo, com o motivo.
+// Fora do salvamento de propósito: `id` identifica a linha, `active` tem fluxo
+// próprio (insert explícito e o botão da listagem), `sort_order` e
+// `legacy_bread_id` não são editáveis nesta tela.
+type ColunasEditaveisForaDoSalvamento = Exclude<
+  keyof EditableProduct,
+  ProductSaveColumn | 'id' | 'active' | 'sort_order' | 'legacy_bread_id'
+>
+const _todaColunaEditavelViajaNoSalvamento:
+  ColunasEditaveisForaDoSalvamento extends never ? true : ColunasEditaveisForaDoSalvamento = true
+
 const KIND_LABELS: Record<Kind, string> = { kit: 'KIT', insumo: 'INSUMO', final: 'FINAL' }
 const CONVERSION_BASIS_LABELS: Record<PurchaseConversionBasis, string> = {
   simple: 'Direta',
@@ -103,8 +120,15 @@ const PRODUCTION_PROCESSES: { value: ProductionProcess; label: string; descripti
   { value: 'preparo', label: 'Preparo', description: 'O produto final é preparado pela área, como pastinhas e recheios.' },
 ]
 
+// A mesma resposta que a gaveta de edição mostra e que o salvamento grava. Sem
+// isto, os produtos que estão na categoria Revenda sem a marcação antiga ficavam
+// sem o chip e fora do filtro, enquanto a gaveta dizia que eram revenda.
+function isRevendaProduct(product: Product): boolean {
+  return resolveIsRevenda(product.catalog_type, product.is_revenda)
+}
+
 function canUseTechnicalSheet(product: Product): boolean {
-  return !product.is_revenda && product.kind !== 'insumo'
+  return !isRevendaProduct(product) && product.kind !== 'insumo'
 }
 
 function formatProductionDays(days: number[] | null | undefined): string {
@@ -347,7 +371,14 @@ export default function ProdutosPage() {
 
   function openProductEditor(product: Product) {
     setIsNew(false)
-    setEditItem({ ...product, is_revenda: resolveIsRevenda(product.catalog_type, product.is_revenda) })
+    setEditItem({
+      ...product,
+      // A tela abre já mostrando o que o salvamento vai gravar: a marcação de
+      // revenda que a categoria manda e o nome dela no texto legado. Sem isso a
+      // frase explicativa citava um nome que o banco não teria mais.
+      is_revenda: resolveIsRevenda(product.catalog_type, product.is_revenda),
+      category: resolveLegacyCategoryText(product.category_id, categories, product.category),
+    })
     setConversionEdits(purchaseConversions.filter(conversion => conversion.base_product_id === product.id).map(conversion => ({ ...conversion })))
   }
 
@@ -356,10 +387,14 @@ export default function ProdutosPage() {
     : products
   const cats = ['Todos',...new Set(productsForTab.map(p=>p.category).filter(Boolean))]
   const categoryGroups = groupCategoriesForPicker(categories, editItem?.category_id ?? null)
+  const categoryPickerProblem = describeCategoryPickerProblem({
+    loadError: categoryLoadError,
+    categoryCount: categories.length,
+  })
   const filtered = productsForTab.filter(p=>{
     const matchCat = catFilter==='Todos' || p.category===catFilter
     const matchKind = kindFilter==='all'
-      || (kindFilter==='revenda' ? p.is_revenda : p.kind===kindFilter)
+      || (kindFilter==='revenda' ? isRevendaProduct(p) : p.kind===kindFilter)
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
     const matchPendingReview = !pendingReviewOnly || (p.active && p.is_fabricacao_propria && !p.production_process)
     return matchCat && matchKind && matchSearch && matchPendingReview
@@ -382,7 +417,7 @@ export default function ProdutosPage() {
     if (p.kind === 'kit') kindCounts.kit++
     else if (p.kind === 'insumo') kindCounts.insumo++
     else if (p.kind === 'final') kindCounts.final++
-    if (p.is_revenda) kindCounts.revenda++
+    if (isRevendaProduct(p)) kindCounts.revenda++
   }
   const grouped = filtered.reduce((acc:Record<string,Product[]>,p)=>{ (acc[p.category]??=[]).push(p); return acc },{})
 
@@ -530,7 +565,7 @@ export default function ProdutosPage() {
                           {p.kind && p.kind !== 'final' && (
                             <span className={`ps-store-chip ${KIND_CHIP_CLS[p.kind]}`}>{KIND_LABELS[p.kind]}</span>
                           )}
-                          {p.is_revenda && (
+                          {isRevendaProduct(p) && (
                             <span className="ps-store-chip" style={{background:'var(--crust-tint)', color:'var(--crust)'}}>🛒 REVENDA</span>
                           )}
                           {p.is_fabricacao_propria && (
@@ -664,7 +699,7 @@ export default function ProdutosPage() {
                 <div className="ps-fieldlabel">Categoria</div>
                 <select
                   value={editItem.category_id || ''}
-                  disabled={!!categoryLoadError}
+                  disabled={!!categoryPickerProblem}
                   onChange={e => setEditItem(prev => ({ ...prev, ...applyCategoryChoice(e.target.value, categories, prev ?? {}) }))}
                   className="ps-select"
                 >
@@ -673,8 +708,8 @@ export default function ProdutosPage() {
                       sem classificação: isso desfaria a classificação da fase 2A sem
                       ninguém notar. */}
                   {!editItem.category_id && <option value="">Escolha a categoria…</option>}
-                  {editItem.category_id && !categories.some(category => category.id === editItem.category_id) && (
-                    <option value={editItem.category_id}>{editItem.category || 'Categoria atual'}</option>
+                  {needsCurrentCategoryFallback(categoryGroups, editItem.category_id) && (
+                    <option value={editItem.category_id!}>{editItem.category || 'Categoria atual'}</option>
                   )}
                   {categoryGroups.map(group => (
                     <optgroup key={group.catalogType} label={group.label}>
@@ -689,11 +724,18 @@ export default function ProdutosPage() {
                 {editItem.catalog_type ? (
                   <small style={{ display: 'block', marginTop: 4 }}>
                     Tipo de item: <b>{CATALOG_TYPE_LABELS[editItem.catalog_type]}</b> — vem da categoria escolhida.
+                    {editItem.catalog_type === 'produto_revenda' && editItem.is_fabricacao_propria && (
+                      <><br/><span style={{ color: 'var(--berry)', fontWeight: 700 }}>
+                        Este produto está marcado como fabricação própria. Categoria de revenda significa comprado
+                        pronto, e com ela o produto perde a ficha técnica; se ele é feito aqui, escolha a categoria de
+                        venda dele.
+                      </span></>
+                    )}
                   </small>
                 ) : (
                   <small style={{ display: 'block', marginTop: 4, color: isNew ? 'var(--berry)' : 'var(--honey-deep)' }}>
-                    {categoryLoadError
-                      ? `${categoryLoadError} Recarregue a tela para escolher a categoria.`
+                    {categoryPickerProblem
+                      ? categoryPickerProblem
                       : isNew
                         ? 'Obrigatório: a categoria escolhida define o tipo de item do produto.'
                         : editItem.category

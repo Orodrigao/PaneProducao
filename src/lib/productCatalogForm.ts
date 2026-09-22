@@ -25,9 +25,34 @@ export interface CatalogCategoryGroup {
   categories: ProductCategory[]
 }
 
+// Ordem em que os grupos aparecem na tela de produto, do que mais se cadastra
+// para o que menos. A ordem do enum é a do banco e começa por matéria-prima e
+// embalagem, deixando Escritório e Manutenção (um produto cada) acima de Produto
+// fabricado, que reúne catorze categorias. Quem cadastra abre a lista atrás de
+// pão muito mais vezes que atrás de chave de toalheiro.
+const CATALOG_TYPE_PICKER_ORDER: readonly CatalogType[] = [
+  'materia_prima',
+  'produto_fabricado',
+  'produto_revenda',
+  'embalagem',
+  'higiene_limpeza',
+  'escritorio_administrativo',
+  'manutencao',
+  'utensilio_equipamento',
+  'servico',
+  'kit',
+]
+
 const CATALOG_TYPE_ORDER = new Map<CatalogType, number>(
-  CATALOG_TYPES.map((catalogType, index) => [catalogType, index]),
+  CATALOG_TYPE_PICKER_ORDER.map((catalogType, index) => [catalogType, index]),
 )
+
+// Se um tipo novo entrar no catálogo e ninguém o colocar na ordem acima, ele
+// desapareceria da lista da tela sem aviso. Esta guarda quebra a compilação.
+type TiposForaDaOrdemDoPicker = Exclude<CatalogType, typeof CATALOG_TYPE_PICKER_ORDER[number]>
+const _todoTipoTemLugarNaLista:
+  TiposForaDaOrdemDoPicker extends never ? true : TiposForaDaOrdemDoPicker = true
+void _todoTipoTemLugarNaLista
 
 /**
  * Categorias oferecidas na tela, agrupadas por tipo de item. Categoria inativa
@@ -57,6 +82,39 @@ export function groupCategoriesForPicker(
         (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'pt-BR'),
       ),
     }))
+}
+
+/**
+ * A categoria do produto ficou fora da lista oferecida? Pode ser lista que não
+ * carregou, ou categoria de um tipo que o navegador ainda não conhece, que
+ * `groupCategoriesForPicker` descarta de propósito. Nos dois casos a tela precisa
+ * de uma opção de segurança, senão o campo mostra a primeira categoria da lista
+ * enquanto o produto continua apontando para outra.
+ */
+export function needsCurrentCategoryFallback(
+  groups: CatalogCategoryGroup[],
+  currentCategoryId: string | null | undefined,
+): boolean {
+  if (!currentCategoryId) return false
+  return !groups.some(group => group.categories.some(category => category.id === currentCategoryId))
+}
+
+/**
+ * O que impede a tela de oferecer a escolha, em uma frase, ou nulo quando a
+ * lista está utilizável. Lista vazia não vem com erro do banco: policy que
+ * filtra por linha e tabela ainda sem dado devolvem zero linhas e sucesso. Sem
+ * isto, a tela cobraria uma escolha que não oferece e o salvamento recusaria em
+ * laço, sem dizer por quê.
+ */
+export function describeCategoryPickerProblem(input: {
+  loadError: string | null
+  categoryCount: number
+}): string | null {
+  if (input.loadError) return `${input.loadError} Recarregue a tela para escolher a categoria.`
+  if (input.categoryCount === 0) {
+    return 'A lista de categorias chegou vazia. Recarregue a tela; se continuar vazia, avise antes de cadastrar produto novo.'
+  }
+  return null
 }
 
 /**
