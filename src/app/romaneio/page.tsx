@@ -36,6 +36,7 @@ import {
   formatRomaneioTime as fmtTime,
 } from '@/lib/romaneioDateTime'
 import { canSeeRomaneio } from '@/lib/romaneioAccess'
+import RomaneioSentSummary from '@/components/romaneio/RomaneioSentSummary'
 import { validateRomaneioConference, type RomaneioConferenceVerdict } from '@/lib/romaneioConference'
 import {
   canPerformRomaneioAction,
@@ -382,6 +383,13 @@ export default function RomaneioPage() {
 
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
   const hideLoad = () => setLoading(false)
+
+  const handleSessionExpired = useCallback(() => {
+    showToastPS('Sua sessão expirou. Entre novamente.')
+    authLogout()
+    router.replace('/login?force=email&returnTo=/romaneio')
+  }, [router])
+  const openExBilling = useCallback(() => router.push('/relatorios/romaneios'), [router])
 
   const handleInitialLoadError = (error: unknown) => {
     hideLoad()
@@ -1612,24 +1620,10 @@ export default function RomaneioPage() {
                 </>
               )}
 
-              {/* Fechamento — aponta para o relatório oficial (Tabela Buck).
-                  O cálculo antigo desta aba usava preços congelados no envio e
-                  divergia do relatório; foi aposentado para haver um total só. */}
+              {/* Fechamento — soma das quantidades enviadas no dia, por loja.
+                  Valores em reais ficam só no relatório oficial (Tabela Buck). */}
               {adminTab==='fechamento' && (
-                <>
-                  <div className="ps-label">Fechamento EX</div>
-                  <div className="ps-card" style={{marginTop:12}}>
-                    <div className="ps-pname">O fechamento oficial fica em Relatórios</div>
-                    <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.5}}>
-                      A cobrança da EX é calculada em <b>Relatórios → Romaneios EX</b>, com os
-                      preços da Tabela Buck. Esta aba deixou de calcular valores para não
-                      existirem dois totais diferentes para o mesmo período.
-                    </div>
-                    <button className="ps-btn primary block" style={{marginTop:14}} onClick={()=>router.push('/relatorios/romaneios')}>
-                      Abrir fechamento oficial
-                    </button>
-                  </div>
-                </>
+                <RomaneioSentSummary onOpenBilling={openExBilling} onSessionExpired={handleSessionExpired}/>
               )}
             </div>
           </div>
