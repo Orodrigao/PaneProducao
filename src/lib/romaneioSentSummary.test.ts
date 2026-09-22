@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildSentSummary, type SentSummaryItem, type SentSummaryRomaneio } from './romaneioSentSummary'
+import {
+  buildSentSummary,
+  catalogUnitFromBreadUnit,
+  type SentSummaryItem,
+  type SentSummaryRomaneio,
+} from './romaneioSentSummary'
 
 const roms: SentSummaryRomaneio[] = [
   { id: 'r1', status: 'enviado', destinations: { name: 'Julio/JC', code: 'JC' } },
@@ -9,7 +14,7 @@ const roms: SentSummaryRomaneio[] = [
 ]
 
 function item(romaneio_id: string, product_id: string | null, product_name: string, qty_sent: number | string | null): SentSummaryItem {
-  return { romaneio_id, product_id, product_source: 'breads', product_name, qty_sent }
+  return { romaneio_id, product_id, product_source: 'bread', product_name, qty_sent }
 }
 
 describe('buildSentSummary', () => {
@@ -70,6 +75,22 @@ describe('buildSentSummary', () => {
       ['Ciabatta (kg)', 'kg', 1.5],
       ['Ciabatta (un)', 'un', 20],
     ])
+  })
+
+  it('usa a unidade do cadastro quando o nome não diz kg', () => {
+    const bread = (qty: number): SentSummaryItem =>
+      ({ romaneio_id: 'r1', product_id: 'p5', product_source: 'bread', product_name: 'Massa de pizza', qty_sent: qty })
+    expect(buildSentSummary(roms, [bread(2)], { p5: 'kg' }).rows[0].unit).toBe('kg')
+    expect(buildSentSummary(roms, [bread(2)]).rows[0].unit).toBe('un')
+    // Nome com unidade escrita vence o cadastro (Ciabatta por unidade).
+    const cia: SentSummaryItem = { romaneio_id: 'r1', product_id: 'p9', product_source: 'bread', product_name: 'Ciabatta (un)', qty_sent: 3 }
+    expect(buildSentSummary(roms, [cia], { p9: 'kg' }).rows[0].unit).toBe('un')
+  })
+
+  it('lê a unidade do cadastro em qualquer escrita', () => {
+    expect(catalogUnitFromBreadUnit('KG')).toBe('kg')
+    expect(catalogUnitFromBreadUnit('un')).toBe('un')
+    expect(catalogUnitFromBreadUnit(null)).toBe('un')
   })
 
   it('pão sem id não é marcado como extra', () => {

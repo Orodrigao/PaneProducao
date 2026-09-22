@@ -3,7 +3,11 @@
 // Quilo e unidade nunca se somam: cada linha tem uma unidade e os totais são
 // separados por unidade.
 
-import { billingUnitForRomaneioProduct, type RomaneioBillingUnit } from './romaneioBilling'
+import {
+  billingUnitForRomaneioProduct,
+  explicitUnitInRomaneioProduct,
+  type RomaneioBillingUnit,
+} from './romaneioBilling'
 
 export interface SentSummaryRomaneio {
   id: string
@@ -71,12 +75,33 @@ function addTo(cell: SentSummaryCell, qty: number, pending: boolean) {
   if (pending) cell.pending += qty
 }
 
+/** Unidade do cadastro do pão (`breads.unit`), por id do produto. */
+export type SentSummaryCatalogUnits = Record<string, RomaneioBillingUnit>
+
+export function catalogUnitFromBreadUnit(unit: string | null | undefined): RomaneioBillingUnit {
+  return (unit ?? '').toLowerCase().includes('kg') ? 'kg' : 'un'
+}
+
+// Mesma ordem de decisão da montagem do romaneio: unidade escrita no nome,
+// depois os pães sempre pesados, depois a unidade do cadastro.
+function itemUnit(item: SentSummaryItem, name: string, catalogUnits: SentSummaryCatalogUnits): RomaneioBillingUnit {
+  const explicit = explicitUnitInRomaneioProduct(name)
+  if (explicit) return explicit
+  if (billingUnitForRomaneioProduct(name) === 'kg') return 'kg'
+  if (item.product_source === 'bread' && item.product_id) return catalogUnits[item.product_id] ?? 'un'
+  return 'un'
+}
+
 function storeRank(code: string) {
   const i = STORE_ORDER.indexOf(code)
   return i === -1 ? STORE_ORDER.length : i
 }
 
-export function buildSentSummary(romaneios: SentSummaryRomaneio[], items: SentSummaryItem[]): SentSummary {
+export function buildSentSummary(
+  romaneios: SentSummaryRomaneio[],
+  items: SentSummaryItem[],
+  catalogUnits: SentSummaryCatalogUnits = {},
+): SentSummary {
   const romById = new Map(romaneios.map(r => [r.id, r]))
   const stores = new Map<string, SentSummaryStore>()
   const rows = new Map<string, SentSummaryRow>()
@@ -96,7 +121,7 @@ export function buildSentSummary(romaneios: SentSummaryRomaneio[], items: SentSu
     // entra na chave para a linha nunca misturar as duas.
     const isExtra = item.product_source === 'extra'
     const name = item.product_name.trim()
-    const unit = billingUnitForRomaneioProduct(name)
+    const unit = itemUnit(item, name, catalogUnits)
     const key = isExtra || !item.product_id
       ? `nome:${isExtra ? 'extra' : 'item'}:${unit}:${name.toLowerCase()}`
       : `${item.product_source || ''}:${item.product_id}:${unit}`

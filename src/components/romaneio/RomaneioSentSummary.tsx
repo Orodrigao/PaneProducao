@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { Package } from 'lucide-react'
-import { supabaseRestFetch } from '@/lib/supabaseRest'
+import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { formatDateBR, todayKey } from '@/lib/utils'
 import {
   buildSentSummary,
+  catalogUnitFromBreadUnit,
   formatQty,
+  type SentSummaryCatalogUnits,
   type SentSummary,
   type SentSummaryCell,
   type SentSummaryItem,
@@ -41,7 +43,13 @@ async function loadSummary(date: string): Promise<SentSummary> {
     `romaneio_items?romaneio_id=in.(${ids})&select=romaneio_id,product_id,product_source,product_name,qty_sent&order=id.asc&limit=${ROW_LIMIT}`,
   )
   if (items.length >= ROW_LIMIT) throw new RowLimitError('lista de itens possivelmente incompleta')
-  return buildSentSummary(romaneios, items)
+  const breadIds = [...new Set(items.filter(i => i.product_source === 'bread' && i.product_id).map(i => i.product_id))]
+  const catalogUnits: SentSummaryCatalogUnits = {}
+  if (breadIds.length) {
+    const breads = await fetchJson<{ id: string; unit: string | null }[]>(`breads?id=in.(${breadIds.join(',')})&select=id,unit`)
+    for (const bread of breads) catalogUnits[bread.id] = catalogUnitFromBreadUnit(bread.unit)
+  }
+  return buildSentSummary(romaneios, items, catalogUnits)
 }
 
 function Cell({ cell, unit, strong }: { cell?: SentSummaryCell; unit: RomaneioBillingUnit; strong?: boolean }) {
@@ -58,7 +66,13 @@ function Cell({ cell, unit, strong }: { cell?: SentSummaryCell; unit: RomaneioBi
   )
 }
 
-export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: () => void }) {
+export default function RomaneioSentSummary({
+  onOpenBilling,
+  onSessionExpired,
+}: {
+  onOpenBilling: () => void
+  onSessionExpired: () => void
+}) {
   const [date, setDate] = useState(todayKey())
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
@@ -71,10 +85,12 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
     loadSummary(date)
       .then(summary => { if (!cancelled) setState({ kind: 'ready', summary }) })
       .catch(error => {
-        if (!cancelled) setState({ kind: error instanceof RowLimitError ? 'limit' : 'error' })
+        if (cancelled) return
+        if (error instanceof SupabaseRestError && error.status === 401) { onSessionExpired(); return }
+        setState({ kind: error instanceof RowLimitError ? 'limit' : 'error' })
       })
     return () => { cancelled = true }
-  }, [date, reloadKey])
+  }, [date, reloadKey, onSessionExpired])
 
   // Troca o dia já em "carregando" para nunca exibir números do dia anterior.
   const changeDate = (next: string) => {

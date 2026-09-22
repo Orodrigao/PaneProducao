@@ -384,6 +384,13 @@ export default function RomaneioPage() {
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
   const hideLoad = () => setLoading(false)
 
+  const handleSessionExpired = useCallback(() => {
+    showToastPS('Sua sessão expirou. Entre novamente.')
+    authLogout()
+    router.replace('/login?force=email&returnTo=/romaneio')
+  }, [router])
+  const openExBilling = useCallback(() => router.push('/relatorios/romaneios'), [router])
+
   const handleInitialLoadError = (error: unknown) => {
     hideLoad()
     if (error instanceof SupabaseRestError && error.status === 401) {
@@ -1616,7 +1623,7 @@ export default function RomaneioPage() {
               {/* Fechamento — soma das quantidades enviadas no dia, por loja.
                   Valores em reais ficam só no relatório oficial (Tabela Buck). */}
               {adminTab==='fechamento' && (
-                <RomaneioSentSummary onOpenBilling={()=>router.push('/relatorios/romaneios')}/>
+                <RomaneioSentSummary onOpenBilling={openExBilling} onSessionExpired={handleSessionExpired}/>
               )}
             </div>
           </div>
