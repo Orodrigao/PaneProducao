@@ -54,11 +54,84 @@
 --
 -- O gatilho sync_site_bread_catalog publica pão no site e reage a UPDATE OF
 -- name, category, active, sort_order, kind, is_fabricacao_propria, is_pj,
--- production_days, production_area. Esta migration escreve só catalog_type e
+-- production_days, production_area. A classificação escreve só catalog_type e
 -- category_id, que estão fora dessa lista; o teste da frente lê a definição do
--- gatilho e prova que essas duas colunas não o acordam.
+-- gatilho e prova que essas duas colunas não o acordam. A correção de
+-- categoria logo abaixo escreve, sim, em category e acorda o gatilho, mas
+-- nenhum dos dez itens é pão: são limpeza e industrializados de revenda, e o
+-- teste prova que a vitrine do site fica igual.
 
 begin;
+
+-- Antes de classificar, dois grupos de itens que estavam na categoria errada.
+-- Rodrigo decidiu em 2026-09-22, olhando o cadastro item a item:
+--
+--   - Manutenção guardava cinco itens de limpeza (detergente, escova de roupa,
+--     lã de aço, palha de aço e luva nitrílica). É o mesmo caso da luva de
+--     látex, que a PR #432 já mandou para Higiene e limpeza. Sobra na
+--     Manutenção só a chave do toalheiro, que é manutenção de verdade;
+--   - cinco industrializados dentro de Insumos já estavam marcados com
+--     is_revenda: goma de mascar, café em pacote, muffin pronto e dois
+--     chocolates Trento. Contavam como matéria-prima no custo de produção.
+--
+-- Corrigir aqui, e não depois, é de propósito: a classificação abaixo segue o
+-- texto da categoria. Trocar o texto depois deixaria o produto com a categoria
+-- nova escrita e a gaveta antiga amarrada, que é exatamente a divergência que
+-- esta fase registra como risco.
+--
+-- O registro vai para private.product_category_unification_log, o mesmo da
+-- PR #432: é a mesma natureza de mudança (texto livre da categoria) e a
+-- reversão fica num lugar só.
+create or replace function private.move_misfiled_legacy_categories()
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_changed integer;
+begin
+  with item_moves (source_category, product_name, new_category) as (
+    -- Casa por nome E pela categoria de origem, como a unificação: não arrasta
+    -- homônimo de outro grupo, e rodando de novo o item que já saiu não é
+    -- movido outra vez.
+    values
+      ('Manutenção', 'DETERGENTE NEUTRO 5L AGELIMP', 'Higiene e limpeza'),
+      ('Manutenção', 'ESCOVA DE ROUPA COM ALCA', 'Higiene e limpeza'),
+      ('Manutenção', 'LA DE ACO C/8', 'Higiene e limpeza'),
+      ('Manutenção', 'PALHA DE ACO', 'Higiene e limpeza'),
+      ('Manutenção', 'LUVA NITRILICA SEM PO M/8 PRETA 100 UN', 'Higiene e limpeza'),
+      ('Insumos', '3L MINT GOMA FRESH 15X8,5GR', 'Revenda'),
+      ('Insumos', 'CAFE CASABLANCA MOIDO EXTRAFORTE - PCTE 500GRS', 'Revenda'),
+      ('Insumos', 'MUFFIN BAUNILHA GOTAS MB 15 X 80G', 'Revenda'),
+      ('Insumos', 'TRENTO CHOCOLATE BRANCO 29GR DP. 16X29GR', 'Revenda'),
+      ('Insumos', 'TRENTO DUO 29GR DP. 16X29GR', 'Revenda')
+  ),
+  changed as (
+    update public.products product
+    set category = item_move.new_category
+    from item_moves item_move
+    where item_move.source_category = product.category
+      and item_move.product_name = pg_catalog.upper(pg_catalog.btrim(product.name))
+      and product.category is distinct from item_move.new_category
+    returning product.id, item_move.source_category, item_move.new_category
+  ),
+  logged as (
+    insert into private.product_category_unification_log (product_id, old_category, new_category)
+    select changed.id, changed.source_category, changed.new_category
+    from changed
+    returning 1
+  )
+  select pg_catalog.count(*) into v_changed from logged;
+
+  return v_changed;
+end;
+$$;
+
+revoke all on function private.move_misfiled_legacy_categories()
+  from public, anon, authenticated, service_role;
+
+select private.move_misfiled_legacy_categories();
 
 -- A lista decidida vive numa tabela temporária porque é usada duas vezes: no
 -- seed e na trava de tipo. Repetir os 20 nomes seria criar a chance de eles

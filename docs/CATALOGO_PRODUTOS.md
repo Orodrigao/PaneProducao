@@ -153,6 +153,23 @@ Cada troca fica em `private.product_category_unification_log` com o texto
 antigo. As telas comparam `Insumos` sem diferenciar maiúscula. Essa limpeza é o
 que tornou a fase 2A possível sem tela de classificação item a item.
 
+**Segunda rodada, junto da fase 2A (2026-09-22).** Olhando os itens de cada
+categoria, o Rodrigo achou mais dois grupos fora do lugar, e a migration
+`20260922184538_categorias_controladas.sql` corrige os dez antes de classificar:
+
+- cinco itens de limpeza que estavam em `Manutenção` (detergente neutro, escova
+  de roupa, lã de aço, palha de aço e luva nitrílica) vão para
+  `Higiene e limpeza`, pelo mesmo critério que mandou a luva de látex para lá.
+  `Manutenção` fica só com a chave do toalheiro;
+- cinco industrializados que estavam em `Insumos` e já vinham marcados com
+  `is_revenda` (goma de mascar, café em pacote, muffin pronto e dois chocolates
+  Trento) vão para `Revenda`, e param de contar como matéria-prima no custo.
+
+A correção vem antes da classificação de propósito: trocar o texto depois
+deixaria o produto com a categoria nova escrita e a gaveta antiga amarrada.
+Ficou de fora, à espera de decisão: um produto chamado `Tele`, em
+`Confeitaria`, também marcado como revenda, cuja natureza ninguém soube dizer.
+
 ## Riscos e dívidas registradas
 
 - **Entre a fase 2A e a 2B, os dois campos divergem no primeiro salvamento.**

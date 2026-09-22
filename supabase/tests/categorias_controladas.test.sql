@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(36);
 
 -- Contrato de acesso: registro e funções são internos, como na unificação.
 select ok(not has_table_privilege('authenticated', 'private.product_catalog_assignment_log', 'select'),
@@ -79,6 +79,54 @@ select ok(
     where t.tgname = 'sync_site_bread_catalog_after_product_change')
   not like all(array['%catalog_type%', '%category_id%']),
   'classificar não está entre as colunas que acordam a vitrine do site'
+);
+
+-- Correção de itens que estavam na categoria errada, decidida pelo Rodrigo em
+-- 2026-09-22. Ela roda antes da classificação de propósito, para o produto
+-- entrar já na gaveta certa.
+select ok(not has_function_privilege('anon', 'private.move_misfiled_legacy_categories()', 'execute'),
+  'anônimo não executa a correção de categoria');
+
+insert into public.products (id, name, category, kind, active) values
+  ('c0000000-0000-4000-8000-000000000001', 'DETERGENTE NEUTRO 5L AGELIMP', 'Manutenção', 'insumo', true),
+  ('c0000000-0000-4000-8000-000000000002', 'Luva Nitrilica sem po M/8 preta 100 un', 'Manutenção', 'insumo', true),
+  ('c0000000-0000-4000-8000-000000000003', 'CHAVE TOALHEIRO AUTO CORTE/ALAVANCA TRILHA', 'Manutenção', 'final', true),
+  ('c0000000-0000-4000-8000-000000000004', 'TRENTO DUO 29GR DP. 16X29GR', 'Insumos', 'final', true),
+  -- Homônimo em outro grupo: o nome está na lista de trocas, mas a categoria
+  -- de origem não. Não pode ser arrastado.
+  ('c0000000-0000-4000-8000-000000000005', 'PALHA DE ACO', 'Embalagens', 'insumo', true);
+
+create temporary table vitrine_antes as
+  select product_id, slug from public.site_bread_catalog;
+
+-- Três dos cinco se movem: a chave do toalheiro é manutenção de verdade e a
+-- palha de aço fictícia está em Embalagens, fora do grupo de origem da troca.
+select is(private.move_misfiled_legacy_categories(), 3,
+  'a correção move só os fictícios que estão no grupo errado');
+select results_eq(
+  $q$select name || ' => ' || category from public.products
+    where id::text like 'c0000000-0000-4000-8000-00000000000%' order by id$q$,
+  $q$values
+    ('DETERGENTE NEUTRO 5L AGELIMP => Higiene e limpeza'),
+    ('Luva Nitrilica sem po M/8 preta 100 un => Higiene e limpeza'),
+    ('CHAVE TOALHEIRO AUTO CORTE/ALAVANCA TRILHA => Manutenção'),
+    ('TRENTO DUO 29GR DP. 16X29GR => Revenda'),
+    ('PALHA DE ACO => Embalagens')$q$,
+  'limpeza sai da Manutenção mesmo com o nome em caixa mista, a chave do toalheiro fica, industrializado vai para Revenda e homônimo de outro grupo não é arrastado'
+);
+select is(
+  (select count(*)::integer from private.product_category_unification_log
+    where product_id::text like 'c0000000-0000-4000-8000-00000000000%'
+      and old_category in ('Manutenção', 'Insumos')),
+  3,
+  'cada troca de categoria fica registrada com o grupo de origem'
+);
+select is(private.move_misfiled_legacy_categories(), 0,
+  'rodar a correção de novo não move nada');
+select results_eq(
+  $q$select product_id::text || ' ' || slug from public.site_bread_catalog order by product_id$q$,
+  $q$select product_id::text || ' ' || slug from vitrine_antes order by product_id$q$,
+  'a vitrine do site fica igual: nenhum dos itens corrigidos é pão'
 );
 
 -- Cadastro fictício: um caso por regra que a classificação precisa respeitar.
