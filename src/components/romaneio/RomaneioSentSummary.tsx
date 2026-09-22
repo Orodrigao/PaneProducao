@@ -12,6 +12,7 @@ import {
   type SentSummaryItem,
   type SentSummaryRomaneio,
 } from '@/lib/romaneioSentSummary'
+import type { RomaneioBillingUnit } from '@/lib/romaneioBilling'
 
 type LoadState =
   | { kind: 'loading' }
@@ -23,6 +24,10 @@ async function fetchJson<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Teto de linhas por consulta do Supabase (max_rows). Chegar nele significa
+// que a lista pode ter vindo cortada: melhor avisar do que somar a menos.
+const ROW_LIMIT = 1000
+
 async function loadSummary(date: string): Promise<SentSummary> {
   const romaneios = await fetchJson<SentSummaryRomaneio[]>(
     `romaneios?record_date=eq.${date}&select=id,status,destinations(name,code)`,
@@ -30,19 +35,20 @@ async function loadSummary(date: string): Promise<SentSummary> {
   if (romaneios.length === 0) return buildSentSummary([], [])
   const ids = romaneios.map(r => r.id).join(',')
   const items = await fetchJson<SentSummaryItem[]>(
-    `romaneio_items?romaneio_id=in.(${ids})&select=romaneio_id,product_id,product_source,product_name,qty_sent`,
+    `romaneio_items?romaneio_id=in.(${ids})&select=romaneio_id,product_id,product_source,product_name,qty_sent&order=id.asc&limit=${ROW_LIMIT}`,
   )
+  if (items.length >= ROW_LIMIT) throw new Error('lista de itens possivelmente incompleta')
   return buildSentSummary(romaneios, items)
 }
 
-function Cell({ cell, strong }: { cell?: SentSummaryCell; strong?: boolean }) {
+function Cell({ cell, unit, strong }: { cell?: SentSummaryCell; unit: RomaneioBillingUnit; strong?: boolean }) {
   if (!cell || cell.total === 0) return <td className="num" style={{ color: 'var(--ink-faint)' }}>–</td>
   return (
     <td className="num" style={strong ? { fontWeight: 800 } : undefined}>
-      {formatQty(cell.total)}
+      {formatQty(cell.total)}{unit === 'kg' ? ' kg' : ''}
       {cell.pending > 0 && (
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--amber)' }} title="Ainda em romaneio separado, não saiu">
-          {formatQty(cell.pending)} não saiu
+          {formatQty(cell.pending)}{unit === 'kg' ? ' kg' : ''} não saiu
         </div>
       )}
     </td>
@@ -55,6 +61,7 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
+    // Campo vazio no meio da digitação: espera a data completa.
     if (!date) return
     let cancelled = false
     setState({ kind: 'loading' })
@@ -64,7 +71,9 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
     return () => { cancelled = true }
   }, [date, reloadKey])
 
-  const summary = state.kind === 'ready' ? state.summary : null
+  // Sem data completa no campo, não mostra números de outro dia.
+  const shown: LoadState | null = date ? state : null
+  const summary = shown?.kind === 'ready' ? shown.summary : null
 
   return (
     <>
@@ -77,19 +86,19 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
             type="date"
             value={date}
             max={todayKey()}
-            onChange={e => setDate(e.target.value || todayKey())}
+            onChange={e => setDate(e.target.value)}
           />
         </label>
-        {date !== todayKey() && (
+        {date !== todayKey() && date !== '' && (
           <button className="ps-btn ghost sm" onClick={() => setDate(todayKey())}>Voltar para hoje</button>
         )}
       </div>
 
-      {state.kind === 'loading' && (
+      {shown?.kind === 'loading' && (
         <div className="ps-empty" role="status">Somando os romaneios de {formatDateBR(date)}…</div>
       )}
 
-      {state.kind === 'error' && (
+      {shown?.kind === 'error' && (
         <div className="ps-warning" role="alert" style={{ marginTop: 12 }}>
           Não foi possível carregar os romaneios de {formatDateBR(date)}.{' '}
           <button className="ps-btn ghost sm" onClick={() => setReloadKey(k => k + 1)}>Tentar de novo</button>
@@ -123,18 +132,26 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
               <tbody>
                 {summary.rows.map(row => (
                   <tr key={row.key}>
-                    <td>{row.productName}</td>
-                    {summary.stores.map(s => <Cell key={s.code} cell={row.byStore[s.code]} />)}
-                    <Cell cell={row.total} strong />
+                    <td>
+                      {row.productName}
+                      {row.isExtra && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-faint)', fontWeight: 600 }}>extra</span>}
+                    </td>
+                    {summary.stores.map(s => <Cell key={s.code} cell={row.byStore[s.code]} unit={row.unit} />)}
+                    <Cell cell={row.total} unit={row.unit} strong />
                   </tr>
                 ))}
-                <tr className="total">
-                  <td>Total</td>
-                  {summary.stores.map(s => <Cell key={s.code} cell={summary.storeTotals[s.code]} />)}
-                  <Cell cell={summary.total} strong />
-                </tr>
+                {summary.totals.map(t => (
+                  <tr key={t.unit} className="total">
+                    <td>{summary.totals.length > 1 ? (t.unit === 'kg' ? 'Total em kg' : 'Total em unidades') : 'Total'}</td>
+                    {summary.stores.map(s => <Cell key={s.code} cell={t.byStore[s.code]} unit={t.unit} />)}
+                    <Cell cell={t.total} unit={t.unit} strong />
+                  </tr>
+                ))}
               </tbody>
             </table>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 8, lineHeight: 1.5 }}>
+            Quantidade que saiu da produção. O que a loja recusou na conferência aparece em Divergências.
           </div>
         </>
       )}

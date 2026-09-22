@@ -1,5 +1,9 @@
 // Soma das quantidades enviadas nos romaneios de um dia, por produto e loja.
 // Só quantidades: valores em reais ficam no fechamento oficial (Tabela Buck).
+// Quilo e unidade nunca se somam: cada linha tem uma unidade e os totais são
+// separados por unidade.
+
+import { billingUnitForRomaneioProduct, type RomaneioBillingUnit } from './romaneioBilling'
 
 export interface SentSummaryRomaneio {
   id: string
@@ -29,6 +33,14 @@ export interface SentSummaryCell {
 export interface SentSummaryRow {
   key: string
   productName: string
+  unit: RomaneioBillingUnit
+  isExtra: boolean
+  byStore: Record<string, SentSummaryCell>
+  total: SentSummaryCell
+}
+
+export interface SentSummaryTotal {
+  unit: RomaneioBillingUnit
   byStore: Record<string, SentSummaryCell>
   total: SentSummaryCell
 }
@@ -36,8 +48,8 @@ export interface SentSummaryRow {
 export interface SentSummary {
   stores: SentSummaryStore[]
   rows: SentSummaryRow[]
-  storeTotals: Record<string, SentSummaryCell>
-  total: SentSummaryCell
+  /** Um total por unidade presente no dia (un antes de kg). */
+  totals: SentSummaryTotal[]
   romaneioCount: number
   pendingRomaneioCount: number
 }
@@ -68,8 +80,7 @@ export function buildSentSummary(romaneios: SentSummaryRomaneio[], items: SentSu
   const romById = new Map(romaneios.map(r => [r.id, r]))
   const stores = new Map<string, SentSummaryStore>()
   const rows = new Map<string, SentSummaryRow>()
-  const storeTotals: Record<string, SentSummaryCell> = {}
-  const total = emptyCell()
+  const totals = new Map<RomaneioBillingUnit, SentSummaryTotal>()
 
   for (const item of items) {
     const rom = romById.get(item.romaneio_id)
@@ -80,25 +91,34 @@ export function buildSentSummary(romaneios: SentSummaryRomaneio[], items: SentSu
     if (!stores.has(code)) stores.set(code, { code, name: rom.destinations?.name || code })
     const pending = rom.status === NOT_SENT_STATUS
 
-    const key = item.product_id ? `${item.product_source || ''}:${item.product_id}` : `nome:${item.product_name.trim().toLowerCase()}`
+    // Extra ganha id novo a cada romaneio; o mesmo extra se junta pelo nome.
+    const isExtra = item.product_source === 'extra' || !item.product_id
+    const name = item.product_name.trim()
+    const unit = billingUnitForRomaneioProduct(name)
+    const key = isExtra ? `extra:${unit}:${name.toLowerCase()}` : `${item.product_source || ''}:${item.product_id}`
     let row = rows.get(key)
     if (!row) {
-      row = { key, productName: item.product_name.trim(), byStore: {}, total: emptyCell() }
+      row = { key, productName: name, unit, isExtra, byStore: {}, total: emptyCell() }
       rows.set(key, row)
     }
+    let unitTotal = totals.get(unit)
+    if (!unitTotal) {
+      unitTotal = { unit, byStore: {}, total: emptyCell() }
+      totals.set(unit, unitTotal)
+    }
     row.byStore[code] ??= emptyCell()
-    storeTotals[code] ??= emptyCell()
+    unitTotal.byStore[code] ??= emptyCell()
     addTo(row.byStore[code], qty, pending)
     addTo(row.total, qty, pending)
-    addTo(storeTotals[code], qty, pending)
-    addTo(total, qty, pending)
+    addTo(unitTotal.byStore[code], qty, pending)
+    addTo(unitTotal.total, qty, pending)
   }
 
   return {
     stores: [...stores.values()].sort((a, b) => storeRank(a.code) - storeRank(b.code) || a.code.localeCompare(b.code)),
-    rows: [...rows.values()].sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR')),
-    storeTotals,
-    total,
+    rows: [...rows.values()].sort((a, b) =>
+      Number(a.isExtra) - Number(b.isExtra) || a.productName.localeCompare(b.productName, 'pt-BR')),
+    totals: [...totals.values()].sort((a, b) => (a.unit === 'un' ? 0 : 1) - (b.unit === 'un' ? 0 : 1)),
     romaneioCount: romaneios.length,
     pendingRomaneioCount: romaneios.filter(r => r.status === NOT_SENT_STATUS).length,
   }

@@ -26,8 +26,10 @@ describe('buildSentSummary', () => {
     expect(frances.byStore.EX).toEqual({ total: 30, pending: 0 })
     expect(frances.byStore.JA).toEqual({ total: 25, pending: 25 })
     expect(frances.total).toEqual({ total: 105, pending: 35 })
-    expect(s.total).toEqual({ total: 110, pending: 35 })
-    expect(s.storeTotals.EX.total).toBe(35)
+    expect(s.totals).toHaveLength(1)
+    expect(s.totals[0].unit).toBe('un')
+    expect(s.totals[0].total).toEqual({ total: 110, pending: 35 })
+    expect(s.totals[0].byStore.EX.total).toBe(35)
   })
 
   it('ordena lojas JC, JA, EX e produtos por nome', () => {
@@ -46,13 +48,30 @@ describe('buildSentSummary', () => {
     ])
     expect(s.rows).toEqual([])
     expect(s.stores).toEqual([])
-    expect(s.total).toEqual({ total: 0, pending: 0 })
+    expect(s.totals).toEqual([])
   })
 
   it('aceita decimal com vírgula e agrupa por nome quando falta o id do produto', () => {
-    const s = buildSentSummary(roms, [item('r1', null, 'Massa kg ', '1,5'), item('r3', null, 'massa kg', 2)])
+    const s = buildSentSummary(roms, [item('r1', null, 'Massa (kg) ', '1,5'), item('r3', null, 'massa (kg)', 2)])
     expect(s.rows).toHaveLength(1)
     expect(s.rows[0].total.total).toBe(3.5)
+  })
+
+  it('nunca soma quilo com unidade: totais separados por unidade', () => {
+    const s = buildSentSummary(roms, [item('r1', 'p1', 'Pão francês', 40), item('r1', 'p9', 'Ciabatta', '1,5')])
+    expect(s.rows.find(r => r.productName === 'Ciabatta')!.unit).toBe('kg')
+    expect(s.totals.map(t => [t.unit, t.total.total])).toEqual([['un', 40], ['kg', 1.5]])
+    expect(s.totals[0].byStore.JC.total).toBe(40)
+  })
+
+  it('junta o mesmo extra de viagens diferentes e lista extras depois dos pães', () => {
+    const extra = (rom: string, id: string, qty: number): SentSummaryItem =>
+      ({ romaneio_id: rom, product_id: id, product_source: 'extra', product_name: 'Bolo de cenoura', qty_sent: qty })
+    const s = buildSentSummary(roms, [extra('r1', 'extra_1', 2), extra('r3', 'extra_2', 3), item('r1', 'p1', 'Pão francês', 10)])
+    expect(s.rows.map(r => [r.productName, r.isExtra, r.total.total])).toEqual([
+      ['Pão francês', false, 10],
+      ['Bolo de cenoura', true, 5],
+    ])
   })
 
   it('conta romaneios e quantos ainda não saíram', () => {
