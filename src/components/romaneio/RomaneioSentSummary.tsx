@@ -17,6 +17,7 @@ import type { RomaneioBillingUnit } from '@/lib/romaneioBilling'
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'error' }
+  | { kind: 'limit' }
   | { kind: 'ready'; summary: SentSummary }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -28,6 +29,8 @@ async function fetchJson<T>(path: string): Promise<T> {
 // que a lista pode ter vindo cortada: melhor avisar do que somar a menos.
 const ROW_LIMIT = 1000
 
+class RowLimitError extends Error {}
+
 async function loadSummary(date: string): Promise<SentSummary> {
   const romaneios = await fetchJson<SentSummaryRomaneio[]>(
     `romaneios?record_date=eq.${date}&select=id,status,destinations(name,code)`,
@@ -37,7 +40,7 @@ async function loadSummary(date: string): Promise<SentSummary> {
   const items = await fetchJson<SentSummaryItem[]>(
     `romaneio_items?romaneio_id=in.(${ids})&select=romaneio_id,product_id,product_source,product_name,qty_sent&order=id.asc&limit=${ROW_LIMIT}`,
   )
-  if (items.length >= ROW_LIMIT) throw new Error('lista de itens possivelmente incompleta')
+  if (items.length >= ROW_LIMIT) throw new RowLimitError('lista de itens possivelmente incompleta')
   return buildSentSummary(romaneios, items)
 }
 
@@ -67,7 +70,9 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
     setState({ kind: 'loading' })
     loadSummary(date)
       .then(summary => { if (!cancelled) setState({ kind: 'ready', summary }) })
-      .catch(() => { if (!cancelled) setState({ kind: 'error' }) })
+      .catch(error => {
+        if (!cancelled) setState({ kind: error instanceof RowLimitError ? 'limit' : 'error' })
+      })
     return () => { cancelled = true }
   }, [date, reloadKey])
 
@@ -108,6 +113,13 @@ export default function RomaneioSentSummary({ onOpenBilling }: { onOpenBilling: 
         <div className="ps-warning" role="alert" style={{ marginTop: 12 }}>
           Não foi possível carregar os romaneios de {formatDateBR(date)}.{' '}
           <button className="ps-btn ghost sm" onClick={() => setReloadKey(k => k + 1)}>Tentar de novo</button>
+        </div>
+      )}
+
+      {shown?.kind === 'limit' && (
+        <div className="ps-warning" role="alert" style={{ marginTop: 12 }}>
+          Os romaneios de {formatDateBR(date)} passam de {ROW_LIMIT.toLocaleString('pt-BR')} linhas de itens,
+          acima do que esta tela consegue somar. Para não mostrar um total menor que o real, a soma não foi exibida.
         </div>
       )}
 
