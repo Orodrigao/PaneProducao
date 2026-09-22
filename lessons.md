@@ -14,7 +14,7 @@ Regras de uma linha, ate 40 palavras, teto de 40 linhas; passou disso, consolide
 2026-08-12 - dinheiro-digitado-com-virgula - Campo de dinheiro usa parseMoneyInput (src/lib/cashClosing.ts) na tela, na validacao e no envio; nunca Number() cru.
 2026-08-13 - valor-novo-no-check - Valor novo em check ou enum do banco atualiza o mapa de rotulos no mesmo commit; a leitura passa por funcao com fallback para a chave crua.
 2026-08-13 - efeito-fora-da-janela - Quando a regra de negocio joga o resultado da acao para um mes que a tela nao mostra, a confirmacao diz para onde foi ("Entrou no livro em julho") e a lista antecipa antes do clique.
-2026-08-14 - data-da-padaria - "Hoje" do negocio em SQL e em teste de banco e private.data_na_padaria(), nunca current_date nem now()::date, que respondem em UTC; teste cujo resultado muda com o relogio e defeito.
+2026-08-14 - hora-e-utc-ate-prova - "Hoje" em SQL e teste de banco e private.data_na_padaria(), nunca current_date; carimbo terminado em Z tire tres horas; no Git Bash `TZ=` e ignorado e `date` ja responde em Brasilia.
 2026-08-14 - chave-de-origem-e-o-evento - source_ref de lancamento financeiro aponta para o evento que moveu dinheiro (recebimento, parcela), nunca para o agregado (cobranca, compra).
 2026-08-14 - cadastro-guarda-padrao - Cadastro guarda o padrao; a transacao guarda a decisao. "Esse cliente e assim" quase sempre significa "as vezes e assim".
 2026-08-14 - botao-desabilitado-com-motivo - Controle desabilitado mostra o motivo escrito ao lado, inclusive no estado "ainda sem informacao"; tooltip nao existe no celular.
@@ -31,10 +31,10 @@ Regras de uma linha, ate 40 palavras, teto de 40 linhas; passou disso, consolide
 2026-08-31 - constraint-nao-e-regra -Antes de escrever direto numa tabela, leia a funcao oficial da operacao; constraint diz o que o banco tolera, nao o que o negocio permite.
 2026-09-02 - campo-novo-e-passado-pendente - Filtro de pendencia por campo novo trata todo o historico como pendente; conte no banco real antes de expor e ancore em campo que sempre existiu.
 2026-09-02 - assercao-com-dente - Prove que o teste falha reintroduzindo o defeito; assercao montada do texto que voce escreveu confirma suposicao, nao comportamento.
-2026-09-02 - hora-da-ferramenta-e-utc - Carimbo terminado em Z e UTC: tire tres horas antes de escrever. Nesta maquina `date` ja responde em America/Sao_Paulo e `TZ=...` e ignorado no Git Bash; hora do dia e fato medido, nao deduzido.
 2026-09-04 - texto-envelhece-com-o-sistema - Mudanca de comportamento inclui as telas que explicam o comportamento antigo: grep em src/ pelas frases da regra trocada e leia o fluxo inteiro.
 2026-09-04 - caso-padrao-na-fronteira - Valor do banco que escolhe rotulo ou indice tem caso padrao seguro na fronteira (bloquear, nunca liberar); teste de paridade le o SQL.
 2026-09-07 - onde-aparece-vem-de-quem-organiza - Em que aba ou secao algo aparece vem da funcao que monta a lista (organizePjOrders), nunca de regra reescrita ao lado.
 2026-09-09 - seed-nao-prova-usuario-real - Permissao nova exige matriz permitido x bloqueado no preview e consulta somente leitura provando que o ator real tem a concessao.
 2026-09-12 - selo-depois-do-ci - Check da Portaria so depois do CI remoto verde; selo antes do push custou seis PRs para uma entrega (367 a 374). Falha no CI corrige na mesma branch e PR.
 2026-09-14 - ordem-na-mesma-transacao - Coluna que ordena eventos gravados por RPC recebe clock_timestamp(), nunca o default now(): now() e o inicio da transacao e empata tudo que o teste de banco grava junto.
+2026-09-22 - migration-editada-nao-reaplica - Editar migration ja aplicada no banco por PR nao a reaplica: o preview mostra estado que nao existe mais e engana a prova. Confie no CI Banco ou reconstrua o banco da PR.
