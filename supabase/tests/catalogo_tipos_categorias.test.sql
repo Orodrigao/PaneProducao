@@ -77,35 +77,35 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '93000000-0000-4000-8000-00000000000a', true);
 
 select lives_ok(
-  $$select public.manage_product_category('Embalagens', 'embalagem', null, true, 10)$$,
+  $$select public.manage_product_category('Caixaria de prova', 'embalagem', null, true, 10)$$,
   'administrador cria categoria');
-select is((select normalized_name from public.product_categories where name = 'Embalagens'),
-  'embalagens', 'nome normalizado é previsível');
+select is((select normalized_name from public.product_categories where name = 'Caixaria de prova'),
+  'caixaria-de-prova', 'nome normalizado é previsível');
 select throws_ok(
-  $$select public.manage_product_category(' EMBALÁGENS ', 'embalagem', null, true, 20)$$,
+  $$select public.manage_product_category(' CAIXÁRIA DE PROVA ', 'embalagem', null, true, 20)$$,
   '23505', 'Já existe uma categoria com esse nome, mesmo considerando acentos e maiúsculas.',
   'acentos, caixa e espaços não criam duplicata');
 
 -- O mesmo nome pode chegar de duas formas no Unicode: com o acento dentro da
 -- letra, ou com o acento como caractere separado, que é o que alguns aparelhos
 -- mandam ao colar. `chr(769)` é esse acento solto. Com a normalização antiga,
--- por lista fixa de letras, esta linha virava a chave 'embala-gens' e o banco
--- aceitaria a categoria repetida: a asserção falha sem o conserto.
+-- por lista fixa de letras, esta linha virava a chave 'caixa-ria-de-prova' e o
+-- banco aceitaria a categoria repetida: a asserção falha sem o conserto.
 select throws_ok(
-  $$select public.manage_product_category('EMBALA' || chr(769) || 'GENS', 'embalagem', null, true, 30)$$,
+  $$select public.manage_product_category('CAIXA' || chr(769) || 'RIA DE PROVA', 'embalagem', null, true, 30)$$,
   '23505', 'Já existe uma categoria com esse nome, mesmo considerando acentos e maiúsculas.',
   'acento escrito como caractere separado também não cria duplicata');
 
 reset role;
 select lives_ok(
   $$insert into public.products (name, category, unit, kind, catalog_type, category_id)
-    select '[TESTE] Caixa controlada', 'Embalagens', 'un', 'insumo', 'embalagem', id
-    from public.product_categories where normalized_name = 'embalagens'$$,
+    select '[TESTE] Caixa controlada', 'Caixaria de prova', 'un', 'insumo', 'embalagem', id
+    from public.product_categories where normalized_name = 'caixaria-de-prova'$$,
   'produto aceita categoria do mesmo tipo');
 select throws_ok(
   $$insert into public.products (name, category, unit, kind, catalog_type, category_id)
-    select '[TESTE] Categoria incompatível', 'Embalagens', 'un', 'insumo', 'materia_prima', id
-    from public.product_categories where normalized_name = 'embalagens'$$,
+    select '[TESTE] Categoria incompatível', 'Caixaria de prova', 'un', 'insumo', 'materia_prima', id
+    from public.product_categories where normalized_name = 'caixaria-de-prova'$$,
   '23503', null,
   'produto recusa categoria de outro tipo');
 
@@ -113,8 +113,8 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '93000000-0000-4000-8000-00000000000a', true);
 select throws_ok(
   $$select public.manage_product_category(
-    'Embalagens', 'materia_prima',
-    (select id from public.product_categories where normalized_name = 'embalagens'), true, 10
+    'Caixaria de prova', 'materia_prima',
+    (select id from public.product_categories where normalized_name = 'caixaria-de-prova'), true, 10
   )$$,
   '23503', 'Não é possível trocar o tipo de uma categoria já usada por produtos.',
   'tipo de categoria usada não muda silenciosamente');
@@ -124,7 +124,11 @@ select throws_ok(
   $$select public.manage_product_category('Ocupação', 'manutencao', null, true, 0)$$,
   '42501', 'Somente administradores podem gerenciar categorias de produtos.',
   'financeiro não cria categoria de produto');
-select is((select count(*)::int from public.product_categories), 1,
+-- A lista deixou de nascer vazia na fase 2A: contar uma linha só provaria que
+-- o seed desta prova rodou, não que o perfil ativo enxerga a lista. O que
+-- interessa é a leitura passar pela RLS e trazer as categorias do cadastro
+-- mais a criada aqui.
+select ok((select count(*)::int from public.product_categories) >= 21,
   'perfil ativo consulta a lista controlada');
 select throws_ok(
   $$insert into public.product_categories (name, catalog_type) values ('Livre', 'manutencao')$$,
@@ -134,11 +138,11 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '93000000-0000-4000-8000-00000000000a', true);
 select lives_ok(
   $$select public.manage_product_category(
-    'Embalagens de produção', 'embalagem',
-    (select id from public.product_categories where normalized_name = 'embalagens'), false, 10
+    'Caixaria de produção', 'embalagem',
+    (select id from public.product_categories where normalized_name = 'caixaria-de-prova'), false, 10
   )$$,
   'administrador renomeia e inativa categoria');
-select is((select active from public.product_categories where normalized_name = 'embalagens-de-producao'),
+select is((select active from public.product_categories where normalized_name = 'caixaria-de-producao'),
   false, 'categoria inativada permanece no histórico');
 
 select * from finish();

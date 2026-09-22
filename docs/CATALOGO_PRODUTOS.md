@@ -34,7 +34,7 @@ Consequência aceita: enquanto a migração assistida não acontecer, tipo e
 categoria controlada são informação **opcional** no cadastro, e a categoria em
 texto livre continua existindo em paralelo.
 
-## Fase 1 — Fundação (PR #318, aguardando teste do Rodrigo)
+## Fase 1 — Fundação (PR #318, em produção desde 2026-09-03)
 
 **Escopo:** o lugar onde as categorias passam a viver de forma controlada.
 
@@ -64,23 +64,49 @@ tela antiga de produto.
 O escopo abaixo está aprovado em linhas gerais; cada fase ainda recebe plano
 próprio e aprovação antes de começar.
 
-### Fase 2 — A tela de produto passa a usar a lista controlada
+### Fase 2A — A lista nasce preenchida e o cadastro aponta para ela
+
+Entregue em 2026-09-22. A fase 1 criou a estrutura e ninguém a preencheu: a
+lista ficou vazia e os 655 produtos seguiram sem tipo e sem categoria
+controlada. A unificação do texto livre (abaixo) deixou 20 grafias limpas, e
+isso permitiu preencher tudo de uma vez, sem tela de classificação:
+
+- as 20 categorias do cadastro entram na lista controlada, cada uma com o tipo
+  de item decidido pelo Rodrigo: Insumos é matéria-prima; Embalagens, Higiene e
+  limpeza, Escritório e Manutenção vão para os tipos de mesmo nome; Revenda é
+  produto de revenda; as catorze categorias de venda são produto fabricado;
+- `private.assign_controlled_product_categories()` amarra cada produto à
+  categoria de mesmo nome normalizado e grava tipo e categoria. Só toca produto
+  sem os dois campos, então rodar de novo é seguro e decisão já registrada não
+  é sobrescrita;
+- cada classificação fica em `private.product_catalog_assignment_log` com o
+  valor anterior, para reverter;
+- `products.category` não é tocado, então nenhuma tela que ainda lê o texto
+  muda de comportamento.
+
+Os seis produtos marcados como kit (`products.kind = 'kit'`) seguem a categoria
+de pão onde já estão. Quem responde "isto é um kit" hoje é `kind`; uma segunda
+fonte para a mesma pergunta é como as grafias repetidas nasceram. Os tipos
+`utensilio_equipamento` e `kit` continuam sem categoria até a operação precisar.
+
+### Fase 2B — A tela de produto passa a usar a lista controlada
 
 O cadastro de produto escolhe tipo e categoria da lista, em vez de digitar
-texto. As duas informações convivem durante a transição: o texto legado
-permanece na coluna antiga até a fase 4.
+texto, e o texto legado passa a ser gravado com o nome da categoria escolhida,
+para as telas que ainda leem o texto continuarem certas. As duas informações
+convivem até a fase 4.
 
-Decisão pendente: se tipo e categoria passam a ser obrigatórios para item novo
-já nesta fase, ou somente depois da migração assistida.
+Decisão do Rodrigo, 2026-09-22: tipo e categoria são **obrigatórios para
+produto novo** já nesta fase. Produto antigo continua salvando sem travar.
 
-### Fase 3 — Migração assistida do cadastro existente
+### Fase 3 — Famílias de insumo
 
-Uma tela que percorre o cadastro atual e permite classificar em lote, com
-sugestão automática a partir do texto legado. Rodrigo revisa e confirma; nada é
-reclassificado sozinho.
-
-Ordem de grandeza conhecida: cerca de 337 insumos, mais os demais itens do
-catálogo.
+A migração assistida item a item deixou de ser necessária para classificar o
+catálogo: a fase 2A fez isso pelo nome. O trabalho de decisão que sobra é
+outro, e é o que o CMV precisa: os 340 insumos estão hoje numa família só,
+chamada "Insumos". Quebrar isso em famílias reais (farinhas, laticínios,
+fermentos, e assim por diante) continua exigindo decisão item a item, agora
+sobre um recorte menor e com a estrutura pronta para receber.
 
 ### Fase 4 — Aposentar a categoria em texto livre
 
@@ -111,10 +137,21 @@ esperar a lista controlada:
   ficha técnica, não a categoria.
 
 Cada troca fica em `private.product_category_unification_log` com o texto
-antigo. As telas comparam `Insumos` sem diferenciar maiúscula. A lista controlada
-continua vazia; as fases 2 a 4 acima seguem valendo.
+antigo. As telas comparam `Insumos` sem diferenciar maiúscula. Essa limpeza é o
+que tornou a fase 2A possível sem tela de classificação item a item.
 
 ## Riscos e dívidas registradas
+
+- **Entre a fase 2A e a 2B, os dois campos podem divergir.** A tela antiga
+  grava só o texto livre. Um produto que mudar de categoria nessa janela
+  continua apontando para a categoria controlada anterior, até a 2B passar a
+  gravar os dois juntos. A correção é rodar
+  `private.assign_controlled_product_categories()` de novo depois de limpar o
+  campo, ou ajustar pela própria tela quando a 2B estiver no ar.
+- **Produto criado depois da migration nasce sem classificação.** É o caso dos
+  produtos fictícios do seed no banco de teste, que roda depois das migrations,
+  e o de qualquer produto cadastrado antes de a 2B exigir a escolha. A função
+  continua disponível e idempotente justamente para isso.
 
 - **Duas implementações da normalização de nome**, uma no navegador
   (`src/lib/productCategories.ts`) e uma no banco
