@@ -608,6 +608,12 @@ describe('parseDueDateInput', () => {
     expect(parseDueDateInput('2026-09/28')).toBeNull()
   })
 
+  it('recusa o ano zero, que o Postgres nao aceita', () => {
+    expect(parseDueDateInput('0000-01-01')).toBeNull()
+    expect(parseDueDateInput('01/01/0000')).toBeNull()
+    expect(parseDueDateInput('0001-01-01')).toBe('0001-01-01')
+  })
+
   it('recusa texto, vazio e ano de dois digitos', () => {
     expect(parseDueDateInput('')).toBeNull()
     expect(parseDueDateInput('   ')).toBeNull()

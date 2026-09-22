@@ -251,6 +251,10 @@ export function parseDueDateInput(value: string): string | null {
     return null
   }
 
+  // O ano zero existe no calendário do JavaScript e não existe no Postgres:
+  // sem esta linha, `0000-01-01` sairia daqui como data boa.
+  if (ano < 1) return null
+
   const chave = `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
   // Quem decide se o dia existe é o calendário: conferir só o intervalo deixa
   // 31/04 e 29/02 fora de bissexto virarem outro dia em silêncio.
