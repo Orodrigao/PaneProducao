@@ -28,6 +28,7 @@ import {
   podeDividirEm,
   fallbackExcessRule,
   loadReceivableExcessRule,
+  parseDueDateInput,
   receiptExcess,
   splitReceiptExcess,
   validateExcessReason,
@@ -568,5 +569,71 @@ describe('parcelamento — casos de borda', () => {
   it('podeDividirEm retorna falso se o prazo for nulo, independente das parcelas', () => {
     expect(podeDividirEm(null, 1)).toBe(false)
     expect(podeDividirEm(null, 2)).toBe(false)
+  })
+})
+
+describe('parseDueDateInput', () => {
+  it('aceita o formato que a pessoa escreve no papel', () => {
+    // O caso real: a cobranca da Buck precisava vencer em 28/09/2026.
+    expect(parseDueDateInput('28/09/2026')).toBe('2026-09-28')
+    expect(parseDueDateInput('28-09-2026')).toBe('2026-09-28')
+    expect(parseDueDateInput(' 5/9/2026 ')).toBe('2026-09-05')
+  })
+
+  it('continua aceitando a chave que a tela usava antes', () => {
+    expect(parseDueDateInput('2026-09-28')).toBe('2026-09-28')
+    expect(parseDueDateInput('2026-9-5')).toBe('2026-09-05')
+  })
+
+  it('recusa o que nao e um dia do calendario', () => {
+    // Sem a conferencia contra o calendario, 31/04 viraria 01/05 em silencio.
+    expect(parseDueDateInput('31/04/2026')).toBeNull()
+    expect(parseDueDateInput('29/02/2026')).toBeNull()
+    expect(parseDueDateInput('28/13/2026')).toBeNull()
+    expect(parseDueDateInput('00/09/2026')).toBeNull()
+  })
+
+  it('aceita 29 de fevereiro quando o ano e bissexto', () => {
+    expect(parseDueDateInput('29/02/2028')).toBe('2028-02-29')
+  })
+
+  it('recusa texto, vazio e ano de dois digitos', () => {
+    expect(parseDueDateInput('')).toBeNull()
+    expect(parseDueDateInput('   ')).toBeNull()
+    expect(parseDueDateInput('amanha')).toBeNull()
+    expect(parseDueDateInput('28/09/26')).toBeNull()
+    expect(parseDueDateInput('28.09.2026')).toBeNull()
+  })
+})
+
+describe('regra do vencimento no banco', () => {
+  it('a correcao de vencimento compara com o faturamento, nao com o prazo calculado', () => {
+    // Paridade com o SQL: a tela promete ao Financeiro que da para antecipar,
+    // e quem decide isso e a RPC. Se uma migration nova devolver a comparacao
+    // a original_due_date, este teste avisa.
+    const migrations = readdirSync(PASTA_MIGRATIONS).filter(nome => nome.endsWith('.sql')).sort()
+    const definicoes = migrations
+      .map(nome => readFileSync(join(PASTA_MIGRATIONS, nome), 'utf8'))
+      .filter(sql => sql.includes('function public.correct_receivable_due_date'))
+    expect(definicoes.length, 'nenhuma migration define correct_receivable_due_date')
+      .toBeGreaterThan(0)
+
+    const ultima = definicoes[definicoes.length - 1]
+    const corpo = ultima.slice(ultima.indexOf('function public.correct_receivable_due_date'))
+    expect(corpo).toContain('if p_due_date < v_row.invoice_date then')
+    expect(corpo).not.toContain('p_due_date < v_row.original_due_date')
+  })
+
+  it('a definicao mais recente mantem a trava financeira por request_id', () => {
+    // `create or replace` troca o corpo inteiro: sem repetir a trava que a
+    // migration da concorrencia injetou, ela sumiria sem ninguem perceber.
+    const migrations = readdirSync(PASTA_MIGRATIONS).filter(nome => nome.endsWith('.sql')).sort()
+    const definicoes = migrations
+      .map(nome => readFileSync(join(PASTA_MIGRATIONS, nome), 'utf8'))
+      .filter(sql => sql.includes('function public.correct_receivable_due_date'))
+
+    const ultima = definicoes[definicoes.length - 1]
+    const corpo = ultima.slice(ultima.indexOf('function public.correct_receivable_due_date'))
+    expect(corpo).toContain('perform private.lock_financial_request(p_request_id);')
   })
 })

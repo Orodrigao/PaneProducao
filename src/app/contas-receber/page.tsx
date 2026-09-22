@@ -12,9 +12,11 @@ import {
   cancelReceivable,
   correctReceivableDueDate,
   formatReceivableMoney,
+  getReceivableErrorMessage,
   loadReceivableCustomers,
   loadPjOrdersToBill,
   loadReceivables,
+  parseDueDateInput,
   reverseReceivableReceipt,
   splitReceivable,
   sortReceivables,
@@ -30,7 +32,7 @@ import {
   type BuckReceivableDetail,
   type BuckWeekToBillRow,
 } from '@/lib/buckWeeklyBilling'
-import { showToast } from '@/lib/utils'
+import { formatDateBR, showToast } from '@/lib/utils'
 import { discoverPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
 
 export default function ContasReceberPage() {
@@ -91,7 +93,7 @@ export default function ContasReceberPage() {
       await load()
     } catch (actionError) {
       console.error(actionError)
-      showToast(actionError instanceof Error ? actionError.message : 'Não foi possível estornar o recebimento.')
+      showToast(getReceivableErrorMessage(actionError, 'Não foi possível estornar o recebimento.'))
     } finally {
       setBusyId(null)
     }
@@ -107,7 +109,7 @@ export default function ContasReceberPage() {
       await load()
     } catch (actionError) {
       console.error(actionError)
-      showToast(actionError instanceof Error ? actionError.message : 'Não foi possível cancelar a cobrança.')
+      showToast(getReceivableErrorMessage(actionError, 'Não foi possível cancelar a cobrança.'))
     } finally {
       setBusyId(null)
     }
@@ -140,7 +142,7 @@ export default function ContasReceberPage() {
       await load()
     } catch (actionError) {
       console.error(actionError)
-      showToast(actionError instanceof Error ? actionError.message : 'Não foi possível dividir a cobrança.')
+      showToast(getReceivableErrorMessage(actionError, 'Não foi possível dividir a cobrança.'))
     } finally {
       setBusyId(null)
     }
@@ -148,8 +150,13 @@ export default function ContasReceberPage() {
 
   async function handleCorrectDueDate(receivable: ReceivableRow) {
     if (openPjConditions(receivable, 'due')) return
-    const dueDate = window.prompt('Novo vencimento (AAAA-MM-DD):', receivable.due_date)?.trim()
-    if (!dueDate) return
+    const digitado = window.prompt('Novo vencimento (DD/MM/AAAA):', formatDateBR(receivable.due_date))?.trim()
+    if (!digitado) return
+    const dueDate = parseDueDateInput(digitado)
+    if (!dueDate) {
+      showToast('Data inválida. Escreva dia, mês e ano, como em 28/09/2026.')
+      return
+    }
     const reason = window.prompt('Por que o vencimento está sendo alterado?')?.trim()
     if (!reason) return
     setBusyId(receivable.id)
@@ -159,7 +166,7 @@ export default function ContasReceberPage() {
       await load()
     } catch (actionError) {
       console.error(actionError)
-      showToast(actionError instanceof Error ? actionError.message : 'Não foi possível corrigir o vencimento.')
+      showToast(getReceivableErrorMessage(actionError, 'Não foi possível corrigir o vencimento.'))
     } finally {
       setBusyId(null)
     }
