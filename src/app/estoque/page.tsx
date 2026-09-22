@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CheckCircle2, ClipboardList, Search, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ClipboardList, Search, Settings2, TrendingDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, PAYABLES_PERMISSION, roleColor, type AppUser } from '@/lib/auth'
 import KPICard from '@/components/reports/KPICard'
+import { canViewInventoryConsumption } from '@/lib/inventoryConsumption'
 import {
   buildInventoryReadiness,
   summarizeInventoryReadiness,
@@ -187,7 +188,10 @@ export default function EstoquePage() {
 
           {tab === 'preparacao' && (
             <>
-              <div style={{display:'flex', justifyContent:'flex-end', marginTop:14}}>
+              <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:14, flexWrap:'wrap'}}>
+                {canViewInventoryConsumption(user) && (
+                  <Link href="/estoque/consumo" className="ps-btn ghost sm"><TrendingDown size={14}/> Consumo semanal</Link>
+                )}
                 <Link href="/estoque/contagem" className="ps-btn ghost sm"><ClipboardList size={14}/> Contagem semanal</Link>
               </div>
               <div style={{display:'flex', gap:10, marginTop:10, flexWrap:'wrap'}}>
