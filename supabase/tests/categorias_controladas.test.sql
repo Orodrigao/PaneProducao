@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(41);
 
 -- Contrato de acesso: registro e funções são internos, como na unificação.
 select ok(not has_table_privilege('authenticated', 'private.product_catalog_assignment_log', 'select'),
@@ -38,8 +38,8 @@ select ok((select relrowsecurity and relforcerowsecurity
 -- cadastro real é a conferência de cobertura, exercitada mais abaixo.
 select is(
   (select count(*)::integer from public.product_categories),
-  20,
-  'a lista controlada tem as 20 categorias do cadastro real'
+  21,
+  'a lista controlada tem as 20 categorias do cadastro real mais Serviços'
 );
 select results_eq(
   $q$select name || ' => ' || catalog_type from public.product_categories
@@ -64,7 +64,8 @@ select results_eq(
     ('Sopas & Cremes => produto_fabricado'),
     ('Pastas & Pesto => produto_fabricado'),
     ('Confeitaria => produto_fabricado'),
-    ('Revenda => produto_revenda')$q$,
+    ('Revenda => produto_revenda'),
+    ('Serviços => servico')$q$,
   'cada categoria recebe o tipo de item decidido, na ordem de uso da padaria'
 );
 select ok((select bool_and(active) from public.product_categories),
@@ -81,6 +82,28 @@ select ok(
   'classificar não está entre as colunas que acordam a vitrine do site'
 );
 
+-- O décimo tipo de item, serviço, criado nesta fase para a taxa de
+-- tele-entrega. Os três lugares que definem os tipos precisam concordar: os
+-- dois checks e a validação dentro de manage_product_category.
+select ok((select pg_get_constraintdef(oid) from pg_constraint
+    where conname = 'product_categories_catalog_type_check') like '%servico%',
+  'a lista controlada aceita o tipo serviço');
+select ok((select pg_get_constraintdef(oid) from pg_constraint
+    where conname = 'products_catalog_type_check') like '%servico%',
+  'o produto aceita o tipo serviço');
+select lives_ok(
+  $q$insert into public.product_categories (name, catalog_type, sort_order)
+     values ('[TESTE] Taxas', 'servico', 900)$q$,
+  'categoria nova de serviço é aceita pelo banco'
+);
+select throws_ok(
+  $q$insert into public.product_categories (name, catalog_type, sort_order)
+     values ('[TESTE] Tipo inventado', 'servico_de_mentira', 901)$q$,
+  '23514',
+  null,
+  'tipo fora da lista continua recusado'
+);
+
 -- Correção de itens que estavam na categoria errada, decidida pelo Rodrigo em
 -- 2026-09-22. Ela roda antes da classificação de propósito, para o produto
 -- entrar já na gaveta certa.
@@ -94,14 +117,15 @@ insert into public.products (id, name, category, kind, active) values
   ('c0000000-0000-4000-8000-000000000004', 'TRENTO DUO 29GR DP. 16X29GR', 'Insumos', 'final', true),
   -- Homônimo em outro grupo: o nome está na lista de trocas, mas a categoria
   -- de origem não. Não pode ser arrastado.
-  ('c0000000-0000-4000-8000-000000000005', 'PALHA DE ACO', 'Embalagens', 'insumo', true);
+  ('c0000000-0000-4000-8000-000000000005', 'PALHA DE ACO', 'Embalagens', 'insumo', true),
+  ('c0000000-0000-4000-8000-000000000006', 'Tele', 'Confeitaria', 'final', true);
 
 create temporary table vitrine_antes as
   select product_id, slug from public.site_bread_catalog;
 
 -- Três dos cinco se movem: a chave do toalheiro é manutenção de verdade e a
 -- palha de aço fictícia está em Embalagens, fora do grupo de origem da troca.
-select is(private.move_misfiled_legacy_categories(), 3,
+select is(private.move_misfiled_legacy_categories(), 4,
   'a correção move só os fictícios que estão no grupo errado');
 select results_eq(
   $q$select name || ' => ' || category from public.products
@@ -111,14 +135,15 @@ select results_eq(
     ('Luva Nitrilica sem po M/8 preta 100 un => Higiene e limpeza'),
     ('CHAVE TOALHEIRO AUTO CORTE/ALAVANCA TRILHA => Manutenção'),
     ('TRENTO DUO 29GR DP. 16X29GR => Revenda'),
-    ('PALHA DE ACO => Embalagens')$q$,
-  'limpeza sai da Manutenção mesmo com o nome em caixa mista, a chave do toalheiro fica, industrializado vai para Revenda e homônimo de outro grupo não é arrastado'
+    ('PALHA DE ACO => Embalagens'),
+    ('Tele => Serviços')$q$,
+  'limpeza sai da Manutenção mesmo com o nome em caixa mista, a chave do toalheiro fica, industrializado vai para Revenda, a taxa de tele-entrega vai para Serviços e homônimo de outro grupo não é arrastado'
 );
 select is(
   (select count(*)::integer from private.product_category_unification_log
     where product_id::text like 'c0000000-0000-4000-8000-00000000000%'
-      and old_category in ('Manutenção', 'Insumos')),
-  3,
+      and old_category in ('Manutenção', 'Insumos', 'Confeitaria')),
+  4,
   'cada troca de categoria fica registrada com o grupo de origem'
 );
 select is(private.move_misfiled_legacy_categories(), 0,
@@ -279,6 +304,17 @@ update public.product_categories set active = true where normalized_name = 'salg
 -- para o que chegar antes de a tela exigir a escolha, na fase seguinte.
 select is(private.assign_controlled_product_categories('teste-fase-2a'), 1,
   'categoria reativada classifica o produto que ficou para trás');
+
+-- A taxa de tele-entrega, que a migration tirou de Confeitaria, cai na gaveta
+-- de serviço em vez de contar como doce fabricado.
+select is(
+  (select product.catalog_type || ' / ' || category.name
+    from public.products product
+    join public.product_categories category on category.id = product.category_id
+    where product.id = 'c0000000-0000-4000-8000-000000000006'),
+  'servico / Serviços',
+  'a taxa de tele-entrega fica em Serviços, no tipo serviço'
+);
 
 -- A trava composta recusa categoria de um tipo em produto de outro tipo.
 select throws_ok(

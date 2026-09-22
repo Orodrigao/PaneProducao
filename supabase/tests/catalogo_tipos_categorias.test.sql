@@ -125,11 +125,11 @@ select throws_ok(
   '42501', 'Somente administradores podem gerenciar categorias de produtos.',
   'financeiro não cria categoria de produto');
 -- A lista deixou de nascer vazia na fase 2A, então o número esperado subiu de
--- 1 para 21: as 20 semeadas pela migration mais a criada aqui. O número
+-- 1 para 22: as 21 semeadas pela migration mais a criada aqui. O número
 -- continua exato de propósito, porque ele também é a trava contra categoria
--- entrando por caminho inesperado; trocar por "pelo menos 21" deixaria passar
+-- entrando por caminho inesperado; trocar por "pelo menos 22" deixaria passar
 -- uma migration futura que semeasse duplicata.
-select is((select count(*)::int from public.product_categories), 21,
+select is((select count(*)::int from public.product_categories), 22,
   'perfil ativo consulta a lista controlada');
 select throws_ok(
   $$insert into public.product_categories (name, catalog_type) values ('Livre', 'manutencao')$$,

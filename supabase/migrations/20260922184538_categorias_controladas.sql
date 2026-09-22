@@ -7,7 +7,8 @@
 -- unificou o texto livre de products.category em 20 grafias limpas, e é isso
 -- que torna esta migration possível sem tela de classificação item a item:
 -- cada uma das 20 vira uma categoria controlada, e o produto encontra a sua
--- pela mesma chave normalizada que a lista já usa.
+-- pela mesma chave normalizada que a lista já usa. A vigésima primeira,
+-- Serviços, nasce aqui para receber a taxa de tele-entrega.
 --
 -- O tipo de item de cada categoria foi decidido pelo Rodrigo em 2026-09-22:
 -- Insumos é matéria-prima; Embalagens, Higiene e limpeza, Escritório e
@@ -22,11 +23,11 @@
 -- Duas travas fecham em vez de adivinhar, porque classificar metade do
 -- catálogo em silêncio é pior que recusar a migration:
 --
---   1. se alguma das 20 já existir na lista com outro tipo ou inativa, a
+--   1. se alguma das 21 já existir na lista com outro tipo ou inativa, a
 --      migration aborta. Sem isso, uma categoria criada pela tela com o tipo
 --      errado seria reaproveitada e arrastaria centenas de produtos com ela;
 --   2. se sobrar produto cuja categoria não tem correspondente na lista, a
---      migration aborta. As 20 grafias vieram de leitura ao vivo do cadastro;
+--      migration aborta. As grafias vieram de leitura ao vivo do cadastro;
 --      se uma delas não bater (um espaço, um "e" no lugar de "&"), os produtos
 --      daquela categoria ficariam sem classificação e nada avisaria.
 --
@@ -62,6 +63,134 @@
 -- teste prova que a vitrine do site fica igual.
 
 begin;
+
+-- Um décimo tipo de item: serviço.
+--
+-- A padaria cobra tele-entrega por um "produto" chamado Tele, que a Elis criou
+-- para lançar o frete do cliente. Ele vive em Confeitaria e nenhuma das nove
+-- gavetas da fase 1 serve para ele: não é matéria-prima, não é fabricado, não
+-- é revenda. Classificá-lo como produto fabricado misturaria frete com doce em
+-- todo agrupamento por tipo. Rodrigo decidiu em 2026-09-22 criar a gaveta em
+-- vez de forçar o item numa errada; ela serve para qualquer taxa futura.
+--
+-- O tipo existe em três lugares que precisam concordar: o check de
+-- product_categories, o check de products e a validação dentro de
+-- manage_product_category. Fora do banco, existe também em CATALOG_TYPES, em
+-- src/lib/productCategories.ts, alterado no mesmo commit.
+alter table public.product_categories
+  drop constraint product_categories_catalog_type_check;
+alter table public.product_categories
+  add constraint product_categories_catalog_type_check check (catalog_type in (
+    'materia_prima',
+    'embalagem',
+    'higiene_limpeza',
+    'escritorio_administrativo',
+    'utensilio_equipamento',
+    'manutencao',
+    'produto_fabricado',
+    'produto_revenda',
+    'kit',
+    'servico'
+  ));
+
+alter table public.products
+  drop constraint products_catalog_type_check;
+alter table public.products
+  add constraint products_catalog_type_check check (
+    catalog_type is null or catalog_type in (
+      'materia_prima',
+      'embalagem',
+      'higiene_limpeza',
+      'escritorio_administrativo',
+      'utensilio_equipamento',
+      'manutencao',
+      'produto_fabricado',
+      'produto_revenda',
+      'kit',
+      'servico'
+    )
+  );
+
+-- Redefinida a partir da versão vigente (20260902181827), com o tipo novo na
+-- validação. Nada mais muda: `create or replace` sobrescreve o corpo inteiro,
+-- então a diferença tem que ser só esta.
+create or replace function public.manage_product_category(
+  p_name text,
+  p_catalog_type text,
+  p_id uuid default null,
+  p_active boolean default true,
+  p_sort_order integer default 0
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_name text := pg_catalog.btrim(p_name);
+begin
+  if not (select private.current_user_is_access_admin()) then
+    raise exception using errcode = '42501', message = 'Somente administradores podem gerenciar categorias de produtos.';
+  end if;
+
+  if v_name is null or char_length(v_name) not between 2 and 80 then
+    raise exception using errcode = '22023', message = 'Informe um nome de categoria entre 2 e 80 caracteres.';
+  end if;
+  if private.normalize_product_category_name(v_name) = '' then
+    raise exception using errcode = '22023', message = 'O nome da categoria precisa conter letras ou números.';
+  end if;
+  if p_catalog_type is null or p_catalog_type not in (
+    'materia_prima', 'embalagem', 'higiene_limpeza', 'escritorio_administrativo',
+    'utensilio_equipamento', 'manutencao', 'produto_fabricado', 'produto_revenda',
+    'kit', 'servico'
+  ) then
+    raise exception using errcode = '22023', message = 'Tipo de item inválido.';
+  end if;
+  if p_sort_order is null or p_sort_order not between 0 and 10000 then
+    raise exception using errcode = '22023', message = 'A ordem deve estar entre 0 e 10000.';
+  end if;
+
+  if p_id is null then
+    insert into public.product_categories (name, catalog_type, active, sort_order)
+    values (v_name, p_catalog_type, coalesce(p_active, true), p_sort_order)
+    returning id into v_id;
+  else
+    if exists (
+      select 1 from public.products product
+      where product.category_id = p_id
+        and product.catalog_type is distinct from p_catalog_type
+    ) then
+      raise exception using errcode = '23503',
+        message = 'Não é possível trocar o tipo de uma categoria já usada por produtos.';
+    end if;
+
+    update public.product_categories category
+    set name = v_name,
+        catalog_type = p_catalog_type,
+        active = coalesce(p_active, category.active),
+        sort_order = p_sort_order,
+        updated_at = now()
+    where category.id = p_id
+    returning category.id into v_id;
+
+    if v_id is null then
+      raise exception using errcode = 'P0002', message = 'Categoria de produto não encontrada.';
+    end if;
+  end if;
+
+  return v_id;
+exception
+  when unique_violation then
+    raise exception using errcode = '23505',
+      message = 'Já existe uma categoria com esse nome, mesmo considerando acentos e maiúsculas.';
+end;
+$$;
+
+revoke all on function public.manage_product_category(text, text, uuid, boolean, integer)
+  from public, anon, service_role;
+grant execute on function public.manage_product_category(text, text, uuid, boolean, integer)
+  to authenticated;
 
 -- Antes de classificar, dois grupos de itens que estavam na categoria errada.
 -- Rodrigo decidiu em 2026-09-22, olhando o cadastro item a item:
@@ -105,7 +234,9 @@ begin
       ('Insumos', 'CAFE CASABLANCA MOIDO EXTRAFORTE - PCTE 500GRS', 'Revenda'),
       ('Insumos', 'MUFFIN BAUNILHA GOTAS MB 15 X 80G', 'Revenda'),
       ('Insumos', 'TRENTO CHOCOLATE BRANCO 29GR DP. 16X29GR', 'Revenda'),
-      ('Insumos', 'TRENTO DUO 29GR DP. 16X29GR', 'Revenda')
+      ('Insumos', 'TRENTO DUO 29GR DP. 16X29GR', 'Revenda'),
+      -- A taxa de tele-entrega sai de Confeitaria para a categoria de serviço.
+      ('Confeitaria', 'TELE', 'Serviços')
   ),
   changed as (
     update public.products product
@@ -165,7 +296,8 @@ insert into categorias_decididas (nome, tipo, ordem) values
   ('Salgados', 'produto_fabricado', 110),
   ('Sopas & Cremes', 'produto_fabricado', 120),
   ('Pastas & Pesto', 'produto_fabricado', 130),
-  ('Confeitaria', 'produto_fabricado', 140);
+  ('Confeitaria', 'produto_fabricado', 140),
+  ('Serviços', 'servico', 10);
 
 -- 1. A lista controlada recebe as categorias que o cadastro já usa.
 --    Quem decide se uma categoria já existe é a chave normalizada, a mesma do

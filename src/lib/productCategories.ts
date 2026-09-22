@@ -8,6 +8,11 @@ export const CATALOG_TYPES = [
   'produto_fabricado',
   'produto_revenda',
   'kit',
+  // Décimo tipo, criado em 2026-09-22: o que a padaria cobra sem ser um item
+  // físico do catálogo, como a taxa de tele-entrega. Esta lista precisa
+  // concordar com o check de catalog_type no banco; mudar uma sem a outra faz
+  // a tela oferecer um tipo que o banco recusa.
+  'servico',
 ] as const
 
 export type CatalogType = typeof CATALOG_TYPES[number]
@@ -22,6 +27,7 @@ export const CATALOG_TYPE_LABELS: Record<CatalogType, string> = {
   produto_fabricado: 'Produto fabricado',
   produto_revenda: 'Produto de revenda',
   kit: 'Kit',
+  servico: 'Serviço',
 }
 
 export interface ProductCategory {

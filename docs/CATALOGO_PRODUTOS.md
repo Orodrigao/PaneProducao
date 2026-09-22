@@ -51,9 +51,10 @@ texto livre continua existindo em paralelo.
   no banco, para que acento embutido e acento escrito como caractere separado
   produzam a mesma chave.
 
-**Os nove tipos de item:** matéria-prima, embalagem, higiene e limpeza,
-escritório e administrativo, utensílio e equipamento, manutenção, produto
-fabricado, produto de revenda, kit.
+**Os nove tipos de item da fase 1:** matéria-prima, embalagem, higiene e
+limpeza, escritório e administrativo, utensílio e equipamento, manutenção,
+produto fabricado, produto de revenda, kit. A fase 2A acrescentou o décimo,
+**serviço** (ver abaixo).
 
 **O que a fase 1 deliberadamente NÃO faz:** não reclassifica nenhum produto,
 não renomeia nada, não apaga nada, e não troca a categoria em texto livre da
@@ -75,6 +76,14 @@ isso permitiu preencher tudo de uma vez, sem tela de classificação:
   de item decidido pelo Rodrigo: Insumos é matéria-prima; Embalagens, Higiene e
   limpeza, Escritório e Manutenção vão para os tipos de mesmo nome; Revenda é
   produto de revenda; as catorze categorias de venda são produto fabricado;
+- nasce um **décimo tipo de item, serviço**, e com ele a vigésima primeira
+  categoria, `Serviços`. Existe porque a padaria cobra tele-entrega por um
+  "produto" chamado `Tele`, criado pela Elis para lançar o frete do cliente, e
+  nenhuma das nove gavetas servia: não é matéria-prima, não é fabricado, não é
+  revenda. Rodrigo decidiu criar a gaveta em vez de forçar o item numa errada;
+  ela serve para qualquer taxa futura. O tipo vive em três lugares que precisam
+  concordar: o check de `product_categories`, o de `products` e a validação
+  dentro de `manage_product_category`, mais `CATALOG_TYPES` no navegador;
 - `private.assign_controlled_product_categories()` amarra cada produto à
   categoria **ativa** de mesmo nome normalizado e grava tipo e categoria. Só
   toca produto sem os dois campos, então rodar de novo é seguro e decisão já
@@ -167,8 +176,12 @@ categoria, o Rodrigo achou mais dois grupos fora do lugar, e a migration
 
 A correção vem antes da classificação de propósito: trocar o texto depois
 deixaria o produto com a categoria nova escrita e a gaveta antiga amarrada.
-Ficou de fora, à espera de decisão: um produto chamado `Tele`, em
-`Confeitaria`, também marcado como revenda, cuja natureza ninguém soube dizer.
+Um terceiro item saiu junto: `Tele`, que estava em `Confeitaria` marcado como
+revenda, é a taxa de tele-entrega e foi para a categoria `Serviços`. No ERP ele
+não está ligado a preço, romaneio, cobrança nem venda — conferido por consulta
+somente leitura em 22/09/2026 —, então mudar sua categoria não altera nenhum
+número registrado. Onde a cobrança de frete deve morar de verdade continua uma
+pergunta aberta, maior que o catálogo.
 
 ## Riscos e dívidas registradas
 
