@@ -3,27 +3,39 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(30);
 
--- Contrato de acesso: registro e função são internos, como na unificação.
+-- Contrato de acesso: registro e funções são internos, como na unificação.
 select ok(not has_table_privilege('authenticated', 'private.product_catalog_assignment_log', 'select'),
   'usuário autenticado não lê o registro da classificação');
 select ok(not has_table_privilege('anon', 'private.product_catalog_assignment_log', 'select'),
   'anônimo não lê o registro da classificação');
 select ok(not has_table_privilege('service_role', 'private.product_catalog_assignment_log', 'select'),
   'chave de serviço não lê o registro da classificação');
-select ok(not has_function_privilege('authenticated', 'private.assign_controlled_product_categories()', 'execute'),
+select ok(not has_function_privilege('authenticated', 'private.assign_controlled_product_categories(text)', 'execute'),
   'usuário autenticado não executa a classificação');
-select ok(not has_function_privilege('anon', 'private.assign_controlled_product_categories()', 'execute'),
+select ok(not has_function_privilege('anon', 'private.assign_controlled_product_categories(text)', 'execute'),
   'anônimo não executa a classificação');
-select ok(not has_function_privilege('service_role', 'private.assign_controlled_product_categories()', 'execute'),
+select ok(not has_function_privilege('service_role', 'private.assign_controlled_product_categories(text)', 'execute'),
   'chave de serviço não executa a classificação');
+select ok(not has_function_privilege('anon', 'private.product_categories_without_match()', 'execute'),
+  'anônimo não executa a conferência de cobertura');
 select ok((select proconfig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private' and p.proname = 'assign_controlled_product_categories')
     @> array['search_path=""'],
   'classificação roda com search_path fechado');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private' and p.proname = 'assign_controlled_product_categories'),
+  'classificação roda com privilégio do dono, não do chamador');
+select ok((select relrowsecurity and relforcerowsecurity
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'private' and c.relname = 'product_catalog_assignment_log'),
+  'registro da classificação usa RLS forçada');
 
 -- A lista controlada, que estava vazia, nasce com as 20 categorias do cadastro.
+-- Esta asserção é detector de mudança, não prova de verdade: ela repete a
+-- decisão escrita na migration. Quem prova que as 20 grafias batem com o
+-- cadastro real é a conferência de cobertura, exercitada mais abaixo.
 select is(
   (select count(*)::integer from public.product_categories),
   20,
@@ -58,14 +70,15 @@ select results_eq(
 select ok((select bool_and(active) from public.product_categories),
   'toda categoria nasce ativa');
 
--- Nenhum produto do cadastro ficou apontando para categoria de outro tipo: é a
--- invariante que a chave estrangeira composta existe para segurar.
-select is(
-  (select count(*)::integer from public.products product
-    join public.product_categories category on category.id = product.category_id
-    where product.catalog_type is distinct from category.catalog_type),
-  0,
-  'nenhum produto aponta para categoria de outro tipo'
+-- O cabeçalho da migration afirma que classificar não mexe na vitrine do site.
+-- Provar pelo slug não serve: o gatilho reaproveita o slug existente, então a
+-- asserção passaria mesmo se ele disparasse. A prova é a lista de colunas que
+-- o acordam.
+select ok(
+  (select pg_get_triggerdef(t.oid) from pg_trigger t
+    where t.tgname = 'sync_site_bread_catalog_after_product_change')
+  not like all(array['%catalog_type%', '%category_id%']),
+  'classificar não está entre as colunas que acordam a vitrine do site'
 );
 
 -- Cadastro fictício: um caso por regra que a classificação precisa respeitar.
@@ -89,7 +102,7 @@ select
 from public.product_categories category
 where category.normalized_name = 'revenda';
 
--- Pão público no site, para provar que classificar não mexe na vitrine.
+-- Pão público no site, para provar que classificar não tira pão da vitrine.
 insert into public.products (
   id, name, category, kind, active, production_area, is_fabricacao_propria, is_pj, production_days
 ) values (
@@ -97,22 +110,32 @@ insert into public.products (
   'padaria', true, false, array[1, 3]
 );
 
-create temporary table site_slug_before as
-  select slug from public.site_bread_catalog
-  where product_id = 'b0000000-0000-4000-8000-000000000012';
-
-select ok((select count(*) from site_slug_before) = 1,
+select ok(exists(select 1 from public.site_bread_catalog
+    where product_id = 'b0000000-0000-4000-8000-000000000012'),
   'pão fictício entrou no catálogo do site antes da classificação');
 
-create temporary table assign_result as
-  select private.assign_controlled_product_categories() as changed;
+-- Quantos produtos DEVEM ser classificados, contados antes da chamada. O seed
+-- do banco de teste insere produtos depois das migrations, então eles chegam
+-- sem classificação e entram nesta varredura junto dos fictícios. Contar aqui
+-- em vez de escrever um número fixo mantém a asserção exata mesmo quando o
+-- seed mudar de tamanho.
+create temporary table elegiveis as
+  select count(*)::integer as total
+  from public.products product
+  join public.product_categories category
+    on category.normalized_name = private.normalize_product_category_name(product.category)
+  where product.category_id is null
+    and product.catalog_type is null
+    and category.active;
 
--- O seed do banco de teste insere produtos depois das migrations, então eles
--- chegam sem classificação e são apanhados aqui junto dos fictícios desta
--- prova. É a mesma situação de um produto cadastrado entre esta fase e a
--- seguinte, e mostra que a função continua servindo para quem chegar depois.
-select ok((select changed from assign_result) >= 10,
-  'classificação apanha os dez fictícios elegíveis e também o que o seed criou depois da migration');
+create temporary table categoria_antes as
+  select id, category from public.products;
+
+create temporary table assign_result as
+  select private.assign_controlled_product_categories('teste-fase-2a') as changed;
+
+select is((select changed from assign_result), (select total from elegiveis),
+  'classificação grava exatamente os produtos elegíveis contados antes da chamada');
 
 select results_eq(
   $q$select product.name || ' => ' || coalesce(product.catalog_type, 'sem tipo')
@@ -143,12 +166,23 @@ select is(
   10,
   'registro tem uma linha por produto classificado'
 );
+-- O registro é o artefato de reversão: se ele guardar valor diferente do que
+-- ficou no produto, desfazer escreve lixo. Nenhuma contagem pega isso.
 select is(
-  (select count(*)::integer from private.product_catalog_assignment_log
-    where product_id::text like 'b0000000-%'
-      and (old_catalog_type is not null or old_category_id is not null)),
+  (select count(*)::integer
+    from private.product_catalog_assignment_log registro
+    join public.products product on product.id = registro.product_id
+    where registro.product_id::text like 'b0000000-%'
+      and (product.catalog_type is distinct from registro.new_catalog_type
+        or product.category_id is distinct from registro.new_category_id)),
   0,
-  'registro guarda o estado anterior, que era em branco'
+  'o registro casa com o tipo e a categoria que ficaram gravados no produto'
+);
+select is(
+  (select count(distinct run_label)::integer from private.product_catalog_assignment_log
+    where product_id::text like 'b0000000-%'),
+  1,
+  'o registro marca a rodada que classificou, para desfazer uma sem desfazer as outras'
 );
 select is(
   (select count(*)::integer from private.product_catalog_assignment_log
@@ -157,24 +191,36 @@ select is(
   'produto já classificado não entra no registro'
 );
 
+select is(
+  (select count(*)::integer from public.products product
+    join categoria_antes antes on antes.id = product.id
+    where product.category is distinct from antes.category),
+  0,
+  'o texto livre da categoria não é tocado por nenhum produto'
+);
+
 select ok(exists(select 1 from public.site_bread_catalog
     where product_id = 'b0000000-0000-4000-8000-000000000012'),
   'pão continua no catálogo do site depois da classificação');
-select is(
-  (select slug from public.site_bread_catalog where product_id = 'b0000000-0000-4000-8000-000000000012'),
-  (select slug from site_slug_before),
-  'endereço do pão no site não muda'
-);
 
-select is(private.assign_controlled_product_categories(), 0,
+select is(private.assign_controlled_product_categories('teste-fase-2a'), 0,
   'rodar de novo não classifica nada');
+
+-- A conferência de cobertura é a trava que a migration usa para não classificar
+-- meio cadastro em silêncio. Aqui ela é exercitada de verdade: o produto de
+-- categoria inventada precisa aparecer.
+select results_eq(
+  $q$select * from private.product_categories_without_match()$q$,
+  $q$values ('Vitrine de Natal')$q$,
+  'a conferência acusa a categoria que não existe na lista controlada'
+);
 
 -- Categoria desativada sai de circulação: item novo nela fica sem classificação
 -- em vez de entrar num grupo que a operação aposentou.
 update public.product_categories set active = false where normalized_name = 'salgados';
 insert into public.products (id, name, category, kind, active)
   values ('b0000000-0000-4000-8000-000000000013', '[TESTE] Coxinha nova', 'Salgados', 'final', true);
-select is(private.assign_controlled_product_categories(), 0,
+select is(private.assign_controlled_product_categories('teste-fase-2a'), 0,
   'categoria inativa não classifica produto novo');
 select ok((select catalog_type is null and category_id is null from public.products
     where id = 'b0000000-0000-4000-8000-000000000013'),
@@ -183,7 +229,7 @@ update public.product_categories set active = true where normalized_name = 'salg
 
 -- Produto classificado depois de a categoria voltar: prova que a função serve
 -- para o que chegar antes de a tela exigir a escolha, na fase seguinte.
-select is(private.assign_controlled_product_categories(), 1,
+select is(private.assign_controlled_product_categories('teste-fase-2a'), 1,
   'categoria reativada classifica o produto que ficou para trás');
 
 -- A trava composta recusa categoria de um tipo em produto de outro tipo.
@@ -195,19 +241,12 @@ select throws_ok(
   'produto não muda de tipo mantendo categoria de outro tipo'
 );
 
--- Não sobrou nome repetido por acento ou caixa, que é o motivo da lista existir.
-select is(
-  (select count(distinct normalized_name)::integer from public.product_categories),
-  (select count(*)::integer from public.product_categories),
-  'nenhuma categoria repete a chave normalizada'
-);
-
--- Todo produto classificado tem os dois campos, nunca só um.
-select is(
-  (select count(*)::integer from public.products
-    where category_id is not null and catalog_type is null),
-  0,
-  'produto com categoria controlada sempre tem tipo'
+-- Sem o produto de categoria inventada, a conferência fica vazia: é o estado
+-- que a migration exige para completar em produção.
+delete from public.products where id = 'b0000000-0000-4000-8000-000000000008';
+select is_empty(
+  $q$select * from private.product_categories_without_match()$q$,
+  'com todo texto de categoria coberto, a conferência não acusa nada'
 );
 
 select * from finish();

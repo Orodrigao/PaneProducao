@@ -436,11 +436,17 @@ confiável.
 
 ### Catálogo: tipos e categorias controladas
 
-Plano em [CATALOGO_PRODUTOS.md](CATALOGO_PRODUTOS.md). A fase 1, que cria a
-estrutura controlada e a tela de categorias sem reclassificar nada, está na PR
-#318, aguardando o teste do Rodrigo. Enquanto a migração assistida não
-acontecer, tipo e categoria controlada são informação opcional e a categoria em
-texto livre continua em uso.
+Plano em [CATALOGO_PRODUTOS.md](CATALOGO_PRODUTOS.md). A fase 1 (PR #318, em
+produção desde 03/09/2026) criou a estrutura controlada e a tela de categorias
+sem reclassificar nada, e a lista ficou vazia.
+
+Em 22/09/2026 a unificação do texto livre (PR #432) deixou 20 grafias limpas, e
+a fase 2A (PR #434) preencheu a lista com essas 20 categorias, cada uma num
+tipo de item, e classificou o catálogo inteiro casando pelo nome normalizado.
+O texto livre continua em uso nas telas, e o cadastro de produto ainda grava só
+ele: escolher tipo e categoria pela tela é a fase 2B, que também precisa
+decidir quem manda entre a categoria controlada e a marcação `is_revenda`. Até
+lá, editar a categoria de um produto pela tela faz os dois campos divergirem.
 
 ### Produção: classificação operacional dos produtos
 

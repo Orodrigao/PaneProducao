@@ -76,13 +76,24 @@ isso permitiu preencher tudo de uma vez, sem tela de classificação:
   limpeza, Escritório e Manutenção vão para os tipos de mesmo nome; Revenda é
   produto de revenda; as catorze categorias de venda são produto fabricado;
 - `private.assign_controlled_product_categories()` amarra cada produto à
-  categoria de mesmo nome normalizado e grava tipo e categoria. Só toca produto
-  sem os dois campos, então rodar de novo é seguro e decisão já registrada não
-  é sobrescrita;
+  categoria **ativa** de mesmo nome normalizado e grava tipo e categoria. Só
+  toca produto sem os dois campos, então rodar de novo é seguro e decisão já
+  registrada não é sobrescrita. Categoria inativa não classifica ninguém;
 - cada classificação fica em `private.product_catalog_assignment_log` com o
-  valor anterior, para reverter;
+  valor anterior e a rodada que a gravou;
 - `products.category` não é tocado, então nenhuma tela que ainda lê o texto
-  muda de comportamento.
+  muda de comportamento;
+- duas travas fecham em vez de adivinhar: categoria já cadastrada com tipo
+  diferente do decidido aborta a migration, e produto cuja categoria não existe
+  na lista também aborta. Classificar metade do catálogo em silêncio seria pior
+  que recusar a migration.
+
+**Como desfazer**, se um dia for preciso: sempre por migration nova, nesta
+ordem. Primeiro devolver `catalog_type` e `category_id` dos produtos a partir
+do registro, filtrando por `run_label` e comparando com os valores que a
+rodada gravou, para não atropelar decisão tomada depois; só então apagar as
+categorias, porque a chave estrangeira é `on delete restrict` e recusa apagar
+categoria em uso. O SQL está escrito no cabeçalho da migration.
 
 Os seis produtos marcados como kit (`products.kind = 'kit'`) seguem a categoria
 de pão onde já estão. Quem responde "isto é um kit" hoje é `kind`; uma segunda
@@ -110,7 +121,9 @@ sobre um recorte menor e com a estrutura pronta para receber.
 
 ### Fase 4 — Aposentar a categoria em texto livre
 
-Só depois de a migração assistida cobrir o cadastro. Remoção de coluna em uso é
+Só depois de a 2B estar no ar e de nenhuma tela depender mais do texto livre.
+Hoje Sobras, Itens JC, Tabelas de preço e a contagem de estoque ainda leem
+`products.category`. Remoção de coluna em uso é
 mudança destrutiva e segue a regra de duas fases do AGENTS.md: primeiro o site
 para de usar, em um PR, depois o banco remove, em outro.
 
@@ -142,17 +155,34 @@ que tornou a fase 2A possível sem tela de classificação item a item.
 
 ## Riscos e dívidas registradas
 
-- **Entre a fase 2A e a 2B, os dois campos podem divergir.** A tela antiga
-  grava só o texto livre. Um produto que mudar de categoria nessa janela
-  continua apontando para a categoria controlada anterior, até a 2B passar a
-  gravar os dois juntos. A correção é rodar
-  `private.assign_controlled_product_categories()` de novo depois de limpar o
-  campo, ou ajustar pela própria tela quando a 2B estiver no ar.
+- **Entre a fase 2A e a 2B, os dois campos divergem no primeiro salvamento.**
+  A tela antiga monta o corpo do salvamento a partir de `select('*')`, então
+  reescreve `catalog_type` e `category_id` com o valor antigo enquanto muda o
+  texto livre. Nenhuma trava do banco reclama, porque a categoria antiga
+  continua válida. Não é "pode divergir" um dia: é toda edição de categoria
+  feita antes da 2B. A correção é a própria 2B; enquanto ela não vem, reclassificar
+  exige uma migration nova, nunca comando manual em produção.
 - **Produto criado depois da migration nasce sem classificação.** É o caso dos
   produtos fictícios do seed no banco de teste, que roda depois das migrations,
   e o de qualquer produto cadastrado antes de a 2B exigir a escolha. A função
-  continua disponível e idempotente justamente para isso.
-
+  continua idempotente para isso, mas só uma migration pode chamá-la: ela não
+  tem grant para nenhum papel de cliente.
+- **O tipo das 20 categorias ficou imutável pela tela.** `manage_product_category`
+  recusa trocar o tipo de categoria já usada por produtos, e depois desta fase
+  todas as 20 têm produto. Mudar de ideia sobre um tipo (por exemplo, decidir
+  que Lanches é revenda) passa a exigir PR com migration, não mais um clique do
+  administrador. É consequência da fase 1, e vale saber antes de precisar.
+- **Kit tem duas respostas que podem discordar.** Os 6 produtos com
+  `kind = 'kit'` estão em `catalog_type = 'produto_fabricado'`. Para kit, **quem
+  manda é `kind`**: qualquer soma por `catalog_type` precisa excluir
+  `kind = 'kit'`, senão conta o kit e de novo os pães que o compõem, já que
+  existe baixa de componentes de kit no projeto. Nada no banco força isso hoje;
+  a regra é esta linha.
+- **`is_revenda` é a outra fonte que ninguém conciliou.** A classificação deriva
+  `produto_revenda` do texto da categoria, não da marcação `is_revenda`, que
+  está viva em seis telas. Um produto marcado como revenda dentro de Insumos
+  vira matéria-prima e as duas leituras discordam. A fase 2B precisa decidir
+  quem manda antes de qualquer relatório somar por tipo.
 - **Duas implementações da normalização de nome**, uma no navegador
   (`src/lib/productCategories.ts`) e uma no banco
   (`private.normalize_product_category_name`). Elas precisam mudar juntas. Hoje
