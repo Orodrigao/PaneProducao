@@ -16,11 +16,13 @@ import {
 } from '@/lib/romaneioSentSummary'
 import type { RomaneioBillingUnit } from '@/lib/romaneioBilling'
 
+// Todo estado carrega o dia que o originou: resposta de um dia anterior
+// nunca aparece sob a data nova, mesmo se chegar depois da troca.
 type LoadState =
-  | { kind: 'loading' }
-  | { kind: 'error' }
-  | { kind: 'limit' }
-  | { kind: 'ready'; summary: SentSummary }
+  | { kind: 'loading'; date: string }
+  | { kind: 'error'; date: string }
+  | { kind: 'limit'; date: string }
+  | { kind: 'ready'; date: string; summary: SentSummary }
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await supabaseRestFetch(path)
@@ -74,32 +76,28 @@ export default function RomaneioSentSummary({
   onSessionExpired: () => void
 }) {
   const [date, setDate] = useState(todayKey())
-  const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [state, setState] = useState<LoadState>({ kind: 'loading', date: todayKey() })
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     // Campo vazio no meio da digitação: espera a data completa.
     if (!date) return
     let cancelled = false
-    setState({ kind: 'loading' })
+    setState({ kind: 'loading', date })
     loadSummary(date)
-      .then(summary => { if (!cancelled) setState({ kind: 'ready', summary }) })
+      .then(summary => { if (!cancelled) setState({ kind: 'ready', date, summary }) })
       .catch(error => {
         if (cancelled) return
         if (error instanceof SupabaseRestError && error.status === 401) { onSessionExpired(); return }
-        setState({ kind: error instanceof RowLimitError ? 'limit' : 'error' })
+        setState({ kind: error instanceof RowLimitError ? 'limit' : 'error', date })
       })
     return () => { cancelled = true }
   }, [date, reloadKey, onSessionExpired])
 
-  // Troca o dia já em "carregando" para nunca exibir números do dia anterior.
-  const changeDate = (next: string) => {
-    setState({ kind: 'loading' })
-    setDate(next)
-  }
+  const changeDate = (next: string) => setDate(next)
 
-  // Sem data completa no campo, não mostra números de outro dia.
-  const shown: LoadState | null = date ? state : null
+  // Sem data completa no campo, ou com resposta de outro dia, não mostra nada.
+  const shown: LoadState | null = date && state.date === date ? state : null
   const summary = shown?.kind === 'ready' ? shown.summary : null
 
   return (
