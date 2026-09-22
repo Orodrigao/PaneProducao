@@ -30,7 +30,7 @@ export interface CatalogCategoryGroup {
 // embalagem, deixando Escritório e Manutenção (um produto cada) acima de Produto
 // fabricado, que reúne catorze categorias. Quem cadastra abre a lista atrás de
 // pão muito mais vezes que atrás de chave de toalheiro.
-const CATALOG_TYPE_PICKER_ORDER: readonly CatalogType[] = [
+const CATALOG_TYPE_PICKER_ORDER = [
   'materia_prima',
   'produto_fabricado',
   'produto_revenda',
@@ -41,7 +41,7 @@ const CATALOG_TYPE_PICKER_ORDER: readonly CatalogType[] = [
   'utensilio_equipamento',
   'servico',
   'kit',
-]
+] as const satisfies readonly CatalogType[]
 
 const CATALOG_TYPE_ORDER = new Map<CatalogType, number>(
   CATALOG_TYPE_PICKER_ORDER.map((catalogType, index) => [catalogType, index]),

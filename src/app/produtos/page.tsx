@@ -721,6 +721,11 @@ export default function ProdutosPage() {
                     </optgroup>
                   ))}
                 </select>
+                {categoryPickerProblem && (
+                  <small style={{ display: 'block', marginTop: 4, color: 'var(--berry)' }}>
+                    {categoryPickerProblem}
+                  </small>
+                )}
                 {editItem.catalog_type ? (
                   <small style={{ display: 'block', marginTop: 4 }}>
                     Tipo de item: <b>{CATALOG_TYPE_LABELS[editItem.catalog_type]}</b> — vem da categoria escolhida.
@@ -734,9 +739,7 @@ export default function ProdutosPage() {
                   </small>
                 ) : (
                   <small style={{ display: 'block', marginTop: 4, color: isNew ? 'var(--berry)' : 'var(--honey-deep)' }}>
-                    {categoryPickerProblem
-                      ? categoryPickerProblem
-                      : isNew
+                    {isNew
                         ? 'Obrigatório: a categoria escolhida define o tipo de item do produto.'
                         : editItem.category
                           ? `Hoje está como “${editItem.category}” em texto livre. Escolher a categoria da lista acerta o tipo de item.`
