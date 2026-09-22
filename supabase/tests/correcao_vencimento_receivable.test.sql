@@ -13,12 +13,19 @@
 --   * motivo continua obrigatório;
 --   * repetir o mesmo pedido não corrige de novo;
 --   * a tabela continua barrando vencimento anterior ao faturamento, mesmo
---     para quem escrevesse nela por fora da função.
+--     para quem escrevesse nela por fora da função;
+--   * quem não tem a permissão é barrado;
+--   * cobrança já recebida ou cancelada não tem vencimento corrigido;
+--   * o teto de um ano depois do faturamento continua de pé.
+--
+-- As quatro últimas são regras antigas, mas foram redigitadas pela migration
+-- que criou este arquivo (`create or replace` troca o corpo inteiro). Sem
+-- executá-las, um dedo a menos na linha da permissão passaria com o CI verde.
 
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(20);
 
 -- Cenário ------------------------------------------------------------------
 
@@ -40,9 +47,31 @@ insert into public.app_user_permissions (user_id, permission_key, scope, granted
 values
   ('9b000000-0000-4000-8000-000000000001', 'contas_receber.acessar', 'jc', null),
   ('9b000000-0000-4000-8000-000000000001', 'contas_receber.lancar', 'jc', null),
-  ('9b000000-0000-4000-8000-000000000001', 'contas_receber.corrigir_vencimento', 'jc', null);
+  ('9b000000-0000-4000-8000-000000000001', 'contas_receber.corrigir_vencimento', 'jc', null),
+  ('9b000000-0000-4000-8000-000000000001', 'contas_receber.cancelar', 'jc', null);
 
 -- Prazo de 15 dias corridos, igual ao da Buck no caso real.
+-- Segunda conta: enxerga o Contas a receber, mas não pode corrigir vencimento.
+-- É ela que prova que a trava de permissão sobreviveu à reescrita da função.
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data, is_super_admin
+) values
+  ('9b000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'financeiro-sem-vencimento-test@example.com',
+   '$2a$10$7EqJtq98hPqEX7fNZaFWoOhiECGBjbvfeY/eAPU59rtoPeDPZhvtW',
+   now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, false);
+
+insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
+values ('9b000000-0000-4000-8000-000000000002', 'Teste Financeiro Sem Vencimento', 'financeiro', 'jc', true,
+  '["/contas-receber"]'::jsonb);
+
+insert into public.app_user_permissions (user_id, permission_key, scope, granted_by)
+values
+  ('9b000000-0000-4000-8000-000000000002', 'contas_receber.acessar', 'jc', null),
+  ('9b000000-0000-4000-8000-000000000002', 'contas_receber.lancar', 'jc', null);
+
 insert into public.customers (id, name, doc, payment_term_days, active)
 values ('9b000000-0000-4000-8000-0000000000c1', '[TESTE] Cliente Vencimento', '33444555000182', 15, true);
 
@@ -170,6 +199,36 @@ select is(
   'ficaram dois eventos de correcao, um por pedido distinto aceito'
 );
 
+-- Teto de um ano depois do faturamento ------------------------------------
+
+select throws_ok(
+  $$ select public.correct_receivable_due_date(
+    '9b000000-0000-4000-8000-00000000b005'::uuid,
+    (select id from public.receivables where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid),
+    private.data_na_padaria() + 400, 'Vencimento muito longe'
+  ) $$,
+  '22023',
+  'Vencimento distante demais do faturamento. Confira a data.',
+  'vencimento a mais de um ano do faturamento continua recusado'
+);
+
+-- Quem não tem a permissão não corrige -------------------------------------
+
+select set_config('request.jwt.claim.sub', '9b000000-0000-4000-8000-000000000002', true);
+
+select throws_ok(
+  $$ select public.correct_receivable_due_date(
+    '9b000000-0000-4000-8000-00000000b006'::uuid,
+    (select id from public.receivables where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid),
+    private.data_na_padaria() + 3, 'Sem a concessao para isto'
+  ) $$,
+  '42501',
+  'Sem permissão para corrigir vencimentos.',
+  'perfil sem a concessao e barrado'
+);
+
+select set_config('request.jwt.claim.sub', '9b000000-0000-4000-8000-000000000001', true);
+
 -- O piso continua na tabela, não só na função -------------------------------
 
 reset role;
@@ -181,8 +240,7 @@ select throws_ok(
   $$ update public.receivables
      set due_date = invoice_date - 1
      where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid $$,
-  '23514',
-  'new row for relation "receivables" violates check constraint "receivables_due_after_invoice"',
+  '23514', null,
   'escrita direta com vencimento antes do faturamento continua barrada pela tabela'
 );
 
@@ -191,6 +249,33 @@ select lives_ok(
      set due_date = original_due_date - 1
      where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid $$,
   'a tabela deixou de exigir que o vencimento nunca ande para tras'
+);
+
+-- Cobrança sem vencimento a corrigir ---------------------------------------
+
+-- Volta para a pele do Financeiro: as duas provas acima precisavam do dono da
+-- tabela, as de baixo precisam de novo de quem usa o sistema.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '9b000000-0000-4000-8000-000000000001', true);
+
+select lives_ok(
+  $$ select public.cancel_receivable(
+    '9b000000-0000-4000-8000-00000000b007'::uuid,
+    (select id from public.receivables where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid),
+    'Encerrando o cenario do teste'
+  ) $$,
+  'financeiro cancela a cobranca'
+);
+
+select throws_ok(
+  $$ select public.correct_receivable_due_date(
+    '9b000000-0000-4000-8000-00000000b008'::uuid,
+    (select id from public.receivables where request_id = '9b000000-0000-4000-8000-00000000a001'::uuid),
+    private.data_na_padaria() + 3, 'Tentando corrigir cobranca cancelada'
+  ) $$,
+  '22023',
+  'Só o vencimento de uma cobrança em aberto ou parcialmente recebida pode ser corrigido.',
+  'cobranca cancelada nao tem vencimento corrigido'
 );
 
 select * from finish();

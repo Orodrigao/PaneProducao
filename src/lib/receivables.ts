@@ -6,7 +6,7 @@
 
 import { supabase } from '@/lib/supabase'
 import { parseMoneyInput } from '@/lib/cashClosing'
-import { todayKey } from '@/lib/utils'
+import { formatDateBR, todayKey } from '@/lib/utils'
 
 export type ReceivableStatus = 'aberta' | 'parcial' | 'recebida' | 'cancelada'
 export type ReceivableOrigin = 'avulso' | 'pedido_pj' | 'romaneio_ex'
@@ -228,23 +228,25 @@ export function getReceivableErrorMessage(error: unknown, fallback: string): str
 }
 
 /**
- * A data como o Financeiro digita: 28/09/2026, 28-09-2026 e também a chave
- * 2026-09-28, que era o único formato aceito antes. Devolve sempre AAAA-MM-DD,
+ * A data como o Financeiro digita: 28/09/2026, 28-09-2026, 28.09.2026 e também
+ * a chave 2026-09-28, que era o único formato aceito antes. Devolve sempre AAAA-MM-DD,
  * que é o que o banco espera, ou null quando o que foi digitado não é um dia
  * do calendário (31/02, mês 13, ano de dois dígitos).
  */
 export function parseDueDateInput(value: string): string | null {
   const texto = value.trim()
-  const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(texto)
-  const brasileiro = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(texto)
+  // O separador tem de se repetir: aceitar `28/09-2026` seria aceitar erro de
+  // digitação como se fosse intenção.
+  const iso = /^(\d{4})([-/.])(\d{1,2})\2(\d{1,2})$/.exec(texto)
+  const brasileiro = /^(\d{1,2})([-/.])(\d{1,2})\2(\d{4})$/.exec(texto)
 
   let ano: number
   let mes: number
   let dia: number
   if (iso) {
-    ano = Number(iso[1]); mes = Number(iso[2]); dia = Number(iso[3])
+    ano = Number(iso[1]); mes = Number(iso[3]); dia = Number(iso[4])
   } else if (brasileiro) {
-    dia = Number(brasileiro[1]); mes = Number(brasileiro[2]); ano = Number(brasileiro[3])
+    dia = Number(brasileiro[1]); mes = Number(brasileiro[3]); ano = Number(brasileiro[4])
   } else {
     return null
   }
@@ -256,6 +258,27 @@ export function parseDueDateInput(value: string): string | null {
   if (Number.isNaN(data.getTime())) return null
   if (data.getUTCFullYear() !== ano || data.getUTCMonth() + 1 !== mes || data.getUTCDate() !== dia) return null
   return chave
+}
+
+/**
+ * Mesmos limites da RPC correct_receivable_due_date, conferidos antes de pedir
+ * o motivo: cobrança não vence antes do dia em que foi faturada, nem mais de um
+ * ano depois. Quem decide continua sendo o banco; isto só evita fazer a pessoa
+ * escrever o motivo para descobrir no fim que a data não servia.
+ */
+export function validateDueDateCorrection(
+  dueDate: string,
+  receivable: Pick<ReceivableRow, 'invoice_date'>,
+): string | null {
+  if (dueDate < receivable.invoice_date) {
+    return `O vencimento não pode ser antes do faturamento, que foi em ${formatDateBR(receivable.invoice_date)}.`
+  }
+  const teto = new Date(`${receivable.invoice_date}T00:00:00Z`)
+  teto.setUTCDate(teto.getUTCDate() + 365)
+  if (dueDate > teto.toISOString().slice(0, 10)) {
+    return 'Vencimento distante demais do faturamento. Confira a data.'
+  }
+  return null
 }
 
 /** Mesmos limites do banco: dinheiro validado na entrada E na saída. */

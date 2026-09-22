@@ -30,6 +30,7 @@ import {
   loadReceivableExcessRule,
   parseDueDateInput,
   receiptExcess,
+  validateDueDateCorrection,
   splitReceiptExcess,
   validateExcessReason,
   validateReceivablePaymentDraft,
@@ -597,12 +598,42 @@ describe('parseDueDateInput', () => {
     expect(parseDueDateInput('29/02/2028')).toBe('2028-02-29')
   })
 
+  it('aceita ponto como separador, que tambem se digita no Brasil', () => {
+    expect(parseDueDateInput('28.09.2026')).toBe('2026-09-28')
+  })
+
+  it('recusa separador trocado no meio da data', () => {
+    // `28/09-2026` e erro de digitacao, nao intencao; aceitar seria adivinhar.
+    expect(parseDueDateInput('28/09-2026')).toBeNull()
+    expect(parseDueDateInput('2026-09/28')).toBeNull()
+  })
+
   it('recusa texto, vazio e ano de dois digitos', () => {
     expect(parseDueDateInput('')).toBeNull()
     expect(parseDueDateInput('   ')).toBeNull()
     expect(parseDueDateInput('amanha')).toBeNull()
     expect(parseDueDateInput('28/09/26')).toBeNull()
-    expect(parseDueDateInput('28.09.2026')).toBeNull()
+  })
+})
+
+describe('validateDueDateCorrection', () => {
+  const cobranca = { invoice_date: '2026-09-20' }
+
+  it('deixa antecipar ate o dia do faturamento', () => {
+    // O caso da Buck: faturada em 20/09, combinada para 28/09.
+    expect(validateDueDateCorrection('2026-09-28', cobranca)).toBeNull()
+    expect(validateDueDateCorrection('2026-09-20', cobranca)).toBeNull()
+  })
+
+  it('barra antes do faturamento, dizendo a data que manda', () => {
+    expect(validateDueDateCorrection('2026-09-19', cobranca))
+      .toBe('O vencimento não pode ser antes do faturamento, que foi em 20/09/2026.')
+  })
+
+  it('barra mais de um ano depois do faturamento', () => {
+    expect(validateDueDateCorrection('2027-09-20', cobranca)).toBeNull()
+    expect(validateDueDateCorrection('2027-09-21', cobranca))
+      .toBe('Vencimento distante demais do faturamento. Confira a data.')
   })
 })
 

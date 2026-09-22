@@ -21,6 +21,7 @@ import {
   splitReceivable,
   sortReceivables,
   summarizeReceivables,
+  validateDueDateCorrection,
   type PjOrderToBillRow,
   type ReceivableCustomerOption,
   type ReceivableReceiptRow,
@@ -155,6 +156,13 @@ export default function ContasReceberPage() {
     const dueDate = parseDueDateInput(digitado)
     if (!dueDate) {
       showToast('Data inválida. Escreva dia, mês e ano, como em 28/09/2026.')
+      return
+    }
+    // O banco decide, mas dizer agora evita fazer a pessoa escrever o motivo
+    // para só então descobrir que a data não servia.
+    const limite = validateDueDateCorrection(dueDate, receivable)
+    if (limite) {
+      showToast(limite)
       return
     }
     const reason = window.prompt('Por que o vencimento está sendo alterado?')?.trim()
