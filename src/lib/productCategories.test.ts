@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CATALOG_TYPES,
+  INSUMOS_CATEGORY,
+  isSameProductCategory,
   normalizeProductCategoryName,
   validateProductCategoryDraft,
   type ProductCategoryDraft,
@@ -46,5 +48,20 @@ describe('validateProductCategoryDraft', () => {
   it('recusa ordem fracionária ou fora do limite', () => {
     expect(validateProductCategoryDraft({ ...validDraft, sortOrder: 1.5 })).toMatch(/inteiro/i)
     expect(validateProductCategoryDraft({ ...validDraft, sortOrder: 10001 })).toMatch(/10000/i)
+  })
+})
+
+describe('isSameProductCategory', () => {
+  it('trata grafias com maiúscula diferente como a mesma categoria', () => {
+    expect(isSameProductCategory('INSUMOS', INSUMOS_CATEGORY)).toBe(true)
+    expect(isSameProductCategory(' insumos ', INSUMOS_CATEGORY)).toBe(true)
+    expect(isSameProductCategory('Pães recheados', 'Pães Recheados')).toBe(true)
+  })
+
+  it('não confunde categorias diferentes nem valor vazio', () => {
+    expect(isSameProductCategory('Revenda', INSUMOS_CATEGORY)).toBe(false)
+    expect(isSameProductCategory('Pães', 'Pães Branco')).toBe(false)
+    expect(isSameProductCategory(null, INSUMOS_CATEGORY)).toBe(false)
+    expect(isSameProductCategory('', INSUMOS_CATEGORY)).toBe(false)
   })
 })

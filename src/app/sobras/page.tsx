@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ChevronLeft, Clock3, Minus, Plus, Save, Package, Trash2, Layers, X, Search, ClipboardCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { INSUMOS_CATEGORY } from '@/lib/productCategories'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, todayKey, todayLabel, showToast } from '@/lib/utils'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
@@ -135,7 +136,7 @@ export default function SobrasPage() {
     if (!user) return
 
     const [{ data: prodsRaw }, { data: bdsRaw }] = await Promise.all([
-      supabase.from('products').select('id,name,category,unit,kind,is_shelf').eq('active', true).neq('category','INSUMOS').order('category').order('name'),
+      supabase.from('products').select('id,name,category,unit,kind,is_shelf').eq('active', true).not('category', 'ilike', INSUMOS_CATEGORY).order('category').order('name'),
       supabase.from('breads').select('id,name,unit,is_shelf').eq('active', true).eq('is_pj', false).order('name'),
     ])
 

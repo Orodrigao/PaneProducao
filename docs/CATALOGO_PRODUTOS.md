@@ -93,6 +93,27 @@ para de usar, em um PR, depois o banco remove, em outro.
 A entrega que justifica as anteriores: custo, compras e CMV por família de
 insumo e por tipo de item.
 
+## Limpeza do texto legado, antes da fase 3 (2026-09-22)
+
+A contagem de estoque agrupa pela categoria em texto livre, e as grafias
+repetidas viravam grupos separados. Por decisão do Rodrigo, a migration
+`20260922164735_unificar_categorias_produtos.sql` unificou o texto legado sem
+esperar a lista controlada:
+
+- uma grafia por grupo: `Insumos`, `Revenda`, `Embalagens`, `Higiene e limpeza`,
+  `Manutenção`, `Escritório`, `Pães Recheados`;
+- `Doce`, `Bolos`, `Muffins`, `Cookies`, `Brownie` e `Folhados & Doces` entram
+  em `Confeitaria`; `Pães - Migrado` vira `Pães`;
+- itens no grupo errado mudaram: bombons para Revenda; base de brigadeiro e
+  mistura de panettone para Insumos; luva para Higiene e limpeza. Massa folhada
+  ficou em Confeitaria porque tem preço em tabela de preço;
+- uma categoria só de embalagem: o que põe a embalagem no custo do produto é a
+  ficha técnica, não a categoria.
+
+Cada troca fica em `private.product_category_unification_log` com o texto
+antigo. As telas comparam `Insumos` sem diferenciar maiúscula. A lista controlada
+continua vazia; as fases 2 a 4 acima seguem valendo.
+
 ## Riscos e dívidas registradas
 
 - **Duas implementações da normalização de nome**, uma no navegador

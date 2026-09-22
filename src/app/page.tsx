@@ -17,6 +17,7 @@ import {
   type ProductionPlanStore,
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
+import { INSUMOS_CATEGORY, isSameProductCategory } from '@/lib/productCategories'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
 import {
@@ -32,8 +33,9 @@ const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
 // Categorias de products que NAO entram em "Itens JC" (lista de producao nao-pao).
-// INSUMOS = ingredientes; Paes* = ja tem fluxo em /forno via tabela breads.
-const NON_PRODUCT_CATS = ['INSUMOS','Pães Branco','Pães Integ.','Pães Rech.','Pães Recheados']
+// Insumos = ingredientes; Paes* = ja tem fluxo em /forno via tabela breads.
+// A comparacao ignora maiuscula e acento: "INSUMOS" e "Insumos" sao a mesma.
+const NON_PRODUCT_CATS = [INSUMOS_CATEGORY,'Pães Branco','Pães Integ.','Pães Recheados']
 
 type UserKey = ProductionHomeUserKey
 type Store = 'jc'|'ja'|'ex'|'pj'
@@ -351,8 +353,10 @@ export default function ProducaoPage() {
 
   // Itens JC — carregar produtos elegiveis (uma vez) + producao do dia
   const loadProdItems = useCallback(async () => {
-    const cats = NON_PRODUCT_CATS.map(c => `"${c}"`).join(',')
-    const data: ProdItem[] = await sbGet('products', `active=eq.true&category=not.in.(${encodeURIComponent(cats)})&select=id,name,category,unit&order=category.asc,name.asc`)
+    // O servidor ja corta os insumos (a maior parte do cadastro); o filtro
+    // normalizado pega o resto e qualquer variacao de maiuscula.
+    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit&order=category.asc,name.asc`)
+    const data = rows.filter(p => !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
     setProdItems(data)
     return data
   }, [])
