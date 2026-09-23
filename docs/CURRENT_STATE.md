@@ -1,10 +1,10 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-11
+**Data de referência:** 2026-09-23
 
-**Base observada:** `origin/main` em `7cb8ce5` e auditoria somente leitura de
-produção em 11/09/2026. A revisão cobriu a virada da jornada PJ; as demais
-seções conservam suas datas de revisão anteriores.
+**Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
+a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
+o PR #441. As demais seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -58,8 +58,8 @@ e [FINANCEIRO.md](FINANCEIRO.md)): RLS forçado desde a criação, escrita
 somente por função protegida, grants explícitos, idempotência e matriz de
 teste permitido×bloqueado. Substitui a regra anterior, que exigia a
 conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
-financeiro novo. O hardening restante (GraphQL e funções privilegiadas)
-segue em lotes, em paralelo.
+financeiro novo. O hardening restante (fechar a exposição GraphQL; a revisão
+das funções privilegiadas fechou em 2026-09-23) segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -135,9 +135,37 @@ Riscos ainda abertos:
 - a auditoria live somente leitura de 2026-07-28 confirmou melhora material:
   todas as tabelas públicas auditadas estão com RLS ligado e não há policies
   `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
-  aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
-  porque restam exposição GraphQL relevante ao ERP e funções
-  `SECURITY DEFINER` chamáveis por usuários logados;
+  aceito até a desativação desse sistema;
+- **fechada em 2026-09-23 a revisão das funções `SECURITY DEFINER` chamáveis
+  por usuário logado**, pendência da auditoria de 2026-07-28. Leitura direta
+  em produção (não deduzida de migration): as 93 funções `SECURITY DEFINER` de
+  `public` têm `search_path=""`; as 11 funções `private.*` que as policies RLS
+  usam para decidir acesso (`current_user_can_finance`,
+  `current_user_can_finance_store`, `current_user_can_payables`,
+  `current_user_can_receivables`, `current_user_can_sales`,
+  `current_user_has_permission`, `current_user_is_access_admin`,
+  `is_pj_flow`, `is_pj_flow_receivable`, `pizza_is_allowed`,
+  `pj_flow_commercial`) só liberam acesso a partir de `auth.uid()` contra um
+  perfil ativo, nunca para anônimo. As policies que **não** citam identidade
+  diretamente (`payable_events`, `payable_installments`,
+  `payable_purchase_items`, delegando à policy da compra-mãe) são seguras
+  porque o Postgres aplica a RLS da tabela-mãe dentro da subconsulta, e as
+  quatro tabelas de Contas a Pagar não têm nenhuma policy de escrita — toda
+  gravação passa pelas funções protegidas. As policies do fluxo PJ
+  (`orders_pj_flow_read` e semelhantes) são `RESTRICTIVE`: só estreitam
+  acesso, nunca abrem. Nenhum defeito encontrado. Achado menor, sem risco:
+  `current_user_can_sales` é a única das seis funções de permissão que não
+  libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
+  **resta só a exposição GraphQL do schema público**, tratada a seguir;
+- **exposição GraphQL do schema público, ainda aberta.** Levantamento de
+  2026-09-23 (advisor de segurança do próprio Supabase, em produção): `anon` e
+  `authenticated` têm permissão para chamar `graphql_public.graphql()`, o que
+  expõe 75 tabelas do ERP a qualquer usuário logado e 5 tabelas legadas
+  (`pizza_*` e `site_bread_catalog`) a qualquer visitante anônimo pela
+  introspecção do GraphQL. A RLS por trás continua valendo (GraphQL usa o
+  mesmo papel de banco do REST, não contorna policy), então não é vazamento de
+  dado — é superfície destrancada sem uso: o código do site não referencia
+  GraphQL em nenhum lugar. Fechamento planejado (fase 1 do item de segurança);
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
   plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
@@ -202,6 +230,14 @@ Riscos ainda abertos:
   a composição de um kit deixa de tocar vendas já confirmadas. Nenhuma venda
   de kit real existe em produção até esta correção (tabelas de importação e
   vínculo vazias, conferido por leitura direta em 19 e 20/09/2026);
+- **corrigido em 2026-09-23 (PR #440, issue #438) o relógio da padaria que
+  atrasava 6 horas entre meia-noite e 05:59** — justamente o turno em que a
+  padaria trabalha. `private.data_na_padaria()` e seu espelho no cliente
+  mostravam o dia anterior nessa janela, afetando o campo de data já
+  preenchido em Romaneio, Sobras, Fechamento de Caixa, Forno e Produção da
+  Cozinha, além de fazer a tela inicial anunciar "Prazo encerrando — Menos de
+  0h" sem nenhum prazo vencido. Os relógios do banco e do cliente foram
+  unificados; as telas agora abrem no dia certo em qualquer horário;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -315,7 +351,9 @@ disputavam um único banco de teste compartilhado.
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
-  em Riscos ainda abertos);
+  em Riscos ainda abertos); desde 22/09/2026 (PR #433) a aba Fechamento soma o
+  que foi enviado no dia por produto e loja, separando unidade de quilo e
+  destacando o que ainda está Separado sem ter saído;
 - estoques e fornecedores; em Contas a Pagar, o semáforo de compra responde
   "este fornecedor está liberado para pedido?" — leitura pura das parcelas
   vencidas em aberto por fornecedor (`summarizeSupplierPurchaseStatus`), sem
@@ -359,7 +397,10 @@ disputavam um único banco de teste compartilhado.
   calculado do prazo do cliente, **recebimento em pedaços** (vários por
   cobrança, cada um com data, valor, forma e conta, gerando seu próprio
   lançamento no livro), estorno por pedaço, cancelamento e correção de
-  vencimento. A cobrança fica `parcial` enquanto faltar dinheiro, e quanto
+  vencimento — **desde 23/09/2026 (PR #435) o vencimento também pode ser
+  antecipado**, até o dia em que a cobrança foi faturada, com a mensagem de
+  recusa mostrando o motivo real em vez de um recado genérico. A cobrança
+  fica `parcial` enquanto faltar dinheiro, e quanto
   entrou é sempre a soma dos pedaços ativos. A fatura pode ser **dividida em
   2x ou 3x** na hora do lançamento, ou depois pela ação de dividir — o prazo do
   cliente é o teto e a última parcela cai nele. A cobrança que nasce de origem
@@ -417,7 +458,12 @@ disputavam um único banco de teste compartilhado.
 - auditoria de cobertura/qualidade do CMV;
 - relatórios operacionais;
 - gestão administrativa de permissões por usuário;
-- layout responsivo para desktop além do mobile.
+- layout responsivo para desktop além do mobile;
+- tela de Planejamento: desde 23/09/2026 (PRs #437 e #441) abre sozinha no
+  próximo dia útil de produção (considerando o horário e pulando domingo),
+  troca de dia por botão em vez de calendário, mostra planejamento parcialmente
+  convertido em pedido e segue a direção visual aprovada por Rodrigo (Apple
+  Design), sem mudar regra, quantidade ou permissão.
 
 ## Capacidades parciais
 
@@ -497,8 +543,9 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
    ControlePizza/`pizza_*` é exceção legada aceita até desativação.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
-   live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas
-   (a configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
+   live de 2026-07-28 no escopo do ERP: resta só a exposição GraphQL (a
+   revisão das funções privilegiadas fechou em 2026-09-23 sem defeito, e a
+   configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
    Este bloqueio deixou de travar funcionalidade nova — ver a decisão em
    Fase estratégica.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
