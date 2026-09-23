@@ -58,8 +58,8 @@ e [FINANCEIRO.md](FINANCEIRO.md)): RLS forçado desde a criação, escrita
 somente por função protegida, grants explícitos, idempotência e matriz de
 teste permitido×bloqueado. Substitui a regra anterior, que exigia a
 conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
-financeiro novo. O hardening restante (GraphQL e funções privilegiadas)
-segue em lotes, em paralelo.
+financeiro novo. O hardening restante (fechar a exposição GraphQL; a revisão
+das funções privilegiadas fechou em 2026-09-23) segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -135,9 +135,37 @@ Riscos ainda abertos:
 - a auditoria live somente leitura de 2026-07-28 confirmou melhora material:
   todas as tabelas públicas auditadas estão com RLS ligado e não há policies
   `anon` permissivas; os grants `anon` do ControlePizza ficam como risco legado
-  aceito até a desativação desse sistema; Sprint 0 ainda não fecha para o ERP
-  porque restam exposição GraphQL relevante ao ERP e funções
-  `SECURITY DEFINER` chamáveis por usuários logados;
+  aceito até a desativação desse sistema;
+- **fechada em 2026-09-23 a revisão das funções `SECURITY DEFINER` chamáveis
+  por usuário logado**, pendência da auditoria de 2026-07-28. Leitura direta
+  em produção (não deduzida de migration): as 93 funções `SECURITY DEFINER` de
+  `public` têm `search_path=""`; as 11 funções `private.*` que as policies RLS
+  usam para decidir acesso (`current_user_can_finance`,
+  `current_user_can_finance_store`, `current_user_can_payables`,
+  `current_user_can_receivables`, `current_user_can_sales`,
+  `current_user_has_permission`, `current_user_is_access_admin`,
+  `is_pj_flow`, `is_pj_flow_receivable`, `pizza_is_allowed`,
+  `pj_flow_commercial`) só liberam acesso a partir de `auth.uid()` contra um
+  perfil ativo, nunca para anônimo. As policies que **não** citam identidade
+  diretamente (`payable_events`, `payable_installments`,
+  `payable_purchase_items`, delegando à policy da compra-mãe) são seguras
+  porque o Postgres aplica a RLS da tabela-mãe dentro da subconsulta, e as
+  quatro tabelas de Contas a Pagar não têm nenhuma policy de escrita — toda
+  gravação passa pelas funções protegidas. As policies do fluxo PJ
+  (`orders_pj_flow_read` e semelhantes) são `RESTRICTIVE`: só estreitam
+  acesso, nunca abrem. Nenhum defeito encontrado. Achado menor, sem risco:
+  `current_user_can_sales` é a única das seis funções de permissão que não
+  libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
+  **resta só a exposição GraphQL do schema público**, tratada a seguir;
+- **exposição GraphQL do schema público, ainda aberta.** Levantamento de
+  2026-09-23 (advisor de segurança do próprio Supabase, em produção): `anon` e
+  `authenticated` têm permissão para chamar `graphql_public.graphql()`, o que
+  expõe 75 tabelas do ERP a qualquer usuário logado e 5 tabelas legadas
+  (`pizza_*` e `site_bread_catalog`) a qualquer visitante anônimo pela
+  introspecção do GraphQL. A RLS por trás continua valendo (GraphQL usa o
+  mesmo papel de banco do REST, não contorna policy), então não é vazamento de
+  dado — é superfície destrancada sem uso: o código do site não referencia
+  GraphQL em nenhum lugar. Fechamento planejado (fase 1 do item de segurança);
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
   plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
@@ -513,8 +541,9 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
    ControlePizza/`pizza_*` é exceção legada aceita até desativação.
 3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
-   live de 2026-07-28 no escopo do ERP: GraphQL e funções privilegiadas
-   (a configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
+   live de 2026-07-28 no escopo do ERP: resta só a exposição GraphQL (a
+   revisão das funções privilegiadas fechou em 2026-09-23 sem defeito, e a
+   configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
    Este bloqueio deixou de travar funcionalidade nova — ver a decisão em
    Fase estratégica.
 4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
