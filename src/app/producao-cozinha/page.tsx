@@ -292,12 +292,14 @@ export default function ProducaoCozinhaPage() {
               onChange={event => changeDate(event.target.value)}
               className="ps-input"
               aria-label="Dia da produção"
+              disabled={saving}
             />
             {!isToday && (
               <button
                 type="button"
                 className="ps-btn"
                 onClick={() => changeDate(today)}
+                disabled={saving}
               >
                 Hoje
               </button>
@@ -310,6 +312,7 @@ export default function ProducaoCozinhaPage() {
             <select
               value={store}
               onChange={event => setStore(event.target.value as KitchenStore)}
+              disabled={saving}
               className="ps-select"
             >
               {allowedStores.map(option => (
@@ -408,7 +411,7 @@ export default function ProducaoCozinhaPage() {
                       type="button"
                       className="ps-step"
                       onClick={() => setQuantity(item.id, quantity - increment)}
-                      disabled={!dateIsOpen || quantity === 0}
+                      disabled={saving || !dateIsOpen || quantity === 0}
                       aria-label={`Diminuir ${item.name}`}
                     >
                       <Minus size={18} />
@@ -421,7 +424,7 @@ export default function ProducaoCozinhaPage() {
                       min={0}
                       max={KITCHEN_MAX_QUANTITY}
                       value={quantity}
-                      disabled={!dateIsOpen}
+                      disabled={saving || !dateIsOpen}
                       onFocus={event => event.currentTarget.select()}
                       onChange={event => setQuantity(item.id, Number(event.target.value))}
                       aria-label={`Quantidade produzida de ${item.name}`}
@@ -430,7 +433,7 @@ export default function ProducaoCozinhaPage() {
                       type="button"
                       className="ps-step"
                       onClick={() => setQuantity(item.id, quantity + increment)}
-                      disabled={!dateIsOpen || quantity >= KITCHEN_MAX_QUANTITY}
+                      disabled={saving || !dateIsOpen || quantity >= KITCHEN_MAX_QUANTITY}
                       aria-label={`Aumentar ${item.name}`}
                     >
                       <Plus size={18} />
