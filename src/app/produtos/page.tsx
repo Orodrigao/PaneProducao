@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert, Tags } from 'lucide-react'
+import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert, Tags, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
@@ -200,6 +200,9 @@ export default function ProdutosPage() {
   const [pendingReviewOnly, setPendingReviewOnly] = useState(false)
   const [editItem, setEditItem] = useState<EditableProduct|null>(null)
   const [isNew, setIsNew]       = useState(false)
+  const [duplicateItem, setDuplicateItem] = useState<Product|null>(null)
+  const [duplicateName, setDuplicateName] = useState('')
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(()=>{ setUser(getCurrentUser()); load() },[])
 
@@ -380,6 +383,33 @@ export default function ProdutosPage() {
       category: resolveLegacyCategoryText(product.category_id, categories, product.category),
     })
     setConversionEdits(purchaseConversions.filter(conversion => conversion.base_product_id === product.id).map(conversion => ({ ...conversion })))
+  }
+
+  function openDuplicateProduct(product: Product) {
+    setDuplicateItem(product)
+    setDuplicateName(`${product.name} - cópia`)
+  }
+
+  async function duplicateProduct() {
+    if (!duplicateItem) return
+    const name = duplicateName.trim()
+    if (!name) { showToast('Informe o nome do novo produto.'); return }
+    setDuplicating(true)
+    try {
+      const { error } = await supabase.rpc('duplicate_product_complete', {
+        p_source_product_id: duplicateItem.id,
+        p_new_name: name,
+      })
+      if (error) throw error
+      setDuplicateItem(null)
+      setDuplicateName('')
+      await load()
+      showToast(`✅ "${name}" foi duplicado com ficha técnica e preços.`)
+    } catch (error: unknown) {
+      showToast('Erro ao duplicar: ' + getErrorMessage(error, 'não foi possível criar a cópia'))
+    } finally {
+      setDuplicating(false)
+    }
   }
 
   const productsForTab = tab === 'fabricacao'
@@ -643,6 +673,15 @@ export default function ProdutosPage() {
                       <button onClick={()=>toggleActive(p)} className={`ps-status ${p.active?'conferido':'separado'}`} style={{border:'1px solid transparent', cursor:'pointer'}}>
                         {p.active?'✓ Ativo':'Inativo'}
                       </button>
+                      <button
+                        onClick={()=>openDuplicateProduct(p)}
+                        className="ps-iconbtn"
+                        style={{width:30, height:30}}
+                        title={`Duplicar ${p.name}`}
+                        aria-label={`Duplicar ${p.name}`}
+                      >
+                        <Copy size={14}/>
+                      </button>
                       <button onClick={()=>openProductEditor(p)} className="ps-iconbtn" style={{width:30, height:30}}>
                         <Pencil size={14}/>
                       </button>
@@ -659,6 +698,37 @@ export default function ProdutosPage() {
           )}
         </div>
       </div>
+
+      {/* MODAL — Duplicar produto */}
+      {duplicateItem && (
+        <div className="ps-sheet-overlay" onClick={e=>e.target===e.currentTarget&&!duplicating&&setDuplicateItem(null)}>
+          <div className="ps-sheet" role="dialog" aria-modal="true" aria-labelledby="duplicate-product-title">
+            <div className="ps-sheet-grab"/>
+            <h3 id="duplicate-product-title">Duplicar produto</h3>
+            <p style={{fontSize:13, color:'var(--ink-soft)', lineHeight:1.5, margin:'0 0 14px'}}>
+              A cópia leva a ficha técnica e os preços de venda, mas começa inativa para não entrar em operação ou na vitrine sem revisão. Estoque, pedidos, compras e histórico não são copiados.
+            </p>
+            <div className="ps-fieldgroup" style={{marginBottom:16}}>
+              <div className="ps-fieldlabel">Novo nome</div>
+              <input
+                type="text"
+                autoFocus
+                value={duplicateName}
+                onChange={e=>setDuplicateName(e.target.value)}
+                onKeyDown={e=>{ if (e.key === 'Enter') void duplicateProduct() }}
+                className="ps-input"
+                disabled={duplicating}
+              />
+            </div>
+            <div style={{display:'flex', justifyContent:'flex-end', gap:8}}>
+              <button className="ps-btn" onClick={()=>setDuplicateItem(null)} disabled={duplicating}>Cancelar</button>
+              <button className="ps-btn primary" onClick={()=>void duplicateProduct()} disabled={duplicating}>
+                <Copy size={14}/>{duplicating ? 'Duplicando…' : 'Duplicar produto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL — Produto */}
       {editItem && (
