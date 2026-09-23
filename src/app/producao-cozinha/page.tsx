@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChefHat, Minus, Plus, Save } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
@@ -69,6 +69,9 @@ export default function ProducaoCozinhaPage() {
   const [saving, setSaving] = useState(false)
   const [saveRequestId, setSaveRequestId] = useState('')
   const [loadError, setLoadError] = useState('')
+  // Só a carga mais recente pode preencher a tela: trocar de dia rápido não
+  // deixa a resposta do dia anterior aparecer com o rótulo do dia novo.
+  const latestLoad = useRef(0)
 
   const isAdmin = user?.role === 'admin'
   const allowedStores = useMemo(
@@ -138,6 +141,7 @@ export default function ProducaoCozinhaPage() {
     targetDate: string,
     keepTyped: boolean,
   ) => {
+    const loadId = ++latestLoad.current
     setLoading(true)
     setLoadError('')
     try {
@@ -146,6 +150,7 @@ export default function ProducaoCozinhaPage() {
         loadKitchenEntries(targetStore, targetDate),
         loadKitchenProductionPlan(targetStore, targetDate),
       ])
+      if (loadId !== latestLoad.current) return
       const normalizedPlan = planRows.map(normalizeKitchenPlanRow)
       const plannedOnly = normalizedPlan.filter(row => !kitchenItems.some(item => item.id === row.productId))
       const saved: Record<string, number> = {}
@@ -163,12 +168,13 @@ export default function ProducaoCozinhaPage() {
         return kept
       })
     } catch (error) {
+      if (loadId !== latestLoad.current) return
       setLoadError(describeKitchenError(error))
       setItems([])
       setEntries([])
       setPlan([])
     } finally {
-      setLoading(false)
+      if (loadId === latestLoad.current) setLoading(false)
     }
   }, [])
 
