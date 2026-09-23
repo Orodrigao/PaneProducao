@@ -37,7 +37,8 @@ describe('navegação responsiva', () => {
     expect(cssSource).toContain('@media (min-width:600px)')
     expect(cssSource).toContain('@media (min-width:1200px)')
     expect(cssSource).toContain('.ps-nav{ display:none; }')
-    expect(cssSource).toContain('--app-sidebar-w:248px')
+    expect(cssSource).toContain('--app-sidebar-w:82px')
+    expect(cssSource).toContain('--app-sidebar-w:220px')
     expect(cssSource).toContain('.app-body:has(.ps-sidebar){ padding-left:var(--app-sidebar-w); }')
   })
 

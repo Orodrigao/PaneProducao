@@ -1,0 +1,127 @@
+import { expect, test, type Page } from '@playwright/test'
+
+test.use({
+  browserName: 'chromium',
+  channel: 'chrome',
+})
+
+async function enterAsAdmin(page: Page) {
+  const password = process.env.SUPABASE_TEST_USER_PASSWORD
+  test.skip(!password, 'A senha da conta ficticia existe somente no secret do GitHub.')
+
+  await page.goto('/login')
+  await page.getByPlaceholder('nome@paneesalute.com.br').fill('rodrigao+teste@gmail.com')
+  await page.locator('input[type="password"]').fill(password!)
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
+  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
+}
+
+async function expectLayoutFitsViewport(page: Page, width: number, height: number) {
+  await page.setViewportSize({ width, height })
+  await expect(page.getByRole('heading', { name: 'Planejamento', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Planejar para' })).toBeVisible()
+  await expect(page.getByText('Total planejado', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pães', exact: true })).toBeVisible()
+  await expect(page.getByLabel('JC total').first()).toBeVisible()
+  await expect(page.getByLabel('JA total').first()).toBeVisible()
+
+  const hasHorizontalOverflow = await page.locator('html').evaluate(element => (
+    element.scrollWidth > element.clientWidth + 1
+  ))
+  expect(hasHorizontalOverflow, `layout com rolagem horizontal em ${width}x${height}`).toBe(false)
+
+  const sidebar = page.getByRole('complementary', { name: 'Navegação principal' })
+  if (width >= 1200) {
+    await expect(sidebar).toBeVisible()
+    const sidebarBox = await sidebar.boundingBox()
+    expect(sidebarBox?.width).toBeGreaterThanOrEqual(215)
+    expect(sidebarBox?.width).toBeLessThanOrEqual(225)
+  } else if (width >= 600) {
+    await expect(sidebar).toBeVisible()
+    const sidebarBox = await sidebar.boundingBox()
+    expect(sidebarBox?.width).toBeGreaterThanOrEqual(78)
+    expect(sidebarBox?.width).toBeLessThanOrEqual(86)
+  } else {
+    await expect(sidebar).toBeHidden()
+    await expect(page.getByRole('navigation')).toBeVisible()
+  }
+
+  const undersizedDayButtons = await page
+    .getByRole('group', { name: 'Planejar para' })
+    .getByRole('button')
+    .evaluateAll(buttons => buttons.filter(button => {
+      const rect = button.getBoundingClientRect()
+      return rect.width < 44 || rect.height < 44
+    }).length)
+  expect(undersizedDayButtons, `botoes de dia pequenos em ${width}x${height}`).toBe(0)
+
+  if (width <= 480) {
+    const refreshBox = await page.getByRole('button', { name: 'Atualizar' }).boundingBox()
+    const selectedDateBox = await page.locator('time[datetime]').boundingBox()
+    expect(refreshBox).not.toBeNull()
+    expect(selectedDateBox).not.toBeNull()
+    expect(selectedDateBox!.y).toBeGreaterThanOrEqual(refreshBox!.y + refreshBox!.height - 1)
+  }
+}
+
+test('Planejamento preserva leitura e toque no computador, tablet e celular', async ({ page }) => {
+  await enterAsAdmin(page)
+  await page.goto('/planejamento-producao')
+
+  let createdPlanId: string | null = null
+  let selectedDayName = ''
+  const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
+
+  try {
+    await expect(page.getByText('Dia selecionado', { exact: true })).toBeVisible()
+
+    const dayGroup = page.getByRole('group', { name: 'Planejar para' })
+    const otherDay = dayGroup.locator('button[aria-pressed="false"]').first()
+    selectedDayName = await otherDay.innerText()
+    await otherDay.click()
+    await expect(dayGroup.getByRole('button', { name: selectedDayName, exact: true }))
+      .toHaveAttribute('aria-pressed', 'true')
+
+    const summary = page.getByText('Total planejado', { exact: true })
+    await expect(summary.or(createDraft)).toBeVisible({ timeout: 30_000 })
+
+    if (await createDraft.isVisible()) {
+      const createResponsePromise = page.waitForResponse(response => (
+        response.request().method() === 'POST'
+        && new URL(response.url()).pathname.endsWith('/rest/v1/production_plans')
+      ))
+      await createDraft.click()
+      const createResponse = await createResponsePromise
+      if (createResponse.ok()) {
+        const createdRows = await createResponse.json() as Array<{ id?: string }>
+        createdPlanId = createdRows[0]?.id ?? null
+        expect(createdPlanId, 'a criação do rascunho deve retornar seu identificador').toBeTruthy()
+      }
+    }
+    await expect(summary).toBeVisible({ timeout: 30_000 })
+
+    await expectLayoutFitsViewport(page, 1440, 1000)
+    await expectLayoutFitsViewport(page, 1200, 900)
+    await expectLayoutFitsViewport(page, 820, 1180)
+    await expectLayoutFitsViewport(page, 390, 844)
+  } finally {
+    if (createdPlanId && !page.isClosed()) {
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.reload()
+
+      const selectedDay = page
+        .getByRole('group', { name: 'Planejar para' })
+        .getByRole('button', { name: selectedDayName, exact: true })
+      await selectedDay.click()
+
+      const discard = page.getByRole('button', { name: 'Descartar' })
+      const ownPlan = page.locator(`[data-plan-id="${createdPlanId}"]`)
+      await expect(ownPlan.or(createDraft)).toBeVisible({ timeout: 30_000 })
+      if (await ownPlan.isVisible() && await discard.isVisible()) {
+        page.once('dialog', dialog => dialog.accept())
+        await discard.click()
+        await expect(createDraft).toBeVisible({ timeout: 30_000 })
+      }
+    }
+  }
+})
