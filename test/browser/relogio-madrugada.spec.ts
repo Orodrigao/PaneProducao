@@ -130,47 +130,31 @@ test.describe('o dia padrão das telas que gravam registro', () => {
     await expect(page.getByText('Prazo encerrando')).toHaveCount(0)
   })
 
-  // Campo com a data certa na tela ainda não é registro com a data certa no
-  // banco. Este caso grava de verdade na madrugada, confere o que saiu pela
-  // rede e relê depois de recarregar a página.
-  test('a contagem da prateleira grava e relê com a data de hoje', async ({ page }) => {
+  // Campo com a data certa na tela ainda não é a data que chega ao banco. Este
+  // caso não grava nada: ele escuta a conversa com o banco e confere o dia que
+  // o aplicativo pede. Gravar de verdade exigiria marcar um produto como de
+  // prateleira no Banco Preview compartilhado, que serve todas as PRs, e essa
+  // marca ficaria lá depois do teste.
+  test('a consulta ao banco pergunta pelo dia de hoje', async ({ page }) => {
+    const consultas: string[] = []
+    page.on('request', request => {
+      if (request.url().includes('/rest/v1/')) consultas.push(request.url())
+    })
+
     await abrirComRelogioNaMadrugada(page, '/sobras')
-
-    const gravacao = page.waitForRequest(request =>
-      request.url().includes('/rest/v1/shelf_counts') && request.method() === 'POST')
-
+    await expect(page.getByText('quarta, 23/09').first()).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: /Prateleira \(fim do dia\)/i }).click()
-    // A loja é um `select`, e já nasce na loja de quem entrou. Mexer nela não
-    // faz parte da prova: o que está em jogo é a data que vai no registro.
 
-    // Uma contagem qualquer serve: o que está em prova é a data, não o número.
-    // O valor anterior é guardado para ser devolvido no fim: este teste grava
-    // no Banco Preview compartilhado, que é o mesmo de todas as outras PRs.
-    const contador = page.getByRole('spinbutton').first()
-    await expect(contador).toBeVisible({ timeout: 30_000 })
-    const valorOriginal = await contador.inputValue()
-    await contador.fill('7')
-
-    await page.getByRole('button', { name: /Salvar/i }).first().click()
-
-    // O upsert de shelf_counts tem a data na chave: é ela que decide o dia do
-    // registro. Com o relógio antigo sairia 2026-09-22.
-    const enviado = await gravacao
-    expect(enviado.postData() ?? '').toContain(`"record_date":"${HOJE_NA_PADARIA}"`)
-    expect(enviado.postData() ?? '').not.toContain(`"record_date":"${ONTEM}"`)
-
-    // E relê: recarrega a página e a contagem volta no dia de hoje.
-    await page.reload()
-    await page.getByRole('button', { name: /Prateleira \(fim do dia\)/i }).click()
-    const relido = page.getByRole('spinbutton').first()
-    await expect(relido).toHaveValue('7', { timeout: 30_000 })
-
-    // Devolve o espaço como estava. O upsert usa (data, loja, produto) como
-    // chave, então regravar o valor anterior desfaz a marca deste teste e as
-    // outras PRs não herdam um 7 que ninguém contou.
-    await relido.fill(valorOriginal || '0')
-    await page.getByRole('button', { name: /Salvar/i }).first().click()
-    await expect(page.getByRole('status')).toBeVisible({ timeout: 30_000 })
+    // A tela consulta `record_date=eq.<hoje>` e, de propósito, também
+    // `eq.<ontem>` — o baseline do dia anterior. Por isso a prova é a presença
+    // de HOJE, não a ausência de ontem: com o relógio antigo, às 01:30 o par
+    // viraria 22/09 e 21/09, e 23/09 não apareceria em consulta nenhuma.
+    await expect
+      .poll(
+        () => consultas.filter(url => url.includes(`record_date=eq.${HOJE_NA_PADARIA}`)).length,
+        { timeout: 30_000, message: 'Nenhuma consulta ao banco pediu o dia de hoje.' },
+      )
+      .toBeGreaterThan(0)
   })
 })
 
