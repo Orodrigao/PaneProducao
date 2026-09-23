@@ -410,7 +410,8 @@
   margin: 28px 2px 12px;
 }
 
-.sectionHeading h2 { margin-top: 3px; color: var(--planning-ink); font-family: var(--font-ui); font-size: 25px; letter-spacing: -0.025em; line-height: 1; }
+.sectionHeading h2 { display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--planning-ink); font-family: var(--font-ui); font-size: 25px; letter-spacing: -0.025em; line-height: 1; }
+.sectionHeading h2 svg { color: var(--planning-accent); }
 
 .sectionHeading strong {
   min-width: 30px;

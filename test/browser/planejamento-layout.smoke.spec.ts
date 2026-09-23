@@ -30,6 +30,22 @@ async function expectLayoutFitsViewport(page: Page, width: number, height: numbe
   ))
   expect(hasHorizontalOverflow, `layout com rolagem horizontal em ${width}x${height}`).toBe(false)
 
+  const sidebar = page.getByRole('complementary', { name: 'Navegação principal' })
+  if (width >= 1200) {
+    await expect(sidebar).toBeVisible()
+    const sidebarBox = await sidebar.boundingBox()
+    expect(sidebarBox?.width).toBeGreaterThanOrEqual(215)
+    expect(sidebarBox?.width).toBeLessThanOrEqual(225)
+  } else if (width >= 600) {
+    await expect(sidebar).toBeVisible()
+    const sidebarBox = await sidebar.boundingBox()
+    expect(sidebarBox?.width).toBeGreaterThanOrEqual(78)
+    expect(sidebarBox?.width).toBeLessThanOrEqual(86)
+  } else {
+    await expect(sidebar).toBeHidden()
+    await expect(page.getByRole('navigation')).toBeVisible()
+  }
+
   const undersizedDayButtons = await page
     .getByRole('group', { name: 'Planejar para' })
     .getByRole('button')

@@ -112,7 +112,7 @@ export default function Nav() {
       title={l.label}
     >
       <span className={variant === 'primary' ? 'nic' : 'ps-sidebar-icon'}>
-        <l.Icon size={variant === 'primary' ? 22 : 20} strokeWidth={1.85} />
+        <l.Icon size={variant === 'primary' ? 22 : 18} strokeWidth={1.8} />
       </span>
       <span>{l.label}</span>
     </Link>

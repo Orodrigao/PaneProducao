@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
   CalendarCheck,
+  Croissant,
   PackageOpen,
   Plus,
   RefreshCw,
@@ -918,7 +919,7 @@ export default function ProductionPlanningPage() {
           <div className={styles.sectionHeading}>
             <div>
               <span>Produção</span>
-              <h2>Pães</h2>
+              <h2><Croissant size={22} strokeWidth={1.8} aria-hidden="true" /> Pães</h2>
             </div>
             <strong>{visibleBreads.length}</strong>
           </div>
