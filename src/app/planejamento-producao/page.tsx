@@ -825,9 +825,9 @@ export default function ProductionPlanningPage() {
             )
           })}
         </div>
-        <div className={styles.selectedDate}>
+        <time className={styles.selectedDate} dateTime={date}>
           {dayDateLabel(date)}
-        </div>
+        </time>
       </section>
 
       {error && (

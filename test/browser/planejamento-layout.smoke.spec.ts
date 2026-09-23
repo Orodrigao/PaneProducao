@@ -54,6 +54,14 @@ async function expectLayoutFitsViewport(page: Page, width: number, height: numbe
       return rect.width < 42 || rect.height < 42
     }).length)
   expect(undersizedDayButtons, `botoes de dia pequenos em ${width}x${height}`).toBe(0)
+
+  if (width <= 480) {
+    const refreshBox = await page.getByRole('button', { name: 'Atualizar' }).boundingBox()
+    const selectedDateBox = await page.locator('time[datetime]').boundingBox()
+    expect(refreshBox).not.toBeNull()
+    expect(selectedDateBox).not.toBeNull()
+    expect(selectedDateBox!.y).toBeGreaterThanOrEqual(refreshBox!.y + refreshBox!.height - 1)
+  }
 }
 
 test('Planejamento preserva leitura e toque no computador, tablet e celular', async ({ page }) => {

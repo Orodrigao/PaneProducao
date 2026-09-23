@@ -563,6 +563,16 @@
   .breadCard :global(.ps-card-head) { flex-direction: column; }
 }
 
+@media (max-width: 480px) {
+  .datePickerHead { grid-column: 1 / -1; }
+  .selectedDate {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    padding: 0 4px 2px;
+    text-align: left;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scroll { scroll-behavior: auto; }
   .page *,
