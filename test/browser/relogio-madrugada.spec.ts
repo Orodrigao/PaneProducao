@@ -19,6 +19,15 @@ test.use({
   timezoneId: 'America/Sao_Paulo',
 })
 
+// A dispensa fica no nível do arquivo, não dentro de um teste. O Playwright lê
+// o `storageState` ao criar o contexto, ANTES de rodar o corpo do teste: uma
+// dispensa lá dentro chegaria tarde e cada caso quebraria por arquivo de sessão
+// inexistente em vez de ser pulado.
+test.skip(
+  !process.env.SUPABASE_TEST_USER_PASSWORD,
+  'A senha das contas fictícias existe somente no cofre local e no secret do GitHub.',
+)
+
 const previewAccounts = {
   admin: 'rodrigao+teste@gmail.com',
   romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
@@ -60,10 +69,6 @@ test.beforeAll(async ({ browser }) => {
 })
 
 async function abrirComRelogioNaMadrugada(page: Page, rota: string) {
-  test.skip(
-    !process.env.SUPABASE_TEST_USER_PASSWORD,
-    'A senha das contas fictícias existe somente no cofre local e no secret do GitHub.',
-  )
   // `setFixedTime` congela `Date.now()` sem congelar os timers, então o React
   // continua rodando normalmente enquanto o aplicativo acha que é 01:30.
   await page.clock.setFixedTime(MADRUGADA)
@@ -135,7 +140,8 @@ test.describe('o dia padrão das telas que gravam registro', () => {
       request.url().includes('/rest/v1/shelf_counts') && request.method() === 'POST')
 
     await page.getByRole('button', { name: /Prateleira \(fim do dia\)/i }).click()
-    await page.getByRole('button', { name: /^JC/ }).first().click()
+    // A loja é um `select`, e já nasce na loja de quem entrou. Mexer nela não
+    // faz parte da prova: o que está em jogo é a data que vai no registro.
 
     // Uma contagem qualquer serve: o que está em prova é a data, não o número.
     // O valor anterior é guardado para ser devolvido no fim: este teste grava
@@ -156,7 +162,6 @@ test.describe('o dia padrão das telas que gravam registro', () => {
     // E relê: recarrega a página e a contagem volta no dia de hoje.
     await page.reload()
     await page.getByRole('button', { name: /Prateleira \(fim do dia\)/i }).click()
-    await page.getByRole('button', { name: /^JC/ }).first().click()
     const relido = page.getByRole('spinbutton').first()
     await expect(relido).toHaveValue('7', { timeout: 30_000 })
 

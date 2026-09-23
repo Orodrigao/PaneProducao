@@ -74,12 +74,16 @@ export function readBakeryClock(value: Date = new Date()): BakeryClockReading {
     return { dateKey: '', dayOfWeek: -1, hour: Number.NaN, minute: Number.NaN }
   }
 
+  // A tupla (`as const`) e o tipo explícito existem para o compilador conferir
+  // os nomes das partes. Sem eles, `Object.fromEntries` devolve `any` e um erro
+  // de digitação em `parts.year` viraria a data "undefined-..." sem ninguém
+  // reclamar.
   const parts = Object.fromEntries(
     bakeryClockFormatter
       .formatToParts(value)
       .filter(part => part.type !== 'literal')
-      .map(part => [part.type, part.value]),
-  )
+      .map(part => [part.type, part.value] as const),
+  ) as Partial<Record<Intl.DateTimeFormatPartTypes, string>>
   const dateKey = `${parts.year}-${parts.month}-${parts.day}`
 
   return {
