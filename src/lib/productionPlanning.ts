@@ -405,8 +405,8 @@ export function readBakeryClock(value: Date = new Date()): BakeryClockReading {
 // Domingo é sempre pulado (não há produção).
 //
 // Abrir no domingo cai em terça, e é de propósito: na cadência de dois dias,
-// a segunda já foi planejada no sábado. Se a prática for outra, o ajuste é
-// tratar domingo como `advance = 1`.
+// a segunda já foi planejada no sábado. Decidido pelo Rodrigo em 23/09/2026,
+// na PR 437, depois de a revisão propor a segunda. Não reabrir sem ele.
 export function defaultPlanningDayIndex(
   currentDayOfWeek: number,
   currentHour: number,

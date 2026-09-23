@@ -322,8 +322,8 @@ describe('productionPlanning', () => {
 
   it('defaultPlanningDayIndex no domingo mantem a cadencia de dois dias', () => {
     // Domingo (0) depois das 6h → Ter (2). A segunda ja foi planejada no
-    // sabado, entao o proximo dia a planejar e a terca. Decisao consciente:
-    // se a pratica for outra, basta tratar domingo como avanco de 1 dia.
+    // sabado, entao o proximo dia a planejar e a terca. Decidido pelo Rodrigo
+    // em 23/09/2026 (PR 437), depois de a revisao propor a segunda.
     expect(defaultPlanningDayIndex(0, 12)).toBe(2)
     // Domingo (0) antes das 6h → avanca 1 = Seg (1)
     expect(defaultPlanningDayIndex(0, 5)).toBe(1)

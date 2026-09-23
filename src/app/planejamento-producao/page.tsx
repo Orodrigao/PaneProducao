@@ -801,7 +801,10 @@ export default function ProductionPlanningPage() {
                 type="button"
                 className="ps-day"
                 aria-pressed={date === dayDate}
-                onClick={() => setDate(dayDate)}
+                // Relê o relógio no toque: a tela do celular fica aberta a
+                // noite inteira, e uma data calculada antes da meia-noite
+                // mandaria o toque para o dia de hoje, que não vira pedido.
+                onClick={() => setDate(nextOccurrenceOfDay(i, readBakeryClock().dateKey))}
               >
                 {DAYS_PT[i]}
               </button>
