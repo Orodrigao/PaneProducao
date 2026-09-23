@@ -735,33 +735,29 @@ export default function ProductionPlanningPage() {
   return shell(
     <main className={styles.page}>
       <section className={styles.hero}>
-        <div>
-          <span className={styles.eyebrow}>Produção · JC + JA</span>
-          <h1 className={`ps-page-title ${styles.title}`}><CalendarCheck size={26} /> Planejamento</h1>
-          <p className={styles.lead}>Organize a produção do dia com uma visão clara do total e de cada loja.</p>
-        </div>
-        <div className={styles.heroDate} aria-label={`Dia selecionado: ${dayDateLabel(date)}`}>
-          <span>Dia selecionado</span>
-          <strong>{dayDateLabel(date)}</strong>
+        <div className={styles.heroMain}>
+          <div className={styles.heroCopy}>
+            <span className={styles.eyebrow}>Produção · JC + JA</span>
+            <h1 className={`ps-page-title ${styles.title}`}><CalendarCheck size={26} /> Planejamento</h1>
+            <p className={styles.lead}>Escolha o dia, distribua a produção e acompanhe o total das lojas.</p>
+          </div>
+          <div className={styles.heroDate} aria-label={`Dia selecionado: ${dayDateLabel(date)}`}>
+            <span>Dia selecionado</span>
+            <strong>{dayDateLabel(date)}</strong>
+          </div>
         </div>
       </section>
 
-      <section className={`ps-card ${styles.openPlans}`}>
-        <div className="ps-card-head">
-          <div>
-            <b>Planejamentos em aberto</b>
-            <p style={{ margin: '4px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-              Toque em uma data para abrir o planejamento.
-            </p>
+      {openPlans.length > 0 && (
+        <section className={styles.openPlans}>
+          <div className={styles.openPlansHead}>
+            <div>
+              <span className={styles.openPlansLabel}>Em andamento</span>
+              <b>Outros planejamentos</b>
+            </div>
+            <span className={styles.countBadge}>{openPlans.length}</span>
           </div>
-          <span className="ps-store-chip">{openPlans.length}</span>
-        </div>
 
-        {openPlans.length === 0 ? (
-          <div className="ps-empty" style={{ padding: '12px 10px', marginTop: 10 }}>
-            Nenhum planejamento em aberto.
-          </div>
-        ) : (
           <div className={styles.openPlanList}>
             {openPlans.map(openPlan => {
               const expired = planDateIsExpiredForOrders(openPlan.production_date, todayDate)
@@ -770,16 +766,13 @@ export default function ProductionPlanningPage() {
                 <button
                   key={openPlan.id}
                   type="button"
-                  className={`ps-btn ghost ${styles.openPlanButton} ${openPlan.production_date === date ? styles.openPlanSelected : ''}`}
+                  className={`${styles.openPlanButton} ${openPlan.production_date === date ? styles.openPlanSelected : ''}`}
                   aria-pressed={openPlan.production_date === date}
                   onClick={() => openPlanDate(openPlan.production_date)}
-                  style={{
-                    justifyContent: 'space-between',
-                  }}
                 >
                   <span className={styles.openPlanCopy}>
                     <b>{dateLabel(openPlan.production_date)}</b>
-                    <small style={{ color: expired ? 'var(--berry)' : 'var(--ink-soft)', fontWeight: 700 }}>
+                    <small className={expired ? styles.expiredPlan : ''}>
                       {expired
                         ? 'Data já passou — não vira mais pedido'
                         : PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
@@ -788,25 +781,25 @@ export default function ProductionPlanningPage() {
                     </small>
                   </span>
                   <span className={styles.openPlanTotals}>
-                    <span className="ps-store-chip">Total {openPlan.total}</span>
-                    <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
-                    <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
+                    <span>Total <b>{openPlan.total}</b></span>
+                    <span>JC <b>{openPlan.storeTotals.jc}</b></span>
+                    <span>JA <b>{openPlan.storeTotals.ja}</b></span>
                   </span>
                 </button>
               )
             })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      <section className={`ps-filters ${styles.datePicker}`}>
+      <section className={styles.datePicker}>
         <div className={styles.datePickerHead}>
-          <span className="ps-fieldlabel" style={{ margin: 0 }} id="ps-planejamento-dia">Pães para qual dia?</span>
-          <button type="button" className={`ps-btn ghost ${styles.refreshButton}`} onClick={() => void refreshPlanning()} disabled={loading}>
+          <span className={styles.pickerLabel} id="ps-planejamento-dia">Planejar para</span>
+          <button type="button" className={styles.refreshButton} onClick={() => void refreshPlanning()} disabled={loading}>
             <RefreshCw size={14} /> Atualizar
           </button>
         </div>
-        <div className={`ps-days ${styles.days}`} role="group" aria-labelledby="ps-planejamento-dia">
+        <div className={styles.days} role="group" aria-labelledby="ps-planejamento-dia">
           {[1, 2, 3, 4, 5, 6].map(i => {
             // Compara a DATA, e não o dia da semana: ao abrir um planejamento
             // antigo pela lista, o botão daquele dia acenderia, e um toque nele
@@ -818,14 +811,15 @@ export default function ProductionPlanningPage() {
               <button
                 key={i}
                 type="button"
-                className={`ps-day ${styles.dayButton}`}
+                className={styles.dayButton}
                 aria-pressed={date === dayDate}
                 // Relê o relógio no toque: a tela do celular fica aberta a
                 // noite inteira, e uma data calculada antes da meia-noite
                 // mandaria o toque para o dia de hoje, que não vira pedido.
                 onClick={() => setDate(nextOccurrenceOfDay(i, readBakeryClock().dateKey))}
               >
-                {DAYS_PT[i]}
+                <span>{DAYS_PT[i]}</span>
+                <small>{dayDate.slice(8, 10)}</small>
               </button>
             )
           })}

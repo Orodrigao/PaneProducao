@@ -19,7 +19,7 @@ async function enterAsAdmin(page: Page) {
 async function expectLayoutFitsViewport(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height })
   await expect(page.getByRole('heading', { name: 'Planejamento', exact: true })).toBeVisible()
-  await expect(page.getByRole('group', { name: 'Pães para qual dia?' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Planejar para' })).toBeVisible()
   await expect(page.getByText('Total planejado', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Pães', exact: true })).toBeVisible()
   await expect(page.getByLabel('JC total').first()).toBeVisible()
@@ -31,7 +31,7 @@ async function expectLayoutFitsViewport(page: Page, width: number, height: numbe
   expect(hasHorizontalOverflow, `layout com rolagem horizontal em ${width}x${height}`).toBe(false)
 
   const undersizedDayButtons = await page
-    .getByRole('group', { name: 'Pães para qual dia?' })
+    .getByRole('group', { name: 'Planejar para' })
     .getByRole('button')
     .evaluateAll(buttons => buttons.filter(button => {
       const rect = button.getBoundingClientRect()
@@ -44,28 +44,50 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
   await enterAsAdmin(page)
   await page.goto('/planejamento-producao')
 
-  await expect(page.getByText('Planejamentos em aberto', { exact: true })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('Dia selecionado', { exact: true })).toBeVisible()
+  let createdForTest = false
+  let selectedDayName = ''
+  const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
 
-  const openPlans = page
-    .locator('section')
-    .filter({ hasText: 'Planejamentos em aberto' })
-    .first()
-    .getByRole('button')
-  await expect(openPlans.first()).toBeVisible({ timeout: 30_000 })
-  await openPlans.first().click()
-  await expect(page.getByText('Total planejado', { exact: true })).toBeVisible({ timeout: 30_000 })
+  try {
+    await expect(page.getByText('Dia selecionado', { exact: true })).toBeVisible()
 
-  await expectLayoutFitsViewport(page, 1440, 1000)
-  await expectLayoutFitsViewport(page, 820, 1180)
-  await expectLayoutFitsViewport(page, 390, 844)
+    const dayGroup = page.getByRole('group', { name: 'Planejar para' })
+    const otherDay = dayGroup.locator('button[aria-pressed="false"]').first()
+    selectedDayName = await otherDay.innerText()
+    await otherDay.click()
+    await expect(dayGroup.getByRole('button', { name: selectedDayName, exact: true }))
+      .toHaveAttribute('aria-pressed', 'true')
 
-  const dayGroup = page.getByRole('group', { name: 'Pães para qual dia?' })
-  const otherDay = dayGroup
-    .locator('button[aria-pressed="false"]')
-    .first()
-  const otherDayName = await otherDay.innerText()
-  await otherDay.click()
-  await expect(dayGroup.getByRole('button', { name: otherDayName, exact: true }))
-    .toHaveAttribute('aria-pressed', 'true')
+    const summary = page.getByText('Total planejado', { exact: true })
+    await expect(summary.or(createDraft)).toBeVisible({ timeout: 30_000 })
+
+    if (await createDraft.isVisible()) {
+      createdForTest = true
+      await createDraft.click()
+    }
+    await expect(summary).toBeVisible({ timeout: 30_000 })
+
+    await expectLayoutFitsViewport(page, 1440, 1000)
+    await expectLayoutFitsViewport(page, 1200, 900)
+    await expectLayoutFitsViewport(page, 820, 1180)
+    await expectLayoutFitsViewport(page, 390, 844)
+  } finally {
+    if (createdForTest && !page.isClosed()) {
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.reload()
+
+      const selectedDay = page
+        .getByRole('group', { name: 'Planejar para' })
+        .getByRole('button', { name: selectedDayName, exact: true })
+      await selectedDay.click()
+
+      const discard = page.getByRole('button', { name: 'Descartar' })
+      await expect(discard.or(createDraft)).toBeVisible({ timeout: 30_000 })
+      if (await discard.isVisible()) {
+        page.once('dialog', dialog => dialog.accept())
+        await discard.click()
+        await expect(createDraft).toBeVisible({ timeout: 30_000 })
+      }
+    }
+  }
 })
