@@ -51,7 +51,7 @@ async function expectLayoutFitsViewport(page: Page, width: number, height: numbe
     .getByRole('button')
     .evaluateAll(buttons => buttons.filter(button => {
       const rect = button.getBoundingClientRect()
-      return rect.width < 42 || rect.height < 42
+      return rect.width < 44 || rect.height < 44
     }).length)
   expect(undersizedDayButtons, `botoes de dia pequenos em ${width}x${height}`).toBe(0)
 
