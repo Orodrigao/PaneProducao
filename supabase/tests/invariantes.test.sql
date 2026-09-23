@@ -306,9 +306,10 @@ select ok((select qual from pg_policies
       '%current_user_is_access_admin%',
       '%producao_cozinha.lancar%',
       '%store%',
-      '%record_date%'
+      '%record_date%',
+      '%- 31)%'
     ]),
-  'equipe da cozinha lê hoje e ontem da sua loja; admin lê o histórico');
+  'equipe da cozinha lê os últimos 31 dias da sua loja; admin lê o histórico');
 select ok(exists(select 1 from pg_constraint
     where conname = 'kitchen_production_quantity_range'),
   'quantidade limitada no banco, não só na tela');

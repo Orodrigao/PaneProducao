@@ -14,6 +14,8 @@ import {
   formatKitchenQuantity,
   groupKitchenItems,
   isEmptyKitchenBatchRequest,
+  isKitchenDateOpen,
+  kitchenOldestDate,
   kitchenDaySummaryTotals,
   kitchenStoresForUser,
   normalizeKitchenStore,
@@ -74,7 +76,10 @@ export default function ProducaoCozinhaPage() {
     [user, permissions, isAdmin],
   )
   const today = todayKey()
-  const dateIsOpen = date === today
+  const isToday = date === today
+  const dateIsOpen = isKitchenDateOpen(date, today, isAdmin)
+  const oldestDate = kitchenOldestDate(today, isAdmin)
+  const dateLabel = formatDateBR(date)
   const allItems = useMemo(() => {
     const merged = new Map(items.map(item => [item.id, item]))
     for (const row of plan) {
@@ -127,7 +132,12 @@ export default function ProducaoCozinhaPage() {
     return () => { alive = false }
   }, [router])
 
-  const loadDay = useCallback(async (targetStore: KitchenStore, targetDate: string) => {
+  // Trocar o dia não apaga o que já foi digitado; depois de salvar, sim.
+  const loadDay = useCallback(async (
+    targetStore: KitchenStore,
+    targetDate: string,
+    keepTyped: boolean,
+  ) => {
     setLoading(true)
     setLoadError('')
     try {
@@ -144,13 +154,19 @@ export default function ProducaoCozinhaPage() {
       setItems(kitchenItems)
       setEntries(dayEntries)
       setPlan(normalizedPlan)
-      setQuantities(saved)
+      setQuantities(prev => {
+        if (!keepTyped) return saved
+        const kept = { ...saved }
+        for (const [id, value] of Object.entries(prev)) {
+          if (id in kept && value > 0) kept[id] = value
+        }
+        return kept
+      })
     } catch (error) {
       setLoadError(describeKitchenError(error))
       setItems([])
       setEntries([])
       setPlan([])
-      setQuantities({})
     } finally {
       setLoading(false)
     }
@@ -158,7 +174,7 @@ export default function ProducaoCozinhaPage() {
 
   useEffect(() => {
     if (!ready || !store) { setLoading(false); return }
-    void loadDay(store, date)
+    void loadDay(store, date, true)
   }, [ready, store, date, loadDay])
 
   const setQuantity = (productId: string, value: number) => {
@@ -170,8 +186,17 @@ export default function ProducaoCozinhaPage() {
     }))
   }
 
+  const changeDate = (value: string) => {
+    setSaveRequestId('')
+    setDate(value || today)
+  }
+
   const handleSave = async () => {
     if (!store) return
+    if (!dateIsOpen) {
+      showToastPS('Escolha um dia liberado para lançar.')
+      return
+    }
     const batches = buildKitchenBatchRequests({
       quantities,
       items: allItems,
@@ -186,10 +211,10 @@ export default function ProducaoCozinhaPage() {
     const stableRequestId = saveRequestId || requestId()
     setSaveRequestId(stableRequestId)
     try {
-      await recordKitchenBatches(store, batches, stableRequestId)
+      await recordKitchenBatches(store, batches, stableRequestId, date, today)
       setSaveRequestId('')
-      await loadDay(store, date)
-      showToastPS('Novo lote salvo!')
+      await loadDay(store, date, false)
+      showToastPS(isToday ? 'Novo lote salvo!' : `Novo lote salvo em ${dateLabel}!`)
     } catch (error) {
       showToastPS(describeKitchenError(error))
     } finally {
@@ -205,7 +230,7 @@ export default function ProducaoCozinhaPage() {
             <div className="ps-mark">P</div>
             <div className="ps-brand">
               <b>Produção da Cozinha</b>
-              <span>Registro do dia</span>
+              <span>Registro por dia</span>
             </div>
           </div>
           {user && (
@@ -243,30 +268,32 @@ export default function ProducaoCozinhaPage() {
     <>
       <h1 className="ps-page-title"><ChefHat size={23} /> Cozinha</h1>
       <p className="ps-page-lead">
-        Informe somente o que acabou de ficar pronto. Cada salvamento cria um novo lote.
+        Escolha o dia da produção e informe o que ficou pronto. Cada salvamento cria um novo lote.
       </p>
 
       <section className="ps-filters" style={{ alignItems: 'stretch' }}>
         <label className="ps-fieldgroup">
           <span className="ps-fieldlabel">Dia</span>
-          {isAdmin ? (
+          <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="date"
               value={date}
-              onChange={event => setDate(event.target.value || today)}
+              min={oldestDate}
+              max={today}
+              onChange={event => changeDate(event.target.value)}
               className="ps-input"
+              aria-label="Dia da produção"
             />
-          ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
+            {!isToday && (
               <button
                 type="button"
-                className="ps-btn primary"
-                onClick={() => setDate(today)}
+                className="ps-btn"
+                onClick={() => changeDate(today)}
               >
                 Hoje
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </label>
         {allowedStores.length > 1 && (
           <label className="ps-fieldgroup">
@@ -285,16 +312,16 @@ export default function ProducaoCozinhaPage() {
       </section>
 
       <p className="ps-page-lead" style={{ marginTop: 4 }}>
-        {STORE_LABEL[store]} · {formatDateBR(date)}
+        {STORE_LABEL[store]} · {dateLabel}
         {lastEntry?.produced_at && (
-          <> · último lote às {formatDate(lastEntry.produced_at)}
+          <> · último lançamento em {formatDate(lastEntry.produced_at)}
             {lastEntry.recorded_by_name ? ` por ${lastEntry.recorded_by_name}` : ''}</>
         )}
       </p>
 
       {!loading && store === 'jc' && plan.length > 0 && (
         <section className="ps-card" style={{ marginTop: 12, gap: 10 }}>
-          <b>Necessidades programadas para hoje</b>
+          <b>Necessidades programadas para {isToday ? 'hoje' : dateLabel}</b>
           <p style={{ fontSize: 12, color: 'var(--ink-soft)', margin: 0 }}>
             O planejamento orienta o trabalho, mas não limita o que a Cozinha pode produzir.
           </p>
@@ -320,11 +347,22 @@ export default function ProducaoCozinhaPage() {
         <div className="ps-card" style={{ borderColor: '#E6B5AC', color: 'var(--berry)' }}>{loadError}</div>
       )}
 
+      {!isToday && dateIsOpen && (
+        <div className="ps-card" style={{ borderColor: '#E6B5AC' }}>
+          <b>Lançando a produção de {dateLabel}</b>
+          <p style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+            Os lotes salvos agora entram em {dateLabel}. O horário real do lançamento também fica registrado.
+          </p>
+        </div>
+      )}
+
       {!dateIsOpen && (
         <div className="ps-card" style={{ borderColor: '#E6B5AC' }}>
-          <b>Consulta de dia anterior</b>
+          <b>Dia fora do lançamento</b>
           <p style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-            Novos lotes recebem automaticamente o horário de agora. Volte para hoje para lançar.
+            {date > today
+              ? 'Não dá para lançar a produção de um dia que ainda não chegou.'
+              : `A equipe da Cozinha lança somente até ${formatDateBR(oldestDate)}. Escolha outro dia.`}
           </p>
         </div>
       )}
@@ -336,7 +374,7 @@ export default function ProducaoCozinhaPage() {
           <b>Nenhum item de cozinha cadastrado</b>
           <p style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
             Esta tela mostra produtos de montagem ou preparo liberados para produção sem ordem,
-            além dos que foram programados para hoje.
+            além dos que foram programados para este dia.
           </p>
         </div>
       )}
@@ -417,7 +455,7 @@ export default function ProducaoCozinhaPage() {
             onClick={handleSave}
             disabled={saving || !dateIsOpen}
           >
-            <Save size={17} /> {saving ? 'Salvando...' : 'Salvar produção'}
+            <Save size={17} /> {saving ? 'Salvando...' : isToday ? 'Salvar produção' : `Salvar produção de ${dateLabel}`}
           </button>
         </div>
       )}

@@ -120,12 +120,22 @@ export function sanitizeKitchenQuantity(value: unknown, unit: string | null = 'u
 export { shiftDateKey }
 
 /**
- * Janela de lançamento de quem não é admin: hoje e ontem. Espelha
- * private.kitchen_production_date_is_open — quem esquece à noite ainda lança na
- * manhã seguinte, mas ninguém reescreve histórico antigo em silêncio.
+ * Quantos dias para trás a equipe da Cozinha lança e consulta. Espelha a
+ * migration 20260923193000_cozinha_lancamento_retroativo: quem sai às 17h
+ * lança no dia seguinte, e a planilha atrasada cabe na janela.
  */
-export function isKitchenDateOpen(recordDate: string, todayKey: string): boolean {
-  return recordDate === todayKey || recordDate === shiftDateKey(todayKey, -1)
+export const KITCHEN_TEAM_WINDOW_DAYS = 31
+
+/** Dia mais antigo que o perfil pode escolher; admin não tem limite. */
+export function kitchenOldestDate(todayKey: string, isAdmin: boolean): string | undefined {
+  return isAdmin ? undefined : shiftDateKey(todayKey, -KITCHEN_TEAM_WINDOW_DAYS)
+}
+
+/** Dia futuro nunca; a equipe fica nos últimos 31 dias, admin em qualquer passado. */
+export function isKitchenDateOpen(recordDate: string, todayKey: string, isAdmin: boolean): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(recordDate) || recordDate > todayKey) return false
+  const oldest = kitchenOldestDate(todayKey, isAdmin)
+  return oldest === undefined || recordDate >= oldest
 }
 
 export function groupKitchenItems(
@@ -274,6 +284,16 @@ export function describeKitchenError(error: unknown): string {
   const code = errorCode(error)
   const message = errorMessage(error)
 
+  if (message.startsWith('Lançar dia anterior ainda não foi liberado')) return message
+  if (message.includes('31 dias')) {
+    return `A equipe da Cozinha lança e consulta somente até ${KITCHEN_TEAM_WINDOW_DAYS} dias atrás. Escolha outro dia.`
+  }
+  if (message.includes('dia futuro')) {
+    return 'Não dá para lançar a produção de um dia que ainda não chegou.'
+  }
+  if (message.includes('valores diferentes')) {
+    return 'Este salvamento já foi enviado com outros valores. Confira a lista do dia antes de salvar de novo.'
+  }
   if (MISSING_TABLE_CODES.has(code) || message.includes('kitchen_production')) {
     return 'Esta tela ainda não foi liberada no banco de dados. Isso é normal antes da mudança ir para o ar — avise o Rodrigo se continuar assim depois disso.'
   }
