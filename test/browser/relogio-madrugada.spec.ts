@@ -138,8 +138,11 @@ test.describe('o dia padrão das telas que gravam registro', () => {
     await page.getByRole('button', { name: /^JC/ }).first().click()
 
     // Uma contagem qualquer serve: o que está em prova é a data, não o número.
+    // O valor anterior é guardado para ser devolvido no fim: este teste grava
+    // no Banco Preview compartilhado, que é o mesmo de todas as outras PRs.
     const contador = page.getByRole('spinbutton').first()
     await expect(contador).toBeVisible({ timeout: 30_000 })
+    const valorOriginal = await contador.inputValue()
     await contador.fill('7')
 
     await page.getByRole('button', { name: /Salvar/i }).first().click()
@@ -154,7 +157,15 @@ test.describe('o dia padrão das telas que gravam registro', () => {
     await page.reload()
     await page.getByRole('button', { name: /Prateleira \(fim do dia\)/i }).click()
     await page.getByRole('button', { name: /^JC/ }).first().click()
-    await expect(page.getByRole('spinbutton').first()).toHaveValue('7', { timeout: 30_000 })
+    const relido = page.getByRole('spinbutton').first()
+    await expect(relido).toHaveValue('7', { timeout: 30_000 })
+
+    // Devolve o espaço como estava. O upsert usa (data, loja, produto) como
+    // chave, então regravar o valor anterior desfaz a marca deste teste e as
+    // outras PRs não herdam um 7 que ninguém contou.
+    await relido.fill(valorOriginal || '0')
+    await page.getByRole('button', { name: /Salvar/i }).first().click()
+    await expect(page.getByRole('status')).toBeVisible({ timeout: 30_000 })
   })
 })
 
