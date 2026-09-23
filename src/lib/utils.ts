@@ -1,16 +1,14 @@
-export function nowBrasilia() {
-  const n = new Date()
-  const o = -3 * 60 - n.getTimezoneOffset()
-  return new Date(n.getTime() + o * 60000)
-}
+import { bakeryDayKey, readBakeryClock } from './bakeryClock'
+
+/** Hoje na padaria, no formato YYYY-MM-DD. O relógio mora em ./bakeryClock. */
 export function todayKey() {
-  const d = nowBrasilia()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  return bakeryDayKey()
 }
 export function todayLabel() {
-  const d = nowBrasilia()
+  const { dateKey, dayOfWeek } = readBakeryClock()
   const days = ['domingo','segunda','terça','quarta','quinta','sexta','sábado']
-  return `${days[d.getDay()]}, ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
+  const [, month, day] = dateKey.split('-')
+  return `${days[dayOfWeek]}, ${day}/${month}`
 }
 export function formatDate(iso: string) {
   if (!iso) return ''

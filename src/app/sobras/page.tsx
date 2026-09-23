@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { INSUMOS_CATEGORY } from '@/lib/productCategories'
 import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, todayKey, todayLabel, showToast } from '@/lib/utils'
+import { shiftDateKey } from '@/lib/bakeryClock'
 import { filterKitDiscards, buildKitCascadeMovements, type DiscardRow, type KitComponent } from '@/lib/kitCascade'
 import {
   buildBreadLeftoverItems,
@@ -41,10 +42,11 @@ type Mode = 'sobra' | 'descarte' | 'prateleira' | null
 const STORES = ['jc', 'ja', 'ex'] as const
 const STORE_LABEL: Record<string, string> = { jc: 'JC — Júlio de Castilhos', ja: 'JA — Jardim América', ex: 'EX — Exposição' }
 
+// Ontem na padaria. A versão anterior montava meia-noite no fuso do aparelho e
+// lia o resultado em UTC (`toISOString`): fora do Brasil isso devolvia dois
+// dias atrás. A conta de dia agora é a mesma do resto do sistema.
 function yesterdayKey(): string {
-  const d = new Date(todayKey() + 'T00:00:00')
-  d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
+  return shiftDateKey(todayKey(), -1)
 }
 
 function draftTimeLabel(iso: string): string {
