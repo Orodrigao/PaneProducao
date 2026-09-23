@@ -382,6 +382,11 @@ export interface BakeryClockReading {
 // Uma leitura só do relógio serve à data, ao dia e à hora. Duas leituras
 // separadas podem cair em lados diferentes da virada do dia.
 export function readBakeryClock(value: Date = new Date()): BakeryClockReading {
+  // `formatToParts` lança RangeError com data inválida. Degrada como as
+  // vizinhas: `bakeryDayKey` devolve '', `weekdayIndex` devolve -1, e
+  // `nextOccurrenceOfDay` repassa a entrada vazia adiante.
+  if (Number.isNaN(value.getTime())) return { dateKey: '', dayOfWeek: -1, hour: Number.NaN }
+
   const parts = Object.fromEntries(
     SAO_PAULO_CLOCK
       .formatToParts(value)

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   aggregateFrozenBreadAvailability,
   aggregatePlanningLeftoverAvailability,
@@ -29,6 +31,13 @@ import {
 } from './productionPlanning'
 
 describe('productionPlanning', () => {
+  // Composicao completa: instante real → data que a tela abre. E aqui que o
+  // defeito do relogio aparecia; as funcoes puras sozinhas nao o mostravam.
+  const dataQueATelaAbre = (instant: string) => {
+    const clock = readBakeryClock(new Date(instant))
+    return nextOccurrenceOfDay(defaultPlanningDayIndex(clock.dayOfWeek, clock.hour), clock.dateKey)
+  }
+
   it('filtra os paes previstos pela data sem trazer PJ', () => {
     const breads = [
       { id: 'integral', name: 'Integral', days: [1, 2], active: true, is_pj: false },
@@ -324,56 +333,119 @@ describe('productionPlanning', () => {
   // antiga com getTimezoneOffset() voltava 6 horas num aparelho brasileiro: a
   // regra das 6h so disparava ao meio-dia, e a suite ficava verde mesmo assim
   // porque nenhum teste tocava a fiacao entre o relogio e a regra.
-  it('readBakeryClock le data, dia e hora em Sao Paulo a partir do instante', () => {
-    // 2026-09-23T10:39:00Z = quarta, 07:39 em Sao Paulo
-    expect(readBakeryClock(new Date('2026-09-23T10:39:00Z'))).toEqual({
-      dateKey: '2026-09-23',
-      dayOfWeek: 3,
-      hour: 7,
+  //
+  // Rodar em fuso hostil nao e capricho. A conta antiga acerta por acidente em
+  // UTC, que e onde o CI roda: la o defeito passava batido, e so aparecia na
+  // maquina do Rodrigo. Sem trocar o fuso, este teste nao segura a regressao
+  // no unico lugar onde ela precisa ser segurada.
+  describe.each(['UTC', 'Asia/Tokyo', 'America/Sao_Paulo', 'Pacific/Kiritimati'])(
+    'readBakeryClock com o aparelho em %s',
+    timeZone => {
+      // Restaurar por nome de zona, nunca pelo valor cru de process.env.TZ:
+      // quando ele nao esta definido, `process.env.TZ = undefined` grava a
+      // string 'undefined' (que o Node trata como UTC) e `delete` nao devolve
+      // o fuso do sistema. Os dois deixariam os arquivos seguintes da suite
+      // rodando no fuso errado.
+      const fusoOriginal = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+
+      beforeAll(() => { process.env.TZ = timeZone })
+      afterAll(() => { process.env.TZ = fusoOriginal })
+
+      it('le data, dia e hora em Sao Paulo a partir do instante', () => {
+        // 2026-09-23T10:39:00Z = quarta, 07:39 em Sao Paulo
+        expect(readBakeryClock(new Date('2026-09-23T10:39:00Z'))).toEqual({
+          dateKey: '2026-09-23',
+          dayOfWeek: 3,
+          hour: 7,
+        })
+      })
+
+      it('respeita a virada do dia em Sao Paulo, nao a do aparelho', () => {
+        // 1 segundo antes da meia-noite de Sao Paulo ainda e terca 22/09
+        expect(readBakeryClock(new Date('2026-09-23T02:59:59Z'))).toEqual({
+          dateKey: '2026-09-22',
+          dayOfWeek: 2,
+          hour: 23,
+        })
+        // A meia-noite vira quarta 23/09 com hora 0, nunca 24
+        expect(readBakeryClock(new Date('2026-09-23T03:00:00Z'))).toEqual({
+          dateKey: '2026-09-23',
+          dayOfWeek: 3,
+          hour: 0,
+        })
+        // Virada de ano: 01/01/2027 em UTC ainda e 31/12/2026 na padaria
+        expect(readBakeryClock(new Date('2027-01-01T02:59:00Z'))).toEqual({
+          dateKey: '2026-12-31',
+          dayOfWeek: 4,
+          hour: 23,
+        })
+      })
+
+      it('a tela abre na data certa a partir do instante, hora a hora', () => {
+        // Quarta 23/09, 05:00 em Sao Paulo: producao ainda nao comecou → quinta
+        expect(dataQueATelaAbre('2026-09-23T08:00:00Z')).toBe('2026-09-24')
+        // Quarta 23/09, 06:00: a producao do dia comecou → sexta
+        expect(dataQueATelaAbre('2026-09-23T09:00:00Z')).toBe('2026-09-25')
+        // Quarta 23/09, 08:00, horario de pico → continua sexta
+        expect(dataQueATelaAbre('2026-09-23T11:00:00Z')).toBe('2026-09-25')
+        // Sexta 25/09, 10:00 → domingo pulado, cai na segunda 28/09
+        expect(dataQueATelaAbre('2026-09-25T13:00:00Z')).toBe('2026-09-28')
+        // Domingo 27/09, 12:00 → terca 29/09
+        expect(dataQueATelaAbre('2026-09-27T15:00:00Z')).toBe('2026-09-29')
+        // Quarta 30/12 23:59 e quinta 31/12 00:00 caem na mesma sexta 01/01
+        expect(dataQueATelaAbre('2026-12-31T02:59:00Z')).toBe('2027-01-01')
+        expect(dataQueATelaAbre('2026-12-31T03:00:00Z')).toBe('2027-01-01')
+      })
+    },
+  )
+
+  // A tela nao tem teste de render neste repositorio, e estas duas linhas sao
+  // correcoes que um refactor desfaz sem ninguem notar. Mesmo caminho que
+  // pjPrintSheet.test.ts ja usa para travar linha de pagina.
+  it('a tela de Planejamento usa um relogio so e acende o botao pela data', () => {
+    const pagina = readFileSync(
+      resolve(__dirname, '../app/planejamento-producao/page.tsx'),
+      'utf8',
+    )
+
+    // O botao compara a DATA; comparar o dia da semana faz o botao acender
+    // para um planejamento antigo e trocar o plano num toque.
+    expect(pagina).toContain('aria-pressed={date === dayDate}')
+    expect(pagina).not.toContain('weekdayIndex(date)')
+
+    // Um relogio so na tela: todayKey/nowBrasilia voltam 6 horas num aparelho
+    // brasileiro e fariam os botoes e o aviso de data vencida discordarem.
+    expect(pagina).toContain('readBakeryClock')
+    expect(pagina).not.toContain('todayKey')
+    expect(pagina).not.toContain('nowBrasilia')
+  })
+
+  it('readBakeryClock devolve leitura vazia com data invalida', () => {
+    expect(readBakeryClock(new Date(Number.NaN))).toEqual({
+      dateKey: '',
+      dayOfWeek: -1,
+      hour: Number.NaN,
     })
   })
 
-  it('readBakeryClock respeita a virada do dia em Sao Paulo, nao em UTC', () => {
-    // 1 segundo antes da meia-noite de Sao Paulo ainda e terca 22/09
-    expect(readBakeryClock(new Date('2026-09-23T02:59:59Z'))).toEqual({
-      dateKey: '2026-09-22',
-      dayOfWeek: 2,
-      hour: 23,
-    })
-    // A meia-noite vira quarta 23/09 com hora 0, nunca 24
-    expect(readBakeryClock(new Date('2026-09-23T03:00:00Z'))).toEqual({
-      dateKey: '2026-09-23',
-      dayOfWeek: 3,
-      hour: 0,
-    })
-    // Virada de ano: 01/01/2027 em UTC ainda e 31/12/2026 na padaria
-    expect(readBakeryClock(new Date('2027-01-01T02:59:00Z'))).toEqual({
-      dateKey: '2026-12-31',
-      dayOfWeek: 4,
-      hour: 23,
-    })
-  })
+  // A regra de negocio inteira, varrida em vez de escolhida a dedo: a tela
+  // nunca abre em hoje nem no passado, nunca abre num domingo e nunca passa de
+  // uma semana, qualquer que seja o dia e a hora.
+  it('a data de abertura respeita as invariantes em qualquer dia e hora', () => {
+    for (let diaCorrido = 0; diaCorrido < 14; diaCorrido++) {
+      for (const hora of [0, 5, 6, 12, 23]) {
+        const instante = new Date(Date.UTC(2026, 8, 20 + diaCorrido, hora + 3, 0, 0))
+        const clock = readBakeryClock(instante)
+        const aberta = dataQueATelaAbre(instante.toISOString())
 
-  // Composicao completa: instante real → data que a tela abre. E aqui que o
-  // defeito do relogio aparecia; as funcoes puras sozinhas nao o mostravam.
-  it('a tela abre na data certa a partir do instante, hora a hora', () => {
-    const dataQueATelaAbre = (instant: string) => {
-      const clock = readBakeryClock(new Date(instant))
-      return nextOccurrenceOfDay(defaultPlanningDayIndex(clock.dayOfWeek, clock.hour), clock.dateKey)
+        expect(aberta > clock.dateKey).toBe(true)
+        expect(weekdayIndex(aberta)).not.toBe(0)
+        const distancia = (new Date(`${aberta}T12:00:00Z`).getTime()
+          - new Date(`${clock.dateKey}T12:00:00Z`).getTime()) / 86400000
+        expect(distancia).toBeGreaterThanOrEqual(1)
+        expect(distancia).toBeLessThanOrEqual(7)
+      }
     }
-
-    // Quarta 23/09, 05:00 em Sao Paulo: producao ainda nao comecou → quinta
-    expect(dataQueATelaAbre('2026-09-23T08:00:00Z')).toBe('2026-09-24')
-    // Quarta 23/09, 06:00: a producao do dia comecou → sexta
-    expect(dataQueATelaAbre('2026-09-23T09:00:00Z')).toBe('2026-09-25')
-    // Quarta 23/09, 08:00, horario de pico → continua sexta
-    expect(dataQueATelaAbre('2026-09-23T11:00:00Z')).toBe('2026-09-25')
-    // Sexta 25/09, 10:00 → domingo pulado, cai na segunda 28/09
-    expect(dataQueATelaAbre('2026-09-25T13:00:00Z')).toBe('2026-09-28')
-    // Domingo 27/09, 12:00 → terca 29/09
-    expect(dataQueATelaAbre('2026-09-27T15:00:00Z')).toBe('2026-09-29')
-    // Quarta 30/12, 23:59 e quinta 31/12, 00:00 caem na mesma sexta 01/01
-    expect(dataQueATelaAbre('2026-12-31T02:59:00Z')).toBe('2027-01-01')
-    expect(dataQueATelaAbre('2026-12-31T03:00:00Z')).toBe('2027-01-01')
   })
+
 })
