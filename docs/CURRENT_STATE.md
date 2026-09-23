@@ -443,10 +443,17 @@ sem reclassificar nada, e a lista ficou vazia.
 Em 22/09/2026 a unificação do texto livre (PR #432) deixou 20 grafias limpas, e
 a fase 2A (PR #434) preencheu a lista com essas 20 categorias, cada uma num
 tipo de item, e classificou o catálogo inteiro casando pelo nome normalizado.
-O texto livre continua em uso nas telas, e o cadastro de produto ainda grava só
-ele: escolher tipo e categoria pela tela é a fase 2B, que também precisa
-decidir quem manda entre a categoria controlada e a marcação `is_revenda`. Até
-lá, editar a categoria de um produto pela tela faz os dois campos divergirem.
+A fase 2B trocou o campo de texto do cadastro de produto pela lista controlada:
+escolher a categoria grava, no mesmo salvamento, a categoria, o tipo de item e o
+texto legado com o nome dela. Produto novo não salva sem categoria; produto
+antigo continua salvando. A marcação `is_revenda` deixou de ser resposta
+própria e virou espelho do tipo de item, por decisão do Rodrigo em 22/09/2026.
+
+O texto livre continua em uso em Sobras, Itens JC, Tabelas de preço e na
+contagem de estoque, e só sai de cena na fase 4. Falta ainda quebrar os 340
+insumos em famílias reais (fase 3) e os relatórios por família (fase 5); nesses
+relatórios, soma por tipo de item precisa excluir `kind = 'kit'`, senão conta o
+kit e os pães dele duas vezes.
 
 ### Produção: classificação operacional dos produtos
 
