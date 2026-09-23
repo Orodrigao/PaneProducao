@@ -114,7 +114,8 @@ begin
   select
     v_new_product_id,
     component.component_source,
-    component.component_id,
+    case when component.component_id = p_source_product_id::text
+      then v_new_product_id::text else component.component_id end,
     case
       when component.component_id = p_source_product_id::text
         and component.component_variant_id is not null
