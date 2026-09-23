@@ -8,6 +8,7 @@ import {
   isEmptyKitchenBatchRequest,
   isKitchenDateOpen,
   kitchenDaySummaryTotals,
+  kitchenOldestDate,
   kitchenTotalsByUnit,
   kitchenStoresForUser,
   kitchenTotalsByProduct,
@@ -100,19 +101,44 @@ describe('sanitizeKitchenQuantity', () => {
 })
 
 describe('isKitchenDateOpen', () => {
-  it('aceita hoje e ontem', () => {
-    expect(isKitchenDateOpen('2026-07-22', '2026-07-22')).toBe(true)
-    expect(isKitchenDateOpen('2026-07-21', '2026-07-22')).toBe(true)
+  it('equipe lança hoje e até 31 dias atrás', () => {
+    expect(isKitchenDateOpen('2026-09-23', '2026-09-23', false)).toBe(true)
+    expect(isKitchenDateOpen('2026-09-22', '2026-09-23', false)).toBe(true)
+    expect(isKitchenDateOpen('2026-08-23', '2026-09-23', false)).toBe(true)
   })
 
-  it('recusa anteontem e datas futuras', () => {
-    expect(isKitchenDateOpen('2026-07-20', '2026-07-22')).toBe(false)
-    expect(isKitchenDateOpen('2026-07-23', '2026-07-22')).toBe(false)
+  it('equipe não passa de 31 dias nem lança dia futuro', () => {
+    expect(isKitchenDateOpen('2026-08-22', '2026-09-23', false)).toBe(false)
+    expect(isKitchenDateOpen('2026-09-24', '2026-09-23', false)).toBe(false)
   })
 
-  it('atravessa a virada de mês', () => {
-    expect(isKitchenDateOpen('2026-06-30', '2026-07-01')).toBe(true)
+  it('admin lança qualquer dia passado, nunca o futuro', () => {
+    expect(isKitchenDateOpen('2025-01-10', '2026-09-23', true)).toBe(true)
+    expect(isKitchenDateOpen('2026-09-24', '2026-09-23', true)).toBe(false)
+  })
+
+  it('recusa data vazia ou fora do formato', () => {
+    expect(isKitchenDateOpen('', '2026-09-23', true)).toBe(false)
+    expect(isKitchenDateOpen('23/09/2026', '2026-09-23', true)).toBe(false)
+  })
+
+  it('atravessa a virada de mês e de ano', () => {
+    expect(kitchenOldestDate('2026-03-01', false)).toBe('2026-01-29')
+    expect(kitchenOldestDate('2026-01-15', false)).toBe('2025-12-15')
+    expect(kitchenOldestDate('2026-01-15', true)).toBeUndefined()
     expect(shiftDateKey('2026-03-01', -1)).toBe('2026-02-28')
+  })
+})
+
+describe('describeKitchenError na janela de dias', () => {
+  it('explica a janela em vez de falar de permissão', () => {
+    expect(describeKitchenError({ code: '42501', message: 'A equipe da Cozinha lanca somente ate 31 dias atras.' }))
+      .toContain('31 dias')
+  })
+
+  it('explica o dia futuro em vez de culpar a internet', () => {
+    expect(describeKitchenError({ code: '22023', message: 'Nao da para lancar producao de dia futuro.' }))
+      .toContain('ainda não chegou')
   })
 })
 

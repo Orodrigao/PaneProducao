@@ -94,8 +94,8 @@ select throws_ok($$select public.schedule_pj_production(private.data_na_padaria(
   '42501','Usuario sem permissao para organizar a producao PJ.',
   'Cozinha nao programa pedidos PJ por chamada direta');
 select throws_ok($$select * from public.list_kitchen_production_plan(
-  'jc',private.data_na_padaria()-2)$$,
-  '42501','A equipe da Cozinha consulta somente hoje e ontem.',
+  'jc',private.data_na_padaria()-32)$$,
+  '42501','A equipe da Cozinha consulta somente os ultimos 31 dias.',
   'Cozinha nao amplia a janela de historico por chamada direta');
 select is((select planned_quantity from public.list_kitchen_production_plan('jc',private.data_na_padaria())
   where product_id='98000000-0000-4000-8000-000000000011'),4.125::numeric,'Cozinha recebe o planejado por peso');

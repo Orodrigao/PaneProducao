@@ -84,11 +84,30 @@ export async function loadKitchenPermissions(): Promise<KitchenPermission[]> {
   return (data ?? []) as KitchenPermission[]
 }
 
+/**
+ * Grava os lotes no dia escolhido. Se o banco ainda não tem a função com dia
+ * (site novo no ar antes da migration), só o dia de hoje segue pela função
+ * anterior; dia passado é recusado em vez de cair em hoje sem aviso.
+ */
 export async function recordKitchenBatches(
   store: KitchenStore,
   batches: readonly KitchenBatchRequest[],
   requestId: string,
+  recordDate: string,
+  todayKey: string,
 ): Promise<void> {
+  const withDate = await supabase.rpc('record_kitchen_batches_v3', {
+    p_store: store,
+    p_batches: batches,
+    p_request_id: requestId,
+    p_record_date: recordDate,
+  })
+  if (!withDate.error) return
+  if (!['42883', 'PGRST202'].includes(withDate.error.code ?? '')) throw withDate.error
+  if (recordDate !== todayKey) {
+    throw new Error('Lançar dia anterior ainda não foi liberado no banco de dados. Tente de novo em alguns minutos.')
+  }
+
   const current = await supabase.rpc('record_kitchen_batches_v2', {
     p_store: store,
     p_batches: batches,
