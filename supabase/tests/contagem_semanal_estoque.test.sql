@@ -33,6 +33,16 @@ select ok(not has_table_privilege('authenticated', 'public.inventory_weekly_coun
 select ok(not has_table_privilege('anon', 'public.inventory_weekly_counts', 'select'),
   'anonimo nunca le a contagem semanal');
 
+-- Espaco de trabalho limpo -----------------------------------------------------
+-- Este arquivo tambem roda no Banco Preview compartilhado (job "Verificar
+-- invariantes e seed canonicos"), onde o seed ja deixou contagens fechadas da JC
+-- em semanas relativas a private.data_na_padaria(). As assercoes abaixo contam e
+-- localizam a contagem da loja sem saber o id de antemao, entao so tem resultado
+-- previsivel num espaco vazio. A transacao inteira termina em rollback: nada
+-- disso sai daqui.
+delete from public.inventory_weekly_counts where store = 'jc';
+update public.products set weekly_count_enabled = false where weekly_count_enabled;
+
 insert into auth.users(id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin)
 values
