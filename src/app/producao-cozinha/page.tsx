@@ -206,6 +206,9 @@ export default function ProducaoCozinhaPage() {
       showToastPS('Informe pelo menos uma quantidade para salvar.')
       return
     }
+    // Dia anterior pede confirmação: quem digitou a produção de hoje e trocou
+    // o dia por engano vê a data antes de gravar.
+    if (!isToday && !confirm(`Salvar estes lotes na produção de ${dateLabel}, e não de hoje?`)) return
 
     setSaving(true)
     const stableRequestId = saveRequestId || requestId()
@@ -453,7 +456,7 @@ export default function ProducaoCozinhaPage() {
             type="button"
             className="ps-btn primary block"
             onClick={handleSave}
-            disabled={saving || !dateIsOpen}
+            disabled={saving || loading || !dateIsOpen}
           >
             <Save size={17} /> {saving ? 'Salvando...' : isToday ? 'Salvar produção' : `Salvar produção de ${dateLabel}`}
           </button>

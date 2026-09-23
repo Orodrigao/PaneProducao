@@ -307,9 +307,11 @@ disputavam um único banco de teste compartilhado.
 - produção da Cozinha reúne, na mesma tela, a quantidade planejada dos pedidos
   PJ de JC e o lançamento livre conforme a saída da vitrine. O planejado orienta,
   mas não limita: a equipe pode registrar excedente, e o realizado persiste por
-  produto e unidade. JA e EX permanecem no lançamento livre. O banco já possui
-  ações protegidas de correção e cancelamento, mas a interface dessas ações ainda
-  não foi implementada;
+  produto e unidade. JA e EX permanecem no lançamento livre. Desde 23/09/2026
+  a equipe escolhe o dia da produção entre hoje e 31 dias atrás (admin, qualquer
+  dia passado; futuro nunca) e o horário real do lançamento fica registrado. O
+  banco já possui ações protegidas de correção e cancelamento, restritas aos
+  lotes de hoje, mas a interface dessas ações ainda não foi implementada;
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
