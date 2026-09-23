@@ -19,9 +19,9 @@ import {
 import { supabase } from '@/lib/supabase'
 import { INSUMOS_CATEGORY, isSameProductCategory } from '@/lib/productCategories'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
-import { nowBrasilia, todayKey, showToast } from '@/lib/utils'
+import { todayKey, showToast } from '@/lib/utils'
+import { bakeryDayKey, readBakeryClock, shiftDateKey } from '@/lib/bakeryClock'
 import {
-  bakeryDayKey,
   buildPjPrintSheet,
   type PjProductionPrintSource,
 } from '@/lib/pjPrintSheet'
@@ -64,12 +64,12 @@ interface ProductionPlanForOrder {
 
 // ── utils ──────────────────────────────────────────────────────────
 function deliveryDateKey(delivIdx: number) {
-  const todayIdx = nowBrasilia().getDay()
-  const d = nowBrasilia()
-  let daysAhead = (delivIdx - todayIdx + 7) % 7
+  // Uma leitura só do relógio: duas podem cair em lados diferentes da virada
+  // do dia e mandar a entrega para a semana seguinte.
+  const { dateKey, dayOfWeek } = readBakeryClock()
+  let daysAhead = (delivIdx - dayOfWeek + 7) % 7
   if (daysAhead === 0) daysAhead = 7
-  d.setDate(d.getDate() + daysAhead)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  return shiftDateKey(dateKey, daysAhead)
 }
 function requestedProductionDate() {
   if (typeof window === 'undefined') return null
@@ -99,25 +99,29 @@ function operationalErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 function deliveryDayLabel(delivIdx: number) {
-  const todayIdx = nowBrasilia().getDay()
-  const d = nowBrasilia()
-  let daysAhead = (delivIdx - todayIdx + 7) % 7
-  if (daysAhead === 0) daysAhead = 7
-  d.setDate(d.getDate() + daysAhead)
-  return d.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
+  return dateLabel(deliveryDateKey(delivIdx))
 }
 function checkDeadline() {
-  const h = nowBrasilia().getHours()
   return false // pedidos sempre abertos
 }
+// Quantas horas faltam para as próximas 4h da manhã, no relógio da padaria.
+//
+// Antes a hora vinha de `nowBrasilia`, que atrasava 6 horas, e a faixa entre
+// meia-noite e 03h59 devolvia zero fixo. Juntando as duas coisas, a tela
+// mostrava "Prazo encerrando — Menos de 0h" todo dia das 4h às 10h da manhã,
+// sem prazo nenhum ter estourado. Antes das 4h o encerramento é hoje mesmo, e
+// não amanhã: é isso que o zero fixo escondia.
+//
+// Arredonda para cima porque o texto é "Menos de Xh": às 03h59 falta menos de
+// uma hora, e "menos de 1h" é verdade enquanto "menos de 0h" não é nada.
+const ORDER_CUTOFF_MINUTES = 4 * 60
 function getHoursLeft() {
-  const h = nowBrasilia().getHours()
-  if (h < 4) return 0
-  const now = new Date()
-  const t = new Date(now)
-  t.setDate(t.getDate() + 1)
-  t.setHours(4, 0, 0, 0)
-  return Math.floor((t.getTime() - now.getTime()) / 3600000)
+  const { hour, minute } = readBakeryClock()
+  const now = hour * 60 + minute
+  const minutesLeft = now < ORDER_CUTOFF_MINUTES
+    ? ORDER_CUTOFF_MINUTES - now
+    : 24 * 60 + ORDER_CUTOFF_MINUTES - now
+  return Math.ceil(minutesLeft / 60)
 }
 function slugify(str: string) {
   return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'') + Date.now()
@@ -161,7 +165,7 @@ export default function ProducaoPage() {
   const [breads, setBreads] = useState<Bread[]>([])
   const [orders, setOrders] = useState<OrderMap>({})
   const [orderDate, setOrderDate] = useState(todayKey())
-  const [delivIdx, setDelivIdx] = useState(() => DELIVERY_MAP[nowBrasilia().getDay()] ?? 1)
+  const [delivIdx, setDelivIdx] = useState(() => DELIVERY_MAP[readBakeryClock().dayOfWeek] ?? 1)
   const [isLocked, setIsLocked] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('Carregando...')
@@ -425,7 +429,7 @@ export default function ProducaoPage() {
     showLoad('Carregando cardápio...')
     try {
       const bds = await loadBreads()
-      const todayDelivIdx = DELIVERY_MAP[nowBrasilia().getDay()] ?? 1
+      const todayDelivIdx = DELIVERY_MAP[readBakeryClock().dayOfWeek] ?? 1
       setDelivIdx(todayDelivIdx)
       setIsLocked(checkDeadline())
       if (user === 'geolar') {

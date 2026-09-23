@@ -2,6 +2,7 @@
 // Regras puras aqui; acesso a dados em kitchenProductionClient.ts e interface
 // em /producao-cozinha. A autorização efetiva vive nas policies RLS de
 // kitchen_production.
+import { shiftDateKey } from './bakeryClock'
 
 export const KITCHEN_PRODUCTION_ROUTE = '/producao-cozinha'
 export const KITCHEN_PRODUCTION_PERMISSION = 'producao_cozinha.lancar'
@@ -114,12 +115,9 @@ export function sanitizeKitchenQuantity(value: unknown, unit: string | null = 'u
     : Math.trunc(limited)
 }
 
-export function shiftDateKey(dateKey: string, days: number): string {
-  const parsed = new Date(`${dateKey}T12:00:00`)
-  if (Number.isNaN(parsed.getTime())) return dateKey
-  parsed.setDate(parsed.getDate() + days)
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
-}
+// Reexportado do relógio da padaria: somar dias a uma data é a mesma conta em
+// toda tela, e cópia própria foi o que fez o "hoje" do sistema divergir.
+export { shiftDateKey }
 
 /**
  * Janela de lançamento de quem não é admin: hoje e ontem. Espelha

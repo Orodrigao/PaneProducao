@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { bakeryDayKey, buildPjPrintSheet, type PjPrintBreadSource } from './pjPrintSheet'
+import { bakeryDayKey } from './bakeryClock'
+import { buildPjPrintSheet, type PjPrintBreadSource } from './pjPrintSheet'
 import { nextProductionPlanDate } from './productionPlanning'
 
 const productionPageSource = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8')

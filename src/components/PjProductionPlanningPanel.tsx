@@ -15,7 +15,7 @@ import {
   fetchPjProductionQueue,
   schedulePjProduction,
 } from '@/lib/pjProductionPlanningClient'
-import { bakeryDayKey } from '@/lib/pjPrintSheet'
+import { bakeryDayKey } from '@/lib/bakeryClock'
 import { formatDateBR } from '@/lib/utils'
 
 interface ItemDraft {
