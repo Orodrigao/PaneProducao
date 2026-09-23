@@ -50,6 +50,7 @@ import {
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
 import { formatDateBR, showToast as showToastPS } from '@/lib/utils'
+import styles from './page.module.css'
 
 interface ProductionPlanRow {
   id: string
@@ -705,9 +706,9 @@ export default function ProductionPlanningPage() {
   }
 
   const shell = (children: React.ReactNode) => (
-    <div className="ps-canvas">
-      <div className="ps-shell">
-        <header className="ps-header">
+    <div className={`ps-canvas ${styles.canvas}`}>
+      <div className={`ps-shell ${styles.shell}`}>
+        <header className={`ps-header ${styles.header}`}>
           <div className="ps-wordmark">
             <div className="ps-mark">P</div>
             <div className="ps-brand">
@@ -716,7 +717,7 @@ export default function ProductionPlanningPage() {
             </div>
           </div>
           {user && (
-            <div className="ps-userchip">
+            <div className={`ps-userchip ${styles.userChip}`}>
               <div className="ps-avatar" style={{ background: roleColor(user.role) }}>
                 {user.displayName.charAt(0).toUpperCase()}
               </div>
@@ -724,7 +725,7 @@ export default function ProductionPlanningPage() {
             </div>
           )}
         </header>
-        <div className="ps-scroll ps-pad">{children}</div>
+        <div className={`ps-scroll ps-pad ${styles.scroll}`}>{children}</div>
       </div>
     </div>
   )
@@ -732,10 +733,20 @@ export default function ProductionPlanningPage() {
   if (!ready || user?.role !== 'admin') return shell(<div className="ps-empty">Carregando...</div>)
 
   return shell(
-    <>
-      <h1 className="ps-page-title"><CalendarCheck size={23} /> Planejamento</h1>
+    <main className={styles.page}>
+      <section className={styles.hero}>
+        <div>
+          <span className={styles.eyebrow}>Produção · JC + JA</span>
+          <h1 className={`ps-page-title ${styles.title}`}><CalendarCheck size={26} /> Planejamento</h1>
+          <p className={styles.lead}>Organize a produção do dia com uma visão clara do total e de cada loja.</p>
+        </div>
+        <div className={styles.heroDate} aria-label={`Dia selecionado: ${dayDateLabel(date)}`}>
+          <span>Dia selecionado</span>
+          <strong>{dayDateLabel(date)}</strong>
+        </div>
+      </section>
 
-      <section className="ps-card" style={{ marginTop: 14 }}>
+      <section className={`ps-card ${styles.openPlans}`}>
         <div className="ps-card-head">
           <div>
             <b>Planejamentos em aberto</b>
@@ -751,7 +762,7 @@ export default function ProductionPlanningPage() {
             Nenhum planejamento em aberto.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+          <div className={styles.openPlanList}>
             {openPlans.map(openPlan => {
               const expired = planDateIsExpiredForOrders(openPlan.production_date, todayDate)
 
@@ -759,15 +770,14 @@ export default function ProductionPlanningPage() {
                 <button
                   key={openPlan.id}
                   type="button"
-                  className="ps-btn ghost"
+                  className={`ps-btn ghost ${styles.openPlanButton} ${openPlan.production_date === date ? styles.openPlanSelected : ''}`}
+                  aria-pressed={openPlan.production_date === date}
                   onClick={() => openPlanDate(openPlan.production_date)}
                   style={{
                     justifyContent: 'space-between',
-                    borderColor: openPlan.production_date === date ? 'var(--honey)' : undefined,
-                    background: openPlan.production_date === date ? 'var(--honey-tint)' : undefined,
                   }}
                 >
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                  <span className={styles.openPlanCopy}>
                     <b>{dateLabel(openPlan.production_date)}</b>
                     <small style={{ color: expired ? 'var(--berry)' : 'var(--ink-soft)', fontWeight: 700 }}>
                       {expired
@@ -777,7 +787,7 @@ export default function ProductionPlanningPage() {
                         && ' · parte já virou pedido; os números são o que falta'}
                     </small>
                   </span>
-                  <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <span className={styles.openPlanTotals}>
                     <span className="ps-store-chip">Total {openPlan.total}</span>
                     <span className="ps-store-chip">JC {openPlan.storeTotals.jc}</span>
                     <span className="ps-store-chip">JA {openPlan.storeTotals.ja}</span>
@@ -789,14 +799,14 @@ export default function ProductionPlanningPage() {
         )}
       </section>
 
-      <section className="ps-filters" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <section className={`ps-filters ${styles.datePicker}`}>
+        <div className={styles.datePickerHead}>
           <span className="ps-fieldlabel" style={{ margin: 0 }} id="ps-planejamento-dia">Pães para qual dia?</span>
-          <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading} style={{ padding: '6px 12px', fontSize: 13 }}>
+          <button type="button" className={`ps-btn ghost ${styles.refreshButton}`} onClick={() => void refreshPlanning()} disabled={loading}>
             <RefreshCw size={14} /> Atualizar
           </button>
         </div>
-        <div className="ps-days" role="group" aria-labelledby="ps-planejamento-dia">
+        <div className={`ps-days ${styles.days}`} role="group" aria-labelledby="ps-planejamento-dia">
           {[1, 2, 3, 4, 5, 6].map(i => {
             // Compara a DATA, e não o dia da semana: ao abrir um planejamento
             // antigo pela lista, o botão daquele dia acenderia, e um toque nele
@@ -808,7 +818,7 @@ export default function ProductionPlanningPage() {
               <button
                 key={i}
                 type="button"
-                className="ps-day"
+                className={`ps-day ${styles.dayButton}`}
                 aria-pressed={date === dayDate}
                 // Relê o relógio no toque: a tela do celular fica aberta a
                 // noite inteira, e uma data calculada antes da meia-noite
@@ -820,21 +830,21 @@ export default function ProductionPlanningPage() {
             )
           })}
         </div>
-        <div style={{ fontSize: 13, color: 'var(--ink-soft)', fontWeight: 600 }}>
+        <div className={styles.selectedDate}>
           {dayDateLabel(date)}
         </div>
       </section>
 
       {error && (
-        <div className="ps-card" style={{ borderColor: '#E6B5AC', color: 'var(--berry)', marginTop: 14 }}>
+        <div className={`ps-card ${styles.alert} ${styles.alertDanger}`} role="alert">
           <AlertTriangle size={16} /> {error}
         </div>
       )}
 
-      {loading && <div className="ps-empty">Carregando planejamento...</div>}
+      {loading && <div className={`ps-empty ${styles.loading}`}>Carregando planejamento...</div>}
 
       {!loading && !plan && (
-        <div className="ps-card" style={{ marginTop: 16 }}>
+        <div className={`ps-card ${styles.emptyPlan}`}>
           <div className="ps-card-head">
             <div>
               <b>{dateLabel(date)}</b>
@@ -857,29 +867,29 @@ export default function ProductionPlanningPage() {
 
       {!loading && plan && (
         <>
-          <div className="ps-banner honey" style={{ marginTop: 14 }}>
+          <div className={`ps-banner honey ${styles.statusBanner}`}>
             <span>
               {dateLabel(plan.production_date)} {' - '} {planningHasOrderConversion ? 'Pedido gerado' : PRODUCTION_PLAN_STATUS_LABELS[plan.status]}
             </span>
           </div>
 
-          <section className="ps-card" style={{ marginTop: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div>
-                <div className="ps-label" style={{ marginTop: 0 }}>Total planejado</div>
-                <b style={{ fontSize: 28, fontVariantNumeric: 'tabular-nums' }}>{totalPlanned}</b>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                  {storeTotals.map(row => (
-                    <span key={row.store} className="ps-store-chip">
-                      {STORE_LABEL[row.store]} {row.total}
-                    </span>
-                  ))}
-                  <span className="ps-store-chip" style={{ background: 'var(--line-soft)', color: 'var(--ink-soft)' }}>
-                    {filledBreadCount} {filledBreadCount === 1 ? 'pão' : 'pães'} com quantidade
-                  </span>
+          <section className={`ps-card ${styles.summaryCard}`}>
+            <div className={styles.summaryLayout}>
+              <div className={styles.summaryStats}>
+                <div className={`${styles.stat} ${styles.statPrimary}`}>
+                  <span>Total planejado</span>
+                  <strong>{totalPlanned}</strong>
+                  <small>{filledBreadCount} {filledBreadCount === 1 ? 'pão preenchido' : 'pães preenchidos'}</small>
                 </div>
+                {storeTotals.map(row => (
+                  <div key={row.store} className={styles.stat}>
+                    <span>{STORE_LABEL[row.store]}</span>
+                    <strong>{row.total}</strong>
+                    <small>unidades</small>
+                  </div>
+                ))}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+              <div className={styles.summaryActions}>
                 {canEdit && (
                   <button type="button" className="ps-btn primary" onClick={savePlan} disabled={saving}>
                     <Save size={17} /> {saving ? 'Salvando...' : 'Salvar'}
@@ -895,14 +905,14 @@ export default function ProductionPlanningPage() {
           </section>
 
           {planDateExpired && (
-            <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC', color: 'var(--berry)' }}>
+            <div className={`ps-card ${styles.alert} ${styles.alertDanger}`} role="alert">
               <AlertTriangle size={16} /> Essa data já passou. A Produção só oferece de amanhã em diante,
               então este planejamento não vira mais pedido — descarte e crie um na data certa.
             </div>
           )}
 
           {!canEdit && (
-            <div className="ps-card" style={{ marginTop: 14, borderColor: '#E6B5AC' }}>
+            <div className={`ps-card ${styles.alert} ${styles.alertWarning}`} role="status">
               <AlertTriangle size={16} /> {planningFullyConvertedToOrder
                 ? 'Esse planejamento ja virou pedido e nao pode mais ser alterado aqui.'
                 : planningHasOrderConversion
@@ -911,8 +921,14 @@ export default function ProductionPlanningPage() {
             </div>
           )}
 
-          <div className="ps-label">Pães</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <span>Produção</span>
+              <h2>Pães</h2>
+            </div>
+            <strong>{visibleBreads.length}</strong>
+          </div>
+          <div className={styles.breadGrid}>
             {visibleBreads.map(bread => {
               const breadItems = itemsByBread.get(bread.id) ?? []
               const extra = breadItems.some(item => item.is_extra)
@@ -923,13 +939,13 @@ export default function ProductionPlanningPage() {
                 .reduce((total, store) => total + (leftoverAvailability[itemKey(store, bread.id)] ?? 0), 0)
 
               return (
-                <div key={bread.id} className={`ps-card ${breadTotal > 0 ? 'active' : ''}`}>
+                <article key={bread.id} className={`ps-card ${styles.breadCard} ${breadTotal > 0 ? `active ${styles.breadCardActive}` : ''}`}>
                   <div className="ps-card-head">
                     <div>
                       <div className="ps-pname">{bread.name}</div>
                       {extra && <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>Avulso desta data</span>}
                     </div>
-                    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span className={styles.breadTotals}>
                       {breadFrozenAvailable > 0 && (
                         <span className="ps-store-chip"><Snowflake size={13} /> {breadFrozenAvailable}</span>
                       )}
@@ -946,7 +962,7 @@ export default function ProductionPlanningPage() {
                     onRetry={() => void loadDemandHistory(date, breads)}
                   />
 
-                  <div className="ps-grid" style={{ marginTop: 8 }}>
+                  <div className={`ps-grid ${styles.storeGrid}`}>
                     {PRODUCTION_PLAN_STORES.map(store => {
                       const key = itemKey(store, bread.id)
                       const fresh = normalizePlannedQuantity(quantities[key] ?? 0)
@@ -984,11 +1000,11 @@ export default function ProductionPlanningPage() {
                         : calculatePlannedTotalQuantity({ newQuantity: fresh })
 
                       return (
-                        <div key={store} className="ps-fieldgroup" style={{ margin: 0 }}>
+                        <div key={store} className={`ps-fieldgroup ${styles.storePanel}`}>
                           <label className="ps-fieldgroup" style={{ margin: 0 }}>
                             <span className="ps-fieldlabel">{STORE_LABEL[store]} total</span>
                             <input
-                              className="ps-input"
+                              className={`ps-input ${styles.quantityInput}`}
                               type="number"
                               inputMode="numeric"
                               min={0}
@@ -1005,7 +1021,7 @@ export default function ProductionPlanningPage() {
                           )}
 
                           {hasFrozenOption && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, fontWeight: 800, color: canToggleFrozen || useFrozen ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
+                            <label className={styles.optionRow} style={{ color: canToggleFrozen || useFrozen ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
                               <input
                                 type="checkbox"
                                 checked={useFrozen}
@@ -1020,13 +1036,13 @@ export default function ProductionPlanningPage() {
                             </label>
                           )}
                           {!hasFrozenOption && canEditItem && (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                            <span className={styles.unavailableOption}>
                               <Snowflake size={13} /> Congelados: 0 disp.
                             </span>
                           )}
                           {useFrozen && (
                             <input
-                              className="ps-input"
+                              className={`ps-input ${styles.secondaryInput}`}
                               type="number"
                               inputMode="numeric"
                               min={0}
@@ -1041,7 +1057,7 @@ export default function ProductionPlanningPage() {
                           )}
 
                           {hasLeftoverOption && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, fontWeight: 800, color: canToggleLeftover || useLeftover ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
+                            <label className={styles.optionRow} style={{ color: canToggleLeftover || useLeftover ? 'var(--ps-ink)' : 'var(--ink-faint)' }}>
                               <input
                                 type="checkbox"
                                 checked={useLeftover}
@@ -1056,13 +1072,13 @@ export default function ProductionPlanningPage() {
                             </label>
                           )}
                           {!hasLeftoverOption && canEditItem && (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                            <span className={styles.unavailableOption}>
                               <PackageOpen size={13} /> Sobra: 0 disp.
                             </span>
                           )}
                           {useLeftover && (
                             <input
-                              className="ps-input"
+                              className={`ps-input ${styles.secondaryInput}`}
                               type="number"
                               inputMode="numeric"
                               min={0}
@@ -1081,36 +1097,36 @@ export default function ProductionPlanningPage() {
                             </span>
                           )}
 
-                          <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 700 }}>
+                          <span className={styles.formula}>
                             Total: {total} = novo {newProduction} + congelado {frozen} + sobra {leftover}
                           </span>
                         </div>
                       )
                     })}
                   </div>
-                </div>
+                </article>
               )
             })}
           </div>
 
           {canEdit && (
-            <section className="ps-card" style={{ marginTop: 16 }}>
+            <section className={`ps-card ${styles.extraCard}`}>
               <label className="ps-fieldgroup" style={{ margin: 0 }}>
                 <span className="ps-fieldlabel">Incluir pão avulso</span>
-                <div style={{ position: 'relative' }}>
+                <div className={styles.searchField}>
                   <Search size={16} style={{ position: 'absolute', left: 12, top: 13, color: 'var(--ink-faint)' }} />
                   <input
                     className="ps-input"
                     value={search}
                     onChange={event => setSearch(event.target.value)}
                     placeholder="Buscar pão"
-                    style={{ paddingLeft: 36 }}
+                    style={{ paddingLeft: 40 }}
                   />
                 </div>
               </label>
 
               {availableExtras.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                <div className={styles.extraList}>
                   {availableExtras.map(bread => (
                     <button
                       key={bread.id}
@@ -1141,6 +1157,6 @@ export default function ProductionPlanningPage() {
           )}
         </>
       )}
-    </>,
+    </main>,
   )
 }

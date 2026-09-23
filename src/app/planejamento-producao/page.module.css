@@ -1,0 +1,647 @@
+.canvas {
+  background:
+    radial-gradient(circle at 12% -8%, rgba(216, 154, 60, 0.16), transparent 34rem),
+    radial-gradient(circle at 88% 5%, rgba(107, 122, 82, 0.10), transparent 30rem),
+    var(--flour-deep);
+}
+
+.shell {
+  background: linear-gradient(180deg, rgba(255, 253, 248, 0.78), var(--flour) 28rem);
+}
+
+.header {
+  background: color-mix(in srgb, var(--cream) 76%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--ps-line) 74%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.userChip {
+  background: color-mix(in srgb, var(--cream) 94%, transparent);
+}
+
+.scroll {
+  scroll-behavior: smooth;
+  padding-bottom: 132px;
+}
+
+.page {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px 4px 18px;
+}
+
+.eyebrow,
+.sectionHeading span {
+  color: var(--crust);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 6px 0 4px;
+  font-size: clamp(29px, 3vw, 42px);
+  letter-spacing: -0.035em;
+}
+
+.title svg {
+  color: var(--crust);
+}
+
+.lead {
+  max-width: 610px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.heroDate {
+  min-width: 260px;
+  padding: 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--ps-line) 76%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--cream) 70%, transparent);
+  box-shadow: var(--sh-1);
+  backdrop-filter: blur(18px) saturate(1.25);
+}
+
+.heroDate span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroDate strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.3;
+  text-transform: capitalize;
+}
+
+.openPlans {
+  margin: 0 0 14px;
+  padding: 18px;
+  border-color: color-mix(in srgb, var(--ps-line) 76%, transparent);
+  background: color-mix(in srgb, var(--cream) 76%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.openPlanList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.openPlanButton {
+  min-height: 76px;
+  padding: 12px 14px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.48) !important;
+  text-align: left;
+  white-space: normal;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.openPlanButton:hover {
+  transform: translateY(-1px);
+  background: var(--cream) !important;
+  box-shadow: var(--sh-2);
+}
+
+.openPlanButton:active {
+  transform: scale(0.985);
+}
+
+.openPlanSelected {
+  border-color: var(--honey-deep) !important;
+  background: var(--honey-tint) !important;
+  box-shadow: 0 0 0 1px rgba(216, 154, 60, 0.08), var(--sh-1);
+}
+
+.openPlanCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.openPlanTotals,
+.breadTotals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.datePicker {
+  position: sticky;
+  top: 10px;
+  z-index: 20;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border-color: color-mix(in srgb, var(--ps-line) 78%, transparent);
+  background: color-mix(in srgb, var(--cream) 82%, transparent);
+  box-shadow: 0 12px 32px -24px rgba(42, 32, 24, 0.45), var(--sh-1);
+  backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.datePickerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.refreshButton {
+  min-height: 38px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.days {
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--line-soft) 88%, transparent);
+}
+
+.dayButton {
+  min-width: 58px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  box-shadow: none;
+  transition: transform 150ms ease, color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.dayButton:hover {
+  border: 0;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.dayButton:active {
+  transform: scale(0.96);
+}
+
+.dayButton[aria-pressed='true'] {
+  border: 0;
+  background: var(--cream-raise);
+  color: var(--crust);
+  box-shadow: 0 2px 8px rgba(74, 48, 24, 0.12), inset 0 0 0 1px rgba(142, 78, 34, 0.08);
+}
+
+.selectedDate {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.loading,
+.emptyPlan {
+  margin-top: 18px;
+}
+
+.emptyPlan {
+  padding: 22px;
+}
+
+.statusBanner {
+  margin-top: 4px;
+  border-radius: 14px;
+}
+
+.summaryCard {
+  margin-top: 14px;
+  padding: 18px;
+  overflow: visible;
+}
+
+.summaryLayout {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.summaryStats {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(180px, 1.3fr) repeat(2, minmax(112px, 0.7fr));
+  gap: 10px;
+}
+
+.stat {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid var(--line-soft);
+  border-radius: 15px;
+  background: var(--cream-raise);
+}
+
+.stat span,
+.stat small {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.stat strong {
+  display: block;
+  margin: 2px 0 1px;
+  color: var(--ps-ink);
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.statPrimary {
+  border-color: var(--honey-line);
+  background: linear-gradient(145deg, var(--honey-tint), var(--cream));
+}
+
+.statPrimary strong {
+  color: var(--crust);
+}
+
+.summaryActions {
+  display: flex;
+  flex: 0 0 150px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+
+.summaryActions :global(.ps-btn) {
+  min-height: 46px;
+  border-radius: 13px;
+}
+
+.alert {
+  flex-direction: row;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.alert svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.alertDanger {
+  border-color: #e6b5ac;
+  background: var(--berry-tint);
+  color: var(--berry);
+}
+
+.alertWarning {
+  border-color: var(--honey-line);
+  background: var(--honey-tint);
+  color: #7a5418;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 26px 2px 12px;
+}
+
+.sectionHeading h2 {
+  margin-top: 2px;
+  color: var(--ps-ink);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.sectionHeading strong {
+  min-width: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--ps-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cream) 78%, transparent);
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+.breadGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.breadCard {
+  padding: 18px;
+  border-color: color-mix(in srgb, var(--ps-line) 86%, transparent);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(74, 48, 24, 0.04), 0 12px 28px -26px rgba(42, 32, 24, 0.48);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.breadCard:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--sh-2);
+}
+
+.breadCardActive {
+  background: linear-gradient(155deg, var(--honey-tint), var(--cream) 58%) !important;
+}
+
+.breadCard :global(.ps-card-head) {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.breadCard :global(.ps-pname) {
+  font-size: 18px;
+}
+
+.storeGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.storePanel {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--cream-raise) 84%, transparent);
+}
+
+.quantityInput {
+  width: 100%;
+  min-height: 48px;
+  font-size: 19px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.optionRow input[type='checkbox'] {
+  width: 19px;
+  height: 19px;
+  accent-color: var(--crust);
+}
+
+.optionRow small {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.unavailableOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.secondaryInput {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.formula {
+  display: block;
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.extraCard {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.searchField {
+  position: relative;
+}
+
+.searchField svg {
+  position: absolute;
+  z-index: 1;
+  top: 15px !important;
+  left: 14px !important;
+}
+
+.searchField :global(.ps-input) {
+  width: 100%;
+  min-height: 46px;
+}
+
+.extraList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.extraList :global(.ps-btn) {
+  min-height: 46px;
+  border-radius: 13px;
+}
+
+.page :global(.ps-input),
+.page :global(.ps-btn),
+.page :global(.ps-day) {
+  outline: none;
+}
+
+.page :global(.ps-input:focus-visible),
+.page :global(.ps-btn:focus-visible),
+.page :global(.ps-day:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--honey) 70%, white);
+  outline-offset: 2px;
+}
+
+@media (max-width: 980px) {
+  .breadGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryLayout {
+    flex-direction: column;
+  }
+
+  .summaryActions {
+    flex: 0 auto;
+    flex-direction: row;
+  }
+
+  .summaryActions :global(.ps-btn) {
+    flex: 1;
+  }
+}
+
+@media (max-width: 680px) {
+  .scroll {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .hero {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+    padding-top: 22px;
+  }
+
+  .heroDate {
+    min-width: 0;
+  }
+
+  .openPlanList,
+  .summaryStats {
+    grid-template-columns: 1fr;
+  }
+
+  .openPlanButton {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .openPlanTotals {
+    justify-content: flex-start;
+  }
+
+  .datePicker {
+    top: 8px;
+    margin-right: -4px;
+    margin-left: -4px;
+  }
+
+  .days {
+    overflow-x: auto;
+  }
+
+  .dayButton {
+    min-width: 50px;
+  }
+
+  .summaryActions {
+    flex-direction: column;
+  }
+
+  .storeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .breadCard :global(.ps-card-head) {
+    flex-direction: column;
+  }
+
+  .breadTotals {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll {
+    scroll-behavior: auto;
+  }
+
+  .page *,
+  .page *::before,
+  .page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .header,
+  .userChip,
+  .heroDate,
+  .openPlans,
+  .datePicker {
+    background: var(--cream);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .heroDate span,
+  .stat span,
+  .stat small,
+  .page :global(.ps-fieldlabel) {
+    color: var(--ps-ink);
+  }
+
+  .openPlanButton,
+  .datePicker,
+  .breadCard,
+  .storePanel {
+    border-color: var(--ink-soft);
+  }
+}
+
+@media (forced-colors: active) {
+  .openPlanSelected,
+  .dayButton[aria-pressed='true'],
+  .statPrimary,
+  .breadCardActive {
+    border: 2px solid Highlight !important;
+  }
+}
