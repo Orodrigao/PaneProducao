@@ -1,10 +1,10 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-11
+**Data de referência:** 2026-09-23
 
-**Base observada:** `origin/main` em `7cb8ce5` e auditoria somente leitura de
-produção em 11/09/2026. A revisão cobriu a virada da jornada PJ; as demais
-seções conservam suas datas de revisão anteriores.
+**Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
+a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
+o PR #441. As demais seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -202,6 +202,14 @@ Riscos ainda abertos:
   a composição de um kit deixa de tocar vendas já confirmadas. Nenhuma venda
   de kit real existe em produção até esta correção (tabelas de importação e
   vínculo vazias, conferido por leitura direta em 19 e 20/09/2026);
+- **corrigido em 2026-09-23 (PR #440, issue #438) o relógio da padaria que
+  atrasava 6 horas entre meia-noite e 05:59** — justamente o turno em que a
+  padaria trabalha. `private.data_na_padaria()` e seu espelho no cliente
+  mostravam o dia anterior nessa janela, afetando o campo de data já
+  preenchido em Romaneio, Sobras, Fechamento de Caixa, Forno e Produção da
+  Cozinha, além de fazer a tela inicial anunciar "Prazo encerrando — Menos de
+  0h" sem nenhum prazo vencido. Os relógios do banco e do cliente foram
+  unificados; as telas agora abrem no dia certo em qualquer horário;
 - a tela administrativa permite conceder `romaneio.administrar` por loja,
   mas a entrada do painel administrativo do Romaneio exige escopo `*` —
   concessão por loja não abre o painel;
@@ -313,7 +321,9 @@ disputavam um único banco de teste compartilhado.
 - sobras, reaproveitamento e pendências com encaminhamento à Central de
   Pendências;
 - romaneio com permissões granulares por ação e loja (ressalvas registradas
-  em Riscos ainda abertos);
+  em Riscos ainda abertos); desde 22/09/2026 (PR #433) a aba Fechamento soma o
+  que foi enviado no dia por produto e loja, separando unidade de quilo e
+  destacando o que ainda está Separado sem ter saído;
 - estoques e fornecedores; em Contas a Pagar, o semáforo de compra responde
   "este fornecedor está liberado para pedido?" — leitura pura das parcelas
   vencidas em aberto por fornecedor (`summarizeSupplierPurchaseStatus`), sem
@@ -357,7 +367,10 @@ disputavam um único banco de teste compartilhado.
   calculado do prazo do cliente, **recebimento em pedaços** (vários por
   cobrança, cada um com data, valor, forma e conta, gerando seu próprio
   lançamento no livro), estorno por pedaço, cancelamento e correção de
-  vencimento. A cobrança fica `parcial` enquanto faltar dinheiro, e quanto
+  vencimento — **desde 23/09/2026 (PR #435) o vencimento também pode ser
+  antecipado**, até o dia em que a cobrança foi faturada, com a mensagem de
+  recusa mostrando o motivo real em vez de um recado genérico. A cobrança
+  fica `parcial` enquanto faltar dinheiro, e quanto
   entrou é sempre a soma dos pedaços ativos. A fatura pode ser **dividida em
   2x ou 3x** na hora do lançamento, ou depois pela ação de dividir — o prazo do
   cliente é o teto e a última parcela cai nele. A cobrança que nasce de origem
@@ -415,7 +428,12 @@ disputavam um único banco de teste compartilhado.
 - auditoria de cobertura/qualidade do CMV;
 - relatórios operacionais;
 - gestão administrativa de permissões por usuário;
-- layout responsivo para desktop além do mobile.
+- layout responsivo para desktop além do mobile;
+- tela de Planejamento: desde 23/09/2026 (PRs #437 e #441) abre sozinha no
+  próximo dia útil de produção (considerando o horário e pulando domingo),
+  troca de dia por botão em vez de calendário, mostra planejamento parcialmente
+  convertido em pedido e segue a direção visual aprovada por Rodrigo (Apple
+  Design), sem mudar regra, quantidade ou permissão.
 
 ## Capacidades parciais
 
