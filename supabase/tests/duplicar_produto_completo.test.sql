@@ -42,7 +42,8 @@ values
 insert into public.product_components (parent_product_id, component_source, component_id, component_variant_id, quantity)
 values
   ('d2300000-0000-4000-8000-000000000010', 'product', 'd2300000-0000-4000-8000-000000000010', 'd2300000-0000-4000-8000-000000000020', 2),
-  ('d2300000-0000-4000-8000-000000000010', 'product', 'd2300000-0000-4000-8000-000000000011', 'd2300000-0000-4000-8000-000000000022', 3);
+  ('d2300000-0000-4000-8000-000000000010', 'product', 'd2300000-0000-4000-8000-000000000011', 'd2300000-0000-4000-8000-000000000022', 3),
+  ('d2300000-0000-4000-8000-000000000010', 'bread', 'd2300000-0000-4000-8000-000000000010', null, 1);
 
 insert into public.product_recipe_yields (product_id, product_variant_id, batch_name, basis, dough_weight_kg, finished_weight_kg, yield_units, notes)
 values
@@ -97,7 +98,7 @@ select is((select count(*)::integer from public.product_variants where product_i
   'a cópia recebe todas as variantes');
 select ok(not exists (select 1 from public.product_variants where product_id = current_setting('teste.duplicate_product_id')::uuid and id in ('d2300000-0000-4000-8000-000000000020', 'd2300000-0000-4000-8000-000000000021')),
   'as variantes da cópia têm novos identificadores');
-select is((select count(*)::integer from public.product_components where parent_product_id = current_setting('teste.duplicate_product_id')::uuid), 2,
+select is((select count(*)::integer from public.product_components where parent_product_id = current_setting('teste.duplicate_product_id')::uuid), 3,
   'a ficha técnica leva todos os componentes');
 select ok(exists (
   select 1 from public.product_components component
@@ -112,6 +113,12 @@ select ok(exists (
     and component.component_id = 'd2300000-0000-4000-8000-000000000011'
     and component.component_variant_id = 'd2300000-0000-4000-8000-000000000022'
 ), 'componente externo continua apontando para o ingrediente externo');
+select ok(exists (
+  select 1 from public.product_components component
+  where component.parent_product_id = current_setting('teste.duplicate_product_id')::uuid
+    and component.component_source = 'bread'
+    and component.component_id = 'd2300000-0000-4000-8000-000000000010'
+), 'componente pão não é confundido com o produto de mesmo texto');
 select is((select count(*)::integer from public.product_recipe_yields where product_id = current_setting('teste.duplicate_product_id')::uuid), 2,
   'a cópia leva todos os rendimentos');
 select is((select count(*)::integer from public.product_sale_options where product_id = current_setting('teste.duplicate_product_id')::uuid), 2,
