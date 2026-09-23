@@ -6,8 +6,10 @@ import {
   buildProductionOrderDraftsFromPlan,
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
+  defaultPlanningDayIndex,
   frozenLocationPlanningStore,
   matchesPlanningBreadSearch,
+  nextOccurrenceOfDay,
   nextProductionPlanDate,
   normalizePlannedQuantity,
   planCanBeDiscarded,
@@ -256,5 +258,55 @@ describe('productionPlanning', () => {
     expect(planCanBeDiscarded('fechado', draft)).toBe(false)
     expect(planCanBeDiscarded('aguardando_geolar', draft)).toBe(false)
     expect(planCanBeDiscarded('rascunho', zeroedConversion)).toBe(false)
+  })
+
+  // ── Seletor de dia do Planejamento ─────────────────────────────────
+
+  it('defaultPlanningDayIndex avanca 2 dias depois das 6h', () => {
+    // Terca (2) 16h → Qui (4)
+    expect(defaultPlanningDayIndex(2, 16)).toBe(4)
+    // Quarta (3) 6h → Sexta (5)
+    expect(defaultPlanningDayIndex(3, 6)).toBe(5)
+    // Quinta (4) 10h → Sabado (6)
+    expect(defaultPlanningDayIndex(4, 10)).toBe(6)
+  })
+
+  it('defaultPlanningDayIndex avanca 1 dia antes das 6h', () => {
+    // Terca (2) 5h → Quarta (3)
+    expect(defaultPlanningDayIndex(2, 5)).toBe(3)
+    // Segunda (1) 0h → Terca (2)
+    expect(defaultPlanningDayIndex(1, 0)).toBe(2)
+  })
+
+  it('defaultPlanningDayIndex pula domingo', () => {
+    // Sexta (5) depois das 6h → avanca 2 = Dom (0) → Seg (1)
+    expect(defaultPlanningDayIndex(5, 10)).toBe(1)
+    // Sabado (6) depois das 6h → avanca 2 = Seg (1) — domingo pulado
+    expect(defaultPlanningDayIndex(6, 10)).toBe(1)
+    // Sabado (6) antes das 6h → avanca 1 = Dom (0) → Seg (1)
+    expect(defaultPlanningDayIndex(6, 5)).toBe(1)
+  })
+
+  it('nextOccurrenceOfDay calcula a proxima data do dia selecionado', () => {
+    // 2026-09-22 e terca (2). Clicar em Qui (4) → 24/09
+    expect(nextOccurrenceOfDay(4, '2026-09-22')).toBe('2026-09-24')
+    // Clicar em Sex (5) → 25/09
+    expect(nextOccurrenceOfDay(5, '2026-09-22')).toBe('2026-09-25')
+    // Clicar em Seg (1) → 28/09 (proxima segunda)
+    expect(nextOccurrenceOfDay(1, '2026-09-22')).toBe('2026-09-28')
+    // Clicar em Ter (2), mesmo dia → semana que vem, 29/09
+    expect(nextOccurrenceOfDay(2, '2026-09-22')).toBe('2026-09-29')
+  })
+
+  it('nextOccurrenceOfDay cruza virada de mes e ano', () => {
+    // 2026-09-28 (segunda). Clicar em Sab (6) → 03/10
+    expect(nextOccurrenceOfDay(6, '2026-09-28')).toBe('2026-10-03')
+    // 2026-12-30 (quarta). Clicar em Seg (1) → 04/01/2027 (5 dias)
+    expect(nextOccurrenceOfDay(1, '2026-12-30')).toBe('2027-01-04')
+  })
+
+  it('nextOccurrenceOfDay devolve a propria entrada com data invalida', () => {
+    expect(nextOccurrenceOfDay(4, '')).toBe('')
+    expect(nextOccurrenceOfDay(4, 'abc')).toBe('abc')
   })
 })

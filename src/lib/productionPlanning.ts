@@ -350,3 +350,47 @@ export function planCanBeDiscarded(
 ): boolean {
   return statusAllowsDraftEditing(status) && items.every(item => !item.order_created_at)
 }
+
+// ── Seletor de dia do Planejamento ─────────────────────────────────
+
+// Hora de início da produção (Brasília). Depois desse horário, a
+// produção do dia já começou e o planejamento avança um dia a mais.
+const PRODUCTION_START_HOUR = 6
+
+// Dia da semana padrão ao abrir a tela de Planejamento.
+// `currentDayOfWeek` segue a convenção JS (0=Dom … 6=Sáb).
+// Depois das 6 h a produção de hoje já roda → avança 2 dias.
+// Antes das 6 h a produção ainda não começou → avança 1 dia.
+// Domingo é sempre pulado (não há produção).
+export function defaultPlanningDayIndex(
+  currentDayOfWeek: number,
+  currentHour: number,
+): number {
+  const advance = currentHour >= PRODUCTION_START_HOUR ? 2 : 1
+  let target = (currentDayOfWeek + advance) % 7
+  if (target === 0) target = 1 // domingo → segunda
+  return target
+}
+
+// Próxima data do calendário que cai no dia da semana solicitado.
+// Se hoje já é esse dia, retorna a semana que vem (nunca "hoje").
+// `todayDate` é YYYY-MM-DD, `dayIndex` segue convenção JS (1-6).
+export function nextOccurrenceOfDay(
+  dayIndex: number,
+  todayDate: string,
+): string {
+  const today = new Date(`${todayDate}T12:00:00`)
+  if (Number.isNaN(today.getTime())) return todayDate
+
+  const todayDow = today.getDay()
+  let daysAhead = (dayIndex - todayDow + 7) % 7
+  if (daysAhead === 0) daysAhead = 7
+
+  today.setDate(today.getDate() + daysAhead)
+
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-')
+}

@@ -28,8 +28,9 @@ import {
   aggregatePlanningLeftoverAvailability,
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
+  defaultPlanningDayIndex,
   matchesPlanningBreadSearch,
-  nextProductionPlanDate,
+  nextOccurrenceOfDay,
   normalizePlannedQuantity,
   planCanBeDiscarded,
   planDateIsExpiredForOrders,
@@ -40,6 +41,7 @@ import {
   plannedBreadsForDate,
   statusAllowsDraftEditing,
   subtractPlanningReuseProposals,
+  weekdayIndex,
   type PlanningPendingLeftoverRow,
   type PlanningReuseProposalRow,
   type PlanningBreadLite,
@@ -47,7 +49,7 @@ import {
   type ProductionPlanStore,
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
-import { formatDateBR, showToast as showToastPS, todayKey } from '@/lib/utils'
+import { formatDateBR, nowBrasilia, showToast as showToastPS, todayKey } from '@/lib/utils'
 
 interface ProductionPlanRow {
   id: string
@@ -119,6 +121,15 @@ function dateLabel(dateKey: string) {
   return formatDateBR(dateKey)
 }
 
+// Rótulo com dia da semana por extenso, ex.: "quinta-feira, 24/09"
+function dayDateLabel(dateKey: string) {
+  const d = new Date(`${dateKey}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return dateKey
+  return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+}
+
+const DAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
 function storedItemTotal(item: ProductionPlanItemSummaryRow) {
   return calculatePlannedTotalQuantity({
     newQuantity: item.planned_quantity,
@@ -132,7 +143,11 @@ export default function ProductionPlanningPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [ready, setReady] = useState(false)
-  const [date, setDate] = useState(() => nextProductionPlanDate(todayKey()))
+  const [date, setDate] = useState(() => {
+    const b = nowBrasilia()
+    const day = defaultPlanningDayIndex(b.getDay(), b.getHours())
+    return nextOccurrenceOfDay(day, todayKey())
+  })
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
@@ -753,19 +768,29 @@ export default function ProductionPlanningPage() {
         )}
       </section>
 
-      <section className="ps-filters" style={{ alignItems: 'stretch' }}>
-        <label className="ps-fieldgroup">
-          <span className="ps-fieldlabel">Data de produção</span>
-          <input
-            type="date"
-            value={date}
-            onChange={event => setDate(event.target.value || todayKey())}
-            className="ps-input"
-          />
-        </label>
-        <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading}>
-          <RefreshCw size={16} /> Atualizar
-        </button>
+      <section className="ps-filters" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span className="ps-fieldlabel" style={{ margin: 0 }}>Pães para qual dia?</span>
+          <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading} style={{ padding: '6px 12px', fontSize: 13 }}>
+            <RefreshCw size={14} /> Atualizar
+          </button>
+        </div>
+        <div className="ps-days" role="group">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <button
+              key={i}
+              type="button"
+              className="ps-day"
+              aria-pressed={weekdayIndex(date) === i}
+              onClick={() => setDate(nextOccurrenceOfDay(i, todayKey()))}
+            >
+              {DAYS_PT[i]}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink-soft)', fontWeight: 600 }}>
+          {dayDateLabel(date)}
+        </div>
       </section>
 
       {error && (
