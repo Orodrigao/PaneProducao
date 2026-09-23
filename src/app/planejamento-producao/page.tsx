@@ -39,9 +39,9 @@ import {
   planNeedsOrderConversion,
   planningAvailabilityKey,
   plannedBreadsForDate,
+  readBakeryClock,
   statusAllowsDraftEditing,
   subtractPlanningReuseProposals,
-  weekdayIndex,
   type PlanningPendingLeftoverRow,
   type PlanningReuseProposalRow,
   type PlanningBreadLite,
@@ -49,7 +49,7 @@ import {
   type ProductionPlanStore,
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
-import { formatDateBR, nowBrasilia, showToast as showToastPS, todayKey } from '@/lib/utils'
+import { formatDateBR, showToast as showToastPS, todayKey } from '@/lib/utils'
 
 interface ProductionPlanRow {
   id: string
@@ -144,9 +144,9 @@ export default function ProductionPlanningPage() {
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [ready, setReady] = useState(false)
   const [date, setDate] = useState(() => {
-    const b = nowBrasilia()
-    const day = defaultPlanningDayIndex(b.getDay(), b.getHours())
-    return nextOccurrenceOfDay(day, todayKey())
+    const clock = readBakeryClock()
+    const day = defaultPlanningDayIndex(clock.dayOfWeek, clock.hour)
+    return nextOccurrenceOfDay(day, clock.dateKey)
   })
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
@@ -472,6 +472,8 @@ export default function ProductionPlanningPage() {
   const planningFullyConvertedToOrder = planIsFullyConvertedToOrders(items)
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status) && !planningHasOrderConversion)
   const todayDate = todayKey()
+  // Hoje em São Paulo: é dele que os botões de dia calculam as datas.
+  const bakeryToday = readBakeryClock().dateKey
   const planDateExpired = Boolean(plan && planDateIsExpiredForOrders(plan.production_date, todayDate))
   const canDiscard = Boolean(plan && planCanBeDiscarded(plan.status, items))
   const searchQuery = search.trim()
@@ -775,18 +777,26 @@ export default function ProductionPlanningPage() {
             <RefreshCw size={14} /> Atualizar
           </button>
         </div>
-        <div className="ps-days" role="group">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <button
-              key={i}
-              type="button"
-              className="ps-day"
-              aria-pressed={weekdayIndex(date) === i}
-              onClick={() => setDate(nextOccurrenceOfDay(i, todayKey()))}
-            >
-              {DAYS_PT[i]}
-            </button>
-          ))}
+        <div className="ps-days" role="group" aria-label="Dia da produção">
+          {[1, 2, 3, 4, 5, 6].map(i => {
+            // Compara a DATA, e não o dia da semana: ao abrir um planejamento
+            // antigo pela lista, o botão daquele dia acenderia, e um toque nele
+            // trocaria de plano sem aviso — a próxima segunda não é a segunda
+            // que está aberta na tela.
+            const dayDate = nextOccurrenceOfDay(i, bakeryToday)
+
+            return (
+              <button
+                key={i}
+                type="button"
+                className="ps-day"
+                aria-pressed={date === dayDate}
+                onClick={() => setDate(dayDate)}
+              >
+                {DAYS_PT[i]}
+              </button>
+            )
+          })}
         </div>
         <div style={{ fontSize: 13, color: 'var(--ink-soft)', fontWeight: 600 }}>
           {dayDateLabel(date)}

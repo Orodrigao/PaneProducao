@@ -357,11 +357,51 @@ export function planCanBeDiscarded(
 // produção do dia já começou e o planejamento avança um dia a mais.
 const PRODUCTION_START_HOUR = 6
 
+// O relógio da padaria é sempre o de São Paulo, qualquer que seja o fuso do
+// aparelho. A fonte é o Intl, e não aritmética com getTimezoneOffset(): essa
+// conta erra o sinal com facilidade e o erro só aparece em parte do dia, que é
+// o jeito mais caro de descobrir. Mesmo formato de `bakeryDayKey`.
+const SAO_PAULO_CLOCK = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23',
+})
+
+export interface BakeryClockReading {
+  /** Hoje em São Paulo, no formato YYYY-MM-DD. */
+  dateKey: string
+  /** Dia da semana em São Paulo, convenção JS (0=Dom … 6=Sáb). */
+  dayOfWeek: number
+  /** Hora cheia em São Paulo, de 0 a 23. */
+  hour: number
+}
+
+// Uma leitura só do relógio serve à data, ao dia e à hora. Duas leituras
+// separadas podem cair em lados diferentes da virada do dia.
+export function readBakeryClock(value: Date = new Date()): BakeryClockReading {
+  const parts = Object.fromEntries(
+    SAO_PAULO_CLOCK
+      .formatToParts(value)
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value]),
+  )
+  const dateKey = `${parts.year}-${parts.month}-${parts.day}`
+
+  return { dateKey, dayOfWeek: weekdayIndex(dateKey), hour: Number(parts.hour) }
+}
+
 // Dia da semana padrão ao abrir a tela de Planejamento.
-// `currentDayOfWeek` segue a convenção JS (0=Dom … 6=Sáb).
+// `currentDayOfWeek` e o retorno seguem a convenção JS (0=Dom … 6=Sáb).
 // Depois das 6 h a produção de hoje já roda → avança 2 dias.
 // Antes das 6 h a produção ainda não começou → avança 1 dia.
 // Domingo é sempre pulado (não há produção).
+//
+// Abrir no domingo cai em terça, e é de propósito: na cadência de dois dias,
+// a segunda já foi planejada no sábado. Se a prática for outra, o ajuste é
+// tratar domingo como `advance = 1`.
 export function defaultPlanningDayIndex(
   currentDayOfWeek: number,
   currentHour: number,

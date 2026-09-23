@@ -16,6 +16,7 @@ import {
   planDateIsExpiredForOrders,
   normalizePlanningStores,
   plannedBreadsForDate,
+  readBakeryClock,
   planningAvailabilityKey,
   productionPlanItemOrderQuantity,
   planHasOrderConversion,
@@ -308,5 +309,71 @@ describe('productionPlanning', () => {
   it('nextOccurrenceOfDay devolve a propria entrada com data invalida', () => {
     expect(nextOccurrenceOfDay(4, '')).toBe('')
     expect(nextOccurrenceOfDay(4, 'abc')).toBe('abc')
+  })
+
+  it('defaultPlanningDayIndex no domingo mantem a cadencia de dois dias', () => {
+    // Domingo (0) depois das 6h → Ter (2). A segunda ja foi planejada no
+    // sabado, entao o proximo dia a planejar e a terca. Decisao consciente:
+    // se a pratica for outra, basta tratar domingo como avanco de 1 dia.
+    expect(defaultPlanningDayIndex(0, 12)).toBe(2)
+    // Domingo (0) antes das 6h → avanca 1 = Seg (1)
+    expect(defaultPlanningDayIndex(0, 5)).toBe(1)
+  })
+
+  // O relogio da padaria e o de Sao Paulo, e ele precisa vir do Intl. A conta
+  // antiga com getTimezoneOffset() voltava 6 horas num aparelho brasileiro: a
+  // regra das 6h so disparava ao meio-dia, e a suite ficava verde mesmo assim
+  // porque nenhum teste tocava a fiacao entre o relogio e a regra.
+  it('readBakeryClock le data, dia e hora em Sao Paulo a partir do instante', () => {
+    // 2026-09-23T10:39:00Z = quarta, 07:39 em Sao Paulo
+    expect(readBakeryClock(new Date('2026-09-23T10:39:00Z'))).toEqual({
+      dateKey: '2026-09-23',
+      dayOfWeek: 3,
+      hour: 7,
+    })
+  })
+
+  it('readBakeryClock respeita a virada do dia em Sao Paulo, nao em UTC', () => {
+    // 1 segundo antes da meia-noite de Sao Paulo ainda e terca 22/09
+    expect(readBakeryClock(new Date('2026-09-23T02:59:59Z'))).toEqual({
+      dateKey: '2026-09-22',
+      dayOfWeek: 2,
+      hour: 23,
+    })
+    // A meia-noite vira quarta 23/09 com hora 0, nunca 24
+    expect(readBakeryClock(new Date('2026-09-23T03:00:00Z'))).toEqual({
+      dateKey: '2026-09-23',
+      dayOfWeek: 3,
+      hour: 0,
+    })
+    // Virada de ano: 01/01/2027 em UTC ainda e 31/12/2026 na padaria
+    expect(readBakeryClock(new Date('2027-01-01T02:59:00Z'))).toEqual({
+      dateKey: '2026-12-31',
+      dayOfWeek: 4,
+      hour: 23,
+    })
+  })
+
+  // Composicao completa: instante real → data que a tela abre. E aqui que o
+  // defeito do relogio aparecia; as funcoes puras sozinhas nao o mostravam.
+  it('a tela abre na data certa a partir do instante, hora a hora', () => {
+    const dataQueATelaAbre = (instant: string) => {
+      const clock = readBakeryClock(new Date(instant))
+      return nextOccurrenceOfDay(defaultPlanningDayIndex(clock.dayOfWeek, clock.hour), clock.dateKey)
+    }
+
+    // Quarta 23/09, 05:00 em Sao Paulo: producao ainda nao comecou → quinta
+    expect(dataQueATelaAbre('2026-09-23T08:00:00Z')).toBe('2026-09-24')
+    // Quarta 23/09, 06:00: a producao do dia comecou → sexta
+    expect(dataQueATelaAbre('2026-09-23T09:00:00Z')).toBe('2026-09-25')
+    // Quarta 23/09, 08:00, horario de pico → continua sexta
+    expect(dataQueATelaAbre('2026-09-23T11:00:00Z')).toBe('2026-09-25')
+    // Sexta 25/09, 10:00 → domingo pulado, cai na segunda 28/09
+    expect(dataQueATelaAbre('2026-09-25T13:00:00Z')).toBe('2026-09-28')
+    // Domingo 27/09, 12:00 → terca 29/09
+    expect(dataQueATelaAbre('2026-09-27T15:00:00Z')).toBe('2026-09-29')
+    // Quarta 30/12, 23:59 e quinta 31/12, 00:00 caem na mesma sexta 01/01
+    expect(dataQueATelaAbre('2026-12-31T02:59:00Z')).toBe('2027-01-01')
+    expect(dataQueATelaAbre('2026-12-31T03:00:00Z')).toBe('2027-01-01')
   })
 })
