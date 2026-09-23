@@ -28,8 +28,9 @@ import {
   aggregatePlanningLeftoverAvailability,
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
+  defaultPlanningDayIndex,
   matchesPlanningBreadSearch,
-  nextProductionPlanDate,
+  nextOccurrenceOfDay,
   normalizePlannedQuantity,
   planCanBeDiscarded,
   planDateIsExpiredForOrders,
@@ -38,6 +39,7 @@ import {
   planNeedsOrderConversion,
   planningAvailabilityKey,
   plannedBreadsForDate,
+  readBakeryClock,
   statusAllowsDraftEditing,
   subtractPlanningReuseProposals,
   type PlanningPendingLeftoverRow,
@@ -47,7 +49,7 @@ import {
   type ProductionPlanStore,
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
-import { formatDateBR, showToast as showToastPS, todayKey } from '@/lib/utils'
+import { formatDateBR, showToast as showToastPS } from '@/lib/utils'
 
 interface ProductionPlanRow {
   id: string
@@ -90,6 +92,9 @@ interface ProductionPlanSummary {
   status: ProductionPlanStatus
   total: number
   storeTotals: Record<ProductionPlanStore, number>
+  // Já virou pedido em parte (uma loja sim, outra não). Os totais acima são
+  // sempre o que falta converter.
+  partiallyConverted: boolean
 }
 
 interface BreadRow extends PlanningBreadLite {
@@ -119,6 +124,23 @@ function dateLabel(dateKey: string) {
   return formatDateBR(dateKey)
 }
 
+// Rótulo com dia da semana por extenso, ex.: "quinta-feira, 24/09/2026".
+// O ano entra porque nem sempre há botão aceso: quando o planejamento vem da
+// lista de abertos, este rótulo é a única âncora, e 23/09 de dois anos
+// diferentes se leem igual.
+function dayDateLabel(dateKey: string) {
+  const d = new Date(`${dateKey}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return dateKey
+  return d.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+const DAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
 function storedItemTotal(item: ProductionPlanItemSummaryRow) {
   return calculatePlannedTotalQuantity({
     newQuantity: item.planned_quantity,
@@ -132,7 +154,11 @@ export default function ProductionPlanningPage() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(() => getCurrentUser())
   const [ready, setReady] = useState(false)
-  const [date, setDate] = useState(() => nextProductionPlanDate(todayKey()))
+  const [date, setDate] = useState(() => {
+    const clock = readBakeryClock()
+    const day = defaultPlanningDayIndex(clock.dayOfWeek, clock.hour)
+    return nextOccurrenceOfDay(day, clock.dateKey)
+  })
   const [breads, setBreads] = useState<BreadRow[]>([])
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
@@ -239,7 +265,10 @@ export default function ProductionPlanningPage() {
 
     setOpenPlans(plans.flatMap(openPlan => {
       const planItems = itemsByPlan.get(openPlan.id) ?? []
-      if (planHasOrderConversion(planItems)) return []
+      // O critério é só um: ainda falta virar pedido. Plano totalmente
+      // convertido não tem pendência e cai fora sozinho. Excluir também quem
+      // já converteu EM PARTE escondia o plano meio feito de toda a tela, e o
+      // campo de data antigo era o único jeito de alcançá-lo.
       if (!planNeedsOrderConversion(planItems)) return []
       const pendingItems = planItems.filter(item => !item.order_created_at)
       const storeTotals = Object.fromEntries(
@@ -257,6 +286,7 @@ export default function ProductionPlanningPage() {
         status: openPlan.status,
         total: pendingItems.reduce((total, item) => total + storedItemTotal(item), 0),
         storeTotals,
+        partiallyConverted: planHasOrderConversion(planItems),
       }]
     }))
   }, [])
@@ -456,7 +486,11 @@ export default function ProductionPlanningPage() {
   const planningHasOrderConversion = planHasOrderConversion(items)
   const planningFullyConvertedToOrder = planIsFullyConvertedToOrders(items)
   const canEdit = Boolean(plan && statusAllowsDraftEditing(plan.status) && !planningHasOrderConversion)
-  const todayDate = todayKey()
+  // Hoje em São Paulo, lido uma vez para a tela inteira. Os botões de dia e o
+  // aviso de data vencida precisam concordar, inclusive na madrugada: com dois
+  // relógios diferentes a tela dizia duas coisas sobre o mesmo dia entre
+  // meia-noite e 6 h.
+  const todayDate = readBakeryClock().dateKey
   const planDateExpired = Boolean(plan && planDateIsExpiredForOrders(plan.production_date, todayDate))
   const canDiscard = Boolean(plan && planCanBeDiscarded(plan.status, items))
   const searchQuery = search.trim()
@@ -739,6 +773,8 @@ export default function ProductionPlanningPage() {
                       {expired
                         ? 'Data já passou — não vira mais pedido'
                         : PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
+                      {openPlan.partiallyConverted
+                        && ' · parte já virou pedido; os números são o que falta'}
                     </small>
                   </span>
                   <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -753,19 +789,40 @@ export default function ProductionPlanningPage() {
         )}
       </section>
 
-      <section className="ps-filters" style={{ alignItems: 'stretch' }}>
-        <label className="ps-fieldgroup">
-          <span className="ps-fieldlabel">Data de produção</span>
-          <input
-            type="date"
-            value={date}
-            onChange={event => setDate(event.target.value || todayKey())}
-            className="ps-input"
-          />
-        </label>
-        <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading}>
-          <RefreshCw size={16} /> Atualizar
-        </button>
+      <section className="ps-filters" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span className="ps-fieldlabel" style={{ margin: 0 }} id="ps-planejamento-dia">Pães para qual dia?</span>
+          <button type="button" className="ps-btn ghost" onClick={() => void refreshPlanning()} disabled={loading} style={{ padding: '6px 12px', fontSize: 13 }}>
+            <RefreshCw size={14} /> Atualizar
+          </button>
+        </div>
+        <div className="ps-days" role="group" aria-labelledby="ps-planejamento-dia">
+          {[1, 2, 3, 4, 5, 6].map(i => {
+            // Compara a DATA, e não o dia da semana: ao abrir um planejamento
+            // antigo pela lista, o botão daquele dia acenderia, e um toque nele
+            // trocaria de plano sem aviso — a próxima segunda não é a segunda
+            // que está aberta na tela.
+            const dayDate = nextOccurrenceOfDay(i, todayDate)
+
+            return (
+              <button
+                key={i}
+                type="button"
+                className="ps-day"
+                aria-pressed={date === dayDate}
+                // Relê o relógio no toque: a tela do celular fica aberta a
+                // noite inteira, e uma data calculada antes da meia-noite
+                // mandaria o toque para o dia de hoje, que não vira pedido.
+                onClick={() => setDate(nextOccurrenceOfDay(i, readBakeryClock().dateKey))}
+              >
+                {DAYS_PT[i]}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink-soft)', fontWeight: 600 }}>
+          {dayDateLabel(date)}
+        </div>
       </section>
 
       {error && (

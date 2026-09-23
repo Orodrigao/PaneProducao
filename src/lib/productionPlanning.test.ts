@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   aggregateFrozenBreadAvailability,
   aggregatePlanningLeftoverAvailability,
@@ -6,18 +8,22 @@ import {
   buildProductionOrderDraftsFromPlan,
   calculateNewProductionQuantity,
   calculatePlannedTotalQuantity,
+  defaultPlanningDayIndex,
   frozenLocationPlanningStore,
   matchesPlanningBreadSearch,
+  nextOccurrenceOfDay,
   nextProductionPlanDate,
   normalizePlannedQuantity,
   planCanBeDiscarded,
   planDateIsExpiredForOrders,
   normalizePlanningStores,
   plannedBreadsForDate,
+  readBakeryClock,
   planningAvailabilityKey,
   productionPlanItemOrderQuantity,
   planHasOrderConversion,
   planIsFullyConvertedToOrders,
+  planNeedsOrderConversion,
   summarizePlanItemsByStore,
   subtractPlanningReuseProposals,
   storeNeedsOrderConversion,
@@ -26,6 +32,13 @@ import {
 } from './productionPlanning'
 
 describe('productionPlanning', () => {
+  // Composicao completa: instante real → data que a tela abre. E aqui que o
+  // defeito do relogio aparecia; as funcoes puras sozinhas nao o mostravam.
+  const dataQueATelaAbre = (instant: string) => {
+    const clock = readBakeryClock(new Date(instant))
+    return nextOccurrenceOfDay(defaultPlanningDayIndex(clock.dayOfWeek, clock.hour), clock.dateKey)
+  }
+
   it('filtra os paes previstos pela data sem trazer PJ', () => {
     const breads = [
       { id: 'integral', name: 'Integral', days: [1, 2], active: true, is_pj: false },
@@ -257,4 +270,202 @@ describe('productionPlanning', () => {
     expect(planCanBeDiscarded('aguardando_geolar', draft)).toBe(false)
     expect(planCanBeDiscarded('rascunho', zeroedConversion)).toBe(false)
   })
+
+  // ── Seletor de dia do Planejamento ─────────────────────────────────
+
+  it('defaultPlanningDayIndex avanca 2 dias depois das 6h', () => {
+    // Terca (2) 16h → Qui (4)
+    expect(defaultPlanningDayIndex(2, 16)).toBe(4)
+    // Quarta (3) 6h → Sexta (5)
+    expect(defaultPlanningDayIndex(3, 6)).toBe(5)
+    // Quinta (4) 10h → Sabado (6)
+    expect(defaultPlanningDayIndex(4, 10)).toBe(6)
+  })
+
+  it('defaultPlanningDayIndex avanca 1 dia antes das 6h', () => {
+    // Terca (2) 5h → Quarta (3)
+    expect(defaultPlanningDayIndex(2, 5)).toBe(3)
+    // Segunda (1) 0h → Terca (2)
+    expect(defaultPlanningDayIndex(1, 0)).toBe(2)
+  })
+
+  it('defaultPlanningDayIndex pula domingo', () => {
+    // Sexta (5) depois das 6h → avanca 2 = Dom (0) → Seg (1)
+    expect(defaultPlanningDayIndex(5, 10)).toBe(1)
+    // Sabado (6) depois das 6h → avanca 2 = Seg (1) — domingo pulado
+    expect(defaultPlanningDayIndex(6, 10)).toBe(1)
+    // Sabado (6) antes das 6h → avanca 1 = Dom (0) → Seg (1)
+    expect(defaultPlanningDayIndex(6, 5)).toBe(1)
+  })
+
+  it('nextOccurrenceOfDay calcula a proxima data do dia selecionado', () => {
+    // 2026-09-22 e terca (2). Clicar em Qui (4) → 24/09
+    expect(nextOccurrenceOfDay(4, '2026-09-22')).toBe('2026-09-24')
+    // Clicar em Sex (5) → 25/09
+    expect(nextOccurrenceOfDay(5, '2026-09-22')).toBe('2026-09-25')
+    // Clicar em Seg (1) → 28/09 (proxima segunda)
+    expect(nextOccurrenceOfDay(1, '2026-09-22')).toBe('2026-09-28')
+    // Clicar em Ter (2), mesmo dia → semana que vem, 29/09
+    expect(nextOccurrenceOfDay(2, '2026-09-22')).toBe('2026-09-29')
+  })
+
+  it('nextOccurrenceOfDay cruza virada de mes e ano', () => {
+    // 2026-09-28 (segunda). Clicar em Sab (6) → 03/10
+    expect(nextOccurrenceOfDay(6, '2026-09-28')).toBe('2026-10-03')
+    // 2026-12-30 (quarta). Clicar em Seg (1) → 04/01/2027 (5 dias)
+    expect(nextOccurrenceOfDay(1, '2026-12-30')).toBe('2027-01-04')
+  })
+
+  it('nextOccurrenceOfDay devolve a propria entrada com data invalida', () => {
+    expect(nextOccurrenceOfDay(4, '')).toBe('')
+    expect(nextOccurrenceOfDay(4, 'abc')).toBe('abc')
+  })
+
+  it('defaultPlanningDayIndex no domingo mantem a cadencia de dois dias', () => {
+    // Domingo (0) depois das 6h → Ter (2). A segunda ja foi planejada no
+    // sabado, entao o proximo dia a planejar e a terca. Decidido pelo Rodrigo
+    // em 23/09/2026 (PR 437), depois de a revisao propor a segunda.
+    expect(defaultPlanningDayIndex(0, 12)).toBe(2)
+    // Domingo (0) antes das 6h → avanca 1 = Seg (1)
+    expect(defaultPlanningDayIndex(0, 5)).toBe(1)
+  })
+
+  // O relogio da padaria e o de Sao Paulo, e ele precisa vir do Intl. A conta
+  // antiga com getTimezoneOffset() voltava 6 horas num aparelho brasileiro: a
+  // regra das 6h so disparava ao meio-dia, e a suite ficava verde mesmo assim
+  // porque nenhum teste tocava a fiacao entre o relogio e a regra.
+  //
+  // Rodar em fuso hostil nao e capricho. A conta antiga acerta por acidente em
+  // UTC, que e onde o CI roda: la o defeito passava batido, e so aparecia na
+  // maquina do Rodrigo. Sem trocar o fuso, este teste nao segura a regressao
+  // no unico lugar onde ela precisa ser segurada.
+  describe.each(['UTC', 'Asia/Tokyo', 'America/Sao_Paulo', 'Pacific/Kiritimati'])(
+    'readBakeryClock com o aparelho em %s',
+    timeZone => {
+      // Restaurar por nome de zona, nunca pelo valor cru de process.env.TZ:
+      // quando ele nao esta definido, `process.env.TZ = undefined` grava a
+      // string 'undefined' (que o Node trata como UTC) e `delete` nao devolve
+      // o fuso do sistema. Os dois deixariam os arquivos seguintes da suite
+      // rodando no fuso errado.
+      const fusoOriginal = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+
+      beforeAll(() => { process.env.TZ = timeZone })
+      afterAll(() => { process.env.TZ = fusoOriginal })
+
+      it('le data, dia e hora em Sao Paulo a partir do instante', () => {
+        // 2026-09-23T10:39:00Z = quarta, 07:39 em Sao Paulo
+        expect(readBakeryClock(new Date('2026-09-23T10:39:00Z'))).toEqual({
+          dateKey: '2026-09-23',
+          dayOfWeek: 3,
+          hour: 7,
+        })
+      })
+
+      it('respeita a virada do dia em Sao Paulo, nao a do aparelho', () => {
+        // 1 segundo antes da meia-noite de Sao Paulo ainda e terca 22/09
+        expect(readBakeryClock(new Date('2026-09-23T02:59:59Z'))).toEqual({
+          dateKey: '2026-09-22',
+          dayOfWeek: 2,
+          hour: 23,
+        })
+        // A meia-noite vira quarta 23/09 com hora 0, nunca 24
+        expect(readBakeryClock(new Date('2026-09-23T03:00:00Z'))).toEqual({
+          dateKey: '2026-09-23',
+          dayOfWeek: 3,
+          hour: 0,
+        })
+        // Virada de ano: 01/01/2027 em UTC ainda e 31/12/2026 na padaria
+        expect(readBakeryClock(new Date('2027-01-01T02:59:00Z'))).toEqual({
+          dateKey: '2026-12-31',
+          dayOfWeek: 4,
+          hour: 23,
+        })
+      })
+
+      it('a tela abre na data certa a partir do instante, hora a hora', () => {
+        // Quarta 23/09, 05:00 em Sao Paulo: producao ainda nao comecou → quinta
+        expect(dataQueATelaAbre('2026-09-23T08:00:00Z')).toBe('2026-09-24')
+        // Quarta 23/09, 06:00: a producao do dia comecou → sexta
+        expect(dataQueATelaAbre('2026-09-23T09:00:00Z')).toBe('2026-09-25')
+        // Quarta 23/09, 08:00, horario de pico → continua sexta
+        expect(dataQueATelaAbre('2026-09-23T11:00:00Z')).toBe('2026-09-25')
+        // Sexta 25/09, 10:00 → domingo pulado, cai na segunda 28/09
+        expect(dataQueATelaAbre('2026-09-25T13:00:00Z')).toBe('2026-09-28')
+        // Domingo 27/09, 12:00 → terca 29/09
+        expect(dataQueATelaAbre('2026-09-27T15:00:00Z')).toBe('2026-09-29')
+        // Quarta 30/12 23:59 e quinta 31/12 00:00 caem na mesma sexta 01/01
+        expect(dataQueATelaAbre('2026-12-31T02:59:00Z')).toBe('2027-01-01')
+        expect(dataQueATelaAbre('2026-12-31T03:00:00Z')).toBe('2027-01-01')
+      })
+    },
+  )
+
+  // A tela nao tem teste de render neste repositorio, e estas duas linhas sao
+  // correcoes que um refactor desfaz sem ninguem notar. Mesmo caminho que
+  // pjPrintSheet.test.ts ja usa para travar linha de pagina.
+  // A lista 'Planejamentos em aberto' e o unico caminho para um plano fora da
+  // janela dos botoes. Ela filtra por 'ainda falta virar pedido'; filtrar
+  // tambem por 'ja virou em parte' escondia o plano meio feito de toda a tela.
+  it('plano convertido em parte ainda precisa virar pedido', () => {
+    const parcial = [
+      { store: 'jc', bread_id: 'p1', planned_quantity: 10, order_created_at: '2026-09-22T10:00:00Z' },
+      { store: 'ja', bread_id: 'p1', planned_quantity: 5, order_created_at: null },
+    ]
+    expect(planHasOrderConversion(parcial)).toBe(true)
+    expect(planNeedsOrderConversion(parcial)).toBe(true)
+    expect(planIsFullyConvertedToOrders(parcial)).toBe(false)
+
+    const totalmente = parcial.map(item => ({ ...item, order_created_at: '2026-09-22T10:00:00Z' }))
+    expect(planNeedsOrderConversion(totalmente)).toBe(false)
+  })
+
+  it('a tela de Planejamento usa um relogio so e acende o botao pela data', () => {
+    const pagina = readFileSync(
+      resolve(__dirname, '../app/planejamento-producao/page.tsx'),
+      'utf8',
+    )
+
+    // O botao compara a DATA; comparar o dia da semana faz o botao acender
+    // para um planejamento antigo e trocar o plano num toque.
+    expect(pagina).toContain('aria-pressed={date === dayDate}')
+    expect(pagina).not.toContain('weekdayIndex(date)')
+
+    // Um relogio so na tela: todayKey/nowBrasilia voltam 6 horas num aparelho
+    // brasileiro e fariam os botoes e o aviso de data vencida discordarem.
+    expect(pagina).toContain('readBakeryClock')
+    expect(pagina).not.toContain('todayKey')
+    expect(pagina).not.toContain('nowBrasilia')
+
+    // A lista de abertos nao pode voltar a esconder o plano meio convertido.
+    expect(pagina).not.toContain('if (planHasOrderConversion(planItems)) return []')
+  })
+
+  it('readBakeryClock devolve leitura vazia com data invalida', () => {
+    expect(readBakeryClock(new Date(Number.NaN))).toEqual({
+      dateKey: '',
+      dayOfWeek: -1,
+      hour: Number.NaN,
+    })
+  })
+
+  // A regra de negocio inteira, varrida em vez de escolhida a dedo: a tela
+  // nunca abre em hoje nem no passado, nunca abre num domingo e nunca passa de
+  // uma semana, qualquer que seja o dia e a hora.
+  it('a data de abertura respeita as invariantes em qualquer dia e hora', () => {
+    for (let diaCorrido = 0; diaCorrido < 14; diaCorrido++) {
+      for (const hora of [0, 5, 6, 12, 23]) {
+        const instante = new Date(Date.UTC(2026, 8, 20 + diaCorrido, hora + 3, 0, 0))
+        const clock = readBakeryClock(instante)
+        const aberta = dataQueATelaAbre(instante.toISOString())
+
+        expect(aberta > clock.dateKey).toBe(true)
+        expect(weekdayIndex(aberta)).not.toBe(0)
+        const distancia = (new Date(`${aberta}T12:00:00Z`).getTime()
+          - new Date(`${clock.dateKey}T12:00:00Z`).getTime()) / 86400000
+        expect(distancia).toBeGreaterThanOrEqual(1)
+        expect(distancia).toBeLessThanOrEqual(7)
+      }
+    }
+  })
+
 })

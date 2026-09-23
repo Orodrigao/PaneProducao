@@ -350,3 +350,92 @@ export function planCanBeDiscarded(
 ): boolean {
   return statusAllowsDraftEditing(status) && items.every(item => !item.order_created_at)
 }
+
+// ── Seletor de dia do Planejamento ─────────────────────────────────
+
+// Hora de início da produção (Brasília). Depois desse horário, a
+// produção do dia já começou e o planejamento avança um dia a mais.
+const PRODUCTION_START_HOUR = 6
+
+// O relógio da padaria é sempre o de São Paulo, qualquer que seja o fuso do
+// aparelho. A fonte é o Intl, e não aritmética com getTimezoneOffset(): essa
+// conta erra o sinal com facilidade e o erro só aparece em parte do dia, que é
+// o jeito mais caro de descobrir. Mesmo formato de `bakeryDayKey`.
+const SAO_PAULO_CLOCK = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23',
+})
+
+export interface BakeryClockReading {
+  /** Hoje em São Paulo, no formato YYYY-MM-DD. */
+  dateKey: string
+  /** Dia da semana em São Paulo, convenção JS (0=Dom … 6=Sáb). */
+  dayOfWeek: number
+  /** Hora cheia em São Paulo, de 0 a 23. */
+  hour: number
+}
+
+// Uma leitura só do relógio serve à data, ao dia e à hora. Duas leituras
+// separadas podem cair em lados diferentes da virada do dia.
+export function readBakeryClock(value: Date = new Date()): BakeryClockReading {
+  // `formatToParts` lança RangeError com data inválida. Degrada como as
+  // vizinhas: `bakeryDayKey` devolve '', `weekdayIndex` devolve -1, e
+  // `nextOccurrenceOfDay` repassa a entrada vazia adiante.
+  if (Number.isNaN(value.getTime())) return { dateKey: '', dayOfWeek: -1, hour: Number.NaN }
+
+  const parts = Object.fromEntries(
+    SAO_PAULO_CLOCK
+      .formatToParts(value)
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value]),
+  )
+  const dateKey = `${parts.year}-${parts.month}-${parts.day}`
+
+  return { dateKey, dayOfWeek: weekdayIndex(dateKey), hour: Number(parts.hour) }
+}
+
+// Dia da semana padrão ao abrir a tela de Planejamento.
+// `currentDayOfWeek` e o retorno seguem a convenção JS (0=Dom … 6=Sáb).
+// Depois das 6 h a produção de hoje já roda → avança 2 dias.
+// Antes das 6 h a produção ainda não começou → avança 1 dia.
+// Domingo é sempre pulado (não há produção).
+//
+// Abrir no domingo cai em terça, e é de propósito: na cadência de dois dias,
+// a segunda já foi planejada no sábado. Decidido pelo Rodrigo em 23/09/2026,
+// na PR 437, depois de a revisão propor a segunda. Não reabrir sem ele.
+export function defaultPlanningDayIndex(
+  currentDayOfWeek: number,
+  currentHour: number,
+): number {
+  const advance = currentHour >= PRODUCTION_START_HOUR ? 2 : 1
+  let target = (currentDayOfWeek + advance) % 7
+  if (target === 0) target = 1 // domingo → segunda
+  return target
+}
+
+// Próxima data do calendário que cai no dia da semana solicitado.
+// Se hoje já é esse dia, retorna a semana que vem (nunca "hoje").
+// `todayDate` é YYYY-MM-DD, `dayIndex` segue convenção JS (1-6).
+export function nextOccurrenceOfDay(
+  dayIndex: number,
+  todayDate: string,
+): string {
+  const today = new Date(`${todayDate}T12:00:00`)
+  if (Number.isNaN(today.getTime())) return todayDate
+
+  const todayDow = today.getDay()
+  let daysAhead = (dayIndex - todayDow + 7) % 7
+  if (daysAhead === 0) daysAhead = 7
+
+  today.setDate(today.getDate() + daysAhead)
+
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-')
+}
