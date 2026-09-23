@@ -535,7 +535,7 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
     text-align:center; text-decoration:none; cursor:pointer; transition:transform .14s ease, color .14s ease, background .14s ease;
   }
   .ps-sidebar-item:hover{ color:#3e352f; background:#f5f1ec; }
-  .ps-sidebar-item:active{ transform:scale(.97); }
+  .ps-sidebar-item:active{ transform:translateY(1px); }
   .ps-sidebar-item.active{ color:#8c431a; background:#f4ebe2; }
   .ps-sidebar-icon{ width:22px; height:22px; display:grid; place-items:center; flex:none; }
   .ps-sidebar-groups-full{ display:none; }

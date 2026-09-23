@@ -521,7 +521,7 @@
 
 .page :global(.ps-input:focus-visible),
 .page :global(.ps-btn:focus-visible),
-.page button:focus-visible { outline: 3px solid rgba(189, 103, 45, 0.35); outline-offset: 2px; }
+.page button:focus-visible { outline: 3px solid #8c431a; outline-offset: 2px; }
 
 @media (max-width: 1280px) {
   .datePicker { grid-template-columns: 1fr auto; }

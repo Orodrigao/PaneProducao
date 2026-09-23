@@ -68,7 +68,7 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
   await enterAsAdmin(page)
   await page.goto('/planejamento-producao')
 
-  let createdForTest = false
+  let createdPlanId: string | null = null
   let selectedDayName = ''
   const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
 
@@ -86,8 +86,17 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
     await expect(summary.or(createDraft)).toBeVisible({ timeout: 30_000 })
 
     if (await createDraft.isVisible()) {
-      createdForTest = true
+      const createResponsePromise = page.waitForResponse(response => (
+        response.request().method() === 'POST'
+        && new URL(response.url()).pathname.endsWith('/rest/v1/production_plans')
+      ))
       await createDraft.click()
+      const createResponse = await createResponsePromise
+      if (createResponse.ok()) {
+        const createdRows = await createResponse.json() as Array<{ id?: string }>
+        createdPlanId = createdRows[0]?.id ?? null
+        expect(createdPlanId, 'a criação do rascunho deve retornar seu identificador').toBeTruthy()
+      }
     }
     await expect(summary).toBeVisible({ timeout: 30_000 })
 
@@ -96,7 +105,7 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
     await expectLayoutFitsViewport(page, 820, 1180)
     await expectLayoutFitsViewport(page, 390, 844)
   } finally {
-    if (createdForTest && !page.isClosed()) {
+    if (createdPlanId && !page.isClosed()) {
       await page.setViewportSize({ width: 1440, height: 1000 })
       await page.reload()
 
@@ -106,8 +115,9 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
       await selectedDay.click()
 
       const discard = page.getByRole('button', { name: 'Descartar' })
-      await expect(discard.or(createDraft)).toBeVisible({ timeout: 30_000 })
-      if (await discard.isVisible()) {
+      const ownPlan = page.locator(`[data-plan-id="${createdPlanId}"]`)
+      await expect(ownPlan.or(createDraft)).toBeVisible({ timeout: 30_000 })
+      if (await ownPlan.isVisible() && await discard.isVisible()) {
         page.once('dialog', dialog => dialog.accept())
         await discard.click()
         await expect(createDraft).toBeVisible({ timeout: 30_000 })

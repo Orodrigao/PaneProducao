@@ -868,7 +868,7 @@ export default function ProductionPlanningPage() {
             </span>
           </div>
 
-          <section className={`ps-card ${styles.summaryCard}`}>
+          <section className={`ps-card ${styles.summaryCard}`} data-plan-id={plan.id}>
             <div className={styles.summaryLayout}>
               <div className={styles.summaryStats}>
                 <div className={`${styles.stat} ${styles.statPrimary}`}>
