@@ -92,6 +92,9 @@ interface ProductionPlanSummary {
   status: ProductionPlanStatus
   total: number
   storeTotals: Record<ProductionPlanStore, number>
+  // Já virou pedido em parte (uma loja sim, outra não). Os totais acima são
+  // sempre o que falta converter.
+  partiallyConverted: boolean
 }
 
 interface BreadRow extends PlanningBreadLite {
@@ -262,7 +265,10 @@ export default function ProductionPlanningPage() {
 
     setOpenPlans(plans.flatMap(openPlan => {
       const planItems = itemsByPlan.get(openPlan.id) ?? []
-      if (planHasOrderConversion(planItems)) return []
+      // O critério é só um: ainda falta virar pedido. Plano totalmente
+      // convertido não tem pendência e cai fora sozinho. Excluir também quem
+      // já converteu EM PARTE escondia o plano meio feito de toda a tela, e o
+      // campo de data antigo era o único jeito de alcançá-lo.
       if (!planNeedsOrderConversion(planItems)) return []
       const pendingItems = planItems.filter(item => !item.order_created_at)
       const storeTotals = Object.fromEntries(
@@ -280,6 +286,7 @@ export default function ProductionPlanningPage() {
         status: openPlan.status,
         total: pendingItems.reduce((total, item) => total + storedItemTotal(item), 0),
         storeTotals,
+        partiallyConverted: planHasOrderConversion(planItems),
       }]
     }))
   }, [])
@@ -766,6 +773,8 @@ export default function ProductionPlanningPage() {
                       {expired
                         ? 'Data já passou — não vira mais pedido'
                         : PRODUCTION_PLAN_STATUS_LABELS[openPlan.status]}
+                      {openPlan.partiallyConverted
+                        && ' · parte já virou pedido; os números são o que falta'}
                     </small>
                   </span>
                   <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

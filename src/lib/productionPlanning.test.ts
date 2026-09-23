@@ -23,6 +23,7 @@ import {
   productionPlanItemOrderQuantity,
   planHasOrderConversion,
   planIsFullyConvertedToOrders,
+  planNeedsOrderConversion,
   summarizePlanItemsByStore,
   subtractPlanningReuseProposals,
   storeNeedsOrderConversion,
@@ -402,6 +403,22 @@ describe('productionPlanning', () => {
   // A tela nao tem teste de render neste repositorio, e estas duas linhas sao
   // correcoes que um refactor desfaz sem ninguem notar. Mesmo caminho que
   // pjPrintSheet.test.ts ja usa para travar linha de pagina.
+  // A lista 'Planejamentos em aberto' e o unico caminho para um plano fora da
+  // janela dos botoes. Ela filtra por 'ainda falta virar pedido'; filtrar
+  // tambem por 'ja virou em parte' escondia o plano meio feito de toda a tela.
+  it('plano convertido em parte ainda precisa virar pedido', () => {
+    const parcial = [
+      { store: 'jc', bread_id: 'p1', planned_quantity: 10, order_created_at: '2026-09-22T10:00:00Z' },
+      { store: 'ja', bread_id: 'p1', planned_quantity: 5, order_created_at: null },
+    ]
+    expect(planHasOrderConversion(parcial)).toBe(true)
+    expect(planNeedsOrderConversion(parcial)).toBe(true)
+    expect(planIsFullyConvertedToOrders(parcial)).toBe(false)
+
+    const totalmente = parcial.map(item => ({ ...item, order_created_at: '2026-09-22T10:00:00Z' }))
+    expect(planNeedsOrderConversion(totalmente)).toBe(false)
+  })
+
   it('a tela de Planejamento usa um relogio so e acende o botao pela data', () => {
     const pagina = readFileSync(
       resolve(__dirname, '../app/planejamento-producao/page.tsx'),
@@ -418,6 +435,9 @@ describe('productionPlanning', () => {
     expect(pagina).toContain('readBakeryClock')
     expect(pagina).not.toContain('todayKey')
     expect(pagina).not.toContain('nowBrasilia')
+
+    // A lista de abertos nao pode voltar a esconder o plano meio convertido.
+    expect(pagina).not.toContain('if (planHasOrderConversion(planItems)) return []')
   })
 
   it('readBakeryClock devolve leitura vazia com data invalida', () => {
