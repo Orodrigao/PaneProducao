@@ -11,6 +11,24 @@ select ok(not has_function_privilege('anon',
 select ok(not has_function_privilege('authenticated',
   'private.periodos_consumo_insumos(text)', 'execute'), 'funcao interna de periodos nao e chamavel direto');
 
+-- Espaco de trabalho limpo -----------------------------------------------------
+-- Este arquivo tambem roda no Banco Preview compartilhado (job "Verificar
+-- invariantes e seed canonicos"), onde o seed ja deixou contagens fechadas e
+-- notas da JC ancoradas em private.data_na_padaria(), ou seja, andando com o
+-- calendario. As funcoes de consumo leem TODAS as contagens fechadas e TODAS as
+-- notas da loja, entao o cenario montado abaixo so tem resultado previsivel num
+-- espaco vazio: sem isto, o seed acrescenta periodos, desloca a janela e pode
+-- ate colidir com a chave (loja, semana) das contagens desta fixture.
+-- A transacao inteira termina em rollback: nada disso sai daqui.
+-- O rascunho de importacao de XML aponta para a nota sem apagar junto
+-- (NO ACTION), entao ele sai primeiro: num banco onde alguem ja importou uma
+-- nota pela tela, a ordem inversa derruba o arquivo com erro de chave
+-- estrangeira em vez de testar coisa alguma.
+delete from public.payable_import_drafts
+ where purchase_id in (select id from public.payable_purchases where store = 'jc');
+delete from public.payable_purchases where store = 'jc';
+delete from public.inventory_weekly_counts where store = 'jc';
+
 insert into auth.users(id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin)
 values
