@@ -20,8 +20,14 @@ select ok(not has_function_privilege('authenticated',
 -- espaco vazio: sem isto, o seed acrescenta periodos, desloca a janela e pode
 -- ate colidir com a chave (loja, semana) das contagens desta fixture.
 -- A transacao inteira termina em rollback: nada disso sai daqui.
-delete from public.inventory_weekly_counts where store = 'jc';
+-- O rascunho de importacao de XML aponta para a nota sem apagar junto
+-- (NO ACTION), entao ele sai primeiro: num banco onde alguem ja importou uma
+-- nota pela tela, a ordem inversa derruba o arquivo com erro de chave
+-- estrangeira em vez de testar coisa alguma.
+delete from public.payable_import_drafts
+ where purchase_id in (select id from public.payable_purchases where store = 'jc');
 delete from public.payable_purchases where store = 'jc';
+delete from public.inventory_weekly_counts where store = 'jc';
 
 insert into auth.users(id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin)
