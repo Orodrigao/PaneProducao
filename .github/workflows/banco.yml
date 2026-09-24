@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "supabase/migrations/**"
+      - "supabase/config.toml"
       - ".github/workflows/banco.yml"
 
 concurrency:
@@ -38,3 +39,16 @@ jobs:
 
       - name: Aplicar migrations
         run: supabase db push --include-all
+
+      # Atualiza somente a lista de schemas expostos. `supabase config push`
+      # não é usado aqui porque o config.toml também contém valores locais de
+      # Auth; enviar o arquivo inteiro poderia sobrescrever a configuração real.
+      - name: Aplicar configuração da Data API
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request PATCH \
+            --url "https://api.supabase.com/v1/projects/$PROJECT_REF/postgrest" \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{"db_schema":"public"}' \
+            | jq -e '.db_schema == "public"' > /dev/null

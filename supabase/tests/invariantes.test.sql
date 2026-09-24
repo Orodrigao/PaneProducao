@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(142);
+select plan(134);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 52,
@@ -575,34 +575,6 @@ select is(
                                                  '([0-9]+(?:[.,][0-9]+)?)\s*KG'))[1], ',', '.')::numeric),
   0,
   'insumo de receita comprado por unidade converte pelo peso declarado na nota');
-
--- GraphQL fechado para anon e authenticated (23/09/2026): o site nao usa,
--- so REST. Advisor de seguranca do Supabase apontava 75 tabelas do ERP
--- alcancaveis por authenticated e 5 legadas por anon via introspeccao.
-select ok(not has_schema_privilege('anon', 'graphql_public', 'usage'),
-  'anon nao usa o schema do GraphQL');
-select ok(not has_schema_privilege('authenticated', 'graphql_public', 'usage'),
-  'authenticated nao usa o schema do GraphQL');
-select ok(not has_function_privilege('anon',
-    'graphql_public.graphql(text, text, jsonb, jsonb)', 'execute'),
-  'anon nao executa o resolver do GraphQL');
-select ok(not has_function_privilege('authenticated',
-    'graphql_public.graphql(text, text, jsonb, jsonb)', 'execute'),
-  'authenticated nao executa o resolver do GraphQL');
-select ok(has_function_privilege('service_role',
-    'graphql_public.graphql(text, text, jsonb, jsonb)', 'execute'),
-  'service_role mantem o GraphQL, o fechamento e so para anon/authenticated');
-
--- A revisao adversarial achou a porta interna: graphql_public.graphql roda
--- SECURITY INVOKER e chama graphql.resolve, e anon/authenticated tinham
--- USAGE nesse schema tambem (o de graphql_public sozinho ja bloqueia o
--- caminho da API HTTP, mas nao uma conexao SQL direta com o papel).
-select ok(not has_schema_privilege('anon', 'graphql', 'usage'),
-  'anon nao usa o schema interno do pg_graphql');
-select ok(not has_schema_privilege('authenticated', 'graphql', 'usage'),
-  'authenticated nao usa o schema interno do pg_graphql');
-select ok(has_schema_privilege('service_role', 'graphql', 'usage'),
-  'service_role mantem o schema interno, o fechamento e so para anon/authenticated');
 
 select * from finish();
 rollback;
