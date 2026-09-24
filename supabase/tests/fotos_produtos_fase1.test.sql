@@ -68,8 +68,11 @@ select is((select storage_path from public.product_photos where product_id = 'f2
   'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
   'a foto fica vinculada pelo ID imutável do produto, não pelo nome');
 reset role;
-select is((select action from private.product_photo_audit where product_id = 'f2400000-0000-4000-8000-000000000010' order by created_at desc limit 1),
-  'add', 'a inclusão gera trilha de auditoria no banco');
+select ok(exists (
+  select 1 from private.product_photo_audit
+  where product_id = 'f2400000-0000-4000-8000-000000000010'
+    and action = 'add'
+), 'a inclusão gera trilha de auditoria no banco');
 set local role authenticated;
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000052', true);
@@ -93,8 +96,11 @@ select is(public.clear_product_photo('f2400000-0000-4000-8000-000000000010'),
   'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
   'remoção devolve o caminho para a limpeza posterior pelo Storage API');
 reset role;
-select is((select action from private.product_photo_audit where product_id = 'f2400000-0000-4000-8000-000000000010' order by created_at desc limit 1),
-  'remove', 'a remoção também fica auditável');
+select ok(exists (
+  select 1 from private.product_photo_audit
+  where product_id = 'f2400000-0000-4000-8000-000000000010'
+    and action = 'remove'
+), 'a remoção também fica auditável');
 
 select * from finish();
 rollback;
