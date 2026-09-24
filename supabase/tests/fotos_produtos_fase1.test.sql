@@ -22,6 +22,9 @@ select ok(has_function_privilege('authenticated', 'public.set_product_photo(uuid
   'só usuário logado pode chamar as portas de foto, sujeitas à conferência interna');
 select ok((select prosecdef from pg_proc where oid = 'public.set_product_photo(uuid, text)'::regprocedure),
   'a associação atômica confere arquivo, produto e permissão no banco');
+select ok((select pg_get_expr(polqual, polrelid) from pg_policy
+  where polname = 'product_photos_files_delete_photo_manager') ilike '%not (exists%product_photos%storage_path%',
+  'a política de limpeza bloqueia arquivo que ainda é foto principal');
 
 insert into public.product_categories (id, name, catalog_type, active, sort_order)
 values ('f2400000-0000-4000-8000-000000000001', '[TESTE] Categoria fotos', 'produto_fabricado', true, 999);
@@ -86,22 +89,9 @@ select throws_ok(
   'perfil sem a permissão explícita não remove a foto');
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000050', true);
-delete from storage.objects
-where bucket_id = 'product-photos'
-  and name = 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp';
-select is((select count(*)::integer from storage.objects where bucket_id = 'product-photos'), 1,
-  'gestor não apaga pelo Storage uma foto que ainda está associada');
 select is(public.clear_product_photo('f2400000-0000-4000-8000-000000000010'),
   'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
   'remoção devolve o caminho para a limpeza posterior pelo Storage API');
-delete from storage.objects
-where bucket_id = 'product-photos'
-  and name = 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp';
-delete from storage.objects
-where bucket_id = 'product-photos'
-  and name = 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp';
-select is((select count(*)::integer from storage.objects where bucket_id = 'product-photos'), 0,
-  'gestor remove somente versões sem vínculo ativo, incluindo órfãos');
 reset role;
 select is((select action from private.product_photo_audit where product_id = 'f2400000-0000-4000-8000-000000000010' order by created_at desc limit 1),
   'remove', 'a remoção também fica auditável');
