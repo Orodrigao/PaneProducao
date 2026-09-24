@@ -11,6 +11,8 @@ on:
       - "supabase/migrations/**"
       - "supabase/config.toml"
       - ".github/workflows/banco.yml"
+      - "scripts/supabase-api-config.mjs"
+      - "scripts/supabase-api-config.test.mjs"
 
 concurrency:
   group: banco-producao
@@ -26,6 +28,10 @@ jobs:
       PROJECT_REF: gohluceldchoitihrimw
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - uses: supabase/setup-cli@v3
         with:
@@ -44,11 +50,4 @@ jobs:
       # não é usado aqui porque o config.toml também contém valores locais de
       # Auth; enviar o arquivo inteiro poderia sobrescrever a configuração real.
       - name: Aplicar configuração da Data API
-        run: |
-          curl --fail-with-body --silent --show-error \
-            --request PATCH \
-            --url "https://api.supabase.com/v1/projects/$PROJECT_REF/postgrest" \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data '{"db_schema":"public"}' \
-            | jq -e '.db_schema == "public"' > /dev/null
+        run: node scripts/supabase-api-config.mjs
