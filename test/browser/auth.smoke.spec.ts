@@ -830,9 +830,37 @@ async function deleteProductPhotoFile(
   })
 }
 
+// Tempo esgotado interrompe o teste sem deixar o finally terminar, e a foto
+// fica vinculada ao produto ficticio no banco compartilhado. Sem esta limpeza,
+// cada execucao seguinte encontra a sobra, reprova e deixa outra no lugar: foi
+// o que travou o CI em 25/09 (execucoes 36163007234 e 36154142818).
+async function releaseLeftoverProductPhoto(
+  page: import('@playwright/test').Page,
+  headers: Record<string, string>,
+  api: { url: string },
+): Promise<void> {
+  const pointer = await page.request.get(
+    `${api.url}/rest/v1/product_photos?product_id=eq.${productPhotoTestProductId}&select=storage_path`,
+    { headers },
+  )
+  expect(pointer.ok(), `leitura da foto atual respondeu ${pointer.status()}`).toBe(true)
+  if (((await pointer.json()) as unknown[]).length === 0) return
+
+  const clear = await clearProductPhoto(page, headers, api)
+  expect(clear.ok(), `desvinculo da sobra respondeu ${clear.status()}: ${await clear.text()}`).toBe(true)
+  // Apaga o caminho que a RPC acabou de desvincular, nao o lido antes.
+  const releasedPath = (await clear.json()) as string
+  const remove = await deleteProductPhotoFile(page, headers, api, releasedPath)
+  expect(remove.ok(), `exclusao da sobra respondeu ${remove.status()}: ${await remove.text()}`).toBe(true)
+}
+
 test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API', async ({ page }) => {
+  // Login no preview e uma dezena de chamadas a Data API e ao Storage: os 30s padrao ja
+  // se esgotaram numa execucao lenta do banco compartilhado.
+  test.setTimeout(90_000)
   const api = await enterProductPhotoPreview(page, previewAccounts.admin)
   const headers = await dataApiHeaders(page, api)
+  await releaseLeftoverProductPhoto(page, headers, api)
   const storagePath = productPhotoStoragePath()
   const objectUrl = `${api.url}/storage/v1/object/authenticated/product-photos/${storagePath}`
   let uploaded = false
@@ -853,9 +881,11 @@ test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API',
       headers,
       data: { p_product_id: productPhotoTestProductId, p_storage_path: storagePath },
     })
+    // Marcado antes das conferencias: se alguma reprovar, o finally ainda
+    // desvincula a foto em vez de deixa-la presa ao produto de teste.
+    linked = link.ok()
     expect(link.ok(), `vinculo da foto respondeu ${link.status()}: ${await link.text()}`).toBe(true)
     expect(await link.json()).toBeNull()
-    linked = true
 
     const pointer = await page.request.get(
       `${api.url}/rest/v1/product_photos?product_id=eq.${productPhotoTestProductId}&select=storage_path`,
