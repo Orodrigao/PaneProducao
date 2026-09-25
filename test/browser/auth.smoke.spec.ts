@@ -867,7 +867,10 @@ test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API',
     // O Storage pode responder 200 mesmo quando a RLS não apagou linha alguma.
     // Por isso a prova é reler o arquivo enquanto ele ainda é a foto principal.
     await deleteProductPhotoFile(page, headers, api, storagePath)
-    const stillLinked = await page.request.get(objectUrl, { headers })
+    const stillLinked = await page.request.get(
+      `${objectUrl}?cacheNonce=linked-${randomUUID()}`,
+      { headers },
+    )
     expect(stillLinked.ok(), 'a foto principal nao pode ser apagada enquanto estiver vinculada').toBe(true)
 
     const clear = await clearProductPhoto(page, headers, api)
@@ -879,7 +882,12 @@ test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API',
     expect(remove.ok(), `exclusao da foto respondeu ${remove.status()}: ${await remove.text()}`).toBe(true)
     uploaded = false
 
-    const removedFile = await page.request.get(objectUrl, { headers })
+    // A CDN pode conservar a resposta 200 do download anterior mesmo depois
+    // da exclusao. Um nonce novo obriga a conferir o Storage, nao o cache.
+    const removedFile = await page.request.get(
+      `${objectUrl}?cacheNonce=removed-${randomUUID()}`,
+      { headers },
+    )
     expect([400, 404], `arquivo apagado respondeu ${removedFile.status()}`).toContain(removedFile.status())
     const removedPointer = await page.request.get(
       `${api.url}/rest/v1/product_photos?product_id=eq.${productPhotoTestProductId}&select=storage_path`,
