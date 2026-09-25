@@ -1,6 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
 test.use({
@@ -37,11 +37,12 @@ function romaneioCardByObs(page: import('@playwright/test').Page, obs: string) {
 async function enterWithPreviewAccount(
   page: import('@playwright/test').Page,
   email: string,
+  baseUrl?: string,
 ) {
   const password = process.env.SUPABASE_TEST_USER_PASSWORD
   test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
 
-  await page.goto('/login')
+  await page.goto(baseUrl ? new URL('/login', baseUrl).toString() : '/login')
   await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
   await page.locator('input[type="password"]').fill(password!)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
@@ -731,11 +732,13 @@ async function sessionAccessToken(page: import('@playwright/test').Page): Promis
   })
 }
 
-async function dataApiHeaders(page: import('@playwright/test').Page): Promise<Record<string, string>> {
-  const api = previewApi()
+async function dataApiHeaders(
+  page: import('@playwright/test').Page,
+  targetApi = previewApi(),
+): Promise<Record<string, string>> {
   const token = await sessionAccessToken(page)
   expect(token, 'a sessao do navegador precisa ter um token para falar com a Data API').not.toBe('')
-  return { apikey: api.anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  return { apikey: targetApi.anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
 
 const productPhotoTestProductId = '10000000-0000-4000-8000-000000000001'
@@ -748,11 +751,68 @@ function productPhotoStoragePath(): string {
   return `products/${productPhotoTestProductId}/${randomUUID()}.webp`
 }
 
+let productPhotoPreviewUrlPromise: Promise<string | undefined> | undefined
+
+function productPhotoPreviewUrl(): Promise<string | undefined> {
+  if (productPhotoPreviewUrlPromise) return productPhotoPreviewUrlPromise
+  productPhotoPreviewUrlPromise = (async () => {
+    if (process.env.GITHUB_EVENT_NAME !== 'pull_request' || !process.env.GITHUB_EVENT_PATH) {
+      return undefined
+    }
+
+    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) as {
+      pull_request?: { head?: { sha?: string } }
+      repository?: { full_name?: string }
+    }
+    const repository = process.env.GITHUB_REPOSITORY ?? event.repository?.full_name
+    const headSha = event.pull_request?.head?.sha
+    if (!repository || !headSha) throw new Error('O evento da PR nao informou repositorio e commit para localizar o preview.')
+
+    const deployments = await fetch(
+      `https://api.github.com/repos/${repository}/deployments?sha=${headSha}&environment=Preview&per_page=10`,
+      { headers: { Accept: 'application/vnd.github+json' } },
+    )
+    if (!deployments.ok) throw new Error(`O GitHub respondeu ${deployments.status} ao localizar o preview da PR.`)
+    const rows = await deployments.json() as { id?: number }[]
+
+    for (const deployment of rows) {
+      if (!deployment.id) continue
+      const statuses = await fetch(
+        `https://api.github.com/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
+        { headers: { Accept: 'application/vnd.github+json' } },
+      )
+      if (!statuses.ok) continue
+      const statusRows = await statuses.json() as { state?: string; environment_url?: string }[]
+      const ready = statusRows.find(status => status.state === 'success' && status.environment_url)
+      if (ready?.environment_url) return ready.environment_url
+    }
+
+    throw new Error('A Vercel ainda nao publicou um preview verde para o commit atual da PR.')
+  })()
+  return productPhotoPreviewUrlPromise
+}
+
+async function enterProductPhotoPreview(
+  page: import('@playwright/test').Page,
+  email: string,
+): Promise<{ url: string; anonKey: string }> {
+  const previewUrl = await productPhotoPreviewUrl()
+  const apiRequest = page.waitForRequest(
+    request => request.url().includes('.supabase.co/') && Boolean(request.headers().apikey),
+    { timeout: 15_000 },
+  )
+  await enterWithPreviewAccount(page, email, previewUrl)
+  const request = await apiRequest
+  const requestUrl = new URL(request.url())
+  return { url: requestUrl.origin, anonKey: request.headers().apikey }
+}
+
 async function clearProductPhoto(
   page: import('@playwright/test').Page,
   headers: Record<string, string>,
+  api: { url: string },
 ): Promise<import('@playwright/test').APIResponse> {
-  return page.request.post(`${previewApi().url}/rest/v1/rpc/clear_product_photo`, {
+  return page.request.post(`${api.url}/rest/v1/rpc/clear_product_photo`, {
     headers,
     data: { p_product_id: productPhotoTestProductId },
   })
@@ -761,18 +821,18 @@ async function clearProductPhoto(
 async function deleteProductPhotoFile(
   page: import('@playwright/test').Page,
   headers: Record<string, string>,
+  api: { url: string },
   storagePath: string,
 ): Promise<import('@playwright/test').APIResponse> {
-  return page.request.delete(`${previewApi().url}/storage/v1/object/product-photos`, {
+  return page.request.delete(`${api.url}/storage/v1/object/product-photos`, {
     headers,
     data: { prefixes: [storagePath] },
   })
 }
 
 test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.admin)
-  const api = previewApi()
-  const headers = await dataApiHeaders(page)
+  const api = await enterProductPhotoPreview(page, previewAccounts.admin)
+  const headers = await dataApiHeaders(page, api)
   const storagePath = productPhotoStoragePath()
   const objectUrl = `${api.url}/storage/v1/object/authenticated/product-photos/${storagePath}`
   let uploaded = false
@@ -806,16 +866,16 @@ test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API',
 
     // O Storage pode responder 200 mesmo quando a RLS não apagou linha alguma.
     // Por isso a prova é reler o arquivo enquanto ele ainda é a foto principal.
-    await deleteProductPhotoFile(page, headers, storagePath)
+    await deleteProductPhotoFile(page, headers, api, storagePath)
     const stillLinked = await page.request.get(objectUrl, { headers })
     expect(stillLinked.ok(), 'a foto principal nao pode ser apagada enquanto estiver vinculada').toBe(true)
 
-    const clear = await clearProductPhoto(page, headers)
+    const clear = await clearProductPhoto(page, headers, api)
     expect(clear.ok(), `desvinculo da foto respondeu ${clear.status()}: ${await clear.text()}`).toBe(true)
     expect(await clear.json()).toBe(storagePath)
     linked = false
 
-    const remove = await deleteProductPhotoFile(page, headers, storagePath)
+    const remove = await deleteProductPhotoFile(page, headers, api, storagePath)
     expect(remove.ok(), `exclusao da foto respondeu ${remove.status()}: ${await remove.text()}`).toBe(true)
     uploaded = false
 
@@ -827,15 +887,14 @@ test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API',
     )
     expect(await removedPointer.json()).toEqual([])
   } finally {
-    if (linked) await clearProductPhoto(page, headers)
-    if (uploaded) await deleteProductPhotoFile(page, headers, storagePath)
+    if (linked) await clearProductPhoto(page, headers, api)
+    if (uploaded) await deleteProductPhotoFile(page, headers, api, storagePath)
   }
 })
 
 test('Vendas JA nao envia foto de produto pela Storage API', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
-  const api = previewApi()
-  const headers = await dataApiHeaders(page)
+  const api = await enterProductPhotoPreview(page, previewAccounts.vendasJa)
+  const headers = await dataApiHeaders(page, api)
   const storagePath = productPhotoStoragePath()
   const upload = await page.request.post(
     `${api.url}/storage/v1/object/product-photos/${storagePath}`,
