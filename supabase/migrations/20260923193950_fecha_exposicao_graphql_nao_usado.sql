@@ -1,0 +1,6 @@
+-- Migration mantida sem comandos para preservar o histórico já registrado no
+-- banco isolado desta PR. A tentativa original de revogar privilégios não era
+-- efetiva porque os objetos de pg_graphql pertencem a supabase_admin.
+--
+-- A despublicação do endpoint é feita pela lista [api].schemas em
+-- supabase/config.toml e aplicada em produção pelo workflow Banco (migrations).

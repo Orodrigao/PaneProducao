@@ -9,7 +9,10 @@ on:
     branches: [main]
     paths:
       - "supabase/migrations/**"
+      - "supabase/config.toml"
       - ".github/workflows/banco.yml"
+      - "scripts/supabase-api-config.mjs"
+      - "scripts/supabase-api-config.test.mjs"
 
 concurrency:
   group: banco-producao
@@ -26,6 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: supabase/setup-cli@v3
         with:
           version: 2.109.1
@@ -38,3 +45,9 @@ jobs:
 
       - name: Aplicar migrations
         run: supabase db push --include-all
+
+      # Atualiza somente a lista de schemas expostos. `supabase config push`
+      # não é usado aqui porque o config.toml também contém valores locais de
+      # Auth; enviar o arquivo inteiro poderia sobrescrever a configuração real.
+      - name: Aplicar configuração da Data API
+        run: node scripts/supabase-api-config.mjs
