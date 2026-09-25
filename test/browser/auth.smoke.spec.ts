@@ -783,8 +783,8 @@ function productPhotoPreviewUrl(): Promise<string | undefined> {
       )
       if (!statuses.ok) continue
       const statusRows = await statuses.json() as { state?: string; environment_url?: string }[]
-      const ready = statusRows.find(status => status.state === 'success' && status.environment_url)
-      if (ready?.environment_url) return ready.environment_url
+      const latest = statusRows[0]
+      if (latest?.state === 'success' && latest.environment_url) return latest.environment_url
     }
 
     throw new Error('A Vercel ainda nao publicou um preview verde para o commit atual da PR.')
