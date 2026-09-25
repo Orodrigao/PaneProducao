@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
 test.use({
@@ -736,6 +737,118 @@ async function dataApiHeaders(page: import('@playwright/test').Page): Promise<Re
   expect(token, 'a sessao do navegador precisa ter um token para falar com a Data API').not.toBe('')
   return { apikey: api.anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
+
+const productPhotoTestProductId = '10000000-0000-4000-8000-000000000001'
+const onePixelWebp = Buffer.from(
+  'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEALmk0mk0iIiIiIgBoSygABc6zbAAA',
+  'base64',
+)
+
+function productPhotoStoragePath(): string {
+  return `products/${productPhotoTestProductId}/${randomUUID()}.webp`
+}
+
+async function clearProductPhoto(
+  page: import('@playwright/test').Page,
+  headers: Record<string, string>,
+): Promise<import('@playwright/test').APIResponse> {
+  return page.request.post(`${previewApi().url}/rest/v1/rpc/clear_product_photo`, {
+    headers,
+    data: { p_product_id: productPhotoTestProductId },
+  })
+}
+
+async function deleteProductPhotoFile(
+  page: import('@playwright/test').Page,
+  headers: Record<string, string>,
+  storagePath: string,
+): Promise<import('@playwright/test').APIResponse> {
+  return page.request.delete(`${previewApi().url}/storage/v1/object/product-photos`, {
+    headers,
+    data: { prefixes: [storagePath] },
+  })
+}
+
+test('Administrador envia, vincula, desvincula e apaga a foto pela Storage API', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.admin)
+  const api = previewApi()
+  const headers = await dataApiHeaders(page)
+  const storagePath = productPhotoStoragePath()
+  const objectUrl = `${api.url}/storage/v1/object/authenticated/product-photos/${storagePath}`
+  let uploaded = false
+  let linked = false
+
+  try {
+    const upload = await page.request.post(
+      `${api.url}/storage/v1/object/product-photos/${storagePath}`,
+      {
+        headers: { ...headers, 'Content-Type': 'image/webp', 'x-upsert': 'false' },
+        data: onePixelWebp,
+      },
+    )
+    expect(upload.ok(), `upload da foto respondeu ${upload.status()}: ${await upload.text()}`).toBe(true)
+    uploaded = true
+
+    const link = await page.request.post(`${api.url}/rest/v1/rpc/set_product_photo`, {
+      headers,
+      data: { p_product_id: productPhotoTestProductId, p_storage_path: storagePath },
+    })
+    expect(link.ok(), `vinculo da foto respondeu ${link.status()}: ${await link.text()}`).toBe(true)
+    expect(await link.json()).toBeNull()
+    linked = true
+
+    const pointer = await page.request.get(
+      `${api.url}/rest/v1/product_photos?product_id=eq.${productPhotoTestProductId}&select=storage_path`,
+      { headers },
+    )
+    expect(pointer.ok()).toBe(true)
+    expect(await pointer.json()).toEqual([{ storage_path: storagePath }])
+
+    // O Storage pode responder 200 mesmo quando a RLS não apagou linha alguma.
+    // Por isso a prova é reler o arquivo enquanto ele ainda é a foto principal.
+    await deleteProductPhotoFile(page, headers, storagePath)
+    const stillLinked = await page.request.get(objectUrl, { headers })
+    expect(stillLinked.ok(), 'a foto principal nao pode ser apagada enquanto estiver vinculada').toBe(true)
+
+    const clear = await clearProductPhoto(page, headers)
+    expect(clear.ok(), `desvinculo da foto respondeu ${clear.status()}: ${await clear.text()}`).toBe(true)
+    expect(await clear.json()).toBe(storagePath)
+    linked = false
+
+    const remove = await deleteProductPhotoFile(page, headers, storagePath)
+    expect(remove.ok(), `exclusao da foto respondeu ${remove.status()}: ${await remove.text()}`).toBe(true)
+    uploaded = false
+
+    const removedFile = await page.request.get(objectUrl, { headers })
+    expect([400, 404], `arquivo apagado respondeu ${removedFile.status()}`).toContain(removedFile.status())
+    const removedPointer = await page.request.get(
+      `${api.url}/rest/v1/product_photos?product_id=eq.${productPhotoTestProductId}&select=storage_path`,
+      { headers },
+    )
+    expect(await removedPointer.json()).toEqual([])
+  } finally {
+    if (linked) await clearProductPhoto(page, headers)
+    if (uploaded) await deleteProductPhotoFile(page, headers, storagePath)
+  }
+})
+
+test('Vendas JA nao envia foto de produto pela Storage API', async ({ page }) => {
+  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  const api = previewApi()
+  const headers = await dataApiHeaders(page)
+  const storagePath = productPhotoStoragePath()
+  const upload = await page.request.post(
+    `${api.url}/storage/v1/object/product-photos/${storagePath}`,
+    {
+      headers: { ...headers, 'Content-Type': 'image/webp', 'x-upsert': 'false' },
+      data: onePixelWebp,
+    },
+  )
+
+  expect(upload.ok(), `Vendas JA recebeu ${upload.status()} ao tentar enviar foto`).toBe(false)
+  expect([400, 401, 403]).toContain(upload.status())
+  expect((await upload.text()).toLowerCase()).toContain('row-level security')
+})
 
 async function skipWithoutImportDraftsTable(page: import('@playwright/test').Page, headers: Record<string, string>) {
   const probe = await page.request.get(`${previewApi().url}/rest/v1/payable_import_drafts?select=id&limit=1`, { headers })
