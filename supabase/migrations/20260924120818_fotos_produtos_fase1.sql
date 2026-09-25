@@ -112,6 +112,7 @@ for delete to authenticated
 using (
   bucket_id = 'product-photos'
   and (select private.current_user_has_permission('catalogo.gerenciar_fotos', '*'))
+  and owner_id::text = (select auth.uid())::text
   and name ~ '^products/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$'
   and not exists (
     select 1
@@ -149,13 +150,14 @@ after insert or update or delete on public.product_photos
 for each row execute function private.audit_product_photo_change();
 
 create function public.set_product_photo(p_product_id uuid, p_storage_path text)
-returns void
+returns text
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   v_actor_id uuid := (select auth.uid());
+  v_previous_storage_path text;
 begin
   if v_actor_id is null
     or not (select private.current_user_has_permission('catalogo.gerenciar_fotos', '*')) then
@@ -170,9 +172,18 @@ begin
     raise exception using errcode = '22023', message = 'Caminho da foto inválido para este produto.';
   end if;
 
-  if not exists (select 1 from public.products product where product.id = p_product_id) then
+  perform 1
+  from public.products product
+  where product.id = p_product_id
+  for update;
+  if not found then
     raise exception using errcode = '22023', message = 'Produto não encontrado.';
   end if;
+
+  select photo.storage_path
+  into v_previous_storage_path
+  from public.product_photos photo
+  where photo.product_id = p_product_id;
 
   if not exists (
     select 1
@@ -185,12 +196,19 @@ begin
     raise exception using errcode = '22023', message = 'A foto precisa ser enviada em WebP por quem fará a associação.';
   end if;
 
+  if v_previous_storage_path is not distinct from p_storage_path then
+    return null;
+  end if;
+
   insert into public.product_photos (product_id, storage_path, created_by, updated_by)
   values (p_product_id, p_storage_path, v_actor_id, v_actor_id)
   on conflict (product_id) do update set
     storage_path = excluded.storage_path,
     updated_by = excluded.updated_by,
-    updated_at = now();
+    updated_at = now()
+  where product_photos.storage_path is distinct from excluded.storage_path;
+
+  return v_previous_storage_path;
 end;
 $$;
 

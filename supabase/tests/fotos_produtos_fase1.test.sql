@@ -61,25 +61,55 @@ values ('product-photos', 'products/f2400000-0000-4000-8000-000000000010/f240000
 insert into storage.objects (bucket_id, name, owner_id, metadata)
 values ('product-photos', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp',
   'f2400000-0000-4000-8000-000000000050', '{"mimetype":"image/webp"}');
-select lives_ok(
-  $$select public.set_product_photo('f2400000-0000-4000-8000-000000000010', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp')$$,
-  'gestor explicitamente autorizado associa o próprio arquivo WebP');
+select is(public.set_product_photo(
+  'f2400000-0000-4000-8000-000000000010',
+  'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp'
+), null::text, 'a primeira associação não tem arquivo anterior para limpar');
+select is(public.set_product_photo(
+  'f2400000-0000-4000-8000-000000000010',
+  'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp'
+), null::text, 'repetir a mesma associação é idempotente e não devolve o arquivo atual para limpeza');
 select is((select storage_path from public.product_photos where product_id = 'f2400000-0000-4000-8000-000000000010'),
   'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
   'a foto fica vinculada pelo ID imutável do produto, não pelo nome');
 reset role;
+select is((select count(*)::integer from private.product_photo_audit
+  where product_id = 'f2400000-0000-4000-8000-000000000010'), 1,
+  'repetir a mesma associação não inventa uma substituição na auditoria');
 select ok(exists (
   select 1 from private.product_photo_audit
   where product_id = 'f2400000-0000-4000-8000-000000000010'
     and action = 'add'
 ), 'a inclusão gera trilha de auditoria no banco');
 set local role authenticated;
+select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000050', true);
+select is(public.set_product_photo(
+  'f2400000-0000-4000-8000-000000000010',
+  'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp'
+), 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
+  'a substituição devolve exatamente o arquivo anterior para limpeza pelo Storage API');
+reset role;
+select ok(exists (
+  select 1 from private.product_photo_audit
+  where product_id = 'f2400000-0000-4000-8000-000000000010'
+    and action = 'replace'
+    and old_storage_path like '%000000000100.webp'
+    and new_storage_path like '%000000000101.webp'
+), 'a substituição registra os dois caminhos na auditoria');
+set local role authenticated;
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000052', true);
 select throws_ok(
-  $$select public.set_product_photo('f2400000-0000-4000-8000-000000000010', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp')$$,
+  $$select public.set_product_photo('f2400000-0000-4000-8000-000000000010', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp')$$,
   '22023', 'A foto precisa ser enviada em WebP por quem fará a associação.',
   'outro gestor não associa arquivo enviado por outra pessoa');
+delete from storage.objects
+where bucket_id = 'product-photos'
+  and name = 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp';
+reset role;
+select is((select count(*)::integer from storage.objects where bucket_id = 'product-photos'), 2,
+  'outro gestor não apaga o upload órfão de quem enviou');
+set local role authenticated;
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000051', true);
 select is((select count(*)::integer from public.product_photos where product_id = 'f2400000-0000-4000-8000-000000000010'), 1,
@@ -93,7 +123,7 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000050', true);
 select is(public.clear_product_photo('f2400000-0000-4000-8000-000000000010'),
-  'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp',
+  'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp',
   'remoção devolve o caminho para a limpeza posterior pelo Storage API');
 reset role;
 select ok(exists (
