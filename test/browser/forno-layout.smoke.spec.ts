@@ -94,10 +94,10 @@ test('Forno mantém cartões, editor e escolha do dia acessíveis em várias lar
   await expectResponsiveLayout(page)
 
   await card.getByRole('button', { name: 'Ajustar ou informar perda' }).click()
-  await expect(card.getByLabel('Saída boa')).toBeVisible()
-  await expect(card.getByLabel('Perda no forno')).toBeVisible()
+  await expect(card.getByRole('spinbutton', { name: 'Saída boa' })).toBeVisible()
+  await expect(card.getByRole('spinbutton', { name: 'Perda no forno' })).toBeVisible()
   await card.getByRole('button', { name: 'Cancelar', exact: true }).click()
-  await expect(card.getByLabel('Saída boa')).toHaveCount(0)
+  await expect(card.getByRole('spinbutton', { name: 'Saída boa' })).toHaveCount(0)
 })
 
 test('Forno diferencia uma saída já confirmada', async ({ page }) => {
