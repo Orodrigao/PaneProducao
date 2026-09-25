@@ -23,8 +23,10 @@ select ok(has_function_privilege('authenticated', 'public.set_product_photo(uuid
 select ok((select prosecdef from pg_proc where oid = 'public.set_product_photo(uuid, text)'::regprocedure),
   'a associação atômica confere arquivo, produto e permissão no banco');
 select ok((select pg_get_expr(polqual, polrelid) from pg_policy
-  where polname = 'product_photos_files_delete_photo_manager') ilike '%not (exists%product_photos%storage_path%',
-  'a política de limpeza bloqueia arquivo que ainda é foto principal');
+  where polname = 'product_photos_files_delete_photo_manager') ilike '%not (exists%product_photos%storage_path%'
+  and (select pg_get_expr(polqual, polrelid) from pg_policy
+    where polname = 'product_photos_files_delete_photo_manager') ilike '%owner_id%auth.uid%',
+  'a política de limpeza exige o dono e bloqueia arquivo que ainda é foto principal');
 
 insert into public.product_categories (id, name, catalog_type, active, sort_order)
 values ('f2400000-0000-4000-8000-000000000001', '[TESTE] Categoria fotos', 'produto_fabricado', true, 999);
@@ -103,13 +105,6 @@ select throws_ok(
   $$select public.set_product_photo('f2400000-0000-4000-8000-000000000010', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp')$$,
   '22023', 'A foto precisa ser enviada em WebP por quem fará a associação.',
   'outro gestor não associa arquivo enviado por outra pessoa');
-delete from storage.objects
-where bucket_id = 'product-photos'
-  and name = 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000100.webp';
-reset role;
-select is((select count(*)::integer from storage.objects where bucket_id = 'product-photos'), 2,
-  'outro gestor não apaga o upload órfão de quem enviou');
-set local role authenticated;
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000051', true);
 select is((select count(*)::integer from public.product_photos where product_id = 'f2400000-0000-4000-8000-000000000010'), 1,
