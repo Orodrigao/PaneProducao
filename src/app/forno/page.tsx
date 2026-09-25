@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Check, LoaderCircle, Minus, Pencil, Plus } from 'lucide-react'
+import { AlertTriangle, Check, Flame, LoaderCircle, Minus, Pencil, Plus, Wheat } from 'lucide-react'
 import { getCurrentUserAsync, roleColor, type Role } from '@/lib/auth'
 import {
   aggregateConfirmedReuse,
@@ -21,6 +21,7 @@ import {
 } from '@/lib/ovenProduction'
 import { supabase } from '@/lib/supabase'
 import { formatDateBR, showToast, todayKey } from '@/lib/utils'
+import styles from './page.module.css'
 
 interface OrderRow {
   id: string
@@ -529,25 +530,38 @@ export default function FornoPage() {
           )}
         </header>
 
-        <main className="ps-pad ps-oven-page">
-          <p className="ps-forno-intro">
-            Confira o previsto e confirme somente o que saiu bom do forno.
-          </p>
+        <main className={`ps-pad ps-oven-page ${styles.page}`}>
+          <section className={styles.hero} aria-labelledby="oven-title">
+            <div className={styles.heroCopy}>
+              <span className={styles.eyebrow}><Flame size={14} aria-hidden="true" /> Produção do dia</span>
+              <h1 id="oven-title" className={styles.title}>Forno</h1>
+              <p className={styles.lead}>Confira o previsto e confirme somente o que saiu bom do forno.</p>
+            </div>
+            <div className={styles.selectedDate}>
+              <span>Dia selecionado</span>
+              <strong>{formatDateBR(date)}</strong>
+            </div>
+          </section>
 
-          <div className="ps-label">Dia</div>
-          <div className="ps-days" role="group" aria-label="Data da produção">
-            {dateOptions.map((option, index) => (
-              <button
-                type="button"
-                key={option}
-                className="ps-day"
-                aria-pressed={option === date}
-                onClick={() => setDate(option)}
-              >
-                {index === 0 ? 'Hoje' : index === 1 ? 'Ontem' : formatDayShort(option)}
-              </button>
-            ))}
-          </div>
+          <section className={styles.datePicker} aria-label="Escolher dia da produção">
+            <div className={styles.pickerHeading}>
+              <span className={styles.eyebrow}>Acompanhar produção</span>
+              <strong>Escolha o dia</strong>
+            </div>
+            <div className={`ps-days ${styles.days}`} role="group" aria-label="Data da produção">
+              {dateOptions.map((option, index) => (
+                <button
+                  type="button"
+                  key={option}
+                  className={`ps-day ${styles.dayButton}`}
+                  aria-pressed={option === date}
+                  onClick={() => setDate(option)}
+                >
+                  {index === 0 ? 'Hoje' : index === 1 ? 'Ontem' : formatDayShort(option)}
+                </button>
+              ))}
+            </div>
+          </section>
 
           {loadError ? (
             <div className="ps-oven-error" role="alert">
@@ -559,13 +573,13 @@ export default function FornoPage() {
             <div className="ps-empty">Nenhum produto de Forno previsto para {formatDateBR(date)}.</div>
           ) : (
             <>
-              <div className="ps-section">
+              <div className={`ps-section ${styles.sectionHeading}`}>
                 <div className="bar" />
                 <b>Saída do forno</b>
                 <span className="meta">{confirmedCount}/{products.length} confirmados</span>
               </div>
 
-              <div className="ps-grid">
+              <div className={`ps-grid ${styles.productGrid}`}>
                 {products.map(product => {
                   const productKey = product.key
                   const planned = plannedMap.get(productKey) ?? 0
@@ -592,12 +606,15 @@ export default function FornoPage() {
                   return (
                     <article
                       key={productKey}
-                      className={`ps-card ps-oven-card${actual ? ' confirmed' : ''}`}
+                      className={`ps-card ps-oven-card ${styles.productCard}${actual ? ' confirmed' : ''}`}
                     >
                       <div className="ps-oven-card-head">
-                        <div>
-                          <div className="ps-pname">{product.name}</div>
-                          <div className="ps-oven-lot">Lote {lotCode}</div>
+                        <div className={styles.productIdentity}>
+                          <span className={styles.productIcon} aria-hidden="true"><Wheat size={20} strokeWidth={1.8} /></span>
+                          <div>
+                            <div className="ps-pname">{product.name}</div>
+                            <div className="ps-oven-lot">Lote {lotCode}</div>
+                          </div>
                         </div>
                         <div className="ps-oven-planned">
                           <span>Previsto</span>
