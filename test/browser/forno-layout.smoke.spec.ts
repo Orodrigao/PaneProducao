@@ -64,10 +64,13 @@ async function expectResponsiveLayout(page: import('@playwright/test').Page) {
     )
     expect(hasNoHorizontalOverflow, `sem rolagem horizontal em ${viewport.width}px`).toBe(true)
 
-    const dateButtonsHaveTouchSize = await dateGroup.getByRole('button').evaluateAll(
-      buttons => buttons.every(button => button.getBoundingClientRect().height >= 44),
+    const dateButtonHeights = await dateGroup.getByRole('button').evaluateAll(
+      buttons => buttons.map(button => Math.round(button.getBoundingClientRect().height)),
     )
-    expect(dateButtonsHaveTouchSize, `alvos de toque com pelo menos 44px em ${viewport.width}px`).toBe(true)
+    expect(
+      dateButtonHeights.every(height => height >= 44),
+      `alvos de toque com pelo menos 44px em ${viewport.width}px; alturas: ${dateButtonHeights.join(', ')}`,
+    ).toBe(true)
   }
 }
 

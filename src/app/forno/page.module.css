@@ -110,7 +110,9 @@
 .days { min-width: 0; }
 
 .dayButton {
+  height: 46px;
   min-height: 44px;
+  flex-shrink: 0;
   border-color: transparent;
   border-radius: 11px;
   color: var(--oven-muted);
