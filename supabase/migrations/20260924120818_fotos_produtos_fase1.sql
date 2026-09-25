@@ -52,6 +52,24 @@ alter table public.product_photos force row level security;
 alter table private.product_photo_audit enable row level security;
 alter table private.product_photo_audit force row level security;
 
+create function private.current_user_can_cleanup_product_photo(p_storage_path text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from private.product_photo_audit audit
+    where audit.actor_id = (select auth.uid())
+      and audit.old_storage_path = p_storage_path
+  );
+$$;
+
+revoke all on function private.current_user_can_cleanup_product_photo(text) from public;
+grant execute on function private.current_user_can_cleanup_product_photo(text) to authenticated;
+
 revoke all on table public.product_photos from public, anon, authenticated;
 grant select on table public.product_photos to authenticated;
 revoke all on table private.product_photo_audit from public, anon, authenticated;
@@ -94,6 +112,23 @@ using (
   )
 );
 
+create policy product_photos_files_select_photo_manager_cleanup on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'product-photos'
+  and (select private.current_user_has_permission('catalogo.gerenciar_fotos', '*'))
+  and name ~ '^products/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$'
+  and not exists (
+    select 1
+    from public.product_photos photo
+    where photo.storage_path = storage.objects.name
+  )
+  and (
+    owner_id::text = (select auth.uid())::text
+    or (select private.current_user_can_cleanup_product_photo(storage.objects.name))
+  )
+);
+
 create policy product_photos_files_insert_photo_manager on storage.objects
 for insert to authenticated
 with check (
@@ -112,12 +147,15 @@ for delete to authenticated
 using (
   bucket_id = 'product-photos'
   and (select private.current_user_has_permission('catalogo.gerenciar_fotos', '*'))
-  and owner_id::text = (select auth.uid())::text
   and name ~ '^products/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$'
   and not exists (
     select 1
     from public.product_photos photo
     where photo.storage_path = storage.objects.name
+  )
+  and (
+    owner_id::text = (select auth.uid())::text
+    or (select private.current_user_can_cleanup_product_photo(storage.objects.name))
   )
 );
 

@@ -22,11 +22,20 @@ select ok(has_function_privilege('authenticated', 'public.set_product_photo(uuid
   'só usuário logado pode chamar as portas de foto, sujeitas à conferência interna');
 select ok((select prosecdef from pg_proc where oid = 'public.set_product_photo(uuid, text)'::regprocedure),
   'a associação atômica confere arquivo, produto e permissão no banco');
+select ok((select prosecdef from pg_proc where oid = 'private.current_user_can_cleanup_product_photo(text)'::regprocedure)
+  and (select coalesce(array_to_string(proconfig, ','), '') from pg_proc
+    where oid = 'private.current_user_can_cleanup_product_photo(text)'::regprocedure) ilike '%search_path=%',
+  'a autorização de limpeza consulta a auditoria sem expô-la ao cliente');
 select ok((select pg_get_expr(polqual, polrelid) from pg_policy
   where polname = 'product_photos_files_delete_photo_manager') ilike '%not (exists%product_photos%storage_path%'
   and (select pg_get_expr(polqual, polrelid) from pg_policy
-    where polname = 'product_photos_files_delete_photo_manager') ilike '%owner_id%auth.uid%',
-  'a política de limpeza exige o dono e bloqueia arquivo que ainda é foto principal');
+    where polname = 'product_photos_files_delete_photo_manager') ilike '%owner_id%auth.uid%current_user_can_cleanup_product_photo%',
+  'a limpeza aceita o dono ou quem desvinculou a foto, mas bloqueia arquivo ainda associado');
+select ok((select pg_get_expr(polqual, polrelid) from pg_policy
+  where polname = 'product_photos_files_select_photo_manager_cleanup') ilike '%owner_id%auth.uid%current_user_can_cleanup_product_photo%'
+  and (select pg_get_expr(polqual, polrelid) from pg_policy
+    where polname = 'product_photos_files_select_photo_manager_cleanup') ilike '%not (exists%product_photos%storage_path%',
+  'a Storage API pode ler para excluir apenas upload próprio ou foto que o gestor desvinculou');
 
 insert into public.product_categories (id, name, catalog_type, active, sort_order)
 values ('f2400000-0000-4000-8000-000000000001', '[TESTE] Categoria fotos', 'produto_fabricado', true, 999);
@@ -105,6 +114,8 @@ select throws_ok(
   $$select public.set_product_photo('f2400000-0000-4000-8000-000000000010', 'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp')$$,
   '22023', 'A foto precisa ser enviada em WebP por quem fará a associação.',
   'outro gestor não associa arquivo enviado por outra pessoa');
+select is((select count(*)::integer from storage.objects where bucket_id = 'product-photos'), 1,
+  'outro gestor não lê o upload órfão nem ganha acesso só por ter a permissão');
 
 select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000051', true);
 select is((select count(*)::integer from public.product_photos where product_id = 'f2400000-0000-4000-8000-000000000010'), 1,
@@ -116,10 +127,18 @@ select throws_ok(
   '42501', 'Sem permissão para gerenciar fotos de produtos.',
   'perfil sem a permissão explícita não remove a foto');
 
-select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000050', true);
+select set_config('request.jwt.claim.sub', 'f2400000-0000-4000-8000-000000000052', true);
 select is(public.clear_product_photo('f2400000-0000-4000-8000-000000000010'),
   'products/f2400000-0000-4000-8000-000000000010/f2400000-0000-4000-8000-000000000101.webp',
-  'remoção devolve o caminho para a limpeza posterior pelo Storage API');
+  'outro gestor autorizado pode remover o vínculo e recebe o caminho para a Storage API');
+select is((select count(*)::integer from storage.objects
+    where bucket_id = 'product-photos'
+      and name like '%000000000101.webp'), 1,
+  'quem desvinculou consegue ler a foto anterior para a exclusão pela Storage API');
+select is((select count(*)::integer from storage.objects
+    where bucket_id = 'product-photos'
+      and name like '%000000000100.webp'), 0,
+  'quem desvinculou não ganha acesso a outro órfão enviado por outra pessoa');
 reset role;
 select ok(exists (
   select 1 from private.product_photo_audit
