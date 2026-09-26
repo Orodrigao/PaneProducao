@@ -28,6 +28,16 @@ incorporada à `main`.
   exige a PR atualizada com a `main` antes do merge
   (`strict_required_status_checks_policy: false`): atualizar a base depois do
   merge de outro agente é regra escrita, não trava.
+- **Fechando a lacuna (autorizado pelo Rodrigo em 26/09/2026):** entram na
+  trava `Aplicar história completa num banco limpo` (job do `CI Banco`) e
+  `Apontar o preview para o banco desta PR` (job do `Banco por PR`). Para isso
+  o `CI Banco` passou a rodar em toda PR (o ensaio só quando a PR mexe em
+  banco); com o filtro antigo, PR sem banco nunca receberia o check e ficaria
+  esperando para sempre. A trava muda só depois que essa mudança estiver na
+  `main`; até lá, a lista de três checks acima continua valendo.
+  `Usuarios do Banco por PR` fica de fora enquanto puder correr antes de o
+  banco da PR ficar pronto (falha observada em 03/09/2026, mais abaixo):
+  obrigatório, ele travaria merges por essa corrida.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
   portaria e de coordenação e as skills de função — vivem no repositório
   `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta

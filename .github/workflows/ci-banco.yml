@@ -3,18 +3,14 @@ name: CI Banco (ensaio de migrations)
 # Toda migration é executada num Supabase local descartável antes de chegar
 # perto de produção: o PR só fica verde se a história inteira do schema
 # (baseline + migrations novas) aplicar limpa num banco nascido do zero.
+#
+# Roda em TODA PR, sem filtro `paths:`, porque o job é check exigido na trava
+# da `main`. Com filtro, PR que não mexe em banco nunca receberia o check e
+# ficaria esperando para sempre. Quem escolhe se o ensaio roda é o primeiro
+# passo, com a mesma lista que o filtro tinha.
 
 on:
   pull_request:
-    paths:
-      - "supabase/migrations/**"
-      - "supabase/tests/**"
-      - "supabase/tests-local/**"
-      - "supabase/seed.sql"
-      - "supabase/config.toml"
-      - "scripts/verify-preview-seed-repeatability.mjs"
-      - "scripts/verify-preview-seed-repeatability.test.mjs"
-      - ".github/workflows/ci-banco.yml"
 
 jobs:
   ensaio:
@@ -22,34 +18,80 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Mesma lista do antigo filtro `paths:`. Mudou aqui, mude em
+      # docs/regras/BANCO.md.
+      CAMINHOS_DO_BANCO: '^(supabase/(migrations|tests|tests-local)/|supabase/seed\.sql$|supabase/config\.toml$|scripts/verify-preview-seed-repeatability(\.test)?\.mjs$|\.github/workflows/ci-banco\.yml$)'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # O merge-base abaixo precisa da história da base e da PR.
+          fetch-depth: 0
+
+      # Falha FECHADA: erro aqui deixa o job vermelho, e resposta que não seja
+      # "false" roda o ensaio. Só "false" explícito dispensa. `--no-renames`
+      # conta os dois lados de um arquivo movido, como o filtro `paths:`. O
+      # `grep` lê de here-string, não de pipe: com `pipefail`, um pipe que o
+      # `grep -q` fecha cedo poderia virar "false" numa PR grande.
+      - name: Descobrir se a PR mexe em banco
+        id: escopo
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          inicio="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          arquivos="$(git diff --no-renames --name-only "$inicio" "$HEAD_SHA")"
+          set +e
+          grep -qE "$CAMINHOS_DO_BANCO" <<< "$arquivos"
+          achou=$?
+          set -e
+          case "$achou" in
+            0) banco=true ;;
+            1) banco=false ;;
+            *) echo "::error::Falha ao conferir a lista de arquivos (grep saiu com $achou)."; exit 1 ;;
+          esac
+          echo "banco=$banco" >> "$GITHUB_OUTPUT"
+          echo "Mexe em banco: $banco"
+
+      - name: Dispensar o ensaio
+        if: steps.escopo.outputs.banco == 'false'
+        run: echo "Esta PR não mexe em banco; o ensaio não precisa rodar." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@v4
+        if: steps.escopo.outputs.banco != 'false'
         with:
           node-version: 22
 
       - uses: supabase/setup-cli@v3
+        if: steps.escopo.outputs.banco != 'false'
         with:
           version: 2.109.1
 
       - name: Subir Postgres local
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase db start
 
       - name: Aplicar todas as migrations do zero
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase db reset --local
 
       - name: Provar que o seed sobrevive a virada do dia
+        if: steps.escopo.outputs.banco != 'false'
         run: node scripts/verify-preview-seed-repeatability.mjs
 
       - name: Verificar invariantes estruturais (pgTAP)
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db
 
       - name: Provar concorrencia real da programacao PJ
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/pj_production_lock_concurrency.test.sql
 
       - name: Provar concorrencia real da importacao pendente de NF-e
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql
 
       - name: Provar idempotencia financeira sob concorrencia real
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql
