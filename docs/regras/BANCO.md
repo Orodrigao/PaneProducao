@@ -42,12 +42,13 @@ A Action `Banco (migrations)` é o único caminho do schema até produção.
   mas o **ensaio só roda** quando a PR toca
   `supabase/migrations/`, `supabase/tests/`, `supabase/tests-local/`,
   `supabase/seed.sql`, `supabase/config.toml`, o verificador de repetição do
-  seed (`scripts/verify-preview-seed-repeatability.mjs` e seu teste) ou o
-  próprio `.github/workflows/ci-banco.yml` — a lista vale pelo que está em
-  `CAMINHOS_DO_BANCO` no workflow. Nas outras PRs o check fica verde em
-  segundos, com o aviso "ensaio dispensado"; se não conseguir ler a lista de
-  arquivos, fica vermelho em vez de dispensar. Quando o ensaio roda, é ele quem
-  precisa estar verde. O
+  seed (`scripts/verify-preview-seed-repeatability.mjs` e seu teste), o
+  próprio `.github/workflows/ci-banco.yml` ou o script que decide
+  (`scripts/ci-banco-escopo.mjs`) — a lista vale pelo que está nesse script,
+  testado no `npm test`. Nas outras PRs o check fica verde sem rodar o ensaio,
+  com o aviso "Ensaio dispensado" no resumo do job; se não conseguir ler a
+  lista de arquivos da PR, fica vermelho em vez de dispensar. Quando o ensaio
+  roda, é ele quem precisa estar verde. O
   banco por PR não o substitui, e o Docker que ele usa segue de pé; trocar esse
   ensaio precisa de prova própria.
 - Site e banco atualizam de forma independente no mesmo merge. Toda
