@@ -59,7 +59,7 @@ Regras de parceria:
    (ex.: "manter dois logins em paralelo dobra os cenários de teste para
    sempre"), avise ANTES de implementar. Rodrigo decide, mas informado.
 5. **"Pronto" exige evidência.** Nunca declare concluído sem mostrar o que
-   verificou (seção Verificação). Se algo não foi testado, diga
+   verificou (`docs/regras/FECHAMENTO.md`). Se algo não foi testado, diga
    explicitamente "não testei X".
 6. **O agente executa a verificação técnica.** Entregue o link do preview,
     resultados e limites da prova por perfil e loja afetados. Login fictício,
@@ -119,10 +119,10 @@ Antes de propor uma mudança:
 7. leia `lessons.md`: regras de uma linha, no máximo 40 linhas, sem narrativa;
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
-10. faça o checkpoint de distribuição descrito nas regras da equipe (MASTER e
-    manual `COORDENACAO.md`, ver Equipe de IA): registre frentes
-    independentes e seguras, despachos escolhidos ou o motivo concreto para
-    concentrar o trabalho;
+10. faça o checkpoint de distribuição descrito no MASTER e em
+    `C:\Users\rodri\.ai-team\workspace\manuals\COORDENACAO.md` (ver Equipe
+    de IA): registre frentes independentes e seguras, despachos escolhidos ou
+    o motivo concreto para concentrar o trabalho;
 11. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
     conflito encontrado no preflight.
 
@@ -130,30 +130,30 @@ Não carregue todo o diretório `docs/` por padrão.
 
 ## Tabela de gatilhos
 
-Este arquivo carrega sempre. As regras abaixo carregam quando o gatilho
-aparece e valem tanto quanto ele. O teste do harness
-(`src/lib/harness.test.ts`) barra ponteiro quebrado, regra fora da tabela e
-arquivo de regra acima do teto de tamanho.
+Este arquivo carrega sempre; o resto carrega quando o gatilho aparece. Os
+arquivos de `docs/regras/` valem tanto quanto ele; as demais linhas apontam
+roteiro ou manual, subordinados a estas regras. O teste do harness
+(`src/lib/harness.test.ts`, no `npm test`) confere ponteiros, regra fora da
+tabela e teto de tamanho. O CI de PR só documental não roda o `npm test`:
+quem muda regra roda esse teste antes do push (ver FECHAMENTO).
 
 | Gatilho | Leia antes de agir |
 | --- | --- |
 | Tocar `supabase/` (migration, seed, teste de banco, configuração) ou consultar o banco de produção | `docs/regras/BANCO.md` |
-| Declarar pronto, rodar a bateria, abrir ou atualizar PR, pedir `Check` ou integrar | `docs/regras/FECHAMENTO.md` |
+| Começar ou encerrar sessão, diagnosticar falha, commitar, fazer push, declarar pronto, abrir ou atualizar PR, pedir `Check` ou integrar | `docs/regras/FECHAMENTO.md` |
+| Mexer em `.github/workflows/`, script de CI ou de banco ou `vercel.json` | `docs/regras/FECHAMENTO.md` e `docs/regras/BANCO.md` |
 | Criar, mover ou apagar arquivo; registrar estado, lição ou plano | `docs/regras/ARQUIVOS.md` |
 | Funcionalidade nova, de qualquer tamanho | `.claude/skills/nova-funcionalidade/SKILL.md` |
 | Preview, contas fictícias ou teste no navegador | `docs/AMBIENTE_PREVIEW.md` |
 
 ## Equipe de IA
 
-Os agentes trabalham como equipe de papéis, não de fornecedores: este arquivo
-cita papéis (quem conduz, quem revisa, ajudante, coordenador vigente,
-portaria) e funções, nunca o nome de uma IA como papel. Nomes exigidos por
-ferramenta (`CLAUDE.md`, `.claude/`) e o aplicativo CodeRabbit do GitHub são
-nomes de ferramenta, não de papel. As regras comuns da equipe —
-MASTER, protocolo, manuais da portaria e de coordenação e as skills de função
-— são versionadas no repositório `Orodrigao/equipe-ia` e instaladas na
-máquina do Rodrigo em `C:\Users\rodri\.ai-team`. Quem ocupa cada papel é
-decisão de coordenação, registrada lá.
+Este arquivo cita papéis (quem conduz, quem revisa, ajudante, coordenador
+vigente, portaria) e funções, nunca o nome de uma IA como papel; `CLAUDE.md`,
+`.claude/` e CodeRabbit são nomes de ferramenta. As regras comuns da equipe —
+MASTER, protocolo, manuais da portaria e de coordenação e skills de função —
+são versionadas em `Orodrigao/equipe-ia` e instaladas em
+`C:\Users\rodri\.ai-team`; quem ocupa cada papel é decidido lá.
 
 ## Stack e limites arquiteturais
 
@@ -197,18 +197,19 @@ máquina — nem site, nem banco.
   para ler logs e configuração.
 
 **Trava da `main`:** a `main` é travada no GitHub pelo ruleset
-`Trava da main` (id 24014339). Ninguém apaga a `main` nem força push nela,
-toda mudança entra por PR e o merge exige os checks obrigatórios verdes; não
-há exceção cadastrada, nem para o dono. Os checks exigidos, com data e fonte,
-estão em `docs/CURRENT_STATE.md`.
+`Trava da main` (id 24014339): ninguém apaga a `main` nem força push nela,
+toda mudança entra por PR e o merge exige os checks obrigatórios verdes.
+Mexer na trava ou no nome de um job que é check exigido depende de aprovação
+(Segurança obrigatória). Checks exigidos e lacunas: `docs/CURRENT_STATE.md`.
 
 **Banco (Supabase, via Action `Banco (migrations)`):**
 
 - `supabase/migrations/` é a única história do schema. Migration viaja dentro
   do PR, junto do código que depende dela, e só a Action aplica em produção,
   depois do merge.
-- Aplicar migration ou escrever em produção à mão — CLI local, MCP ou SQL
-  Editor — é proibido, mesmo "só dessa vez". MCP do Supabase é leitura.
+- Aplicar migration à mão em produção — CLI local, MCP ou SQL Editor — é
+  proibido, mesmo "só dessa vez"; outra escrita fora da Action exige
+  aprovação (Segurança obrigatória). Escrita de schema por MCP: nunca.
 - Mudança destrutiva (remover ou renomear coluna/tabela em uso) é sempre em
   duas fases, em PRs separados: primeiro o site para de usar, depois o banco
   remove.
@@ -298,8 +299,9 @@ varredura, rascunho, execução de fase bem especificada e revisão) e as
 skills de função da equipe, quando instaladas na máquina —
 `segunda-opiniao` (revisão por agente de outra família de modelo),
 `leitura-cercada` e `proposta-cercada` (outro agente lê ou propõe mudança
-sem escrever no repositório) e `despachar-frente` (uma frente inteira
-entregue a outro agente). Regras do mandato:
+sem escrever no repositório) e `despachar-frente` (uma frente entregue a
+outro agente, que segue "Dois agentes em paralelo" e não integra sozinha).
+Regras do mandato:
 
 - anunciar a escalação em uma linha leiga ("essa desce para o executor
   leve porque é ajuste de tela");
@@ -307,7 +309,7 @@ entregue a outro agente). Regras do mandato:
   conferência por amostragem contra a realidade — entrega de agente nunca
   vai ao Rodrigo nem vira código sem esse filtro;
 - toda PR de código relevante recebe revisão adversarial de um agente de
-  outra família de modelo (`segunda-opiniao`; sem ponte disponível, uma
+  outra família de modelo (`segunda-opiniao`; sem a skill instalada, uma
   sessão limpa sem o contexto da tarefa) antes do Check final e da
   integração. Embuta o diff no pedido e leia o texto da resposta: saída sem
   erro não prova que houve revisão. O resultado — incorporado ou descartado
@@ -377,6 +379,10 @@ no escopo autorizado; esta lista não exige um novo OK a cada execução.
 - deploy manual de Edge Function;
 - alteração de `.env`, segredos, tokens ou chaves;
 - dependência nova de produção;
+- alterar, desativar ou pôr exceção no ruleset `Trava da main`, ou renomear
+  ou remover job que é check exigido (toda PR ficaria esperando para sempre);
+- ampliar aplicativo do GitHub para outro repositório ou habilitar produto
+  cobrado por uso;
 - exclusão de branch ou worktree — exceto o fecho de ciclo pós-merge
   (deletar branch e worktree da tarefa concluída é obrigação, não exige
   aprovação).

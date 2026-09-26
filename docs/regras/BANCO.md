@@ -39,8 +39,11 @@ A Action `Banco (migrations)` é o único caminho do schema até produção.
   logar.
 - O ensaio descartável do `CI Banco` prova a história completa do schema, mas
   **não roda em toda PR**: ele só dispara quando a PR toca
-  `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
-  `supabase/config.toml`. Quando dispara, é ele quem precisa estar verde. O
+  `supabase/migrations/`, `supabase/tests/`, `supabase/tests-local/`,
+  `supabase/seed.sql`, `supabase/config.toml`, o verificador de repetição do
+  seed (`scripts/verify-preview-seed-repeatability.mjs` e seu teste) ou o
+  próprio `.github/workflows/ci-banco.yml` — a lista vale pelo que está no
+  workflow. Quando dispara, é ele quem precisa estar verde. O
   banco por PR não o substitui, e o Docker que ele usa segue de pé; trocar esse
   ensaio precisa de prova própria.
 - Site e banco atualizam de forma independente no mesmo merge. Toda

@@ -4,7 +4,9 @@
 
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
-o PR #441. As demais seções conservam suas datas de revisão anteriores.
+o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
+regras em `docs/regras/`. As demais seções conservam suas datas de revisão
+anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -12,8 +14,9 @@ incorporada à `main`.
 ## Trava da `main` e equipe de IA (26/09/2026)
 
 - **A `main` está travada no GitHub desde 25/09/2026** pelo ruleset
-  `Trava da main` (id 24014339). Conferido por leitura da API pública do
-  GitHub em 26/09/2026: ativo, sem ninguém na lista de exceção (nem o dono).
+  `Trava da main` (id 24014339). Conferido por leitura da API do GitHub em
+  26/09/2026, feita com permissão de administrador (a lista de exceção só é
+  confiável lida assim): ativo, sem ninguém na lista de exceção (nem o dono).
   Recusa apagar a `main` e forçar push nela, exige PR (sem mínimo de
   aprovações) e exige verdes três checks: `Classificar mudança (documental,
   mecanismo de CI ou produto)`, `Verificação (lint, tipos, testes, build)` e
@@ -21,7 +24,10 @@ incorporada à `main`.
 - **Lacuna da trava:** `CI Banco`, `Banco por PR` e `Usuarios do Banco por PR`
   não estão entre os checks obrigatórios. Numa PR que mexe em `supabase/`, o
   GitHub deixaria mergear com esses três vermelhos; quem segura hoje é a regra
-  do `AGENTS.md` (CI vermelho não mergeia), não a trava.
+  do `AGENTS.md` (CI vermelho não mergeia), não a trava. A trava também não
+  exige a PR atualizada com a `main` antes do merge
+  (`strict_required_status_checks_policy: false`): atualizar a base depois do
+  merge de outro agente é regra escrita, não trava.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
   portaria e de coordenação e as skills de função — vivem no repositório
   `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta
@@ -291,7 +297,7 @@ de 2026-07-22, este repositório é o único dono da história de migrations do
 projeto compartilhado: o baseline inclui os objetos do ControlePizza, e
 qualquer mudança de schema — do ERP ou do ControlePizza — entra por PR aqui
 e é aplicada pela Action. O repositório ControlePizza não aplica schema
-(regra em AGENTS.md, seção Deploy e produção).
+(regra em `docs/regras/BANCO.md`).
 
 Em 2026-07-28, Rodrigo decidiu não investir hardening no ControlePizza, porque
 essa parte será desativada em breve e não estará no projeto final. Até a

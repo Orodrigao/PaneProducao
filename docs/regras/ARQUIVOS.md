@@ -18,7 +18,8 @@ depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
 - **`docs/regras/`:** somente as regras de trabalho acionadas pela tabela de
   gatilhos do `AGENTS.md`, uma por arquivo, em `MAIUSCULAS.md`. Regra nova
   entra na tabela no mesmo PR; arquivo aqui sem linha na tabela é órfão, e o
-  teste do harness (`src/lib/harness.test.ts`) recusa.
+  teste do harness (`src/lib/harness.test.ts`) falha — em PR só documental,
+  rode-o antes do push (ver FECHAMENTO).
 - **`docs/history/`:** documento que perdeu vigência é movido para cá
   (movido, nunca copiado). Aqui nada é editado.
 - **`docs/examples/` e `test/fixtures/`:** dados de exemplo, sempre

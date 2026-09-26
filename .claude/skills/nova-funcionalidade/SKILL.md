@@ -23,7 +23,7 @@ abertas, branches e worktrees ativos, `docs/CURRENT_STATE.md`,
 `lessons.md`. Procure sobreposição com trabalho em andamento; se houver,
 pare e proponha como isolar antes da descoberta.
 
-O preflight completo do AGENTS.md (os 10 passos da seção "Hierarquia da
+O preflight completo do AGENTS.md (os 11 passos da seção "Hierarquia da
 documentação", incluindo diffs, commits recentes e auditoria de código,
 migrations e testes) deve estar concluído antes de apresentar qualquer
 solução ou plano — mas a auditoria profunda pode esperar as primeiras

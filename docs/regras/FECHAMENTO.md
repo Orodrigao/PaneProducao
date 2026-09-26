@@ -58,6 +58,11 @@ Os caminhos anteriores de renomeações também contam; qualquer código, config
 lista incompleta ou caminho fora dessa lista impede a dispensa. Cleanup de recursos
 que já existiam permanece obrigatório.
 
+A dispensa não confere as regras: quem muda `AGENTS.md`, `CLAUDE.md`,
+`lessons.md`, `docs/regras/` ou `.claude/skills/` roda
+`npx vitest run src/lib/harness.test.ts` no worktree antes do push e registra o
+resultado no PR, porque o CI de PR só documental não roda o `npm test`.
+
 Markdown que altera autoridade (`AGENTS.md`, `CLAUDE.md` e `docs/regras/`)
 continua protegido e exige revisão independente,
 registrada em `-ReviewEvidence` no Check. Código da Portaria/instalador exige provas
