@@ -120,9 +120,9 @@ Antes de propor uma mudança:
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
 10. faça o checkpoint de distribuição descrito no MASTER e em
-    `C:\Users\rodri\.ai-team\workspace\manuals\COORDENACAO.md` (ver Equipe
-    de IA): registre frentes independentes e seguras, despachos escolhidos ou
-    o motivo concreto para concentrar o trabalho;
+    `~/.ai-team/workspace/manuals/COORDENACAO.md` da instalação da equipe (ver
+    Equipe de IA): registre frentes independentes e seguras, despachos
+    escolhidos ou o motivo concreto para concentrar o trabalho;
 11. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
     conflito encontrado no preflight.
 
@@ -152,8 +152,9 @@ Este arquivo cita papéis (quem conduz, quem revisa, ajudante, coordenador
 vigente, portaria) e funções, nunca o nome de uma IA como papel; `CLAUDE.md`,
 `.claude/` e CodeRabbit são nomes de ferramenta. As regras comuns da equipe —
 MASTER, protocolo, manuais da portaria e de coordenação e skills de função —
-são versionadas em `Orodrigao/equipe-ia` e instaladas em
-`C:\Users\rodri\.ai-team`; quem ocupa cada papel é decidido lá.
+são versionadas em `Orodrigao/equipe-ia` e instaladas em `~/.ai-team` da
+máquina (no Windows do Rodrigo, `C:\Users\rodri\.ai-team`); quem ocupa cada
+papel é decidido lá.
 
 ## Stack e limites arquiteturais
 
