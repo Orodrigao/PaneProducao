@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   LIMITE_ARQUIVOS_COMPARACAO,
+  urlDePreviewConfiavel,
   LIMITE_COMMITS_CONSULTADOS,
   LIMITE_COMMITS_PR,
   commitsAnterioresDaPr,
@@ -14,10 +15,12 @@ const REPO = 'dono/repo'
 const API = `https://api.github.com/repos/${REPO}`
 const sha = (n) => String(n).padStart(40, 'a')
 const HEAD = sha(9)
-const URL_VERDE = 'https://pane-git-branch.vercel.app'
+const preview = (id) => `https://pane-producao-${id}-orodrigaos-projects.vercel.app`
+const URL_VERDE = preview('abc123xyz')
 
-const verde = (url = URL_VERDE) => [{ state: 'success', environment_url: url }]
-const falhou = [{ state: 'failure' }, { state: 'success', environment_url: 'https://antigo.vercel.app' }]
+const VERCEL = { login: 'vercel[bot]' }
+const verde = (url = URL_VERDE, creator = VERCEL) => [{ state: 'success', environment_url: url, creator }]
+const falhou = [{ state: 'failure' }, { state: 'success', environment_url: preview('antigo1'), creator: VERCEL }]
 const doc = (filename) => ({ filename, status: 'modified' })
 
 /**
@@ -82,6 +85,23 @@ describe('escolherDeploymentVerde', () => {
   })
 })
 
+describe('urlDePreviewConfiavel', () => {
+  it('aceita so status da Vercel em endereco de preview deste projeto', () => {
+    assert.equal(urlDePreviewConfiavel(verde()[0]), true)
+    assert.equal(urlDePreviewConfiavel(verde(URL_VERDE, { login: 'alguem' })[0]), false)
+    assert.equal(urlDePreviewConfiavel(verde(URL_VERDE, null)[0]), false)
+    assert.equal(urlDePreviewConfiavel(verde('https://pane-producao-x1-outro-time.vercel.app')[0]), false)
+    assert.equal(urlDePreviewConfiavel(verde('http://pane-producao-abc-orodrigaos-projects.vercel.app')[0]), false)
+    assert.equal(urlDePreviewConfiavel(verde('https://pane-producao-abc-orodrigaos-projects.vercel.app.evil.com')[0]), false)
+    assert.equal(urlDePreviewConfiavel(verde('nao e url')[0]), false)
+    assert.equal(urlDePreviewConfiavel({ state: 'success', creator: VERCEL }), false)
+  })
+
+  it('status verde de procedencia duvidosa nao vira preview', () => {
+    assert.equal(escolherDeploymentVerde([{ statuses: verde(URL_VERDE, { login: 'alguem' }) }]), null)
+  })
+})
+
 describe('commitsAnterioresDaPr', () => {
   it('devolve os anteriores ao atual, do mais novo para o mais antigo', () => {
     const r = commitsAnterioresDaPr([sha(1), sha(2), HEAD, sha(3)].map((s) => ({ sha: s })), HEAD)
@@ -127,8 +147,8 @@ describe('comparacaoPermiteReuso', () => {
 
 describe('localizarPreviewDaPr', () => {
   it('commit atual com preview verde: usa ele, sem olhar o resto', async () => {
-    const github = githubFalso({ deployments: { [HEAD]: [verde('https://atual.vercel.app')] } })
-    assert.equal(await localizar(github), 'https://atual.vercel.app')
+    const github = githubFalso({ deployments: { [HEAD]: [verde(preview('atual1'))] } })
+    assert.equal(await localizar(github), preview('atual1'))
     assert.ok(github.chamadas.every((url) => !url.includes('/pulls/') && !url.includes('/compare/')))
   })
 
@@ -156,7 +176,7 @@ describe('localizarPreviewDaPr', () => {
 
   it('anda por varios pushes ignorados ate o ultimo publicado', async () => {
     const github = githubFalso({
-      deployments: { [sha(1)]: [verde('https://velho.vercel.app')], [sha(2)]: [verde()] },
+      deployments: { [sha(1)]: [verde(preview('velho1'))], [sha(2)]: [verde()] },
       commits: [sha(1), sha(2), sha(3), HEAD],
       comparacoes: { [`${sha(2)}...${HEAD}`]: { status: 'ahead', files: [doc('AGENTS.md'), doc('docs/A.md')] } },
     })
@@ -207,6 +227,25 @@ describe('localizarPreviewDaPr', () => {
   it('comparacao indisponivel: falha fechado', async () => {
     const github = githubFalso({ deployments: { [sha(1)]: [verde()] }, commits: [sha(1), HEAD] })
     await assert.rejects(localizar(github), /respondeu 404/)
+  })
+
+  it('commit atual publicado durante a busca: nao usa o preview anterior', async () => {
+    const github = githubFalso({
+      deployments: { [sha(1)]: [verde()] },
+      commits: [sha(1), HEAD],
+      comparacoes: { [`${sha(1)}...${HEAD}`]: { status: 'ahead', files: [doc('AGENTS.md')] } },
+    })
+    let consultasDoHead = 0
+    const fetchImpl = async (url) => {
+      if (url.includes(`sha=${HEAD}`) && ++consultasDoHead > 1) {
+        return { ok: true, status: 200, json: async () => [{ id: 999, sha: HEAD }] }
+      }
+      return github.fetchImpl(url)
+    }
+    await assert.rejects(
+      localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, fetchImpl }),
+      /ganhou deployment durante a busca/,
+    )
   })
 
   it('evento sem numero da PR ou sem commit: falha fechado', async () => {

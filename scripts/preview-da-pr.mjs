@@ -38,9 +38,30 @@ export const LIMITE_ARQUIVOS_COMPARACAO = 300
 const SHA_COMPLETO = /^[0-9a-f]{40}$/
 
 /**
+ * Procedencia do link: so a Vercel publica status como `vercel[bot]`, e todo
+ * preview deste projeto mora neste formato de endereco. Qualquer outra coisa
+ * nao recebe as credenciais das contas ficticias. Se o projeto ou o time da
+ * Vercel mudarem de nome, o teste reprova com esta mensagem, nunca em silencio.
+ */
+export const AUTOR_STATUS_VERCEL = 'vercel[bot]'
+export const HOST_PREVIEW = /^pane-producao-[a-z0-9]+-orodrigaos-projects\.vercel\.app$/
+
+export function urlDePreviewConfiavel(status) {
+  if (status?.creator?.login !== AUTOR_STATUS_VERCEL) return false
+  if (typeof status.environment_url !== 'string') return false
+  try {
+    const url = new URL(status.environment_url)
+    return url.protocol === 'https:' && HOST_PREVIEW.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Entre as deployments de UM commit (mais nova primeiro, com os status de
  * cada uma, mais novo primeiro), decide SO pela mais nova: devolve a URL dela
- * se o status mais recente for `success`, senao `null`. O workflow Banco por
+ * se o status mais recente for `success` e o link tiver procedencia confiavel
+ * (ver urlDePreviewConfiavel), senao `null`. O workflow Banco por
  * PR refaz o deploy no mesmo commit depois de apontar o preview para o banco
  * da PR; aceitar uma verde mais antiga testaria contra o banco errado.
  */
@@ -48,7 +69,7 @@ export function escolherDeploymentVerde(deployments) {
   if (!Array.isArray(deployments)) return null
   const statuses = deployments[0]?.statuses
   const ultimo = Array.isArray(statuses) ? statuses[0] : undefined
-  if (ultimo?.state === 'success' && typeof ultimo.environment_url === 'string' && ultimo.environment_url) {
+  if (ultimo?.state === 'success' && urlDePreviewConfiavel(ultimo)) {
     return ultimo.environment_url
   }
   return null
@@ -151,6 +172,11 @@ export async function localizarPreviewDaPr({ repositorio, prNumber, headSha, fet
     if (!url) throw new Error(`${semPreview}: o ultimo commit publicado (${sha.slice(0, 7)}) nao tem preview verde.`)
     const reuso = comparacaoPermiteReuso(await pedirJson(`${api}/compare/${sha}...${headSha}`, fetchImpl))
     if (!reuso.ok) throw new Error(`${semPreview}: ${reuso.motivo}`)
+    // A Vercel pode ter publicado o commit atual durante esta busca; se sim,
+    // quem decide e ele, nao o preview anterior.
+    if ((await deploymentsDoCommit({ api, sha: headSha, fetchImpl })).existe) {
+      throw new Error(`${semPreview}: o commit atual ganhou deployment durante a busca; rode de novo.`)
+    }
     return url
   }
   throw new Error(`${semPreview}: nenhum dos ultimos ${LIMITE_COMMITS_CONSULTADOS} commits da PR tem deployment.`)
