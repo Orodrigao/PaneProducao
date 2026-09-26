@@ -166,6 +166,10 @@ export default function ProductionPlanningPage() {
   // plano e a lista chegam por consultas separadas e em qualquer ordem.
   const [breadsState, setBreadsState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
+  // Dia a que plan e items pertencem. Entre o toque num dia novo e a consulta
+  // dele começar, a tela ainda tem o plano anterior; sem esta marca ele
+  // apareceria por um instante sob o botão do dia novo.
+  const [loadedPlanDate, setLoadedPlanDate] = useState<string | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
   const [openPlans, setOpenPlans] = useState<ProductionPlanSummary[]>([])
   const [quantities, setQuantities] = useState<QuantityInputs>({})
@@ -438,7 +442,10 @@ export default function ProductionPlanningPage() {
       setLeftoverEnabled({})
       setError('Não foi possível carregar o planejamento agora.')
     } finally {
-      if (isCurrent()) setLoading(false)
+      if (isCurrent()) {
+        setLoadedPlanDate(targetDate)
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -473,6 +480,7 @@ export default function ProductionPlanningPage() {
     }
   }, [date, loadAvailability, loadBreads, loadDemandHistory, loadOpenPlans, loadPlan, ready, user?.role])
 
+  const planLoading = loading || loadedPlanDate !== date
   const expectedBreads = useMemo(() => plannedBreadsForDate(breads, date), [breads, date])
   const itemsByBread = useMemo(() => {
     const map = new Map<string, ProductionPlanItemRow[]>()
@@ -574,8 +582,20 @@ export default function ProductionPlanningPage() {
           .insert(rows)
         if (itemError) {
           // Plano sem os pães do dia parece pronto e não é. Desfaz para a
-          // pessoa tentar de novo; os itens saem junto pelo ON DELETE CASCADE.
-          await supabase.from('production_plans').delete().eq('id', createdPlan.id)
+          // pessoa tentar de novo. O select confirma a exclusão, porque RLS
+          // bloqueada devolve zero linhas sem erro.
+          const { data: undoneRows, error: undoError } = await supabase
+            .from('production_plans')
+            .delete()
+            .eq('id', createdPlan.id)
+            .select('id')
+          if (undoError || (undoneRows ?? []).length === 0) {
+            // Não deu para desfazer: mostra o plano vazio, que tem o botão
+            // Descartar, e diz o que fazer.
+            await loadPlan(date)
+            setError('O rascunho foi criado sem os pães do dia. Toque em Descartar e crie de novo.')
+            return
+          }
           throw itemError
         }
       }
@@ -830,7 +850,7 @@ export default function ProductionPlanningPage() {
       <section className={styles.datePicker}>
         <div className={styles.datePickerHead}>
           <span className={styles.pickerLabel} id="ps-planejamento-dia">Planejar para</span>
-          <button type="button" className={styles.refreshButton} onClick={() => void refreshPlanning()} disabled={loading}>
+          <button type="button" className={styles.refreshButton} onClick={() => void refreshPlanning()} disabled={planLoading}>
             <RefreshCw size={14} /> Atualizar
           </button>
         </div>
@@ -870,9 +890,9 @@ export default function ProductionPlanningPage() {
         </div>
       )}
 
-      {loading && <div className={`ps-empty ${styles.loading}`}>Carregando planejamento...</div>}
+      {planLoading && <div className={`ps-empty ${styles.loading}`}>Carregando planejamento...</div>}
 
-      {!loading && !plan && (
+      {!planLoading && !plan && (
         <div className={`ps-card ${styles.emptyPlan}`}>
           <div className="ps-card-head">
             <div>
@@ -896,7 +916,7 @@ export default function ProductionPlanningPage() {
         </div>
       )}
 
-      {!loading && plan && (
+      {!planLoading && plan && (
         <>
           <div className={`ps-banner honey ${styles.statusBanner}`}>
             <span>

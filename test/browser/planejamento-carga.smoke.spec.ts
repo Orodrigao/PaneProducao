@@ -95,6 +95,83 @@ test('Criar rascunho espera a lista de pães do dia', async ({ page }) => {
   expect(writes).toEqual([])
 })
 
+for (const undo of ['desfeito', 'não desfeito'] as const) {
+  test(`Rascunho cujos pães não gravam é ${undo} e a tela avisa`, async ({ page }) => {
+    await enterAsAdmin(page)
+
+    const fakeId = '0c0c0c0c-0000-4000-8000-00000000000c'
+    let createdDate: string | null = null
+    let planSurvives = false
+    const deletes: string[] = []
+
+    // Toda gravação é simulada: o plano "nasce", os pães recusam e a exclusão
+    // compensatória responde conforme o cenário.
+    await page.route(/\/rest\/v1\/production_plans(\?|$)/, async route => {
+      const request = route.request()
+      const method = request.method()
+      if (method === 'GET') {
+        const date = planDateOf(route)
+        if (!date) return route.fallback()
+        const exists = planSurvives && date === createdDate
+        return route.fulfill({ json: exists ? [fakePlan(fakeId, date)] : [] })
+      }
+      if (method === 'POST') {
+        const body = request.postDataJSON() as Array<{ production_date: string }>
+        createdDate = body[0].production_date
+        return route.fulfill({ status: 201, json: [fakePlan(fakeId, createdDate)] })
+      }
+      if (method === 'DELETE') {
+        deletes.push(new URL(request.url()).searchParams.get('id') ?? '')
+        if (undo === 'desfeito') return route.fulfill({ json: [{ id: fakeId }] })
+        planSurvives = true
+        return route.fulfill({ json: [] })
+      }
+      return route.abort()
+    })
+    await page.route(/\/rest\/v1\/production_plan_items(\?|$)/, async route => {
+      const method = route.request().method()
+      if (method === 'POST') {
+        return route.fulfill({ status: 500, json: { message: 'falha simulada' } })
+      }
+      if (method === 'GET' && route.request().url().includes(fakeId)) {
+        return route.fulfill({ json: [] })
+      }
+      if (method === 'GET') return route.fallback()
+      return route.abort()
+    })
+
+    await page.goto('/planejamento-producao')
+    const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
+    const dayGroup = page.getByRole('group', { name: 'Planejar para' })
+    await expect(dayGroup.getByRole('button')).toHaveCount(6, { timeout: 30_000 })
+
+    // Um dia com pães previstos, para existir o que gravar.
+    let found = false
+    for (const button of await dayGroup.getByRole('button').all()) {
+      await button.click()
+      await expect(button).toHaveAttribute('aria-pressed', 'true')
+      await expect(createDraft).toBeEnabled({ timeout: 30_000 })
+      const text = await page.getByText(/pães previstos para a data\.$/).innerText()
+      if (Number(text.split(' ')[0]) > 0) { found = true; break }
+    }
+    expect(found, 'algum dia da semana com pães previstos').toBe(true)
+
+    await createDraft.click()
+    await expect.poll(() => deletes).toEqual([`eq.${fakeId}`])
+
+    if (undo === 'desfeito') {
+      await expect(page.getByText('Não foi possível criar o planejamento.')).toBeVisible()
+      await expect(createDraft).toBeVisible()
+    } else {
+      await expect(page.getByText(
+        'O rascunho foi criado sem os pães do dia. Toque em Descartar e crie de novo.',
+      )).toBeVisible()
+      await expect(page.locator(`[data-plan-id="${fakeId}"]`)).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Descartar' })).toBeVisible()
+    }
+  })
+}
+
 test('Resposta atrasada do dia anterior não toma o lugar do dia escolhido', async ({ page }) => {
   await enterAsAdmin(page)
 
