@@ -142,7 +142,7 @@ quem muda regra roda esse teste antes do push (ver FECHAMENTO).
 | Tocar `supabase/` (migration, seed, teste de banco, configuração) ou consultar o banco de produção | `docs/regras/BANCO.md` |
 | Começar ou encerrar sessão, diagnosticar falha, commitar, fazer push, declarar pronto, abrir ou atualizar PR, pedir `Check` ou integrar | `docs/regras/FECHAMENTO.md` |
 | Mexer em `.github/workflows/`, script de CI ou de banco ou `vercel.json` | `docs/regras/FECHAMENTO.md` e `docs/regras/BANCO.md` |
-| Criar, mover ou apagar arquivo; registrar estado, lição ou plano | `docs/regras/ARQUIVOS.md` |
+| Criar, mover ou apagar arquivo; editar regra; registrar estado, lição ou plano | `docs/regras/ARQUIVOS.md` |
 | Funcionalidade nova, de qualquer tamanho | `.claude/skills/nova-funcionalidade/SKILL.md` |
 | Preview, contas fictícias ou teste no navegador | `docs/AMBIENTE_PREVIEW.md` |
 
@@ -191,7 +191,7 @@ máquina — nem site, nem banco.
 - Preview e máquina local nunca falam com produção: usam o `PaneERP Preview`
   compartilhado ou o banco isolado daquela PR. A configuração de produção
   existe somente no escopo Production da Vercel, e a trava do build falha se
-  essas portas se cruzarem.
+  essas portas se cruzarem. Nunca copie dados reais de produção para eles.
 - Build da `main` quebrado → o deploy é recusado e produção continua na
   versão anterior. Corrija com novo PR; nunca com deploy manual.
 - `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo

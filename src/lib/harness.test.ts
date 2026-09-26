@@ -24,12 +24,17 @@ function regrasFiles(): string[] {
     .sort()
 }
 
-function skillFiles(): string[] {
-  const skillsDir = path.join(root, '.claude', 'skills')
-  return readdirSync(skillsDir)
-    .filter((name) => existsSync(path.join(skillsDir, name, 'SKILL.md')))
-    .map((name) => `.claude/skills/${name}/SKILL.md`)
+function skillDirs(): string[] {
+  return readdirSync(path.join(root, '.claude', 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
     .sort()
+}
+
+function skillFiles(): string[] {
+  return skillDirs()
+    .filter((name) => existsExactCase(`.claude/skills/${name}/SKILL.md`))
+    .map((name) => `.claude/skills/${name}/SKILL.md`)
 }
 
 // Teto de linhas das regras: passou disso, consolide antes de acrescentar.
@@ -166,6 +171,12 @@ describe('regras: ponteiros e teto de tamanho', () => {
         .map((ponteiro) => `${arquivo} -> ${ponteiro}`),
     )
     expect(quebrados).toEqual([])
+  })
+
+  it('toda pasta de skill versionada tem SKILL.md com caixa exata', () => {
+    const semSkill = skillDirs().filter((name) => !existsExactCase(`.claude/skills/${name}/SKILL.md`))
+    expect(skillDirs().length).toBeGreaterThan(0)
+    expect(semSkill).toEqual([])
   })
 
   it('lugar previsto ainda vazio sai da lista quando nasce', () => {
