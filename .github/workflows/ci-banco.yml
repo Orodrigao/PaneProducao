@@ -28,6 +28,11 @@ jobs:
         with:
           node-version: 22
 
+      # O check exigido confere o próprio decisor em toda PR: mudança em
+      # scripts/change-scope.mjs, de que ele depende, não passa sem este teste.
+      - name: Testar a regra de decisão
+        run: node --test scripts/ci-banco-escopo.test.mjs
+
       # A lista de caminhos e a regra vivem em scripts/ci-banco-escopo.mjs,
       # testado no `npm test`. Falha FECHADA: erro deixa o job vermelho, e os
       # passos do ensaio rodam com qualquer resposta que não seja "false".

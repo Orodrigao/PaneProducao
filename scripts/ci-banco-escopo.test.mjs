@@ -50,6 +50,18 @@ function decidirPr(preparar) {
 }
 
 describe('ehCaminhoDoBanco', () => {
+  it('a lista e exatamente a combinada; encolher exige mudar este teste de proposito', () => {
+    assert.deepEqual(PASTAS_DO_BANCO, ['supabase/migrations/', 'supabase/tests/', 'supabase/tests-local/'])
+    assert.deepEqual(ARQUIVOS_DO_BANCO, [
+      'supabase/seed.sql',
+      'supabase/config.toml',
+      'scripts/verify-preview-seed-repeatability.mjs',
+      'scripts/verify-preview-seed-repeatability.test.mjs',
+      '.github/workflows/ci-banco.yml',
+      'scripts/ci-banco-escopo.mjs',
+    ])
+  })
+
   it('reconhece cada arquivo e cada pasta da lista', () => {
     for (const arquivo of ARQUIVOS_DO_BANCO) assert.equal(ehCaminhoDoBanco(arquivo), true, arquivo)
     for (const pasta of PASTAS_DO_BANCO) assert.equal(ehCaminhoDoBanco(`${pasta}qualquer/coisa.sql`), true, pasta)
@@ -102,6 +114,11 @@ describe('decidirEnsaio contra git de verdade', () => {
       },
     ],
     ['teste de banco local', true, (r) => r.escrever('supabase/tests-local/t.test.sql')],
+    ['teste de banco', true, (r) => r.escrever('supabase/tests/t.test.sql')],
+    ['seed', true, (r) => r.escrever('supabase/seed.sql')],
+    ['config.toml', true, (r) => r.escrever('supabase/config.toml')],
+    ['verificador do seed', true, (r) => r.escrever('scripts/verify-preview-seed-repeatability.mjs')],
+    ['teste do verificador do seed', true, (r) => r.escrever('scripts/verify-preview-seed-repeatability.test.mjs')],
     ['o proprio workflow', true, (r) => r.escrever('.github/workflows/ci-banco.yml')],
     ['o proprio decisor', true, (r) => r.escrever('scripts/ci-banco-escopo.mjs')],
     ['funcao do supabase', false, (r) => r.escrever('supabase/functions/f.ts', 'mudou\n')],
@@ -155,27 +172,48 @@ describe('decidirEnsaio contra git de verdade', () => {
   })
 })
 
+// Guardas textuais do ci-banco.yml (o projeto nao tem parser de YAML): cada uma
+// barra um jeito de o check exigido ficar verde sem o ensaio ter rodado.
 describe('ci-banco.yml usa a decisao', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/ci-banco.yml', import.meta.url), 'utf8')
+  const workflow = readFileSync(new URL('../.github/workflows/ci-banco.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const inicioDosPassos = workflow.indexOf('\n    steps:\n')
+  // Cada passo comeca em "      - ", seja qual for a primeira chave.
+  const passos = workflow.slice(inicioDosPassos).split('\n      - ').slice(1)
+  const condicao = (passo) => passo.match(/(?:^|\n\s+)if: (.*)/)?.[1]
+  const indiceEscopo = passos.findIndex((passo) => /(?:^|\n\s+)id: escopo$/m.test(passo))
 
   it('nao tem filtro paths: (check exigido precisa chegar em toda PR)', () => {
     assert.doesNotMatch(workflow, /^\s*paths(-ignore)?:/m)
   })
 
-  it('o passo de decisao chama este script', () => {
-    assert.match(workflow, /id: escopo\n(?:.*\n)*?\s+run: node scripts\/ci-banco-escopo\.mjs >> "\$GITHUB_OUTPUT"/)
+  it('nada ignora falha e o job nao tem condicao (job pulado conta como verde)', () => {
+    assert.doesNotMatch(workflow, /continue-on-error/)
+    assert.ok(inicioDosPassos > 0, 'bloco steps: nao encontrado')
+    const cabecalhoDoJob = workflow.slice(workflow.indexOf('\n  ensaio:\n'), inicioDosPassos)
+    assert.doesNotMatch(cabecalhoDoJob, /^\s+if:/m)
+  })
+
+  it('o passo de decisao so chama este script, sem desvio', () => {
+    assert.ok(indiceEscopo >= 0, 'passo id: escopo nao encontrado')
+    const runs = passos[indiceEscopo].match(/^\s+run:.*$/gm) ?? []
+    assert.deepEqual(runs.map((linha) => linha.trim()), ['run: node scripts/ci-banco-escopo.mjs >> "$GITHUB_OUTPUT"'])
+    assert.equal(condicao(passos[indiceEscopo]), undefined)
+  })
+
+  it('o teste do decisor roda no proprio job, antes da decisao', () => {
+    const indiceTeste = passos.findIndex((passo) => /^\s+run: node --test scripts\/ci-banco-escopo\.test\.mjs$/m.test(passo))
+    assert.ok(indiceTeste >= 0 && indiceTeste < indiceEscopo, 'teste do decisor ausente ou depois da decisao')
+    for (const passo of passos.slice(0, indiceEscopo)) assert.equal(condicao(passo), undefined, passo.split('\n')[0])
   })
 
   it('todo passo depois da decisao roda salvo "false" explicito, menos o aviso de dispensa', () => {
-    const depois = workflow.slice(workflow.indexOf('id: escopo'))
-    const passos = depois.split(/\n\s+- (?:name|uses): /).slice(1)
-    assert.ok(passos.length >= 9, `poucos passos depois da decisao: ${passos.length}`)
-    for (const passo of passos) {
-      const condicao = passo.match(/\n\s+if: (.*)/)?.[1]
-      if (passo.startsWith('Dispensar o ensaio')) {
-        assert.equal(condicao, "steps.escopo.outputs.banco == 'false'")
+    const depois = passos.slice(indiceEscopo + 1)
+    assert.ok(depois.length >= 9, `poucos passos depois da decisao: ${depois.length}`)
+    for (const passo of depois) {
+      if (/(?:^|\n\s+)name: Dispensar o ensaio$/m.test(passo)) {
+        assert.equal(condicao(passo), "steps.escopo.outputs.banco == 'false'")
       } else {
-        assert.equal(condicao, "steps.escopo.outputs.banco != 'false'", passo.split('\n')[0])
+        assert.equal(condicao(passo), "steps.escopo.outputs.banco != 'false'", passo.split('\n')[0])
       }
     }
   })

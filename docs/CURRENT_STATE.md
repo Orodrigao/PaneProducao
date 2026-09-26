@@ -40,7 +40,7 @@ incorporada à `main`.
   reconstrói o banco compartilhado e não é o caminho.
 - **Ficam fora da trava, de propósito:** `Banco por PR` só confere se o link de
   teste aponta para o banco certo, não protege produção, e depende das APIs da
-  Vercel e do Supabase e do limite de 20 bancos de teste; obrigatório, qualquer
+  Vercel e do Supabase e da cota de bancos de teste; obrigatório, qualquer
   falha dessas travaria todo merge, sem exceção nem para o dono. `Usuarios do
   Banco por PR` pode correr antes de o banco da PR ficar pronto (falha
   observada em 03/09/2026, mais abaixo) e travaria merges por essa corrida. Os

@@ -53,7 +53,8 @@ function main() {
   const { banco, total, doBanco } = decidirEnsaio({ base: process.env.BASE_SHA, head: process.env.HEAD_SHA })
   // stdout vai para o $GITHUB_OUTPUT; o relato vai para o log.
   console.error(`${total} arquivo(s) na PR; ${doBanco.length} de banco.`)
-  for (const caminho of doBanco) console.error(`  ${caminho}`)
+  // JSON: nome com quebra de linha nao vira comando "::" do Actions no log.
+  for (const caminho of doBanco) console.error(`  ${JSON.stringify(caminho)}`)
   console.log(`banco=${banco}`)
 }
 
