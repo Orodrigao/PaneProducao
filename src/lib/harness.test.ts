@@ -60,7 +60,10 @@ function extractPointers(markdown: string, documento: string): string[] {
       PASTAS_DO_REPOSITORIO.some((pasta) => candidate.startsWith(pasta)) &&
       !/[<>*{}$]/.test(candidate),
   )
-  const deLink = Array.from(markdown.matchAll(/\]\(([^)\s]+)\)/g), (match) => match[1].split('#')[0])
+  const deLink = Array.from(
+    markdown.matchAll(/\]\(([^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\)/g),
+    (match) => match[1].split('#')[0],
+  )
     .filter((alvo) => alvo !== '' && !/^[a-z][a-z0-9+.-]*:/i.test(alvo))
     .map((alvo) => {
       const resolvido = path.posix.normalize(path.posix.join(path.posix.dirname(documento), alvo))
@@ -127,6 +130,7 @@ describe('regras: ponteiros e teto de tamanho', () => {
   it('reconhece como ponteiro so caminho de pasta versionada, sem padrao', () => {
     const texto = [
       'Leia `docs/regras/BANCO.md` e [o estado](../CURRENT_STATE.md#riscos).',
+      'Com titulo: [banco](../BANCO_INEXISTENTE.md "Detalhes").',
       'Ignora `npm test`, `tipo/<descricao-curta>`, `NOTES.md`, `origin/main`,',
       '`.next/types`, `docs/*.md`, `C:\\Users\\x` e [site](https://exemplo.com).',
       'Crases coladas: `a b`/`docs/NAO_EXISTE.md`.',
@@ -135,6 +139,7 @@ describe('regras: ponteiros e teto de tamanho', () => {
       'docs/regras/BANCO.md',
       'docs/NAO_EXISTE.md',
       'docs/CURRENT_STATE.md',
+      'docs/BANCO_INEXISTENTE.md',
     ])
   })
 
