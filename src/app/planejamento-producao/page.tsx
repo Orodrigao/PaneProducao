@@ -162,6 +162,9 @@ export default function ProductionPlanningPage() {
     return nextOccurrenceOfDay(day, clock.dateKey)
   })
   const [breads, setBreads] = useState<BreadRow[]>([])
+  // Sem a lista de pães, "Criar rascunho" gravaria o plano sem nenhum item: o
+  // plano e a lista chegam por consultas separadas e em qualquer ordem.
+  const [breadsState, setBreadsState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [plan, setPlan] = useState<ProductionPlanRow | null>(null)
   const [items, setItems] = useState<ProductionPlanItemRow[]>([])
   const [openPlans, setOpenPlans] = useState<ProductionPlanSummary[]>([])
@@ -181,6 +184,11 @@ export default function ProductionPlanningPage() {
   const [demandHistoryState, setDemandHistoryState] = useState<BreadDemandHistoryLoadState>('loading')
   const [demandHistory, setDemandHistory] = useState<Record<string, BreadDemandSummary>>({})
   const demandHistoryRequestId = useRef(0)
+  // Trocar de dia com a consulta anterior no ar fazia a resposta atrasada
+  // pintar o plano de outro dia sob o botão do dia novo. Só a consulta mais
+  // recente, e do dia que está na tela, pode mexer no plano exibido.
+  const planRequestId = useRef(0)
+  const selectedDate = useRef(date)
 
   useEffect(() => {
     let alive = true
@@ -201,9 +209,14 @@ export default function ProductionPlanningPage() {
       .eq('is_pj', false)
       .order('name', { ascending: true })
 
-    if (breadError) throw breadError
+    if (breadError) {
+      // Uma lista já carregada continua valendo; só a falta dela trava o botão.
+      setBreadsState(current => (current === 'ready' ? current : 'error'))
+      throw breadError
+    }
     const loadedBreads = (data ?? []) as BreadRow[]
     setBreads(loadedBreads)
+    setBreadsState('ready')
     return loadedBreads
   }, [])
 
@@ -337,6 +350,15 @@ export default function ProductionPlanningPage() {
   }, [])
 
   const loadPlan = useCallback(async (targetDate: string) => {
+    // Recarga pedida para um dia que já saiu da tela (ex.: salvar terminou
+    // depois da troca de dia) não pode tomar a vez da consulta do dia atual.
+    if (targetDate !== selectedDate.current) return
+    const requestId = planRequestId.current + 1
+    planRequestId.current = requestId
+    const isCurrent = () => (
+      planRequestId.current === requestId && selectedDate.current === targetDate
+    )
+
     setLoading(true)
     setError('')
     try {
@@ -346,11 +368,12 @@ export default function ProductionPlanningPage() {
         .eq('production_date', targetDate)
         .maybeSingle()
 
+      if (!isCurrent()) return
       if (planError) throw planError
       const loadedPlan = planData as ProductionPlanRow | null
-      setPlan(loadedPlan)
 
       if (!loadedPlan) {
+        setPlan(null)
         setItems([])
         setQuantities({})
         setFrozenQuantities({})
@@ -366,8 +389,12 @@ export default function ProductionPlanningPage() {
         .eq('plan_id', loadedPlan.id)
         .order('store', { ascending: true })
 
+      if (!isCurrent()) return
       if (itemError) throw itemError
       const loadedItems = (itemData ?? []) as ProductionPlanItemRow[]
+      // Plano e itens entram juntos: o cabeçalho de um plano com os números
+      // do anterior nunca chega a aparecer.
+      setPlan(loadedPlan)
       setItems(loadedItems)
       setQuantities(Object.fromEntries(
         loadedItems.map(item => [
@@ -401,6 +428,7 @@ export default function ProductionPlanningPage() {
         ]),
       ))
     } catch {
+      if (!isCurrent()) return
       setPlan(null)
       setItems([])
       setQuantities({})
@@ -410,11 +438,12 @@ export default function ProductionPlanningPage() {
       setLeftoverEnabled({})
       setError('Não foi possível carregar o planejamento agora.')
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
+    selectedDate.current = date
     if (!ready || user?.role !== 'admin') return
     let alive = true
     setLoading(true)
@@ -431,12 +460,12 @@ export default function ProductionPlanningPage() {
         if (alive) setDemandHistoryState('error')
       })
 
+    // O "carregando" do plano é da própria loadPlan: encerrá-lo aqui quando uma
+    // consulta vizinha falha cedo mostraria o plano do dia anterior sob o
+    // botão do dia novo.
     Promise.all([breadsRequest, loadOpenPlans(), loadAvailability(date), loadPlan(date)])
       .catch(() => {
         if (alive) setError('Não foi possível carregar o planejamento agora.')
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
       })
     return () => {
       alive = false
@@ -509,7 +538,7 @@ export default function ProductionPlanningPage() {
   }).slice(0, 8)
 
   async function createPlan() {
-    if (!user || creating) return
+    if (!user || creating || breadsState !== 'ready') return
     setCreating(true)
     setError('')
     try {
@@ -543,7 +572,12 @@ export default function ProductionPlanningPage() {
         const { error: itemError } = await supabase
           .from('production_plan_items')
           .insert(rows)
-        if (itemError) throw itemError
+        if (itemError) {
+          // Plano sem os pães do dia parece pronto e não é. Desfaz para a
+          // pessoa tentar de novo; os itens saem junto pelo ON DELETE CASCADE.
+          await supabase.from('production_plans').delete().eq('id', createdPlan.id)
+          throw itemError
+        }
       }
 
       showToastPS('Planejamento criado.')
@@ -844,7 +878,9 @@ export default function ProductionPlanningPage() {
             <div>
               <b>{dateLabel(date)}</b>
               <p style={{ margin: '4px 0 0', color: 'var(--ink-soft)', fontSize: 13 }}>
-                {expectedBreads.length} pães previstos para a data.
+                {breadsState === 'ready' && `${expectedBreads.length} pães previstos para a data.`}
+                {breadsState === 'loading' && 'Carregando os pães previstos para a data.'}
+                {breadsState === 'error' && 'Não foi possível carregar os pães. Toque em Atualizar para tentar de novo.'}
               </p>
             </div>
           </div>
@@ -854,7 +890,7 @@ export default function ProductionPlanningPage() {
               criado nesta data não vira pedido.
             </p>
           )}
-          <button type="button" className="ps-btn primary block" onClick={createPlan} disabled={creating}>
+          <button type="button" className="ps-btn primary block" onClick={createPlan} disabled={creating || breadsState !== 'ready'}>
             <Plus size={17} /> {creating ? 'Criando...' : 'Criar rascunho'}
           </button>
         </div>
