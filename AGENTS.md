@@ -59,7 +59,7 @@ Regras de parceria:
    (ex.: "manter dois logins em paralelo dobra os cenários de teste para
    sempre"), avise ANTES de implementar. Rodrigo decide, mas informado.
 5. **"Pronto" exige evidência.** Nunca declare concluído sem mostrar o que
-   verificou (seção Verificação). Se algo não foi testado, diga
+   verificou (`docs/regras/FECHAMENTO.md`). Se algo não foi testado, diga
    explicitamente "não testei X".
 6. **O agente executa a verificação técnica.** Entregue o link do preview,
     resultados e limites da prova por perfil e loja afetados. Login fictício,
@@ -84,7 +84,9 @@ Regras de parceria:
 
 Autoridades diferentes valem para perguntas diferentes:
 
-- **Regras de trabalho e segurança** — este arquivo, e somente ele.
+- **Regras de trabalho e segurança** — este arquivo e os de `docs/regras/`,
+  que ele aciona pela tabela de gatilhos abaixo. Em conflito, vale este
+  arquivo.
 - **Fato de implementação** (o que existe e como funciona) — código,
   migrations e testes. Vencem qualquer documento; divergência → reporte e
   corrija o documento na mesma tarefa.
@@ -112,18 +114,47 @@ Antes de propor uma mudança:
 5. se houver trabalho local não relacionado, branch desatualizada ou outra PR
    tocando a mesma área, pare e proponha como isolar ou reconciliar o trabalho
    antes de editar;
-6. leia este arquivo e `docs/CURRENT_STATE.md`;
+6. leia este arquivo, `docs/CURRENT_STATE.md` e as regras que a tabela de
+   gatilhos acionar para a tarefa;
 7. leia `lessons.md`: regras de uma linha, no máximo 40 linhas, sem narrativa;
 8. leia apenas o plano e os documentos relacionados à tarefa;
 9. audite o código, migrations e testes relevantes;
-10. faça o checkpoint de distribuição descrito em `MASTER.md` e em
-   `C:\Users\rodri\.ai-team\workspace\manuals\COORDENACAO.md`: registre
-   frentes independentes e seguras,
-   despachos escolhidos ou o motivo concreto para concentrar o trabalho;
+10. faça o checkpoint de distribuição descrito no MASTER e em
+    `~/.ai-team/workspace/manuals/COORDENACAO.md` da instalação da equipe (ver
+    Equipe de IA): registre frentes independentes e seguras, despachos
+    escolhidos ou o motivo concreto para concentrar o trabalho;
 11. resuma em 5 a 10 linhas o entendimento, o nível de risco e qualquer
     conflito encontrado no preflight.
 
 Não carregue todo o diretório `docs/` por padrão.
+
+## Tabela de gatilhos
+
+Este arquivo carrega sempre; o resto carrega quando o gatilho aparece. Os
+arquivos de `docs/regras/` valem tanto quanto ele; as demais linhas apontam
+roteiro ou manual, subordinados a estas regras. O teste do harness
+(`src/lib/harness.test.ts`, no `npm test`) confere ponteiros, regra fora da
+tabela e teto de tamanho. O CI de PR só documental não roda o `npm test`:
+quem muda regra roda esse teste antes do push (ver FECHAMENTO).
+
+| Gatilho | Leia antes de agir |
+| --- | --- |
+| Tocar `supabase/` (migration, seed, teste de banco, configuração) ou consultar o banco de produção | `docs/regras/BANCO.md` |
+| Começar ou encerrar sessão, diagnosticar falha, commitar, fazer push, declarar pronto, abrir ou atualizar PR, pedir `Check` ou integrar | `docs/regras/FECHAMENTO.md` |
+| Mexer em `.github/workflows/`, script de CI ou de banco ou `vercel.json` | `docs/regras/FECHAMENTO.md` e `docs/regras/BANCO.md` |
+| Criar, mover ou apagar arquivo; registrar estado, lição ou plano | `docs/regras/ARQUIVOS.md` |
+| Funcionalidade nova, de qualquer tamanho | `.claude/skills/nova-funcionalidade/SKILL.md` |
+| Preview, contas fictícias ou teste no navegador | `docs/AMBIENTE_PREVIEW.md` |
+
+## Equipe de IA
+
+Este arquivo cita papéis (quem conduz, quem revisa, ajudante, coordenador
+vigente, portaria) e funções, nunca o nome de uma IA como papel; `CLAUDE.md`,
+`.claude/` e CodeRabbit são nomes de ferramenta. As regras comuns da equipe —
+MASTER, protocolo, manuais da portaria e de coordenação e skills de função —
+são versionadas em `Orodrigao/equipe-ia` e instaladas em `~/.ai-team` da
+máquina (no Windows do Rodrigo, `C:\Users\rodri\.ai-team`); quem ocupa cada
+papel é decidido lá.
 
 ## Stack e limites arquiteturais
 
@@ -166,62 +197,30 @@ máquina — nem site, nem banco.
 - `vercel deploy`, plugin ou CLI para publicar: proibido. Servem no máximo
   para ler logs e configuração.
 
+**Trava da `main`:** a `main` é travada no GitHub pelo ruleset
+`Trava da main` (id 24014339): ninguém apaga a `main` nem força push nela,
+toda mudança entra por PR e o merge exige os checks obrigatórios verdes.
+Mexer na trava ou no nome de um job que é check exigido depende de aprovação
+(Segurança obrigatória). Checks exigidos e lacunas: `docs/CURRENT_STATE.md`.
+
 **Banco (Supabase, via Action `Banco (migrations)`):**
 
-- `supabase/migrations/` é a única história do schema. O marco zero é o
-  baseline `20260722190516_remote_schema.sql` — foto fiel de produção em
-  2026-07-22. O que veio antes está em
-  `docs/history/migrations-pre-baseline/` e nunca é reaplicado.
-- Migration viaja dentro do PR, junto do código que depende dela. O CI
-  ensaia a história completa do schema num banco local descartável (workflow
-  `CI Banco`); só depois do merge a Action aplica em produção com
-  `supabase db push`.
-- **Banco de teste por PR, no ar desde 2026-08-30 (PRs #287 a #291).** PR que
-  mexe em `supabase/` ganha do Supabase um banco isolado, construído com as
-  migrations e o seed fictício da própria branch. O workflow `Banco por PR`
-  aponta o preview da Vercel para esse banco e manda refazer o deploy; o
-  workflow `Usuarios do Banco por PR` cria nele as contas fictícias. Fechar a
-  PR apaga o banco e as variáveis daquela branch. A regra de decisão vive em
-  `scripts/preview-branch-env.mjs`, testada no `npm test` de toda PR.
-- PR que não mexe em `supabase/` não ganha banco próprio e não precisa: segue
-  no `PaneERP Preview` compartilhado, que espelha a `main`. Quem mantém esse
-  espelho é o job `Restaurar Banco Preview para a main`, disparado a cada push
-  na `main` e ao fechar PR sem merge. Nunca copie dados reais de produção para
-  lá.
-- **Não existe mais fila nem etiqueta:** duas PRs com migration convivem sem
-  se atropelar. A etiqueta `precisa-banco-preview`, o job `Reconstruir Preview
-  desta PR` e a espera dela no `ci.yml` foram removidos do código.
-- O link da Vercel só vale para teste depois que a Vercel estiver verde. PR que
-  mexe em `supabase/` espera também `Banco por PR` **e** `Usuarios do Banco por
-  PR`: o primeiro aponta o preview para o banco certo, o segundo cria as contas
-  fictícias lá dentro. Sem o segundo, o link abre num banco sem ninguém para
-  logar.
-- O ensaio descartável do `CI Banco` prova a história completa do schema, mas
-  **não roda em toda PR**: ele só dispara quando a PR toca
-  `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
-  `supabase/config.toml`. Quando dispara, é ele quem precisa estar verde. O
-  banco por PR não o substitui, e o Docker que ele usa segue de pé; trocar esse
-  ensaio precisa de prova própria.
-- Site e banco atualizam de forma independente no mesmo merge. Toda
-  migration precisa conviver tanto com a versão do site que está no ar
-  quanto com a que está entrando. Mudança destrutiva (remover ou renomear
-  coluna/tabela em uso) é sempre em duas fases, em PRs separados: primeiro
-  o site para de usar, depois o banco remove.
-- O projeto Supabase (`PanePedidosLojas`) é compartilhado com o sistema
-  ControlePizza. Este repositório é o único dono da história de migrations
-  do projeto — o baseline inclui os objetos do ControlePizza por isso.
-  Nenhum outro repositório ou agente aplica schema neste banco; mudança
-  para o ControlePizza entra por PR aqui, identificada como tal.
-- Aplicar migration manualmente em produção — CLI local, MCP ou SQL Editor —
-  é proibido, mesmo "só dessa vez". Foi exatamente isso que fez repo e banco
-  contarem histórias diferentes até 2026-07-22.
-- MCP do Supabase no desktop é ferramenta de leitura (consultar dados,
-  conferir policies). Escrita de schema por MCP: nunca.
-- Estado real do banco: `supabase migration list` (com o projeto linkado) ou
-  auditoria live somente leitura — nunca deduzido de arquivo local.
+- `supabase/migrations/` é a única história do schema. Migration viaja dentro
+  do PR, junto do código que depende dela, e só a Action aplica em produção,
+  depois do merge.
+- Aplicar migration à mão em produção — CLI local, MCP ou SQL Editor — é
+  proibido, mesmo "só dessa vez"; outra escrita fora da Action exige
+  aprovação (Segurança obrigatória). Escrita de schema por MCP: nunca.
+- Mudança destrutiva (remover ou renomear coluna/tabela em uso) é sempre em
+  duas fases, em PRs separados: primeiro o site para de usar, depois o banco
+  remove.
+- Estado real do banco nunca é deduzido de arquivo local.
+- Banco de teste por PR, ensaio `CI Banco`, projeto compartilhado com o
+  ControlePizza, migrations e regras de schema e RLS: `docs/regras/BANCO.md`.
 
 **Semáforo (CI):** PR com código, configuração ou alteração mista roda lint,
-tipos, testes e build no GitHub. PR documental segue a seleção abaixo.
+tipos, testes e build no GitHub. PR documental segue a dispensa descrita em
+`docs/regras/FECHAMENTO.md`.
 PR com migration ou seed também exige `CI Banco` e `Banco por PR` verdes.
 Merge exige todos os checks aplicáveis verdes, revisão exigida e evidência
 dos critérios técnicos pelo agente. Teste de Rodrigo não é requisito universal.
@@ -231,9 +230,7 @@ Pedido limitado a plano, draft ou preview não autoriza produção. Registre o l
 de entrega no plano/PR; ativação de fluxos reais e outras operações críticas devem
 estar expressamente cobertas. Aceite humano bloqueia apenas se solicitado para
 aquela entrega. Esta regra não remove restrições explícitas de tarefas em andamento.
-CI vermelho = não mergeia, sem exceção. Se o preview de uma PR sem migration
-falhar depois de um período sem uso, confira primeiro se o projeto
-`PaneERP Preview` foi pausado antes de investigar a funcionalidade.
+CI vermelho = não mergeia, sem exceção.
 
 ## Fluxo para nova funcionalidade
 
@@ -242,7 +239,7 @@ Nenhuma funcionalidade nova começa pela implementação.
 Para conduzir Descoberta e Plano, siga o roteiro guiado em
 `.claude/skills/nova-funcionalidade/SKILL.md` — ele operacionaliza esta
 seção (entrevista passo a passo, plano em fases e briefing autocontido
-para o executor) e vale para qualquer agente, Claude ou Codex.
+para o executor) e vale para qualquer agente, de qualquer fornecedor.
 
 ### 1. Descoberta
 
@@ -272,7 +269,7 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
 - Começar de branch `tipo/<descricao-curta>` criada a partir do
   `origin/main` atualizado — tipos: `feat`, `fix`, `docs`, `chore`,
   `refactor`, `test`; descrição em kebab-case. O prefixo descreve a
-  mudança, nunca o agente (nada de `codex/` ou `claude/`).
+  mudança, nunca o agente (nada de prefixo com o nome da IA).
 - Um worktree, uma tarefa e um escopo. O worktree nasce com a tarefa e
   morre com ela: mergeou ou fechou o PR → deletar branch (local e remota) e
   worktree no mesmo dia. Worktree sem tarefa ativa é entulho.
@@ -288,30 +285,36 @@ para o executor) e vale para qualquer agente, Claude ou Codex.
 - Não refatorar módulos vizinhos por iniciativa própria.
 - Não criar abstração sem consumidor real.
 
-**Dois agentes em paralelo (Codex + Claude):** permitido, com regras.
+**Dois agentes em paralelo:** permitido, com regras.
 Tarefas diferentes em áreas diferentes do código — nunca os dois no mesmo
 arquivo ou fluxo. Cada agente no seu worktree e branch; ambos nascem de
 `origin/main` fresco. Depois que um mergeia, o outro atualiza sua base
 antes do próprio merge. Para o git, vocês são dois devs — se comportem como
 bons colegas.
 
-**Subagentes e operários — autorização permanente do Rodrigo (2026-08-17):**
+**Ajudantes — autorização permanente do Rodrigo (2026-08-17):**
 o agente que conduz a sessão está autorizado a despachar, por iniciativa
 própria e sem pedir de novo a cada sessão, ajudantes que trabalhem sob a
 sua revisão: subagentes da própria sessão (modelos mais leves para
-varredura, rascunho, execução de fase bem especificada e revisão), o
-operário Gemini e a consulta ao Sol (skills `operario` e `consulta`, quando
-disponíveis na máquina). Regras do mandato:
+varredura, rascunho, execução de fase bem especificada e revisão) e as
+skills de função da equipe, quando instaladas na máquina —
+`segunda-opiniao` (revisão por agente de outra família de modelo),
+`leitura-cercada` e `proposta-cercada` (outro agente lê ou propõe mudança
+sem escrever no repositório) e `despachar-frente` (uma frente entregue a
+outro agente, que segue "Dois agentes em paralelo" e não integra sozinha).
+Regras do mandato:
 
 - anunciar a escalação em uma linha leiga ("essa desce para o executor
   leve porque é ajuste de tela");
 - toda entrega de ajudante passa pela revisão de quem despachou, com
   conferência por amostragem contra a realidade — entrega de agente nunca
   vai ao Rodrigo nem vira código sem esse filtro;
-- toda PR de código relevante recebe revisão adversarial de um segundo
-  agente (Sol, ou uma sessão limpa sem o contexto da tarefa) antes do Check
-  final e da integração; o resultado — incorporado ou descartado por
-  escrito — vai no corpo do PR;
+- toda PR de código relevante recebe revisão adversarial de um agente de
+  outra família de modelo (`segunda-opiniao`; sem a skill instalada, uma
+  sessão limpa sem o contexto da tarefa) antes do Check final e da
+  integração. Embuta o diff no pedido e leia o texto da resposta: saída sem
+  erro não prova que houve revisão. O resultado — incorporado ou descartado
+  por escrito — vai no corpo do PR;
 - área crítica (dinheiro, permissões, Auth, RLS, migrations) não desce
   para ajudante: fica com o agente principal;
 - fan-out grande (mais de ~4 agentes de uma vez, ou orquestração em
@@ -321,33 +324,11 @@ Essa autorização não é passiva: o checkpoint do preflight deve ser cumprido 
 Rodrigo precisar lembrar. Não crie uma frente quando a separação custar mais que
 o ganho ou quando ela dividir artificialmente o mesmo problema.
 
-**CodeRabbit nas PRs:** o aplicativo do GitHub está autorizado somente no
-repositório público `Orodrigao/PaneProducao` e faz revisão automática das PRs
-novas elegíveis. Como o fluxo deste projeto abre toda PR em rascunho, o check
-pode responder `Review skipped: draft pull request`; nesse caso, com o diff
-estável, publique o comentário `@coderabbitai full review` e aguarde o parecer.
-Como ele só atua depois do push, é evidência adicional e não substitui a revisão
-adversarial anterior à PR, testes, CI, Check da Portaria nem decisão do agente
-responsável.
+**CodeRabbit nas PRs:** revisão automática depois do push, evidência auxiliar
+que nunca substitui a revisão adversarial, o CI nem o Check, e nunca autoriza
+merge. Uso e limites: `docs/regras/FECHAMENTO.md`.
 
-- aguarde o check do CodeRabbit quando ele aparecer e classifique cada achado;
-  sugestão genérica ou incompatível com o projeto deve ser descartada por escrito,
-  problema real causado ou exposto pelo diff deve ser corrigido antes do
-  fechamento, e achado fora do escopo deve ser registrado e tratado conforme as
-  demais regras deste arquivo;
-- o CodeRabbit não pode aprovar PR, aplicar correção, gerar teste, criar commit ou
-  abrir PR derivada por iniciativa própria. Comandos como `@coderabbitai autofix`,
-  caixas de *Finishing Touches* e recursos de agente só podem ser acionados quando
-  fizerem parte do escopo autorizado e continuam sujeitos à revisão normal;
-- para uma PR aberta que nasceu antes da instalação, `@coderabbitai full review`
-  pede uma leitura completa. Não dispare revisão em massa nem reabra PR encerrada;
-- não amplie a instalação para outro repositório, especialmente um privado, nem
-  habilite produto cobrado por uso sem conferir preço, dados enviados, permissões
-  e obter autorização explícita do Rodrigo;
-- comentário ou check verde do CodeRabbit é evidência auxiliar. Nunca é autorização
-  para merge, publicação, mudança de permissão ou operação em produção.
-
-### 4. Verificação
+### 4. Verificação e entrega
 
 Toda mudança de código, antes de declarar pronto:
 
@@ -358,14 +339,6 @@ npm test
 npm run build
 ```
 
-Esses comandos pertencem ao fechamento, não ao diagnóstico. Durante a
-investigação, rode direto na worktree o menor teste que reproduz a falha
-(`npx vitest run <arquivo>`, `npx tsc --noEmit`, `npx eslint <arquivo>`) e prove
-vermelho-verde quando couber. As dependências já foram instaladas pelo `npm ci` no
-nascimento do worktree; pacote novo só entra pela caixa isolada. O `Diagnose` da
-Portaria reconstrói a caixa inteira a cada chamada e fica reservado à prova que
-exigir isolamento.
-
 A ordem do fechamento é fixa. Ela existe porque selar antes do CI custou seis PRs
 para uma entrega (367 a 374) e cinco para outra (376 a 380) em setembro de 2026:
 
@@ -373,8 +346,6 @@ para uma entrega (367 a 374) e cinco para outra (376 a 380) em setembro de 2026:
 2. push da branch e PR em rascunho;
 3. CI remoto verde. Falha no CI corrige na mesma branch e na mesma PR, com a
    tarefa da Portaria ainda `running`; correção que altera comportamento volta
-   ao passo 1; correção que altera comportamento volta
-   ao passo 1; correção que altera comportamento volta
    ao passo 1;
 4. `Verify` e um único `Check` isolado, que roda a bateria acima e sela o conteúdo;
 5. integração.
@@ -384,156 +355,16 @@ navegador, parte das provas só existe no CI remoto, e tarefa selada não volta 
 `running`. Selo antes do CI obriga a cancelar
 tarefa, branch e PR a cada falha encontrada lá.
 
-Não repita a bateria completa sem mudança relevante de código, dado ou ambiente,
-salvo instabilidade ou falha de infraestrutura identificada e registrada. Conte e
-explique no fechamento qualquer repetição completa. `tsc` e `build` sempre em
-sequência, nunca em paralelo.
+Diagnóstico antes da bateria, matriz perfil × loja, dispensa documental da
+Portaria, prova de lógica de workflow, PR, nome da sessão e casa limpa depois
+do merge: `docs/regras/FECHAMENTO.md`, que vale inteiro.
 
-Além disso:
+## Arquivos e memória
 
-- testar no navegador (no preview do PR quando existir) o fluxo completo
-  alterado;
-- testar a matriz afetada: cada perfil × cada loja que a mudança toca — não
-  apenas admin. Mudança em permissão, rota ou dado compartilhado testa no
-  mínimo um perfil restrito (vendas, expedição ou romaneio);
-- revisar o diff como revisão de código;
-- confirmar estados de carregamento, vazio, erro, sucesso e repetição de
-  ação;
-- não considerar concluído com teste quebrado — exceção única: falha
-  comprovadamente pré-existente, reproduzida na `main`, reportada e sem
-  relação com o diff; não a corrija junto (risco fora do escopo);
-- mudança de Auth, permissão ou RLS só conta como verificada com ao menos um
-  perfil que deve conseguir E um que deve ser bloqueado, ambos testados no
-  navegador;
-- listar para o Rodrigo o que foi verificado e o que ficou sem teste.
-
-O agente executa essa matriz, inclusive no navegador com contas fictícias;
-o acesso segue `docs/AMBIENTE_PREVIEW.md`. Mocks provam apenas cenários simulados.
-Quando houver gravação alterada, confirme persistência real no ambiente de teste
-após recarregar/reler e confirme que entradas rejeitadas não gravam indevidamente.
-Registre revisão testada, ambiente, perfis, resultados e lacunas no PR. Teste
-ignorado não conta como aprovado; repetição que passa não elimina instabilidade.
-Uma lacuna técnica relevante impede declarar prontidão e exige investigação,
-não um pedido genérico para Rodrigo testar. A avaliação humana não substitui prova.
-
-Antes de testar, consulte `PlanChecks` da Portaria. Mudança exclusivamente em
-`README.md`, `AGENTS.md`, `CLAUDE.md`, `lessons.md` ou Markdown sob `docs/`
-recebe conferência documental: diff, estrutura, referências adicionadas e consistência.
-Não instala dependências, executa testes do ERP, build, navegador ou prepara preview.
-Os caminhos anteriores de renomeações também contam; qualquer código, configuração,
-lista incompleta ou caminho fora dessa lista impede a dispensa. Cleanup de recursos
-que já existiam permanece obrigatório.
-
-Markdown que altera autoridade continua protegido e exige revisão independente,
-registrada em `-ReviewEvidence` no Check. Código da Portaria/instalador exige provas
-dos mecanismos alterados; isso não torna obrigatória a bateria do ERP.
-
-Após 15 minutos sem nova evidência, o responsável reavalia hipótese, ferramenta e
-divisão do trabalho. Registre tempos observados e contribuição por provedor nas
-três primeiras entregas do novo fluxo. Não estime tokens por PR nem repita bateria
-idêntica sem causa concreta de infraestrutura, instabilidade ou dados registrada.
-
-**Lógica de workflow se testa na máquina, não empurrando.** Passo de
-workflow que decide alguma coisa (um guarda que barra, um filtro que escolhe
-o que roda) só era exercitado abrindo PR e esperando o semáforo: caro e
-lento, e impossível de repetir à vontade enquanto todas as PRs disputavam um
-banco de teste só. O que esses passos decidem depende só dos dados que chegam, então
-copie o trecho do workflow ao pé da letra para um script de teste e troque
-apenas a fonte dos dados por casos fabricados. Cubra sempre os três que a
-realidade não oferece: lista vazia, campo ausente e lista truncada no
-limite de paginação. Trava de serialização falha FECHADA — na dúvida barra,
-porque deixar passar o que ela existe para impedir é pior que barrar à toa.
-Isso testa a regra, não a sintaxe: continue dizendo, ao declarar pronto,
-que o trecho real não foi executado.
-
-### 5. Entrega
-
-- Commits pequenos e em português.
-- Push somente da branch da tarefa.
-- **A sessão se identifica pela tarefa, e pela PR assim que ela existir.**
-  Renomeie a própria sessão para o assunto ao começar (`banco de teste por PR`)
-  e para `#<numero> <assunto curto>` logo depois de abrir a PR
-  (`#296 manual do banco por PR`). O Rodrigo acompanha várias frentes ao mesmo
-  tempo e a lista de sessões é o índice dele; sessão com nome genérico o obriga
-  a abrir uma por uma para achar a que ele quer. Vale para qualquer agente cuja
-  ferramenta permita renomear a sessão.
-- Pull request sempre draft, salvo pedido explícito em contrário.
-- Nunca fazer push direto na `main`.
-- Preencher todas as seções aplicáveis do template de PR; seção não
-  aplicável recebe `N/A` com justificativa curta, nunca é apagada.
-- Informar em linguagem leiga: o que mudou para a operação, arquivos
-  alterados, verificações executadas e riscos restantes.
-- Fechar com o link do preview, a evidência dos testes executados pelos agentes
-  e as lacunas concretas (regra 6). Sugestões de avaliação humana são opcionais,
-  salvo aceite humano explicitamente solicitado para a entrega.
-- Depois do merge: confirmar que o deploy ficou "Ready" (e, se houve
-  migration, que a Action `Banco (migrations)` passou), deletar branch e
-  worktree, e avisar o Rodrigo: "no ar, ambiente limpo". A entrega só
-  termina com a casa limpa.
-
-Uma sessão cobre uma entrega lógica. PR substituta da mesma entrega pode
-continuar nela; entrega integrada, cancelada ou encerrada exige fechamento e fim
-da sessão. Nova fase ou novo objetivo que abra outra PR nasce em nova
-sessão, com passagem curta e sem logs extensos. Acompanhe jobs por esperas ou
-consultas compactas, com intervalo crescente, e comunique somente transições
-relevantes.
-
-No fechamento, quando observável, separe tempo de implementação, diagnóstico,
-testes específicos, baterias completas, espera externa, retrabalho e bloqueio
-por cota. Não estime retrospectivamente o que não foi medido.
-
-## Memória útil
-
-Após uma tarefa bem-sucedida:
-
-- atualize `docs/CURRENT_STATE.md` somente se fase, capacidade ou risco real
-  mudou;
-- registre em `lessons.md` somente regra de uma linha (até 40 palavras),
-  generalizável e capaz de evitar erro futuro, formato `data - slug - regra`.
-  O arquivo tem teto de 40 linhas: passou disso, consolide antes de acrescentar.
-  Post-mortem fica no corpo da PR; lição que puder virar teste, lint ou guarda
-  vira código; como-fazer de ambiente vai para `docs/AMBIENTE_PREVIEW.md`;
-- altere `AGENTS.md` somente quando surgir uma regra global e durável —
-  nunca estado, que envelhece e vira mapa errado;
-- atualize `docs/PLAN.md` somente quando roadmap, ordem ou critério de
-  pronto mudar;
-- mova para `docs/history/` documentos de tarefa que perderam vigência.
-
-## Contrato de arquivos
-
-Agentes diferentes escrevem neste repositório; sem contrato, ele vira um
-depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
-
-- **Raiz:** somente `AGENTS.md`, `CLAUDE.md`, `lessons.md` e `README.md`.
-  Nunca crie arquivo novo na raiz.
-- **`docs/`:** o cânone fixo (`CURRENT_STATE.md`, `PLAN.md`, `PRD.md`) mais
-  um documento por funcionalidade, em `MAIUSCULAS_COM_UNDERSCORE.md`.
-  Antes de criar, procure: se já existe documento da funcionalidade,
-  atualize-o — nunca crie um segundo com nome parecido.
-- **`docs/history/`:** documento que perdeu vigência é movido para cá
-  (movido, nunca copiado). Aqui nada é editado.
-- **`docs/examples/` e `test/fixtures/`:** dados de exemplo, sempre
-  anonimizados.
-- **`supabase/`:** migrations e testes pgTAP, nos formatos já definidos.
-- **`.claude/skills/`:** skills compartilhadas do harness de IA, uma por
-  pasta com `SKILL.md`. É o único conteúdo de `.claude/` versionado; as
-  configurações locais por máquina (`settings.local.json`, `launch.json`)
-  seguem ignoradas. Skill nunca contém segredo.
-- **Proibido em qualquer lugar:** markdown dentro de `src/`, arquivos de
-  rascunho ou anotação (`NOTES.md`, `TODO.md`, `RESUMO.md`, `PLANO_V2.md`),
-  relatório de tarefa como arquivo novo (o PR é o relatório) e qualquer
-  cópia de documento existente. Na dúvida sobre onde escrever: não crie —
-  pergunte.
-
-Não guardar:
-
-- narração da tarefa;
-- informação óbvia ao ler o código;
-- lista de arquivos alterados;
-- estado temporário de branch;
-- detalhe já preservado no PR ou commit;
-- snapshot chamado de "estado atual" sem data e fonte;
-- todo de entrega específica fora de `docs/history/` depois de concluída.
+Todo arquivo novo tem um único lugar legítimo; a raiz só aceita `AGENTS.md`,
+`CLAUDE.md`, `lessons.md` e `README.md`. Na dúvida sobre onde escrever: não
+crie — pergunte. O contrato completo e o que registrar depois de uma tarefa
+(estado, lição, plano, histórico): `docs/regras/ARQUIVOS.md`.
 
 ## Segurança obrigatória
 
@@ -549,6 +380,10 @@ no escopo autorizado; esta lista não exige um novo OK a cada execução.
 - deploy manual de Edge Function;
 - alteração de `.env`, segredos, tokens ou chaves;
 - dependência nova de produção;
+- alterar, desativar ou pôr exceção no ruleset `Trava da main`, ou renomear
+  ou remover job que é check exigido (toda PR ficaria esperando para sempre);
+- ampliar aplicativo do GitHub para outro repositório ou habilitar produto
+  cobrado por uso;
 - exclusão de branch ou worktree — exceto o fecho de ciclo pós-merge
   (deletar branch e worktree da tarefa concluída é obrigação, não exige
   aprovação).
@@ -568,35 +403,6 @@ Nunca versionar:
 - dados pessoais que não sejam indispensáveis ao funcionamento.
 
 Fixtures devem ser anonimizadas em `test/fixtures/` ou `docs/examples/`.
-
-## Supabase
-
-**Migrations:**
-
-- Criar com `supabase migration new <descricao>` (gera o timestamp correto).
-  Nunca criar arquivo com timestamp anterior ao último já aplicado.
-- A migration entra no mesmo PR do código que depende dela e é aplicada em
-  produção pela Action após o merge (ver Deploy e produção).
-- Migration é só ida: correção de migration já mergeada é uma migration
-  nova, nunca edição da antiga.
-
-**Regras de schema e RLS:**
-
-- Toda tabela em schema exposto deve ter RLS antes de receber dados.
-- Grants da Data API e policies RLS são controles diferentes; migrations
-  devem tratar ambos explicitamente.
-- Não usar policy genérica permissiva para `anon` ou `authenticated`.
-- Policies de escrita devem validar o perfil e o escopo da operação.
-- `UPDATE` precisa de policy de leitura e de `WITH CHECK`.
-- Função crítica precisa de validação de entrada, tratamento de erro e
-  privilégio mínimo.
-- `SECURITY DEFINER` exige revisão específica, `search_path` seguro e grants
-  explícitos.
-- Antes de nova informação financeira, concluir o hardening indicado em
-  `docs/CURRENT_STATE.md`.
-- Não deduza o estado de produção pelas migrations locais; tarefa de
-  segurança compara migration, resultado documentado, código cliente e
-  auditoria live somente leitura.
 
 ## Código e UX
 

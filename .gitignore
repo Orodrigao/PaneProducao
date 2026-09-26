@@ -15,7 +15,7 @@ _GUIA_INFRA.md
 
 # Configuração local do Claude Code (por máquina, não versionar)
 .claude/*
-# Exceção: skills compartilhadas viajam no repositório (ver AGENTS.md)
+# Exceção: skills compartilhadas viajam no repositório (ver docs/regras/ARQUIVOS.md)
 !.claude/skills/
 
 # Sessão autenticada, downloads e evidências locais do coletor CNM

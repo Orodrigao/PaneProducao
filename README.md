@@ -5,8 +5,9 @@ O sistema complementa o PDV fiscal e busca responder:
 
 > Para onde vai o dinheiro da Pane&Salute?
 
-Fonte única de onboarding — regras de trabalho, arquitetura, segurança e
-fluxo, para agentes e humanos: [AGENTS.md](AGENTS.md). Estado real do
+Porta de entrada única de onboarding — regras de trabalho, arquitetura,
+segurança e fluxo, para agentes e humanos: [AGENTS.md](AGENTS.md), que aciona
+as regras de [docs/regras/](docs/regras/). Estado real do
 projeto: [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 
 ## Desenvolvimento local

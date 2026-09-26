@@ -23,7 +23,7 @@ abertas, branches e worktrees ativos, `docs/CURRENT_STATE.md`,
 `lessons.md`. Procure sobreposição com trabalho em andamento; se houver,
 pare e proponha como isolar antes da descoberta.
 
-O preflight completo do AGENTS.md (os 10 passos da seção "Hierarquia da
+O preflight completo do AGENTS.md (os 11 passos da seção "Hierarquia da
 documentação", incluindo diffs, commits recentes e auditoria de código,
 migrations e testes) deve estar concluído antes de apresentar qualquer
 solução ou plano — mas a auditoria profunda pode esperar as primeiras
@@ -151,8 +151,8 @@ termina testável no navegador. Para cada fase:
 
 Para plano de módulo inteiro (mais de duas fases, ou qualquer coisa
 com dado financeiro), antes de pedir a aprovação do Rodrigo peça uma
-revisão adversarial a um segundo agente — o Claude consulta o Sol, o
-Sol consulta o Claude; sem ponte disponível, uma sessão nova sem o
+revisão adversarial a um agente de outra família de modelo, pela skill
+de função `segunda-opiniao`; sem ponte disponível, uma sessão nova sem o
 contexto desta serve — com uma pergunta única: "o que falta neste
 plano que qualquer sistema desse tipo tem?" Cada lacuna apontada
 entra no plano ou é descartada por escrito, nunca ignorada.
@@ -173,7 +173,7 @@ de texto no chat — nunca um
 arquivo novo no repositório — e precisa ser autocontido: quem o recebe
 não vê esta conversa nem a auditoria que você fez. Tudo que o executor
 precisa saber vai no texto. Ele serve tanto para esta mesma sessão
-executar quanto para colar numa sessão nova (Claude ou Sol/Codex).
+executar quanto para colar numa sessão nova, de qualquer agente.
 
 Estrutura:
 

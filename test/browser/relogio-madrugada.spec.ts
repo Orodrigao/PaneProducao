@@ -158,7 +158,7 @@ test.describe('o dia padrão das telas que gravam registro', () => {
   })
 })
 
-// A matriz do AGENTS.md pede ao menos um perfil restrito, não só administrador.
+// A matriz de docs/regras/FECHAMENTO.md pede ao menos um perfil restrito, não só administrador.
 // Quem monta romaneio da Exposição de madrugada é justamente quem sofria o defeito.
 test.describe('perfil restrito', () => {
   test.use({ storageState: sessionState.romaneioEx })
