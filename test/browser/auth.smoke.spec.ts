@@ -761,33 +761,17 @@ function productPhotoPreviewUrl(): Promise<string | undefined> {
     }
 
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) as {
-      pull_request?: { head?: { sha?: string } }
+      pull_request?: { number?: number; head?: { sha?: string } }
       repository?: { full_name?: string }
     }
-    const repository = process.env.GITHUB_REPOSITORY ?? event.repository?.full_name
-    const headSha = event.pull_request?.head?.sha
-    if (!repository || !headSha) throw new Error('O evento da PR nao informou repositorio e commit para localizar o preview.')
-
-    const deployments = await fetch(
-      `https://api.github.com/repos/${repository}/deployments?sha=${headSha}&environment=Preview&per_page=10`,
-      { headers: { Accept: 'application/vnd.github+json' } },
-    )
-    if (!deployments.ok) throw new Error(`O GitHub respondeu ${deployments.status} ao localizar o preview da PR.`)
-    const rows = await deployments.json() as { id?: number }[]
-
-    for (const deployment of rows) {
-      if (!deployment.id) continue
-      const statuses = await fetch(
-        `https://api.github.com/repos/${repository}/deployments/${deployment.id}/statuses?per_page=20`,
-        { headers: { Accept: 'application/vnd.github+json' } },
-      )
-      if (!statuses.ok) continue
-      const statusRows = await statuses.json() as { state?: string; environment_url?: string }[]
-      const latest = statusRows[0]
-      if (latest?.state === 'success' && latest.environment_url) return latest.environment_url
-    }
-
-    throw new Error('A Vercel ainda nao publicou um preview verde para o commit atual da PR.')
+    // Import dinamico: no import estatico o Playwright converte o modulo para
+    // CommonJS e quebra no import.meta de scripts/change-scope.mjs.
+    const { localizarPreviewDaPr } = await import('../../scripts/preview-da-pr.mjs')
+    return localizarPreviewDaPr({
+      repositorio: process.env.GITHUB_REPOSITORY ?? event.repository?.full_name,
+      prNumber: event.pull_request?.number,
+      headSha: event.pull_request?.head?.sha,
+    })
   })()
   return productPhotoPreviewUrlPromise
 }
