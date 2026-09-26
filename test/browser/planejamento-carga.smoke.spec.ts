@@ -128,6 +128,21 @@ for (const undo of ['desfeito', 'não desfeito'] as const) {
       }
       return route.abort()
     })
+    // Um pão previsto em todos os dias, para o cenário não depender do
+    // cardápio semeado no banco de teste.
+    await page.route(/\/rest\/v1\/breads\?/, async route => {
+      if (route.request().method() !== 'GET') return route.abort()
+      return route.fulfill({
+        json: [{
+          id: '0d0d0d0d-0000-4000-8000-00000000000d',
+          name: 'Pão de teste de carregamento',
+          days: [0, 1, 2, 3, 4, 5, 6],
+          active: true,
+          is_pj: false,
+          unit: 'un',
+        }],
+      })
+    })
     await page.route(/\/rest\/v1\/production_plan_items(\?|$)/, async route => {
       const method = route.request().method()
       if (method === 'POST') {
