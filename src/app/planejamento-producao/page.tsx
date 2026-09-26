@@ -593,7 +593,9 @@ export default function ProductionPlanningPage() {
             // Não deu para desfazer: mostra o plano vazio, que tem o botão
             // Descartar, e diz o que fazer.
             await loadPlan(date)
-            setError('O rascunho foi criado sem os pães do dia. Toque em Descartar e crie de novo.')
+            if (selectedDate.current === date) {
+              setError('O rascunho ficou sem os pães do dia. Descarte-o e crie de novo; se ele não aparecer, toque em Atualizar.')
+            }
             return
           }
           throw itemError

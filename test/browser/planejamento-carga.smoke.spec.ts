@@ -164,7 +164,7 @@ for (const undo of ['desfeito', 'não desfeito'] as const) {
       await expect(createDraft).toBeVisible()
     } else {
       await expect(page.getByText(
-        'O rascunho foi criado sem os pães do dia. Toque em Descartar e crie de novo.',
+        'O rascunho ficou sem os pães do dia. Descarte-o e crie de novo; se ele não aparecer, toque em Atualizar.',
       )).toBeVisible()
       await expect(page.locator(`[data-plan-id="${fakeId}"]`)).toBeVisible()
       await expect(page.getByRole('button', { name: 'Descartar' })).toBeVisible()
