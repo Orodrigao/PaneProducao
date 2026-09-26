@@ -65,39 +65,109 @@ async function expectLayoutFitsViewport(page: Page, width: number, height: numbe
 }
 
 test('Planejamento preserva leitura e toque no computador, tablet e celular', async ({ page }) => {
+  // Pode precisar percorrer alguns dias até achar um com pães; a folga também
+  // deixa tempo para a limpeza do rascunho criado pelo teste.
+  test.setTimeout(180_000)
   await enterAsAdmin(page)
+
+  // A tela não descarta resposta velha: trocar de dia com a consulta anterior
+  // ainda no ar pode trazer de volta o plano do dia anterior. Por isso o teste
+  // só troca de dia depois que a consulta do dia atual voltou e a tela mostra
+  // o conteúdo com a data dele.
+  const loadedPlanDates = new Set<string>()
+  page.on('response', response => {
+    if (response.request().method() !== 'GET') return
+    const url = new URL(response.url())
+    if (!url.pathname.endsWith('/rest/v1/production_plans')) return
+    const planDate = url.searchParams.get('production_date')?.match(/^eq\.(\d{4}-\d{2}-\d{2})$/)?.[1]
+    if (planDate) loadedPlanDates.add(planDate)
+  })
+
+  const dayGroup = page.getByRole('group', { name: 'Planejar para' })
+  const summary = page.getByText('Total planejado', { exact: true })
+  const jcTotal = page.getByLabel('JC total').first()
+  const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
+  const discard = page.getByRole('button', { name: 'Descartar' })
+
+  async function waitForSelectedDay() {
+    const dateKey = await page.locator('time[datetime]').getAttribute('datetime')
+    expect(dateKey, 'a data do dia escolhido deve estar na tela').toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    await expect.poll(() => loadedPlanDates.has(dateKey!), {
+      message: `a consulta do plano de ${dateKey} deve responder`,
+      timeout: 30_000,
+    }).toBe(true)
+
+    const [year, month, day] = dateKey!.split('-')
+    const dateBR = `${day}/${month}/${year}`
+    const planBanner = page.locator('.ps-banner').filter({ hasText: new RegExp(`^\\s*${dateBR}\\s+-\\s`) })
+    const emptyDayCard = page.locator('.ps-card', { has: createDraft })
+      .filter({ has: page.getByText(dateBR, { exact: true }) })
+    await expect(planBanner.or(emptyDayCard)).toBeVisible({ timeout: 30_000 })
+    return { planBanner, emptyDayCard }
+  }
+
+  async function selectDay(dayName: string) {
+    const dayButton = dayGroup.getByRole('button', { name: dayName, exact: true })
+    await dayButton.click()
+    await expect(dayButton).toHaveAttribute('aria-pressed', 'true')
+    return waitForSelectedDay()
+  }
+
   await page.goto('/planejamento-producao')
 
   let createdPlanId: string | null = null
-  let selectedDayName = ''
-  const createDraft = page.getByRole('button', { name: 'Criar rascunho' })
+  let createdDayName = ''
 
   try {
     await expect(page.getByText('Dia selecionado', { exact: true })).toBeVisible()
+    await waitForSelectedDay()
 
-    const dayGroup = page.getByRole('group', { name: 'Planejar para' })
-    const otherDay = dayGroup.locator('button[aria-pressed="false"]').first()
-    selectedDayName = await otherDay.innerText()
-    await otherDay.click()
-    await expect(dayGroup.getByRole('button', { name: selectedDayName, exact: true }))
-      .toHaveAttribute('aria-pressed', 'true')
+    const otherDayNames = await dayGroup.locator('button[aria-pressed="false"]').allInnerTexts()
+    expect(otherDayNames.length, 'a tela deve oferecer outros dias para planejar').toBeGreaterThan(0)
 
-    const summary = page.getByText('Total planejado', { exact: true })
-    await expect(summary.or(createDraft)).toBeVisible({ timeout: 30_000 })
+    // O banco de teste é compartilhado: outra execução pode ter deixado num dia
+    // um rascunho sem nenhum pão, e aí não há linha de loja para medir. Usa o
+    // primeiro dia em que dá para criar o próprio rascunho ou em que o plano já
+    // tem pães; rascunho vazio de terceiros é pulado, nunca alterado.
+    let foundDayWithBreads = false
+    for (const dayName of otherDayNames) {
+      const { planBanner, emptyDayCard } = await selectDay(dayName)
 
-    if (await createDraft.isVisible()) {
-      const createResponsePromise = page.waitForResponse(response => (
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname.endsWith('/rest/v1/production_plans')
-      ))
-      await createDraft.click()
-      const createResponse = await createResponsePromise
-      if (createResponse.ok()) {
+      if (await emptyDayCard.isVisible()) {
+        // O botão aparece antes de a lista de pães chegar; criar nesse instante
+        // grava um rascunho vazio. Espera a contagem de pães previstos.
+        await expect(emptyDayCard.getByText(/^[1-9]\d* pães previstos para a data\.$/))
+          .toBeVisible({ timeout: 30_000 })
+        const createResponsePromise = page.waitForResponse(response => (
+          response.request().method() === 'POST'
+          && new URL(response.url()).pathname.endsWith('/rest/v1/production_plans')
+        ))
+        createdDayName = dayName
+        await createDraft.click()
+        const createResponse = await createResponsePromise
+        expect(createResponse.ok(), 'a criação do rascunho deve ser aceita').toBe(true)
         const createdRows = await createResponse.json() as Array<{ id?: string }>
         createdPlanId = createdRows[0]?.id ?? null
         expect(createdPlanId, 'a criação do rascunho deve retornar seu identificador').toBeTruthy()
+        await expect(planBanner).toBeVisible({ timeout: 30_000 })
+        await expect(page.locator(`[data-plan-id="${createdPlanId}"]`)).toBeVisible()
+        await expect(jcTotal, 'o rascunho criado pelo teste deve trazer os pães do dia')
+          .toBeVisible({ timeout: 30_000 })
+        foundDayWithBreads = true
+        break
+      }
+
+      // Plano existente só mostra as linhas das lojas depois que a lista de pães
+      // chega; a espera curta separa "ainda carregando" de "rascunho vazio".
+      const existingPlanHasBreads = await jcTotal
+        .waitFor({ state: 'visible', timeout: 10_000 })
+        .then(() => true, () => false)
+      if (existingPlanHasBreads) {
+        foundDayWithBreads = true
+        break
       }
     }
+    expect(foundDayWithBreads, `nenhum dia com pães planejáveis entre ${otherDayNames.join(', ')}`).toBe(true)
     await expect(summary).toBeVisible({ timeout: 30_000 })
 
     await expectLayoutFitsViewport(page, 1440, 1000)
@@ -106,22 +176,27 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
     await expectLayoutFitsViewport(page, 390, 844)
   } finally {
     if (createdPlanId && !page.isClosed()) {
-      await page.setViewportSize({ width: 1440, height: 1000 })
-      await page.reload()
-
-      const selectedDay = page
-        .getByRole('group', { name: 'Planejar para' })
-        .getByRole('button', { name: selectedDayName, exact: true })
-      await selectedDay.click()
-
-      const discard = page.getByRole('button', { name: 'Descartar' })
-      const ownPlan = page.locator(`[data-plan-id="${createdPlanId}"]`)
-      await expect(ownPlan.or(createDraft)).toBeVisible({ timeout: 30_000 })
-      if (await ownPlan.isVisible() && await discard.isVisible()) {
+      // Rascunho esquecido no banco compartilhado derruba as próximas execuções,
+      // então a limpeza que não conclui reprova o teste em vez de passar calada.
+      let cleanupFailure = ''
+      try {
+        await page.setViewportSize({ width: 1440, height: 1000 })
+        const ownPlan = page.locator(`[data-plan-id="${createdPlanId}"]`)
+        if (!await ownPlan.isVisible()) {
+          loadedPlanDates.clear()
+          await page.reload()
+          await waitForSelectedDay()
+          await selectDay(createdDayName)
+        }
+        await expect(ownPlan).toBeVisible({ timeout: 30_000 })
+        await expect(discard).toBeVisible()
         page.once('dialog', dialog => dialog.accept())
         await discard.click()
         await expect(createDraft).toBeVisible({ timeout: 30_000 })
+      } catch (error) {
+        cleanupFailure = error instanceof Error ? error.message : String(error)
       }
+      expect.soft(cleanupFailure, `o rascunho ${createdPlanId} criado pelo teste deve ser apagado`).toBe('')
     }
   }
 })
