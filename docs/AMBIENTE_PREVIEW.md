@@ -231,7 +231,8 @@ Os testes de fotos de produto são a exceção: falam com o preview da Vercel da
 própria PR, localizado por `scripts/preview-da-pr.mjs`. Quando o último push é
 só documental, a Vercel não publica o commit; o teste então usa o último
 commit publicado da PR, desde que esteja verde, venha da Vercel e só haja
-documentação ou mecanismo de CI entre ele e o commit atual. Qualquer dúvida
+documentação entre ele e o commit atual. Mudança no mecanismo de CI no meio
+(inclusive nos workflows que ligam o preview ao banco da PR) não vale. Qualquer dúvida
 reprova com a mensagem "A Vercel ainda nao publicou um preview verde".
 
 ## Testes locais e armadilhas conhecidas

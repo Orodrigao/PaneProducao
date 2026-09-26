@@ -124,9 +124,13 @@ describe('commitsAnterioresDaPr', () => {
 })
 
 describe('comparacaoPermiteReuso', () => {
-  it('aceita so documentacao ou mecanismo de CI depois de um ancestral', () => {
+  it('aceita so documentacao depois de um ancestral', () => {
     assert.equal(comparacaoPermiteReuso({ status: 'ahead', files: [doc('AGENTS.md'), doc('docs/X.md')] }).ok, true)
-    assert.equal(comparacaoPermiteReuso({ status: 'ahead', files: [doc('scripts/change-scope.mjs')] }).ok, true)
+  })
+
+  it('mecanismo de CI no meio reprova: pode ter mudado a ligacao do preview com o banco', () => {
+    assert.equal(comparacaoPermiteReuso({ status: 'ahead', files: [doc('.github/workflows/banco-por-pr.yml')] }).ok, false)
+    assert.equal(comparacaoPermiteReuso({ status: 'ahead', files: [doc('AGENTS.md'), doc('scripts/change-scope.mjs')] }).ok, false)
   })
 
   it('codigo, vercel.json sem conferencia, historico divergente ou campo ausente reprovam', () => {

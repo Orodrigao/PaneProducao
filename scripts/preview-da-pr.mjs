@@ -23,9 +23,9 @@ import { classificarPerfilMudancas } from './change-scope.mjs'
  * - sem deployment: anda pelos commits DA PROPRIA PR, do mais novo para o
  *   mais antigo, ate o primeiro que tenha deployment. Esse precisa estar
  *   verde (sem voltar mais para tras) e a comparacao dele ate o commit atual
- *   precisa provar que ele e ancestral e que so mudou documentacao ou
- *   mecanismo de CI, pelo mesmo classificador que a Vercel usa. Assim o codigo
- *   publicado e o mesmo do commit atual, e o banco e o da mesma branch.
+ *   precisa provar que ele e ancestral e que so mudou documentacao, pelo
+ *   mesmo classificador que a Vercel usa. Assim o codigo publicado e o mesmo
+ *   do commit atual, e o banco e o da mesma branch.
  */
 
 /** A API do GitHub para de listar commits de PR em 250, sem avisar. */
@@ -100,9 +100,10 @@ export function commitsAnterioresDaPr(commits, headSha) {
 
 /**
  * A comparacao `publicado...atual` prova que o preview publicado serve para o
- * commit atual: publicado e ancestral e so houve documentacao ou mecanismo de
- * CI no meio. `vercel.json` sem referencia git cai em 'product' no
- * classificador, de proposito.
+ * commit atual: publicado e ancestral e so houve documentacao no meio.
+ * Mudanca no mecanismo de CI NAO basta, embora a Vercel tambem pule o build
+ * nela: esse mecanismo inclui os workflows que ligam o preview ao banco da PR,
+ * e codigo igual nao prova que essa ligacao continua a mesma.
  */
 export function comparacaoPermiteReuso(comparacao) {
   if (!comparacao || (comparacao.status !== 'ahead' && comparacao.status !== 'identical')) {
@@ -117,7 +118,7 @@ export function comparacaoPermiteReuso(comparacao) {
   }
   if (comparacao.status === 'identical' && arquivos.length === 0) return { ok: true }
   const { perfil, motivo, arquivo } = classificarPerfilMudancas(arquivos)
-  if (perfil === 'documentation' || perfil === 'ci-mechanism') return { ok: true }
+  if (perfil === 'documentation') return { ok: true }
   return { ok: false, motivo: `houve mudanca que exige build novo (${motivo ?? perfil}${arquivo ? `: ${arquivo}` : ''}).` }
 }
 
