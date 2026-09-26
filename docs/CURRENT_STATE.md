@@ -28,6 +28,23 @@ incorporada à `main`.
   exige a PR atualizada com a `main` antes do merge
   (`strict_required_status_checks_policy: false`): atualizar a base depois do
   merge de outro agente é regra escrita, não trava.
+- **Fechando a lacuna (decisão do Rodrigo em 26/09/2026):** entra na trava
+  `Aplicar história completa num banco limpo`, o job do `CI Banco`, que impede
+  migration que não aplica limpa de chegar a produção. Para isso o `CI Banco`
+  passou a rodar em toda PR (o ensaio só quando a PR mexe em banco; a regra
+  está em `scripts/ci-banco-escopo.mjs`); com o filtro antigo, PR sem banco
+  nunca receberia o check e ficaria esperando para sempre. A trava muda só
+  depois que essa mudança estiver na `main`; até lá, a lista de três checks
+  acima continua valendo. PR aberta antes disso fica sem o check até receber
+  um push ou trazer a `main` (botão "Update branch"); fechar e reabrir
+  reconstrói o banco compartilhado e não é o caminho.
+- **Ficam fora da trava, de propósito:** `Banco por PR` só confere se o link de
+  teste aponta para o banco certo, não protege produção, e depende das APIs da
+  Vercel e do Supabase e da cota de bancos de teste; obrigatório, qualquer
+  falha dessas travaria todo merge, sem exceção nem para o dono. `Usuarios do
+  Banco por PR` pode correr antes de o banco da PR ficar pronto (falha
+  observada em 03/09/2026, mais abaixo) e travaria merges por essa corrida. Os
+  dois seguem obrigatórios pela regra escrita em PR que mexe em `supabase/`.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
   portaria e de coordenação e as skills de função — vivem no repositório
   `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta
