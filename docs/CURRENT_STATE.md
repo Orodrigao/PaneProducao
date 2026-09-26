@@ -9,6 +9,26 @@ o PR #441. As demais seções conservam suas datas de revisão anteriores.
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
+## Trava da `main` e equipe de IA (26/09/2026)
+
+- **A `main` está travada no GitHub desde 25/09/2026** pelo ruleset
+  `Trava da main` (id 24014339). Conferido por leitura da API pública do
+  GitHub em 26/09/2026: ativo, sem ninguém na lista de exceção (nem o dono).
+  Recusa apagar a `main` e forçar push nela, exige PR (sem mínimo de
+  aprovações) e exige verdes três checks: `Classificar mudança (documental,
+  mecanismo de CI ou produto)`, `Verificação (lint, tipos, testes, build)` e
+  `Navegador (login, perfis e lojas)`.
+- **Lacuna da trava:** `CI Banco`, `Banco por PR` e `Usuarios do Banco por PR`
+  não estão entre os checks obrigatórios. Numa PR que mexe em `supabase/`, o
+  GitHub deixaria mergear com esses três vermelhos; quem segura hoje é a regra
+  do `AGENTS.md` (CI vermelho não mergeia), não a trava.
+- **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
+  portaria e de coordenação e as skills de função — vivem no repositório
+  `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta
+  data, o `AGENTS.md` cita papéis e funções, não nomes de fornecedor, e as
+  regras de banco, fechamento e arquivos saíram para `docs/regras/`, acionadas
+  pela tabela de gatilhos.
+
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 
 As PRs #339, #340 e #341 publicaram a ficha separada em Conferência → Revisão e
