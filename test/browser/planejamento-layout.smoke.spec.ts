@@ -70,10 +70,9 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
   test.setTimeout(180_000)
   await enterAsAdmin(page)
 
-  // A tela não descarta resposta velha: trocar de dia com a consulta anterior
-  // ainda no ar pode trazer de volta o plano do dia anterior. Por isso o teste
-  // só troca de dia depois que a consulta do dia atual voltou e a tela mostra
-  // o conteúdo com a data dele.
+  // O teste só troca de dia depois que a consulta do dia atual voltou e a tela
+  // mostra o conteúdo com a data dele. Assim cada decisão (criar, usar ou pular
+  // o dia) e a limpeza olham o dia certo, sem depender da ordem das respostas.
   const loadedPlanDates = new Set<string>()
   page.on('response', response => {
     if (response.request().method() !== 'GET') return
@@ -134,8 +133,8 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
       const { planBanner, emptyDayCard } = await selectDay(dayName)
 
       if (await emptyDayCard.isVisible()) {
-        // O botão aparece antes de a lista de pães chegar; criar nesse instante
-        // grava um rascunho vazio. Espera a contagem de pães previstos.
+        // Só cria depois que a lista de pães do dia chegou com ao menos um pão;
+        // rascunho sem pães não tem linhas das lojas para medir.
         await expect(emptyDayCard.getByText(/^[1-9]\d* pães previstos para a data\.$/))
           .toBeVisible({ timeout: 30_000 })
         const createResponsePromise = page.waitForResponse(response => (
