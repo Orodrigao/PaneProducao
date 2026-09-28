@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
@@ -15,7 +16,7 @@ test('Financeiro JC consulta o uso do cadastro e escolhe categoria controlada na
 
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
-  const xml = readFileSync(new URL('../../fixtures/nfe/sem-acrescimos.xml', import.meta.url), 'utf8')
+  const xml = readFileSync(resolve(process.cwd(), 'test/fixtures/nfe/sem-acrescimos.xml'), 'utf8')
     .replace('INSUMO FICTICIO A', 'MANJERICAO')
   await page.locator('input[type="file"]').setInputFiles({ name: 'nota-ficticia.xml', mimeType: 'text/xml', buffer: Buffer.from(xml) })
 
