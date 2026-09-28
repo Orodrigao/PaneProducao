@@ -192,8 +192,9 @@ export function matchesProductSearch(name: string, query: string): boolean {
  * Código de barras (GTIN) de verdade: 8, 12, 13 ou 14 dígitos que não sejam só
  * zeros. Produto a granel vem com cEAN "SEM GTIN"; comparar esse texto como
  * código fazia a memória tratar produtos diferentes do mesmo fornecedor como um
- * só (farinhas da Le 5 Stagioni, 28/09/2026). O banco repete esta regra em
- * private.gtin_valido.
+ * só (farinhas da Le 5 Stagioni, 28/09/2026). O item da nota continua guardando
+ * o que a NF-e diz; só a comparação com a memória usa esta regra, que o banco
+ * repete em private.gtin_valido ao gravar a memória.
  */
 export function normalizeGtin(value: string | null | undefined): string | null {
   const trimmed = (value ?? '').trim()
@@ -203,7 +204,6 @@ export function normalizeGtin(value: string | null | undefined): string | null {
 
 /** O banco também desempata memórias repetidas pela confirmação mais recente. */
 export function findLatestSupplierMapping<T extends NfeSupplierMappingIdentity>(item: NfeItemDraft, mappings: readonly T[]): T | undefined {
-  // Rascunho salvo antes deste conserto ainda pode trazer "SEM GTIN" no item.
   const itemGtin = normalizeGtin(item.ean)
   return [...mappings]
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
@@ -524,7 +524,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     return {
       lineNumber: numberValue(detail.getAttribute('nItem') ?? '0'),
       supplierCode: childText(prod, 'cProd') || null,
-      ean: normalizeGtin(childText(prod, 'cEAN')),
+      ean: childText(prod, 'cEAN') || null,
       description: childText(prod, 'xProd'),
       ncm: childText(prod, 'NCM') || null,
       quantity: numberValue(childText(prod, 'qCom') || childText(prod, 'qTrib')),

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { normalizeGtin, type NfeDraft, type NfeItemDraft } from '@/lib/nfeXml'
+import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
 import { composeNfe } from '@/lib/nfeComposition'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
@@ -451,7 +451,7 @@ export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId
     p_items: draft.items.map(item => ({
       line_number: item.lineNumber,
       supplier_product_code: item.supplierCode,
-      supplier_ean: normalizeGtin(item.ean),
+      supplier_ean: item.ean,
       source_description: item.description,
       source_unit: item.purchaseUnit,
       source_quantity: item.quantity,

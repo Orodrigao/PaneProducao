@@ -8,9 +8,11 @@
 --   * marcar um item como uso ou despesa não desliga a memória de outro produto
 --     do mesmo fornecedor, e classificar um produto não desliga a decisão de uso
 --     ou despesa de outro;
---   * o banco guarda nulo no lugar de "SEM GTIN" na memória e no item da nota,
---     qualquer que seja a porta de entrada; GTIN válido continua guardado;
---   * a regra de GTIN e os gatilhos não são chamados direto pela Data API.
+--   * a memória guarda nulo no lugar de "SEM GTIN", qualquer que seja a porta de
+--     entrada; GTIN válido continua guardado, sem espaços, e continua
+--     reconhecendo o mesmo produto mesmo com outro código do fornecedor;
+--   * o item da nota continua guardando o que a NF-e diz;
+--   * a regra de GTIN e o gatilho não são chamados direto pela Data API.
 --
 -- Caso real: as farinhas Mora, Croissant e La Rustica da Le 5 Stagioni, todas
 -- em KG e "SEM GTIN", ficaram com uma memória só, apontando para a farinha de
@@ -28,8 +30,6 @@ select ok(not has_function_privilege('authenticated', 'private.gtin_valido(text)
   'a regra de GTIN não é chamada direto pela Data API');
 select ok(not has_function_privilege('authenticated', 'private.normalizar_gtin_memoria_fornecedor()', 'execute'),
   'o gatilho da memória não é chamado direto');
-select ok(not has_function_privilege('authenticated', 'private.normalizar_gtin_item_nota()', 'execute'),
-  'o gatilho do item da nota não é chamado direto');
 
 select is(private.gtin_valido('SEM GTIN'), null, '"SEM GTIN" não é código de barras');
 select is(private.gtin_valido('0000000000000'), null, 'só zeros não é código de barras');
@@ -42,8 +42,6 @@ select has_trigger('public', 'payable_product_mappings', 'normalizar_gtin_memori
   'a memória de insumo normaliza o código de barras na gravação');
 select has_trigger('public', 'payable_non_catalog_mappings', 'normalizar_gtin_memoria_uso_despesa',
   'a memória de uso ou despesa normaliza o código de barras na gravação');
-select has_trigger('public', 'payable_purchase_items', 'normalizar_gtin_item_nota',
-  'o item da nota normaliza o código de barras na gravação');
 
 -- Cenário --------------------------------------------------------------------
 
@@ -140,8 +138,8 @@ select is((select count(*)::int from public.payable_product_mappings
   'a memória guarda nulo no lugar de "SEM GTIN"');
 select is((select count(*)::int from public.payable_purchase_items item
     join public.payable_purchases purchase on purchase.id = item.purchase_id
-    where purchase.supplier_id = '99310000-0000-4000-8000-0000000000f1' and item.source_ean is not null), 0,
-  'o item da nota guarda nulo no lugar de "SEM GTIN"');
+    where purchase.supplier_id = '99310000-0000-4000-8000-0000000000f1' and item.source_ean = 'SEM GTIN'), 2,
+  'o item da nota continua guardando o que a NF-e diz');
 
 -- 2. Nota seguinte com uma farinha nova -------------------------------------
 
@@ -208,7 +206,26 @@ select ok(exists(select 1 from public.payable_non_catalog_mappings
     where supplier_id = '99310000-0000-4000-8000-0000000000f1' and supplier_product_code = '009999' and active),
   'classificar um produto não desliga a decisão de uso ou despesa de outro item');
 
--- 5. Qualquer porta de entrada normaliza ------------------------------------
+-- 5. GTIN de verdade continua reconhecendo --------------------------------
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '99310000-0000-4000-8000-00000000000a', true);
+
+select lives_ok(pg_temp.importar_sql(5, jsonb_build_array(
+    pg_temp.item(1, 'GTIN-1', '99310000-0000-4000-8000-0000000000d1', 'mapeado', '7896021822379'))),
+  'produto com código de barras de verdade');
+
+select lives_ok(pg_temp.importar_sql(6, jsonb_build_array(
+    pg_temp.item(1, 'GTIN-2', '99310000-0000-4000-8000-0000000000d1', 'mapeado', '7896021822379'))),
+  'o mesmo código de barras chega com outro código do fornecedor');
+
+reset role;
+
+select is((select count(*)::int from public.payable_product_mappings
+    where supplier_id = '99310000-0000-4000-8000-0000000000f1' and supplier_ean = '7896021822379' and active), 1,
+  'o código de barras válido continua reconhecendo a mesma memória, sem criar outra');
+
+-- 6. Qualquer porta de entrada normaliza a memória --------------------------
 
 insert into public.payable_product_mappings (
   supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
@@ -216,17 +233,24 @@ insert into public.payable_product_mappings (
 ) values
   ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-1', 'SEM GTIN', '[TESTE] DIRETO SEM GTIN', 'UN',
    '99310000-0000-4000-8000-0000000000d1', 'kg', 'package', 5, '99310000-0000-4000-8000-00000000000a'),
-  ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-2', '7896021822379', '[TESTE] DIRETO COM GTIN', 'UN',
+  ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-2', ' 78960218 ', '[TESTE] DIRETO COM GTIN', 'UN',
    '99310000-0000-4000-8000-0000000000d1', 'kg', 'package', 5, '99310000-0000-4000-8000-00000000000a');
 
 select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-1'), null,
   'gravação direta de "SEM GTIN" na memória vira nulo');
-select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-2'), '7896021822379',
-  'GTIN válido gravado direto continua guardado');
+select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-2'), '78960218',
+  'GTIN válido gravado direto continua guardado, sem espaços');
 
-update public.payable_purchase_items set source_ean = 'SEM GTIN' where source_product_code = '000498';
-select is((select source_ean from public.payable_purchase_items where source_product_code = '000498'), null,
-  'alteração direta do item da nota para "SEM GTIN" vira nulo');
+update public.payable_product_mappings set supplier_ean = 'SEM GTIN' where supplier_product_code = 'DIRETO-2';
+select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-2'), null,
+  'alteração direta da memória para "SEM GTIN" vira nulo');
+
+insert into public.payable_non_catalog_mappings (
+  supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit, last_confirmed_by
+) values ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-3', 'SEM GTIN', '[TESTE] DIRETO USO', 'UN',
+  '99310000-0000-4000-8000-00000000000a');
+select is((select supplier_ean from public.payable_non_catalog_mappings where supplier_product_code = 'DIRETO-3'), null,
+  'a memória de uso ou despesa também guarda nulo no lugar de "SEM GTIN"');
 
 select * from finish();
 rollback;

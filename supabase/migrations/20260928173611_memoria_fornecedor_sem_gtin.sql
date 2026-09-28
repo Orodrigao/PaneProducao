@@ -14,14 +14,15 @@
 --   * marcar um item como uso ou despesa desligava a memória de outro produto
 --     do mesmo fornecedor, e vice-versa.
 --
--- O conserto normaliza o dado na entrada, em vez de reescrever as três funções
--- grandes: um gatilho guarda nulo no lugar de qualquer cEAN que não seja um GTIN
--- de verdade, na memória e no item da nota. Com nulo, os três ramos de busca já
--- existentes deixam de casar pelo código de barras e passam a casar pelo código
--- do produto do fornecedor, que a NF-e sempre traz (cProd é obrigatório). Vale
--- para qualquer porta de entrada, inclusive o site antigo em cache, porque o
--- valor que chega nas funções só é comparado com memórias já normalizadas. O
--- site aplica a mesma regra em src/lib/nfeXml.ts (normalizeGtin).
+-- O conserto normaliza só a memória, em vez de reescrever as três funções
+-- grandes: um gatilho guarda nulo no lugar de qualquer código que não seja um
+-- GTIN de verdade. Em toda comparação das três funções um dos lados é a memória
+-- gravada (mapping.supplier_ean = <valor do item>); com a memória normalizada,
+-- "SEM GTIN" nunca mais casa, venha o item do site atual, de um site antigo em
+-- cache ou de um rascunho retomado, e o item passa a ser reconhecido pelo código
+-- do produto do fornecedor, que a NF-e sempre traz (cProd é obrigatório). O item
+-- da nota continua guardando o que a NF-e diz. O site aplica a mesma regra na
+-- busca da memória (normalizeGtin em src/lib/nfeXml.ts).
 --
 -- As memórias que apontam para o cadastro errado não são corrigidas aqui: a
 -- correção de dados vem na migration seguinte, com a lista conferida.
@@ -57,19 +58,6 @@ $$;
 
 revoke all on function private.normalizar_gtin_memoria_fornecedor() from public, anon, authenticated;
 
-create or replace function private.normalizar_gtin_item_nota()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  new.source_ean := private.gtin_valido(new.source_ean);
-  return new;
-end;
-$$;
-
-revoke all on function private.normalizar_gtin_item_nota() from public, anon, authenticated;
-
 drop trigger if exists normalizar_gtin_memoria_insumo on public.payable_product_mappings;
 create trigger normalizar_gtin_memoria_insumo
 before insert or update of supplier_ean on public.payable_product_mappings
@@ -80,24 +68,16 @@ create trigger normalizar_gtin_memoria_uso_despesa
 before insert or update of supplier_ean on public.payable_non_catalog_mappings
 for each row execute function private.normalizar_gtin_memoria_fornecedor();
 
-drop trigger if exists normalizar_gtin_item_nota on public.payable_purchase_items;
-create trigger normalizar_gtin_item_nota
-before insert or update of source_ean on public.payable_purchase_items
-for each row execute function private.normalizar_gtin_item_nota();
-
--- Dados já gravados. Nenhuma dessas tabelas tem outro gatilho de escrita, e só
--- a coluna do código de barras muda: updated_at fica como está, para a ordem
--- "confirmação mais recente" das memórias não mudar.
+-- Memórias já gravadas. As duas tabelas não têm outro gatilho, e só a coluna do
+-- código de barras muda: updated_at fica como está, para a ordem "confirmação
+-- mais recente" das memórias não mudar. Em 28/09/2026 eram 26 memórias com
+-- "SEM GTIN" e nenhuma com espaço em volta de um GTIN válido.
 update public.payable_product_mappings
-set supplier_ean = null
-where supplier_ean is not null and private.gtin_valido(supplier_ean) is null;
+set supplier_ean = private.gtin_valido(supplier_ean)
+where supplier_ean is distinct from private.gtin_valido(supplier_ean);
 
 update public.payable_non_catalog_mappings
-set supplier_ean = null
-where supplier_ean is not null and private.gtin_valido(supplier_ean) is null;
-
-update public.payable_purchase_items
-set source_ean = null
-where source_ean is not null and private.gtin_valido(source_ean) is null;
+set supplier_ean = private.gtin_valido(supplier_ean)
+where supplier_ean is distinct from private.gtin_valido(supplier_ean);
 
 commit;

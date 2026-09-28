@@ -689,11 +689,14 @@ mascavo ligado ao damasco, antes atribuído à falta de busca, tinha a mesma
 causa).
 
 **Regra.** Só é código de barras o GTIN de verdade: 8, 12, 13 ou 14 dígitos que
-não sejam só zeros. Qualquer outro valor vira nulo na leitura da nota
-(`normalizeGtin` em `src/lib/nfeXml.ts`) e no banco, por gatilho, na memória e
-no item da nota (`private.gtin_valido`, migration `memoria_fornecedor_sem_gtin`),
-valendo para qualquer porta de entrada. Com nulo, o item é reconhecido pelo
-código do produto do fornecedor, que a NF-e sempre traz.
+não sejam só zeros. A memória guarda nulo no lugar de qualquer outro valor, por
+gatilho no banco (`private.gtin_valido`, migration `memoria_fornecedor_sem_gtin`),
+valendo para qualquer porta de entrada; a busca da tela compara pela mesma regra
+(`normalizeGtin` em `src/lib/nfeXml.ts`). O item da nota continua guardando o
+que a NF-e diz. Sem código de barras, o item é reconhecido pelo código do
+produto do fornecedor, que a NF-e sempre traz. O dígito verificador não é
+conferido: os 399 códigos numéricos gravados em 28/09/2026 estavam todos certos,
+e um código que não casa só faz o reconhecimento cair no código do fornecedor.
 
 **Dados corrigidos** (migration `corrige_vinculos_farinhas`, aprovada por
 Rodrigo em 2026-09-28): a farinha integral da Moinho Nordeste, ligada a um
@@ -706,10 +709,10 @@ foram desligadas, e a próxima nota pergunta de novo. Outros itens antigos que
 entraram errados pelo mesmo defeito (Timy, Bersaglio, Ofelia, Astoria) ficam
 para a tela de vínculos, cuja descoberta começou na mesma data.
 
-Provas: Vitest de `normalizeGtin`, da busca da memória e do envio ao banco;
-pgTAP `supabase/tests/memoria_fornecedor_sem_gtin.test.sql` (duas farinhas
-"SEM GTIN" na mesma nota, nota seguinte, uso ou despesa, classificação posterior
-e gravação direta).
+Provas: Vitest de `normalizeGtin` e da busca da memória; pgTAP
+`supabase/tests/memoria_fornecedor_sem_gtin.test.sql` (duas farinhas
+"SEM GTIN" na mesma nota, nota seguinte, uso ou despesa, classificação
+posterior, GTIN válido com outro código do fornecedor e gravação direta).
 
 ## Decisões pendentes
 

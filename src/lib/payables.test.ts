@@ -131,15 +131,6 @@ describe('contas a pagar manual', () => {
     })
   })
 
-  it('rascunho salvo com "SEM GTIN" não manda esse texto ao banco como código de barras', () => {
-    const draft = nfeDraft()
-    const withoutBarcode = { ...draft, items: [{ ...draft.items[0], ean: 'SEM GTIN' }] }
-    const withBarcode = { ...draft, items: [{ ...draft.items[0], ean: '7896021822379' }] }
-
-    expect(xmlPayablePayload(withoutBarcode, 'supplier-1', 'request-1').p_items[0].supplier_ean).toBeNull()
-    expect(xmlPayablePayload(withBarcode, 'supplier-1', 'request-1').p_items[0].supplier_ean).toBe('7896021822379')
-  })
-
   it('banco anterior à fase 3A: nota sem acréscimo repete o envio sem o bloco fiscal', async () => {
     supabaseMocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })
