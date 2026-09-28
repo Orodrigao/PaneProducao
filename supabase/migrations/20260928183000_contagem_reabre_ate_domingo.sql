@@ -128,9 +128,10 @@ begin
     return v_count;
   end if;
 
+  -- O mesmo instante em que o prazo foi conferido (licao ordem-na-mesma-transacao).
   update public.inventory_weekly_counts
   set status = 'aberta',
-      reopened_at = now(),
+      reopened_at = pg_catalog.clock_timestamp(),
       reopened_by = v_user_id,
       reopened_by_name = v_user_name
   where id = p_count_id
