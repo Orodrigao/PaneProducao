@@ -1061,6 +1061,8 @@ test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica v
   await expect(page.getByText('Importação retomada')).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 
   const confirmar = page.getByRole('button', { name: 'Confirmar NF-e' })
+  await expect(confirmar).toBeDisabled()
+  await page.getByRole('button', { name: 'Conferi esta classificação' }).click()
   await expect(confirmar).toBeEnabled()
   await confirmar.click()
   await expect(page.locator('.toast', { hasText: 'importad' })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
