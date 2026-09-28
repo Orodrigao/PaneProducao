@@ -668,6 +668,49 @@ cenário 6 de `supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql
 `test/browser/auth.smoke.spec.ts`, que pula no banco compartilhado antes do
 merge, como os cenários da fase 2.
 
+## Memória do fornecedor e produto sem código de barras (2026-09-28)
+
+A memória do fornecedor (`payable_product_mappings` para insumo,
+`payable_non_catalog_mappings` para uso ou despesa) reconhece o item da nota
+seguinte pelo código do produto do fornecedor, pelo código de barras ou, sem
+nenhum dos dois, pela descrição igual, sempre dentro do mesmo fornecedor e da
+mesma unidade.
+
+**Defeito corrigido.** A NF-e escreve `SEM GTIN` no código de barras de todo
+produto que não tem um, como as farinhas a granel. O banco e a tela comparavam
+esse texto como código de barras, então todo produto "SEM GTIN" do mesmo
+fornecedor e da mesma unidade parecia o mesmo produto: cada confirmação
+reescrevia a memória do anterior, a nota seguinte chegava com itens diferentes
+pré-preenchidos como "reconhecidos", e marcar um item como uso ou despesa
+desligava a memória de outro. Medido em produção: 12 fornecedores mandam
+"SEM GTIN" e 7 memórias apontavam para o cadastro de outro produto (a farinha
+integral Mora e a La Rustica entraram como farinha de croissant; o açúcar
+mascavo ligado ao damasco, antes atribuído à falta de busca, tinha a mesma
+causa).
+
+**Regra.** Só é código de barras o GTIN de verdade: 8, 12, 13 ou 14 dígitos que
+não sejam só zeros. Qualquer outro valor vira nulo na leitura da nota
+(`normalizeGtin` em `src/lib/nfeXml.ts`) e no banco, por gatilho, na memória e
+no item da nota (`private.gtin_valido`, migration `memoria_fornecedor_sem_gtin`),
+valendo para qualquer porta de entrada. Com nulo, o item é reconhecido pelo
+código do produto do fornecedor, que a NF-e sempre traz.
+
+**Dados corrigidos** (migration `corrige_vinculos_farinhas`, aprovada por
+Rodrigo em 2026-09-28): a farinha integral da Moinho Nordeste, ligada a um
+cadastro duplicado, passou para "Farinha de Trigo Integral" e o duplicado foi
+desativado; na nota da Le 5 Stagioni de 11/09 a Integral Mora voltou para o
+próprio cadastro e a La Rustica ganhou cadastro próprio, com o custo das três
+recalculado pela regra da nota mais recente; a ficha do Croissant passou a usar
+a farinha de croissant comprada; as memórias que apontavam para outro produto
+foram desligadas, e a próxima nota pergunta de novo. Outros itens antigos que
+entraram errados pelo mesmo defeito (Timy, Bersaglio, Ofelia, Astoria) ficam
+para a tela de vínculos, cuja descoberta começou na mesma data.
+
+Provas: Vitest de `normalizeGtin`, da busca da memória e do envio ao banco;
+pgTAP `supabase/tests/memoria_fornecedor_sem_gtin.test.sql` (duas farinhas
+"SEM GTIN" na mesma nota, nota seguinte, uso ou despesa, classificação posterior
+e gravação direta).
+
 ## Decisões pendentes
 
 - **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços

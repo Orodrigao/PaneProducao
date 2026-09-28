@@ -188,15 +188,30 @@ export function matchesProductSearch(name: string, query: string): boolean {
   return terms.every(term => target.includes(term))
 }
 
+/**
+ * Código de barras (GTIN) de verdade: 8, 12, 13 ou 14 dígitos que não sejam só
+ * zeros. Produto a granel vem com cEAN "SEM GTIN"; comparar esse texto como
+ * código fazia a memória tratar produtos diferentes do mesmo fornecedor como um
+ * só (farinhas da Le 5 Stagioni, 28/09/2026). O banco repete esta regra em
+ * private.gtin_valido.
+ */
+export function normalizeGtin(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim()
+  if (!/^(\d{8}|\d{12,14})$/.test(trimmed) || /^0+$/.test(trimmed)) return null
+  return trimmed
+}
+
 /** O banco também desempata memórias repetidas pela confirmação mais recente. */
 export function findLatestSupplierMapping<T extends NfeSupplierMappingIdentity>(item: NfeItemDraft, mappings: readonly T[]): T | undefined {
+  // Rascunho salvo antes deste conserto ainda pode trazer "SEM GTIN" no item.
+  const itemGtin = normalizeGtin(item.ean)
   return [...mappings]
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
     .find(mapping => (
       mapping.purchase_unit === item.purchaseUnit
         && ((item.supplierCode && mapping.supplier_product_code === item.supplierCode)
-          || (item.ean && mapping.supplier_ean === item.ean)
-          || (!item.supplierCode && !item.ean && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
+          || (itemGtin && normalizeGtin(mapping.supplier_ean) === itemGtin)
+          || (!item.supplierCode && !itemGtin && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
     ))
 }
 
@@ -509,7 +524,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     return {
       lineNumber: numberValue(detail.getAttribute('nItem') ?? '0'),
       supplierCode: childText(prod, 'cProd') || null,
-      ean: childText(prod, 'cEAN') || null,
+      ean: normalizeGtin(childText(prod, 'cEAN')),
       description: childText(prod, 'xProd'),
       ncm: childText(prod, 'NCM') || null,
       quantity: numberValue(childText(prod, 'qCom') || childText(prod, 'qTrib')),
