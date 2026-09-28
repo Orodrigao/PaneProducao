@@ -121,16 +121,19 @@ export default function ContagemSemanalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Tela deixada aberta de domingo para segunda: ao voltar para a aba, relê o
-  // dia da padaria para não oferecer reabrir fora do prazo nem esconder o
-  // início da semana nova (revisão do Sol).
+  // Tela deixada aberta de domingo para segunda: relê o dia da padaria ao
+  // voltar para a aba e a cada minuto com ela na frente, para não oferecer
+  // reabrir fora do prazo nem esconder o início da semana nova (revisão do Sol
+  // e do CodeRabbit). Mesmo dia não re-renderiza: o React ignora valor igual.
   useEffect(() => {
     const refreshToday = () => {
       if (document.visibilityState === 'visible') setTodayKey(bakeryDayKey())
     }
+    const timer = window.setInterval(refreshToday, 60_000)
     document.addEventListener('visibilitychange', refreshToday)
     window.addEventListener('focus', refreshToday)
     return () => {
+      window.clearInterval(timer)
       document.removeEventListener('visibilitychange', refreshToday)
       window.removeEventListener('focus', refreshToday)
     }

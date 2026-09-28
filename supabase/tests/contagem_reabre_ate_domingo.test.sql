@@ -45,11 +45,13 @@ select ok((select "description" from public.app_permissions where "key" = 'estoq
 
 -- O prazo e medido no instante da reabertura, depois da trava, e nao no
 -- inicio da transacao: now() deixaria passar uma chamada de domingo 23:59 que
--- so terminasse na segunda. Guarda estrutural, porque o relogio nao e
--- controlavel no teste.
-select ok(pg_catalog.pg_get_functiondef('public.reopen_inventory_weekly_count(uuid)'::regprocedure)
-  like '%contagem_semanal_no_prazo_de_quem_conta(v_week_start, pg_catalog.clock_timestamp())%',
-  'reabrir mede o prazo com o relogio do instante, nao o do inicio da transacao');
+-- so terminasse na segunda. O mesmo instante decide o prazo e vai para
+-- reopened_at. Guarda estrutural, porque o relogio nao e controlavel no teste.
+select ok((select def like '%v_now := pg_catalog.clock_timestamp();%'
+    and def like '%contagem_semanal_no_prazo_de_quem_conta(v_week_start, v_now)%'
+    and def like '%reopened_at = v_now,%'
+  from (select pg_catalog.pg_get_functiondef('public.reopen_inventory_weekly_count(uuid)'::regprocedure) as def) f),
+  'reabrir mede o prazo com o relogio do instante e grava esse mesmo instante');
 
 -- Espaco de trabalho limpo -----------------------------------------------------
 delete from public.inventory_weekly_counts where store = 'jc';

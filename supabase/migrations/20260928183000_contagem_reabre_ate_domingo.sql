@@ -58,6 +58,7 @@ declare
   v_store text;
   v_week_start date;
   v_status text;
+  v_now timestamptz;
   v_count public.inventory_weekly_counts;
 begin
   if p_count_id is null then
@@ -114,9 +115,13 @@ begin
   into v_is_admin;
 
   -- clock_timestamp(), e nao now(): now() e o inicio da transacao, e uma
-  -- chamada de domingo 23:59 que so terminasse na segunda passaria.
+  -- chamada de domingo 23:59 que so terminasse na segunda passaria. Lido uma
+  -- vez so: o mesmo instante decide o prazo e fica gravado em reopened_at
+  -- (licao ordem-na-mesma-transacao; achado do CodeRabbit).
+  v_now := pg_catalog.clock_timestamp();
+
   if not v_is_admin
-    and not private.contagem_semanal_no_prazo_de_quem_conta(v_week_start, pg_catalog.clock_timestamp()) then
+    and not private.contagem_semanal_no_prazo_de_quem_conta(v_week_start, v_now) then
     raise exception using errcode = '42501',
       message = 'O prazo para reabrir esta contagem terminou no domingo '
         || pg_catalog.to_char(v_week_start + 6, 'DD/MM')
@@ -128,10 +133,9 @@ begin
     return v_count;
   end if;
 
-  -- O mesmo instante em que o prazo foi conferido (licao ordem-na-mesma-transacao).
   update public.inventory_weekly_counts
   set status = 'aberta',
-      reopened_at = pg_catalog.clock_timestamp(),
+      reopened_at = v_now,
       reopened_by = v_user_id,
       reopened_by_name = v_user_name
   where id = p_count_id

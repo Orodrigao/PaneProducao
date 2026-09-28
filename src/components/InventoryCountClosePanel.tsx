@@ -15,16 +15,16 @@ interface Props {
 }
 
 // Confirmação de fechar. Em 26/09 a contagem foi fechada no meio (15 de 59),
-// provavelmente achando que fechar era salvar: aqui fica escrito que os números
-// já salvam sozinhos e, pelo nome, o que ainda falta contar.
+// provavelmente achando que fechar era salvar: aqui fica escrito que cada número
+// salva sozinho ao sair do campo e, pelo nome, o que ainda falta contar.
 export function InventoryCountClosePanel(props: Props) {
   const pending = props.pendingNames.length
   return (
     <div className="ps-card" style={{marginTop:16, marginBottom:20, padding:14}}>
       <div style={{fontSize:14, fontWeight:600}}>Fechar a contagem?</div>
       <div style={{fontSize:13, color:'var(--ink-soft)', marginTop:6}}>
-        Os números já ficam salvos sozinhos enquanto você digita: não precisa fechar para salvar.
-        Feche só quando terminar de contar tudo.
+        Cada número fica salvo sozinho quando você passa para o próximo campo (aparece o ✓ ao lado):
+        não precisa fechar para salvar. Feche só quando terminar de contar tudo.
       </div>
 
       {pending > 0 ? (
