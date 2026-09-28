@@ -64,14 +64,33 @@ begin
     raise exception using errcode = '22023', message = 'Contagem obrigatoria.';
   end if;
 
-  -- Loja e semana nunca mudam depois de criadas (nenhuma funcao as altera),
-  -- entao podem ser lidas antes da trava para decidir a permissao.
+  -- Loja e semana nunca mudam depois de criadas (nenhuma funcao as altera);
+  -- aqui servem so para achar a trava. Quem pode e o prazo sao decididos
+  -- depois da trava, para uma chamada que esperou nao usar permissao ou
+  -- relogio velhos (revisao do Sol, 2026-09-28).
   select count_row.store, count_row.week_start
   into v_store, v_week_start
   from public.inventory_weekly_counts count_row
   where count_row.id = p_count_id;
 
   if v_store is null then
+    raise exception using errcode = 'P0002', message = 'Contagem semanal nao encontrada.';
+  end if;
+
+  -- Mesma trava de abrir: por loja+semana, nao existe caminho para colidir
+  -- com o indice unico (so ha uma linha por loja+semana), mas a trava mantem
+  -- abrir e reabrir simetricos e cobertos pelo mesmo teste de concorrencia.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('paneerp:inventory-weekly-count:' || v_store || ':' || v_week_start::text, 0)
+  );
+
+  select count_row.status
+  into v_status
+  from public.inventory_weekly_counts count_row
+  where count_row.id = p_count_id
+  for update;
+
+  if v_status is null then
     raise exception using errcode = 'P0002', message = 'Contagem semanal nao encontrada.';
   end if;
 
@@ -94,29 +113,14 @@ begin
   )
   into v_is_admin;
 
+  -- clock_timestamp(), e nao now(): now() e o inicio da transacao, e uma
+  -- chamada de domingo 23:59 que so terminasse na segunda passaria.
   if not v_is_admin
-    and not private.contagem_semanal_no_prazo_de_quem_conta(v_week_start) then
+    and not private.contagem_semanal_no_prazo_de_quem_conta(v_week_start, pg_catalog.clock_timestamp()) then
     raise exception using errcode = '42501',
       message = 'O prazo para reabrir esta contagem terminou no domingo '
         || pg_catalog.to_char(v_week_start + 6, 'DD/MM')
         || '. Agora so o admin reabre.';
-  end if;
-
-  -- Mesma trava de abrir: por loja+semana, nao existe caminho para colidir
-  -- com o indice unico (so ha uma linha por loja+semana), mas a trava mantem
-  -- abrir e reabrir simetricos e cobertos pelo mesmo teste de concorrencia.
-  perform pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('paneerp:inventory-weekly-count:' || v_store || ':' || v_week_start::text, 0)
-  );
-
-  select count_row.status
-  into v_status
-  from public.inventory_weekly_counts count_row
-  where count_row.id = p_count_id
-  for update;
-
-  if v_status is null then
-    raise exception using errcode = 'P0002', message = 'Contagem semanal nao encontrada.';
   end if;
 
   if v_status = 'aberta' then

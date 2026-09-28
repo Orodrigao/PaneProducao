@@ -121,6 +121,21 @@ export default function ContagemSemanalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Tela deixada aberta de domingo para segunda: ao voltar para a aba, relê o
+  // dia da padaria para não oferecer reabrir fora do prazo nem esconder o
+  // início da semana nova (revisão do Sol).
+  useEffect(() => {
+    const refreshToday = () => {
+      if (document.visibilityState === 'visible') setTodayKey(bakeryDayKey())
+    }
+    document.addEventListener('visibilitychange', refreshToday)
+    window.addEventListener('focus', refreshToday)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshToday)
+      window.removeEventListener('focus', refreshToday)
+    }
+  }, [])
+
   const board = useMemo(() => buildInventoryCountBoard(items, productsById), [items, productsById])
   const summary = useMemo(() => summarizeInventoryCountBoard(board), [board])
   // Editabilidade e "existe contagem aberta" vêm só do status gravado pelo
@@ -281,7 +296,7 @@ export default function ContagemSemanalPage() {
             </div>
           ) : (
             <>
-              {!count && (
+              {!count && hasEligibleProducts && (
                 <div className="ps-card" style={{marginTop:14, padding:16, textAlign:'center'}}>
                   <div style={{fontSize:13, color:'var(--ink-soft)', marginBottom:12}}>Nenhuma contagem foi feita ainda.</div>
                   <button className="ps-btn" onClick={openCount} disabled={opening}>

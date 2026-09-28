@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(35);
+select plan(36);
 
 -- Regra de 2026-09-28: quem conta (expedicao da JC com estoque.contar_semanal)
 -- reabre a contagem ate o domingo da semana, 23:59 na padaria; depois so o
@@ -42,6 +42,14 @@ set local timezone to default;
 
 select ok((select "description" from public.app_permissions where "key" = 'estoque.contar_semanal') like '%reabrir%',
   'o texto da permissao diz que quem conta tambem reabre');
+
+-- O prazo e medido no instante da reabertura, depois da trava, e nao no
+-- inicio da transacao: now() deixaria passar uma chamada de domingo 23:59 que
+-- so terminasse na segunda. Guarda estrutural, porque o relogio nao e
+-- controlavel no teste.
+select ok(pg_catalog.pg_get_functiondef('public.reopen_inventory_weekly_count(uuid)'::regprocedure)
+  like '%contagem_semanal_no_prazo_de_quem_conta(v_week_start, pg_catalog.clock_timestamp())%',
+  'reabrir mede o prazo com o relogio do instante, nao o do inicio da transacao');
 
 -- Espaco de trabalho limpo -----------------------------------------------------
 delete from public.inventory_weekly_counts where store = 'jc';
