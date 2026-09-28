@@ -3,18 +3,14 @@ name: CI Banco (ensaio de migrations)
 # Toda migration é executada num Supabase local descartável antes de chegar
 # perto de produção: o PR só fica verde se a história inteira do schema
 # (baseline + migrations novas) aplicar limpa num banco nascido do zero.
+#
+# Roda em TODA PR, sem filtro `paths:`, porque o job é check exigido na trava
+# da `main`. Com filtro, PR que não mexe em banco nunca receberia o check e
+# ficaria esperando para sempre. Quem escolhe se o ensaio roda é o passo
+# "Descobrir se a PR mexe em banco", com a lista que o filtro tinha.
 
 on:
   pull_request:
-    paths:
-      - "supabase/migrations/**"
-      - "supabase/tests/**"
-      - "supabase/tests-local/**"
-      - "supabase/seed.sql"
-      - "supabase/config.toml"
-      - "scripts/verify-preview-seed-repeatability.mjs"
-      - "scripts/verify-preview-seed-repeatability.test.mjs"
-      - ".github/workflows/ci-banco.yml"
 
 jobs:
   ensaio:
@@ -24,32 +20,63 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          # O merge-base da decisão abaixo precisa da história da base e da PR.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # O check exigido confere o próprio decisor em toda PR: mudança em
+      # scripts/change-scope.mjs, de que ele depende, não passa sem este teste.
+      - name: Testar a regra de decisão
+        run: node --test scripts/ci-banco-escopo.test.mjs
+
+      # A lista de caminhos e a regra vivem em scripts/ci-banco-escopo.mjs,
+      # testado no `npm test`. Falha FECHADA: erro deixa o job vermelho, e os
+      # passos do ensaio rodam com qualquer resposta que não seja "false".
+      - name: Descobrir se a PR mexe em banco
+        id: escopo
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci-banco-escopo.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Dispensar o ensaio
+        if: steps.escopo.outputs.banco == 'false'
+        run: |
+          echo "Ensaio dispensado: esta PR não mexe em banco." >> "$GITHUB_STEP_SUMMARY"
+
       - uses: supabase/setup-cli@v3
+        if: steps.escopo.outputs.banco != 'false'
         with:
           version: 2.109.1
 
       - name: Subir Postgres local
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase db start
 
       - name: Aplicar todas as migrations do zero
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase db reset --local
 
       - name: Provar que o seed sobrevive a virada do dia
+        if: steps.escopo.outputs.banco != 'false'
         run: node scripts/verify-preview-seed-repeatability.mjs
 
       - name: Verificar invariantes estruturais (pgTAP)
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db
 
       - name: Provar concorrencia real da programacao PJ
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/pj_production_lock_concurrency.test.sql
 
       - name: Provar concorrencia real da importacao pendente de NF-e
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql
 
       - name: Provar idempotencia financeira sob concorrencia real
+        if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql

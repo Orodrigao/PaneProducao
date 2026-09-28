@@ -25,13 +25,14 @@ ou documentos de produção.
 2. PR que não mexe em `supabase/` não ganha banco próprio e não precisa: o
    preview dela usa o `PaneERP Preview` compartilhado, que espelha a `main`.
 3. `CI Banco` ensaia a história completa do schema num banco local descartável.
-   Ele **não roda em toda PR**: só dispara quando a PR toca
-   `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql` ou
-   `supabase/config.toml`.
+   O check aparece em toda PR, mas o **ensaio só roda** quando a PR mexe em
+   migration, teste de banco, seed ou `config.toml` — a lista completa está em
+   `docs/regras/BANCO.md`. Nas outras PRs ele fica verde com "Ensaio
+   dispensado".
 4. O preview só está liberado quando a Vercel está verde, mais `Banco por PR`
    **e** `Usuarios do Banco por PR` quando a PR mexe em `supabase/`, mais
-   `CI Banco` quando ele dispara. Sem o de usuários, o link abre num banco sem
-   nenhuma conta para entrar.
+   `CI Banco`. Sem o de usuários, o link abre num banco sem nenhuma conta para
+   entrar.
 5. Fechar a PR apaga o banco isolado dela e trava a branch na Vercel num
    endereço inválido (`pr-fechada-sem-banco.invalid`): um push depois do
    fechamento gera preview com build vermelho, inclusive quando o push é só de
