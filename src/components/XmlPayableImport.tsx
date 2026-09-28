@@ -204,6 +204,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   const fileRef = useRef<HTMLInputElement>(null)
   const requestIdRef = useRef(crypto.randomUUID())
   const mappingSnapshotRef = useRef<{ supplierId: string; fingerprint: string } | null>(null)
+  const latestMappingRequestRef = useRef<symbol | null>(null)
   // A retomada acontece uma vez, na montagem; depois disso a pessoa é dona do
   // rascunho e nenhuma recarga de lista pode sobrescrever o que ela mudou.
   const [initial] = useState<{ resumed: ResumedImport | null; error: string | null }>(() => {
@@ -324,6 +325,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setDuplicateNfe(Boolean(existingPurchase))
       setConfirmedMemoryLines(new Set())
       mappingSnapshotRef.current = null
+      latestMappingRequestRef.current = null
       setMemoryReadyForSupplier(null)
       setMemoryLoadFailed(false)
       setAutoMappedCount(0)
@@ -339,6 +341,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   }
 
   async function loadMappings(nextSupplierId: string, nextDraft = draft) {
+    const request = Symbol()
+    latestMappingRequestRef.current = request
     if (!nextDraft || !nextSupplierId) return
     mappingSnapshotRef.current = null
     setMemoryReadyForSupplier(null)
@@ -348,11 +352,13 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     try {
       fetched = await fetchSupplierMappings(nextSupplierId)
     } catch {
+      if (latestMappingRequestRef.current !== request) return
       setAutoMappedCount(0)
       setMemoryLoadFailed(true)
       setError('Não foi possível carregar as classificações anteriores deste fornecedor.')
       return
     }
+    if (latestMappingRequestRef.current !== request) return
     mappingSnapshotRef.current = { supplierId: nextSupplierId, fingerprint: fetched.fingerprint }
     setMemoryReadyForSupplier(nextSupplierId)
     const nextMappings = fetched.products
@@ -370,7 +376,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     // A resposta chega depois de a pessoa já ter mexido nos itens: a memória
     // só preenche o que ainda está pendente e nunca apaga uma decisão feita.
     setDraft(previous => {
-      if (!previous || previous.accessKey !== nextDraft.accessKey) return previous
+      if (latestMappingRequestRef.current !== request || !previous || previous.accessKey !== nextDraft.accessKey) return previous
       return {
         ...previous,
         items: previous.items.map(item => item.mappingStatus === 'pendente' ? (remembered(item) ?? item) : item),
@@ -384,6 +390,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
 
   function clearRememberedClassification() {
     mappingSnapshotRef.current = null
+    latestMappingRequestRef.current = null
     setMemoryReadyForSupplier(null)
     setMemoryLoadFailed(false)
     setConfirmedMemoryLines(new Set())
@@ -531,6 +538,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setSupplierId(resumed.supplierId)
       setResumedDraft(content)
       mappingSnapshotRef.current = null
+      latestMappingRequestRef.current = null
       setMemoryReadyForSupplier(null)
       setMemoryLoadFailed(false)
       setConfirmedMemoryLines(new Set())
