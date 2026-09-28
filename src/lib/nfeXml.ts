@@ -188,15 +188,37 @@ export function matchesProductSearch(name: string, query: string): boolean {
   return terms.every(term => target.includes(term))
 }
 
+/**
+ * Código de barras (GTIN) de verdade: 8, 12, 13 ou 14 dígitos, não só zeros e
+ * com o dígito verificador certo. Produto a granel vem com cEAN "SEM GTIN";
+ * comparar esse texto como código fazia a memória tratar produtos diferentes do
+ * mesmo fornecedor como um só (farinhas da Le 5 Stagioni, 28/09/2026). Número
+ * com dígito errado repetido em produtos diferentes faria o mesmo, e sem ele o
+ * reconhecimento cai no código do fornecedor. O item da nota continua guardando
+ * o que a NF-e diz; só a comparação com a memória usa esta regra, que o banco
+ * repete em private.gtin_valido ao gravar a memória.
+ */
+export function normalizeGtin(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim()
+  if (!/^(\d{8}|\d{12,14})$/.test(trimmed) || /^0+$/.test(trimmed)) return null
+  // Dígito verificador GS1: da direita para a esquerda, sem o último dígito,
+  // pesos 3 e 1 alternados a partir do vizinho do verificador.
+  const digits = trimmed.padStart(14, '0').split('').map(Number)
+  const sum = digits.slice(0, 13).reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0)
+  if ((10 - (sum % 10)) % 10 !== digits[13]) return null
+  return trimmed
+}
+
 /** O banco também desempata memórias repetidas pela confirmação mais recente. */
 export function findLatestSupplierMapping<T extends NfeSupplierMappingIdentity>(item: NfeItemDraft, mappings: readonly T[]): T | undefined {
+  const itemGtin = normalizeGtin(item.ean)
   return [...mappings]
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
     .find(mapping => (
       mapping.purchase_unit === item.purchaseUnit
         && ((item.supplierCode && mapping.supplier_product_code === item.supplierCode)
-          || (item.ean && mapping.supplier_ean === item.ean)
-          || (!item.supplierCode && !item.ean && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
+          || (itemGtin && normalizeGtin(mapping.supplier_ean) === itemGtin)
+          || (!item.supplierCode && !itemGtin && mapping.supplier_description.trim().toLowerCase() === item.description.trim().toLowerCase()))
     ))
 }
 

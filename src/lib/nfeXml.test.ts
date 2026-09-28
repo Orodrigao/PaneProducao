@@ -10,6 +10,7 @@ import {
   findLatestSupplierMapping,
   isClassificationComplete,
   declaresNoPayment,
+  normalizeGtin,
   resolveInstallments,
   suggestConversionFactor,
   unitFamily,
@@ -115,6 +116,68 @@ describe('conversão de itens importados da NF-e', () => {
     const newer = { ...older, updated_at: '2026-09-01T10:00:00Z', decision: 'nova' }
 
     expect(findLatestSupplierMapping(item(), [older, newer])?.decision).toBe('nova')
+  })
+})
+
+describe('memória do fornecedor com produto sem código de barras', () => {
+  // Caso real de 28/09/2026: a NF-e da Le 5 Stagioni traz as três farinhas a
+  // granel com cEAN "SEM GTIN". Comparar esse texto como código de barras fazia
+  // a memória da integral Mora reconhecer a farinha de croissant e a La Rustica.
+  const moraMemory = {
+    supplier_product_code: '000498',
+    supplier_ean: 'SEM GTIN',
+    supplier_description: 'FARINHA DE TRIGO 00 LE5STAGIONI INTEGRAL MORA 10KG RS',
+    purchase_unit: 'KG',
+    updated_at: '2026-09-21T19:28:53Z',
+    decision: 'mora',
+  }
+
+  it('não trata "SEM GTIN" nem código inválido como código de barras', () => {
+    expect(normalizeGtin('SEM GTIN')).toBeNull()
+    expect(normalizeGtin('')).toBeNull()
+    expect(normalizeGtin(null)).toBeNull()
+    expect(normalizeGtin('0000000000000')).toBeNull()
+    expect(normalizeGtin('12345')).toBeNull()
+    expect(normalizeGtin(' 7896021822379 ')).toBe('7896021822379')
+    expect(normalizeGtin('96385074')).toBe('96385074')
+  })
+
+  it('não trata como código de barras número com dígito verificador errado', () => {
+    // Número repetido pelo fornecedor em produtos diferentes voltaria a juntar
+    // as memórias; sem ele, o reconhecimento cai no código do fornecedor.
+    expect(normalizeGtin('7896021822378')).toBeNull()
+    expect(normalizeGtin('96385075')).toBeNull()
+    expect(normalizeGtin('17896021822376')).toBe('17896021822376')
+  })
+
+  it('não reconhece outro produto do mesmo fornecedor só porque os dois vêm "SEM GTIN"', () => {
+    const croissant = item({ supplierCode: '000989', ean: 'SEM GTIN', purchaseUnit: 'KG', description: 'FARINHA DE TRIGO 00 LE5STAGIONI CROISSANT 10 KG RS' })
+    const laRustica = item({ supplierCode: '001028', ean: 'SEM GTIN', purchaseUnit: 'KG', description: 'FARINHA DE TRIGO TIPO 1 LE5STAGIONI MACINATA A PIETRA 10 KG (LA RUSTICA) - RS' })
+
+    expect(findLatestSupplierMapping(croissant, [moraMemory])).toBeUndefined()
+    expect(findLatestSupplierMapping(laRustica, [moraMemory])).toBeUndefined()
+  })
+
+  it('continua reconhecendo o próprio produto pelo código do fornecedor', () => {
+    const mora = item({ supplierCode: '000498', ean: 'SEM GTIN', purchaseUnit: 'KG', description: moraMemory.supplier_description })
+
+    expect(findLatestSupplierMapping(mora, [moraMemory])?.decision).toBe('mora')
+  })
+
+  it('continua reconhecendo pelo código de barras de verdade', () => {
+    const memory = { ...moraMemory, supplier_product_code: '7064', supplier_ean: '7896021822379', purchase_unit: 'UN' }
+    const sameBarcode = item({ supplierCode: '7065', ean: '7896021822379', purchaseUnit: 'UN' })
+
+    expect(findLatestSupplierMapping(sameBarcode, [memory])?.decision).toBe('mora')
+  })
+
+  it('sem código do fornecedor e "SEM GTIN", reconhece só pela descrição igual', () => {
+    const memory = { ...moraMemory, supplier_product_code: null }
+    const sameDescription = item({ supplierCode: null, ean: 'SEM GTIN', purchaseUnit: 'KG', description: moraMemory.supplier_description })
+    const otherDescription = item({ supplierCode: null, ean: 'SEM GTIN', purchaseUnit: 'KG', description: 'FARINHA DE TRIGO 00 LE5STAGIONI CROISSANT 10 KG RS' })
+
+    expect(findLatestSupplierMapping(sameDescription, [memory])?.decision).toBe('mora')
+    expect(findLatestSupplierMapping(otherDescription, [memory])).toBeUndefined()
   })
 })
 
