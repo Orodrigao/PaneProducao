@@ -172,13 +172,17 @@ select is((select status from public.close_inventory_weekly_count(
   'fechada','Rafaela fecha a contagem da semana');
 select throws_ok(
   'select public.save_inventory_weekly_count_item(' || quote_literal(:'v_count_id') || ', ''97000000-0000-4000-8000-000000000011'', 20)',
-  '22023','Esta contagem ja foi fechada. Peca para o admin reabrir antes de corrigir.',
+  '22023','Esta contagem ja foi fechada. Para corrigir, ela precisa ser reaberta.',
   'contagem fechada trava novos numeros');
+-- Quem conta reabre ate o domingo da semana: coberto em
+-- contagem_reabre_ate_domingo.test.sql. Aqui, so a expedicao sem a permissao.
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000003',true);
 select throws_ok(
   'select public.reopen_inventory_weekly_count(' || quote_literal(:'v_count_id') || ')',
-  '42501','So o admin pode reabrir uma contagem fechada.','expedicao nao reabre contagem');
+  '42501','Sem permissao para reabrir esta contagem.','expedicao sem a permissao nao reabre contagem');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000002',true);
 select throws_ok($$select public.open_inventory_weekly_count('jc')$$,
-  '22023','A contagem desta semana ja foi fechada. Peca para o admin reabrir para corrigir.',
+  '22023','A contagem desta semana ja foi fechada. Para corrigir, reabra a contagem.',
   'abrir nao ressuscita silenciosamente uma contagem fechada da mesma semana');
 
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
