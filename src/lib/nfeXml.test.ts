@@ -139,7 +139,15 @@ describe('memória do fornecedor com produto sem código de barras', () => {
     expect(normalizeGtin('0000000000000')).toBeNull()
     expect(normalizeGtin('12345')).toBeNull()
     expect(normalizeGtin(' 7896021822379 ')).toBe('7896021822379')
-    expect(normalizeGtin('78960218')).toBe('78960218')
+    expect(normalizeGtin('96385074')).toBe('96385074')
+  })
+
+  it('não trata como código de barras número com dígito verificador errado', () => {
+    // Número repetido pelo fornecedor em produtos diferentes voltaria a juntar
+    // as memórias; sem ele, o reconhecimento cai no código do fornecedor.
+    expect(normalizeGtin('7896021822378')).toBeNull()
+    expect(normalizeGtin('96385075')).toBeNull()
+    expect(normalizeGtin('17896021822376')).toBe('17896021822376')
   })
 
   it('não reconhece outro produto do mesmo fornecedor só porque os dois vêm "SEM GTIN"', () => {

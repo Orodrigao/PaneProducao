@@ -8,8 +8,8 @@
 --   * marcar um item como uso ou despesa não desliga a memória de outro produto
 --     do mesmo fornecedor, e classificar um produto não desliga a decisão de uso
 --     ou despesa de outro;
---   * a memória guarda nulo no lugar de "SEM GTIN", qualquer que seja a porta de
---     entrada; GTIN válido continua guardado, sem espaços, e continua
+--   * a memória guarda nulo no lugar de "SEM GTIN" ou de número com dígito
+--     verificador errado, qualquer que seja a porta de entrada; GTIN válido continua guardado, sem espaços, e continua
 --     reconhecendo o mesmo produto mesmo com outro código do fornecedor;
 --   * o item da nota continua guardando o que a NF-e diz;
 --   * a regra de GTIN e o gatilho não são chamados direto pela Data API.
@@ -36,7 +36,10 @@ select is(private.gtin_valido('0000000000000'), null, 'só zeros não é código
 select is(private.gtin_valido('12345'), null, 'código curto demais não é código de barras');
 select is(private.gtin_valido(null), null, 'nulo continua nulo');
 select is(private.gtin_valido(' 7896021822379 '), '7896021822379', 'GTIN-13 válido é guardado sem espaços');
-select is(private.gtin_valido('78960218'), '78960218', 'GTIN-8 válido é guardado');
+select is(private.gtin_valido('96385074'), '96385074', 'GTIN-8 válido é guardado');
+select is(private.gtin_valido('17896021822376'), '17896021822376', 'GTIN-14 válido é guardado');
+select is(private.gtin_valido('7896021822378'), null, 'dígito verificador errado não é código de barras');
+select is(private.gtin_valido('96385075'), null, 'GTIN-8 com dígito errado não é código de barras');
 
 select has_trigger('public', 'payable_product_mappings', 'normalizar_gtin_memoria_insumo',
   'a memória de insumo normaliza o código de barras na gravação');
@@ -233,12 +236,12 @@ insert into public.payable_product_mappings (
 ) values
   ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-1', 'SEM GTIN', '[TESTE] DIRETO SEM GTIN', 'UN',
    '99310000-0000-4000-8000-0000000000d1', 'kg', 'package', 5, '99310000-0000-4000-8000-00000000000a'),
-  ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-2', ' 78960218 ', '[TESTE] DIRETO COM GTIN', 'UN',
+  ('99310000-0000-4000-8000-0000000000f1', 'DIRETO-2', ' 96385074 ', '[TESTE] DIRETO COM GTIN', 'UN',
    '99310000-0000-4000-8000-0000000000d1', 'kg', 'package', 5, '99310000-0000-4000-8000-00000000000a');
 
 select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-1'), null,
   'gravação direta de "SEM GTIN" na memória vira nulo');
-select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-2'), '78960218',
+select is((select supplier_ean from public.payable_product_mappings where supplier_product_code = 'DIRETO-2'), '96385074',
   'GTIN válido gravado direto continua guardado, sem espaços');
 
 update public.payable_product_mappings set supplier_ean = 'SEM GTIN' where supplier_product_code = 'DIRETO-2';

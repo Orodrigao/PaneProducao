@@ -688,15 +688,16 @@ integral Mora e a La Rustica entraram como farinha de croissant; o açúcar
 mascavo ligado ao damasco, antes atribuído à falta de busca, tinha a mesma
 causa).
 
-**Regra.** Só é código de barras o GTIN de verdade: 8, 12, 13 ou 14 dígitos que
-não sejam só zeros. A memória guarda nulo no lugar de qualquer outro valor, por
-gatilho no banco (`private.gtin_valido`, migration `memoria_fornecedor_sem_gtin`),
+**Regra.** Só é código de barras o GTIN de verdade: 8, 12, 13 ou 14 dígitos, não
+só zeros e com o dígito verificador certo. A memória guarda nulo no lugar de
+qualquer outro valor, por gatilho no banco (`private.gtin_valido`, migration `memoria_fornecedor_sem_gtin`),
 valendo para qualquer porta de entrada; a busca da tela compara pela mesma regra
 (`normalizeGtin` em `src/lib/nfeXml.ts`). O item da nota continua guardando o
 que a NF-e diz. Sem código de barras, o item é reconhecido pelo código do
-produto do fornecedor, que a NF-e sempre traz. O dígito verificador não é
-conferido: os 399 códigos numéricos gravados em 28/09/2026 estavam todos certos,
-e um código que não casa só faz o reconhecimento cair no código do fornecedor.
+produto do fornecedor, que a NF-e sempre traz. O dígito verificador entra porque
+um número inválido repetido pelo fornecedor em produtos diferentes voltaria a
+juntar as memórias; os 399 códigos numéricos gravados em 28/09/2026 estavam
+todos certos, então nenhuma memória válida é afetada.
 
 **Dados corrigidos** (migration `corrige_vinculos_farinhas`, aprovada por
 Rodrigo em 2026-09-28): a farinha integral da Moinho Nordeste, ligada a um

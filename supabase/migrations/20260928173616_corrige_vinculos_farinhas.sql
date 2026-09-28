@@ -6,10 +6,13 @@
 --
 -- Como cada caso se protege:
 --   * trava as linhas envolvidas e confere o estado lido em produção em
---     28/09/2026 (identidade, cadastro atual e o que mais aponta para ele);
+--     28/09/2026 (compra válida e com a mesma data, identidade, cadastro atual e
+--     o que mais aponta para ele);
 --   * se qualquer conferência falha (banco novo do CI ou do preview, alguém já
 --     corrigiu pela tela, a migration rodou de novo), o caso é pulado inteiro,
---     com aviso, antes de qualquer escrita;
+--     com aviso, antes de qualquer escrita. Em produção a PR exige conferir, depois
+--     da Action, que os quatro casos foram aplicados; um caso pulado vira PR nova,
+--     em vez de travar a Action das migrations seguintes;
 --   * cada escrita repete o estado antigo no próprio WHERE e confere que mudou
 --     exatamente uma linha; se não, a migration inteira é desfeita com erro, em
 --     vez de deixar um caso pela metade.
@@ -53,12 +56,16 @@ declare
   c_compra constant uuid := '1ac350f8-fdfb-4e34-9d78-ef7398470b17';
   c_memoria constant uuid := 'd7305fc0-9b3b-4c65-89d9-ab64a17a2008';
 begin
+  perform 1 from public.payable_purchases where id = c_compra for update;
   perform 1 from public.payable_purchase_items where id = c_item for update;
   perform 1 from public.payable_product_mappings where id = c_memoria for update;
   perform 1 from public.products where id in (c_integral, c_duplicado) for update;
 
   if not (
-    exists (select 1 from public.payable_purchase_items
+    exists (select 1 from public.payable_purchases
+            where id = c_compra and origin = 'xml' and status <> 'cancelada'
+              and nfe_issued_at = date '2026-09-22')
+    and exists (select 1 from public.payable_purchase_items
             where id = c_item and purchase_id = c_compra and product_id = c_duplicado
               and source_product_code = '9965' and mapping_status = 'mapeado')
     and exists (select 1 from public.payable_product_mappings
@@ -121,12 +128,16 @@ declare
   c_item_la_rustica constant uuid := '27ae5f4d-17d9-4e9d-b5cb-f12ecc6a6ca5';
   c_memoria_mora constant uuid := 'cda345e5-2e5d-4d24-9c75-4c0c2a037d22';
 begin
+  perform 1 from public.payable_purchases where id = c_compra for update;
   perform 1 from public.payable_purchase_items where id in (c_item_mora, c_item_la_rustica) for update;
   perform 1 from public.payable_product_mappings where id = c_memoria_mora for update;
   perform 1 from public.products where id in (c_croissant, c_mora) for update;
 
   if not (
-    exists (select 1 from public.payable_purchase_items
+    exists (select 1 from public.payable_purchases
+            where id = c_compra and origin = 'xml' and status <> 'cancelada'
+              and nfe_issued_at = date '2026-09-11')
+    and exists (select 1 from public.payable_purchase_items
             where id = c_item_mora and purchase_id = c_compra and product_id = c_croissant
               and source_product_code = '000498' and mapping_status = 'mapeado')
     and exists (select 1 from public.payable_purchase_items

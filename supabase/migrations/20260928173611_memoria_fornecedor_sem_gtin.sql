@@ -29,7 +29,11 @@
 
 begin;
 
--- GTIN válido: 8, 12, 13 ou 14 dígitos que não sejam só zeros.
+-- GTIN válido: 8, 12, 13 ou 14 dígitos, não só zeros e com o dígito verificador
+-- GS1 certo (pesos 3 e 1 alternados a partir do vizinho do verificador). Número
+-- com dígito errado repetido em produtos diferentes voltaria a juntar memórias;
+-- sem ele, o reconhecimento cai no código do fornecedor. Em 28/09/2026 os 399
+-- códigos numéricos gravados em produção tinham o dígito certo.
 create or replace function private.gtin_valido(p_value text)
 returns text
 language sql
@@ -37,10 +41,19 @@ immutable
 set search_path = ''
 as $$
   select case
-    when btrim(p_value) ~ '^([0-9]{8}|[0-9]{12,14})$' and btrim(p_value) !~ '^0+$'
-      then btrim(p_value)
+    when codigo.valor ~ '^([0-9]{8}|[0-9]{12,14})$'
+      and codigo.valor !~ '^0+$'
+      and (
+        10 - (
+          select sum(substr(lpad(codigo.valor, 14, '0'), posicao, 1)::int
+                     * case when posicao % 2 = 1 then 3 else 1 end)
+          from pg_catalog.generate_series(1, 13) as posicao
+        ) % 10
+      ) % 10 = right(codigo.valor, 1)::int
+      then codigo.valor
     else null
-  end;
+  end
+  from (select btrim(p_value) as valor) as codigo;
 $$;
 
 revoke all on function private.gtin_valido(text) from public, anon, authenticated;
@@ -71,7 +84,8 @@ for each row execute function private.normalizar_gtin_memoria_fornecedor();
 -- Memórias já gravadas. As duas tabelas não têm outro gatilho, e só a coluna do
 -- código de barras muda: updated_at fica como está, para a ordem "confirmação
 -- mais recente" das memórias não mudar. Em 28/09/2026 eram 26 memórias com
--- "SEM GTIN" e nenhuma com espaço em volta de um GTIN válido.
+-- "SEM GTIN", nenhuma com espaço em volta de um GTIN válido e nenhuma com dígito
+-- verificador errado.
 update public.payable_product_mappings
 set supplier_ean = private.gtin_valido(supplier_ean)
 where supplier_ean is distinct from private.gtin_valido(supplier_ean);
