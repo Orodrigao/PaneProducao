@@ -5,46 +5,45 @@
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
-regras em `docs/regras/`. As demais seções conservam suas datas de revisão
-anteriores.
+regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava. As demais
+seções conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
 
-## Trava da `main` e equipe de IA (26/09/2026)
+## Trava da `main` e equipe de IA (28/09/2026)
 
 - **A `main` está travada no GitHub desde 25/09/2026** pelo ruleset
   `Trava da main` (id 24014339). Conferido por leitura da API do GitHub em
-  26/09/2026, feita com permissão de administrador (a lista de exceção só é
+  28/09/2026, feita com permissão de administrador (a lista de exceção só é
   confiável lida assim): ativo, sem ninguém na lista de exceção (nem o dono).
   Recusa apagar a `main` e forçar push nela, exige PR (sem mínimo de
-  aprovações) e exige verdes três checks: `Classificar mudança (documental,
-  mecanismo de CI ou produto)`, `Verificação (lint, tipos, testes, build)` e
-  `Navegador (login, perfis e lojas)`.
-- **Lacuna da trava:** `CI Banco`, `Banco por PR` e `Usuarios do Banco por PR`
-  não estão entre os checks obrigatórios. Numa PR que mexe em `supabase/`, o
-  GitHub deixaria mergear com esses três vermelhos; quem segura hoje é a regra
-  do `AGENTS.md` (CI vermelho não mergeia), não a trava. A trava também não
-  exige a PR atualizada com a `main` antes do merge
-  (`strict_required_status_checks_policy: false`): atualizar a base depois do
-  merge de outro agente é regra escrita, não trava.
-- **Fechando a lacuna (decisão do Rodrigo em 26/09/2026):** entra na trava
-  `Aplicar história completa num banco limpo`, o job do `CI Banco`, que impede
-  migration que não aplica limpa de chegar a produção. Para isso o `CI Banco`
-  passou a rodar em toda PR (o ensaio só quando a PR mexe em banco; a regra
-  está em `scripts/ci-banco-escopo.mjs`); com o filtro antigo, PR sem banco
-  nunca receberia o check e ficaria esperando para sempre. A trava muda só
-  depois que essa mudança estiver na `main`; até lá, a lista de três checks
-  acima continua valendo. PR aberta antes disso fica sem o check até receber
-  um push ou trazer a `main` (botão "Update branch"); fechar e reabrir
-  reconstrói o banco compartilhado e não é o caminho.
+  aprovações) e exige verdes quatro checks: `Classificar mudança (documental,
+  mecanismo de CI ou produto)`, `Verificação (lint, tipos, testes, build)`,
+  `Navegador (login, perfis e lojas)` e, desde 28/09/2026, `Aplicar história
+  completa num banco limpo`, o job do `CI Banco`.
+- **`CI Banco` na trava (decisão do Rodrigo em 26/09/2026, aplicada em
+  28/09/2026):** migration que não aplica limpa num banco nascido do zero não
+  chega a produção. Desde o PR #457 o `CI Banco` roda em toda PR e só ensaia
+  quando a PR mexe em banco (a regra está em `scripts/ci-banco-escopo.mjs`);
+  nas outras fica verde com "Ensaio dispensado". Ficam sem o check, e portanto
+  sem merge, até um push novo: PR aberta antes de 28/09/2026 que ainda não
+  trouxe a `main` (botão "Update branch"), PR em conflito com a `main` e commit
+  com `[skip ci]`. Fechar e reabrir reconstrói o banco compartilhado e não é o
+  caminho. Renomear o job ou apagar o workflow deixa toda PR esperando para
+  sempre (Segurança obrigatória do `AGENTS.md`); o teste
+  `scripts/ci-banco-escopo.test.mjs` fixa o nome.
 - **Ficam fora da trava, de propósito:** `Banco por PR` só confere se o link de
   teste aponta para o banco certo, não protege produção, e depende das APIs da
   Vercel e do Supabase e da cota de bancos de teste; obrigatório, qualquer
   falha dessas travaria todo merge, sem exceção nem para o dono. `Usuarios do
   Banco por PR` pode correr antes de o banco da PR ficar pronto (falha
-  observada em 03/09/2026, mais abaixo) e travaria merges por essa corrida. Os
-  dois seguem obrigatórios pela regra escrita em PR que mexe em `supabase/`.
+  observada em 03/09/2026, mais abaixo) e travaria merges por essa corrida.
+  Numa PR que mexe em `supabase/`, os dois seguem obrigatórios pela regra do
+  `AGENTS.md` (CI vermelho não mergeia), não pela trava. A trava também não
+  exige a PR atualizada com a `main` antes do merge
+  (`strict_required_status_checks_policy: false`): atualizar a base depois do
+  merge de outro agente é regra escrita, não trava.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
   portaria e de coordenação e as skills de função — vivem no repositório
   `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta
