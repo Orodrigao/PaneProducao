@@ -247,6 +247,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   const [autoMappedCount, setAutoMappedCount] = useState(0)
   const [duplicateNfe, setDuplicateNfe] = useState(false)
   const [confirmedMemoryLines, setConfirmedMemoryLines] = useState<Set<number>>(() => new Set())
+  const [memoryReadyForSupplier, setMemoryReadyForSupplier] = useState<string | null>(null)
+  const [memoryLoadFailed, setMemoryLoadFailed] = useState(false)
   const [recipeUsageIndex, setRecipeUsageIndex] = useState<RecipeUsageIndex | null>(null)
   const [recipeUsageError, setRecipeUsageError] = useState(false)
 
@@ -268,11 +270,19 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     if (!resumedDraft || !supplierId) return
     let cancelled = false
     mappingSnapshotRef.current = null
+    setMemoryReadyForSupplier(null)
+    setMemoryLoadFailed(false)
     void fetchSupplierMappings(supplierId).then(snapshot => {
-      if (!cancelled) mappingSnapshotRef.current = { supplierId, fingerprint: snapshot.fingerprint }
+      if (!cancelled) {
+        mappingSnapshotRef.current = { supplierId, fingerprint: snapshot.fingerprint }
+        setMemoryReadyForSupplier(supplierId)
+      }
     }).catch(error => {
       console.error(error)
-      if (!cancelled) setError('Não foi possível conferir a memória atual deste fornecedor. Reabra o rascunho.')
+      if (!cancelled) {
+        setMemoryLoadFailed(true)
+        setError('Não foi possível conferir a memória atual deste fornecedor. Reabra o rascunho.')
+      }
     })
     return () => { cancelled = true }
   }, [resumedDraft, supplierId])
@@ -314,6 +324,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setDuplicateNfe(Boolean(existingPurchase))
       setConfirmedMemoryLines(new Set())
       mappingSnapshotRef.current = null
+      setMemoryReadyForSupplier(null)
+      setMemoryLoadFailed(false)
       setAutoMappedCount(0)
       setCreatingSupplier(false)
       const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
@@ -328,16 +340,21 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
 
   async function loadMappings(nextSupplierId: string, nextDraft = draft) {
     if (!nextDraft || !nextSupplierId) return
+    mappingSnapshotRef.current = null
+    setMemoryReadyForSupplier(null)
+    setMemoryLoadFailed(false)
     setConfirmedMemoryLines(new Set())
     let fetched: Awaited<ReturnType<typeof fetchSupplierMappings>>
     try {
       fetched = await fetchSupplierMappings(nextSupplierId)
     } catch {
       setAutoMappedCount(0)
+      setMemoryLoadFailed(true)
       setError('Não foi possível carregar as classificações anteriores deste fornecedor.')
       return
     }
     mappingSnapshotRef.current = { supplierId: nextSupplierId, fingerprint: fetched.fingerprint }
+    setMemoryReadyForSupplier(nextSupplierId)
     const nextMappings = fetched.products
     const nonCatalogMappings = fetched.nonCatalog
     const remembered = (item: NfeItemDraft): NfeItemDraft | null => {
@@ -367,6 +384,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
 
   function clearRememberedClassification() {
     mappingSnapshotRef.current = null
+    setMemoryReadyForSupplier(null)
+    setMemoryLoadFailed(false)
     setConfirmedMemoryLines(new Set())
     setAutoMappedCount(0)
     setDraft(previous => previous ? {
@@ -512,6 +531,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setSupplierId(resumed.supplierId)
       setResumedDraft(content)
       mappingSnapshotRef.current = null
+      setMemoryReadyForSupplier(null)
+      setMemoryLoadFailed(false)
       setConfirmedMemoryLines(new Set())
       setPendingDraft(null)
       setAutoMappedCount(0)
@@ -554,6 +575,10 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
           ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
           : unconfirmedMemory > 0
             ? `${unconfirmedMemory} classificação(ões) lembrada(s) do fornecedor precisam ser conferidas nesta NF-e.`
+          : supplierId && memoryReadyForSupplier !== supplierId
+            ? memoryLoadFailed
+              ? 'Não foi possível conferir a memória deste fornecedor. Reabra a importação.'
+              : 'Aguarde a conferência da memória deste fornecedor antes de confirmar.'
           : ''
 
   return (
