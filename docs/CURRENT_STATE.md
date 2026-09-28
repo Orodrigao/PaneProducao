@@ -39,9 +39,10 @@ incorporada à `main`.
   falha dessas travaria todo merge, sem exceção nem para o dono. `Usuarios do
   Banco por PR` pode correr antes de o banco da PR ficar pronto (falha
   observada em 03/09/2026, mais abaixo) e travaria merges por essa corrida.
-  Numa PR que mexe em `supabase/`, os dois seguem obrigatórios pela regra do
-  `AGENTS.md` (CI vermelho não mergeia), não pela trava. A trava também não
-  exige a PR atualizada com a `main` antes do merge
+  Numa PR que mexe em `supabase/`, os dois seguem obrigatórios pela regra
+  escrita, não pela trava: o `docs/regras/BANCO.md` exige os dois verdes e o
+  `AGENTS.md` só deixa mergear com todos os checks aplicáveis verdes. A trava
+  também não exige a PR atualizada com a `main` antes do merge
   (`strict_required_status_checks_policy: false`): atualizar a base depois do
   merge de outro agente é regra escrita, não trava.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
