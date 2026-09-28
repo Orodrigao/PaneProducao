@@ -103,7 +103,13 @@ describe('decidirEnsaio contra git de verdade', () => {
     ['so documento', false, (r) => r.escrever('docs/x.md', 'mudou\n')],
     ['migration nova', true, (r) => r.escrever('supabase/migrations/002_nova.sql')],
     ['migration com acento no nome', true, (r) => r.escrever('supabase/migrations/20260926_produção.sql')],
-    ['migration com espaco e aspas no nome', true, (r) => r.escrever('supabase/migrations/002 "a".sql')],
+    [
+      'migration com espaco e aspas no nome',
+      true,
+      (r) => r.escrever('supabase/migrations/002 "a".sql'),
+      // O CI e o Check rodam no Linux; so la esse nome de arquivo existe.
+      { skip: process.platform === 'win32' && 'o Windows nao aceita aspas em nome de arquivo' },
+    ],
     ['migration apagada', true, (r) => r.exec('git', ['rm', '--quiet', 'supabase/migrations/001_base.sql'])],
     [
       'migration movida para fora',
@@ -134,8 +140,8 @@ describe('decidirEnsaio contra git de verdade', () => {
     ],
   ]
 
-  for (const [nome, esperado, preparar] of casos) {
-    it(nome, () => {
+  for (const [nome, esperado, preparar, opcoes = {}] of casos) {
+    it(nome, opcoes, () => {
       assert.equal(decidirPr(preparar).banco, esperado)
     })
   }
@@ -176,28 +182,57 @@ describe('decidirEnsaio contra git de verdade', () => {
 // barra um jeito de o check exigido ficar verde sem o ensaio ter rodado.
 describe('ci-banco.yml usa a decisao', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci-banco.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
-  const inicioDosPassos = workflow.indexOf('\n    steps:\n')
+  const inicioDosJobs = workflow.indexOf('\njobs:\n')
+  const inicioDosPassos = workflow.indexOf('\n    steps:\n', inicioDosJobs)
   // Cada passo comeca em "      - ", seja qual for a primeira chave.
   const passos = workflow.slice(inicioDosPassos).split('\n      - ').slice(1)
   const condicao = (passo) => passo.match(/(?:^|\n\s+)if: (.*)/)?.[1]
   const indiceEscopo = passos.findIndex((passo) => /(?:^|\n\s+)id: escopo$/m.test(passo))
+  const semComentarios = (texto) =>
+    texto
+      .split('\n')
+      .filter((linha) => linha.trim() !== '' && !linha.trim().startsWith('#'))
+      .join('\n')
 
-  it('nao tem filtro paths: (check exigido precisa chegar em toda PR)', () => {
+  it('dispara em toda PR: so pull_request, sem filtro de caminho, tipo ou branch', () => {
     assert.doesNotMatch(workflow, /^\s*paths(-ignore)?:/m)
+    assert.match(workflow, /\non:\n  pull_request:\n\njobs:\n/)
   })
 
-  it('nada ignora falha e o job nao tem condicao (job pulado conta como verde)', () => {
+  it('o unico job e o ensaio, sem needs:, if: nem outro ambiente (job pulado conta como verde)', () => {
+    assert.ok(inicioDosJobs > 0 && inicioDosPassos > inicioDosJobs, 'bloco jobs:/steps: nao encontrado')
+    // O nome e o check exigido na trava da main: renomear deixa toda PR esperando.
+    assert.equal(
+      workflow.slice(inicioDosJobs, inicioDosPassos),
+      '\njobs:\n  ensaio:\n    name: Aplicar história completa num banco limpo\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read',
+    )
+    assert.deepEqual(workflow.slice(inicioDosJobs).match(/^  [^ #\n].*$/gm), ['  ensaio:'])
+  })
+
+  it('nada ignora falha nem troca interpretador, pasta ou ambiente dos passos', () => {
     assert.doesNotMatch(workflow, /continue-on-error/)
-    assert.ok(inicioDosPassos > 0, 'bloco steps: nao encontrado')
-    const cabecalhoDoJob = workflow.slice(workflow.indexOf('\n  ensaio:\n'), inicioDosPassos)
-    assert.doesNotMatch(cabecalhoDoJob, /^\s+if:/m)
+    assert.doesNotMatch(workflow, /^\s*(shell|defaults|container|services|working-directory):/m)
+    // O unico env: e o da decisao; outro poderia, por exemplo, trocar o PATH.
+    assert.equal(workflow.match(/^\s*env:/gm)?.length, 1)
   })
 
-  it('o passo de decisao so chama este script, sem desvio', () => {
+  it('o checkout traz a PR com a historia inteira, sem trocar a referencia', () => {
+    assert.equal(semComentarios(passos[0]), 'uses: actions/checkout@v4\n        with:\n          fetch-depth: 0')
+  })
+
+  it('o passo de decisao so chama este script com a base e o topo da PR, sem desvio', () => {
     assert.ok(indiceEscopo >= 0, 'passo id: escopo nao encontrado')
-    const runs = passos[indiceEscopo].match(/^\s+run:.*$/gm) ?? []
-    assert.deepEqual(runs.map((linha) => linha.trim()), ['run: node scripts/ci-banco-escopo.mjs >> "$GITHUB_OUTPUT"'])
-    assert.equal(condicao(passos[indiceEscopo]), undefined)
+    assert.equal(
+      semComentarios(passos[indiceEscopo]),
+      [
+        'name: Descobrir se a PR mexe em banco',
+        '        id: escopo',
+        '        env:',
+        '          BASE_SHA: ${{ github.event.pull_request.base.sha }}',
+        '          HEAD_SHA: ${{ github.event.pull_request.head.sha }}',
+        '        run: node scripts/ci-banco-escopo.mjs >> "$GITHUB_OUTPUT"',
+      ].join('\n'),
+    )
   })
 
   it('o teste do decisor roda no proprio job, antes da decisao', () => {
@@ -216,5 +251,25 @@ describe('ci-banco.yml usa a decisao', () => {
         assert.equal(condicao(passo), "steps.escopo.outputs.banco != 'false'", passo.split('\n')[0])
       }
     }
+  })
+
+  it('os passos rodam exatamente os comandos combinados, na ordem', () => {
+    // Trocar um comando do ensaio por outro que nao prova nada exige mudar esta lista de proposito.
+    const comandos = passos.flatMap((passo) => (passo.match(/^\s*(?:uses|run):.*$/gm) ?? []).map((linha) => linha.trim()))
+    assert.deepEqual(comandos, [
+      'uses: actions/checkout@v4',
+      'uses: actions/setup-node@v4',
+      'run: node --test scripts/ci-banco-escopo.test.mjs',
+      'run: node scripts/ci-banco-escopo.mjs >> "$GITHUB_OUTPUT"',
+      'run: |',
+      'uses: supabase/setup-cli@v3',
+      'run: supabase db start',
+      'run: supabase db reset --local',
+      'run: node scripts/verify-preview-seed-repeatability.mjs',
+      'run: supabase test db',
+      'run: supabase test db supabase/tests-local/pj_production_lock_concurrency.test.sql',
+      'run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql',
+      'run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql',
+    ])
   })
 })
