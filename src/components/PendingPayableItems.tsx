@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Plus, Save, X } from 'lucide-react'
 import {
   calculateUsableQuantity,
@@ -17,6 +17,7 @@ import {
   type PendingPayableItemRow,
 } from '@/lib/payables'
 import { showToast } from '@/lib/utils'
+import { loadProductCategories, payableCatalogCategoryOptions, type ProductCategory } from '@/lib/productCategories'
 
 interface PendingPayableItemsProps {
   items: PendingPayableItemRow[]
@@ -32,8 +33,21 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
   const [busy, setBusy] = useState<string | null>(null)
   const [createdProducts, setCreatedProducts] = useState<PayableProduct[]>([])
   const [creatingItemId, setCreatingItemId] = useState<string | null>(null)
-  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un' })
+  const [newProduct, setNewProduct] = useState({ name: '', category: '', unit: 'un' })
+  const [catalogCategories, setCatalogCategories] = useState<ProductCategory[]>([])
+  const [categoryLoadError, setCategoryLoadError] = useState(false)
   const catalog = [...products, ...createdProducts.filter(extra => !products.some(known => known.id === extra.id))]
+
+  useEffect(() => {
+    let cancelled = false
+    void loadProductCategories().then(categories => {
+      if (!cancelled) setCatalogCategories(payableCatalogCategoryOptions(categories))
+    }).catch(error => {
+      console.error(error)
+      if (!cancelled) setCategoryLoadError(true)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   function update(itemId: string, patch: Partial<(typeof values)[string]>) {
     setValues(previous => ({ ...previous, [itemId]: { ...previous[itemId], ...patch } }))
@@ -59,12 +73,13 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
   }
 
   function openProductForm(item: PendingPayableItemRow) {
-    setNewProduct({ name: item.source_description ?? item.item_name, category: 'Insumos', unit: 'un' })
+    setNewProduct({ name: item.source_description ?? item.item_name, category: catalogCategories.find(category => category.name === 'Insumos')?.name ?? '', unit: 'un' })
     setCreatingItemId(item.id)
   }
 
   async function saveNewProduct(item: PendingPayableItemRow) {
     if (!newProduct.name.trim() || !newProduct.unit.trim()) { showToast('Informe nome e unidade do item novo.'); return }
+    if (!catalogCategories.some(category => category.name === newProduct.category)) { showToast('Escolha uma categoria da lista.'); return }
     setBusy(item.id)
     try {
       const id = await createPayableCatalogProduct(newProduct.name, newProduct.category, newProduct.unit)
@@ -144,7 +159,7 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
                   <input className="ps-input" value={newProduct.name} onChange={event => setNewProduct(previous => ({ ...previous, name: event.target.value }))} />
                 </div>
                 <div className="ps-fieldrow" style={{ width: '100%' }}>
-                  <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><input className="ps-input" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} /></div>
+                  <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><select className="ps-select" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} disabled={catalogCategories.length === 0}><option value="">Escolha a categoria</option>{catalogCategories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select>{categoryLoadError && <small role="alert">Não foi possível carregar as categorias. Reabra esta tela.</small>}</div>
                   <div className="ps-fieldgroup"><div className="ps-fieldlabel">Unidade da receita</div><input className="ps-input" value={newProduct.unit} onChange={event => setNewProduct(previous => ({ ...previous, unit: event.target.value }))} /></div>
                 </div>
                 <div style={{ width: '100%' }}><button className="ps-btn primary sm" disabled={busy === item.id} onClick={() => void saveNewProduct(item)}><Save size={14} /> {busy === item.id ? 'Salvando...' : 'Criar e selecionar'}</button> <button className="ps-btn ghost sm" disabled={busy === item.id} onClick={() => setCreatingItemId(null)}>Cancelar</button></div>

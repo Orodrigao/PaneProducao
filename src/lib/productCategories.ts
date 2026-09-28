@@ -47,6 +47,12 @@ export interface ProductCategoryDraft {
   sortOrder: number
 }
 
+/** A importação de NF-e cadastra insumos de receita ou mercadorias para revenda. */
+export function payableCatalogCategoryOptions(categories: readonly ProductCategory[]): ProductCategory[] {
+  return categories.filter(category => category.active &&
+    (category.catalog_type === 'materia_prima' || category.catalog_type === 'produto_revenda'))
+}
+
 export function normalizeProductCategoryName(value: string): string {
   return value
     .trim()

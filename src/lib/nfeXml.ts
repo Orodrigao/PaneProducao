@@ -188,6 +188,29 @@ export function matchesProductSearch(name: string, query: string): boolean {
   return terms.every(term => target.includes(term))
 }
 
+const MATCH_NOISE = new Set(['ao', 'aos', 'as', 'de', 'da', 'do', 'das', 'dos', 'com', 'sem', 'para', 'p', 'e', 'un', 'und', 'kg', 'g', 'gr', 'lt', 'ml'])
+
+/** Sugestões por palavras em comum; jamais decide que dois chocolates são equivalentes. */
+export function rankCatalogCandidates<T extends { name: string }>(description: string, products: readonly T[]): T[] {
+  const terms = [...new Set(searchKey(description).split(/[^a-z0-9]+/).filter(term => term.length >= 3 && !MATCH_NOISE.has(term) && !/^\d+$/.test(term)))]
+  if (terms.length === 0) return []
+  return products.map((product, order) => {
+    const name = searchKey(product.name)
+    const nameTerms = new Set(name.split(/[^a-z0-9]+/))
+    const overlap = terms.filter(term => nameTerms.has(term)).length
+    const partial = terms.filter(term => !nameTerms.has(term) && term.length >= 5 && name.includes(term)).length
+    return { product, order, score: overlap * 3 + partial }
+  }).filter(candidate => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.product.name.localeCompare(right.product.name, 'pt-BR') || left.order - right.order)
+    .map(candidate => candidate.product)
+}
+
+/** Rascunho salvo não prova que a pessoa conferiu a decisão da nota. */
+export function classificationNeedsReview(item: NfeItemDraft, resumedDraft: boolean, confirmedLines: ReadonlySet<number>): boolean {
+  const classifiedFromDraft = resumedDraft && item.mappingStatus !== 'pendente'
+  return (item.recognized || classifiedFromDraft) && !confirmedLines.has(item.lineNumber)
+}
+
 /**
  * Código de barras (GTIN) de verdade: 8, 12, 13 ou 14 dígitos, não só zeros e
  * com o dígito verificador certo. Produto a granel vem com cEAN "SEM GTIN";

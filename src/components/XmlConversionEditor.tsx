@@ -10,13 +10,41 @@ import {
   getConversionUnitWarning,
   initialSearchFromDescription,
   matchesProductSearch,
+  rankCatalogCandidates,
   suggestConversionFactor,
   type NfeConversionBasis,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
 import type { PayableProduct } from '@/lib/payables'
+import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
 
 const MAX_RESULTS = 8
+
+function RecipeUsageDetails({ productId, index, error, compact = false }: {
+  productId: string
+  index: RecipeUsageIndex | null
+  error: boolean
+  compact?: boolean
+}) {
+  const result = useMemo(() => index ? findCurrentRecipeUsage(index, productId) : null, [index, productId])
+  if (error) return <small className="ps-help">Não foi possível consultar as fichas agora.</small>
+  if (!index || !result) return <small className="ps-help">Consultando as fichas atuais...</small>
+  if (result.usages.length === 0) return <small className="ps-help">Nenhuma ficha técnica atual usa este cadastro.</small>
+  const visible = compact ? result.usages.slice(0, 2) : result.usages
+  return (
+    <span style={{ display: 'grid', gap: 2 }}>
+      <small className="ps-help">Usado nas fichas atuais ({result.usages.length}):</small>
+      {visible.map(usage => (
+        <small key={usage.productId} style={{ display: 'block' }}>
+          {usage.path.slice(1).map(id => index.products.get(id)?.name ?? 'Produto').join(' → ')}
+          {!usage.active ? ' · cadastro inativo' : ''}
+        </small>
+      ))}
+      {compact && result.usages.length > visible.length && <small className="ps-help">e mais {result.usages.length - visible.length} ficha(s)</small>}
+      {result.truncated && <small className="ps-help">Há mais vínculos; refine a consulta em Cadastros.</small>}
+    </span>
+  )
+}
 
 export function ProductSelector({
   item,
@@ -24,24 +52,37 @@ export function ProductSelector({
   onChange,
   onCreate,
   onWithoutProduct,
+  recipeUsageIndex,
+  recipeUsageError = false,
+  memoryConfirmed = false,
+  onConfirmMemory,
+  requiresReview = false,
 }: {
   item: NfeItemDraft
   products: PayableProduct[]
   onChange: (productId: string) => void
   onCreate: () => void
   onWithoutProduct: () => void
+  recipeUsageIndex?: RecipeUsageIndex | null
+  recipeUsageError?: boolean
+  memoryConfirmed?: boolean
+  onConfirmMemory?: () => void
+  requiresReview?: boolean
 }) {
   const [query, setQuery] = useState(() => initialSearchFromDescription(item.description))
+  const [visibleCount, setVisibleCount] = useState(MAX_RESULTS)
   const selected = products.find(product => product.id === item.baseProductId)
 
-  const results = useMemo(
-    () => (query.trim() ? products.filter(product => matchesProductSearch(product.name, query)).slice(0, MAX_RESULTS) : []),
-    [products, query],
-  )
-  const total = useMemo(
-    () => (query.trim() ? products.filter(product => matchesProductSearch(product.name, query)).length : 0),
-    [products, query],
-  )
+  const suggested = useMemo(() => rankCatalogCandidates(item.description, products), [item.description, products])
+  const matches = useMemo(() => query.trim()
+    ? products.filter(product => matchesProductSearch(product.name, query))
+    : [], [products, query])
+  const suggestionOrder = useMemo(() => new Map(suggested.map((product, index) => [product.id, index])), [suggested])
+  const orderedMatches = useMemo(() => [...matches].sort((left, right) =>
+    (suggestionOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (suggestionOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      || left.name.localeCompare(right.name, 'pt-BR')), [matches, suggestionOrder])
+  const results = orderedMatches.slice(0, visibleCount)
+  const alternatives = suggested.filter(product => !matches.some(match => match.id === product.id)).slice(0, 4)
 
   if (item.mappingStatus === 'nao_aplicavel') {
     return (
@@ -52,9 +93,12 @@ export function ProductSelector({
           <div style={{ flex: 1 }}>
             <b>Uso ou despesa — não entra em receita</b>
             <small style={{ display: 'block', marginTop: 3 }}>O nome, a marca, o fornecedor e o preço da NF-e continuam guardados. O sistema lembrará desta decisão na próxima nota.</small>
+            {requiresReview && <small style={{ display: 'block' }}>{item.recognized ? 'Decisão lembrada deste fornecedor.' : 'Decisão salva em rascunho.'} Confira se também vale para esta NF-e.</small>}
           </div>
           <button className="ps-btn ghost sm" onClick={() => onChange('')}>Trocar</button>
         </div>
+        {requiresReview && !memoryConfirmed && <button className="ps-btn primary sm" onClick={onConfirmMemory}>Conferi esta classificação</button>}
+        {requiresReview && memoryConfirmed && <small className="ps-help">Classificação conferida nesta NF-e.</small>}
       </div>
     )
   }
@@ -68,9 +112,15 @@ export function ProductSelector({
           style={{ padding: 10, borderColor: 'var(--teal-border)', background: 'var(--teal-bg)', display: 'flex', alignItems: 'center', gap: 8 }}
         >
           <Check size={16} color="var(--teal)" aria-hidden />
-          <b style={{ flex: 1 }}>{selected.name}{selected.unit ? ` · ${selected.unit}` : ''}</b>
+          <div style={{ flex: 1 }}>
+            <b>{selected.name}{selected.unit ? ` · ${selected.unit}` : ''}</b>
+            {requiresReview && <small style={{ display: 'block' }}>{item.recognized ? 'Lembrado deste fornecedor.' : 'Vínculo salvo em rascunho.'} Confira se é o mesmo produto da NF-e.</small>}
+          </div>
           <button className="ps-btn ghost sm" onClick={() => onChange('')}>Trocar</button>
         </div>
+        <RecipeUsageDetails productId={selected.id} index={recipeUsageIndex ?? null} error={recipeUsageError} />
+        {requiresReview && !memoryConfirmed && <button className="ps-btn primary sm" onClick={onConfirmMemory}>Conferi este vínculo nesta NF-e</button>}
+        {requiresReview && memoryConfirmed && <small className="ps-help">Vínculo conferido nesta NF-e.</small>}
       </div>
     )
   }
@@ -100,7 +150,7 @@ export function ProductSelector({
             className="ps-input"
             style={{ paddingLeft: 30 }}
             value={query}
-            onChange={event => setQuery(event.target.value)}
+            onChange={event => { setQuery(event.target.value); setVisibleCount(MAX_RESULTS) }}
             placeholder="Procure pelo nome do insumo"
             aria-label={`Procurar item-base para ${item.description}`}
           />
@@ -108,7 +158,7 @@ export function ProductSelector({
             <button
               className="ps-iconbtn"
               style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)' }}
-              onClick={() => setQuery('')}
+              onClick={() => { setQuery(''); setVisibleCount(MAX_RESULTS) }}
               aria-label="Limpar busca"
             >
               <X size={14} />
@@ -147,11 +197,12 @@ export function ProductSelector({
         <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
           <small className="ps-help">Itens encontrados para vincular:</small>
           {results.map(product => (
-            <button key={product.id} className="ps-btn ghost sm" style={{ justifyContent: 'flex-start', textAlign: 'left' }} onClick={() => onChange(product.id)}>
-              {product.name}{product.unit ? ` · ${product.unit}` : ''}
+            <button key={product.id} className="ps-btn ghost sm" style={{ justifyContent: 'flex-start', textAlign: 'left', display: 'grid' }} onClick={() => onChange(product.id)}>
+              <b>{product.name}{product.unit ? ` · ${product.unit}` : ''}</b>
+              <RecipeUsageDetails productId={product.id} index={recipeUsageIndex ?? null} error={recipeUsageError} compact />
             </button>
           ))}
-          {total > results.length && <small className="ps-help">Mais {total - results.length} resultado(s). Escreva mais para estreitar.</small>}
+          {orderedMatches.length > results.length && <button className="ps-btn ghost sm" onClick={() => setVisibleCount(count => count + MAX_RESULTS)}>Mostrar mais {Math.min(MAX_RESULTS, orderedMatches.length - results.length)} resultado(s)</button>}
           {/* A busca pode achar parente sem ser o certo: "CREME" acha o creme de
               bolo quando se procura o de confeiteiro. Quem chegou ate aqui e nao
               reconheceu nenhum resultado precisa da saida de cadastro no proprio
@@ -159,6 +210,18 @@ export function ProductSelector({
               este caso e reprovou quando o bloco foi removido, em 03/09/2026. */}
           <small className="ps-help" style={{ marginTop: 4 }}>Nenhum desses serve?</small>
           <button className="ps-btn ghost sm" style={{ alignSelf: 'start' }} onClick={onCreate}><Plus size={14} /> Cadastrar item novo</button>
+        </div>
+      )}
+
+      {alternatives.length > 0 && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+          <small className="ps-help">Outros cadastros com palavras da NF-e. Confirme o produto antes de vincular:</small>
+          {alternatives.map(product => (
+            <button key={product.id} className="ps-btn ghost sm" style={{ justifyContent: 'flex-start', textAlign: 'left', display: 'grid' }} onClick={() => onChange(product.id)}>
+              <b>{product.name}{product.unit ? ` · ${product.unit}` : ''}</b>
+              <RecipeUsageDetails productId={product.id} index={recipeUsageIndex ?? null} error={recipeUsageError} compact />
+            </button>
+          ))}
         </div>
       )}
 

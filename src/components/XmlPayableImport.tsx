@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileClock, FileUp, Plus, Save, X } from 'lucide-react'
 import {
   findLatestSupplierMapping,
+  classificationNeedsReview,
   parseNfeXml,
   type NfeConversionBasis,
   type NfeDraft,
@@ -34,6 +35,9 @@ import {
 import { showToast } from '@/lib/utils'
 import { allocateItemCosts, composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
 import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
+import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
+import type { RecipeUsageIndex } from '@/lib/recipeUsage'
+import { loadProductCategories, payableCatalogCategoryOptions, type ProductCategory } from '@/lib/productCategories'
 
 export interface XmlSupplierOption { id: string; name: string; cnpj: string | null }
 
@@ -56,6 +60,26 @@ interface NonCatalogMapping {
   supplier_description: string
   purchase_unit: string
   updated_at: string
+}
+
+async function fetchSupplierMappings(supplierId: string): Promise<{ products: ProductMapping[]; nonCatalog: NonCatalogMapping[]; fingerprint: string }> {
+  const { supabase } = await import('@/lib/supabase')
+  const [productResult, nonCatalogResult] = await Promise.all([
+    supabase.from('payable_product_mappings')
+      .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,updated_at')
+      .eq('supplier_id', supplierId).eq('active', true),
+    supabase.from('payable_non_catalog_mappings')
+      .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,updated_at')
+      .eq('supplier_id', supplierId).eq('active', true),
+  ])
+  if (productResult.error || nonCatalogResult.error) throw new Error('Não foi possível conferir a memória deste fornecedor.')
+  const products = (productResult.data ?? []) as ProductMapping[]
+  const nonCatalog = (nonCatalogResult.data ?? []) as NonCatalogMapping[]
+  const fingerprint = JSON.stringify([
+    ...products.map(mapping => `p:${JSON.stringify(mapping)}`),
+    ...nonCatalog.map(mapping => `n:${JSON.stringify(mapping)}`),
+  ].sort())
+  return { products, nonCatalog, fingerprint }
 }
 
 interface XmlPayableImportProps {
@@ -179,6 +203,7 @@ function lostLinesMessage(lines: readonly number[]): string {
 export default function XmlPayableImport({ suppliers, products, initialDraft = null, onSaved, onCancel }: XmlPayableImportProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const requestIdRef = useRef(crypto.randomUUID())
+  const mappingSnapshotRef = useRef<{ supplierId: string; fingerprint: string } | null>(null)
   // A retomada acontece uma vez, na montagem; depois disso a pessoa é dona do
   // rascunho e nenhuma recarga de lista pode sobrescrever o que ela mudou.
   const [initial] = useState<{ resumed: ResumedImport | null; error: string | null }>(() => {
@@ -216,9 +241,52 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   const [creatingLine, setCreatingLine] = useState<number | null>(null)
   const [creatingSupplier, setCreatingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
-  const [newProduct, setNewProduct] = useState({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
+  const [newProduct, setNewProduct] = useState({ name: '', category: '', unit: 'un', useNfeName: true })
+  const [catalogCategories, setCatalogCategories] = useState<ProductCategory[]>([])
+  const [categoryLoadError, setCategoryLoadError] = useState(false)
   const [autoMappedCount, setAutoMappedCount] = useState(0)
   const [duplicateNfe, setDuplicateNfe] = useState(false)
+  const [confirmedMemoryLines, setConfirmedMemoryLines] = useState<Set<number>>(() => new Set())
+  const [recipeUsageIndex, setRecipeUsageIndex] = useState<RecipeUsageIndex | null>(null)
+  const [recipeUsageError, setRecipeUsageError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadRecipeUsageIndex().then(index => {
+      if (!cancelled) setRecipeUsageIndex(index)
+    }).catch(error => {
+      console.error(error)
+      if (!cancelled) setRecipeUsageError(true)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // Rascunhos guardam a decisão, não uma prova de conferência. Ao retomar,
+  // todas as linhas decididas voltam a pedir confirmação e a memória atual é
+  // fotografada para detectar outra mudança enquanto a tela estiver aberta.
+  useEffect(() => {
+    if (!resumedDraft || !supplierId) return
+    let cancelled = false
+    mappingSnapshotRef.current = null
+    void fetchSupplierMappings(supplierId).then(snapshot => {
+      if (!cancelled) mappingSnapshotRef.current = { supplierId, fingerprint: snapshot.fingerprint }
+    }).catch(error => {
+      console.error(error)
+      if (!cancelled) setError('Não foi possível conferir a memória atual deste fornecedor. Reabra o rascunho.')
+    })
+    return () => { cancelled = true }
+  }, [resumedDraft, supplierId])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadProductCategories().then(categories => {
+      if (!cancelled) setCatalogCategories(payableCatalogCategoryOptions(categories))
+    }).catch(error => {
+      console.error(error)
+      if (!cancelled) setCategoryLoadError(true)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   async function readFile(file: File) {
     setError(null)
@@ -244,6 +312,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setResumedDraft(null)
       setPendingDraft(savedDraft)
       setDuplicateNfe(Boolean(existingPurchase))
+      setConfirmedMemoryLines(new Set())
+      mappingSnapshotRef.current = null
       setAutoMappedCount(0)
       setCreatingSupplier(false)
       const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
@@ -258,22 +328,18 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
 
   async function loadMappings(nextSupplierId: string, nextDraft = draft) {
     if (!nextDraft || !nextSupplierId) return
-    const { supabase } = await import('@/lib/supabase')
-    const [productResult, nonCatalogResult] = await Promise.all([
-      supabase
-        .from('payable_product_mappings')
-        .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,updated_at')
-        .eq('supplier_id', nextSupplierId)
-        .eq('active', true),
-      supabase
-        .from('payable_non_catalog_mappings')
-        .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,updated_at')
-        .eq('supplier_id', nextSupplierId)
-        .eq('active', true),
-    ])
-    if (productResult.error || nonCatalogResult.error) { setAutoMappedCount(0); setError('Não foi possível carregar as classificações anteriores deste fornecedor.'); return }
-    const nextMappings = (productResult.data ?? []) as ProductMapping[]
-    const nonCatalogMappings = (nonCatalogResult.data ?? []) as NonCatalogMapping[]
+    setConfirmedMemoryLines(new Set())
+    let fetched: Awaited<ReturnType<typeof fetchSupplierMappings>>
+    try {
+      fetched = await fetchSupplierMappings(nextSupplierId)
+    } catch {
+      setAutoMappedCount(0)
+      setError('Não foi possível carregar as classificações anteriores deste fornecedor.')
+      return
+    }
+    mappingSnapshotRef.current = { supplierId: nextSupplierId, fingerprint: fetched.fingerprint }
+    const nextMappings = fetched.products
+    const nonCatalogMappings = fetched.nonCatalog
     const remembered = (item: NfeItemDraft): NfeItemDraft | null => {
       const mapping = findLatestSupplierMapping(item, nextMappings)
       const nonCatalog = findLatestSupplierMapping(item, nonCatalogMappings)
@@ -299,9 +365,19 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     setDraft(previous => previous ? { ...previous, items: previous.items.map((item, itemIndex) => itemIndex === index ? next : item) } : previous)
   }
 
+  function clearRememberedClassification() {
+    mappingSnapshotRef.current = null
+    setConfirmedMemoryLines(new Set())
+    setAutoMappedCount(0)
+    setDraft(previous => previous ? {
+      ...previous,
+      items: previous.items.map(item => item.recognized ? clearProduct(item) : item),
+    } : previous)
+  }
+
   function openProductForm(index: number) {
     if (!draft) return
-    setNewProduct({ name: draft.items[index].description, category: 'Insumos', unit: 'un', useNfeName: true })
+    setNewProduct({ name: draft.items[index].description, category: catalogCategories.find(category => category.name === 'Insumos')?.name ?? '', unit: 'un', useNfeName: true })
     setCreatingLine(index)
   }
 
@@ -317,23 +393,33 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       if (draft) updateItem(index, clearProduct(draft.items[index]))
       return
     }
-    if (draft) updateItem(index, withProduct(draft.items[index], product))
+    if (draft) {
+      updateItem(index, withProduct(draft.items[index], product))
+      setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
+    }
   }
 
   function markWithoutProduct(index: number) {
-    if (draft) updateItem(index, withoutProduct(draft.items[index]))
+    if (draft) {
+      updateItem(index, withoutProduct(draft.items[index]))
+      setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
+    }
   }
 
   async function saveNewProduct(index: number) {
     if (!newProduct.name.trim() || !newProduct.unit.trim()) { showToast('Informe nome e unidade do item novo.'); return }
+    if (!catalogCategories.some(category => category.name === newProduct.category)) { showToast('Escolha uma categoria da lista.'); return }
     setSaving(true)
     try {
       const id = await createPayableCatalogProduct(newProduct.name, newProduct.category, newProduct.unit)
       const product: PayableProduct = { id, name: newProduct.name.trim(), category: newProduct.category, unit: newProduct.unit.trim() }
       setCreatedProducts(previous => [...previous, product])
-      if (draft) updateItem(index, withProduct(draft.items[index], product))
+      if (draft) {
+        updateItem(index, withProduct(draft.items[index], product))
+        setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
+      }
       setCreatingLine(null)
-      setNewProduct({ name: '', category: 'Insumos', unit: 'un', useNfeName: true })
+      setNewProduct({ name: '', category: '', unit: 'un', useNfeName: true })
       showToast('Item criado e vinculado à NF-e.')
     } catch (saveError) {
       showToast(saveError instanceof Error ? saveError.message : 'Não foi possível criar o item.')
@@ -352,6 +438,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     try {
       const supplier = await createPayableSupplier(newSupplier.name, newSupplier.cnpj)
       setCreatedSuppliers(previous => previous.some(item => item.id === supplier.id) ? previous : [...previous, supplier])
+      clearRememberedClassification()
       setSupplierId(supplier.id)
       setCreatingSupplier(false)
       await loadMappings(supplier.id)
@@ -369,10 +456,22 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     if (draft.installments.some(item => item.dueDate < draft.issueDate)) { showToast('Há vencimento anterior à emissão da nota. Confira a data digitada.'); return }
     if (draft.installments.some(item => item.amount <= 0)) { showToast('A NF-e não tem parcelas válidas para o financeiro.'); return }
     if (draft.items.some(conversionNeedsAttention)) { showToast('Confira quanto vem na embalagem dos itens marcados em vermelho.'); return }
+    if (draft.items.some(item => classificationNeedsReview(item, Boolean(resumedDraft), confirmedMemoryLines))) {
+      showToast('Confira cada classificação lembrada ou salva em rascunho antes de confirmar a NF-e.')
+      return
+    }
     const compositionReason = compositionBlockReason(composeNfe(draft))
     if (compositionReason) { showToast(compositionReason); return }
     setSaving(true)
     try {
+      const openedMemory = mappingSnapshotRef.current
+      if (!openedMemory || openedMemory.supplierId !== supplierId) {
+        throw new Error('Aguarde carregar a memória deste fornecedor antes de confirmar a NF-e.')
+      }
+      const currentMemory = await fetchSupplierMappings(supplierId)
+      if (currentMemory.fingerprint !== openedMemory.fingerprint) {
+        throw new Error('A memória deste fornecedor mudou enquanto a NF-e estava aberta. Reabra a importação e confira os vínculos antes de confirmar.')
+      }
       // Importação retomada passa pelo banco com o id e a versão abertos na
       // tela: descarte, confirmação ou salvamento de outra pessoa nesse
       // meio-tempo fazem o banco recusar, e nada vira conta.
@@ -412,6 +511,8 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setXmlText(resumed.xmlText)
       setSupplierId(resumed.supplierId)
       setResumedDraft(content)
+      mappingSnapshotRef.current = null
+      setConfirmedMemoryLines(new Set())
       setPendingDraft(null)
       setAutoMappedCount(0)
       setError(resumed.lostLines.length > 0 ? lostLinesMessage(resumed.lostLines) : null)
@@ -435,6 +536,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
   const unconfirmedFactors = draft?.items.filter(conversionNeedsAttention).length ?? 0
+  const unconfirmedMemory = draft?.items.filter(item => classificationNeedsReview(item, Boolean(resumedDraft), confirmedMemoryLines)).length ?? 0
   const dueDateBeforeIssue = draft?.installments.some(item => item.dueDate && item.dueDate < draft.issueDate) ?? false
   const filledByHand = draft?.dueDateSource === 'ausente' && !missingDueDate
   const assumedOnIssueDate = draft?.dueDateSource === 'a-vista'
@@ -448,8 +550,10 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       ? 'Falta o vencimento. Preencha a data acima para liberar a confirmação.'
       : dueDateBeforeIssue
         ? 'Há vencimento anterior à emissão da nota. Confira a data digitada.'
-        : unconfirmedFactors > 0
+      : unconfirmedFactors > 0
           ? `${unconfirmedFactors} item(ns) esperam a conferência da embalagem. Sem isso o custo do insumo entra errado.`
+          : unconfirmedMemory > 0
+            ? `${unconfirmedMemory} classificação(ões) lembrada(s) do fornecedor precisam ser conferidas nesta NF-e.`
           : ''
 
   return (
@@ -505,7 +609,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
           )}
           <div className="ps-fieldgroup" style={{ marginTop: 10 }}>
             <div className="ps-fieldlabel">Fornecedor no ERP *</div>
-            <select className="ps-select" value={supplierId} onChange={event => { setSupplierId(event.target.value); if (!event.target.value) setAutoMappedCount(0); void loadMappings(event.target.value) }}>
+            <select className="ps-select" value={supplierId} onChange={event => { clearRememberedClassification(); setSupplierId(event.target.value); void loadMappings(event.target.value) }}>
               <option value="">Selecione o fornecedor</option>
               {availableSuppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.cnpj ? ` · ${supplier.cnpj}` : ''}</option>)}
             </select>
@@ -549,7 +653,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                   + impostos e despesas {formatBRL(itemCosts?.get(item.lineNumber)?.surchargeTotal ?? 0)} · pago {formatBRL(itemCosts?.get(item.lineNumber)?.acquisitionValue ?? 0)}
                 </small>
               )}
-              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} />
+              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} recipeUsageIndex={recipeUsageIndex} recipeUsageError={recipeUsageError} requiresReview={item.recognized || Boolean(resumedDraft && item.mappingStatus !== 'pendente')} memoryConfirmed={confirmedMemoryLines.has(item.lineNumber)} onConfirmMemory={() => setConfirmedMemoryLines(previous => new Set(previous).add(item.lineNumber))} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
                   <div className="ps-fieldgroup">
@@ -578,7 +682,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                     </small>
                   </div>
                   <div className="ps-fieldrow" style={{ marginTop: 8 }}>
-                    <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><input className="ps-input" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} /></div>
+                    <div className="ps-fieldgroup"><div className="ps-fieldlabel">Categoria</div><select className="ps-select" value={newProduct.category} onChange={event => setNewProduct(previous => ({ ...previous, category: event.target.value }))} disabled={catalogCategories.length === 0}><option value="">Escolha a categoria</option>{catalogCategories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select>{categoryLoadError && <small role="alert">Não foi possível carregar as categorias. Reabra a importação.</small>}</div>
                     <div className="ps-fieldgroup"><div className="ps-fieldlabel">Unidade da receita</div><input className="ps-input" value={newProduct.unit} onChange={event => setNewProduct(previous => ({ ...previous, unit: event.target.value }))} /></div>
                   </div>
                   <div style={{ marginTop: 8 }}><button className="ps-btn primary sm" disabled={saving} onClick={() => void saveNewProduct(index)}><Save size={14} /> Criar e vincular</button> <button className="ps-btn ghost sm" onClick={() => setCreatingLine(null)}>Cancelar</button></div>
