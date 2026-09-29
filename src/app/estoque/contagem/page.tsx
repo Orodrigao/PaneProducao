@@ -1,13 +1,22 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Lock, Unlock, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, Lock, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, type AppUser } from '@/lib/auth'
 import { showToast } from '@/lib/utils'
+import { bakeryDayKey, shiftDateKey } from '@/lib/bakeryClock'
+import { InventoryCountClosedPanel } from '@/components/InventoryCountClosedPanel'
+import { InventoryCountClosePanel } from '@/components/InventoryCountClosePanel'
 import {
   buildInventoryCountBoard,
   collectDirtyQuantityEdits,
+  formatDayMonth,
+  inventoryCountReopenAccess,
+  inventoryCountReopenDeadline,
+  inventoryCountWeekStart,
+  isInventoryCountOfCurrentWeek,
+  listPendingInventoryCountNames,
   summarizeInventoryCountBoard,
   isInventoryWeeklyCountEditable,
   type InventoryCountProductLookup,
@@ -49,7 +58,9 @@ export default function ContagemSemanalPage() {
   const [closing, setClosing] = useState(false)
   const [reopening, setReopening] = useState(false)
   const [confirmingClose, setConfirmingClose] = useState(false)
-  const [confirmingReopen, setConfirmingReopen] = useState(false)
+  // Hoje na padaria, relido a cada carga: decide só o que a tela oferece
+  // (iniciar, reabrir); quem autoriza de verdade é o banco.
+  const [todayKey, setTodayKey] = useState('')
 
   const allowed = canCountInventory(user)
 
@@ -78,6 +89,7 @@ export default function ContagemSemanalPage() {
   const load = async () => {
     setLoading(true)
     setError(null)
+    setTodayKey(bakeryDayKey())
     try {
       const [eligibleResult, countResult] = await Promise.all([
         supabase.from('products').select('id', { count: 'exact', head: true })
@@ -109,6 +121,24 @@ export default function ContagemSemanalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Tela deixada aberta de domingo para segunda: relê o dia da padaria ao
+  // voltar para a aba e a cada minuto com ela na frente, para não oferecer
+  // reabrir fora do prazo nem esconder o início da semana nova (revisão do Sol
+  // e do CodeRabbit). Mesmo dia não re-renderiza: o React ignora valor igual.
+  useEffect(() => {
+    const refreshToday = () => {
+      if (document.visibilityState === 'visible') setTodayKey(bakeryDayKey())
+    }
+    const timer = window.setInterval(refreshToday, 60_000)
+    document.addEventListener('visibilitychange', refreshToday)
+    window.addEventListener('focus', refreshToday)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshToday)
+      window.removeEventListener('focus', refreshToday)
+    }
+  }, [])
+
   const board = useMemo(() => buildInventoryCountBoard(items, productsById), [items, productsById])
   const summary = useMemo(() => summarizeInventoryCountBoard(board), [board])
   // Editabilidade e "existe contagem aberta" vêm só do status gravado pelo
@@ -116,6 +146,24 @@ export default function ContagemSemanalPage() {
   // CodeRabbit: o relógio/fuso do aparelho podia divergir do servidor e
   // bloquear uma contagem que estava genuinamente aberta).
   const editable = isInventoryWeeklyCountEditable(count)
+  // Já os botões de iniciar e reabrir usam o dia da padaria (bakeryDayKey,
+  // independente do fuso do aparelho) só para não oferecer o que o banco vai
+  // recusar; o prazo de verdade é conferido pelo banco na hora de reabrir.
+  const isAdmin = user?.role === 'admin'
+  const reopenAccess = inventoryCountReopenAccess({ count, isAdmin, canCount: allowed, todayKey })
+  const reopenDeadline = count ? inventoryCountReopenDeadline(count.week_start) : ''
+  const countIsCurrentWeek = isInventoryCountOfCurrentWeek(count, todayKey)
+  const currentWeekStart = inventoryCountWeekStart(todayKey)
+  const pendingNames = useMemo(() => listPendingInventoryCountNames(board, inputs), [board, inputs])
+  // O que acontece depois de fechar, calculado como se já estivesse fechada.
+  const reopenAfterClose = inventoryCountReopenAccess({
+    count: count ? { ...count, status: 'fechada' } : null, isAdmin, canCount: allowed, todayKey,
+  })
+  const afterCloseNote = reopenAfterClose === 'counter-in-time'
+    ? `Se fechar antes da hora, você ainda pode reabrir até domingo, ${formatDayMonth(reopenDeadline)}, às 23:59.`
+    : reopenAfterClose === 'counter-late'
+      ? 'Depois de fechar, só o admin reabre.'
+      : null
 
   const openCount = async () => {
     setOpening(true)
@@ -209,9 +257,9 @@ export default function ContagemSemanalPage() {
       showToast('Contagem reaberta!')
     } catch (rpcError: unknown) {
       showToast('Erro: ' + (rpcError instanceof Error ? rpcError.message : 'não foi possível reabrir'))
+      await load()
     } finally {
       setReopening(false)
-      setConfirmingReopen(false)
     }
   }
 
@@ -251,42 +299,34 @@ export default function ContagemSemanalPage() {
             </div>
           ) : (
             <>
-              {!editable && (
+              {!count && hasEligibleProducts && (
                 <div className="ps-card" style={{marginTop:14, padding:16, textAlign:'center'}}>
-                  <div style={{fontSize:13, color:'var(--ink-soft)', marginBottom:12}}>
-                    {count
-                      ? `A última contagem foi fechada em ${formatDateTime(count.closed_at)}.`
-                      : 'Nenhuma contagem foi feita ainda.'}
-                    {' '}{hasEligibleProducts ? '' : 'Nenhum insumo marcado para contar no momento.'}
-                  </div>
-                  {hasEligibleProducts && (
-                    <button className="ps-btn" onClick={openCount} disabled={opening}>
-                      {opening ? 'Abrindo...' : count ? 'Iniciar nova contagem' : 'Iniciar contagem desta semana'}
-                    </button>
-                  )}
+                  <div style={{fontSize:13, color:'var(--ink-soft)', marginBottom:12}}>Nenhuma contagem foi feita ainda.</div>
+                  <button className="ps-btn" onClick={openCount} disabled={opening}>
+                    {opening ? 'Abrindo...' : 'Iniciar contagem desta semana'}
+                  </button>
                 </div>
               )}
 
               {count && !editable && (
-                <div className="ps-card" style={{marginTop:14, padding:'12px 14px', background:'var(--cream)'}}>
-                  <div style={{display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:600}}>
-                    <Lock size={16}/> Contagem fechada em {formatDateTime(count.closed_at)}{count.closed_by_name ? ` por ${count.closed_by_name}` : ''}
-                  </div>
-                  {user?.role === 'admin' && (
-                    <div style={{display:'flex', gap:8, marginTop:10, flexWrap:'wrap'}}>
-                      {!confirmingReopen ? (
-                        <button className="ps-btn ghost sm" onClick={() => setConfirmingReopen(true)}>
-                          <Unlock size={14}/> Reabrir esta contagem
-                        </button>
-                      ) : (
-                        <>
-                          <span style={{fontSize:12, color:'var(--ink-soft)'}}>Reabrir e liberar edição dos números?</span>
-                          <button className="ps-btn sm" onClick={reopenCount} disabled={reopening}>{reopening ? 'Reabrindo...' : 'Confirmar'}</button>
-                          <button className="ps-btn ghost sm" onClick={() => setConfirmingReopen(false)}>Cancelar</button>
-                        </>
-                      )}
-                    </div>
-                  )}
+                <InventoryCountClosedPanel
+                  count={count}
+                  isCurrentWeek={countIsCurrentWeek}
+                  nextWeekStart={currentWeekStart ? shiftDateKey(currentWeekStart, 7) : ''}
+                  canStartNew={hasEligibleProducts && !countIsCurrentWeek}
+                  reopenAccess={reopenAccess}
+                  reopenDeadline={reopenDeadline}
+                  opening={opening}
+                  reopening={reopening}
+                  formatDateTime={formatDateTime}
+                  onStart={openCount}
+                  onReopen={reopenCount}
+                />
+              )}
+
+              {count && !editable && !hasEligibleProducts && !countIsCurrentWeek && (
+                <div style={{fontSize:13, color:'var(--ink-soft)', marginTop:8}}>
+                  Nenhum insumo marcado para contar no momento. Marque em Produtos → editar insumo → &quot;Contagem semanal&quot;.
                 </div>
               )}
 
@@ -339,24 +379,29 @@ export default function ContagemSemanalPage() {
                     })}
                   </div>
 
-                  {editable && (
+                  {/* Sem disabled durante o salvamento: tocar aqui com o último campo
+                      ainda em foco dispara o salvamento no blur, e o botão travado
+                      engolia o toque (visto no teste do preview). Este botão só abre a
+                      confirmação; quem espera o salvamento é o "Fechar" de lá. */}
+                  {editable && !confirmingClose && (
                     <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:16, marginBottom:20}}>
-                      {!confirmingClose ? (
-                        <button className="ps-btn" onClick={() => setConfirmingClose(true)} disabled={anySaving}>
-                          <Lock size={14}/> Fechar contagem
-                        </button>
-                      ) : (
-                        <>
-                          <span style={{fontSize:12, color:'var(--ink-soft)', alignSelf:'center'}}>
-                            {summary.pending > 0 ? `${summary.pending} insumo(s) ainda sem contagem. ` : ''}Fechar mesmo assim?
-                          </span>
-                          <button className="ps-btn ghost sm" onClick={() => setConfirmingClose(false)}>Cancelar</button>
-                          <button className="ps-btn sm" onClick={closeCount} disabled={closing || anySaving}>
-                            {flushingBeforeClose ? 'Salvando pendências...' : closing ? 'Fechando...' : 'Confirmar'}
-                          </button>
-                        </>
-                      )}
+                      <button className="ps-btn" onClick={() => setConfirmingClose(true)}>
+                        <Lock size={14}/> Fechar contagem
+                      </button>
                     </div>
+                  )}
+
+                  {editable && confirmingClose && (
+                    <InventoryCountClosePanel
+                      pendingNames={pendingNames}
+                      total={summary.total}
+                      afterCloseNote={afterCloseNote}
+                      flushing={flushingBeforeClose}
+                      closing={closing}
+                      anySaving={anySaving}
+                      onConfirm={closeCount}
+                      onCancel={() => setConfirmingClose(false)}
+                    />
                   )}
                 </>
               )}

@@ -537,7 +537,9 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
   values
     ('rodrigao+teste@gmail.com', 'Rodrigo Teste', 'admin', null, '["/", "*", "/produtos"]'::jsonb),
     ('rodrigao+teste-vendas-ja@gmail.com', 'Vendas JA Teste', 'vendas', 'ja', '["/romaneio", "/fechamento-caixa", "/sobras", "/encomendas", "/estoque-congelado"]'::jsonb),
-    ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/sobras", "/pedidos-pj"]'::jsonb),
+    -- /estoque espelha o cracha real da expedicao (leitura de producao em
+    -- 28/09): e por ali que ela chega na Contagem semanal.
+    ('rodrigao+teste-expedicao-jc@gmail.com', 'Expedicao JC Teste', 'expedicao', 'jc', '["/", "/romaneio", "/sobras", "/pedidos-pj", "/estoque"]'::jsonb),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'Romaneio EX Teste', 'expedicao', 'ex', '["/romaneio"]'::jsonb),
     ('rodrigao+teste-cozinha-jc@gmail.com', 'Cozinha JC Teste', 'producao', 'jc', '["/producao-cozinha", "/forno"]'::jsonb),
     ('rodrigao+teste-geolar-jc@gmail.com', 'Geolar JC Teste', 'producao', 'jc', '["/", "/sobras"]'::jsonb),
@@ -596,6 +598,10 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-expedicao-jc@gmail.com', 'sobras.registrar', 'jc'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'pedidos_pj.acessar', 'jc'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'pedidos_pj.confirmar_envio', 'jc'),
+    -- Contagem semanal: em producao o cracha da expedicao tem esta permissao
+    -- com escopo '*' (leitura de 28/09). Sem ela o preview nao prova quem conta,
+    -- fecha e reabre ate domingo; o financeiro JC fica como perfil bloqueado.
+    ('rodrigao+teste-expedicao-jc@gmail.com', 'estoque.contar_semanal', '*'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.acessar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.visualizar', 'ex'),
     ('rodrigao+teste-romaneio-ex@gmail.com', 'romaneio.conferir_recebimento', 'ex'),
