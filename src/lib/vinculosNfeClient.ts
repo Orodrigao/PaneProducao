@@ -35,6 +35,7 @@ export interface SupplierMapping {
 
 export interface InvoiceLinkHistory {
   id: string
+  factor_confirmed: boolean
   supplier_name: string
   invoice_number: string | null
   invoice_series: string | null
@@ -54,7 +55,6 @@ export interface InvoiceLinkHistory {
   mapping_status: string
   mapping_confirmed_at: string | null
   mapping_confirmed_by: string | null
-  factor_confirmed: boolean
   factor_confirmed_at: string | null
   factor_confirmed_by: string | null
 }
@@ -87,7 +87,6 @@ type InvoiceRow = {
   mapping_status: string
   mapping_confirmed_at: string | null
   mapping_confirmed_by: string | null
-  factor_confirmed: boolean | null
   factor_confirmed_at: string | null
   factor_confirmed_by: string | null
   purchase: {
@@ -131,7 +130,7 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
       .select('id,supplier_id,supplier:suppliers(name),supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,active,last_confirmed_at,last_confirmed_by')
       .eq('base_product_id', product.id).order('last_confirmed_at', { ascending: false }).range(start, end)),
     loadAll<InvoiceRow>((start, end) => supabase.from('payable_purchase_items')
-      .select('id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier:suppliers(name))')
+      .select('id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier:suppliers(name))')
       .eq('product_id', product.id).eq('purchase.origin', 'xml').eq('purchase.store', 'jc')
       .order('id').range(start, end)),
     supabase.rpc('list_vinculo_nfe_authors', { p_product_id: product.id }),
@@ -169,7 +168,7 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
       mapping_status: row.mapping_status,
       mapping_confirmed_at: row.mapping_confirmed_at,
       mapping_confirmed_by: row.mapping_confirmed_by,
-      factor_confirmed: row.factor_confirmed === true,
+      factor_confirmed: row.factor_confirmed_at !== null,
       factor_confirmed_at: row.factor_confirmed_at,
       factor_confirmed_by: row.factor_confirmed_by,
     }]

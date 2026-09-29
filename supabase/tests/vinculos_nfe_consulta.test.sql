@@ -48,11 +48,11 @@ insert into public.payable_purchases (
 );
 insert into public.payable_purchase_items (
   id, purchase_id, product_id, item_name, unit, quantity, unit_price,
-  mapping_confirmed_at, mapping_confirmed_by, factor_confirmed, factor_confirmed_at, factor_confirmed_by
+  mapping_confirmed_at, mapping_confirmed_by, factor_confirmed_at, factor_confirmed_by
 ) values (
   '97000000-0000-4000-8000-000000000043', '97000000-0000-4000-8000-000000000041',
   '97000000-0000-4000-8000-000000000021', 'Compra manual', 'kg', 1, 10,
-  now(), '97000000-0000-4000-8000-000000000005', true, now(), '97000000-0000-4000-8000-000000000005'
+  now(), '97000000-0000-4000-8000-000000000005', now(), '97000000-0000-4000-8000-000000000005'
 );
 
 select ok(has_function_privilege('authenticated', 'public.list_vinculo_nfe_authors(uuid)', 'execute'),
