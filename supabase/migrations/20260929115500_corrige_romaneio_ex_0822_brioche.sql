@@ -33,7 +33,16 @@ begin
     and item.qty_sent = 32
     and romaneio.record_date = date '2026-08-22'
     and romaneio.trip_number = 2
+    and romaneio.status = 'conferido'
     and lower(destination.code) = 'ex'
+    and not exists (
+      select 1 from public.romaneio_item_corrections correction
+      where correction.item_id = item.id
+    )
+    and not exists (
+      select 1 from public.receivable_romaneio_lines line
+      where line.itens::text like '%' || item.romaneio_id::text || '%'
+    )
     and exists (
       select 1 from public.breads bread
       where bread.id = 'brioche_hamburguer1775678357276'
@@ -92,8 +101,14 @@ begin
       and romaneio.record_date = date '2026-08-22'
       and romaneio.status = 'enviado'
       and (
-        (romaneio.id = '1e73e89c-a632-4bcc-b8d5-ad514e2db2ce' and romaneio.trip_number = 5)
-        or (romaneio.id = '9f9fe444-f428-4f97-a001-900090561618' and romaneio.trip_number = 6)
+        (romaneio.id = '1e73e89c-a632-4bcc-b8d5-ad514e2db2ce' and romaneio.trip_number = 5 and exists (
+          select 1 from public.romaneio_items item
+          where item.romaneio_id = romaneio.id and item.qty_sent = 24
+        ))
+        or (romaneio.id = '9f9fe444-f428-4f97-a001-900090561618' and romaneio.trip_number = 6 and exists (
+          select 1 from public.romaneio_items item
+          where item.romaneio_id = romaneio.id and item.qty_sent = 12
+        ))
       )
       and (
         select count(*) from public.romaneio_items item where item.romaneio_id = romaneio.id
@@ -104,12 +119,19 @@ begin
         where item.romaneio_id = romaneio.id
           and item.product_id = 'brioche_forma1775678330784'
           and item.product_source = 'bread'
-          and item.qty_sent in (24, 12)
           and item.qty_received is null
       )
       and not exists (
         select 1 from public.romaneio_item_corrections correction
         where correction.romaneio_id = romaneio.id
+      )
+      and not exists (
+        select 1 from public.romaneio_replacement_pending pending
+        where pending.source_romaneio_id = romaneio.id
+      )
+      and not exists (
+        select 1 from public.receivable_romaneio_lines line
+        where line.itens::text like '%' || romaneio.id::text || '%'
       )
   loop
     delete from public.romaneios where id = v_romaneio_id;
