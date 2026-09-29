@@ -379,9 +379,13 @@ export default function ContagemSemanalPage() {
                     })}
                   </div>
 
+                  {/* Sem disabled durante o salvamento: tocar aqui com o último campo
+                      ainda em foco dispara o salvamento no blur, e o botão travado
+                      engolia o toque (visto no teste do preview). Este botão só abre a
+                      confirmação; quem espera o salvamento é o "Fechar" de lá. */}
                   {editable && !confirmingClose && (
                     <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:16, marginBottom:20}}>
-                      <button className="ps-btn" onClick={() => setConfirmingClose(true)} disabled={anySaving}>
+                      <button className="ps-btn" onClick={() => setConfirmingClose(true)}>
                         <Lock size={14}/> Fechar contagem
                       </button>
                     </div>
