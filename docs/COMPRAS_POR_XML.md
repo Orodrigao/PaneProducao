@@ -715,6 +715,29 @@ Provas: Vitest de `normalizeGtin` e da busca da memória; pgTAP
 "SEM GTIN" na mesma nota, nota seguinte, uso ou despesa, classificação
 posterior, GTIN válido com outro código do fornecedor e gravação direta).
 
+## Conferência do cadastro durante a NF-e (fase 1 de Vínculos)
+
+Na escolha do item-base, a tela mostra quais fichas técnicas **atuais** usam o
+cadastro, diretamente ou por outro produto, com o caminho entre eles. Cadastro
+sem ficha mostra isso explicitamente; falha da consulta é avisada. A busca
+aceita palavras livres, oferece outros cadastros com palavras da descrição da
+NF-e e permite mostrar mais resultados. Semelhança de nome é apenas sugestão:
+a pessoa ainda escolhe o cadastro. Em particular, "COB AO LEITE PINGO CHIPS
+1,01KG SICAO" não é tratado automaticamente como "CHIPS AO LEITE GOTA PINGO".
+
+Quando a memória do fornecedor pré-preenche a classificação, a pessoa precisa
+confirmar cada item antes de importar. Se a memória ativa do fornecedor mudar
+enquanto uma NF-e nova está aberta, a confirmação pede para reabrir e conferir.
+Ao retomar uma importação salva para depois, todas as classificações guardadas
+pedem nova conferência antes da confirmação, inclusive as que vieram da memória.
+Esta conferência compara a memória no navegador no momento de enviar; a fase
+de edição dos vínculos terá a trava transacional do banco para escritas
+concorrentes. O cadastro rápido de produto usa as categorias controladas de
+Insumos ou Revenda, com validação também no banco.
+
+Fichas não têm versionamento histórico neste modelo. A consulta informa onde
+o insumo é usado agora, não em qual receita uma nota antiga foi consumida.
+
 ## Decisões pendentes
 
 - **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços

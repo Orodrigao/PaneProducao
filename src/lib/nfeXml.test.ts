@@ -3,6 +3,7 @@ import {
   calculateNetLineTotal,
   calculateNormalizedUnitCost,
   calculateUsableQuantity,
+  classificationNeedsReview,
   conversionFactorFromUsableQuantity,
   conversionNeedsConfirmation,
   getConversionUnitWarning,
@@ -11,11 +12,24 @@ import {
   isClassificationComplete,
   declaresNoPayment,
   normalizeGtin,
+  rankCatalogCandidates,
   resolveInstallments,
   suggestConversionFactor,
   unitFamily,
   type NfeItemDraft,
 } from '@/lib/nfeXml'
+
+describe('sugestões de cadastro da NF-e', () => {
+  it('mostra alternativas por palavras do item sem confundir sugestão com vínculo automático', () => {
+    const catalog = [
+      { name: 'CHIPS AO LEITE GOTA PINGO' },
+      { name: 'COBERTURA AO LEITE SICAO' },
+      { name: 'SACO PAPEL KRAFT' },
+    ]
+    expect(rankCatalogCandidates('COB AO LEITE PINGO CHIPS 1,01KG SICAO', catalog).map(item => item.name))
+      .toEqual(['CHIPS AO LEITE GOTA PINGO', 'COBERTURA AO LEITE SICAO'])
+  })
+})
 
 function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
   return {
@@ -60,6 +74,20 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
     ...overrides,
   }
 }
+
+describe('conferência de classificações da NF-e', () => {
+  it('exige conferência da memória aplicada nesta nota', () => {
+    expect(classificationNeedsReview(item({ recognized: true, mappingStatus: 'mapeado' }), false, new Set())).toBe(true)
+    expect(classificationNeedsReview(item({ recognized: true, mappingStatus: 'mapeado' }), false, new Set([1]))).toBe(false)
+  })
+
+  it('exige conferência ao retomar rascunho mesmo sem campo de memória persistido', () => {
+    expect(classificationNeedsReview(item({ mappingStatus: 'mapeado' }), true, new Set())).toBe(true)
+    expect(classificationNeedsReview(item({ mappingStatus: 'nao_aplicavel' }), true, new Set())).toBe(true)
+    expect(classificationNeedsReview(item({ mappingStatus: 'pendente' }), true, new Set())).toBe(false)
+    expect(classificationNeedsReview(item({ mappingStatus: 'mapeado' }), true, new Set([1]))).toBe(false)
+  })
+})
 
 describe('conversão de itens importados da NF-e', () => {
   it('desconta o valor informado no item antes de fechar o total da NF', () => {

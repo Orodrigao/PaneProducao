@@ -151,20 +151,17 @@ listas de compra, entrada de estoque e contas a pagar. É onde ele não deveria
 estar: é taxa de tele-entrega, não item comprado. Os outros 33 ganham a marcação
 no primeiro salvamento de cada um; nada muda em massa.
 
-**Brecha que sobra, achada pela revisão independente:** a RPC
+**Brecha identificada na fase 2B, fechada na fase 2C:** a RPC
 `public.create_payable_catalog_product`, usada pelas telas de contas a pagar e de
 importação de XML (`src/components/PendingPayableItems.tsx` e
-`src/components/XmlPayableImport.tsx`), cria produto com categoria em **texto
-livre digitado** e sem `category_id` nem `catalog_type`. Quem cadastra um insumo
-novo direto da nota continua podendo inventar uma grafia e nasce sem
-classificação, e a obrigatoriedade da tela de produto não alcança esse caminho
-porque ela só vale para produto novo criado por ela. Conferido em produção em
-22/09/2026: a função não tem as duas colunas e nenhum produto está sem
-classificação hoje, então a brecha ainda não foi usada. Fechar exige migration
-na RPC, reaproveitando o casamento por nome normalizado que
-`private.assign_controlled_product_categories` já faz, mais a escolha da
-categoria nessas duas telas. Ficou fora desta fase de propósito: é banco e outra
-área do sistema, e entra como fase 2C antes dos relatórios da fase 5.
+`src/components/XmlPayableImport.tsx`), aceitava categoria em texto livre e
+criava produto sem `category_id` nem `catalog_type`. Na fase 2C, as duas telas
+oferecem somente categorias ativas de matéria-prima ou revenda. A função do
+banco valida a categoria, grava tipo, identificador e texto legado coerentes e
+recusa nome de produto já existente, para a pessoa selecionar o cadastro certo.
+A assinatura antiga permanece durante a troca do site, mas também exige uma
+categoria controlada. A conferência de 22/09/2026 encontrou todos os produtos
+classificados; esta fase fecha a entrada nova, sem reclassificar compras antigas.
 
 **Dentro da própria tela, a listagem passou a usar a mesma resposta da gaveta.**
 O chip de revenda e o filtro liam a marcação gravada, então os 33 produtos da
