@@ -24,6 +24,10 @@ export const ARQUIVOS_DO_BANCO = [
   'supabase/config.toml',
   'scripts/verify-preview-seed-repeatability.mjs',
   'scripts/verify-preview-seed-repeatability.test.mjs',
+  'scripts/ci-banco-seed-com-contas.mjs',
+  'scripts/ci-banco-seed-com-contas.test.mjs',
+  'scripts/provision-preview-users.mjs',
+  'supabase/verification/preview_users.sql',
   '.github/workflows/ci-banco.yml',
   'scripts/ci-banco-escopo.mjs',
 ]

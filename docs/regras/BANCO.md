@@ -42,10 +42,17 @@ A Action `Banco (migrations)` é o único caminho do schema até produção.
   mas o **ensaio só roda** quando a PR toca
   `supabase/migrations/`, `supabase/tests/`, `supabase/tests-local/`,
   `supabase/seed.sql`, `supabase/config.toml`, o verificador de repetição do
-  seed (`scripts/verify-preview-seed-repeatability.mjs` e seu teste), o
+  seed (`scripts/verify-preview-seed-repeatability.mjs` e seu teste), o passo
+  que aplica o seed com as contas fictícias
+  (`scripts/ci-banco-seed-com-contas.mjs` e seu teste), a lista dessas contas
+  (`scripts/provision-preview-users.mjs`), a conferência dos perfis
+  (`supabase/verification/preview_users.sql`), o
   próprio `.github/workflows/ci-banco.yml` ou o script que decide
   (`scripts/ci-banco-escopo.mjs`) — a lista vale pelo que está nesse script,
-  testado no `npm test`. Nas outras PRs o check fica verde sem rodar o ensaio,
+  testado no `npm test`. O pgTAP do ensaio roda com o seed aplicado como no
+  Banco Preview da `main`: as mesmas contas fictícias (criadas por SQL, sem a
+  API do Auth), o seed reaplicado por cima delas e os perfis conferidos. Teste
+  que colide com fixture do seed quebra na PR, não depois do merge. Nas outras PRs o check fica verde sem rodar o ensaio,
   com o aviso "Ensaio dispensado" no resumo do job; se não conseguir ler a
   lista de arquivos da PR, fica vermelho em vez de dispensar. Quando o ensaio
   roda, é ele quem precisa estar verde. O
