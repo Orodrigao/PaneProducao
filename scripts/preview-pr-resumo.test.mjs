@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { resumirRelatorio, tabelaMarkdown } from './preview-pr-resumo.mjs'
+import { MATRIZ_MINIMA, resumirRelatorio as resumirComMinima, tabelaMarkdown } from './preview-pr-resumo.mjs'
+
+// As regras gerais sao testadas sem a matriz minima; ela tem testes proprios abaixo.
+const resumirRelatorio = (relatorio) => resumirComMinima(relatorio, [])
 
 const SCRIPT = fileURLToPath(new URL('./preview-pr-resumo.mjs', import.meta.url))
 
@@ -93,6 +96,36 @@ describe('resumirRelatorio', () => {
   })
 })
 
+describe('matriz minima', () => {
+  const minima = () => MATRIZ_MINIMA.map((l) => teste('expected', matriz(l.perfil, l.loja, l.esperado, l.alvo)))
+
+  it('aprova quando as quatro linhas minimas passaram, com ou sem linhas extras', () => {
+    assert.equal(resumirComMinima(relatorio(minima())).ok, true)
+    assert.equal(resumirComMinima(relatorio([...minima(), teste('expected', matriz('Cozinha JC', 'JC', 'entra', 'x'))])).ok, true)
+  })
+
+  it('apagar qualquer cenario minimo reprova, mesmo com o resto verde e anotado', () => {
+    for (let i = 0; i < MATRIZ_MINIMA.length; i += 1) {
+      const r = resumirComMinima(relatorio(minima().filter((_, j) => j !== i)))
+      assert.equal(r.ok, false, String(i))
+      assert.match(r.motivos.join(), /Matriz minima incompleta/)
+    }
+  })
+
+  it('linha minima presente mas reprovada conta como faltando', () => {
+    const linhas = minima()
+    linhas[3] = { ...linhas[3], status: 'unexpected' }
+    assert.match(resumirComMinima(relatorio(linhas)).motivos.join(), /Matriz minima incompleta: falta aprovar Vendas JA/)
+  })
+
+  it('a matriz minima e a mesma que o roteiro de demonstracao declara', () => {
+    const roteiro = readFileSync(fileURLToPath(new URL('../test/preview-pr/perfis.spec.ts', import.meta.url)), 'utf8')
+    for (const l of MATRIZ_MINIMA) {
+      assert.ok(roteiro.includes(`matriz('${l.perfil}', '${l.loja}', '${l.esperado}', '${l.alvo}')`), JSON.stringify(l))
+    }
+  })
+})
+
 describe('tabelaMarkdown', () => {
   it('uma linha por teste e barra vertical nao quebra a tabela', () => {
     const texto = tabelaMarkdown(resumirRelatorio(relatorio([teste('expected', matriz('A|B', 'JA', 'entra', 'x\ny'))])))
@@ -124,7 +157,7 @@ describe('execucao direta', () => {
   })
 
   it('relatorio aprovado sai com zero', () => {
-    const r = rodar(JSON.stringify(relatorio([teste('expected')])))
+    const r = rodar(JSON.stringify(relatorio(MATRIZ_MINIMA.map((l) => teste('expected', matriz(l.perfil, l.loja, l.esperado, l.alvo))))))
     assert.equal(r.status, 0, r.resumo)
     assert.match(r.resumo, /Vendas JA/)
   })

@@ -16,6 +16,21 @@ import { pathToFileURL } from 'node:url'
 
 export const ANOTACOES_DA_MATRIZ = ['perfil', 'loja', 'esperado', 'alvo']
 
+/**
+ * Linhas que TODA execucao precisa ter aprovadas, alem das que cada PR
+ * acrescentar: um perfil que entra e um que e barrado, na tela e na Data API.
+ * Provam, a cada rodada, que o login funciona nos dois sentidos. Sem esta
+ * lista, apagar um cenario deixaria o resto aprovar sozinho.
+ */
+export const MATRIZ_MINIMA = [
+  { perfil: 'Administrador', loja: 'todas', esperado: 'entra', alvo: 'Producao da Cozinha (tela)' },
+  { perfil: 'Administrador', loja: 'JA', esperado: 'permitido', alvo: 'list_kitchen_production_plan (Data API)' },
+  { perfil: 'Vendas JA', loja: 'JA', esperado: 'bloqueada', alvo: 'Producao da Cozinha (tela)' },
+  { perfil: 'Vendas JA', loja: 'JA', esperado: 'bloqueada', alvo: 'list_kitchen_production_plan (Data API)' },
+]
+
+const chaveDaLinha = (linha) => ANOTACOES_DA_MATRIZ.map((tipo) => linha[tipo]).join(' | ')
+
 const RESULTADOS = {
   expected: 'passou',
   unexpected: 'FALHOU',
@@ -41,7 +56,7 @@ function celula(valor) {
   return String(valor ?? '').replace(/[|\r\n]+/g, ' ').trim() || '?'
 }
 
-export function resumirRelatorio(relatorio) {
+export function resumirRelatorio(relatorio, matrizMinima = MATRIZ_MINIMA) {
   const motivos = []
   if (!relatorio || typeof relatorio !== 'object' || !Array.isArray(relatorio.suites)) {
     return { ok: false, linhas: [], motivos: ['O relatorio do Playwright veio sem a lista de suites.'] }
@@ -66,6 +81,12 @@ export function resumirRelatorio(relatorio) {
   }
 
   if (linhas.length === 0) motivos.push('Nenhum teste foi executado.')
+  const aprovadas = new Set(linhas.filter((linha) => linha.resultado === RESULTADOS.expected).map(chaveDaLinha))
+  for (const obrigatoria of matrizMinima) {
+    if (!aprovadas.has(chaveDaLinha(obrigatoria))) {
+      motivos.push(`Matriz minima incompleta: falta aprovar ${chaveDaLinha(obrigatoria)}.`)
+    }
+  }
   const stats = relatorio.stats
   if (!stats || stats.expected !== linhas.length || stats.unexpected || stats.flaky || stats.skipped) {
     motivos.push('Os totais do Playwright nao batem com a lista de testes aprovados.')

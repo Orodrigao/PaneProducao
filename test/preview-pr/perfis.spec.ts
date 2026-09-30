@@ -14,6 +14,8 @@ async function planoDaCozinha(page: import('@playwright/test').Page, perfil: 'ad
   return page.request.post(`${acesso.url}/rest/v1/rpc/list_kitchen_production_plan`, {
     headers: cabecalhos,
     data: { p_store: 'ja', p_production_date: hojeNaPadaria() },
+    // O token da sessao nao segue redirecionamento para outro destino.
+    maxRedirects: 0,
   })
 }
 

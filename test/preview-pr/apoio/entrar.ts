@@ -73,11 +73,20 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
   const permitidos = new Set([destino.base.host, destino.banco.host])
   await page.route('**/*', async (route) => {
     const alvo = new URL(route.request().url())
-    if ((alvo.protocol === 'https:' || alvo.protocol === 'wss:') && permitidos.has(alvo.host)) {
+    if (alvo.protocol !== 'https:' || !permitidos.has(alvo.host)) {
+      await route.abort('blockedbyclient')
+      return
+    }
+    if (alvo.host !== destino.banco.host) {
       await route.continue()
       return
     }
-    await route.abort('blockedbyclient')
+    // O pedido de login leva a senha ao banco. `continue` seguiria um
+    // redirecionamento sem passar de novo por esta cerca; aqui o pedido sai
+    // sem seguir redirect, e se vier 3xx quem segue e o navegador, com um
+    // pedido novo que volta a esta rota e e abortado se o destino for outro.
+    const resposta = await route.fetch({ maxRedirects: 0 })
+    await route.fulfill({ response: resposta })
   })
 }
 

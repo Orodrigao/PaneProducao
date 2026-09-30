@@ -27,6 +27,8 @@ export default defineConfig({
     baseURL: process.env.PREVIEW_PR_BASE_URL,
     browserName: 'chromium',
     channel: 'chrome',
+    // Service worker faz pedidos que a cerca de rede de entrar.ts nao ve.
+    serviceWorkers: 'block',
     screenshot: 'off',
     trace: 'off',
     video: 'off',

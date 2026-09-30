@@ -46,6 +46,17 @@ describe('roteiros de test/preview-pr', () => {
     assert.ok(!config.includes(SENHA), 'a configuracao nao pode citar a senha')
   })
 
+  it('a cerca de rede nao segue redirecionamento e service worker fica bloqueado', () => {
+    const ajudante = roteiros.find((r) => r.nome === AJUDANTE).texto
+    assert.match(ajudante, /route\.fetch\(\{ maxRedirects: 0 \}\)/)
+    assert.match(ajudante, /route\.abort\('blockedbyclient'\)/)
+    const config = readFileSync(join(RAIZ, 'playwright.preview-pr.config.ts'), 'utf8')
+    assert.match(config, /serviceWorkers: 'block'/)
+    assert.match(config, /trace: 'off'/)
+    assert.match(config, /video: 'off'/)
+    assert.match(config, /screenshot: 'off'/)
+  })
+
   it('o ajudante falha sem senha, nunca pula', () => {
     const ajudante = roteiros.find((r) => r.nome === AJUDANTE).texto
     assert.match(ajudante, /if \(!senha\) throw new Error\(/)
