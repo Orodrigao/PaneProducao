@@ -157,9 +157,9 @@ function avaliarExpressaoGithub(expressao, contexto, statusAteAqui) {
     `return (${paraJs(expressao)});`,
   )
   return fn(
-    contexto.github ?? {},
-    contexto.needs ?? {},
-    contexto.inputs ?? {},
+    acessoSeguro(contexto.github),
+    acessoSeguro(contexto.needs),
+    acessoSeguro(contexto.inputs),
     () => true,
     () => statusAteAqui === 'success',
     () => statusAteAqui === 'failure',
@@ -200,6 +200,97 @@ function simularPassosDoJob(passos, contexto, nomesQueFalham) {
     resultados.push({ titulo: passo.titulo, rodou: deveRodar, falhou })
   }
   return resultados
+}
+
+/**
+ * Extrai o bloco `concurrency:` de um job: a expressao `${{ ... }}` do
+ * `group:` (escalar de uma linha) e os valores crus de `queue:` e
+ * `cancel-in-progress:` (undefined quando ausentes).
+ */
+function extrairConcorrenciaDoJob(workflowTexto, nomeJob) {
+  const linhas = workflowTexto.replace(/\r\n/g, '\n').split('\n')
+  const indiceJob = linhas.findIndex((l) => l === `  ${nomeJob}:`)
+  assert.ok(indiceJob > -1, `Job "${nomeJob}" nao encontrado.`)
+  let fimJob = linhas.length
+  for (let i = indiceJob + 1; i < linhas.length; i += 1) {
+    if (/^ {2}\S/.test(linhas[i])) { fimJob = i; break }
+  }
+  const bloco = linhas.slice(indiceJob, fimJob)
+  const indiceConcorrencia = bloco.findIndex((l) => l === '    concurrency:')
+  assert.ok(indiceConcorrencia > -1, `"concurrency:" nao encontrado no job "${nomeJob}".`)
+  const campos = {}
+  for (const linha of bloco.slice(indiceConcorrencia + 1)) {
+    const campo = linha.match(/^ {6}([a-z-]+):\s*(.*)$/)
+    if (!campo) break
+    campos[campo[1]] = campo[2].trim()
+  }
+  const bruto = campos.group
+  assert.ok(bruto, `"concurrency.group" nao encontrado no job "${nomeJob}".`)
+  const combinacao = bruto.match(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/)
+  assert.ok(combinacao, `"concurrency.group" do job "${nomeJob}" nao esta no formato \${{ ... }}: ${bruto}`)
+  return { grupo: combinacao[1], queue: campos.queue, cancelInProgress: campos['cancel-in-progress'] }
+}
+
+/**
+ * No GitHub, propriedade de algo ausente vale null em vez de lancar erro
+ * (`needs.classificacao.outputs.perfil` com a classificacao pulada). Este
+ * invólucro imita isso para os casos de "campo ausente": acesso a algo que nao
+ * existe devolve um objeto vazio, diferente de qualquer texto ou booleano.
+ */
+function acessoSeguro(valor) {
+  if (valor === null || valor === undefined) return acessoSeguro({})
+  if (typeof valor !== 'object') return valor
+  return new Proxy(valor, { get: (alvo, chave) => acessoSeguro(alvo[chave]) })
+}
+
+/** Avalia a expressao do `group:` contra um contexto fabricado (github/needs/inputs). */
+function avaliarGrupo(expressao, contexto) {
+  const fn = new Function(
+    'github', 'needs', 'inputs', 'format',
+    `return (${paraJs(expressao)});`,
+  )
+  return fn(
+    acessoSeguro(contexto.github),
+    acessoSeguro(contexto.needs),
+    acessoSeguro(contexto.inputs),
+    (modelo, ...valores) => modelo.replace(/\{(\d+)\}/g, (_, indice) => valores[Number(indice)]),
+  )
+}
+
+/**
+ * Modelo da fila de um grupo de concorrencia do GitHub, pela documentacao
+ * (docs.github.com, "Control the concurrency of workflows and jobs", e o
+ * changelog de 2026-05-07): um em andamento; com `queue: single` (padrao) no
+ * maximo UM pendente, e quem chega cancela o pendente anterior; com
+ * `queue: max` ate 100 pendentes em ordem de chegada. `eventos` e a sequencia
+ * `{ id, grupo }` na ordem em que cada execucao ENTRA no grupo; nada termina
+ * durante a sequencia (e o pior caso: a primeira segura o grupo o tempo todo).
+ * Devolve o destino de cada id: 'andamento', 'pendente' ou 'cancelado'.
+ */
+function simularFilaDoGithub(eventos, queue) {
+  const limitePendentes = queue === 'max' ? 100 : 1
+  const grupos = new Map()
+  const destino = {}
+  for (const { id, grupo } of eventos) {
+    const estado = grupos.get(grupo) ?? { andamento: null, pendentes: [] }
+    grupos.set(grupo, estado)
+    if (!estado.andamento) {
+      estado.andamento = id
+      destino[id] = 'andamento'
+      continue
+    }
+    if (estado.pendentes.length >= limitePendentes) {
+      if (limitePendentes === 1) {
+        destino[estado.pendentes.shift()] = 'cancelado'
+      } else {
+        destino[id] = 'cancelado'
+        continue
+      }
+    }
+    estado.pendentes.push(id)
+    destino[id] = 'pendente'
+  }
+  return destino
 }
 
 describe('ehCaminhoDocumental', () => {
@@ -1636,37 +1727,14 @@ describe('uso em ci.yml', () => {
   describe('grupo de concorrencia do job navegador (nao pode disputar a fila real do Banco Preview a toa)', () => {
     const workflowTexto = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
 
-    /** Extrai a expressao `${{ ... }}` do campo `group:` de `concurrency:` de um job (escalar de uma linha). */
-    function extrairGrupoConcorrencia(nomeJob) {
-      const linhas = workflowTexto.replace(/\r\n/g, '\n').split('\n')
-      const indiceJob = linhas.findIndex((l) => l === `  ${nomeJob}:`)
-      assert.ok(indiceJob > -1, `Job "${nomeJob}" nao encontrado.`)
-      let fimJob = linhas.length
-      for (let i = indiceJob + 1; i < linhas.length; i += 1) {
-        if (/^ {2}\S/.test(linhas[i])) { fimJob = i; break }
-      }
-      const linhaGrupo = linhas.slice(indiceJob, fimJob).find((l) => /^\s*group:/.test(l))
-      assert.ok(linhaGrupo, `"concurrency.group" nao encontrado no job "${nomeJob}".`)
-      const bruto = linhaGrupo.slice(linhaGrupo.indexOf('group:') + 6).trim()
-      const combinacao = bruto.match(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/)
-      assert.ok(combinacao, `"concurrency.group" do job "${nomeJob}" nao esta no formato \${{ ... }}: ${bruto}`)
-      return combinacao[1]
-    }
-
-    function avaliarGrupo(expressao, contexto) {
-      const fn = new Function(
-        'github', 'needs', 'format',
-        `return (${paraJs(expressao)});`,
-      )
-      return fn(
-        contexto.github ?? {},
-        contexto.needs ?? {},
-        (modelo, ...valores) => modelo.replace(/\{(\d+)\}/g, (_, indice) => valores[Number(indice)]),
-      )
-    }
+    it('espera na fila sem ser cancelado por quem chega depois (queue: max, nunca cancel-in-progress)', () => {
+      const { queue, cancelInProgress } = extrairConcorrenciaDoJob(workflowTexto, 'navegador')
+      assert.equal(queue, 'max', 'Sem queue: max o GitHub guarda um so pendente e o mais novo cancela o anterior (PR 476).')
+      assert.equal(cancelInProgress, 'false')
+    })
 
     it('so entra na fila real quando a classificacao teve sucesso, confirmou perfil "product" E a verificacao tambem teve sucesso', () => {
-      const expressao = extrairGrupoConcorrencia('navegador')
+      const expressao = extrairConcorrenciaDoJob(workflowTexto, 'navegador').grupo
 
       const casos = [
         ['classificacao com sucesso, perfil product, verificacao com sucesso: fila real', { result: 'success', outputs: { perfil: 'product' } }, { result: 'success' }, 'banco-preview-compartilhado'],
@@ -1826,6 +1894,105 @@ describe('uso em banco-preview.yml', () => {
     const resultado = simular(contexto)
     assert.equal(rodou(resultado, 'Nada a reconstruir para este evento'), true)
     assert.equal(rodou(resultado, 'actions/checkout@v4'), false)
+  })
+
+  // Fila do banco compartilhado. Incidente de 2026-09-30: o push b47fddf
+  // (PR 476) ficou pendente atras da restauracao de 999f2b6, o fechamento com
+  // merge da PR 476 entrou no mesmo grupo e o cancelou (o GitHub guardava um
+  // so pendente), e o Preview ficou atras da main sem aviso.
+  describe('fila banco-preview-compartilhado', () => {
+    const ciTexto = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const COMPARTILHADO = 'banco-preview-compartilhado'
+    const semNeeds = { classificacao: { result: 'skipped' } }
+    const CASOS = [
+      ['disparo manual confirmado', { github: { event_name: 'workflow_dispatch' }, needs: semNeeds, inputs: { confirmacao: 'RECONSTRUIR' } }],
+      ['disparo manual com confirmacao errada', { github: { event_name: 'workflow_dispatch' }, needs: semNeeds, inputs: { confirmacao: 'reconstruir' } }],
+      ['disparo manual sem o campo confirmacao', { github: { event_name: 'workflow_dispatch' }, needs: semNeeds }],
+      ['push product', { github: { event_name: 'push' }, needs: { classificacao: { result: 'success', outputs: { perfil: 'product' } } } }],
+      ['push documentation', { github: { event_name: 'push' }, needs: { classificacao: { result: 'success', outputs: { perfil: 'documentation' } } } }],
+      ['push ci-mechanism', { github: { event_name: 'push' }, needs: { classificacao: { result: 'success', outputs: { perfil: 'ci-mechanism' } } } }],
+      ['push com perfil invalido', { github: { event_name: 'push' }, needs: { classificacao: { result: 'success', outputs: { perfil: 'talvez' } } } }],
+      ['push com classificacao que falhou, sem outputs', { github: { event_name: 'push' }, needs: { classificacao: { result: 'failure' } } }],
+      ['push com classificacao pulada, sem outputs', { github: { event_name: 'push' }, needs: semNeeds }],
+      ['PR fechada sem merge', { github: { event_name: 'pull_request', event: { action: 'closed', pull_request: { merged: false } } }, needs: semNeeds }],
+      ['PR fechada com merge', { github: { event_name: 'pull_request', event: { action: 'closed', pull_request: { merged: true } } }, needs: semNeeds }],
+    ]
+
+    function grupoDoRestaurar(contexto, runId) {
+      const { grupo } = extrairConcorrenciaDoJob(workflowTexto, 'restaurar-main')
+      return avaliarGrupo(grupo, { ...contexto, github: { ...contexto.github, run_id: runId } })
+    }
+
+    it('nao tem concurrency no nivel do workflow: la todo evento entraria na fila, ate quem nao reconstroi', () => {
+      assert.ok(
+        !/^concurrency:/m.test(workflowTexto.replace(/\r\n/g, '\n')),
+        'concurrency no nivel do workflow poe o fechamento com merge e o push documental na fila real.',
+      )
+    })
+
+    it('restaurar-main espera na fila sem ser cancelado por quem chega depois (queue: max, nunca cancel-in-progress)', () => {
+      const { queue, cancelInProgress } = extrairConcorrenciaDoJob(workflowTexto, 'restaurar-main')
+      assert.equal(queue, 'max')
+      assert.equal(cancelInProgress, 'false')
+    })
+
+    it('quem apaga o banco esta na fila real; quem nao apaga fica num grupo unico e nao ocupa a fila', () => {
+      for (const [rotulo, contexto] of CASOS) {
+        const passos = simular({ ...contexto, inputs: contexto.inputs ?? {} }).passos
+        const apaga = passos.find((p) => p.titulo === 'Apagar desvios e reconstruir a partir da main').rodou
+        const grupo = grupoDoRestaurar(contexto, '42')
+        assert.equal(grupo, apaga ? COMPARTILHADO : 'banco-preview-sem-reconstrucao-42', rotulo)
+      }
+    })
+
+    it('reconstroi o topo da main no momento em que roda, nunca o sha do evento', () => {
+      const linhas = workflowTexto.replace(/\r\n/g, '\n').split('\n')
+      const inicio = linhas.findIndex((l) => l === '  restaurar-main:')
+      const bloco = linhas.slice(inicio).join('\n')
+      const checkout = bloco.slice(bloco.indexOf('- uses: actions/checkout@v4'), bloco.indexOf('- name: Registrar o topo da main'))
+      assert.match(checkout, /\n {8}with:\n {10}ref: main\n/, 'O checkout da reconstrucao precisa ser ref: main (topo atual).')
+      assert.doesNotMatch(bloco, /ref:\s*\$\{\{\s*github\.sha/, 'Reconstruir o sha do evento deixaria o Preview atras quando a main anda durante a espera.')
+    })
+
+    it('o job Navegador do ci.yml divide a mesma fila com a mesma regra de espera', () => {
+      const navegador = extrairConcorrenciaDoJob(ciTexto, 'navegador')
+      const restaurar = extrairConcorrenciaDoJob(workflowTexto, 'restaurar-main')
+      assert.equal(navegador.queue, restaurar.queue, 'Regras de fila diferentes no mesmo grupo nao tem comportamento documentado.')
+      assert.ok(navegador.grupo.includes(`'${COMPARTILHADO}'`))
+      assert.ok(restaurar.grupo.includes(`'${COMPARTILHADO}'`))
+    })
+
+    it('reproduz o incidente: nenhuma restauracao de push de produto e cancelada, e o teste falha se a fila voltar a ser de um pendente so', () => {
+      const produto = { result: 'success', outputs: { perfil: 'product' } }
+      const grupoNavegador = (runId) => avaliarGrupo(extrairConcorrenciaDoJob(ciTexto, 'navegador').grupo, {
+        github: { run_id: runId }, needs: { classificacao: produto, verificacao: { result: 'success' } },
+      })
+      // Ordem em que cada execucao entra no grupo, como em 2026-09-30, mais
+      // um smoke de PR e um push documental chegando no meio.
+      const eventos = [
+        { id: 'restaurar 999f2b6', grupo: grupoDoRestaurar(CASOS[3][1], '1') },
+        { id: 'restaurar b47fddf', grupo: grupoDoRestaurar(CASOS[3][1], '2') },
+        { id: 'PR 476 fechada com merge', grupo: grupoDoRestaurar(CASOS[10][1], '3') },
+        { id: 'navegador de uma PR', grupo: grupoNavegador('4') },
+        { id: 'push documental', grupo: grupoDoRestaurar(CASOS[4][1], '5') },
+        { id: 'restaurar de outro push de produto', grupo: grupoDoRestaurar(CASOS[3][1], '6') },
+      ]
+      const queueReal = extrairConcorrenciaDoJob(workflowTexto, 'restaurar-main').queue
+
+      const comFilaReal = simularFilaDoGithub(eventos, queueReal)
+      assert.deepEqual(
+        Object.entries(comFilaReal).filter(([, destino]) => destino === 'cancelado'),
+        [],
+        'Com a fila real ninguem pode ser cancelado.',
+      )
+      assert.equal(comFilaReal['restaurar b47fddf'], 'pendente')
+      assert.equal(comFilaReal['PR 476 fechada com merge'], 'andamento', 'O fechamento com merge roda no proprio grupo, fora da fila.')
+
+      // Dente do teste: a mesma sequencia com um pendente so (o padrao do
+      // GitHub) cancela a restauracao do push b47fddf, que foi o incidente.
+      const comUmPendente = simularFilaDoGithub(eventos, 'single')
+      assert.equal(comUmPendente['restaurar b47fddf'], 'cancelado')
+    })
   })
 })
 

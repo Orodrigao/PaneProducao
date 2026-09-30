@@ -160,6 +160,13 @@ jobs:
     # o reset de outra PR entre 22:03:45 e 22:04:24 e as tres tentativas de
     # login as 22:04:03, 22:04:08 e 22:04:14. Espera em fila, nunca cancela.
     #
+    # `queue: max` e obrigatorio, aqui e no Banco Preview. Sem ele o GitHub
+    # guarda UM so pendente por grupo e o mais novo cancela o anterior: este
+    # job era cancelado com "Canceling since a higher priority waiting request
+    # for banco-preview-compartilhado exists" (PR 476, 2026-09-30) e, pior,
+    # podia cancelar a restauracao pendente de um push na main. Com
+    # `queue: max` ate 100 esperam em ordem de chegada.
+    #
     # PR so documental ou so mecanismo de CI nunca precisa do banco: colocar
     # seu grupo num nome unico por execucao (nunca reutilizado) evita que ela
     # fique na fila atras de um reset que nao lhe diz respeito, sem abrir mao
@@ -178,6 +185,7 @@ jobs:
     concurrency:
       group: ${{ (needs.classificacao.result == 'success' && needs.classificacao.outputs.perfil == 'product' && needs.verificacao.result == 'success') && 'banco-preview-compartilhado' || format('ci-docs-only-{0}', github.run_id) }}
       cancel-in-progress: false
+      queue: max
     env:
       PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}

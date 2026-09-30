@@ -6,8 +6,9 @@ name: Banco Preview
 # NAO mexe em `supabase/`. PR que mexe ganha banco proprio do Supabase e nao
 # passa por aqui (ver `banco-por-pr.yml`).
 #
-# Push na main e PR fechada reconstroem o ambiente, removendo migrations que
-# nunca chegaram a producao.
+# Push de produto na main, PR fechada sem merge e o disparo manual reconstroem
+# o ambiente a partir do topo da main, removendo migrations que nunca chegaram
+# a producao.
 
 on:
   # Somente o fechamento importa: PR abandonada deixa no banco compartilhado
@@ -25,9 +26,9 @@ on:
         required: true
         type: string
 
-concurrency:
-  group: banco-preview-compartilhado
-  cancel-in-progress: false
+# Sem `concurrency` no nivel do workflow: a fila `banco-preview-compartilhado`
+# fica no job restaurar-main, para que so quem vai de fato reconstruir entre
+# nela (ver o comentario do job).
 
 permissions:
   contents: read
@@ -86,6 +87,30 @@ jobs:
     if: always()
     name: Restaurar Banco Preview para a main
     runs-on: ubuntu-latest
+    # Fila unica do banco compartilhado, dividida com o job "Navegador" do
+    # ci.yml (o smoke le e escreve nesse banco; o reset o apaga).
+    #
+    # `queue: max` e obrigatorio. Sem ele o GitHub guarda UM so pendente por
+    # grupo e o mais novo cancela o anterior. Em 2026-09-30 o push b47fddf
+    # (PR 476) ficou pendente atras da restauracao de 999f2b6, o fechamento
+    # com merge da mesma PR entrou no grupo e o cancelou, e o Preview ficou
+    # atras da main sem aviso. Com `queue: max` ate 100 esperam em ordem de
+    # chegada e ninguem e cancelado por quem chega depois.
+    #
+    # So entra na fila real quem vai reconstruir: a mesma condicao
+    # `deve-reconstruir` dos passos abaixo, mais a palavra de confirmacao do
+    # disparo manual. Push documental, push so de mecanismo de CI, PR fechada
+    # com merge e disparo com confirmacao errada nao tocam no banco e recebem
+    # um grupo unico por execucao, para nao ocupar a fila de ninguem.
+    #
+    # Cada reconstrucao restaura o topo da main no momento em que roda (o
+    # checkout abaixo usa `ref: main`, nao o sha do evento). Assim a ultima da
+    # fila sempre deixa o Preview no topo atual, mesmo se a main andou enquanto
+    # ela esperava.
+    concurrency:
+      group: ${{ ((github.event_name == 'workflow_dispatch' && inputs.confirmacao == 'RECONSTRUIR') || (github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product') || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)) && 'banco-preview-compartilhado' || format('banco-preview-sem-reconstrucao-{0}', github.run_id) }}
+      cancel-in-progress: false
+      queue: max
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_OWNER_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PREVIEW_DB_PASSWORD }}
@@ -133,6 +158,18 @@ jobs:
           (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)
         with:
           ref: main
+
+      # Decide pelo estado atual: registra qual main sera restaurada. Quando a
+      # execucao esperou na fila, o topo pode ser mais novo que o commit do
+      # evento; e o topo que vale.
+      - name: Registrar o topo da main que sera restaurado
+        if: *deve-reconstruir
+        env:
+          EVENTO_SHA: ${{ github.sha }}
+        run: |
+          TOPO="$(git rev-parse HEAD)"
+          echo "Evento: $GITHUB_EVENT_NAME em $EVENTO_SHA. Restaurando o topo da main: $TOPO."
+          echo "Banco Preview restaurado a partir da main em \`$TOPO\` (evento \`$GITHUB_EVENT_NAME\` em \`$EVENTO_SHA\`)." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: supabase/setup-cli@v3
         if: *deve-reconstruir
