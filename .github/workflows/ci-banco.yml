@@ -65,6 +65,14 @@ jobs:
         if: steps.escopo.outputs.banco != 'false'
         run: node scripts/verify-preview-seed-repeatability.mjs
 
+      # O pgTAP roda com o seed aplicado como no Banco Preview da main: contas
+      # ficticias, seed reaplicado por cima delas e perfis conferidos. Sem as
+      # contas, o seed pula as fixtures que dependem de perfil e um teste que
+      # colide com elas so quebra depois do merge (PR 468).
+      - name: Aplicar o seed com as contas ficticias, como no Banco Preview
+        if: steps.escopo.outputs.banco != 'false'
+        run: node scripts/ci-banco-seed-com-contas.mjs
+
       - name: Verificar invariantes estruturais (pgTAP)
         if: steps.escopo.outputs.banco != 'false'
         run: supabase test db
