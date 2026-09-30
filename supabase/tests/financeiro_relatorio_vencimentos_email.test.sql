@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(31);
 
 select ok(exists(
   select 1
@@ -267,7 +267,20 @@ reset role;
 
 select ok(exists(
   select 1 from cron.job where jobname = 'daily-payable-due-report' and schedule = '*/15 * * * *'
-), 'o cron tenta entregar o relatorio a cada quinze minutos');
+), 'a migration agenda a entrega do relatorio a cada quinze minutos');
+
+-- Este teste so roda em banco de teste (CI e Preview), sempre depois do seed.
+-- O agendamento acima aponta para a funcao de producao; ligado aqui, chamaria
+-- producao com o segredo deste banco e voltaria 401.
+select ok(exists(
+  select 1 from cron.job where jobname = 'daily-payable-due-report' and not active
+), 'o seed desliga o relatorio diario neste banco de teste');
+select is(
+  (select count(*)::integer from cron.job
+   where active and command like '%gohluceldchoitihrimw.supabase.co%'),
+  0,
+  'nenhum job ativo deste banco de teste chama a producao'
+);
 
 select * from finish();
 rollback;
