@@ -174,7 +174,11 @@ select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,weight_coverage_pct}')::numeric, 95::numeric, 'mês completo usa a cobertura do peso');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,is_provisional}')::boolean, false, 'mês sem lacunas não é provisório');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,fixed_expense_pct}')::numeric, 0.1::numeric, 'média de percentuais de fixos é ponderada pelo faturamento');
-select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,labor_cost_per_kg}')::numeric, 3.75::numeric, 'média de mão de obra por quilo é ponderada pelos quilos conhecidos');
+select is(
+  round((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,labor_cost_per_kg}')::numeric, 6),
+  round((116.25::numeric(12,2) + 178.125::numeric(12,2)) / (31 + 47.5), 6),
+  'média pondera mão de obra persistida em centavos pelos quilos conhecidos'
+);
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,month_count}')::integer, 2, 'a média informa quantos meses entraram');
 
 set local role authenticated;
