@@ -23,11 +23,24 @@ function parseDateInput(value: string, hours: number, minutes: number, seconds: 
   return date
 }
 
+export type CustomPeriodIssue = 'incomplete' | 'inverted'
+
+export type CustomPeriodReading =
+  | { period: ReportPeriod; issue: null }
+  | { period: null; issue: CustomPeriodIssue }
+
 // Valores de <input type="date"> no modo Custom. O campo devolve '' quando é
-// apagado ou está incompleto; nesse caso não há período e a tela mantém o último válido.
-export function customPeriod(fromValue: string, toValue: string): ReportPeriod | null {
+// apagado ou está incompleto, e a data inicial pode ficar depois da final;
+// nesses casos não há período e a tela mantém o último válido.
+export function readCustomPeriod(fromValue: string, toValue: string): CustomPeriodReading {
   const from = parseDateInput(fromValue, 0, 0, 0)
   const to = parseDateInput(toValue, 23, 59, 59)
-  if (!from || !to) return null
-  return { from, to }
+  if (!from || !to) return { period: null, issue: 'incomplete' }
+  // Mesmo dia vale: começa 00:00:00 e termina 23:59:59.
+  if (from > to) return { period: null, issue: 'inverted' }
+  return { period: { from, to }, issue: null }
+}
+
+export function customPeriod(fromValue: string, toValue: string): ReportPeriod | null {
+  return readCustomPeriod(fromValue, toValue).period
 }
