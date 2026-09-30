@@ -83,10 +83,16 @@ trava sem antes separar os testes que escrevem dos que só leem troca um
 entupimento visível por falha intermitente, que é pior. Uma tentativa nesse
 sentido foi reprovada em revisão em 2026-08-30.
 
-O custo dela é real e está medido: naquele mesmo dia, com cinco frentes
-abertas, o GitHub cancelou quem estava na fila, dois CIs e quatro
-reconstruções morreram em cascata e o banco ficou sem ser restaurado. Resolver
-isso é fase própria, e começa pelos testes, não pela trava.
+Os cancelamentos em cascata acabaram. Em 2026-08-30 e de novo em 2026-09-30 o
+GitHub cancelou quem esperava na fila, porque guardava um só pendente por
+grupo: CIs e reconstruções morreram e o banco ficou atrás da `main` sem aviso.
+Desde 2026-09-30 os dois lados usam `queue: max` (até 100 esperam, em ordem de
+chegada), e só entra na fila a execução que vai de fato apagar e reconstruir o
+banco. Push documental, push só de mecanismo de CI e PR fechada com merge não
+ocupam a vaga de ninguém. Cada reconstrução restaura o topo da `main` no
+momento em que roda, e o resumo do job diz qual commit foi restaurado. A
+serialização dos smokes entre si continua: separá-los segue sendo fase própria,
+que começa pelos testes, não pela trava.
 
 **Ramificação que ainda não nasceu: corrigido.** A revisão de 2026-08-30
 apontou que o `Banco por PR` desistia na primeira consulta e deixava uma PR com
