@@ -95,7 +95,7 @@ test('Administrador grava e rele o imposto na Configuracao do Sistema',
   async ({ page }) => {
     const acesso = await entrarComo(page, 'admin')
     await page.goto(TELA)
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible()
+    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible({ timeout: 20_000 })
 
     const campo = page.getByLabel(CAMPO_IMPOSTO)
     await expect(campo).toBeEnabled()
@@ -106,17 +106,18 @@ test('Administrador grava e rele o imposto na Configuracao do Sistema',
     try {
       await campo.fill(marca)
       await salvar(page)
+      // Pagina nova le tudo do banco. O carregamento no preview frio passou
+      // de 5 s numa execucao (PR 467), dai a folga maior so aqui.
       await page.reload()
-      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca)
+      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca, { timeout: 20_000 })
       // A tela pode mostrar o rascunho; o banco diz o que ficou gravado.
       expect(await impostoNoBanco(page, acesso)).toBe(marca)
 
       // Devolve o valor de antes pela tela, para a proxima execucao partir do
-      // mesmo lugar.
+      // mesmo lugar; o banco confirma a devolucao.
       await page.getByLabel(CAMPO_IMPOSTO).fill(antes)
       await salvar(page)
       devolvido = true
-      await page.reload()
       await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(antes)
       expect(await impostoNoBanco(page, acesso)).toBe(antes)
     } finally {
