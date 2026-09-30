@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { customPeriod } from './periodFilter'
+import { customPeriod, readCustomPeriod } from './periodFilter'
 
 describe('período Custom dos relatórios', () => {
   it('datas completas viram o dia inteiro, do início do primeiro ao fim do último', () => {
@@ -40,5 +40,37 @@ describe('período Custom dos relatórios', () => {
     expect(period).not.toBeNull()
     expect(Number.isNaN(period?.from.getTime())).toBe(false)
     expect(Number.isNaN(period?.to.getTime())).toBe(false)
+  })
+
+  it('data inicial depois da final não gera período', () => {
+    expect(customPeriod('2026-09-29', '2026-09-01')).toBeNull()
+    // Um dia de diferença na virada do ano também conta.
+    expect(customPeriod('2027-01-01', '2026-12-31')).toBeNull()
+  })
+
+  it('mesmo dia no início e no fim é o dia inteiro', () => {
+    const period = customPeriod('2026-09-15', '2026-09-15')
+    expect(period?.from).toEqual(new Date(2026, 8, 15, 0, 0, 0))
+    expect(period?.to).toEqual(new Date(2026, 8, 15, 23, 59, 59))
+  })
+})
+
+describe('motivo de o período Custom não valer', () => {
+  it('data apagada ou parcial é incompleta', () => {
+    expect(readCustomPeriod('2026-09-01', '')).toEqual({ period: null, issue: 'incomplete' })
+    expect(readCustomPeriod('2026-09', '2026-09-29')).toEqual({ period: null, issue: 'incomplete' })
+  })
+
+  it('início depois do fim é invertido', () => {
+    expect(readCustomPeriod('2026-09-29', '2026-09-01')).toEqual({ period: null, issue: 'inverted' })
+  })
+
+  it('data incompleta vence o invertido: não dá para comparar o que ainda não é data', () => {
+    expect(readCustomPeriod('2026-09-29', '0202-09-01')).toEqual({ period: null, issue: 'incomplete' })
+  })
+
+  it('período válido não tem motivo', () => {
+    expect(readCustomPeriod('2026-09-01', '2026-09-29').issue).toBeNull()
+    expect(readCustomPeriod('2026-09-15', '2026-09-15').issue).toBeNull()
   })
 })
