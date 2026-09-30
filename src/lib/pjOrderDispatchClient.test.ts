@@ -93,6 +93,24 @@ describe('fila operacional de Pedidos PJ', () => {
     })
   })
 
+  it('pede para recarregar quando outra pessoa conferiu antes', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'PT409',
+        message: 'Outra pessoa conferiu este pedido enquanto você preenchia. Recarregue para ver o que já foi gravado.',
+      },
+    })
+    const result = await savePjOrderDispatchQuantities('grupo-1', [
+      { order_id: 'linha-1', quantity: 10, reason: null },
+    ], '2026-09-14T15:10:00Z', '11111111-1111-4111-8111-111111111111')
+    expect(result).toEqual({
+      ok: false,
+      stale: true,
+      message: 'Outra pessoa conferiu este pedido enquanto você preenchia. Recarregue para ver o que já foi gravado.',
+    })
+  })
+
   it('repete a tentativa incerta com o mesmo identificador sem duplicar a gravacao', async () => {
     const requestId = '11111111-1111-4111-8111-111111111111'
     const items = [{ order_id: 'linha-1', quantity: 10, reason: null }]
