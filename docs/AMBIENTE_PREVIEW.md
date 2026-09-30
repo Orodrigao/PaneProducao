@@ -88,13 +88,13 @@ abertas, o GitHub cancelou quem estava na fila, dois CIs e quatro
 reconstruções morreram em cascata e o banco ficou sem ser restaurado. Resolver
 isso é fase própria, e começa pelos testes, não pela trava.
 
-**Limitação conhecida, ainda sem correção.** O `Banco por PR` consulta a lista
-de ramificações uma vez e, se a da PR ainda não tiver nascido, encerra tratando
-a PR como se não tivesse banco próprio. GitHub e Supabase não garantem ordem
-entre si, então uma PR com migration pode acabar apontada para o banco
-compartilhado sem aviso. Apontado na revisão de 2026-08-30; corrigir exige
-distinguir "não mexe em `supabase/`" de "a ramificação ainda não apareceu" e
-esperar nesse segundo caso.
+**Ramificação que ainda não nasceu: corrigido.** A revisão de 2026-08-30
+apontou que o `Banco por PR` desistia na primeira consulta e deixava uma PR com
+migration apontada para o banco compartilhado sem aviso. Hoje
+`scripts/preview-branch-env.mjs` distingue "não mexe em `supabase/`" de "a
+ramificação ainda não apareceu" e, no segundo caso, espera até 300 segundos;
+se ela não nascer, o check fica vermelho dizendo que seguir testaria o banco
+errado (conferido no código em 2026-09-30).
 
 O Supabase cobra o compute usado por branch; na tabela consultada em 2026-08-28,
 o tamanho Micro começa em US$ 0,01344 por hora, exige plano Pro e esse consumo
@@ -235,6 +235,58 @@ commit publicado da PR, desde que esteja verde, venha da Vercel e só haja
 documentação entre ele e o commit atual. Mudança no mecanismo de CI no meio
 (inclusive nos workflows que ligam o preview ao banco da PR) não vale. Qualquer dúvida
 reprova com a mensagem "A Vercel ainda nao publicou um preview verde".
+
+## Navegador no preview desta PR (piloto)
+
+Plano aprovado pelo Rodrigo em 2026-09-30, fases 1 a 3 até integrar. Motivo: a
+plataforma de um dos agentes não deixa digitar senha fora de `localhost`, e em
+PR que mexe em `supabase/` o teste de perfil só roda no link da Vercel. Com
+isso o Rodrigo logava na mão a cada PR de banco. Agora quem entra é o GitHub,
+com o secret `SUPABASE_TEST_USER_PASSWORD`. O agente escreve os roteiros e lê o
+resultado, sem ver a senha.
+
+O check `Navegador no preview desta PR` é um job de
+`Usuarios do Banco por PR`. Roda só em PR que mexe em `supabase/`, depois de o
+provisionamento criar as contas, e fica vermelho, nunca pulado, se o
+provisionamento não terminar bem. A ordem é esta:
+
+1. o provisionamento publica o endereço do banco da PR (não é segredo: ele já
+   vai no JavaScript do preview);
+2. `scripts/preview-pr-pronto.mjs` espera o `Apontar o preview para o banco
+   desta PR` do commit, localiza o preview verde por `scripts/preview-da-pr.mjs`
+   e só aceita quando o JavaScript publicado daquele link cita o banco da PR e
+   nenhum outro. Produção reprova na hora; o banco compartilhado espera o
+   redeploy por até 15 minutos;
+3. o Playwright (`playwright.preview-pr.config.ts`, roteiros em
+   `test/preview-pr/`) entra com `entrarComo(page, perfil)` de
+   `test/preview-pr/apoio/entrar.ts`, o único arquivo que lê a senha. Durante a
+   sessão a página só fala com o preview e com o banco da PR, e o login precisa
+   ter ido a esse banco;
+4. `scripts/preview-pr-resumo.mjs` escreve no resumo do job a tabela perfil ×
+   loja × esperado × resultado, e reprova se nada rodou, se algo foi pulado, se
+   um teste só passou na repetição ou se falta a matriz (`matriz(...)` na
+   declaração do teste).
+
+O job não recebe o token do Supabase nem o da Vercel. A senha só existe no
+passo do Playwright, depois do `npm ci`, e só `pull-requests`, `contents`,
+`checks` e `deployments` em leitura. Risco residual aceito pelo Rodrigo: o
+código da PR roda com a senha de teste, como já acontece no job de navegador do
+`ci.yml`. Em falha, o artefato guarda só o `error-context.md` por 7 dias.
+`scripts/preview-pr-guarda.test.mjs`, no `npm test`, reprova roteiro que cite
+a senha, pule teste ou leia o ambiente, e executa o passo que publica o
+endereço do banco com uma CLI falsa.
+
+Roteiro novo: mudança de permissão se prova em dois níveis. O perfil permitido
+consegue, e o bloqueado é barrado na tela e numa chamada direta à Data API com
+o token da própria sessão (`cabecalhosDaSessao`), com o mesmo pedido passando
+para quem pode. Dado criado leva marca única da execução e é limpo quando der;
+o próximo `Usuarios do Banco por PR` reaplica o seed.
+
+Fases: 1, o check existe e é provado numa PR-canário fechada sem merge; 2,
+piloto numa PR real de banco; 3, a regra entra em `docs/regras/BANCO.md`,
+`docs/regras/FECHAMENTO.md` e no briefing das skills. Pôr o check na
+`Trava da main` é decisão separada, depois de umas dez PRs estáveis. PR que não
+mexe em `supabase/` continua no job `Navegador (login, perfis e lojas)`.
 
 ## Testes locais e armadilhas conhecidas
 
