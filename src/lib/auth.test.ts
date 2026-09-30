@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAppUser,
   canAccess,
+  isAdminOnlyRoute,
   canAccessSalesImport,
   fetchCurrentAuthUser,
   navigateAfterAuthentication,
@@ -181,6 +182,42 @@ describe('canAccess', () => {
     }
 
     expect(canAccess(user, '/produtos/cmv')).toBe(true)
+  })
+
+  it('recusa Administracao a quem nao e admin, mesmo com rota curinga', () => {
+    for (const role of ['compras', 'financeiro', 'producao'] as const) {
+      const user = {
+        id: `uuid-${role}`,
+        username: role,
+        displayName: role,
+        role,
+        active: true,
+        allowedRoutes: ['*', '/admin/configuracao'],
+        store: 'jc',
+      }
+      expect(canAccess(user, '/admin/configuracao')).toBe(false)
+      expect(canAccess(user, '/admin/usuarios')).toBe(false)
+      expect(canAccess(user, '/admin')).toBe(false)
+      expect(canAccess(user, '/produtos')).toBe(true)
+    }
+  })
+
+  it('libera Administracao ao admin', () => {
+    const admin = {
+      id: 'uuid-admin',
+      username: 'admin',
+      displayName: 'Admin',
+      role: 'admin' as const,
+      active: true,
+      allowedRoutes: ['/'],
+      store: null,
+    }
+    expect(canAccess(admin, '/admin/configuracao')).toBe(true)
+  })
+
+  it('nao confunde tela com prefixo parecido com Administracao', () => {
+    expect(isAdminOnlyRoute('/administrativo')).toBe(false)
+    expect(isAdminOnlyRoute('/admin/configuracao')).toBe(true)
   })
 })
 

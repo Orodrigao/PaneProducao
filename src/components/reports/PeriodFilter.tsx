@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { readCustomPeriod, type CustomPeriodIssue } from '@/lib/periodFilter'
 
 type Preset = 'hoje' | '7d' | '30d' | 'mes' | 'custom'
 
@@ -28,6 +29,11 @@ const PRESET_LABELS: Record<Preset, string> = {
   hoje: 'Hoje', '7d': '7 dias', '30d': '30 dias', mes: 'Mês', custom: 'Custom',
 }
 
+const ISSUE_MESSAGES: Record<CustomPeriodIssue, string> = {
+  incomplete: 'Data incompleta: o relatório segue no último período válido.',
+  inverted: 'A data inicial é depois da final: o relatório segue no último período válido.',
+}
+
 interface Props {
   defaultPreset?: Preset
   onChange: (range: { from: Date; to: Date }) => void
@@ -38,12 +44,13 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
   const [customFrom, setCustomFrom] = useState(() => toISODate(new Date(Date.now() - 30 * 86400000)))
   const [customTo, setCustomTo] = useState(() => toISODate(new Date()))
 
+  const customIssue = preset === 'custom' ? readCustomPeriod(customFrom, customTo).issue : null
+
   useEffect(() => {
     if (preset === 'custom') {
-      onChange({
-        from: new Date(customFrom + 'T00:00:00'),
-        to:   new Date(customTo + 'T23:59:59'),
-      })
+      // Data apagada, incompleta ou início depois do fim: não emite período novo; a tela segue no último válido.
+      const { period } = readCustomPeriod(customFrom, customTo)
+      if (period) onChange(period)
     } else {
       onChange(rangeFor(preset))
     }
@@ -51,7 +58,8 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
   }, [preset, customFrom, customTo])
 
   return (
-    <div className="ps-presets">
+    // Sobras e descartes trava a linha dos botões em tela larga; o aviso precisa quebrar linha.
+    <div className="ps-presets" style={customIssue ? { flexWrap: 'wrap' } : undefined}>
       {(['hoje','7d','30d','mes','custom'] as Preset[]).map(p => (
         <button key={p} onClick={() => setPreset(p)} className={`ps-preset ${preset === p ? 'active' : ''}`}>
           {PRESET_LABELS[p]}
@@ -65,6 +73,11 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
           <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
             className="ps-input" style={{padding:'6px 10px', fontSize:13}}/>
         </>
+      )}
+      {customIssue && (
+        <span role="status" className="ps-help" style={{flexBasis:'100%', marginTop:0}}>
+          {ISSUE_MESSAGES[customIssue]}
+        </span>
       )}
     </div>
   )

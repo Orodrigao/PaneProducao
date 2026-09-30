@@ -105,7 +105,7 @@ select throws_ok($q$select pg_temp.act('check',0)$q$,'22023',null,'conferência 
 select lives_ok($q$select pg_temp.act('save',0,'[{"id":"97000000-0000-4000-8000-000000000101","quantity":38,"reason":"Dois não ficaram disponíveis"}]','97000000-0000-4000-8000-000000000301')$q$,'salva 38 de 40 sem gerar saldo');
 select lives_ok($q$select pg_temp.act('save',0,'[{"id":"97000000-0000-4000-8000-000000000101","quantity":38,"reason":"Dois não ficaram disponíveis"}]','97000000-0000-4000-8000-000000000301')$q$,'resposta perdida: repetir mesmo pedido não duplica');
 select throws_ok($q$select pg_temp.act('save',0,'[{"id":"97000000-0000-4000-8000-000000000101","quantity":37}]','97000000-0000-4000-8000-000000000301')$q$,'22023',null,'mesmo ID com conteúdo diferente é recusado');
-select throws_ok($q$select pg_temp.act('check',0)$q$,'40001',null,'segundo celular com versão antiga é recusado');
+select throws_ok($q$select pg_temp.act('check',0)$q$,'PT409',null,'segundo celular com versão antiga é recusado');
 select lives_ok($q$select pg_temp.act('check',1)$q$,'conclui conferência sem faturar');
 select throws_ok($q$select public.confirm_pj_order_dispatch('97000000-0000-4000-8000-000000000201')$q$,'42501',null,'site antigo não marca despacho em pedido novo');
 reset role;
@@ -119,7 +119,7 @@ select throws_ok($q$select public.create_receivable_from_pj_order(gen_random_uui
 select throws_ok($q$update public.orders set unit_price=1 where id='97000000-0000-4000-8000-000000000101'$q$,'42501',null,'preço não muda fora do contrato');
 select throws_ok($q$update public.orders set order_group_id=gen_random_uuid() where id='97000000-0000-4000-8000-000000000101'$q$,'42501',null,'não move item para escapar do piloto');
 select throws_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),false,7)$q$,'22023',null,'NF externa precisa ser confirmada');
-select throws_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),true,8)$q$,'40001',null,'prazo divergente do revisado exige recarga');
+select throws_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),true,8)$q$,'PT409',null,'prazo divergente do revisado exige recarga');
 select lives_ok($q$select pg_temp.act('release',2,'[]','97000000-0000-4000-8000-000000000302',true,7)$q$,'Elis confirma cobrança e libera');
 select lives_ok($q$select pg_temp.act('release',2,'[]','97000000-0000-4000-8000-000000000302',true,7)$q$,'duplo toque na liberação é idempotente');
 reset role;
@@ -133,7 +133,7 @@ select lives_ok($q$select pg_temp.act('save',3,'[{"id":"97000000-0000-4000-8000-
 select throws_ok($q$select pg_temp.act('depart',4)$q$,'22023',null,'correção bloqueia novamente saída');
 select lives_ok($q$select pg_temp.act('check',4)$q$,'conclui nova conferência');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000001',true);
-select throws_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),true,7)$q$,'40001',null,'revisão anterior não libera versão corrigida');
+select throws_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),true,7)$q$,'PT409',null,'revisão anterior não libera versão corrigida');
 select lives_ok($q$select pg_temp.act('release',5,'[]',gen_random_uuid(),true,7)$q$,'Elis refaz cobrança e liberação');
 reset role;
 select is((select count(*)::int from public.receivables where origin_ref='97000000-0000-4000-8000-000000000201' and status<>'cancelada'),1,'uma cobrança viva após correção');
