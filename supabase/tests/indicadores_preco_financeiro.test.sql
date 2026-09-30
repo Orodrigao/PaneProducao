@@ -128,6 +128,13 @@ cross join (values ('jc'::text), ('ja'::text)) stores(store)
 where store <> 'jc' or extract(dow from day_date) <> 0
 on conflict (store, closing_date) do nothing;
 
+-- O seed geral tem produção fictícia nesses meses. O teste substitui apenas
+-- essas quatro linhas, dentro da transação que termina em rollback.
+delete from public.production_actuals
+where product_source = 'bread'
+  and product_id in ('pricing-indicators-weighted', 'pricing-indicators-no-weight')
+  and record_date in (date '2026-09-01', date '2026-10-01');
+
 insert into public.production_actuals (
   record_date, bread_id, product_source, product_id, product_variant_id,
   product_name, production_unit, lot_code, quantity_baked, quantity_loss,
