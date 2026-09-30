@@ -3,6 +3,31 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(23);
 
+-- O banco Preview recebe o seed geral antes do pgTAP. Retire as mesmas
+-- fixtures financeiras do relatório dentro desta transação; o rollback no
+-- fim preserva os dados de seed para a chamada de verificação do Preview.
+delete from public.finance_entries
+where id::text like '96400000-0000-4000-8000-000000000%'
+   or (
+     source = 'contas_receber'
+     and source_ref in (
+       '96400000-0000-4000-8000-000000000501'::uuid,
+       '96400000-0000-4000-8000-000000000502'::uuid
+     )
+   );
+
+delete from public.receivable_receipts
+where id in (
+  '96400000-0000-4000-8000-000000000501'::uuid,
+  '96400000-0000-4000-8000-000000000502'::uuid
+);
+
+delete from public.receivables
+where id in (
+  '96400000-0000-4000-8000-000000000301'::uuid,
+  '96400000-0000-4000-8000-000000000302'::uuid
+);
+
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at,
@@ -98,6 +123,13 @@ select private.atualizar_situacao_receivable('96300000-0000-4000-8000-0000000003
 update public.finance_entries
 set reversed_at = now(), reversed_by = '96300000-0000-4000-8000-000000000001', reversal_reason = '[TESTE] Lançamento estornado'
 where id = '96300000-0000-4000-8000-00000000010c';
+
+-- Os fechamentos do seed usam as mesmas chaves do cenário de teste; remova-os
+-- pelo identificador do fixture antes de inserir as cópias do teste.
+delete from public.cash_closings
+where created_by_name = '[TESTE] Indicadores admin'
+  and closing_date >= date '2026-09-01'
+  and closing_date < date '2026-11-01';
 
 insert into public.cash_closings (
   closing_date, weekday_label, store, sales_amount, ifood_sales_amount,
