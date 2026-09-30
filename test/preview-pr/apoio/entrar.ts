@@ -74,8 +74,13 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
   // Quando o teste termina com pedidos ainda em voo (a tela do Romaneio
   // dispara varios ao abrir), completar ou abortar esses pedidos estoura
   // "Test ended" e derrubava o teste ja concluido (canario PR 470). Com a
-  // pagina fechada nao ha para onde o pedido ir; o erro e so descartado.
-  const semPagina = () => undefined
+  // pagina fechada nao ha para onde o pedido ir; SO esse erro e descartado.
+  // Qualquer outro sobe e reprova o teste, em vez de virar falha de rede
+  // calada numa chamada que o roteiro talvez nao confira.
+  const semPagina = (erro: unknown) => {
+    if (erro instanceof Error && /Test ended|has been closed/.test(erro.message)) return
+    throw erro
+  }
   await page.route('**/*', async (route) => {
     const alvo = new URL(route.request().url())
     if (alvo.protocol !== 'https:' || !permitidos.has(alvo.host)) {
@@ -95,8 +100,9 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
     let resposta
     try {
       resposta = await route.fetch({ maxRedirects: 0 })
-    } catch {
+    } catch (erro) {
       await route.abort('failed').catch(semPagina)
+      semPagina(erro)
       return
     }
     if (resposta.status() >= 300 && resposta.status() < 400) {
