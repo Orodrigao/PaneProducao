@@ -49,6 +49,7 @@ describe('roteiros de test/preview-pr', () => {
   it('a cerca de rede nao segue redirecionamento e service worker fica bloqueado', () => {
     const ajudante = roteiros.find((r) => r.nome === AJUDANTE).texto
     assert.match(ajudante, /route\.fetch\(\{ maxRedirects: 0 \}\)/)
+    assert.match(ajudante, /resposta\.status\(\) >= 300 && resposta\.status\(\) < 400\) \{\r?\n\s+await route\.abort\('blockedbyclient'\)/)
     assert.match(ajudante, /route\.abort\('blockedbyclient'\)/)
     const config = readFileSync(join(RAIZ, 'playwright.preview-pr.config.ts'), 'utf8')
     assert.match(config, /serviceWorkers: 'block'/)

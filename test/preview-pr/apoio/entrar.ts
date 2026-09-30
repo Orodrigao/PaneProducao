@@ -82,10 +82,16 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
       return
     }
     // O pedido de login leva a senha ao banco. `continue` seguiria um
-    // redirecionamento sem passar de novo por esta cerca; aqui o pedido sai
-    // sem seguir redirect, e se vier 3xx quem segue e o navegador, com um
-    // pedido novo que volta a esta rota e e abortado se o destino for outro.
+    // redirecionamento sem passar de novo por esta cerca, e devolver o 3xx ao
+    // navegador tambem nao garante que o pedido seguinte volte a ela (o
+    // Playwright so chama a rota no primeiro endereco da cadeia; 307/308
+    // reenviam o corpo). A API do Supabase nao redireciona; se redirecionar,
+    // o pedido morre aqui.
     const resposta = await route.fetch({ maxRedirects: 0 })
+    if (resposta.status() >= 300 && resposta.status() < 400) {
+      await route.abort('blockedbyclient')
+      return
+    }
     await route.fulfill({ response: resposta })
   })
 }
