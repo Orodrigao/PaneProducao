@@ -4,9 +4,12 @@
 do mesmo dia e que até aqui viviam somente no painel Onde Estamos. Painel é
 espelho: se a conversa se perde, o desenho se perde junto.
 
-**Status: plano guardado.** Nada em execução, nada reservado na portaria.
-Rodrigo definiu em 2026-09-03 que a prioridade é a cobrança pela quantidade
-enviada e que a formação de preço fica no plano, sem data.
+**Status: plano aprovado em 2026-09-29, fases 1 a 3 autorizadas até produção.**
+A frente foi retomada em 2026-09-29, com descoberta nova e um plano em fases
+revisado por um agente de outra família. O plano está na seção "Plano em fases",
+e o que mudou em relação às decisões de setembro está em "Decidido em
+2026-09-29". O que já foi entregue se confere no código e no
+`docs/CURRENT_STATE.md`, nunca por este status.
 
 **Autoridade:** este documento registra decisões e o desenho pretendido. O que
 existe de fato está no código, nas migrations e nos testes.
@@ -33,7 +36,9 @@ calculado.
    Estão riscados de propósito, para ninguém os tratar como meta. Como chegar
    nos números de verdade está na seção "Como definir as margens".
 4. **No PJ o sistema apenas avisa.** A formação de preço não mexe em preço de
-   cliente PJ, que continua vindo das tabelas de preço.
+   cliente PJ, que continua vindo das tabelas de preço. *Revisto em 2026-09-29:
+   a Buck ganha preço sugerido próprio e os demais clientes PJ saíram do
+   escopo, inclusive do aviso.*
 5. **O ERP calcula o preço sugerido.** Ele não é o dono do preço praticado no
    balcão, pelo motivo da seção seguinte.
 
@@ -51,8 +56,10 @@ no PDV, e um preço digitado no ERP envelheceria em silêncio a cada mudança l�
 É a mesma família de erro da farinha cadastrada a R$ 74,00 o quilo: um número
 digitado que ninguém percebeu ter envelhecido.
 
-**O caminho é o preço observado.** Quando a importação do relatório do CNM
-existir, ela traz o que foi vendido e por quanto. O ERP guarda isso como
+**O caminho é o preço observado.** A importação de vendas do balcão existe
+desde 2026-09-14 (só a JC é importada até aqui) e, com o vínculo entre item do
+PDV e produto do catálogo, mostra o preço médio praticado. Ela traz o que foi
+vendido e por quanto. O ERP guarda isso como
 observação, compara com o custo que veio das notas fiscais e avisa quando a
 margem aperta. Se o preço mudar no PDV, a importação seguinte atualiza sozinha.
 O preço continua tendo um dono só.
@@ -109,6 +116,12 @@ Aqui não dá para separar no lançamento, porque a conta da loja é uma só e c
 produção e balcão juntos. Entra um percentual definido por Rodrigo, revisado
 quando o parque de equipamentos mudar. É o tipo de parâmetro que mora na página
 de Configuração do Sistema.
+
+*Revisto em 2026-09-29: o rateio saiu do escopo.* Com as despesas fixas
+entrando no preço (ver "Decidido em 2026-09-29"), energia e gás chegam ao preço
+de qualquer jeito; o rateio só decidiria qual produto carrega mais. Além disso,
+no Financeiro eles estão dentro da categoria "Ocupação", junto com aluguel,
+internet e IPTU, sem como separar. Volta ao plano se a distorção incomodar.
 
 ### A conta, ao final
 
@@ -188,10 +201,102 @@ cinco produtos vai dizer.
   têm peso em lugar nenhum**. Rodrigo escolheu exigir o peso e ir preenchendo:
   "No fim temos que ter todas as fichas cadastradas. É preciso."
 
+## Decidido em 2026-09-29
+
+Decisões de Rodrigo na conversa "Formação de preço: descoberta e plano".
+
+- **Despesas fixas entram no preço, separadas da margem.** O sistema calcula
+  quanto elas pesam no faturamento de cada mês fechado, a partir do Financeiro,
+  e soma esse percentual ao preço. A margem desejada passa a significar lucro.
+- **O mesmo percentual de despesas fixas vale para todos os canais**, a Buck
+  inclusive, mesmo que ela não use balcão nem loja. Rodrigo preferiu a regra
+  simples ao preço mais justo da Buck.
+- **Canais com preço sugerido próprio: Balcão, iFood e Buck.** Os demais
+  clientes PJ ficam fora, sem aviso.
+- **Só admin vê a formação de preço e muda a Configuração**, garantido no banco,
+  não só na tela. Compras continua mexendo em receita e rendimento.
+- **Divisão do trabalho:** a fase 2 vai para o agente de outra família como
+  executor principal, em paralelo; as fases 1 e 3 ficam com quem conduz a
+  frente, com revisão cruzada.
+
+### Fatos medidos em produção nesta data (somente leitura)
+
+- **O faturamento está em dois lugares.** Balcão da JC e da JA, com iFood, no
+  Fechamento de caixa (`cash_closings`); PJ e Buck no Financeiro. O Financeiro
+  não tem venda de balcão: calcular só por ele dobraria o peso das despesas.
+- **As despesas do Financeiro só estão completas a partir de setembro de
+  2026.** Em agosto a mão de obra lançada é um quarto da de setembro, porque o
+  Financeiro começou no meio do mês.
+- **Encargos e diárias continuam sem equipe**, e a taxa de cartão não aparece
+  lançada.
+- **Peso na produção de setembro (até dia 28):** 34 pães produzidos, 12 com
+  peso na ficha, 62% das unidades cobertas. O Croissant, item mais produzido
+  (2.674 unidades), não tem peso. O Brioche Hamburguer está com 0,8 kg por
+  unidade, valor que parece ser de pacote. Pesar cerca de dez pães leva a
+  cobertura acima de 90%.
+- **Faixas de margem fixas no código:** `classifyGrossMargin`, em
+  `src/lib/saleOptions.ts`, pinta "ruim" abaixo de 50% e "boa" a partir de 65%
+  nas telas de Tabelas de preço e de auditoria de CMV. São números da mesma
+  família do chute corrigido em 2026-09-04.
+
+## A conta
+
+Todos os percentuais incidem sobre o mesmo preço de venda:
+
+```text
+custo direto   = ingredientes da ficha + embalagem da ficha + mão de obra
+custo ajustado = custo direto / (1 − sobra e descarte %)
+preço          = custo ajustado / (1 − imposto % − taxa do canal % − despesas fixas % − margem %)
+```
+
+- **Margem** é o lucro em porcentagem do preço de venda, não acréscimo sobre o
+  custo. A tela diz isso escrito.
+- **Preço de equilíbrio** é a mesma conta com margem zero. É o que a ficha
+  mostra enquanto a margem do tipo e do canal não estiver definida.
+- **Mão de obra** por unidade = custo do quilo × peso médio da unidade; por
+  quilo, o custo do quilo direto.
+
+### Cada custo tem uma única fonte
+
+| Componente | Fonte | Fica fora de |
+| --- | --- | --- |
+| Ingredientes | Ficha técnica | Nada a excluir |
+| Embalagem | Componentes de tipo embalagem na própria ficha | Campo digitado, que deixa de existir |
+| Perda de forno | Rendimento da ficha (massa para assado) | Campo de perda da formação |
+| Sobra e descarte de venda | Percentual gravado por produto | Rendimento da ficha |
+| Mão de obra de produção | Financeiro ÷ quilos produzidos no mês | Despesas fixas |
+| Despesas fixas | Financeiro: mão de obra que não é de produção, ocupação, manutenção, serviços, financeiras e outras | CMV, impostos e taxas de cartão e apps |
+| Imposto | Percentual da Configuração | Despesas fixas |
+| Taxa do canal | Percentual da Configuração (cartão, comissão do iFood) | Despesas fixas |
+
+## Plano em fases
+
+Autorização de Rodrigo em 2026-09-29: fases 1 a 3 até produção, cada uma em
+PR própria, depois de CI verde, revisão de outra família e Check. A fase 5
+espera as margens.
+
+| Fase | Resultado | Quem |
+| --- | --- | --- |
+| 0. Dados prontos | Pesar os pães sem peso, a começar pelo Croissant; conferir o Brioche Hamburguer; combinar com o Financeiro o lançamento de encargos e diárias por equipe | Operação |
+| 1. Configuração do Sistema | Tela nova em Administração, só admin: imposto, taxa de cartão, comissão do iFood, margem desejada e mínima por tipo e canal (podem ficar vazias); guarda quem mudou e quando | Quem conduz |
+| 2. Números do Financeiro | Por mês fechado: faturamento (Fechamento de caixa mais PJ e Buck do Financeiro), peso das despesas fixas e custo do quilo de mão de obra de produção, com cobertura de peso e meses usados; marcado como provisório enquanto os dados não fecham | Agente de outra família |
+| 3. Formação de preço que salva | Na ficha: sobra por produto, embalagem da ficha, preço por canal, preço de equilíbrio e retrato de todos os números a cada salvamento | Quem conduz |
+| 4. Conta dos 5 produtos | Rodrigo compara o custo completo de cinco produtos com o preço praticado e define as margens na Configuração | Rodrigo |
+| 5. Avisos | Sugerido contra praticado (só JC, identificado) e contra a tabela da Buck; aviso de margem apertada na ficha e num relatório; faixas "ruim/boa" vindas da Configuração | A definir |
+
+A ordem 4 antes de 5 é de propósito: aviso de "margem apertada" contra uma
+margem que ninguém decidiu repetiria o erro do chute.
+
+### Fora do escopo
+
+Outros clientes PJ, kits, produção da cozinha (lanches e sopas) na mão de obra
+por quilo, arredondamento de preço, envio de preço ao PDV, rateio de energia e
+comparação com a JA enquanto a venda dela não for importada.
+
 ## O que ainda não está decidido
 
 - Os percentuais de margem, desejada e mínima, por tipo e por canal. Ver "Como
-  definir as margens".
+  definir as margens" e a fase 4.
 - O que a página de Configuração do Sistema vai conter além dos parâmetros de
   preço.
 
