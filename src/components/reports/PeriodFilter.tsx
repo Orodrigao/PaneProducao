@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { customPeriod } from '@/lib/periodFilter'
 
 type Preset = 'hoje' | '7d' | '30d' | 'mes' | 'custom'
 
@@ -38,12 +39,13 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
   const [customFrom, setCustomFrom] = useState(() => toISODate(new Date(Date.now() - 30 * 86400000)))
   const [customTo, setCustomTo] = useState(() => toISODate(new Date()))
 
+  const customIncomplete = preset === 'custom' && customPeriod(customFrom, customTo) === null
+
   useEffect(() => {
     if (preset === 'custom') {
-      onChange({
-        from: new Date(customFrom + 'T00:00:00'),
-        to:   new Date(customTo + 'T23:59:59'),
-      })
+      // Data apagada ou incompleta: não avisa a tela, que segue no último período válido.
+      const period = customPeriod(customFrom, customTo)
+      if (period) onChange(period)
     } else {
       onChange(rangeFor(preset))
     }
@@ -51,7 +53,8 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
   }, [preset, customFrom, customTo])
 
   return (
-    <div className="ps-presets">
+    // Sobras e descartes trava a linha dos botões em tela larga; o aviso precisa quebrar linha.
+    <div className="ps-presets" style={customIncomplete ? { flexWrap: 'wrap' } : undefined}>
       {(['hoje','7d','30d','mes','custom'] as Preset[]).map(p => (
         <button key={p} onClick={() => setPreset(p)} className={`ps-preset ${preset === p ? 'active' : ''}`}>
           {PRESET_LABELS[p]}
@@ -65,6 +68,11 @@ export default function PeriodFilter({ defaultPreset = '30d', onChange }: Props)
           <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
             className="ps-input" style={{padding:'6px 10px', fontSize:13}}/>
         </>
+      )}
+      {customIncomplete && (
+        <span role="status" className="ps-help" style={{flexBasis:'100%', marginTop:0}}>
+          Data incompleta: o relatório segue no último período válido.
+        </span>
       )}
     </div>
   )
