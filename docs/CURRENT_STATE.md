@@ -616,11 +616,12 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
    Diagnóstico de falha de smoke deve separar as duas famílias antes de
    aumentar qualquer tempo limite (ver `lessons.md`,
    `tela-vazia-nao-e-tela-carregando`).
-   Em merge com migration, os gatilhos simultâneos de push e fechamento da PR
-   também podem cancelar a reconstrução automática do Banco Preview antes de ela
-   iniciar; o navegador da `main` fica esperando esse check. A recuperação segura
-   é reconstruir o banco fictício pelo workflow próprio e repetir o CI. A causa
-   estrutural de concorrência ainda precisa de correção separada.
+   O cancelamento da reconstrução automática do Banco Preview por gatilhos
+   simultâneos (push e fechamento da PR) foi corrigido em 2026-09-30 pela fila
+   com `queue: max` (ver a seção do banco compartilhado acima). Continuam os
+   limites descritos em `docs/AMBIENTE_PREVIEW.md`: se a reconstrução falhar ou
+   a espera do navegador da `main` esgotar, reconstrua o banco fictício pelo
+   workflow próprio e repita só o navegador.
 
 ## Próximas fases aprovadas
 
