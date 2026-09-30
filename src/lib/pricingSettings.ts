@@ -331,7 +331,8 @@ export async function savePricingSettings(changes: readonly PricingChange[]): Pr
 /** Mensagem fixa da recusa, pelo código do Postgres. */
 export function pricingSaveErrorMessage(error: unknown): string {
   const code = (error as { code?: string } | null)?.code
-  if (code === '40001') return 'Outro salvamento mudou a configuração depois que a tela abriu. Recarregue a página para ver os valores atuais; o que você digitou continua na tela.'
+  // PT409, não 40001: o PostgREST repete a transação em 40001 e a tela travaria.
+  if (code === 'PT409') return 'Outro salvamento mudou a configuração depois que a tela abriu. Recarregue a página para ver os valores atuais; o que você digitou continua na tela.'
   if (code === '42501') return 'Só administradores podem mudar a Configuração do Sistema.'
   if (code === '22023') {
     const message = (error as { message?: string }).message

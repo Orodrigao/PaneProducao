@@ -182,7 +182,7 @@ describe('runPricingSave', () => {
 
   it('banco recusou: não relê e explica pelo código', async () => {
     let reloaded = false
-    const outcome = await runPricingSave([], async () => { throw { code: '40001' } }, async () => { reloaded = true })
+    const outcome = await runPricingSave([], async () => { throw { code: 'PT409' } }, async () => { reloaded = true })
     expect(outcome.kind).toBe('error')
     expect(outcome.message).toMatch(/Outro salvamento/)
     expect(reloaded).toBe(false)
@@ -250,8 +250,9 @@ describe('parsePricingSettingsResponse', () => {
 
 describe('pricingSaveErrorMessage', () => {
   it('explica o conflito e preserva o que foi digitado', () => {
-    expect(pricingSaveErrorMessage({ code: '40001' })).toMatch(/Recarregue a página/)
+    expect(pricingSaveErrorMessage({ code: 'PT409' })).toMatch(/Recarregue a página/)
     expect(pricingSaveErrorMessage({ code: '42501' })).toMatch(/Só administradores/)
     expect(pricingSaveErrorMessage(new Error('rede'))).toMatch(/continua na tela/)
+    expect(pricingSaveErrorMessage({ code: '40001' })).not.toMatch(/Outro salvamento/)
   })
 })

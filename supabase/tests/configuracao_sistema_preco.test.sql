@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(69);
+select plan(70);
 
 -- Contrato de acesso ----------------------------------------------------------
 select ok(not has_table_privilege('authenticated', 'private.pricing_settings_history', 'select'),
@@ -30,6 +30,13 @@ select ok(not has_function_privilege('anon', 'public.get_pricing_settings(intege
   'anônimo não lê a configuração');
 select ok(not has_function_privilege('anon', 'public.save_pricing_settings(jsonb)', 'execute'),
   'anônimo não grava a configuração');
+-- 40001 faz o PostgREST repetir a transação sem fim quando o conflito é o
+-- próprio estado gravado (visto no preview da PR 467). Nenhuma função desta
+-- frente pode recusar com ele.
+select ok((select bool_and(pg_catalog.pg_get_functiondef(p.oid) not like '%40001%')
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where (n.nspname, p.proname) in (('public', 'get_pricing_settings'), ('public', 'save_pricing_settings'))),
+  'conflito de salvamento não usa 40001, que o PostgREST repete para sempre');
 select ok((select bool_and(p.prosecdef and p.proconfig @> array['search_path=""'])
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where (n.nspname, p.proname) in (('public', 'get_pricing_settings'), ('public', 'save_pricing_settings'),
@@ -182,7 +189,7 @@ select is(
 -- Outro salvamento no meio: recusa em vez de atropelar -------------------------
 select set_config('request.jwt.claim.sub','97200000-0000-4000-8000-000000000002',true);
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"imposto_venda","value":7,"previous_value":6}]')$$,
-  '40001', null, 'tela velha (imposto 6 na tela, 6,5 no banco) não atropela o salvamento do outro admin');
+  'PT409', null, 'tela velha (imposto 6 na tela, 6,5 no banco) não atropela o salvamento do outro admin');
 select is((select (item ->> 'value')::numeric from pg_catalog.jsonb_array_elements(public.get_pricing_settings() -> 'current') item
     where item ->> 'setting_key' = 'imposto_venda'), 6.50::numeric,
   'a recusa por conflito não gravou nada');
