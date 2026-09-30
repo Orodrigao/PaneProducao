@@ -43,7 +43,6 @@ select fixture.id, fixture.request_id, 'lancamento', category.id,
   'outro', fixture.description, 'avulso', '96300000-0000-4000-8000-000000000001'
 from (values
   ('96300000-0000-4000-8000-000000000101'::uuid, '96300000-0000-4000-8000-000000000201'::uuid, date '2026-09-01', 'jc', 'clientes_pj', 2000::numeric, '[TESTE] Receita PJ setembro'),
-  ('96300000-0000-4000-8000-000000000102'::uuid, '96300000-0000-4000-8000-000000000202'::uuid, date '2026-09-01', 'geral', 'buck_ex', 1000::numeric, '[TESTE] Receita Buck setembro'),
   ('96300000-0000-4000-8000-000000000103'::uuid, '96300000-0000-4000-8000-000000000203'::uuid, date '2026-09-01', 'geral', 'ocupacao', 1000::numeric, '[TESTE] Ocupação setembro'),
   ('96300000-0000-4000-8000-000000000104'::uuid, '96300000-0000-4000-8000-000000000204'::uuid, date '2026-09-01', 'jc', 'mao_obra_balcao_jc', 200::numeric, '[TESTE] Balcão setembro'),
   ('96300000-0000-4000-8000-000000000105'::uuid, '96300000-0000-4000-8000-000000000205'::uuid, date '2026-09-01', 'geral', 'mao_obra_encargos', 100::numeric, '[TESTE] Encargos sem equipe setembro'),
@@ -55,13 +54,46 @@ from (values
   ('96300000-0000-4000-8000-00000000010b'::uuid, '96300000-0000-4000-8000-00000000020b'::uuid, date '2026-09-01', 'geral', 'emprestimos', 666::numeric, '[TESTE] Abaixo da linha excluído setembro'),
   ('96300000-0000-4000-8000-00000000010c'::uuid, '96300000-0000-4000-8000-00000000020c'::uuid, date '2026-09-01', 'geral', 'servicos_terceiros', 500::numeric, '[TESTE] Estorno excluído setembro'),
   ('96300000-0000-4000-8000-000000000111'::uuid, '96300000-0000-4000-8000-000000000211'::uuid, date '2026-10-01', 'jc', 'clientes_pj', 1000::numeric, '[TESTE] Receita PJ outubro'),
-  ('96300000-0000-4000-8000-000000000112'::uuid, '96300000-0000-4000-8000-000000000212'::uuid, date '2026-10-01', 'geral', 'buck_ex', 2000::numeric, '[TESTE] Receita Buck outubro'),
   ('96300000-0000-4000-8000-000000000113'::uuid, '96300000-0000-4000-8000-000000000213'::uuid, date '2026-10-01', 'geral', 'ocupacao', 2000::numeric, '[TESTE] Ocupação outubro'),
   ('96300000-0000-4000-8000-000000000114'::uuid, '96300000-0000-4000-8000-000000000214'::uuid, date '2026-10-01', 'jc', 'mao_obra_balcao_jc', 400::numeric, '[TESTE] Balcão outubro'),
   ('96300000-0000-4000-8000-000000000115'::uuid, '96300000-0000-4000-8000-000000000215'::uuid, date '2026-10-01', 'geral', 'mao_obra_producao', 178.125::numeric, '[TESTE] Produção outubro')
 ) fixture(id, request_id, month_start, store, category_key, amount, description)
 join public.finance_categories category on category.key = fixture.category_key
 on conflict (id) do update set amount = excluded.amount, planned_amount = excluded.planned_amount;
+
+-- A Buck entra pelo fluxo de recebíveis; o helper cria o lançamento legítimo
+-- no Financeiro com source=contas_receber e a competência do faturamento.
+insert into public.customers (id, name, payment_term_days, active)
+values ('96300000-0000-4000-8000-0000000000c1', '[TESTE] Buck Indicadores', 15, true)
+on conflict (id) do nothing;
+
+insert into public.receivables (
+  id, request_id, customer_id, origin, finance_category_id, description,
+  invoice_date, original_due_date, due_date, amount, created_by, period_start, period_end
+)
+select fixture.id, fixture.request_id, customer.id, 'romaneio_ex', category.id, fixture.description,
+  fixture.invoice_date, fixture.due_date, fixture.due_date, fixture.amount,
+  '96300000-0000-4000-8000-000000000001', fixture.period_start, fixture.period_end
+from (values
+  ('96300000-0000-4000-8000-000000000301'::uuid, '96300000-0000-4000-8000-000000000401'::uuid, date '2026-09-13', date '2026-09-27', date '2026-09-07', date '2026-09-13', 1000::numeric, '[TESTE] Buck setembro'),
+  ('96300000-0000-4000-8000-000000000302'::uuid, '96300000-0000-4000-8000-000000000402'::uuid, date '2026-10-11', date '2026-10-25', date '2026-10-05', date '2026-10-11', 2000::numeric, '[TESTE] Buck outubro')
+) fixture(id, request_id, invoice_date, due_date, period_start, period_end, amount, description)
+join public.customers customer on customer.id = '96300000-0000-4000-8000-0000000000c1'
+join public.finance_categories category on category.key = 'buck_ex'
+on conflict (id) do nothing;
+
+insert into public.receivable_receipts (
+  id, request_id, receivable_id, received_date, amount, method, account_id, created_by
+)
+values
+  ('96300000-0000-4000-8000-000000000501', '96300000-0000-4000-8000-000000000601', '96300000-0000-4000-8000-000000000301', date '2026-09-13', 1000, 'outro', '96300000-0000-4000-8000-0000000000a1', '96300000-0000-4000-8000-000000000001'),
+  ('96300000-0000-4000-8000-000000000502', '96300000-0000-4000-8000-000000000602', '96300000-0000-4000-8000-000000000302', date '2026-10-11', 2000, 'outro', '96300000-0000-4000-8000-0000000000a1', '96300000-0000-4000-8000-000000000001')
+on conflict (id) do nothing;
+
+select private.lancar_recibo_no_livro('96300000-0000-4000-8000-000000000501', '96300000-0000-4000-8000-000000000001');
+select private.lancar_recibo_no_livro('96300000-0000-4000-8000-000000000502', '96300000-0000-4000-8000-000000000001');
+select private.atualizar_situacao_receivable('96300000-0000-4000-8000-000000000301');
+select private.atualizar_situacao_receivable('96300000-0000-4000-8000-000000000302');
 
 update public.finance_entries
 set reversed_at = now(), reversed_by = '96300000-0000-4000-8000-000000000001', reversal_reason = '[TESTE] Lançamento estornado'

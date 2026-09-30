@@ -1938,7 +1938,6 @@ select fixture.id, fixture.request_id, 'lancamento', category.id,
   'outro', fixture.description, 'avulso', actor.user_id
 from (values
   ('96400000-0000-4000-8000-000000000101'::uuid, '96400000-0000-4000-8000-000000000201'::uuid, date '2026-09-01', 'jc', 'clientes_pj', 2000::numeric, '[TESTE] Receita PJ setembro'),
-  ('96400000-0000-4000-8000-000000000102'::uuid, '96400000-0000-4000-8000-000000000202'::uuid, date '2026-09-01', 'geral', 'buck_ex', 1000::numeric, '[TESTE] Receita Buck setembro'),
   ('96400000-0000-4000-8000-000000000103'::uuid, '96400000-0000-4000-8000-000000000203'::uuid, date '2026-09-01', 'geral', 'ocupacao', 1000::numeric, '[TESTE] Ocupação setembro'),
   ('96400000-0000-4000-8000-000000000104'::uuid, '96400000-0000-4000-8000-000000000204'::uuid, date '2026-09-01', 'jc', 'mao_obra_balcao_jc', 200::numeric, '[TESTE] Balcão setembro'),
   ('96400000-0000-4000-8000-000000000105'::uuid, '96400000-0000-4000-8000-000000000205'::uuid, date '2026-09-01', 'geral', 'mao_obra_encargos', 100::numeric, '[TESTE] Encargos sem equipe setembro'),
@@ -1950,7 +1949,6 @@ from (values
   ('96400000-0000-4000-8000-00000000010b'::uuid, '96400000-0000-4000-8000-00000000020b'::uuid, date '2026-09-01', 'geral', 'emprestimos', 666::numeric, '[TESTE] Abaixo da linha excluído setembro'),
   ('96400000-0000-4000-8000-00000000010c'::uuid, '96400000-0000-4000-8000-00000000020c'::uuid, date '2026-09-01', 'geral', 'servicos_terceiros', 500::numeric, '[TESTE] Estorno excluído setembro'),
   ('96400000-0000-4000-8000-000000000111'::uuid, '96400000-0000-4000-8000-000000000211'::uuid, date '2026-10-01', 'jc', 'clientes_pj', 1000::numeric, '[TESTE] Receita PJ outubro'),
-  ('96400000-0000-4000-8000-000000000112'::uuid, '96400000-0000-4000-8000-000000000212'::uuid, date '2026-10-01', 'geral', 'buck_ex', 2000::numeric, '[TESTE] Receita Buck outubro'),
   ('96400000-0000-4000-8000-000000000113'::uuid, '96400000-0000-4000-8000-000000000213'::uuid, date '2026-10-01', 'geral', 'ocupacao', 2000::numeric, '[TESTE] Ocupação outubro'),
   ('96400000-0000-4000-8000-000000000114'::uuid, '96400000-0000-4000-8000-000000000214'::uuid, date '2026-10-01', 'jc', 'mao_obra_balcao_jc', 400::numeric, '[TESTE] Balcão outubro'),
   ('96400000-0000-4000-8000-000000000115'::uuid, '96400000-0000-4000-8000-000000000215'::uuid, date '2026-10-01', 'geral', 'mao_obra_producao', 178.125::numeric, '[TESTE] Produção outubro')
@@ -1964,6 +1962,63 @@ cross join lateral (
   limit 1
 ) actor
 on conflict (id) do update set amount = excluded.amount, planned_amount = excluded.planned_amount;
+
+-- A receita da Buck nasce no recebimento de uma cobrança; não se lança
+-- diretamente no livro-caixa. O admin só existe depois do workflow oficial.
+insert into public.receivables (
+  id, request_id, customer_id, origin, finance_category_id, description,
+  invoice_date, original_due_date, due_date, amount, created_by, period_start, period_end
+)
+select fixture.id, fixture.request_id, customer.id, 'romaneio_ex', category.id, fixture.description,
+  fixture.invoice_date, fixture.due_date, fixture.due_date, fixture.amount,
+  actor.user_id, fixture.period_start, fixture.period_end
+from (values
+  ('96400000-0000-4000-8000-000000000301'::uuid, '96400000-0000-4000-8000-000000000401'::uuid, date '2026-09-06', date '2026-09-21', date '2026-08-31', date '2026-09-06', 1000::numeric, '[TESTE] Buck setembro'),
+  ('96400000-0000-4000-8000-000000000302'::uuid, '96400000-0000-4000-8000-000000000402'::uuid, date '2026-10-04', date '2026-10-19', date '2026-09-28', date '2026-10-04', 2000::numeric, '[TESTE] Buck outubro')
+) fixture(id, request_id, invoice_date, due_date, period_start, period_end, amount, description)
+join public.customers customer on customer.id = '60000000-0000-4000-8000-000000000009'
+join public.finance_categories category on category.key = 'buck_ex'
+cross join lateral (
+  select profile.user_id
+  from public.app_profiles profile
+  where profile.role = 'admin' and profile.active
+  order by profile.user_id
+  limit 1
+) actor
+on conflict (id) do nothing;
+
+insert into public.receivable_receipts (
+  id, request_id, receivable_id, received_date, amount, method, account_id, created_by
+)
+select fixture.id, fixture.request_id, fixture.receivable_id, fixture.received_date,
+  fixture.amount, 'outro', account.id, actor.user_id
+from (values
+  ('96400000-0000-4000-8000-000000000501'::uuid, '96400000-0000-4000-8000-000000000601'::uuid, '96400000-0000-4000-8000-000000000301'::uuid, date '2026-09-06', 1000::numeric),
+  ('96400000-0000-4000-8000-000000000502'::uuid, '96400000-0000-4000-8000-000000000602'::uuid, '96400000-0000-4000-8000-000000000302'::uuid, date '2026-10-04', 2000::numeric)
+) fixture(id, request_id, receivable_id, received_date, amount)
+join public.finance_accounts account on account.id = '96400000-0000-4000-8000-0000000000a1'
+cross join lateral (
+  select profile.user_id
+  from public.app_profiles profile
+  where profile.role = 'admin' and profile.active
+  order by profile.user_id
+  limit 1
+) actor
+on conflict (id) do nothing;
+
+select private.lancar_recibo_no_livro(receipt.id, receipt.created_by)
+from public.receivable_receipts receipt
+where receipt.id in (
+  '96400000-0000-4000-8000-000000000501',
+  '96400000-0000-4000-8000-000000000502'
+);
+
+select private.atualizar_situacao_receivable(receivable.id)
+from public.receivables receivable
+where receivable.id in (
+  '96400000-0000-4000-8000-000000000301',
+  '96400000-0000-4000-8000-000000000302'
+);
 
 update public.finance_entries
 set reversed_at = now(),
