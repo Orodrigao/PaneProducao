@@ -344,15 +344,21 @@ disputavam um único banco de teste compartilhado.
   na `main` e ao fechar PR sem merge.
 - A etiqueta `precisa-banco-preview`, o job que ela disparava e a espera dela
   no `ci.yml` foram removidos do código.
-- **Risco aberto, ainda sem correção:** o job do smoke e o workflow do banco
-  compartilhado dividem a trava de concorrência `banco-preview-compartilhado`.
-  Ela protege de verdade, porque os testes de navegador **escrevem** no banco
-  (criam compra, fornecedor e lançamento financeiro), mas serializa todos os
-  smokes entre si. Em 2026-08-30, com cinco frentes abertas, o GitHub passou a
-  cancelar quem ficava na fila: dois CIs e quatro reconstruções morreram em
-  cascata e o banco ficou sem restaurar. Tirar a trava sem antes separar os
-  testes que escrevem dos que só leem troca o entupimento por falha
-  intermitente, e foi reprovado em revisão nesta data.
+- O job do smoke e o workflow do banco compartilhado dividem a trava de
+  concorrência `banco-preview-compartilhado`. Ela protege de verdade, porque os
+  testes de navegador **escrevem** no banco (criam compra, fornecedor e
+  lançamento financeiro), e por isso serializa todos os smokes entre si. Tirar
+  a trava sem antes separar os testes que escrevem dos que só leem troca o
+  entupimento por falha intermitente, e foi reprovado em revisão em 2026-08-30.
+- **Cancelamento na fila: corrigido em 2026-09-30.** O GitHub guardava um só
+  pendente por grupo e o mais novo cancelava o anterior; em 2026-09-30 o
+  fechamento com merge da PR 476 cancelou a restauração pendente do push dela
+  e o Preview ficou atrás da `main`. Hoje os dois lados usam `queue: max`, das
+  execuções do `Banco Preview` só entra na fila a que vai reconstruir, cada
+  reconstrução restaura o topo da `main` no momento em que começa, e a espera
+  do smoke pela restauração roda fora da fila. Limites e detalhes:
+  `docs/AMBIENTE_PREVIEW.md`. A regra é testada em
+  `scripts/change-scope.test.mjs`.
 - Conferido em 2026-08-30 por leitura direta da API do Supabase, sem escrita:
   as PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e
   saudáveis (`unnlpxjuxikreramqlwz` e `zexjyzvcpxpmzjlwjffe`), ambos criados
@@ -610,11 +616,12 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
    Diagnóstico de falha de smoke deve separar as duas famílias antes de
    aumentar qualquer tempo limite (ver `lessons.md`,
    `tela-vazia-nao-e-tela-carregando`).
-   Em merge com migration, os gatilhos simultâneos de push e fechamento da PR
-   também podem cancelar a reconstrução automática do Banco Preview antes de ela
-   iniciar; o navegador da `main` fica esperando esse check. A recuperação segura
-   é reconstruir o banco fictício pelo workflow próprio e repetir o CI. A causa
-   estrutural de concorrência ainda precisa de correção separada.
+   O cancelamento da reconstrução automática do Banco Preview por gatilhos
+   simultâneos (push e fechamento da PR) foi corrigido em 2026-09-30 pela fila
+   com `queue: max` (ver a seção do banco compartilhado acima). Continuam os
+   limites descritos em `docs/AMBIENTE_PREVIEW.md`: se a reconstrução falhar ou
+   a espera do navegador da `main` esgotar, reconstrua o banco fictício pelo
+   workflow próprio e repita só o navegador.
 
 ## Próximas fases aprovadas
 
