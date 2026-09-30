@@ -101,7 +101,7 @@ banco ficou atrás da `main` sem aviso. Desde 2026-09-30:
 
 Limites que continuam: reconstrução que falha deixa o banco atrás até a
 próxima dar certo (o job fica vermelho); com mais de 100 esperando o GitHub
-cancela quem chega; a espera do smoke no push desiste depois de 30 minutos,
+cancela quem chega; a espera do smoke no push desiste depois de cerca de 30 minutos,
 e com muitos smokes na frente da restauração o navegador reprova mesmo que a
 restauração termine depois (reexecute só o navegador); e execuções que já
 estavam na fila com o `ci.yml` antigo, ou reexecuções de runs antigos, seguem
