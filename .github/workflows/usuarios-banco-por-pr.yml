@@ -43,6 +43,11 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     name: Criar contas ficticias e conferir perfis
     runs-on: ubuntu-latest
+    # Lidos pelo job do navegador, que nao recebe o token do Supabase. Nenhum
+    # dos dois e segredo: o endereco do banco ja vai no JavaScript do preview.
+    outputs:
+      supabase_url: ${{ steps.banco.outputs.url }}
+      head_sha: ${{ steps.banco.outputs.head_sha }}
     env:
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
       GIT_BRANCH: ${{ github.event.pull_request.head.ref || inputs.git_branch }}
@@ -127,3 +132,118 @@ jobs:
 
       - name: Criar contas, ligar perfis e verificar o banco isolado
         run: node scripts/provision-pr-branch-users.mjs
+
+      # Fica aqui, e nao no script acima, de proposito: o script vem sempre da
+      # main, entao uma mudanca nele so valeria depois do merge. A saida do
+      # `-o env` traz credenciais do banco; so a linha SUPABASE_URL sai daqui, e
+      # nada e impresso. Producao e o banco compartilhado sao recusados, e o
+      # job do navegador confere de novo com codigo testado.
+      #
+      # O teste scripts/preview-pr-guarda.test.mjs executa ESTE bloco com um
+      # `supabase` falso. Mudou aqui, rode `node --test scripts/preview-pr-guarda.test.mjs`.
+      - name: Publicar o endereco do banco desta PR
+        id: banco
+        run: |
+          set -euo pipefail
+          SAIDA="$(supabase --experimental branches get "$GIT_BRANCH" --project-ref gohluceldchoitihrimw -o env)"
+          URL="$(printf '%s\n' "$SAIDA" | grep -E '^SUPABASE_URL=' | head -n 1 | cut -d= -f2- | tr -d "\"'" || true)"
+          unset SAIDA
+          if [[ ! "$URL" =~ ^https://[a-z0-9]{20}\.supabase\.co$ ]]; then
+            echo "::error::O Supabase nao devolveu um endereco valido para o banco desta PR."
+            exit 1
+          fi
+          case "$URL" in
+            *gohluceldchoitihrimw*|*tuqzhjsbodoycjbmwuqm*)
+              echo "::error::O endereco devolvido e producao ou o banco compartilhado, nunca o banco desta PR."
+              exit 1
+              ;;
+          esac
+          if [[ ! "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Commit da PR ausente ou invalido."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Banco desta PR: $URL (commit ${PR_HEAD_SHA:0:7})."
+
+  # Piloto, fora da Trava da main: roda Playwright no link da Vercel DESTA PR,
+  # apontado para o banco isolado dela, logando com as contas ficticias. A
+  # senha vem do secret e so existe no passo do Playwright; o agente escreve os
+  # roteiros em test/preview-pr e le o resultado, sem nunca ver a senha.
+  #
+  # Nao recebe o token do Supabase nem o da Vercel. Roda codigo da PR (npm ci e
+  # os roteiros) com a senha de teste, como o job de navegador do ci.yml ja faz;
+  # risco aceito pelo Rodrigo em 30/09/2026.
+  #
+  # always() + guarda: se as contas ficticias nao ficaram prontas (inclusive PR
+  # de fork, onde o provisionamento nem roda), este job fica VERMELHO com o
+  # motivo, nunca "skipped" nem verde.
+  navegador-preview-pr:
+    name: Navegador no preview desta PR
+    needs: provisionar
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: read
+      deployments: read
+      # Ler os commits da PR, para achar o ultimo preview publicado quando o
+      # commit atual so mexeu em documentacao (scripts/preview-da-pr.mjs).
+      pull-requests: read
+    steps:
+      - name: Falhar se as contas ficticias nao ficaram prontas
+        if: needs.provisionar.result != 'success'
+        env:
+          RESULTADO: ${{ needs.provisionar.result }}
+        run: |
+          echo "::error::O provisionamento das contas ficticias terminou como '$RESULTADO'. Sem ele o navegador nao tem em quem entrar; este check nao pode ser dispensado em silencio."
+          exit 1
+
+      - name: Buscar o codigo desta PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.provisionar.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Esperar o preview desta PR apontar para o banco dela
+        id: pronto
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_HEAD_SHA: ${{ needs.provisionar.outputs.head_sha }}
+          PREVIEW_PR_SUPABASE_URL: ${{ needs.provisionar.outputs.supabase_url }}
+        run: node scripts/preview-pr-pronto.mjs
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Rodar os roteiros no preview desta PR
+        env:
+          PREVIEW_PR_BASE_URL: ${{ steps.pronto.outputs.base_url }}
+          PREVIEW_PR_SUPABASE_URL: ${{ steps.pronto.outputs.supabase_url }}
+          SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
+        run: npx playwright test --config playwright.preview-pr.config.ts
+
+      # Zero testes, teste pulado, teste que so passou repetindo ou matriz sem
+      # perfil/loja/esperado: o Playwright sairia verde, este passo reprova.
+      - name: Resumir perfis e resultados
+        if: always() && steps.pronto.outcome == 'success'
+        run: node scripts/preview-pr-resumo.mjs test-results/preview-pr/relatorio.json
+
+      # So a arvore de acessibilidade da tela na falha, como no ci.yml. Trace,
+      # video e screenshot guardariam a sessao num repositorio publico.
+      - name: Guardar a foto da tela quando o navegador falhar
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: navegador-preview-pr-falha-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/preview-pr/saida/**/error-context.md
+          if-no-files-found: ignore
+          retention-days: 7

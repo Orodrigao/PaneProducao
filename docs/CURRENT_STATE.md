@@ -45,6 +45,11 @@ incorporada à `main`.
   também não exige a PR atualizada com a `main` antes do merge
   (`strict_required_status_checks_policy: false`): atualizar a base depois do
   merge de outro agente é regra escrita, não trava.
+- **Piloto fora da trava desde 30/09/2026:** `Navegador no preview desta PR`,
+  job de `Usuarios do Banco por PR`, roda Playwright no link da Vercel da PR que
+  mexe em `supabase/`, apontado para o banco isolado dela, com a senha fictícia
+  só no GitHub. Entra na trava só por decisão separada do Rodrigo, depois de
+  umas dez PRs estáveis. Funcionamento em `docs/AMBIENTE_PREVIEW.md`.
 - **As regras comuns da equipe de IA** — MASTER, protocolo, manuais da
   portaria e de coordenação e as skills de função — vivem no repositório
   `Orodrigao/equipe-ia` e são instaladas na máquina do Rodrigo. Desde esta
