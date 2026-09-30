@@ -158,10 +158,14 @@ describe('tentativas de gravação de Pedidos PJ', () => {
 
     rpc.mockResolvedValueOnce({
       data: null,
-      error: { code: '40001', message: 'Pedido mudou; recarregue antes de salvar novamente.' },
+      error: { code: 'PT409', message: 'Pedido mudou; recarregue antes de salvar novamente.' },
     })
     const knownConflict = await replacePjOrder(attempt, rows, expectedRows).catch(error => error)
-    expect(knownConflict).toMatchObject({ code: '40001', ambiguous: false })
+    expect(knownConflict).toMatchObject({
+      code: 'PT409',
+      ambiguous: false,
+      message: 'Pedido mudou; recarregue antes de salvar novamente.',
+    })
 
     rpc.mockResolvedValueOnce({
       data: null,

@@ -249,7 +249,7 @@ select throws_ok(
        '[{"order_id":"96000000-0000-4000-8000-0000000000e1","quantity":3.1}]'::jsonb,
        null
      ) $$,
-  '40001',
+  'PT409',
   null,
   'quem abriu a tela antes da gravacao alheia e mandado recarregar, nao vence por chegar depois'
 );
