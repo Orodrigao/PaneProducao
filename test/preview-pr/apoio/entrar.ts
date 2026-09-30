@@ -71,14 +71,19 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
   if (paginasCercadas.has(page)) return
   paginasCercadas.add(page)
   const permitidos = new Set([destino.base.host, destino.banco.host])
+  // Quando o teste termina com pedidos ainda em voo (a tela do Romaneio
+  // dispara varios ao abrir), completar ou abortar esses pedidos estoura
+  // "Test ended" e derrubava o teste ja concluido (canario PR 470). Com a
+  // pagina fechada nao ha para onde o pedido ir; o erro e so descartado.
+  const semPagina = () => undefined
   await page.route('**/*', async (route) => {
     const alvo = new URL(route.request().url())
     if (alvo.protocol !== 'https:' || !permitidos.has(alvo.host)) {
-      await route.abort('blockedbyclient')
+      await route.abort('blockedbyclient').catch(semPagina)
       return
     }
     if (alvo.host !== destino.banco.host) {
-      await route.continue()
+      await route.continue().catch(semPagina)
       return
     }
     // O pedido de login leva a senha ao banco. `continue` seguiria um
@@ -86,13 +91,19 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
     // navegador tambem nao garante que o pedido seguinte volte a ela (o
     // Playwright so chama a rota no primeiro endereco da cadeia; 307/308
     // reenviam o corpo). A API do Supabase nao redireciona; se redirecionar,
-    // o pedido morre aqui.
-    const resposta = await route.fetch({ maxRedirects: 0 })
-    if (resposta.status() >= 300 && resposta.status() < 400) {
-      await route.abort('blockedbyclient')
+    // o pedido morre aqui. Falha no caminho tambem aborta: nunca deixa passar.
+    let resposta
+    try {
+      resposta = await route.fetch({ maxRedirects: 0 })
+    } catch {
+      await route.abort('failed').catch(semPagina)
       return
     }
-    await route.fulfill({ response: resposta })
+    if (resposta.status() >= 300 && resposta.status() < 400) {
+      await route.abort('blockedbyclient').catch(semPagina)
+      return
+    }
+    await route.fulfill({ response: resposta }).catch(semPagina)
   })
 }
 
