@@ -3,6 +3,27 @@
 -- Contas com senha sao criadas pelo Supabase Auth na etapa de infraestrutura;
 -- este seed apenas liga perfis/permissoes quando os e-mails ja existem.
 
+-- Banco de teste nunca chama a producao pelo agendador. Migrations agendam no
+-- pg_cron chamadas com o endereco de producao fixo (o relatorio diario de
+-- contas a pagar, a cada 15 minutos); em Preview, banco por PR e CI essas
+-- chamadas chegavam a producao com o segredo do cofre local e voltavam 401.
+-- O job continua existindo, desligado, para o teste de banco conferir o
+-- agendamento que producao usa. Producao nunca roda este seed.
+do $$
+declare
+  v_job_id bigint;
+begin
+  for v_job_id in
+    select job.jobid
+    from cron.job job
+    where job.active
+      and job.command like '%gohluceldchoitihrimw.supabase.co%'
+  loop
+    perform cron.alter_job(job_id := v_job_id, active := false);
+  end loop;
+end;
+$$;
+
 -- Producao grava o codigo do destino em MAIUSCULAS ('JC', 'JA', 'EX'). O seed
 -- precisa reproduzir isso: quem compara o codigo sem normalizar passava em
 -- producao e falhava no Preview. Atencao: `code` e o codigo do destino, e nao
