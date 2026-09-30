@@ -171,16 +171,33 @@ export function buildPricingChanges(
     })
   }
 
+  // Margem mínima acima da desejada, pelo valor que vale de fato: na exceção de
+  // categoria, campo vazio herda o do canal. Mesma regra do banco.
   for (const channel of PRICING_CHANNELS) {
-    const categoryIds = new Set<string | null>([null])
+    const channelDesiredId = slotId({ key: 'margem_desejada', channel, categoryId: null })
+    const channelMinimumId = slotId({ key: 'margem_minima', channel, categoryId: null })
+    const channelDesired = effectiveDraftValue(channelDesiredId, draft, current)
+    const channelMinimum = effectiveDraftValue(channelMinimumId, draft, current)
+    if (channelDesired !== null && channelMinimum !== null && channelMinimum > channelDesired && !errors[channelMinimumId]) {
+      errors[channelMinimumId] = 'A margem mínima não pode ser maior que a desejada.'
+    }
+
+    const categoryIds = new Set<string>()
     for (const slot of slots) if (slot.channel === channel && slot.categoryId) categoryIds.add(slot.categoryId)
     for (const categoryId of categoryIds) {
       const desiredId = slotId({ key: 'margem_desejada', channel, categoryId })
       const minimumId = slotId({ key: 'margem_minima', channel, categoryId })
-      const desired = effectiveDraftValue(desiredId, draft, current)
-      const minimum = effectiveDraftValue(minimumId, draft, current)
-      if (desired !== null && minimum !== null && minimum > desired && !errors[minimumId]) {
-        errors[minimumId] = 'A margem mínima não pode ser maior que a desejada.'
+      const ownDesired = effectiveDraftValue(desiredId, draft, current)
+      const ownMinimum = effectiveDraftValue(minimumId, draft, current)
+      const desired = ownDesired ?? channelDesired
+      const minimum = ownMinimum ?? channelMinimum
+      if (desired === null || minimum === null || minimum <= desired) continue
+      if (ownMinimum !== null && !errors[minimumId]) {
+        errors[minimumId] = ownDesired === null
+          ? 'A margem mínima não pode ser maior que a desejada do canal, que vale aqui.'
+          : 'A margem mínima não pode ser maior que a desejada.'
+      } else if (ownDesired !== null && !errors[desiredId]) {
+        errors[desiredId] = 'A margem desejada não pode ser menor que a mínima do canal, que vale aqui.'
       }
     }
   }
@@ -321,4 +338,36 @@ export function pricingSaveErrorMessage(error: unknown): string {
     return message ? `Não foi possível salvar: ${message}` : 'Não foi possível salvar: algum valor foi recusado.'
   }
   return 'Não foi possível salvar. Nenhum valor foi alterado; o que você digitou continua na tela.'
+}
+
+export type PricingSaveOutcome =
+  | { kind: 'saved'; message: string }
+  | { kind: 'saved-reload-failed'; message: string }
+  | { kind: 'error'; message: string }
+
+/**
+ * Grava e relê. Gravar e reler são falhas diferentes: se a gravação passou e
+ * só a releitura falhou, a mensagem não pode dizer que nada foi salvo.
+ */
+export async function runPricingSave(
+  changes: readonly PricingChange[],
+  save: (changes: readonly PricingChange[]) => Promise<number>,
+  reload: () => Promise<void>,
+): Promise<PricingSaveOutcome> {
+  let saved: number
+  try {
+    saved = await save(changes)
+  } catch (error) {
+    return { kind: 'error', message: pricingSaveErrorMessage(error) }
+  }
+  const summary = saved === 1 ? '1 valor mudou' : `${saved} valores mudaram`
+  try {
+    await reload()
+  } catch {
+    return {
+      kind: 'saved-reload-failed',
+      message: `Configuração salva (${summary}), mas a tela não conseguiu mostrar os valores novos. Recarregue a página; o que você digitou continua na tela.`,
+    }
+  }
+  return { kind: 'saved', message: `Configuração salva: ${summary}.` }
 }

@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(62);
+select plan(69);
 
 -- Contrato de acesso ----------------------------------------------------------
 select ok(not has_table_privilege('authenticated', 'private.pricing_settings_history', 'select'),
@@ -83,6 +83,7 @@ select throws_ok($$select public.get_pricing_settings()$$, '42501', null, 'Produ
 select set_config('request.jwt.claim.sub','97200000-0000-4000-8000-000000000006',true);
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"imposto_venda","value":6,"previous_value":null}]')$$,
   '42501', null, 'admin inativo não grava a configuração');
+select throws_ok($$select public.get_pricing_settings()$$, '42501', null, 'admin inativo não lê a configuração');
 select throws_ok($$select count(*) from private.pricing_settings_history$$, '42501', null,
   'leitura direta do histórico é recusada pelo banco');
 
@@ -225,6 +226,10 @@ select throws_ok($$select public.save_pricing_settings('[
   '22023', null, 'o mesmo valor duas vezes no salvamento é recusado');
 select throws_ok($$select public.save_pricing_settings('{"setting_key":"imposto_venda"}')$$,
   '22023', null, 'corpo que não é lista é recusado');
+select throws_ok($$select public.save_pricing_settings('[1]')$$,
+  '22023', null, 'item que não é objeto é recusado');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":1,"value":3,"previous_value":null}]')$$,
+  '22023', null, 'canal que não é texto é recusado');
 select throws_ok($$select public.save_pricing_settings('[
     {"setting_key":"taxa_canal","channel":"ifood","value":20,"previous_value":23},
     {"setting_key":"margem_minima","channel":"balcao","value":46,"previous_value":30}]')$$,
@@ -232,10 +237,25 @@ select throws_ok($$select public.save_pricing_settings('[
 select is((select (item ->> 'value')::numeric from pg_catalog.jsonb_array_elements(public.get_pricing_settings() -> 'current') item
     where item ->> 'setting_key' = 'taxa_canal' and item ->> 'channel' = 'ifood'), 23.00::numeric,
   'recusa de um item não grava os outros do mesmo salvamento');
+-- Herança: campo vazio na exceção vale o do canal (desejada do balcão = 45,
+-- mínima do balcão = 30). A comparação é pelo valor que vale de fato.
+select throws_ok(pg_catalog.format($q$select public.save_pricing_settings('[
+    {"setting_key":"margem_minima","channel":"balcao","category_id":"%s","value":60,"previous_value":null}]')$q$,
+    :'v_revenda'),
+  '22023', null, 'mínima de exceção acima da desejada herdada do canal é recusada');
 select is((public.save_pricing_settings(pg_catalog.format($j$[
-    {"setting_key":"margem_minima","channel":"balcao","category_id":"%s","value":60,"previous_value":null}]$j$,
+    {"setting_key":"margem_minima","channel":"balcao","category_id":"%s","value":40,"previous_value":null}]$j$,
     :'v_revenda')::jsonb) ->> 'saved')::integer, 1,
-  'exceção de revenda com só a mínima grava: a comparação é dentro da mesma categoria');
+  'mínima de exceção abaixo da desejada herdada do canal grava');
+select throws_ok($$select public.save_pricing_settings('[
+    {"setting_key":"margem_desejada","channel":"balcao","value":35,"previous_value":45}]')$$,
+  '22023', null, 'baixar a desejada do canal abaixo da mínima de uma exceção que a herda é recusado');
+select is((public.save_pricing_settings('[{"setting_key":"margem_minima","channel":"buck","value":25,"previous_value":null}]') ->> 'saved')::integer, 1,
+  'mínima do canal Buck grava sem desejada definida');
+select throws_ok(pg_catalog.format($q$select public.save_pricing_settings('[
+    {"setting_key":"margem_desejada","channel":"buck","category_id":"%s","value":20,"previous_value":null}]')$q$,
+    :'v_croissant'),
+  '22023', null, 'desejada de exceção abaixo da mínima herdada do canal é recusada');
 select is((public.save_pricing_settings('[]') ->> 'saved')::integer, 0, 'lista vazia não grava nada');
 
 -- O passado não se reescreve ---------------------------------------------------

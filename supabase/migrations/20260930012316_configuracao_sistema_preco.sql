@@ -326,22 +326,50 @@ begin
     v_saved := v_saved + 1;
   end loop;
 
-  -- Margem mínima acima da desejada, no mesmo canal e categoria, não faz
-  -- sentido. Confere o estado final inteiro, não só o que veio agora.
+  -- Margem mínima acima da desejada não faz sentido. A comparação é pelo valor
+  -- que vale de fato: numa exceção de categoria, o campo vazio herda o do
+  -- canal (é o que a tela promete). Assim, mínima de exceção acima da desejada
+  -- do canal, ou desejada de exceção abaixo da mínima do canal, também é
+  -- recusada. Confere o estado final inteiro, não só o que veio agora.
   if exists (
-    select 1
-      from private.pricing_settings_current() minimum
-      join private.pricing_settings_current() desired
-        on desired.cfg_setting_key = 'margem_desejada'
-       and desired.cfg_channel is not distinct from minimum.cfg_channel
-       and desired.cfg_category_id is not distinct from minimum.cfg_category_id
-     where minimum.cfg_setting_key = 'margem_minima'
-       and minimum.cfg_value is not null
-       and desired.cfg_value is not null
-       and minimum.cfg_value > desired.cfg_value
+    with vigente as (
+      select * from private.pricing_settings_current()
+    ),
+    escopo as (
+      select canal.channel, null::uuid as category_id
+        from pg_catalog.unnest(array['balcao', 'ifood', 'buck']) as canal(channel)
+      union
+      select vigente.cfg_channel, vigente.cfg_category_id
+        from vigente
+       where vigente.cfg_category_id is not null
+    ),
+    efetivo as (
+      select
+        coalesce(
+          (select vigente.cfg_value from vigente
+            where vigente.cfg_setting_key = 'margem_desejada' and vigente.cfg_channel = escopo.channel
+              and vigente.cfg_category_id is not distinct from escopo.category_id),
+          (select vigente.cfg_value from vigente
+            where vigente.cfg_setting_key = 'margem_desejada' and vigente.cfg_channel = escopo.channel
+              and vigente.cfg_category_id is null)
+        ) as desired,
+        coalesce(
+          (select vigente.cfg_value from vigente
+            where vigente.cfg_setting_key = 'margem_minima' and vigente.cfg_channel = escopo.channel
+              and vigente.cfg_category_id is not distinct from escopo.category_id),
+          (select vigente.cfg_value from vigente
+            where vigente.cfg_setting_key = 'margem_minima' and vigente.cfg_channel = escopo.channel
+              and vigente.cfg_category_id is null)
+        ) as minimum
+      from escopo
+    )
+    select 1 from efetivo
+     where efetivo.minimum is not null
+       and efetivo.desired is not null
+       and efetivo.minimum > efetivo.desired
   ) then
     raise exception using errcode = '22023',
-      message = 'A margem mínima não pode ser maior que a margem desejada do mesmo canal.';
+      message = 'A margem mínima não pode ser maior que a margem desejada que vale para o mesmo canal e categoria (campo vazio na exceção usa o valor do canal).';
   end if;
 
   return pg_catalog.jsonb_build_object(

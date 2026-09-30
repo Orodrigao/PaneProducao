@@ -15,7 +15,7 @@ import {
   loadPricingSettings,
   marginExceptionCategories,
   pricingChannelLabel,
-  pricingSaveErrorMessage,
+  runPricingSave,
   savePricingSettings,
   type PricingSettingsData,
 } from '@/lib/pricingSettings'
@@ -23,7 +23,7 @@ import { PricingCategoryCard, PricingChannelCard, PricingPercentField } from '@/
 import { PRICING_HISTORY_STEP, PricingSettingsHistory } from '@/components/PricingSettingsHistory'
 import styles from './page.module.css'
 
-type Notice = { kind: 'ok' | 'error'; text: string } | null
+type Notice = { kind: 'ok' | 'warn' | 'error'; text: string } | null
 
 export default function ConfiguracaoSistemaPage() {
   const router = useRouter()
@@ -102,13 +102,15 @@ export default function ConfiguracaoSistemaPage() {
     setSaving(true)
     setNotice(null)
     try {
-      const saved = await savePricingSettings(changes)
-      setDraft({})
-      setAddedCategoryIds([])
-      await reload()
-      setNotice({ kind: 'ok', text: saved === 1 ? 'Configuração salva: 1 valor mudou.' : `Configuração salva: ${saved} valores mudaram.` })
-    } catch (error) {
-      setNotice({ kind: 'error', text: pricingSaveErrorMessage(error) })
+      const outcome = await runPricingSave(changes, savePricingSettings, reload)
+      // Só descarta o rascunho quando a tela já mostra o que o banco gravou.
+      // Se a releitura falhou, o que foi digitado fica e salvar de novo não
+      // duplica: o banco ignora valor igual ao vigente.
+      if (outcome.kind === 'saved') {
+        setDraft({})
+        setAddedCategoryIds([])
+      }
+      setNotice({ kind: outcome.kind === 'saved' ? 'ok' : outcome.kind === 'saved-reload-failed' ? 'warn' : 'error', text: outcome.message })
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -182,7 +184,8 @@ export default function ConfiguracaoSistemaPage() {
                 {saveBlockedReason && !saving && <small className={styles.fieldMeta}>{saveBlockedReason}</small>}
               </div>
               {notice && (
-                <p className={notice.kind === 'ok' ? 'ps-banner honey' : styles.error} role={notice.kind === 'ok' ? 'status' : 'alert'}>
+                <p className={notice.kind === 'ok' ? 'ps-banner honey' : notice.kind === 'warn' ? 'ps-warning' : styles.error}
+                  role={notice.kind === 'ok' ? 'status' : 'alert'}>
                   {notice.text}
                 </p>
               )}

@@ -16,6 +16,7 @@ import {
   percentInputText,
   pricingChannelLabel,
   pricingSaveErrorMessage,
+  runPricingSave,
   slotId,
   type PricingSettingValue,
 } from './pricingSettings'
@@ -125,15 +126,66 @@ describe('buildPricingChanges', () => {
     expect(buildPricingChanges(slots, { [minimum]: '35' }, current).errors[minimum]).toMatch(/maior que a desejada/)
   })
 
-  it('exceção de categoria compara com a desejada da própria categoria', () => {
-    const categorySlotsList = [...slots, ...categorySlots('cat-1')]
+  it('exceção vazia herda o canal: mínima da exceção acima da desejada do canal é recusada', () => {
+    const withCategory = [...slots, ...categorySlots('cat-1')]
     const current = currentValueMap([saved({ key: 'margem_desejada', channel: 'balcao', value: 30 })])
     const minimum = slotId({ key: 'margem_minima', channel: 'balcao', categoryId: 'cat-1' })
-    const result = buildPricingChanges(categorySlotsList, { [minimum]: '40' }, current)
-    expect(result.errors).toEqual({})
-    expect(result.changes).toEqual([
-      { setting_key: 'margem_minima', channel: 'balcao', category_id: 'cat-1', value: 40, previous_value: null },
+    const result = buildPricingChanges(withCategory, { [minimum]: '40' }, current)
+    expect(result.errors[minimum]).toMatch(/desejada do canal/)
+    expect(buildPricingChanges(withCategory, { [minimum]: '25' }, current)).toEqual({
+      changes: [{ setting_key: 'margem_minima', channel: 'balcao', category_id: 'cat-1', value: 25, previous_value: null }],
+      errors: {},
+    })
+  })
+
+  it('desejada da exceção abaixo da mínima herdada do canal é recusada', () => {
+    const withCategory = [...slots, ...categorySlots('cat-1')]
+    const current = currentValueMap([saved({ key: 'margem_minima', channel: 'buck', value: 25 })])
+    const desired = slotId({ key: 'margem_desejada', channel: 'buck', categoryId: 'cat-1' })
+    expect(buildPricingChanges(withCategory, { [desired]: '20' }, current).errors[desired]).toMatch(/mínima do canal/)
+  })
+
+  it('baixar a desejada do canal aponta a exceção cuja mínima passa a ficar acima', () => {
+    const withCategory = [...slots, ...categorySlots('cat-1')]
+    const current = currentValueMap([
+      saved({ key: 'margem_desejada', channel: 'balcao', value: 45 }),
+      saved({ key: 'margem_minima', channel: 'balcao', categoryId: 'cat-1', value: 40 }),
     ])
+    const channelDesired = slotId({ key: 'margem_desejada', channel: 'balcao', categoryId: null })
+    const minimum = slotId({ key: 'margem_minima', channel: 'balcao', categoryId: 'cat-1' })
+    expect(buildPricingChanges(withCategory, { [channelDesired]: '35' }, current).errors[minimum]).toBeDefined()
+  })
+
+  it('exceção com desejada própria compara com ela, não com a do canal', () => {
+    const withCategory = [...slots, ...categorySlots('cat-1')]
+    const current = currentValueMap([
+      saved({ key: 'margem_desejada', channel: 'balcao', value: 30 }),
+      saved({ key: 'margem_desejada', channel: 'balcao', categoryId: 'cat-1', value: 50 }),
+    ])
+    const minimum = slotId({ key: 'margem_minima', channel: 'balcao', categoryId: 'cat-1' })
+    expect(buildPricingChanges(withCategory, { [minimum]: '40' }, current).errors).toEqual({})
+  })
+})
+
+describe('runPricingSave', () => {
+  it('gravou e releu: descarta o rascunho', async () => {
+    const outcome = await runPricingSave([], async () => 2, async () => {})
+    expect(outcome).toEqual({ kind: 'saved', message: 'Configuração salva: 2 valores mudaram.' })
+  })
+
+  it('gravou mas não releu: diz que salvou e não que falhou', async () => {
+    const outcome = await runPricingSave([], async () => 1, async () => { throw new Error('rede') })
+    expect(outcome.kind).toBe('saved-reload-failed')
+    expect(outcome.message).toMatch(/Configuração salva \(1 valor mudou\)/)
+    expect(outcome.message).toMatch(/Recarregue a página/)
+  })
+
+  it('banco recusou: não relê e explica pelo código', async () => {
+    let reloaded = false
+    const outcome = await runPricingSave([], async () => { throw { code: '40001' } }, async () => { reloaded = true })
+    expect(outcome.kind).toBe('error')
+    expect(outcome.message).toMatch(/Outro salvamento/)
+    expect(reloaded).toBe(false)
   })
 })
 
