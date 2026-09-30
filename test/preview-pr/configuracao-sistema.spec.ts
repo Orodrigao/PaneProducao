@@ -2,9 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco, type Perfil } from './apoio/entrar'
 
 // Configuracao do Sistema (imposto, taxas e margens): so o administrador ve e
-// muda, e quem garante e o banco. Aqui o admin grava pela tela um valor com
-// marca unica desta execucao, rele (tela e banco) e devolve o valor que
-// estava antes. O Financeiro da JC, que ve dinheiro mas nao administra, e
+// muda, e quem garante e o banco. Aqui o admin grava pela tela um valor desta
+// execucao (diferente do vigente), rele (tela e banco) e devolve o valor que
+// estava antes. Execucoes do job nesta PR nao correm juntas, entao o valor so
+// precisa ser diferente do que estava. O Financeiro da JC, que ve dinheiro mas nao administra, e
 // barrado na tela e nas duas funcoes do banco com o token da propria sessao;
 // o mesmo pedido passa para o admin, para um 403 por outro motivo nao parecer
 // bloqueio.
@@ -35,7 +36,7 @@ async function chamarNoBanco(page: Page, perfil: Perfil, pedido: Pedido) {
   })
 }
 
-/** Um percentual desta execucao, diferente do que o campo ja mostra. */
+/** Um percentual desta execucao (1 a 98,99), diferente do que o campo ja mostra. */
 function marcaDaExecucao(atual: string): string {
   let centesimos = 100 + (Date.now() % 9800)
   let texto = PERCENTUAL.format(centesimos / 100)
@@ -70,10 +71,12 @@ async function impostoNoBanco(page: Page, acesso: AcessoAoBanco): Promise<string
 }
 
 /**
- * Limpeza quando o teste caiu no meio: devolve o valor de antes pelo banco,
- * dizendo que o vigente e a marca desta execucao. Se a marca nao chegou a ser
- * gravada, ou outra pessoa mudou depois, o banco recusa (PT409) e nada e
- * sobrescrito. A falha original do teste e a que aparece.
+ * Tentativa de limpeza quando o teste ja falhou no meio: devolve o valor de
+ * antes pelo banco, dizendo que o vigente e a marca desta execucao. Se a marca
+ * nao chegou a ser gravada, ou o vigente mudou depois, o banco recusa (PT409)
+ * e nada e sobrescrito. O resultado nao e conferido de proposito: o teste ja
+ * esta vermelho, a falha original e a que precisa aparecer, e o pior caso e
+ * sobrar a marca no banco descartavel desta PR (a proxima execucao parte dela).
  */
 async function devolverPeloBanco(page: Page, acesso: AcessoAoBanco, marca: string, antes: string) {
   try {
@@ -83,7 +86,7 @@ async function devolverPeloBanco(page: Page, acesso: AcessoAoBanco, marca: strin
       maxRedirects: 0,
     })
   } catch {
-    // Pagina ja encerrada: sobra so a marca no banco isolado desta PR.
+    // Sessao ou pagina indisponivel: fica a marca, pelo motivo acima.
   }
 }
 
@@ -144,10 +147,13 @@ test('Financeiro JC e barrado da Configuracao do Sistema na tela',
   async ({ page }) => {
     await entrarComo(page, 'financeiroJc')
     await page.goto(TELA)
-    // O guarda de rota manda para a primeira tela do perfil; qualquer destino
-    // serve, menos ficar aqui ou cair no login (sessao perdida nao e bloqueio).
-    await expect(page).toHaveURL((endereco) =>
-      !/^\/admin\/configuracao\/?$/.test(endereco.pathname) && !/^\/login\/?$/.test(endereco.pathname))
+    const origem = new URL(page.url()).origin
+    // O guarda de rota manda para a primeira rota do perfil, que na conta
+    // ficticia (supabase/seed.sql) e o inicio "/". Pagina de erro ou login
+    // (sessao perdida) nao contam como bloqueio: o menu precisa estar aberto
+    // com o nome do financeiro.
+    await expect(page).toHaveURL((endereco) => endereco.origin === origem && endereco.pathname === '/')
+    await expect(page.getByTitle('Financeiro JC Teste')).toBeVisible()
     await expect(page.getByRole('heading', { name: TITULO })).toHaveCount(0)
     await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveCount(0)
   })
