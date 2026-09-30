@@ -590,6 +590,7 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.acessar', '*'),
     ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.visualizar', '*'),
     ('rodrigao+teste-vendas-ja@gmail.com', 'romaneio.confirmar_saida', '*'),
+    ('rodrigao+teste-vendas-ja@gmail.com', 'producao_cozinha.lancar', 'ja'), -- DEFEITO PROPOSITAL DO CANARIO
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.acessar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.visualizar', '*'),
     ('rodrigao+teste-expedicao-jc@gmail.com', 'romaneio.criar', '*'),
