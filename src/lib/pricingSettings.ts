@@ -338,7 +338,9 @@ export function pricingSaveErrorMessage(error: unknown): string {
     const message = (error as { message?: string }).message
     return message ? `Não foi possível salvar: ${message}` : 'Não foi possível salvar: algum valor foi recusado.'
   }
-  return 'Não foi possível salvar. Nenhum valor foi alterado; o que você digitou continua na tela.'
+  // Falha de rede ou desconhecida: a gravação pode ter entrado antes da
+  // resposta se perder, então a mensagem não afirma que nada mudou.
+  return 'Não foi possível confirmar o salvamento. Recarregue a página para ver o que ficou gravado; o que você digitou continua na tela.'
 }
 
 export type PricingSaveOutcome =

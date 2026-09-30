@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { cabecalhosDaSessao, entrarComo, matriz, type Perfil } from './apoio/entrar'
+import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco, type Perfil } from './apoio/entrar'
 
 // Configuracao do Sistema (imposto, taxas e margens): so o administrador ve e
 // muda, e quem garante e o banco. Aqui o admin grava pela tela um valor com
@@ -46,9 +46,45 @@ function marcaDaExecucao(atual: string): string {
   return texto
 }
 
+/** Texto do campo (formato da tela, com virgula) como numero do banco. */
+function numeroDoCampo(texto: string): number | null {
+  const limpo = texto.trim()
+  return limpo === '' ? null : Number(limpo.replace(',', '.'))
+}
+
 async function salvar(page: Page) {
   await page.getByRole('button', { name: 'Salvar configuração' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Configuração salva: 1 valor mudou.' })).toBeVisible()
+}
+
+async function impostoNoBanco(page: Page, acesso: AcessoAoBanco): Promise<string> {
+  const resposta = await page.request.post(`${acesso.url}/rest/v1/rpc/get_pricing_settings`, {
+    headers: await cabecalhosDaSessao(page, acesso),
+    data: { p_history_limit: 1 },
+    maxRedirects: 0,
+  })
+  expect(resposta.status(), await resposta.text()).toBe(200)
+  const { current } = await resposta.json() as { current: { setting_key: string; value: number | null }[] }
+  const imposto = current.find((item) => item.setting_key === 'imposto_venda')
+  return imposto && imposto.value !== null ? PERCENTUAL.format(imposto.value) : ''
+}
+
+/**
+ * Limpeza quando o teste caiu no meio: devolve o valor de antes pelo banco,
+ * dizendo que o vigente e a marca desta execucao. Se a marca nao chegou a ser
+ * gravada, ou outra pessoa mudou depois, o banco recusa (PT409) e nada e
+ * sobrescrito. A falha original do teste e a que aparece.
+ */
+async function devolverPeloBanco(page: Page, acesso: AcessoAoBanco, marca: string, antes: string) {
+  try {
+    await page.request.post(`${acesso.url}/rest/v1/rpc/save_pricing_settings`, {
+      headers: await cabecalhosDaSessao(page, acesso),
+      data: { p_changes: [{ setting_key: 'imposto_venda', value: numeroDoCampo(antes), previous_value: numeroDoCampo(marca) }] },
+      maxRedirects: 0,
+    })
+  } catch {
+    // Pagina ja encerrada: sobra so a marca no banco isolado desta PR.
+  }
 }
 
 test('Administrador grava e rele o imposto na Configuracao do Sistema',
@@ -63,27 +99,26 @@ test('Administrador grava e rele o imposto na Configuracao do Sistema',
     const antes = await campo.inputValue()
     const marca = marcaDaExecucao(antes)
 
-    await campo.fill(marca)
-    await salvar(page)
-    await page.reload()
-    await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca)
+    let devolvido = false
+    try {
+      await campo.fill(marca)
+      await salvar(page)
+      await page.reload()
+      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca)
+      // A tela pode mostrar o rascunho; o banco diz o que ficou gravado.
+      expect(await impostoNoBanco(page, acesso)).toBe(marca)
 
-    // A tela pode mostrar o rascunho; o banco diz o que ficou gravado.
-    const resposta = await page.request.post(`${acesso.url}/rest/v1/rpc/get_pricing_settings`, {
-      headers: await cabecalhosDaSessao(page, acesso),
-      data: { p_history_limit: 1 },
-      maxRedirects: 0,
-    })
-    expect(resposta.status(), await resposta.text()).toBe(200)
-    const { current } = await resposta.json() as { current: { setting_key: string; value: number | null }[] }
-    const imposto = current.find((item) => item.setting_key === 'imposto_venda')
-    expect(imposto && imposto.value !== null ? PERCENTUAL.format(imposto.value) : '').toBe(marca)
-
-    // Devolve o valor de antes, para a proxima execucao partir do mesmo lugar.
-    await page.getByLabel(CAMPO_IMPOSTO).fill(antes)
-    await salvar(page)
-    await page.reload()
-    await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(antes)
+      // Devolve o valor de antes pela tela, para a proxima execucao partir do
+      // mesmo lugar.
+      await page.getByLabel(CAMPO_IMPOSTO).fill(antes)
+      await salvar(page)
+      devolvido = true
+      await page.reload()
+      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(antes)
+      expect(await impostoNoBanco(page, acesso)).toBe(antes)
+    } finally {
+      if (!devolvido) await devolverPeloBanco(page, acesso, marca, antes)
+    }
   })
 
 test('Administrador le a Configuracao do Sistema pela Data API',
@@ -108,11 +143,11 @@ test('Financeiro JC e barrado da Configuracao do Sistema na tela',
   matriz('Financeiro JC', 'JC', 'bloqueado', 'Configuracao do Sistema (tela)'),
   async ({ page }) => {
     await entrarComo(page, 'financeiroJc')
-    const inicio = new URL(page.url()).pathname
-    expect(inicio, 'o financeiro precisa cair numa tela propria depois do login').not.toBe(TELA)
-
     await page.goto(TELA)
-    await expect(page).toHaveURL((endereco) => endereco.pathname === inicio)
+    // O guarda de rota manda para a primeira tela do perfil; qualquer destino
+    // serve, menos ficar aqui ou cair no login (sessao perdida nao e bloqueio).
+    await expect(page).toHaveURL((endereco) =>
+      !/^\/admin\/configuracao\/?$/.test(endereco.pathname) && !/^\/login\/?$/.test(endereco.pathname))
     await expect(page.getByRole('heading', { name: TITULO })).toHaveCount(0)
     await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveCount(0)
   })

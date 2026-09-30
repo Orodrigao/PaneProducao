@@ -255,4 +255,10 @@ describe('pricingSaveErrorMessage', () => {
     expect(pricingSaveErrorMessage(new Error('rede'))).toMatch(/continua na tela/)
     expect(pricingSaveErrorMessage({ code: '40001' })).not.toMatch(/Outro salvamento/)
   })
+
+  it('falha sem resposta não afirma que nada foi gravado', () => {
+    const mensagem = pricingSaveErrorMessage(new Error('rede'))
+    expect(mensagem).toMatch(/Não foi possível confirmar o salvamento/)
+    expect(mensagem).not.toMatch(/Nenhum valor foi alterado/)
+  })
 })
