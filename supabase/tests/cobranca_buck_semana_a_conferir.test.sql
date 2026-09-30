@@ -23,6 +23,33 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(50);
 
+-- O banco Preview recebe o seed geral antes do pgTAP, e o seed grava
+-- cobrancas da Buck ja recebidas (ids 96400000..., indicadores da formacao de
+-- preco). Este teste parte de nenhuma cobranca da Buck e nenhum recebimento no
+-- livro: retire essas fixtures dentro desta transacao; o rollback no fim
+-- preserva os dados de seed para quem usa o Preview.
+delete from public.finance_entries
+where id::text like '96400000-0000-4000-8000-000000000%'
+   or (
+     source = 'contas_receber'
+     and source_ref in (
+       '96400000-0000-4000-8000-000000000501'::uuid,
+       '96400000-0000-4000-8000-000000000502'::uuid
+     )
+   );
+
+delete from public.receivable_receipts
+where id in (
+  '96400000-0000-4000-8000-000000000501'::uuid,
+  '96400000-0000-4000-8000-000000000502'::uuid
+);
+
+delete from public.receivables
+where id in (
+  '96400000-0000-4000-8000-000000000301'::uuid,
+  '96400000-0000-4000-8000-000000000302'::uuid
+);
+
 -- Cenario ------------------------------------------------------------------
 
 insert into auth.users (
