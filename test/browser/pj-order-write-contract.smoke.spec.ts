@@ -142,15 +142,17 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
         p_order_group_id: groupId,
         p_expected_rows: [{ id: expect.any(String), updated_at: expect.any(String) }],
       })
+      // Resposta real do PostgREST 14.5 para a recusa por versão antiga,
+      // conferida na pilha local em 2026-09-30.
       await route.fulfill({
-        status: 400,
-        json: { code: '40001', message: 'Pedido mudou; recarregue antes de salvar novamente.' },
+        status: 409,
+        json: { code: 'PT409', details: null, hint: null, message: 'Pedido mudou; recarregue antes de salvar novamente.' },
       })
     }
     await page.route(replacePattern, rejectStaleReplace)
     const conflictResponse = page.waitForResponse(response => response.url().includes('/rpc/replace_pj_order_atomic_v2'))
     await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click()
-    expect((await conflictResponse).status()).toBe(400)
+    expect((await conflictResponse).status()).toBe(409)
     await page.unroute(replacePattern, rejectStaleReplace)
     await expect(page.getByText('Erro: Pedido mudou; recarregue antes de salvar novamente.')).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Pedidos', exact: true })).toHaveAttribute('aria-selected', 'true')

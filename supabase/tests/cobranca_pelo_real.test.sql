@@ -470,7 +470,7 @@ select throws_ok(
        '[{"order_id":"95000000-0000-4000-8000-00000000e0a1","dispatched_quantity":1.9}]'::jsonb,
        'com a tela velha na mao',
        timestamptz '2020-01-01 00:00:00-03') $$,
-  '40001',
+  'PT409',
   'Alguém corrigiu este pedido enquanto a tela estava aberta. Recarregue e confira antes de salvar.',
   'quem chega com a tela desatualizada e recusado, em vez de sobrescrever'
 );

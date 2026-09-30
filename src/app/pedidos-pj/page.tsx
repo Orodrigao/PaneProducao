@@ -584,7 +584,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       if (error instanceof PjOrderWriteError && !error.ambiguous) {
         saveAttemptRef.current = null
         if (!editing && user) clearPendingPjCreate(user.id)
-        if (editing && error.code === '40001') {
+        if (editing && error.code === 'PT409') {
           setEditing(null)
           setCustId('')
           setDelivery('')
