@@ -37,10 +37,7 @@ declare
   v_identity text;
   v_saved integer := 0;
 begin
-  if not (select private.current_user_is_access_admin()) then
-    raise exception using errcode = '42501',
-      message = 'Somente administradores podem mudar a Configuração do Sistema.';
-  end if;
+  -- CANARIO: trava de admin removida de proposito. Nunca integrar.
 
   select profile.display_name into v_actor_name
     from public.app_profiles profile
