@@ -1957,14 +1957,14 @@ join public.finance_categories category on category.key = fixture.category_key
 cross join lateral (
   select profile.user_id
   from public.app_profiles profile
-  where profile.role = 'admin' and profile.active
+  where profile.role = 'financeiro' and profile.active
   order by profile.user_id
   limit 1
 ) actor
 on conflict (id) do update set amount = excluded.amount, planned_amount = excluded.planned_amount;
 
 -- A receita da Buck nasce no recebimento de uma cobrança; não se lança
--- diretamente no livro-caixa. O admin só existe depois do workflow oficial.
+-- diretamente no livro-caixa. O fluxo oficial provisiona a conta de Financeiro.
 insert into public.receivables (
   id, request_id, customer_id, origin, finance_category_id, description,
   invoice_date, original_due_date, due_date, amount, created_by, period_start, period_end
@@ -1981,7 +1981,7 @@ join public.finance_categories category on category.key = 'buck_ex'
 cross join lateral (
   select profile.user_id
   from public.app_profiles profile
-  where profile.role = 'admin' and profile.active
+  where profile.role = 'financeiro' and profile.active
   order by profile.user_id
   limit 1
 ) actor
@@ -2000,7 +2000,7 @@ join public.finance_accounts account on account.id = '96400000-0000-4000-8000-00
 cross join lateral (
   select profile.user_id
   from public.app_profiles profile
-  where profile.role = 'admin' and profile.active
+  where profile.role = 'financeiro' and profile.active
   order by profile.user_id
   limit 1
 ) actor
@@ -2022,7 +2022,7 @@ where receivable.id in (
 
 update public.finance_entries
 set reversed_at = now(),
-    reversed_by = (select profile.user_id from public.app_profiles profile where profile.role = 'admin' and profile.active order by profile.user_id limit 1),
+    reversed_by = (select profile.user_id from public.app_profiles profile where profile.role = 'financeiro' and profile.active order by profile.user_id limit 1),
     reversal_reason = '[TESTE] Lançamento estornado'
 where id = '96400000-0000-4000-8000-00000000010c';
 

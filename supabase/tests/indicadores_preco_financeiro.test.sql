@@ -154,7 +154,7 @@ select is(
 );
 
 select is(private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,month}', '2026-09', 'começa em setembro e ordena o mês mais antigo primeiro');
-select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,revenue}')::numeric, 13600::numeric, 'faturamento soma balcão, iFood fora do total, PJ e Buck');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,revenue}')::numeric, 13600::numeric, 'faturamento soma balcão, iFood, PJ e Buck');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expenses}')::numeric, 1360::numeric, 'despesas fixas incluem só grupos definidos e ignoram estorno');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expense_pct}')::numeric, 0.1::numeric, 'percentual de despesa fixa usa o faturamento completo');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,production_labor}')::numeric, 116.25::numeric, 'mão de obra de produção fica separada das despesas fixas');
