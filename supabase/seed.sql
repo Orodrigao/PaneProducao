@@ -1912,3 +1912,5 @@ insert into public.payable_purchase_items(purchase_id,product_id,item_name,unit,
 select fixture.*
 from fixture
 where exists (select 1 from public.payable_purchases purchase where purchase.id = fixture.purchase_id);
+
+-- Canario da PR 469 (navegador no preview desta PR): comentario inofensivo, PR fechada sem merge.
