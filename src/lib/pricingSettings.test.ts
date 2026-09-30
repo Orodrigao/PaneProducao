@@ -250,9 +250,9 @@ describe('parsePricingSettingsResponse', () => {
 
 describe('pricingSaveErrorMessage', () => {
   it('explica o conflito e preserva o que foi digitado', () => {
-    expect(pricingSaveErrorMessage({ code: 'PT409' })).toMatch(/Recarregue a página/)
+    expect(pricingSaveErrorMessage({ code: 'PT409' })).toMatch(/Anote o que você digitou e recarregue a página/)
     expect(pricingSaveErrorMessage({ code: '42501' })).toMatch(/Só administradores/)
-    expect(pricingSaveErrorMessage(new Error('rede'))).toMatch(/continua na tela/)
+    expect(pricingSaveErrorMessage(new Error('rede'))).toMatch(/Anote o que você digitou/)
     expect(pricingSaveErrorMessage({ code: '40001' })).not.toMatch(/Outro salvamento/)
   })
 
@@ -260,5 +260,12 @@ describe('pricingSaveErrorMessage', () => {
     const mensagem = pricingSaveErrorMessage(new Error('rede'))
     expect(mensagem).toMatch(/Não foi possível confirmar o salvamento/)
     expect(mensagem).not.toMatch(/Nenhum valor foi alterado/)
+  })
+
+  it('não promete manter o digitado ao mandar recarregar a página', () => {
+    // Recarregar apaga o rascunho, que só existe na tela.
+    for (const erro of [{ code: 'PT409' }, new Error('rede')]) {
+      expect(pricingSaveErrorMessage(erro)).not.toMatch(/continua na tela/)
+    }
   })
 })
