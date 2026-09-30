@@ -61,3 +61,13 @@ describe('navegação responsiva', () => {
     expect(Number(overlayZIndex)).toBeGreaterThan(Number(sidebarZIndex))
   })
 })
+
+describe('navegação da Administração', () => {
+  it('leva à Configuração do Sistema pelo grupo Administração', () => {
+    const navSource = readFileSync(new URL('./Nav.tsx', import.meta.url), 'utf8')
+    const group = navSource.slice(navSource.indexOf("group: 'Administração'"))
+    const item = group.split('\n').find(line => line.includes("label: 'Configuração'"))
+
+    expect(item).toContain("href: '/admin/configuracao'")
+  })
+})

@@ -1,0 +1,138 @@
+.sectionTitle {
+  margin: 22px 0 8px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ps-ink);
+}
+
+.card {
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.cardTitle {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 560px) {
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.percentInput {
+  width: 100%;
+  min-height: 43px;
+  font-variant-numeric: tabular-nums;
+}
+
+.percentSign {
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.fieldMeta {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.fieldError {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--berry);
+}
+
+.categoryChannel {
+  margin-top: 10px;
+}
+
+.channelName {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.addRow select {
+  flex: 1 1 200px;
+}
+
+.saveBar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.saveButton {
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--crust);
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saveButton:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.error {
+  color: var(--berry);
+  font-weight: 700;
+}
+
+.history {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.historyItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--ps-line);
+  border-radius: var(--r-ctrl);
+  background: var(--cream-raise);
+  font-size: 13px;
+}

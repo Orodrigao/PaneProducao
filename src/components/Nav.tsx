@@ -9,7 +9,7 @@ import {
   Recycle, Snowflake, Scale, Boxes, ShoppingCart, Croissant,
   Users, Building2, Cake, Table2, SlidersHorizontal, LogOut,
   Factory, FileText, DollarSign, ShieldCheck, PanelLeft, ChefHat,
-  CalendarCheck, BookOpenCheck, HandCoins,
+  CalendarCheck, BookOpenCheck, HandCoins, Settings,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -51,6 +51,7 @@ const MORE_GROUPS: { group: string; items: NavLink[] }[] = [
   ]},
   { group: 'Administração', items: [
     { href: '/admin/usuarios', label: 'Usuários', Icon: ShieldCheck },
+    { href: '/admin/configuracao', label: 'Configuração', Icon: Settings },
   ]},
 ]
 

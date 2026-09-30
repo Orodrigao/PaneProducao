@@ -493,8 +493,17 @@ export function logout() {
     .catch(() => undefined)
 }
 
+export const ADMIN_ONLY_ROUTE_PREFIX = '/admin'
+
+export function isAdminOnlyRoute(pathname: string): boolean {
+  return pathname === ADMIN_ONLY_ROUTE_PREFIX || pathname.startsWith(ADMIN_ONLY_ROUTE_PREFIX + '/')
+}
+
 export function canAccess(user: AppUser, pathname: string): boolean {
   if (user.role === 'admin') return true
+  // Administração (usuários, Configuração do Sistema) é só do admin, mesmo
+  // para quem tem rota curinga. O banco recusa de novo em cada função.
+  if (isAdminOnlyRoute(pathname)) return false
 
   const routeMatches = (route: string) =>
     route === '*'
