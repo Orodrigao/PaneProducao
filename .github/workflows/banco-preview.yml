@@ -104,9 +104,12 @@ jobs:
     # um grupo unico por execucao, para nao ocupar a fila de ninguem.
     #
     # Cada reconstrucao restaura o topo da main no momento em que roda (o
-    # checkout abaixo usa `ref: main`, nao o sha do evento). Assim a ultima da
-    # fila sempre deixa o Preview no topo atual, mesmo se a main andou enquanto
-    # ela esperava.
+    # checkout abaixo usa `ref: main`, nao o sha do evento): quem esperou na
+    # fila enquanto a main andou restaura o topo novo, nunca um commit velho.
+    # Push de produto que chegar durante uma reconstrucao ganha a propria, que
+    # entra atras na fila. Limites: reconstrucao que falha deixa o Preview
+    # atras ate a proxima dar certo (o job fica vermelho), e com mais de 100
+    # esperando o GitHub cancela quem chega.
     concurrency:
       group: ${{ ((github.event_name == 'workflow_dispatch' && inputs.confirmacao == 'RECONSTRUIR') || (github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product') || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false)) && 'banco-preview-compartilhado' || format('banco-preview-sem-reconstrucao-{0}', github.run_id) }}
       cancel-in-progress: false
@@ -159,17 +162,17 @@ jobs:
         with:
           ref: main
 
-      # Decide pelo estado atual: registra qual main sera restaurada. Quando a
+      # Decide pelo estado atual: registra qual main foi selecionada. Quando a
       # execucao esperou na fila, o topo pode ser mais novo que o commit do
-      # evento; e o topo que vale.
-      - name: Registrar o topo da main que sera restaurado
+      # evento; e o topo que vale. O resumo so diz "restaurado" no ultimo passo.
+      - name: Registrar o topo da main selecionado
         if: *deve-reconstruir
         env:
           EVENTO_SHA: ${{ github.sha }}
         run: |
           TOPO="$(git rev-parse HEAD)"
-          echo "Evento: $GITHUB_EVENT_NAME em $EVENTO_SHA. Restaurando o topo da main: $TOPO."
-          echo "Banco Preview restaurado a partir da main em \`$TOPO\` (evento \`$GITHUB_EVENT_NAME\` em \`$EVENTO_SHA\`)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Evento: $GITHUB_EVENT_NAME em $EVENTO_SHA. Topo da main selecionado para restaurar: $TOPO."
+          echo "TOPO_SELECIONADO=$TOPO" >> "$GITHUB_ENV"
 
       - uses: supabase/setup-cli@v3
         if: *deve-reconstruir
@@ -233,3 +236,12 @@ jobs:
       - name: Verificar invariantes e seed canonicos
         if: *deve-reconstruir
         run: supabase test db --linked
+
+      # Sem funcao de status no `if`, o GitHub so roda este passo se todos os
+      # anteriores deram certo: o resumo nunca afirma restauracao que falhou.
+      - name: Registrar a restauracao concluida
+        if: *deve-reconstruir
+        env:
+          EVENTO_SHA: ${{ github.sha }}
+        run: |
+          echo "Banco Preview restaurado a partir da main em \`$TOPO_SELECIONADO\` (evento \`$GITHUB_EVENT_NAME\` em \`$EVENTO_SHA\`)." >> "$GITHUB_STEP_SUMMARY"

@@ -354,9 +354,10 @@ disputavam um único banco de teste compartilhado.
   pendente por grupo e o mais novo cancelava o anterior; em 2026-09-30 o
   fechamento com merge da PR 476 cancelou a restauração pendente do push dela
   e o Preview ficou atrás da `main`. Hoje os dois lados usam `queue: max`, só
-  entra na fila quem vai reconstruir, e cada reconstrução restaura o topo da
-  `main` no momento em que roda. A regra é testada em
-  `scripts/change-scope.test.mjs`.
+  entra na fila quem vai reconstruir, cada reconstrução restaura o topo da
+  `main` no momento em que começa, e a espera do smoke pela restauração roda
+  fora da fila. Limites e detalhes: `docs/AMBIENTE_PREVIEW.md`. A regra é
+  testada em `scripts/change-scope.test.mjs`.
 - Conferido em 2026-08-30 por leitura direta da API do Supabase, sem escrita:
   as PRs #286 e #292 tinham, ao mesmo tempo, bancos isolados próprios e
   saudáveis (`unnlpxjuxikreramqlwz` e `zexjyzvcpxpmzjlwjffe`), ambos criados

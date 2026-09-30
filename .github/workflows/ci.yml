@@ -145,9 +145,65 @@ jobs:
         timeout-minutes: 3
         run: node --test scripts/change-scope.test.mjs
 
+  # Push na main reconstroi o Banco Preview compartilhado, e o smoke do job
+  # navegador le esse banco: rodar antes da restauracao do proprio commit
+  # testaria o banco velho, e dentro da janela de reset falharia com credencial
+  # invalida sem defeito nenhum. Por isso a espera existe.
+  #
+  # A espera fica FORA da fila `banco-preview-compartilhado`, num job proprio
+  # antes do navegador. Dentro do navegador ela segurava a fila enquanto
+  # aguardava a restauracao do mesmo commit, e essa restauracao precisa da
+  # mesma fila: se o navegador entrasse primeiro, um esperava o outro ate o
+  # tempo esgotar.
+  #
+  # Em pull request nao ha o que esperar. PR que mexe em `supabase/` testa
+  # no banco proprio dela, e PR que nao mexe usa o compartilhado como ele
+  # esta, espelhando a main. A espera por etiqueta que existia aqui morreu
+  # junto com a fila, nos PRs #287 a #291.
+  espera-restauracao:
+    name: Esperar a restauração do Banco Preview (push na main)
+    needs: [classificacao, verificacao]
+    # always() pelo mesmo motivo do job "verificacao": sem ele, dependencia que
+    # falhou pularia este job e o navegador nao saberia distinguir.
+    if: always()
+    runs-on: ubuntu-latest
+    # A restauracao pode estar na fila atras de smokes de outras PRs.
+    timeout-minutes: 35
+    steps:
+      - name: Esperar a restauracao do Banco Preview na main
+        if: >-
+          github.event_name == 'push' &&
+          needs.classificacao.result == 'success' &&
+          needs.classificacao.outputs.perfil == 'product' &&
+          needs.verificacao.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
+          for attempt in {1..180}; do
+            CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
+            CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
+            CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
+
+            if [[ "$CHECK_STATUS" == "completed" && "$CHECK_CONCLUSION" == "success" ]]; then
+              echo "Banco Preview pronto."
+              exit 0
+            fi
+            if [[ "$CHECK_STATUS" == "completed" ]]; then
+              echo "Banco Preview terminou com estado: ${CHECK_CONCLUSION:-desconhecido}"
+              exit 1
+            fi
+
+            echo "Banco Preview ainda em andamento (${CHECK_STATUS:-sem check}); tentativa $attempt/180."
+            sleep 10
+          done
+
+          echo "Banco Preview nao ficou pronto dentro do tempo esperado."
+          exit 1
+
   navegador:
     name: Navegador (login, perfis e lojas)
-    needs: [classificacao, verificacao]
+    needs: [classificacao, verificacao, espera-restauracao]
     # Mesmo raciocinio do job "verificacao": always() + guard explicito em vez
     # de deixar o "needs" pular o job em silencio quando algo anterior falhou.
     if: always()
@@ -181,9 +237,10 @@ jobs:
     # a fila real do Banco Preview so para, alguns segundos depois, reprovar
     # mesmo assim no proprio guard abaixo — atrasando sem necessidade toda PR
     # que espera atras dela na fila de verdade por uma execucao que ja estava
-    # fadada a falhar antes de tocar no banco.
+    # fadada a falhar antes de tocar no banco. Pelo mesmo motivo, espera da
+    # restauracao que falhou tambem nao entra na fila real.
     concurrency:
-      group: ${{ (needs.classificacao.result == 'success' && needs.classificacao.outputs.perfil == 'product' && needs.verificacao.result == 'success') && 'banco-preview-compartilhado' || format('ci-docs-only-{0}', github.run_id) }}
+      group: ${{ (needs.classificacao.result == 'success' && needs.classificacao.outputs.perfil == 'product' && needs.verificacao.result == 'success' && needs.espera-restauracao.result == 'success') && 'banco-preview-compartilhado' || format('ci-docs-only-{0}', github.run_id) }}
       cancel-in-progress: false
       queue: max
     env:
@@ -194,6 +251,12 @@ jobs:
         if: needs.classificacao.result != 'success' || needs.verificacao.result != 'success'
         run: |
           echo "::error::Classificacao ou verificacao anterior falhou, foi pulada ou nao concluiu. O smoke de navegador nao pode ser dispensado silenciosamente."
+          exit 1
+
+      - name: Falhar se a espera pela restauração do Banco Preview não concluiu
+        if: needs.espera-restauracao.result != 'success'
+        run: |
+          echo "::error::A espera pela restauracao do Banco Preview falhou, foi pulada ou nao concluiu (resultado=${{ needs.espera-restauracao.result }}). Sem ela o smoke leria um banco desatualizado ou no meio do reset."
           exit 1
 
       - uses: actions/checkout@v4
@@ -222,41 +285,6 @@ jobs:
             echo "PaneERP Preview esta indisponivel ou pausado. Reative o projeto antes de investigar o ERP."
             exit 1
           fi
-
-      # Push na main reconstroi o Banco Preview compartilhado, e este smoke le
-      # esse banco: rodar dentro da janela de reset falha com credencial
-      # invalida sem defeito nenhum. Por isso a espera existe.
-      #
-      # Em pull request nao ha o que esperar. PR que mexe em `supabase/` testa
-      # no banco proprio dela, e PR que nao mexe usa o compartilhado como ele
-      # esta, espelhando a main. A espera por etiqueta que existia aqui morreu
-      # junto com a fila, nos PRs #287 a #291.
-      - name: Esperar a restauracao do Banco Preview na main
-        if: github.event_name == 'push' && needs.classificacao.outputs.perfil == 'product'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
-          for attempt in {1..60}; do
-            CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
-            CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
-            CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
-
-            if [[ "$CHECK_STATUS" == "completed" && "$CHECK_CONCLUSION" == "success" ]]; then
-              echo "Banco Preview pronto."
-              exit 0
-            fi
-            if [[ "$CHECK_STATUS" == "completed" ]]; then
-              echo "Banco Preview terminou com estado: ${CHECK_CONCLUSION:-desconhecido}"
-              exit 1
-            fi
-
-            echo "Banco Preview ainda em andamento (${CHECK_STATUS:-sem check}); tentativa $attempt/60."
-            sleep 10
-          done
-
-          echo "Banco Preview nao ficou pronto dentro do tempo esperado."
-          exit 1
 
       - name: Preparar ambiente local seguro
         if: needs.classificacao.outputs.perfil == 'product'
