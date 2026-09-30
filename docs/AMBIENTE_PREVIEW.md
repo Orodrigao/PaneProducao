@@ -89,9 +89,10 @@ banco ficou atrás da `main` sem aviso. Desde 2026-09-30:
 
 - os dois lados usam `queue: max`: até 100 esperam, em ordem de chegada, e
   quem chega depois não cancela quem espera;
-- só entra na fila a execução que vai de fato apagar e reconstruir o banco;
-  push documental, push só de mecanismo de CI e PR fechada com merge rodam
-  num grupo próprio;
+- entre as execuções do `Banco Preview`, só entra na fila a que vai de fato
+  apagar e reconstruir o banco; push documental, push só de mecanismo de CI e
+  PR fechada com merge rodam num grupo próprio (os smokes de produto seguem
+  na fila, como antes);
 - cada reconstrução restaura o topo da `main` no momento em que começa, e o
   resumo do job diz qual commit foi restaurado, só depois de tudo dar certo;
 - no push da `main`, a espera do smoke pela restauração do próprio commit
@@ -100,8 +101,11 @@ banco ficou atrás da `main` sem aviso. Desde 2026-09-30:
 
 Limites que continuam: reconstrução que falha deixa o banco atrás até a
 próxima dar certo (o job fica vermelho); com mais de 100 esperando o GitHub
-cancela quem chega; e execuções que já estavam na fila com o `ci.yml` antigo
-seguem a regra antiga até terminarem. A serialização dos smokes entre si
+cancela quem chega; a espera do smoke no push desiste depois de 30 minutos,
+e com muitos smokes na frente da restauração o navegador reprova mesmo que a
+restauração termine depois (reexecute só o navegador); e execuções que já
+estavam na fila com o `ci.yml` antigo, ou reexecuções de runs antigos, seguem
+a regra antiga. A serialização dos smokes entre si
 continua: separá-los segue sendo fase própria, que começa pelos testes, não
 pela trava.
 

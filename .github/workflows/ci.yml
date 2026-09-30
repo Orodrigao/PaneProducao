@@ -180,8 +180,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "Push na main; aguardando Banco Preview reconstruir os dados ficticios de hoje."
+          # Filtrar pelo nome na propria consulta evita a primeira pagina (30
+          # checks) esconder o que se procura. O check de mesmo nome gerado
+          # pelo fechamento de uma PR fica no commit da PR, nunca no da main:
+          # a Trava da main so aceita PR, e os tres modos de merge do GitHub
+          # sempre criam commit novo.
           for attempt in {1..180}; do
-            CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
+            CHECK_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=Restaurar%20Banco%20Preview%20para%20a%20main&filter=latest" --jq '.check_runs[] | select(.name == "Restaurar Banco Preview para a main") | [.status, (.conclusion // "")] | @tsv' | tail -n 1)"
             CHECK_STATUS="$(cut -f1 <<<"$CHECK_STATE")"
             CHECK_CONCLUSION="$(cut -f2 <<<"$CHECK_STATE")"
 

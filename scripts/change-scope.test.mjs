@@ -273,9 +273,11 @@ function avaliarComSemanticaGithub(texto, contexto, funcoes) {
       if (chave?.tipo !== 'nome') throw new Error(`Propriedade invalida em: ${texto}`)
       posicao += 1
       const objeto = valor
+      // Documentacao: propriedade que nao existe vale texto vazio. null
+      // gravado de proposito continua null.
       valor = () => {
         const v = objeto()
-        return v !== null && typeof v === 'object' && Object.hasOwn(v, chave.valor) ? v[chave.valor] ?? null : null
+        return v !== null && typeof v === 'object' && Object.hasOwn(v, chave.valor) && v[chave.valor] !== undefined ? v[chave.valor] : ''
       }
     }
     return valor
@@ -298,14 +300,14 @@ function avaliarComSemanticaGithub(texto, contexto, funcoes) {
         while (eh(',')) { posicao += 1; argumentos.push(ou()) }
       }
       exigir(')')
-      return () => {
-        const funcao = funcoes[token.valor]
-        if (!funcao) throw new Error(`Funcao "${token.valor}" fora do avaliador em: ${texto}`)
-        return funcao(...argumentos.map((argumento) => argumento()))
-      }
+      // Conferida na leitura, nao so quando chamada: funcao desconhecida num
+      // lado que nunca e avaliado tambem reprova.
+      const funcao = Object.hasOwn(funcoes, token.valor) ? funcoes[token.valor] : undefined
+      if (typeof funcao !== 'function') throw new Error(`Funcao "${token.valor}" fora do avaliador em: ${texto}`)
+      return () => funcao(...argumentos.map((argumento) => argumento()))
     }
     if (!CONTEXTOS_GITHUB.includes(token.valor)) throw new Error(`Contexto "${token.valor}" desconhecido em: ${texto}`)
-    return () => contexto[token.valor] ?? null
+    return () => (contexto[token.valor] === undefined ? {} : contexto[token.valor])
   }
 
   const valor = ou()
@@ -324,6 +326,9 @@ function avaliarExpressaoGithub(expressao, contexto, statusAteAqui) {
     success: () => statusAteAqui === 'success',
     failure: () => statusAteAqui === 'failure',
     cancelled: () => statusAteAqui === 'cancelled',
+    // Existe no GitHub, mas depende de arquivos: nenhum teste pode depender do
+    // resultado dela. Se algum caminho chegar a chama-la, o teste reprova.
+    hashFiles: () => { throw new Error('hashFiles nao e simulada pelo avaliador.') },
   }))
 }
 
@@ -454,11 +459,13 @@ describe('avaliador de expressoes com a semantica do GitHub', () => {
     assert.equal(avaliar("inputs.confirmacao != 'RECONSTRUIR'", { inputs: { confirmacao: 'Reconstruir' } }), false)
   })
 
-  it('campo ausente vale null, e null == false pela conversao para numero', () => {
-    assert.equal(avaliar('github.event.pull_request.merged', { github: { event_name: 'push' } }), null)
+  it('propriedade que nao existe vale texto vazio; null gravado continua null', () => {
+    assert.equal(avaliar('github.event.pull_request.merged', { github: { event_name: 'push' } }), '')
+    assert.equal(avaliar("github.inexistente == ''", { github: {} }), true)
     assert.equal(avaliar('github.event.pull_request.merged == false', { github: {} }), true)
     assert.equal(avaliar("needs.classificacao.outputs.perfil == 'product'", {}), false)
     assert.equal(avaliar("needs.classificacao.outputs.perfil != 'product'", {}), true)
+    assert.equal(avaliar('github.valor', { github: { valor: null } }), null)
   })
 
   it('tipos diferentes viram numero; texto nao numerico vira NaN e nunca e igual', () => {
@@ -480,6 +487,8 @@ describe('avaliador de expressoes com a semantica do GitHub', () => {
     assert.throws(() => avaliar('github.x < 3', { github: {} }), /nao suportado/)
     assert.throws(() => avaliar('segredos.x', {}), /desconhecido/)
     assert.throws(() => avaliar('contains(github.x, 1)', { github: {} }), /fora do avaliador/)
+    assert.throws(() => avaliar('false && desconhecida()'), /fora do avaliador/, 'funcao desconhecida reprova mesmo sem ser chamada')
+    assert.throws(() => avaliar('toString()'), /fora do avaliador/, 'propriedade herdada nao conta como funcao da tabela')
   })
 })
 
@@ -1992,6 +2001,20 @@ describe('uso em ci.yml', () => {
       }
       const verde = simularPassosDoJob(passos, { github: { event_name: 'push' }, needs: { ...produtoVerde, 'espera-restauracao': { result: 'success' } } }, NOMES_QUE_FALHAM)
       assert.equal(verde.find((p) => p.titulo === 'Smoke tests no navegador').rodou, true)
+    })
+
+    it('a espera consulta, filtrado na propria API, exatamente o nome do job de restauracao do banco-preview.yml', () => {
+      const bancoPreview = readFileSync(new URL('../.github/workflows/banco-preview.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+      const linhas = bancoPreview.split('\n')
+      const inicio = linhas.findIndex((l) => l === '  restaurar-main:')
+      const nomeDoJob = linhas.slice(inicio).find((l) => /^ {4}name:/.test(l)).replace(/^ {4}name:\s*/, '').trim()
+
+      const texto = workflowTexto.replace(/\r\n/g, '\n')
+      const passo = texto.slice(texto.indexOf(`- name: ${PASSO_ESPERA}`), texto.indexOf('  navegador:'))
+      const filtro = passo.match(/check-runs\?check_name=([^&"]+)&filter=latest"/)
+      assert.ok(filtro, 'A consulta precisa filtrar por check_name (e filter=latest) na propria API, sem depender da primeira pagina.')
+      assert.equal(decodeURIComponent(filtro[1]), nomeDoJob)
+      assert.ok(passo.includes(`select(.name == "${nomeDoJob}")`))
     })
 
     it('a espera so roda em push de produto com verificacao verde; em PR e em mudanca documental nao espera', () => {
