@@ -60,7 +60,7 @@ select lives_ok($q$select pg_temp.act('release',2,'[]',gen_random_uuid(),true,7)
 select lives_ok($q$select pg_temp.terms('due',3,private.data_na_padaria()+16,null,'98000000-0000-4000-8000-000000000401')$q$,'prorroga vencimento');
 select lives_ok($q$select pg_temp.terms('due',3,private.data_na_padaria()+16,null,'98000000-0000-4000-8000-000000000401')$q$,'repetição da prorrogação é idempotente');
 select throws_ok($q$select pg_temp.terms('due',3,private.data_na_padaria()+17,null,'98000000-0000-4000-8000-000000000401')$q$,'22023',null,'ID não aceita outro acordo');
-select throws_ok($q$select pg_temp.terms('split',3,null,3)$q$,'40001',null,'versão antiga bloqueia parcela');
+select throws_ok($q$select pg_temp.terms('split',3,null,3)$q$,'PT409',null,'versão antiga bloqueia parcela');
 select throws_ok($q$select pg_temp.terms('due',4,private.data_na_padaria()+8)$q$,'22023',null,'data antes da original bloqueada');
 select lives_ok($q$select pg_temp.terms('split',4,null,3,'98000000-0000-4000-8000-000000000402')$q$,'divide em três desde a entrega combinada');
 select lives_ok($q$select pg_temp.terms('split',4,null,3,'98000000-0000-4000-8000-000000000402')$q$,'repetição não duplica parcelas');

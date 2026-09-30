@@ -332,7 +332,7 @@ export async function savePricingSettings(changes: readonly PricingChange[]): Pr
 export function pricingSaveErrorMessage(error: unknown): string {
   const code = (error as { code?: string } | null)?.code
   // PT409, não 40001: o PostgREST repete a transação em 40001 e a tela travaria.
-  if (code === 'PT409') return 'Outro salvamento mudou a configuração depois que a tela abriu. Recarregue a página para ver os valores atuais; o que você digitou continua na tela.'
+  if (code === 'PT409') return 'Outro salvamento mudou a configuração depois que a tela abriu, e nada foi gravado. Anote o que você digitou e recarregue a página para ver os valores atuais.'
   if (code === '42501') return 'Só administradores podem mudar a Configuração do Sistema.'
   if (code === '22023') {
     const message = (error as { message?: string }).message
@@ -340,7 +340,8 @@ export function pricingSaveErrorMessage(error: unknown): string {
   }
   // Falha de rede ou desconhecida: a gravação pode ter entrado antes da
   // resposta se perder, então a mensagem não afirma que nada mudou.
-  return 'Não foi possível confirmar o salvamento. Recarregue a página para ver o que ficou gravado; o que você digitou continua na tela.'
+  // Recarregar apaga o rascunho, que só vive na tela; por isso "anote".
+  return 'Não foi possível confirmar o salvamento. Anote o que você digitou e recarregue a página para ver o que ficou gravado.'
 }
 
 export type PricingSaveOutcome =
@@ -369,7 +370,7 @@ export async function runPricingSave(
   } catch {
     return {
       kind: 'saved-reload-failed',
-      message: `Configuração salva (${summary}), mas a tela não conseguiu mostrar os valores novos. Recarregue a página; o que você digitou continua na tela.`,
+      message: `Configuração salva (${summary}), mas a tela não conseguiu mostrar os valores novos. Recarregue a página para ver o que ficou gravado.`,
     }
   }
   return { kind: 'saved', message: `Configuração salva: ${summary}.` }

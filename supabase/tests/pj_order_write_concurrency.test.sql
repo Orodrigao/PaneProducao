@@ -342,7 +342,7 @@ select throws_ok($q$
     pg_temp.pedido(11),
     (select rows from snapshot_anterior)
   )
-$q$, '40001', 'Pedido mudou; recarregue antes de salvar novamente.',
+$q$, 'PT409', 'Pedido mudou; recarregue antes de salvar novamente.',
   'segunda pessoa com a tela antiga nao sobrescreve a primeira');
 reset role;
 
@@ -373,7 +373,7 @@ select throws_ok($q$
       limit 1
     ) one_row)
   )
-$q$, '40001', 'Pedido mudou; recarregue antes de salvar novamente.',
+$q$, 'PT409', 'Pedido mudou; recarregue antes de salvar novamente.',
   'snapshot incompleto e tratado como pedido alterado');
 select throws_ok($q$
   select public.replace_pj_order_atomic_v2(
@@ -387,7 +387,7 @@ select throws_ok($q$
       )
     )
   )
-$q$, '40001', 'Pedido mudou; recarregue antes de salvar novamente.',
+$q$, 'PT409', 'Pedido mudou; recarregue antes de salvar novamente.',
   'snapshot com linha extra e tratado como pedido alterado');
 select throws_ok($q$
   select public.replace_pj_order_atomic_v2(

@@ -122,9 +122,10 @@ export async function savePjOrderDispatchQuantities(
   const { data, error } = response
 
   if (error) {
-    // 40001 é a recusa por tela desatualizada: a saída é recarregar, não
-    // tentar de novo com os mesmos números.
-    const stale = error.code === '40001'
+    // PT409 é a recusa por tela desatualizada: a saída é recarregar, não
+    // tentar de novo com os mesmos números. Não é 40001 porque o PostgREST
+    // repete sozinho, sem fim, a chamada que termina nesse código.
+    const stale = error.code === 'PT409'
     const communicationFailure = /load failed|failed to fetch|networkerror|network request failed/i.test(error.message)
     if (communicationFailure) {
       return {

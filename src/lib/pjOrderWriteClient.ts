@@ -225,8 +225,9 @@ export async function replacePjOrder(
     p_expected_rows: expectedRows,
   })
   if (error) {
-    const isKnownConflict = error.code === '40001'
-      && error.message === 'Pedido mudou; recarregue antes de salvar novamente.'
+    // PT409 só sai da recusa de propósito por versão antiga. Um 40001 seria
+    // falha real de serialização e continua incerto.
+    const isKnownConflict = error.code === 'PT409'
     throw rpcError(error, isKnownConflict)
   }
   return parseWriteResult(data)
