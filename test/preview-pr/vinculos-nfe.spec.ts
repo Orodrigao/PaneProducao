@@ -38,7 +38,9 @@ test('Administrador consulta os vinculos de NF-e de um insumo na tela',
     await expect(page.getByRole('heading', { name: 'Vínculos efetivamente salvos nas notas' })).toBeVisible()
     await expect(page.getByText(/NF 962001/)).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Uso atual nas fichas de receita' })).toBeVisible()
-    await expect(page.getByRole('alert')).toHaveCount(0)
+    // Erro de carga aparece com o botao de nova tentativa. Nao vale contar
+    // role=alert: o anunciador de rota do Next.js e um alert vazio em toda pagina.
+    await expect(page.getByRole('button', { name: 'Tentar novamente' })).toHaveCount(0)
   })
 
 test('Administrador le os autores dos vinculos pela Data API',
