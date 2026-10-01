@@ -58,6 +58,7 @@ select is(
     'change_pj_flow_terms',
     'confirm_finance_recurring_rule',
     'confirm_xml_import_draft',
+    'correct_payable_product_mapping',
     'correct_receivable_due_date',
     'corrigir_quantidade_enviada_pj',
     'create_and_pay_manual_payable',

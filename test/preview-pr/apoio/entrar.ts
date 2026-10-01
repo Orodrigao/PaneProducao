@@ -16,6 +16,7 @@ export const PERFIS = {
   vendasJa: 'rodrigao+teste-vendas-ja@gmail.com',
   expedicaoJc: 'rodrigao+teste-expedicao-jc@gmail.com',
   financeiroJc: 'rodrigao+teste-financeiro-jc@gmail.com',
+  financeiroCatalogoJc: 'rodrigao+teste-financeiro-catalogo-jc@gmail.com',
   romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
   cozinhaJc: 'rodrigao+teste-cozinha-jc@gmail.com',
   geolarJc: 'rodrigao+teste-geolar-jc@gmail.com',
