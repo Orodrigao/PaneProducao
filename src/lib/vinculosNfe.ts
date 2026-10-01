@@ -56,21 +56,30 @@ export function correctionActionLabel(action: string): string {
 }
 
 /**
- * Fator digitado com vírgula ou ponto decimal ("12", "0,5", "2.5"). Recusa zero,
- * negativo, mais de seis casas (o banco guarda numeric(14,6)) e valores que
- * não cabem na coluna.
+ * Fator digitado no jeito brasileiro: vírgula decimal e ponto de milhar
+ * ("12", "0,5", "1.000,5"). Sem vírgula, ponto só vale como decimal quando não
+ * parece milhar ("2.5" sim; "1.000" é recusado, porque na tela 1.000 é mil).
+ * Recusa zero, negativo, mais de seis casas (o banco guarda numeric(14,6)) e
+ * valores que não cabem na coluna.
  */
 export function parseFactorInput(raw: string): number | null {
   const text = raw.trim().replace(/\s/g, '')
-  const normalized = text.includes(',') ? text.replace(/\./g, '').replace(',', '.') : text
+  if (!text.includes(',') && /^\d{1,3}(\.\d{3})+$/.test(text)) return null
+  const normalized = text.includes(',') ? text.replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.') : text
   if (!/^\d+(\.\d{1,6})?$/.test(normalized)) return null
   const value = Number(normalized)
   if (!Number.isFinite(value) || value <= 0 || value >= 100_000_000) return null
   return value
 }
 
+/** Fator para exibir, com milhar. */
 export function factorLabel(value: number): string {
   return value.toLocaleString('pt-BR', { maximumFractionDigits: 6 })
+}
+
+/** Fator para o campo editável: sem milhar, para o próprio leitor aceitar de volta. */
+export function factorInputText(value: number): string {
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 6, useGrouping: false })
 }
 
 type MemoryIdentity = Pick<SupplierMapping, 'supplier_id' | 'supplier_product_code' | 'supplier_ean' | 'supplier_description' | 'purchase_unit'>

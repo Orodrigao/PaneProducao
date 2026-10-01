@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppUser } from '@/lib/auth'
-import { authorName, canViewNfeLinks, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, describeCorrectionEffect, invoiceMappingLabel, invoiceMatchesMemory, mappingStatusLabel, parseFactorInput } from '@/lib/vinculosNfe'
+import { authorName, canViewNfeLinks, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, describeCorrectionEffect, factorInputText, invoiceMappingLabel, invoiceMatchesMemory, mappingStatusLabel, parseFactorInput } from '@/lib/vinculosNfe'
 
 function user(overrides: Partial<AppUser> = {}): AppUser {
   return {
@@ -49,6 +49,16 @@ describe('consulta de vínculos de NF-e', () => {
     expect(parseFactorInput('')).toBeNull()
     expect(parseFactorInput('1,0000001')).toBeNull()
     expect(parseFactorInput('100000000')).toBeNull()
+  })
+
+  it('não lê ponto de milhar como decimal e devolve o fator do campo sem perda', () => {
+    expect(parseFactorInput('1.000')).toBeNull()
+    expect(parseFactorInput('25.000')).toBeNull()
+    expect(parseFactorInput('1.000,5')).toBe(1000.5)
+    expect(parseFactorInput('1000')).toBe(1000)
+    for (const value of [1000, 25000, 12.5, 0.000001, 1234567.123456]) {
+      expect(parseFactorInput(factorInputText(value))).toBe(value)
+    }
   })
 
   it('rotula situação da memória e ação desconhecida sem inventar', () => {

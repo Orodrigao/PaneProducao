@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { describeCorrectionEffect, factorLabel, invoiceMatchesMemory, parseFactorInput, type MemoryCorrectionAction } from '@/lib/vinculosNfe'
+import { describeCorrectionEffect, factorInputText, invoiceMatchesMemory, parseFactorInput, type MemoryCorrectionAction } from '@/lib/vinculosNfe'
 import { correctSupplierMapping, searchLinkProducts, type InvoiceLinkHistory, type ProductOption, type SupplierMapping } from '@/lib/vinculosNfeClient'
 import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
 
@@ -79,7 +79,7 @@ export default function VinculoNfeCorrecao({ memory, currentProductName, invoice
   const unchanged = chosen !== null && memory.active && chosen.id === memory.base_product_id
     && factor === memory.conversion_factor && (chosen.unit || 'un') === memory.base_unit
   const formBlock = !chosen ? 'Escolha o produto certo do catálogo.'
-    : factor === null ? 'Informe quanto vem em cada unidade da nota (maior que zero, até seis casas).'
+    : factor === null ? 'Informe quanto vem em cada unidade da nota: maior que zero, até seis casas, com vírgula para decimal (1.000 é recusado; escreva 1000).'
     : unchanged ? 'Nada mudou: escolha outro produto ou outro fator.'
     : ''
 
@@ -94,7 +94,7 @@ export default function VinculoNfeCorrecao({ memory, currentProductName, invoice
 
   function openForm() {
     setAction('corrigir')
-    setFactorText(factorLabel(memory.conversion_factor))
+    setFactorText(factorInputText(memory.conversion_factor))
     setError('')
     setMode('form')
   }
