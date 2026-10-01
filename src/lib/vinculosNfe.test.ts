@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppUser } from '@/lib/auth'
-import { authorName, canViewNfeLinks, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, describeCorrectionEffect, factorInputText, invoiceMappingLabel, invoiceMatchesMemory, mappingStatusLabel, parseFactorInput } from '@/lib/vinculosNfe'
+import { authorName, canViewNfeLinks, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, describeCorrectionEffect, factorInputText, invoiceMappingLabel, invoiceMatchesMemory, mappingStatusLabel, nfeLinksHref, parseFactorInput, productIdFromNfeLinksSearch } from '@/lib/vinculosNfe'
 
 function user(overrides: Partial<AppUser> = {}): AppUser {
   return {
@@ -109,5 +109,24 @@ describe('consulta de vínculos de NF-e', () => {
     const desligar = describeCorrectionEffect({ action: 'desligar', memory, currentProductName: 'Farinha errada', savedInvoices: 0, recipeNames: [], recipesTruncated: false })
     expect(desligar[0]).toContain('chega sem a sugestão desta memória')
     expect(desligar.at(-1)).toBe('Nenhuma nota já gravada muda.')
+  })
+})
+
+describe('atalho da tela Produtos para os vínculos', () => {
+  const id = '96200000-0000-4000-8000-000000000013'
+
+  it('monta o link com o produto e volta à tela sem produto quando não há id', () => {
+    expect(nfeLinksHref(id)).toBe(`/produtos/vinculos?produto=${id}`)
+    expect(nfeLinksHref(undefined)).toBe('/produtos/vinculos')
+    expect(nfeLinksHref(null)).toBe('/produtos/vinculos')
+  })
+
+  it('lê de volta só um identificador válido', () => {
+    expect(productIdFromNfeLinksSearch(nfeLinksHref(id).split('?')[1])).toBe(id)
+    expect(productIdFromNfeLinksSearch(`?produto=${id.toUpperCase()}`)).toBe(id)
+    expect(productIdFromNfeLinksSearch('')).toBeNull()
+    expect(productIdFromNfeLinksSearch('?produto=')).toBeNull()
+    expect(productIdFromNfeLinksSearch('?produto=manteiga')).toBeNull()
+    expect(productIdFromNfeLinksSearch(`?produto=${id},drop`)).toBeNull()
   })
 })

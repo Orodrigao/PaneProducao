@@ -55,8 +55,8 @@ select ok(not has_function_privilege('anon', 'public.update_payable_product_mapp
 select ok(not has_table_privilege('authenticated', 'public.payable_product_mappings', 'update'),
   'mapeamentos nao aceitam update direto pelo cliente');
 select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'update_payable_product_mappings') ilike all(array['%allowed_routes%', '%base_product_id%', '%conversion_factor%']),
-  'RPC de conversao valida acesso ao cadastro e o produto-base');
+  where n.nspname = 'public' and p.proname = 'update_payable_product_mappings') ilike all(array['%pode_corrigir_vinculos_nfe%', '%base_product_id%', '%conversion_factor%']),
+  'RPC de conversao segue a regra de quem corrige vinculos de NF-e e valida o produto-base');
 
 select * from finish();
 rollback;

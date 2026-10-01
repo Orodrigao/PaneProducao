@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert, Tags, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { canAccess, getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
-import { canViewNfeLinks } from '@/lib/vinculosNfe'
+import { canViewNfeLinks, nfeLinksHref } from '@/lib/vinculosNfe'
 import { showToast } from '@/lib/utils'
 import BreadWeightManager from '@/components/BreadWeightManager'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
@@ -70,13 +70,13 @@ interface ProductPurchaseConversion {
   base_product_id: string
   base_unit: string
   conversion_basis: PurchaseConversionBasis
-  conversion_factor: number | string
+  conversion_factor: number
+  factor_confirmed: boolean
   last_confirmed_at: string | null
   active: boolean
 }
 
-interface ProductPurchaseConversionRow extends Omit<ProductPurchaseConversion, 'supplier_name' | 'conversion_factor'> {
-  conversion_factor: number
+interface ProductPurchaseConversionRow extends Omit<ProductPurchaseConversion, 'supplier_name'> {
   suppliers: { name: string } | { name: string }[] | null
 }
 
@@ -189,7 +189,6 @@ export default function ProdutosPage() {
   const [components, setComponents] = useState<Component[]>([])
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [purchaseConversions, setPurchaseConversions] = useState<ProductPurchaseConversion[]>([])
-  const [conversionEdits, setConversionEdits] = useState<ProductPurchaseConversion[]>([])
   const [conversionLoadError, setConversionLoadError] = useState<string | null>(null)
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [categoryLoadError, setCategoryLoadError] = useState<string | null>(null)
@@ -218,7 +217,7 @@ export default function ProdutosPage() {
         supabase.from('product_components').select('parent_product_id,component_source,component_id,quantity'),
         supabase
           .from('payable_product_mappings')
-          .select('id,supplier_id,supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,last_confirmed_at,active,suppliers(name)')
+          .select('id,supplier_id,supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,last_confirmed_at,active,suppliers(name)')
           .eq('active', true)
           .order('supplier_description'),
       ])
@@ -290,15 +289,6 @@ export default function ProdutosPage() {
         ? 'Este produto já tem uma classificação de produção. Deseja removê-la e deixá-lo como revisão pendente?'
         : 'Este produto já tem uma classificação de produção. Ela será removida porque o produto deixará de ser fabricação própria. Deseja continuar?',
     )) return
-    const conversionPayload = conversionEdits.map(conversion => ({
-      id: conversion.id,
-      conversion_basis: conversion.conversion_basis,
-      conversion_factor: Number(conversion.conversion_factor),
-    }))
-    if (conversionPayload.some(conversion => !Number.isFinite(conversion.conversion_factor) || conversion.conversion_factor <= 0)) {
-      showToast('Todo fator de conversão deve ser maior que zero.')
-      return
-    }
     const { cost_price: rawCostPrice, ...rest } = editItem
     // Somente as colunas que esta tela edita viajam. Antes o corpo saía da
     // linha inteira lida com select('*'), então o tipo e a categoria antigos
@@ -321,13 +311,10 @@ export default function ProdutosPage() {
       } else {
         const { error } = await supabase.from('products').update(body).eq('id', editItem.id!).select('id').single()
         if (error) throw error
-        if (conversionPayload.length > 0) {
-          const { error: conversionError } = await supabase.rpc('update_payable_product_mappings', {
-            p_product_id: editItem.id,
-            p_mappings: conversionPayload,
-          })
-          if (conversionError) throw new Error(`Produto salvo, mas as conversões não foram atualizadas: ${conversionError.message}`)
-        }
+        // As conversões de compra (memória de vínculo do fornecedor) não viajam
+        // aqui: corrigir fator ou produto é só em Catálogo > Vínculos NF-e, com
+        // versão e histórico. Antes este salvamento reenviava todas e marcava
+        // como conferido um fator que ninguém tinha conferido.
         showToast('✅ Salvo')
       }
       setEditItem(null); load()
@@ -384,7 +371,6 @@ export default function ProdutosPage() {
       is_revenda: resolveIsRevenda(product.catalog_type, product.is_revenda),
       category: resolveLegacyCategoryText(product.category_id, categories, product.category),
     })
-    setConversionEdits(purchaseConversions.filter(conversion => conversion.base_product_id === product.id).map(conversion => ({ ...conversion })))
   }
 
   const canDuplicateProducts = !!user
@@ -529,11 +515,11 @@ export default function ProdutosPage() {
               </Link>
             )}
             {tab==='produtos' ? (
-              <button onClick={()=>{setIsNew(true);setConversionEdits([]);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setEditItem(newProductDefaults(false))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             ) : (
-              <button onClick={()=>{setIsNew(true);setConversionEdits([]);setEditItem(newProductDefaults(true))}} className="ps-btn primary">
+              <button onClick={()=>{setIsNew(true);setEditItem(newProductDefaults(true))}} className="ps-btn primary">
                 <Plus size={14}/> Novo
               </button>
             )}
@@ -699,7 +685,7 @@ export default function ProdutosPage() {
                       >
                         <Copy size={14}/>
                       </button>}
-                      <button onClick={()=>openProductEditor(p)} className="ps-iconbtn" style={{width:30, height:30}}>
+                      <button onClick={()=>openProductEditor(p)} className="ps-iconbtn" style={{width:30, height:30}} title={`Editar ${p.name}`} aria-label={`Editar ${p.name}`}>
                         <Pencil size={14}/>
                       </button>
                     </div>
@@ -843,73 +829,66 @@ export default function ProdutosPage() {
                   </small>
                 )}
               </div>
-              {!isNew && (
-                <div className="ps-banner" style={{ marginTop: 2 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--ps-ink)' }}>Conversões de compra</div>
-                  <small style={{ display: 'block', marginTop: 3 }}>
-                    O fator é específico por fornecedor e embalagem. Ele afeta as próximas importações; notas antigas permanecem como foram registradas.
-                  </small>
-                  {conversionLoadError ? (
-                    <small style={{ display: 'block', marginTop: 8, color: 'var(--berry)' }}>{conversionLoadError}</small>
-                  ) : conversionEdits.length === 0 ? (
-                    <small style={{ display: 'block', marginTop: 8, color: 'var(--ink-faint)' }}>
-                      Nenhuma conversão salva. Ela aparecerá aqui depois que uma NF-e deste fornecedor for confirmada.
+              {!isNew && (() => {
+                const conversions = purchaseConversions.filter(conversion => conversion.base_product_id === editItem.id)
+                const canCorrect = !!user && canAccess(user, '/produtos/vinculos') && canViewNfeLinks(user)
+                return (
+                  <div className="ps-banner" style={{ marginTop: 2 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--ps-ink)' }}>Conversões de compra</div>
+                    <small style={{ display: 'block', marginTop: 3 }}>
+                      O fator é específico por fornecedor e embalagem. Ele afeta as próximas importações; notas antigas permanecem como foram registradas.
                     </small>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                      {conversionEdits.map(conversion => {
-                        const factor = Number(conversion.conversion_factor)
-                        const unitWarning = getConversionUnitWarning(conversion.purchase_unit, conversion.base_unit, factor)
-                        const supplierCode = conversion.supplier_product_code || conversion.supplier_ean
-                        const confirmedAt = conversion.last_confirmed_at
-                          ? new Date(conversion.last_confirmed_at).toLocaleDateString('pt-BR')
-                          : null
-                        return (
-                          <div key={conversion.id} style={{ paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ps-ink)' }}>{conversion.supplier_name}</div>
-                            <small style={{ display: 'block', marginTop: 2 }}>
-                              {conversion.supplier_description} · compra em {conversion.purchase_unit} → receita em {conversion.base_unit}
-                              {supplierCode ? ` · código ${supplierCode}` : ''}
-                            </small>
-                            <div className="ps-fieldrow" style={{ marginTop: 8 }}>
-                              <div className="ps-fieldgroup">
-                                <div className="ps-fieldlabel">Como calcular</div>
-                                <select
-                                  value={conversion.conversion_basis}
-                                  onChange={event => setConversionEdits(previous => previous.map(item => item.id === conversion.id
-                                    ? { ...item, conversion_basis: event.target.value as PurchaseConversionBasis }
-                                    : item))}
-                                  className="ps-select"
-                                >
-                                  {Object.entries(CONVERSION_BASIS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                                </select>
+                    {conversionLoadError ? (
+                      <small style={{ display: 'block', marginTop: 8, color: 'var(--berry)' }}>{conversionLoadError}</small>
+                    ) : conversions.length === 0 ? (
+                      <small style={{ display: 'block', marginTop: 8, color: 'var(--ink-faint)' }}>
+                        Nenhuma conversão salva. Ela aparecerá aqui depois que uma NF-e deste fornecedor for confirmada.
+                      </small>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                          {conversions.map(conversion => {
+                            const factor = Number(conversion.conversion_factor)
+                            const factorText = Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : 'fator inválido'
+                            const unitWarning = getConversionUnitWarning(conversion.purchase_unit, conversion.base_unit, factor)
+                            const supplierCode = conversion.supplier_product_code || conversion.supplier_ean
+                            const confirmedAt = conversion.last_confirmed_at
+                              ? new Date(conversion.last_confirmed_at).toLocaleDateString('pt-BR')
+                              : null
+                            return (
+                              <div key={conversion.id} data-testid="conversao-compra" style={{ paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ps-ink)' }}>{conversion.supplier_name}</div>
+                                <small style={{ display: 'block', marginTop: 2 }}>
+                                  {conversion.supplier_description} · compra em {conversion.purchase_unit} → receita em {conversion.base_unit}
+                                  {supplierCode ? ` · código ${supplierCode}` : ''}
+                                </small>
+                                <small style={{ display: 'block', marginTop: 5 }}>
+                                  1 {conversion.purchase_unit} = {factorText} {conversion.base_unit} · {CONVERSION_BASIS_LABELS[conversion.conversion_basis] ?? conversion.conversion_basis}
+                                  {' · '}{conversion.factor_confirmed ? 'fator conferido' : 'fator ainda não conferido'}
+                                  {confirmedAt ? ` · confirmado em ${confirmedAt}` : ''}
+                                </small>
+                                {unitWarning && <small role="alert" style={{ display: 'block', marginTop: 5, color: 'var(--berry)', fontWeight: 700 }}>{unitWarning}</small>}
                               </div>
-                              <div className="ps-fieldgroup">
-                                <div className="ps-fieldlabel">Fator de conversão</div>
-                                <input
-                                  type="number"
-                                  min="0.000001"
-                                  step="0.000001"
-                                  value={conversion.conversion_factor}
-                                  onChange={event => setConversionEdits(previous => previous.map(item => item.id === conversion.id
-                                    ? { ...item, conversion_factor: event.target.value }
-                                    : item))}
-                                  className="ps-input"
-                                />
-                              </div>
-                            </div>
+                            )
+                          })}
+                        </div>
+                        {canCorrect ? (
+                          <div style={{ marginTop: 10 }}>
+                            <Link href={nfeLinksHref(editItem.id)} target="_blank" rel="noopener" className="ps-btn ghost sm">Corrigir em Vínculos NF-e</Link>
                             <small style={{ display: 'block', marginTop: 5, color: 'var(--ink-faint)' }}>
-                              Exemplo: 1 {conversion.purchase_unit} × {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : 'fator inválido'} = {Number.isFinite(factor) ? factor.toLocaleString('pt-BR', { maximumFractionDigits: 6 }) : '—'} {conversion.base_unit}
-                              {confirmedAt ? ` · confirmado em ${confirmedAt}` : ''}
+                              Abre em outra aba, com histórico de quem corrigiu. O que você digitou aqui continua nesta aba.
                             </small>
-                            {unitWarning && <small role="alert" style={{ display: 'block', marginTop: 5, color: 'var(--berry)', fontWeight: 700 }}>{unitWarning}</small>}
                           </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+                        ) : (
+                          <small style={{ display: 'block', marginTop: 10, color: 'var(--ink-faint)' }}>
+                            Para corrigir um fator, fale com a Administração ou com o Financeiro autorizado: a correção é feita em Catálogo › Vínculos NF-e.
+                          </small>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
               <div className="ps-fieldgroup">
                 <div className="ps-fieldlabel">Uso na operação</div>
                 <select value={editItem.kind || 'final'} onChange={e=>{
