@@ -10,7 +10,8 @@ declare
     'rodrigao+teste-romaneio-ex@gmail.com',
     'rodrigao+teste-cozinha-jc@gmail.com',
     'rodrigao+teste-geolar-jc@gmail.com',
-    'rodrigao+teste-financeiro-jc@gmail.com'
+    'rodrigao+teste-financeiro-jc@gmail.com',
+    'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
   ];
   user_count integer;
   profile_count integer;
@@ -20,8 +21,8 @@ begin
   from auth.users
   where lower(email) = any(expected_users);
 
-  if user_count <> 7 then
-    raise exception 'Banco Preview deveria ter 7 contas ficticias, encontrou %.', user_count;
+  if user_count <> 8 then
+    raise exception 'Banco Preview deveria ter 8 contas ficticias, encontrou %.', user_count;
   end if;
 
   select count(*) into profile_count
@@ -30,8 +31,8 @@ begin
   where lower(user_account.email) = any(expected_users)
     and profile.active;
 
-  if profile_count <> 7 then
-    raise exception 'Banco Preview deveria ter 7 perfis ativos, encontrou %.', profile_count;
+  if profile_count <> 8 then
+    raise exception 'Banco Preview deveria ter 8 perfis ativos, encontrou %.', profile_count;
   end if;
 
   if not exists (
@@ -168,6 +169,22 @@ begin
       and assignment.scope = 'jc'
   ) then
     raise exception 'Perfil Financeiro JC ficou sem permissao para lancar contas.';
+  end if;
+
+  -- Vinculos de NF-e: o financeiro autorizado precisa do Catalogo e do Contas a
+  -- pagar da JC; sem os dois o navegador nao prova quem pode corrigir memoria.
+  if not exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    join public.app_user_permissions assignment on assignment.user_id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
+      and profile.role = 'financeiro'
+      and profile.allowed_routes ? '/produtos'
+      and assignment.permission_key = 'contas_pagar.acessar'
+      and assignment.scope = 'jc'
+  ) then
+    raise exception 'Perfil Financeiro Catalogo JC deve abrir o Catalogo com Contas a pagar da JC.';
   end if;
 
   if not exists (

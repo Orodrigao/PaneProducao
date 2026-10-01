@@ -3,6 +3,7 @@ import { describe, it, mock } from 'node:test'
 import {
   PREVIEW_PROJECT_REF,
   PRODUCTION_PROJECT_REF,
+  PREVIEW_USERS,
   ensurePreviewUsers,
   validatePreviewUserEnvironment,
 } from './provision-preview-users.mjs'
@@ -58,13 +59,13 @@ describe('ensurePreviewUsers', () => {
       new Response(JSON.stringify({
         users: [{ id: 'usuario-existente', email: 'rodrigao+teste@gmail.com' }],
       }), { status: 200 }),
-      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: PREVIEW_USERS.length }, () => new Response('{}', { status: 200 })),
     ]
     const fetchImpl = mock.fn(async () => responses.shift())
 
     await ensurePreviewUsers({ ...SAFE_ENVIRONMENT, fetchImpl })
 
-    assert.equal(fetchImpl.mock.callCount(), 8)
+    assert.equal(fetchImpl.mock.callCount(), PREVIEW_USERS.length + 1)
     assert.match(fetchImpl.mock.calls[1].arguments[0], /admin\/users\/usuario-existente$/)
     assert.equal(fetchImpl.mock.calls[1].arguments[1].method, 'PUT')
     assert.match(fetchImpl.mock.calls[2].arguments[0], /admin\/users$/)

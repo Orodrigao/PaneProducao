@@ -574,7 +574,12 @@ with test_profiles(email, display_name, role, store, allowed_routes) as (
     -- preco", que o Contas a receber oferece quando o pedido esta bloqueado,
     -- caem na tela inicial no preview e nao no de producao, e o teste do
     -- Rodrigo acusa um defeito que so existe no banco de teste.
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/clientes", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios", "/relatorios/vendas-balcao", "/tabelas-preco"]'::jsonb)
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'Financeiro JC Teste', 'financeiro', 'jc', '["/", "/clientes", "/contas-pagar", "/contas-receber", "/financeiro", "/fornecedores", "/pedidos-pj", "/relatorios", "/relatorios/vendas-balcao", "/tabelas-preco"]'::jsonb),
+    -- Espelha o que a Elis tem em producao para os Vinculos de NF-e (leitura
+    -- de 01/10/2026): Catalogo, Fornecedores e Contas a pagar da JC. O
+    -- Financeiro JC acima fica sem /produtos de proposito, como o financeiro
+    -- barrado da mesma tela.
+    ('rodrigao+teste-financeiro-catalogo-jc@gmail.com', 'Financeiro Catalogo JC Teste', 'financeiro', 'jc', '["/", "/contas-pagar", "/fornecedores", "/produtos"]'::jsonb)
 )
 insert into public.app_profiles (user_id, display_name, role, store, active, allowed_routes)
 select user_account.id, profile.display_name, profile.role, profile.store, true, profile.allowed_routes
@@ -598,7 +603,8 @@ where assignment.user_id in (
     'rodrigao+teste-romaneio-ex@gmail.com',
     'rodrigao+teste-cozinha-jc@gmail.com',
     'rodrigao+teste-geolar-jc@gmail.com',
-    'rodrigao+teste-financeiro-jc@gmail.com'
+    'rodrigao+teste-financeiro-jc@gmail.com',
+    'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
   )
 );
 
@@ -664,7 +670,8 @@ with requested_permissions(email, permission_key, scope) as (
     ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.acessar', '*'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'romaneio.visualizar', '*'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'vendas_balcao.visualizar', 'jc'),
-    ('rodrigao+teste-financeiro-jc@gmail.com', 'vendas_balcao.importar', 'jc')
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'vendas_balcao.importar', 'jc'),
+    ('rodrigao+teste-financeiro-catalogo-jc@gmail.com', 'contas_pagar.acessar', 'jc')
 ), resolved_permissions as (
   select user_account.id as user_id, requested.permission_key, requested.scope
   from requested_permissions requested
