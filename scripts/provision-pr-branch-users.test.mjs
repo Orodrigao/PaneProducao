@@ -25,6 +25,7 @@ import {
   waitForPreviewBranch,
   waitForSupabasePreviewCheck,
 } from './provision-pr-branch-users.mjs'
+import { PREVIEW_USERS } from './provision-preview-users.mjs'
 
 const BRANCH_REF = 'unnlpxjuxikreramqlwz'
 const WORKFLOW_PATH = fileURLToPath(new URL('../.github/workflows/usuarios-banco-por-pr.yml', import.meta.url))
@@ -522,7 +523,7 @@ describe('provisionPreviewBranchUsers', () => {
       new Response(JSON.stringify(listaDeChecks(checkSupabase('success'))), { status: 200 }),
       new Response(JSON.stringify([readyBranch()]), { status: 200 }),
       new Response(JSON.stringify({ users: [] }), { status: 200 }),
-      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: PREVIEW_USERS.length }, () => new Response('{}', { status: 200 })),
     ]
     const fetchImpl = mock.fn(async () => responses.shift())
     const runCommand = mock.fn(async (_command, args) => ({
@@ -545,7 +546,7 @@ describe('provisionPreviewBranchUsers', () => {
       log: () => {},
     })
 
-    assert.deepEqual(result, { projectRef: BRANCH_REF, users: 7 })
+    assert.deepEqual(result, { projectRef: BRANCH_REF, users: PREVIEW_USERS.length })
     assert.equal(runCommand.mock.callCount(), 3)
     assert.deepEqual(
       runCommand.mock.calls.slice(1).map((call) => call.arguments[0]),
@@ -590,7 +591,7 @@ describe('provisionPreviewBranchUsers', () => {
       new Response(JSON.stringify(listaDeChecks(checkSupabase('success'))), { status: 200 }),
       new Response(JSON.stringify([readyBranch()]), { status: 200 }),
       new Response(JSON.stringify({ users: [] }), { status: 200 }),
-      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: PREVIEW_USERS.length }, () => new Response('{}', { status: 200 })),
     ]
     const fetchImpl = mock.fn(async () => responses.shift())
     const runCommand = mock.fn(async (_command, args) => ({
@@ -672,7 +673,7 @@ describe('provisionPreviewBranchUsers', () => {
       new Response(JSON.stringify(listaDeChecks(checkSupabase('success'))), { status: 200 }),
       new Response(JSON.stringify([readyBranch()]), { status: 200 }),
       new Response(JSON.stringify({ users: [] }), { status: 200 }),
-      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: PREVIEW_USERS.length }, () => new Response('{}', { status: 200 })),
     ]
     const runCommand = mock.fn(async (_command, args) => {
       if (args.includes('branches')) return { stdout: BRANCH_ENV, stderr: '' }

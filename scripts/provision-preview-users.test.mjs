@@ -3,6 +3,7 @@ import { describe, it, mock } from 'node:test'
 import {
   PREVIEW_PROJECT_REF,
   PRODUCTION_PROJECT_REF,
+  PREVIEW_USERS,
   ensurePreviewUsers,
   validatePreviewUserEnvironment,
 } from './provision-preview-users.mjs'
@@ -52,24 +53,35 @@ describe('validatePreviewUserEnvironment', () => {
   })
 })
 
+describe('PREVIEW_USERS', () => {
+  it('inclui o Financeiro Catalogo JC, o financeiro autorizado dos Vinculos de NF-e', () => {
+    assert.ok(PREVIEW_USERS.some(({ email }) => email === 'rodrigao+teste-financeiro-catalogo-jc@gmail.com'))
+    assert.equal(new Set(PREVIEW_USERS.map(({ email }) => email)).size, PREVIEW_USERS.length)
+  })
+})
+
 describe('ensurePreviewUsers', () => {
   it('cria contas ausentes e atualiza contas existentes sem expor a senha', async () => {
     const responses = [
       new Response(JSON.stringify({
         users: [{ id: 'usuario-existente', email: 'rodrigao+teste@gmail.com' }],
       }), { status: 200 }),
-      ...Array.from({ length: 7 }, () => new Response('{}', { status: 200 })),
+      ...Array.from({ length: PREVIEW_USERS.length }, () => new Response('{}', { status: 200 })),
     ]
     const fetchImpl = mock.fn(async () => responses.shift())
 
     await ensurePreviewUsers({ ...SAFE_ENVIRONMENT, fetchImpl })
 
-    assert.equal(fetchImpl.mock.callCount(), 8)
+    assert.equal(fetchImpl.mock.callCount(), PREVIEW_USERS.length + 1)
     assert.match(fetchImpl.mock.calls[1].arguments[0], /admin\/users\/usuario-existente$/)
     assert.equal(fetchImpl.mock.calls[1].arguments[1].method, 'PUT')
     assert.match(fetchImpl.mock.calls[2].arguments[0], /admin\/users$/)
     assert.equal(fetchImpl.mock.calls[2].arguments[1].method, 'POST')
     assert.match(fetchImpl.mock.calls[2].arguments[1].body, /rodrigao\+teste-vendas-ja@gmail\.com/)
     assert.match(fetchImpl.mock.calls[2].arguments[1].body, /SenhaTeste1!/)
+    assert.ok(
+      fetchImpl.mock.calls.some((call) => /rodrigao\+teste-financeiro-catalogo-jc@gmail\.com/.test(call.arguments[1]?.body ?? '')),
+      'a conta nova chega ao Auth',
+    )
   })
 })

@@ -10,18 +10,20 @@ declare
     'rodrigao+teste-romaneio-ex@gmail.com',
     'rodrigao+teste-cozinha-jc@gmail.com',
     'rodrigao+teste-geolar-jc@gmail.com',
-    'rodrigao+teste-financeiro-jc@gmail.com'
+    'rodrigao+teste-financeiro-jc@gmail.com',
+    'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
   ];
   user_count integer;
   profile_count integer;
   vendas_ja_permission_diff integer;
+  financeiro_catalogo_permission_diff integer;
 begin
   select count(*) into user_count
   from auth.users
   where lower(email) = any(expected_users);
 
-  if user_count <> 7 then
-    raise exception 'Banco Preview deveria ter 7 contas ficticias, encontrou %.', user_count;
+  if user_count <> 8 then
+    raise exception 'Banco Preview deveria ter 8 contas ficticias, encontrou %.', user_count;
   end if;
 
   select count(*) into profile_count
@@ -30,8 +32,8 @@ begin
   where lower(user_account.email) = any(expected_users)
     and profile.active;
 
-  if profile_count <> 7 then
-    raise exception 'Banco Preview deveria ter 7 perfis ativos, encontrou %.', profile_count;
+  if profile_count <> 8 then
+    raise exception 'Banco Preview deveria ter 8 perfis ativos, encontrou %.', profile_count;
   end if;
 
   if not exists (
@@ -168,6 +170,55 @@ begin
       and assignment.scope = 'jc'
   ) then
     raise exception 'Perfil Financeiro JC ficou sem permissao para lancar contas.';
+  end if;
+
+  -- Vinculos de NF-e: o financeiro autorizado tem exatamente o Catalogo, os
+  -- Fornecedores e o Contas a pagar da JC. Rota ou permissao a mais faria a
+  -- prova do navegador passar por outro motivo.
+  if not exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
+      and profile.role = 'financeiro'
+      and lower(profile.store) = 'jc'
+      and profile.allowed_routes = '["/", "/contas-pagar", "/fornecedores", "/produtos"]'::jsonb
+  ) then
+    raise exception 'Perfil Financeiro Catalogo JC deve ser financeiro da JC com Catalogo, Fornecedores e Contas a pagar.';
+  end if;
+
+  with actual as (
+    select assignment.permission_key, assignment.scope
+    from public.app_user_permissions assignment
+    join auth.users user_account on user_account.id = assignment.user_id
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-catalogo-jc@gmail.com'
+  ), expected(permission_key, scope) as (
+    values ('contas_pagar.acessar', 'jc')
+  ), permission_diff as (
+    (select permission_key, scope from actual
+     except
+     select permission_key, scope from expected)
+    union all
+    (select permission_key, scope from expected
+     except
+     select permission_key, scope from actual)
+  )
+  select count(*) into financeiro_catalogo_permission_diff
+  from permission_diff;
+
+  if financeiro_catalogo_permission_diff <> 0 then
+    raise exception 'Permissoes do Financeiro Catalogo JC diferem da matriz aprovada.';
+  end if;
+
+  -- O Financeiro JC e o financeiro barrado dos Vinculos: sem Catalogo.
+  if exists (
+    select 1
+    from public.app_profiles profile
+    join auth.users user_account on user_account.id = profile.user_id
+    where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+      and coalesce(profile.allowed_routes, '[]'::jsonb) ?| array['/produtos', '*']
+  ) then
+    raise exception 'Perfil Financeiro JC deve continuar sem o Catalogo.';
   end if;
 
   if not exists (
