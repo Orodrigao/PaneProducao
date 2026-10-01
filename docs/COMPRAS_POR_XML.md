@@ -730,13 +730,54 @@ confirmar cada item antes de importar. Se a memória ativa do fornecedor mudar
 enquanto uma NF-e nova está aberta, a confirmação pede para reabrir e conferir.
 Ao retomar uma importação salva para depois, todas as classificações guardadas
 pedem nova conferência antes da confirmação, inclusive as que vieram da memória.
-Esta conferência compara a memória no navegador no momento de enviar; a fase
-de edição dos vínculos terá a trava transacional do banco para escritas
-concorrentes. O cadastro rápido de produto usa as categorias controladas de
+Esta conferência compara a memória no navegador no momento de enviar; a
+correção pela tela de Vínculos (fase 3, abaixo) muda a versão da memória e por
+isso também costuma disparar esse pedido de reabrir. Limite conhecido: a
+conferência ocorre no navegador antes do envio, e uma alteração posterior a essa
+leitura, inclusive durante a espera pela trava do fornecedor, pode não ser
+detectada. A nota mantém a escolha confirmada pela pessoa e, se essa escolha for
+lembrada, pode substituir a memória corrigida. Fechar essa janela exige levar a
+versão da memória para dentro de `create_xml_payable`. O cadastro rápido de produto usa as categorias controladas de
 Insumos ou Revenda, com validação também no banco.
 
 Fichas não têm versionamento histórico neste modelo. A consulta informa onde
 o insumo é usado agora, não em qual receita uma nota antiga foi consumida.
+
+## Correção da memória do fornecedor (fase 3 de Vínculos, 2026-10-01)
+
+Em Catálogo > Vínculos NF-e, Administração e o Financeiro autorizado (Catálogo
+e Contas a pagar da JC, a mesma regra da consulta) podem, em cada memória do
+fornecedor:
+
+- **Corrigir:** escolher o produto certo e quanto vem em cada unidade da nota;
+- **Desligar:** a próxima nota daquele item chega sem a sugestão desta memória
+  e quem importa escolhe; ao confirmar o item, a memória volta a ser gravada
+  com a escolha;
+- **Religar:** desfazer um desligamento.
+
+Corrigir ou religar é recusado se o mesmo item do fornecedor já tem outra
+memória ligada (de insumo ou de uso e despesa): duas respostas ligadas fariam a
+importação escolher a mais recente sem avisar.
+
+Antes de confirmar, a tela mostra o efeito: o que a próxima NF-e vai sugerir,
+o que sugere hoje, em quais fichas atuais o produto novo aparece e quantos
+itens de notas já gravadas continuam como estão, e avisa que importações abertas
+desse fornecedor precisarão ser reabertas. Nada muda em notas antigas, custos,
+fichas ou contas; isso é das fases 4 a 6.
+
+A escrita passa só pela função `public.correct_payable_product_mapping`, que
+entra na mesma fila por fornecedor da importação e da classificação
+(`payable-mapping-supplier:`; a edição antiga de conversões no Catálogo,
+`update_payable_product_mappings`, ainda fica fora dessa fila), recusa perfil
+sem permissão, versão desatualizada (código PT409, sem a
+repetição automática que o 40001 provocaria no PostgREST) e entrada inválida.
+O identificador do pedido é único: repetir o mesmo envio devolve a correção já
+gravada, e o identificador reaproveitado com outro conteúdo é recusado. Cada correção fica em `payable_product_mapping_corrections` com autor,
+data, o antes e o depois, e aparece na tela do produto de onde a memória saiu
+e do produto para onde foi. Provas: pgTAP `vinculos_nfe_correcao.test.sql`, a espera real na fila do
+fornecedor em `supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql` e o
+roteiro `test/preview-pr/vinculos-nfe.spec.ts` com Administrador e Financeiro
+Catálogo JC gravando, e Financeiro JC, Vendas JA e Expedição JC barrados.
 
 ## Decisões pendentes
 

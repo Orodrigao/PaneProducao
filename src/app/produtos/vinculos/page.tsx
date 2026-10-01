@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Search } from 'lucide-react'
 import { canAccess, getCurrentUserAsync, type AppUser } from '@/lib/auth'
-import { canViewNfeLinks, authorName, currencyLabel, dateLabel, dateTimeLabel, invoiceMappingLabel, mappingStatusLabel } from '@/lib/vinculosNfe'
+import { canViewNfeLinks, authorName, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, factorLabel, invoiceMappingLabel, mappingStatusLabel } from '@/lib/vinculosNfe'
 import { loadLinkProductDetails, searchLinkProducts, type LinkProductDetails, type ProductOption } from '@/lib/vinculosNfeClient'
 import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
 import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
+import VinculoNfeCorrecao from '@/components/VinculoNfeCorrecao'
 
 export default function VinculosNfePage() {
   const [user, setUser] = useState<AppUser | null>(null)
@@ -19,6 +20,7 @@ export default function VinculosNfePage() {
   const [details, setDetails] = useState<LinkProductDetails | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let active = true
@@ -79,6 +81,10 @@ export default function VinculosNfePage() {
     return () => { active = false }
   }, [selected, allowed, recipeUsageIndex])
 
+  function reload() {
+    if (selected) setSelected({ ...selected })
+  }
+
   if (!authReady) return <main className="ps-canvas"><div className="ps-shell"><p className="ps-pad">Carregando seu acesso…</p></div></main>
   if (!user) return <main className="ps-canvas"><div className="ps-shell"><section className="ps-pad"><h1>Entre no ERP</h1><Link href="/login" className="ps-btn primary">Ir para o login</Link></section></div></main>
   if (!allowed) return <main className="ps-canvas"><div className="ps-shell"><section className="ps-pad"><h1>Acesso não liberado</h1><p>Esta consulta está disponível para Administração e para o Financeiro autorizado.</p><Link href="/" className="ps-btn ghost">Voltar ao início</Link></section></div></main>
@@ -95,15 +101,15 @@ export default function VinculosNfePage() {
         <div className="ps-scroll ps-pad">
           <section className="ps-card" style={{ marginTop: 14, padding: 14 }}>
             <h1 style={{ margin: '0 0 6px', fontSize: 20 }}>Vínculos por produto</h1>
-            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Esta tela não confirma nem altera vínculos.</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações: notas já gravadas, custos, fichas e contas não mudam.</p>
             <label htmlFor="nfe-product-search" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Buscar produto do catálogo</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { setSearch(event.target.value); setSelected(null) }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
+              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { setSearch(event.target.value); setSelected(null); setNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
               {loading && <span role="status">Carregando…</span>}
             </div>
             {products.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => setSelected(product)}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
+                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => { setSelected(product); setNotice('') }}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
               </div>
             )}
             {products.length === 100 && <small style={{ display: 'block', marginTop: 8 }}>Mostrando até 100 produtos. Refine a busca para localizar outro item.</small>}
@@ -121,12 +127,27 @@ export default function VinculosNfePage() {
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Memórias de vínculo por fornecedor</h2>
                 <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>São associações guardadas para ajudar em próximas importações. Não provam, sozinhas, o que foi usado em uma nota antiga.</p>
+                {notice && <p role="status" style={{ margin: '0 0 10px', color: 'var(--teal)', fontWeight: 600 }}>{notice}</p>}
                 {details.memories.length === 0 ? <p>Nenhuma memória encontrada para este produto.</p> : details.memories.map(memory => (
                   <article key={memory.id} style={{ borderTop: '1px solid var(--ps-line)', padding: '10px 0' }}>
                     <b>{memory.supplier_name}</b> · {mappingStatusLabel(memory)}
                     <p style={{ margin: '4px 0' }}>{memory.supplier_description} · código {memory.supplier_product_code || 'não informado'} · EAN {memory.supplier_ean || 'não informado'}</p>
                     <p style={{ margin: '4px 0' }}>Unidade da nota: {memory.purchase_unit} → unidade do produto: {memory.base_unit} · fator {memory.conversion_factor} ({memory.conversion_basis})</p>
                     <small>Confirmado em {dateTimeLabel(memory.last_confirmed_at)} por {authorName(details.authors, memory.last_confirmed_by)}. Fator {memory.factor_confirmed ? 'confirmado' : 'não marcado como confirmado'}.</small>
+                    <VinculoNfeCorrecao memory={memory} currentProductName={details.product.name} invoices={details.invoices} recipeUsageIndex={details.recipeUsageIndex} onSaved={message => { setNotice(message); reload() }} onReload={() => { setNotice(''); reload() }}/>
+                  </article>
+                ))}
+              </section>
+
+              <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Correções de memória</h2>
+                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Memórias que foram corrigidas, desligadas ou religadas e que saíram deste produto ou vieram para ele. Mostra as 50 mais recentes.</p>
+                {details.corrections.length === 0 ? <p>Nenhuma correção registrada.</p> : details.corrections.map(correction => (
+                  <article key={correction.id} style={{ borderTop: '1px solid var(--ps-line)', padding: '10px 0' }}>
+                    <b>{correctionActionLabel(correction.action)}</b> · {correction.supplier_name}
+                    <p style={{ margin: '4px 0' }}>{correction.supplier_description} · código {correction.supplier_product_code || 'não informado'} · {correction.purchase_unit}</p>
+                    <p style={{ margin: '4px 0' }}>Antes: {correction.previous.base_product_name ?? 'produto sem nome'}, fator {factorLabel(Number(correction.previous.conversion_factor))}, {correction.previous.active ? 'ligada' : 'desligada'} → depois: {correction.result.base_product_name ?? 'produto sem nome'}, fator {factorLabel(Number(correction.result.conversion_factor))}, {correction.result.active ? 'ligada' : 'desligada'}</p>
+                    <small>Por {authorName(details.authors, correction.corrected_by)} em {dateTimeLabel(correction.corrected_at)}.</small>
                   </article>
                 ))}
               </section>
