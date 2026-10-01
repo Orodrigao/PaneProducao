@@ -1941,6 +1941,37 @@ select fixture.*
 from fixture
 where exists (select 1 from public.payable_purchases purchase where purchase.id = fixture.purchase_id);
 
+-- Vinculos de NF-e, fase 3: duas memorias ficticias da Manteiga contagem, uma
+-- para o Administrador desligar e religar e outra para o Financeiro Catalogo
+-- corrigir o fator no navegador. O roteiro deixa as duas ligadas ao terminar;
+-- aqui o seed apaga o historico delas e volta ao estado conhecido.
+delete from public.payable_product_mapping_corrections
+where mapping_id in ('96500000-0000-4000-8000-000000000101', '96500000-0000-4000-8000-000000000102');
+
+with fixture(id, code, description) as (
+  values
+    ('96500000-0000-4000-8000-000000000101'::uuid, 'TESTE-MANT-ADM', '[TESTE] Manteiga caixa memoria admin'),
+    ('96500000-0000-4000-8000-000000000102'::uuid, 'TESTE-MANT-FIN', '[TESTE] Manteiga caixa memoria financeiro')
+)
+insert into public.payable_product_mappings (
+  id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
+  base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active,
+  last_confirmed_by
+)
+select fixture.id, '40000000-0000-4000-8000-000000000001', fixture.code, null, fixture.description, 'CX',
+       '96200000-0000-4000-8000-000000000013', 'kg', 'package', 10, true, true, user_account.id
+from fixture
+join auth.users user_account on lower(user_account.email) = 'rodrigao+teste@gmail.com'
+where exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001')
+on conflict (id) do update set
+  supplier_id = excluded.supplier_id, supplier_product_code = excluded.supplier_product_code,
+  supplier_ean = excluded.supplier_ean, supplier_description = excluded.supplier_description,
+  purchase_unit = excluded.purchase_unit, base_product_id = excluded.base_product_id,
+  base_unit = excluded.base_unit, conversion_basis = excluded.conversion_basis,
+  conversion_factor = excluded.conversion_factor, factor_confirmed = excluded.factor_confirmed,
+  active = excluded.active, last_confirmed_by = excluded.last_confirmed_by,
+  last_confirmed_at = now(), updated_at = now();
+
 -- Indicadores da formação de preço: setembro fictício provisório e outubro
 -- fictício completo. As datas fixas permitem conferir os dois estados com
 -- private.pricing_financial_indicators_report('2026-11-01') durante o ensaio.

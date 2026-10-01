@@ -37,6 +37,10 @@ select extensions.dblink_exec(
     delete from public.payable_purchases where nfe_key in (
       '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
       '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
+    delete from public.payable_product_mapping_corrections where mapping_id = '98000000-0000-4000-8000-0000000000e9';
+    delete from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9';
+    delete from public.app_profiles where user_id = '98000000-0000-4000-8000-00000000000b';
+    delete from auth.users where id = '98000000-0000-4000-8000-00000000000b';
     delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
     delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';
@@ -498,6 +502,83 @@ select is(
   'o custo final e o da nota de 12/09 (60 / 5), a mais recente'
 );
 
+-- Vinculos de NF-e, fase 3: corrigir a memoria entra na mesma fila por
+-- fornecedor das funcoes que gravam a memoria na importacao. A sessao da
+-- frente segura a trava com a mesma chave que create_xml_payable e
+-- classify_payable_item usam; a correcao precisa esperar e so gravar depois.
+select extensions.dblink_exec(
+  'draft_holder',
+  $remote$
+    insert into auth.users(
+      id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+      created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin
+    ) values (
+      '98000000-0000-4000-8000-00000000000b', '00000000-0000-0000-0000-000000000000',
+      'authenticated', 'authenticated', 'admin-correcao-concorrente@example.com', '', now(), now(), now(),
+      '{"provider":"email","providers":["email"]}', '{}', false
+    );
+    insert into public.app_profiles(user_id, display_name, role, store, active, allowed_routes)
+    values ('98000000-0000-4000-8000-00000000000b', 'Admin correcao concorrente', 'admin', null, true, '["/produtos"]');
+    insert into public.payable_product_mappings(
+      id, supplier_id, supplier_product_code, supplier_description, purchase_unit,
+      base_product_id, base_unit, conversion_basis, conversion_factor, last_confirmed_by
+    ) values (
+      '98000000-0000-4000-8000-0000000000e9', '98000000-0000-4000-8000-0000000000f1', 'MEM-CONC',
+      '[TESTE] Memoria concorrente', 'kg', '98000000-0000-4000-8000-0000000000d1', 'kg', 'simple', 1,
+      '98000000-0000-4000-8000-00000000000b'
+    );
+  $remote$
+);
+
+select extensions.dblink_exec('draft_holder', 'begin');
+select extensions.dblink_exec(
+  'draft_holder',
+  $q$do $lock$ begin
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('payable-mapping-supplier:98000000-0000-4000-8000-0000000000f1', 0));
+  end $lock$$q$
+);
+
+select extensions.dblink_exec('draft_worker', 'begin');
+select extensions.dblink_exec('draft_worker', $t$set local statement_timeout = '15s'$t$);
+select extensions.dblink_exec('draft_worker', 'set local role authenticated');
+select extensions.dblink_exec('draft_worker', $sub$set local "request.jwt.claim.sub" = '98000000-0000-4000-8000-00000000000b'$sub$);
+select extensions.dblink_send_query(
+  'draft_worker',
+  $q$select public.correct_payable_product_mapping(
+      '98000000-0000-4000-8000-0000000000ea', '98000000-0000-4000-8000-0000000000e9',
+      (select updated_at from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9'),
+      'desligar')::text$q$
+);
+select ok(
+  pg_temp.wait_for_advisory((select pid from worker_backend)),
+  'a correcao da memoria espera na trava do fornecedor enquanto a importacao do mesmo fornecedor nao terminou'
+);
+select is(
+  (select result from extensions.dblink('draft_holder',
+    $q$select active::text from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9'$q$) as response(result text)),
+  'true',
+  'enquanto espera, a correcao nao gravou nada'
+);
+
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table correction_after_import as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a correcao prossegue depois da importacao, sem erro nem deadlock');
+create temporary table correction_after_import_end as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+select is(
+  (select active from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9'),
+  false,
+  'a memoria fica desligada depois que a fila andou'
+);
+select is(
+  (select count(*)::integer from public.payable_product_mapping_corrections where mapping_id = '98000000-0000-4000-8000-0000000000e9'),
+  1,
+  'uma correcao no historico'
+);
+
 -- Limpeza (as outras sessoes gravaram fora desta transacao).
 select extensions.dblink_exec(
   'draft_holder',
@@ -505,6 +586,10 @@ select extensions.dblink_exec(
     delete from public.payable_purchases where nfe_key in (
       '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
       '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
+    delete from public.payable_product_mapping_corrections where mapping_id = '98000000-0000-4000-8000-0000000000e9';
+    delete from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9';
+    delete from public.app_profiles where user_id = '98000000-0000-4000-8000-00000000000b';
+    delete from auth.users where id = '98000000-0000-4000-8000-00000000000b';
     delete from public.products where id = '98000000-0000-4000-8000-0000000000d1';
     delete from public.suppliers where id = '98000000-0000-4000-8000-0000000000f2';
     delete from public.payable_import_drafts where nfe_key = '35260900000000000000550010000000098000000098';
