@@ -53,6 +53,13 @@ describe('validatePreviewUserEnvironment', () => {
   })
 })
 
+describe('PREVIEW_USERS', () => {
+  it('inclui o Financeiro Catalogo JC, o financeiro autorizado dos Vinculos de NF-e', () => {
+    assert.ok(PREVIEW_USERS.some(({ email }) => email === 'rodrigao+teste-financeiro-catalogo-jc@gmail.com'))
+    assert.equal(new Set(PREVIEW_USERS.map(({ email }) => email)).size, PREVIEW_USERS.length)
+  })
+})
+
 describe('ensurePreviewUsers', () => {
   it('cria contas ausentes e atualiza contas existentes sem expor a senha', async () => {
     const responses = [
@@ -72,5 +79,9 @@ describe('ensurePreviewUsers', () => {
     assert.equal(fetchImpl.mock.calls[2].arguments[1].method, 'POST')
     assert.match(fetchImpl.mock.calls[2].arguments[1].body, /rodrigao\+teste-vendas-ja@gmail\.com/)
     assert.match(fetchImpl.mock.calls[2].arguments[1].body, /SenhaTeste1!/)
+    assert.ok(
+      fetchImpl.mock.calls.some((call) => /rodrigao\+teste-financeiro-catalogo-jc@gmail\.com/.test(call.arguments[1]?.body ?? '')),
+      'a conta nova chega ao Auth',
+    )
   })
 })
