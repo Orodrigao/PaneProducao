@@ -1961,7 +1961,10 @@ insert into public.payable_product_mappings (
 select fixture.id, '40000000-0000-4000-8000-000000000001', fixture.code, null, fixture.description, 'CX',
        '96200000-0000-4000-8000-000000000013', 'kg', 'package', 10, true, true, user_account.id
 from fixture
-join auth.users user_account on lower(user_account.email) = 'rodrigao+teste@gmail.com'
+-- Autor: a mesma conta das notas ficticias acima. A prova de repeticao do
+-- seed (scripts/verify-preview-seed-repeatability.mjs) apaga a conta de
+-- administrador ao terminar, e a memoria nao pode prender esse apagamento.
+join auth.users user_account on lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
 where exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001')
 on conflict (id) do update set
   supplier_id = excluded.supplier_id, supplier_product_code = excluded.supplier_product_code,
