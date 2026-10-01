@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Pencil, Save, AlertTriangle, RotateCw, ClipboardList, BarChart3, CheckCircle2, CircleAlert, Tags, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import { canAccess, getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
+import { canViewNfeLinks } from '@/lib/vinculosNfe'
 import { showToast } from '@/lib/utils'
 import BreadWeightManager from '@/components/BreadWeightManager'
 import { formatSaleOptionLabel, type PricingUnit } from '@/lib/saleOptions'
@@ -519,6 +520,9 @@ export default function ProdutosPage() {
             <Link href="/produtos/cmv" className="ps-btn ghost">
               <BarChart3 size={14}/> CMV
             </Link>
+            {user && canAccess(user, '/produtos/vinculos') && canViewNfeLinks(user) && (
+              <Link href="/produtos/vinculos" className="ps-btn ghost">Vínculos NF-e</Link>
+            )}
             {user?.role === 'admin' && (
               <Link href="/produtos/categorias" className="ps-btn ghost">
                 <Tags size={14}/> Categorias
