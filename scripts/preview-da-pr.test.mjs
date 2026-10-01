@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import {
   LIMITE_ARQUIVOS_COMPARACAO,
@@ -30,6 +31,7 @@ const doc = (filename) => ({ filename, status: 'modified' })
  */
 function githubFalso({ deployments = {}, commits = [], comparacoes = {} }) {
   const chamadas = []
+  const cabecalhos = []
   const porId = new Map()
   let proximoId = 1
   const listaPorSha = Object.fromEntries(Object.entries(deployments).map(([s, lista]) => [
@@ -41,8 +43,9 @@ function githubFalso({ deployments = {}, commits = [], comparacoes = {} }) {
     }),
   ]))
   const responder = (corpo) => ({ ok: true, status: 200, json: async () => corpo })
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, init) => {
     chamadas.push(url)
+    cabecalhos.push(init?.headers ?? {})
     const u = new URL(url)
     const caminho = u.pathname.replace(`/repos/${REPO}`, '')
     if (caminho === '/deployments') return responder(listaPorSha[u.searchParams.get('sha')] ?? [])
@@ -56,7 +59,7 @@ function githubFalso({ deployments = {}, commits = [], comparacoes = {} }) {
     if (comparacao && comparacoes[comparacao[1]]) return responder(comparacoes[comparacao[1]])
     return { ok: false, status: 404, json: async () => ({}) }
   }
-  return { fetchImpl, chamadas }
+  return { fetchImpl, chamadas, cabecalhos }
 }
 
 const localizar = (github) => localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, fetchImpl: github.fetchImpl })
@@ -255,5 +258,100 @@ describe('localizarPreviewDaPr', () => {
   it('evento sem numero da PR ou sem commit: falha fechado', async () => {
     await assert.rejects(localizarPreviewDaPr({ repositorio: REPO, headSha: HEAD, fetchImpl: async () => { throw new Error('nao devia chamar') } }), /nao informou/)
     await assert.rejects(localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, fetchImpl: async () => { throw new Error('nao devia chamar') } }), /nao informou/)
+  })
+})
+
+describe('localizarPreviewDaPr com e sem token do GitHub', () => {
+  const TOKEN = 'ghs_tokenFicticioDoJob123'
+  const caminhoComReuso = () => githubFalso({
+    deployments: { [sha(1)]: [verde()] },
+    commits: [sha(1), HEAD],
+    comparacoes: { [`${sha(1)}...${HEAD}`]: { status: 'ahead', files: [doc('AGENTS.md')] } },
+  })
+
+  it('com token: todo pedido, em todas as rotas da busca, vai autenticado so para a API do GitHub', async () => {
+    const github = caminhoComReuso()
+    const url = await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken: TOKEN, fetchImpl: github.fetchImpl })
+    assert.equal(url, URL_VERDE)
+    // deployments do atual, commits da PR, deployments e statuses do anterior,
+    // comparacao e a reconsulta do atual.
+    assert.ok(github.chamadas.length >= 6)
+    assert.ok(github.chamadas.every((u) => new URL(u).origin === 'https://api.github.com'))
+    for (const cabecalho of github.cabecalhos) {
+      assert.equal(cabecalho.Authorization, `Bearer ${TOKEN}`)
+      assert.equal(cabecalho.Accept, 'application/vnd.github+json')
+    }
+  })
+
+  it('sem token: pede como antes, sem cabecalho de autorizacao', async () => {
+    const github = caminhoComReuso()
+    assert.equal(await localizar(github), URL_VERDE)
+    assert.ok(github.cabecalhos.length > 0)
+    for (const cabecalho of github.cabecalhos) assert.equal('Authorization' in cabecalho, false)
+  })
+
+  it('token vazio nao vira cabecalho "Bearer " sem credencial', async () => {
+    const github = caminhoComReuso()
+    await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken: '', fetchImpl: github.fetchImpl })
+    for (const cabecalho of github.cabecalhos) assert.equal('Authorization' in cabecalho, false)
+  })
+
+  for (const githubToken of [undefined, TOKEN]) {
+    it(`403 continua falhando fechado ${githubToken ? 'com' : 'sem'} token, sem vazar o token na mensagem`, async () => {
+      const chamadas = []
+      const fetchImpl = async (url) => {
+        chamadas.push(url)
+        return { ok: false, status: 403, headers: new Headers({ 'x-ratelimit-remaining': '0' }), json: async () => ({}) }
+      }
+      const erro = await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken, fetchImpl }).then(
+        () => assert.fail('403 nao pode virar preview'),
+        (e) => e,
+      )
+      assert.match(erro.message, /O GitHub respondeu 403 ao localizar o preview da PR/)
+      assert.match(erro.message, /limite de pedidos da API esgotado/)
+      assert.equal(erro.message.includes(TOKEN), false)
+      // Para no primeiro 403: nao insiste nem cai em commit anterior.
+      assert.equal(chamadas.length, 1)
+    })
+  }
+
+  it('403 sem cabecalho de limite nao inventa o motivo', async () => {
+    const fetchImpl = async () => ({ ok: false, status: 403, json: async () => ({}) })
+    const erro = await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken: TOKEN, fetchImpl }).catch((e) => e)
+    assert.match(erro.message, /respondeu 403/)
+    assert.equal(/limite/.test(erro.message), false)
+  })
+})
+
+describe('o job Navegador entrega o token so a consulta do preview', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const linhas = ci.split('\n')
+  const inicio = linhas.indexOf('  navegador:')
+  const fim = linhas.findIndex((linha, i) => i > inicio && /^  [a-z][\w-]*:$/.test(linha))
+  const job = linhas.slice(inicio, fim === -1 ? undefined : fim).join('\n')
+  const NOME_VARIAVEL = 'PREVIEW_DA_PR_GITHUB_TOKEN'
+
+  it('o job pede so leitura, e so o que a consulta usa', () => {
+    assert.notEqual(inicio, -1)
+    const permissoes = job.match(/\n    permissions:\n((?: {6}\S.*\n)+)/)?.[1]
+    assert.ok(permissoes, 'o job navegador precisa declarar permissions proprias')
+    assert.deepEqual(
+      permissoes.trim().split('\n').map((l) => l.trim()).sort(),
+      ['contents: read', 'deployments: read', 'pull-requests: read'],
+    )
+  })
+
+  it('o token vai so ao passo do smoke, numa variavel propria', () => {
+    assert.equal(ci.split(NOME_VARIAVEL).length - 1, 1, `${NOME_VARIAVEL} so pode aparecer uma vez no CI`)
+    assert.equal(job.split('github.token').length - 1, 1, 'nenhum outro passo do navegador recebe o token')
+    const passo = job.slice(job.indexOf('- name: Smoke tests no navegador'))
+    const ate = passo.indexOf('\n      - ', 1)
+    const trecho = ate === -1 ? passo : passo.slice(0, ate)
+    assert.match(trecho, new RegExp(`\\n {10}${NOME_VARIAVEL}: \\$\\{\\{ github\\.token \\}\\}\\n`))
+  })
+
+  it('o smoke de fotos repassa essa variavel a consulta', () => {
+    const spec = readFileSync(new URL('../test/browser/auth.smoke.spec.ts', import.meta.url), 'utf8')
+    assert.match(spec, new RegExp(`githubToken: process\\.env\\.${NOME_VARIAVEL}`))
   })
 })

@@ -256,6 +256,9 @@ commit publicado da PR, desde que esteja verde, venha da Vercel e só haja
 documentação entre ele e o commit atual. Mudança no mecanismo de CI no meio
 (inclusive nos workflows que ligam o preview ao banco da PR) não vale. Qualquer dúvida
 reprova com a mensagem "A Vercel ainda nao publicou um preview verde".
+A consulta usa o token do próprio job, só de leitura (`PREVIEW_DA_PR_GITHUB_TOKEN`,
+entregue apenas ao passo do smoke): anônima, ela dividia o limite de 60 pedidos
+por hora do IP do runner e levava 403. Um 403 ainda reprova os dois testes.
 
 ## Navegador no preview desta PR (piloto)
 

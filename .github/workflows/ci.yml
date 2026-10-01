@@ -248,6 +248,13 @@ jobs:
       group: ${{ (needs.classificacao.result == 'success' && needs.classificacao.outputs.perfil == 'product' && needs.verificacao.result == 'success' && needs.espera-restauracao.result == 'success') && 'banco-preview-compartilhado' || format('ci-docs-only-{0}', github.run_id) }}
       cancel-in-progress: false
       queue: max
+    # So leitura, e so o que o smoke de fotos usa para achar o preview da PR
+    # (scripts/preview-da-pr.mjs): deployments e seus status, commits da PR e
+    # a comparacao entre commits. contents tambem serve ao checkout.
+    permissions:
+      contents: read
+      deployments: read
+      pull-requests: read
     env:
       PREVIEW_SUPABASE_URL: https://tuqzhjsbodoycjbmwuqm.supabase.co
       SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
@@ -366,8 +373,14 @@ jobs:
           fi
           echo "Cenario de reposicao da EX intacto para $HOJE."
 
+      # Sem token, a consulta do preview da PR divide o limite anonimo de 60
+      # pedidos por hora com todo o IP do runner: a PR 465 levou 403 em 01/10
+      # sem defeito nenhum. Variavel propria, so neste passo; o GitHub mascara o
+      # valor no log e o teste nunca o passa para a pagina.
       - name: Smoke tests no navegador
         if: needs.classificacao.outputs.perfil == 'product'
+        env:
+          PREVIEW_DA_PR_GITHUB_TOKEN: ${{ github.token }}
         run: npm run test:browser
 
       # Resultado explicito mesmo quando dispensada: ver o mesmo comentario
