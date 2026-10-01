@@ -56,6 +56,15 @@ describe('consulta de vínculos de NF-e', () => {
     expect(parseFactorInput('25.000')).toBeNull()
     expect(parseFactorInput('1.000,5')).toBe(1000.5)
     expect(parseFactorInput('1000')).toBe(1000)
+    expect(parseFactorInput('0.125')).toBe(0.125)
+    expect(parseFactorInput('12.500,25')).toBe(12500.25)
+    // Erro de digitação vira recusa, nunca outro número.
+    expect(parseFactorInput('2 5')).toBeNull()
+    expect(parseFactorInput('0,1 25')).toBeNull()
+    expect(parseFactorInput('1234.567,5')).toBeNull()
+    expect(parseFactorInput('0.125,0')).toBeNull()
+    expect(parseFactorInput('1.000.000')).toBeNull()
+    expect(parseFactorInput('1,5,0')).toBeNull()
     for (const value of [1000, 25000, 12.5, 0.000001, 1234567.123456]) {
       expect(parseFactorInput(factorInputText(value))).toBe(value)
     }

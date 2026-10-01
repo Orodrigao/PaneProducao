@@ -56,17 +56,25 @@ export function correctionActionLabel(action: string): string {
 }
 
 /**
- * Fator digitado no jeito brasileiro: vírgula decimal e ponto de milhar
- * ("12", "0,5", "1.000,5"). Sem vírgula, ponto só vale como decimal quando não
- * parece milhar ("2.5" sim; "1.000" é recusado, porque na tela 1.000 é mil).
- * Recusa zero, negativo, mais de seis casas (o banco guarda numeric(14,6)) e
- * valores que não cabem na coluna.
+ * Fator digitado, em um de três formatos e nada além deles:
+ * - inteiro ou decimal sem milhar: "12", "1000", "0,5", "2.5";
+ * - milhar brasileiro completo com vírgula: "1.000,5", "12.500,25".
+ * Ponto com três dígitos e sem vírgula ("1.000", "25.000") é recusado, porque
+ * na tela 1.000 é mil. Espaço no meio, agrupamento torto, zero, negativo, mais
+ * de seis casas (o banco guarda numeric(14,6)) e valor que não cabe na coluna
+ * também são recusados: erro de digitação vira recusa, nunca outro número.
  */
 export function parseFactorInput(raw: string): number | null {
-  const text = raw.trim().replace(/\s/g, '')
-  if (!text.includes(',') && /^\d{1,3}(\.\d{3})+$/.test(text)) return null
-  const normalized = text.includes(',') ? text.replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.') : text
-  if (!/^\d+(\.\d{1,6})?$/.test(normalized)) return null
+  const text = raw.trim()
+  let normalized: string
+  if (/^\d+([.,]\d{1,6})?$/.test(text)) {
+    if (/^[1-9]\d{0,2}\.\d{3}$/.test(text)) return null
+    normalized = text.replace(',', '.')
+  } else if (/^[1-9]\d{0,2}(\.\d{3})+,\d{1,6}$/.test(text)) {
+    normalized = text.replace(/\./g, '').replace(',', '.')
+  } else {
+    return null
+  }
   const value = Number(normalized)
   if (!Number.isFinite(value) || value <= 0 || value >= 100_000_000) return null
   return value
