@@ -23,5 +23,8 @@ export default defineConfig({
     url: browserTestUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // O token do GitHub que o CI entrega ao smoke de fotos so serve a consulta
+    // do preview da PR, feita pelo teste; o servidor do site nao herda.
+    env: { PREVIEW_DA_PR_GITHUB_TOKEN: '' },
   },
 })

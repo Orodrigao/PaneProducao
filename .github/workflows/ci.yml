@@ -271,7 +271,11 @@ jobs:
           echo "::error::A espera pela restauracao do Banco Preview falhou, foi pulada ou nao concluiu (resultado=${{ needs.espera-restauracao.result }}). Sem ela o smoke leria um banco desatualizado ou no meio do reset."
           exit 1
 
+      # Sem credencial gravada no .git: o job nao faz push, e assim o token so
+      # chega ao smoke pela variavel do passo dele.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Confirmar ambiente fictício e credencial de teste
         if: needs.classificacao.outputs.perfil == 'product'
@@ -374,9 +378,10 @@ jobs:
           echo "Cenario de reposicao da EX intacto para $HOJE."
 
       # Sem token, a consulta do preview da PR divide o limite anonimo de 60
-      # pedidos por hora com todo o IP do runner: a PR 465 levou 403 em 01/10
-      # sem defeito nenhum. Variavel propria, so neste passo; o GitHub mascara o
-      # valor no log e o teste nunca o passa para a pagina.
+      # pedidos por hora com todo o IP do runner: causa provavel do 403 da PR
+      # 465 em 01/10, que passou na repeticao. Variavel propria, so neste passo;
+      # o GitHub mascara o valor no log, o teste nunca o passa para a pagina e
+      # o servidor do site nao o herda (playwright.config.ts).
       - name: Smoke tests no navegador
         if: needs.classificacao.outputs.perfil == 'product'
         env:

@@ -315,6 +315,30 @@ describe('localizarPreviewDaPr com e sem token do GitHub', () => {
     })
   }
 
+  for (const rota of ['/statuses', '/compare/']) {
+    it(`403 no meio da busca (${rota}) tambem falha fechado, sem vazar o token`, async () => {
+      const github = caminhoComReuso()
+      const fetchImpl = async (url, init) => {
+        if (url.includes(rota)) return { ok: false, status: 403, json: async () => ({}) }
+        return github.fetchImpl(url, init)
+      }
+      const erro = await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken: TOKEN, fetchImpl }).catch((e) => e)
+      assert.ok(erro instanceof Error, '403 nao pode virar preview')
+      assert.match(erro.message, /respondeu 403/)
+      assert.equal(erro.message.includes(TOKEN), false)
+      assert.ok(github.chamadas.length > 0, 'chamadas anteriores ao 403 deram certo')
+    })
+  }
+
+  it('o outro chamador (preview-pr-pronto) continua autenticado pelo proprio fetchDoGithub', async () => {
+    const { fetchDoGithub } = await import('./preview-pr-pronto.mjs')
+    const github = caminhoComReuso()
+    const fetchImpl = fetchDoGithub({ githubToken: TOKEN, fetchImpl: github.fetchImpl })
+    assert.equal(await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, fetchImpl }), URL_VERDE)
+    assert.ok(github.cabecalhos.length >= 6)
+    for (const cabecalho of github.cabecalhos) assert.equal(cabecalho.Authorization, `Bearer ${TOKEN}`)
+  })
+
   it('403 sem cabecalho de limite nao inventa o motivo', async () => {
     const fetchImpl = async () => ({ ok: false, status: 403, json: async () => ({}) })
     const erro = await localizarPreviewDaPr({ repositorio: REPO, prNumber: 7, headSha: HEAD, githubToken: TOKEN, fetchImpl }).catch((e) => e)
@@ -341,17 +365,28 @@ describe('o job Navegador entrega o token so a consulta do preview', () => {
     )
   })
 
-  it('o token vai so ao passo do smoke, numa variavel propria', () => {
+  it('so o passo do smoke cita github.token, numa variavel propria', () => {
     assert.equal(ci.split(NOME_VARIAVEL).length - 1, 1, `${NOME_VARIAVEL} so pode aparecer uma vez no CI`)
-    assert.equal(job.split('github.token').length - 1, 1, 'nenhum outro passo do navegador recebe o token')
+    assert.equal(job.split('github.token').length - 1, 1, 'nenhum outro passo do navegador cita github.token')
     const passo = job.slice(job.indexOf('- name: Smoke tests no navegador'))
     const ate = passo.indexOf('\n      - ', 1)
     const trecho = ate === -1 ? passo : passo.slice(0, ate)
     assert.match(trecho, new RegExp(`\\n {10}${NOME_VARIAVEL}: \\$\\{\\{ github\\.token \\}\\}\\n`))
   })
 
+  it('o checkout do navegador nao grava a credencial do job no .git', () => {
+    assert.match(job, /- uses: actions\/checkout@v4\n {8}with:\n {10}persist-credentials: false\n/)
+    assert.equal(job.split('actions/checkout@').length - 1, 1)
+  })
+
   it('o smoke de fotos repassa essa variavel a consulta', () => {
     const spec = readFileSync(new URL('../test/browser/auth.smoke.spec.ts', import.meta.url), 'utf8')
     assert.match(spec, new RegExp(`githubToken: process\\.env\\.${NOME_VARIAVEL}`))
+  })
+
+  it('o servidor do site, iniciado pelo Playwright, nao herda o token', () => {
+    const config = readFileSync(new URL('../playwright.config.ts', import.meta.url), 'utf8')
+    const webServer = config.slice(config.indexOf('webServer:'))
+    assert.match(webServer, new RegExp(`env: \\{ ${NOME_VARIAVEL}: '' \\}`))
   })
 })

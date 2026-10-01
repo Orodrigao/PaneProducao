@@ -126,8 +126,8 @@ const ORIGEM_API_GITHUB = 'https://api.github.com'
 
 /**
  * Sem token, a API do GitHub conta 60 pedidos por hora por IP, e o IP do
- * runner e compartilhado: a PR 465 levou 403 em 01/10 sem defeito nenhum.
- * Com o token do job o limite e por repositorio. Todo endereco consultado
+ * runner e compartilhado: e a causa provavel do 403 da PR 465 em 01/10, que
+ * passou na repeticao. Com o token do job o limite e por repositorio. Todo endereco consultado
  * nasce de ORIGEM_API_GITHUB, entao o token so viaja para a API do GitHub, e
  * nunca entra na mensagem de erro.
  */
