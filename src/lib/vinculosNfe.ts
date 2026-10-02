@@ -11,6 +11,20 @@ export function canViewNfeLinks(user: AppUser): boolean {
       && (permission.scope === '*' || permission.scope === 'jc'))
 }
 
+const VINCULOS_ROUTE = '/produtos/vinculos'
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Atalho da tela Produtos para a correção da memória daquele produto. */
+export function nfeLinksHref(productId: string | null | undefined): string {
+  return productId ? `${VINCULOS_ROUTE}?produto=${encodeURIComponent(productId)}` : VINCULOS_ROUTE
+}
+
+/** Produto pedido pelo atalho; valor que não é identificador vira busca vazia. */
+export function productIdFromNfeLinksSearch(search: string): string | null {
+  const productId = new URLSearchParams(search).get('produto')?.trim() ?? ''
+  return UUID_PATTERN.test(productId) ? productId.toLowerCase() : null
+}
+
 export function authorName(authors: ReadonlyMap<string, string>, id: string | null | undefined): string {
   return id ? (authors.get(id) ?? 'Nome indisponível') : 'Não registrado'
 }

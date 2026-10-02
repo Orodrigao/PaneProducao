@@ -166,6 +166,12 @@ export async function searchLinkProducts(search: string): Promise<ProductOption[
   return (data ?? []) as ProductOption[]
 }
 
+export async function loadLinkProduct(productId: string): Promise<ProductOption | null> {
+  const { data, error } = await supabase.from('products').select('id,name,unit,active').eq('id', productId).maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data ?? null) as ProductOption | null
+}
+
 export async function loadLinkProductDetails(product: ProductOption, recipeUsageIndex: RecipeUsageIndex): Promise<LinkProductDetails> {
   const [mappingRows, invoiceRows, authorsResult, correctionsResult] = await Promise.all([
     loadAll<MappingRow>((start, end) => supabase.from('payable_product_mappings')

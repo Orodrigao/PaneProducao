@@ -1,11 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Search } from 'lucide-react'
 import { canAccess, getCurrentUserAsync, type AppUser } from '@/lib/auth'
-import { canViewNfeLinks, authorName, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, factorLabel, invoiceMappingLabel, mappingStatusLabel } from '@/lib/vinculosNfe'
-import { loadLinkProductDetails, searchLinkProducts, type LinkProductDetails, type ProductOption } from '@/lib/vinculosNfeClient'
+import { canViewNfeLinks, authorName, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, factorLabel, invoiceMappingLabel, mappingStatusLabel, productIdFromNfeLinksSearch } from '@/lib/vinculosNfe'
+import { loadLinkProduct, loadLinkProductDetails, searchLinkProducts, type LinkProductDetails, type ProductOption } from '@/lib/vinculosNfeClient'
 import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
 import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
 import VinculoNfeCorrecao from '@/components/VinculoNfeCorrecao'
@@ -20,7 +20,11 @@ export default function VinculosNfePage() {
   const [details, setDetails] = useState<LinkProductDetails | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [recipeError, setRecipeError] = useState('')
+  const [recipeAttempt, setRecipeAttempt] = useState(0)
   const [notice, setNotice] = useState('')
+  // Escolha feita pela pessoa vence a resposta atrasada do atalho.
+  const manualChoice = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -35,16 +39,39 @@ export default function VinculosNfePage() {
 
   const allowed = user ? canAccess(user, '/produtos/vinculos') && canViewNfeLinks(user) : false
 
+  // Atalho "Corrigir em Vínculos NF-e" da tela Produtos: abre já no produto.
   useEffect(() => {
     let active = true
     if (!allowed) return () => { active = false }
-    void loadRecipeUsageIndex().then(index => {
-      if (active) setRecipeUsageIndex(index)
+    const productId = productIdFromNfeLinksSearch(window.location.search)
+    if (!productId) return () => { active = false }
+    void loadLinkProduct(productId).then(product => {
+      if (!active || manualChoice.current) return
+      if (!product) {
+        setError('O produto do atalho não foi encontrado. Busque pelo nome abaixo.')
+        return
+      }
+      setSearch(product.name)
+      setSelected(product)
     }).catch(cause => {
-      if (active) setError(cause instanceof Error ? cause.message : 'Não foi possível carregar as fichas de receita.')
+      if (active && !manualChoice.current) setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o produto do atalho.')
     })
     return () => { active = false }
   }, [allowed])
+
+  // Erro próprio: sem as fichas os detalhes não carregam, e a busca, que limpa
+  // o erro comum ao começar, não pode esconder isso.
+  useEffect(() => {
+    let active = true
+    if (!allowed) return () => { active = false }
+    setRecipeError('')
+    void loadRecipeUsageIndex().then(index => {
+      if (active) setRecipeUsageIndex(index)
+    }).catch(cause => {
+      if (active) setRecipeError(cause instanceof Error ? cause.message : 'Não foi possível carregar as fichas de receita.')
+    })
+    return () => { active = false }
+  }, [allowed, recipeAttempt])
 
   const searchProducts = useCallback(async (term: string) => {
     if (!allowed) return
@@ -104,15 +131,16 @@ export default function VinculosNfePage() {
             <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações: notas já gravadas, custos, fichas e contas não mudam.</p>
             <label htmlFor="nfe-product-search" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Buscar produto do catálogo</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { setSearch(event.target.value); setSelected(null); setNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
+              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { manualChoice.current = true; setSearch(event.target.value); setSelected(null); setNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
               {loading && <span role="status">Carregando…</span>}
             </div>
             {products.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => { setSelected(product); setNotice('') }}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
+                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => { manualChoice.current = true; setSelected(product); setNotice('') }}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
               </div>
             )}
             {products.length === 100 && <small style={{ display: 'block', marginTop: 8 }}>Mostrando até 100 produtos. Refine a busca para localizar outro item.</small>}
+            {recipeError && <p role="alert" style={{ color: 'var(--berry)', marginBottom: 0 }}>Fichas de receita: {recipeError}<button type="button" className="ps-btn ghost sm" style={{ marginLeft: 8 }} onClick={() => setRecipeAttempt(attempt => attempt + 1)}>Carregar fichas de novo</button></p>}
             {error && <p role="alert" style={{ color: 'var(--berry)', marginBottom: 0 }}>{error}<button type="button" className="ps-btn ghost sm" style={{ marginLeft: 8 }} onClick={() => selected ? setSelected({ ...selected }) : void searchProducts(search)}>Tentar novamente</button></p>}
             {!loading && !error && products.length === 0 && <p style={{ marginBottom: 0, color: 'var(--ink-soft)' }}>Nenhum produto encontrado.</p>}
           </section>
