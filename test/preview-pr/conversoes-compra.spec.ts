@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { cabecalhosDaSessao, entrarComo, matriz, type Perfil } from './apoio/entrar'
+import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './apoio/entrar'
 
 // Conversoes de compra na tela Produtos: so leitura, com atalho para a
 // correcao em Catalogo > Vinculos NF-e. Salvar o produto nao toca mais nas
@@ -22,8 +22,8 @@ interface MemoriaLida {
   conversion_factor: number
 }
 
-async function memoriasDoInsumo(page: Page, perfil: Perfil): Promise<MemoriaLida[]> {
-  const acesso = await entrarComo(page, perfil)
+// Le com a sessao ja aberta: entrar de novo na mesma aba nao mostra o login.
+async function memoriasDoInsumo(page: Page, acesso: AcessoAoBanco): Promise<MemoriaLida[]> {
   const resposta = await page.request.get(
     `${acesso.url}/rest/v1/payable_product_mappings?base_product_id=eq.${INSUMO_ID}&select=id,updated_at,last_confirmed_at,last_confirmed_by,factor_confirmed,conversion_factor&order=id`,
     { headers: await cabecalhosDaSessao(page, acesso), maxRedirects: 0 },
@@ -96,7 +96,8 @@ for (const [perfil, nome] of [
 test('Salvar o produto nao altera as memorias de vinculo do fornecedor',
   matriz('Administrador', 'JC', 'permitido', 'Salvar produto sem tocar nas memorias (tela Produtos)'),
   async ({ page }) => {
-    const antes = await memoriasDoInsumo(page, 'admin')
+    const acesso = await entrarComo(page, 'admin')
+    const antes = await memoriasDoInsumo(page, acesso)
     expect(antes.length).toBeGreaterThanOrEqual(2)
 
     await abrirInsumoNoCatalogo(page)
@@ -106,7 +107,7 @@ test('Salvar o produto nao altera as memorias de vinculo do fornecedor',
 
     // Relido do banco depois de recarregar: mesma versao, mesmo autor, mesmo fator.
     await page.reload()
-    const depois = await memoriasDoInsumo(page, 'admin')
+    const depois = await memoriasDoInsumo(page, acesso)
     expect(depois).toEqual(antes)
   })
 
