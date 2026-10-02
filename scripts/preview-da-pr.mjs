@@ -122,26 +122,40 @@ export function comparacaoPermiteReuso(comparacao) {
   return { ok: false, motivo: `houve mudanca que exige build novo (${motivo ?? perfil}${arquivo ? `: ${arquivo}` : ''}).` }
 }
 
-async function pedirJson(url, fetchImpl) {
-  const resposta = await fetchImpl(url, { headers: { Accept: 'application/vnd.github+json' } })
-  if (!resposta.ok) throw new Error(`O GitHub respondeu ${resposta.status} ao localizar o preview da PR (${url}).`)
+const ORIGEM_API_GITHUB = 'https://api.github.com'
+
+/**
+ * Sem token, a API do GitHub conta 60 pedidos por hora por IP, e o IP do
+ * runner e compartilhado: e a causa provavel do 403 da PR 465 em 01/10, que
+ * passou na repeticao. Com o token do job o limite e por repositorio. Todo endereco consultado
+ * nasce de ORIGEM_API_GITHUB, entao o token so viaja para a API do GitHub, e
+ * nunca entra na mensagem de erro.
+ */
+async function pedirJson(url, { fetchImpl, githubToken }) {
+  const headers = { Accept: 'application/vnd.github+json' }
+  if (githubToken) headers.Authorization = `Bearer ${githubToken}`
+  const resposta = await fetchImpl(url, { headers })
+  if (!resposta.ok) {
+    const esgotado = resposta.headers?.get?.('x-ratelimit-remaining') === '0' ? '; limite de pedidos da API esgotado' : ''
+    throw new Error(`O GitHub respondeu ${resposta.status} ao localizar o preview da PR (${url}${esgotado}).`)
+  }
   return resposta.json()
 }
 
-async function deploymentsDoCommit({ api, sha, fetchImpl }) {
-  const deployments = await pedirJson(`${api}/deployments?sha=${sha}&environment=Preview&per_page=10`, fetchImpl)
+async function deploymentsDoCommit({ api, sha, pedir }) {
+  const deployments = await pedir(`${api}/deployments?sha=${sha}&environment=Preview&per_page=10`)
   if (!Array.isArray(deployments)) throw new Error('A lista de deployments do GitHub nao veio como lista.')
   const maisNova = deployments[0]
   if (!maisNova) return { existe: false, deployments: [] }
   if (!maisNova.id) return { existe: true, deployments: [] }
-  const statuses = await pedirJson(`${api}/deployments/${maisNova.id}/statuses?per_page=20`, fetchImpl)
+  const statuses = await pedir(`${api}/deployments/${maisNova.id}/statuses?per_page=20`)
   return { existe: true, deployments: [{ id: maisNova.id, statuses }] }
 }
 
-async function listarCommitsDaPr({ api, prNumber, fetchImpl }) {
+async function listarCommitsDaPr({ api, prNumber, pedir }) {
   const commits = []
   for (let pagina = 1; pagina <= Math.ceil(LIMITE_COMMITS_PR / 100); pagina += 1) {
-    const lote = await pedirJson(`${api}/pulls/${prNumber}/commits?per_page=100&page=${pagina}`, fetchImpl)
+    const lote = await pedir(`${api}/pulls/${prNumber}/commits?per_page=100&page=${pagina}`)
     if (!Array.isArray(lote)) throw new Error('A lista de commits da PR nao veio como lista.')
     commits.push(...lote)
     if (lote.length < 100) break
@@ -149,33 +163,34 @@ async function listarCommitsDaPr({ api, prNumber, fetchImpl }) {
   return commits
 }
 
-export async function localizarPreviewDaPr({ repositorio, prNumber, headSha, fetchImpl = fetch }) {
+export async function localizarPreviewDaPr({ repositorio, prNumber, headSha, githubToken, fetchImpl = fetch }) {
   if (!repositorio || !prNumber || !headSha) {
     throw new Error('O evento da PR nao informou repositorio, numero e commit para localizar o preview.')
   }
-  const api = `https://api.github.com/repos/${repositorio}`
+  const api = `${ORIGEM_API_GITHUB}/repos/${repositorio}`
+  const pedir = (url) => pedirJson(url, { fetchImpl, githubToken })
   const semPreview = 'A Vercel ainda nao publicou um preview verde para o commit atual da PR'
 
-  const atual = await deploymentsDoCommit({ api, sha: headSha, fetchImpl })
+  const atual = await deploymentsDoCommit({ api, sha: headSha, pedir })
   if (atual.existe) {
     const url = escolherDeploymentVerde(atual.deployments)
     if (url) return url
     throw new Error(`${semPreview}.`)
   }
 
-  const lista = commitsAnterioresDaPr(await listarCommitsDaPr({ api, prNumber, fetchImpl }), headSha)
+  const lista = commitsAnterioresDaPr(await listarCommitsDaPr({ api, prNumber, pedir }), headSha)
   if (!lista.ok) throw new Error(`${semPreview}: ${lista.motivo}`)
 
   for (const sha of lista.anteriores.slice(0, LIMITE_COMMITS_CONSULTADOS)) {
-    const anterior = await deploymentsDoCommit({ api, sha, fetchImpl })
+    const anterior = await deploymentsDoCommit({ api, sha, pedir })
     if (!anterior.existe) continue
     const url = escolherDeploymentVerde(anterior.deployments)
     if (!url) throw new Error(`${semPreview}: o ultimo commit publicado (${sha.slice(0, 7)}) nao tem preview verde.`)
-    const reuso = comparacaoPermiteReuso(await pedirJson(`${api}/compare/${sha}...${headSha}`, fetchImpl))
+    const reuso = comparacaoPermiteReuso(await pedir(`${api}/compare/${sha}...${headSha}`))
     if (!reuso.ok) throw new Error(`${semPreview}: ${reuso.motivo}`)
     // A Vercel pode ter publicado o commit atual durante esta busca; se sim,
     // quem decide e ele, nao o preview anterior.
-    if ((await deploymentsDoCommit({ api, sha: headSha, fetchImpl })).existe) {
+    if ((await deploymentsDoCommit({ api, sha: headSha, pedir })).existe) {
       throw new Error(`${semPreview}: o commit atual ganhou deployment durante a busca; rode de novo.`)
     }
     return url
