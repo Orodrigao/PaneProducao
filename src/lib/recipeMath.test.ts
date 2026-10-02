@@ -5,6 +5,7 @@ import {
   calculateFlourSharePercent,
   calculateYieldUnitsFromRecipeWeight,
   calculateRecipeTotals,
+  isFlourComponent,
   isPackagingComponent,
   packagingCostForPriceBase,
   quantityFromBakersPercentage,
@@ -81,6 +82,50 @@ describe('recipeMath', () => {
     expect(quantityFromBakersPercentageForComponent(20, null, { name: 'Farinha Integral', category: 'INSUMOS' })).toBe(1)
     expect(quantityFromBakersPercentageForComponent(70, null, { name: 'Água', category: 'INSUMOS' })).toBeNull()
     expect(quantityFromBakersPercentageForComponent(70, 1, { name: 'Água', category: 'INSUMOS' })).toBe(0.7)
+  })
+
+  it('trata pré-mistura como farinha base, pelos nomes do cadastro real', () => {
+    expect(isFlourComponent({ name: 'MIST. PÃO DE MANDIOQUINHA', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'MIST. PAO DE BATATA', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'Mistura Bolo de Milho Mauri 5kg', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'MISTURA PAO DE QUEIJO', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'Pré-mistura brioche', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'Premix integral', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'Pre mix multigrãos', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'PRE-MIX CIABATTA', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'PRÉ MISTURA CROISSANT', category: 'Insumos' })).toBe(true)
+    expect(isFlourComponent({ name: 'Base italiana', category: 'Pré-misturas' })).toBe(true)
+    expect(isFlourComponent({ name: 'Misto Quente', category: 'Lanches' })).toBe(false)
+    expect(isFlourComponent({ name: 'Mix de sementes', category: 'Insumos' })).toBe(false)
+    expect(isFlourComponent({ name: 'Leite integral', category: 'Insumos' })).toBe(false)
+  })
+
+  it('aceita a pré-mistura sozinha como 100% e calcula os demais sobre ela', () => {
+    expect(quantityFromBakersPercentageForComponent(100, null, { name: 'MIST. PÃO DE MANDIOQUINHA', category: 'Insumos' })).toBe(1)
+
+    // Bolo de Milho em produção: mistura 0,47 kg, leite 0,188 kg, ovo 0,141 kg.
+    const totals = calculateRecipeTotals([
+      { name: 'Mistura Bolo de Milho Mauri 5kg', category: 'Insumos', quantity: 0.47, cost: 14 },
+      { name: 'LEITE INTEGRAL 1LT', category: 'Insumos', quantity: 0.188, cost: 5 },
+      { name: 'OVO INSUMO', category: 'Insumos', quantity: 0.141, cost: 12 },
+    ])
+    expect(totals.flourBaseKg).toBe(0.47)
+    expect(calculateFlourSharePercent(0.188, totals.flourBaseKg)).toBeCloseTo(40, 6)
+    expect(calculateFlourSharePercent(0.141, totals.flourBaseKg)).toBeCloseTo(30, 6)
+  })
+
+  it('soma pré-mistura e farinha na mesma base quando a receita usa as duas', () => {
+    const totals = calculateRecipeTotals([
+      { name: 'MIST. PÃO DE MANDIOQUINHA', category: 'Insumos', quantity: 0.5, cost: 16.8 },
+      { name: 'Farinha de Trigo', category: 'Insumos', quantity: 0.5, cost: 4 },
+      { name: 'Água', category: 'Insumos', quantity: 0.6, cost: 0 },
+      { name: 'Saco mistura de grãos', category: 'Embalagens', quantity: 2, cost: 0.5 },
+    ])
+    expect(totals.flourBaseKg).toBe(1)
+    expect(totals.doughWeightKg).toBe(1.6)
+    expect(totals.ingredientCost).toBeCloseTo(10.4, 6)
+    expect(totals.packagingCost).toBe(1)
+    expect(calculateFlourSharePercent(0.6, totals.flourBaseKg)).toBe(60)
   })
 
   it('identifica embalagem por categoria ou nome', () => {
