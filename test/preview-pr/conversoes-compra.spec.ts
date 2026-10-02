@@ -116,6 +116,7 @@ test('A funcao antiga de conversoes nao existe mais na Data API, nem para o Admi
   async ({ page }) => {
     const acesso = await entrarComo(page, 'admin')
     const antes = await memoriasDoInsumo(page, acesso)
+    expect(antes.length).toBeGreaterThanOrEqual(2)
     const resposta = await page.request.post(`${acesso.url}/rest/v1/rpc/update_payable_product_mappings`, {
       headers: await cabecalhosDaSessao(page, acesso),
       data: {
