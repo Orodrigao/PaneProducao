@@ -48,15 +48,19 @@ select ok((select bool_or(prosrc ilike all(array['%usable_quantity%', '%apply_xm
 select ok(exists(select 1 from pg_constraint where conname = 'payable_purchases_classification_status_check'),
   'status de classificação é restrito');
 
-select ok(has_function_privilege('authenticated', 'public.update_payable_product_mappings(uuid, jsonb)', 'execute'),
-  'authenticated pode corrigir conversoes pelo RPC protegido');
-select ok(not has_function_privilege('anon', 'public.update_payable_product_mappings(uuid, jsonb)', 'execute'),
-  'anon nao corrige conversoes');
+-- Desde 02/10/2026 a edição antiga de conversões do Catálogo não existe mais:
+-- memória do fornecedor só se corrige por public.correct_payable_product_mapping
+-- (Catálogo > Vínculos NF-e), provada em vinculos_nfe_correcao.test.sql.
+select ok(to_regprocedure('public.update_payable_product_mappings(uuid, jsonb)') is null,
+  'a função antiga de conversões do Catálogo foi removida');
+select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where p.proname = 'update_payable_product_mappings'),
+  'nenhuma outra assinatura da função antiga sobrou em nenhum schema');
 select ok(not has_table_privilege('authenticated', 'public.payable_product_mappings', 'update'),
   'mapeamentos nao aceitam update direto pelo cliente');
-select ok((select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = 'update_payable_product_mappings') ilike all(array['%pode_corrigir_vinculos_nfe%', '%base_product_id%', '%conversion_factor%']),
-  'RPC de conversao segue a regra de quem corrige vinculos de NF-e e valida o produto-base');
+select ok(not has_table_privilege('authenticated', 'public.payable_product_mappings', 'insert')
+  and not has_table_privilege('authenticated', 'public.payable_product_mappings', 'delete'),
+  'mapeamentos nao aceitam insert nem delete direto pelo cliente');
 
 select * from finish();
 rollback;

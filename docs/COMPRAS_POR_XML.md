@@ -767,9 +767,8 @@ fichas ou contas; isso é das fases 4 a 6.
 
 A escrita passa só pela função `public.correct_payable_product_mapping`, que
 entra na mesma fila por fornecedor da importação e da classificação
-(`payable-mapping-supplier:`; a edição antiga de conversões no Catálogo,
-`update_payable_product_mappings`, ainda fica fora dessa fila, sem versão nem
-histórico, até ser removida), recusa perfil
+(`payable-mapping-supplier:`; desde 02/10/2026 é o único caminho que corrige
+memória, porque a edição antiga de conversões no Catálogo foi removida), recusa perfil
 sem permissão, versão desatualizada (código PT409, sem a
 repetição automática que o 40001 provocaria no PostgREST) e entrada inválida.
 O identificador do pedido é único: repetir o mesmo envio devolve a correção já
@@ -785,11 +784,13 @@ produto só para leitura, com o atalho "Corrigir em Vínculos NF-e", que abre
 esta tela já no produto. Salvar um produto não envia mais as memórias: antes
 o salvamento reenviava todas e marcava como conferido um fator que ninguém
 tinha conferido, o que tirava a trava de conferência da próxima importação.
-A função antiga dessa edição, `update_payable_product_mappings`, passou a
-seguir a mesma regra de acesso (`private.pode_corrigir_vinculos_nfe`) e sai
-numa migration seguinte, depois que o site sem ela estiver publicado. Provas:
-pgTAP `conversoes_compra_regra_vinculos.test.sql` e o roteiro
-`test/preview-pr/conversoes-compra.spec.ts`.
+A função antiga dessa edição, `update_payable_product_mappings`, foi removida
+do banco em 02/10/2026 (migration
+`20261002174607_remover_funcao_antiga_conversoes_compra.sql`), em duas fases:
+primeiro o site parou de chamá-la (PR 483), depois o banco a apagou. Provas:
+pgTAP `contas_a_pagar_xml.test.sql` (a função não existe mais) e o roteiro
+`test/preview-pr/conversoes-compra.spec.ts` (nem o Administrador a encontra na
+Data API, e salvar o produto não toca nas memórias).
 
 ## Decisões pendentes
 
