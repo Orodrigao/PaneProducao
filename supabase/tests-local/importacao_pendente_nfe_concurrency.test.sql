@@ -34,9 +34,16 @@ select extensions.dblink_connect(
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
+    delete from public.payable_purchase_item_corrections where undoes_correction_id is not null
+      and product_ids && array['98000000-0000-4000-8000-0000000000d1', '98000000-0000-4000-8000-0000000000d2']::uuid[];
+    delete from public.payable_purchase_item_corrections
+      where product_ids && array['98000000-0000-4000-8000-0000000000d1', '98000000-0000-4000-8000-0000000000d2']::uuid[];
     delete from public.payable_purchases where nfe_key in (
       '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
-      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
+      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074',
+      '35260900000000000000550010000000098000000075', '35260900000000000000550010000000098000000076',
+      '35260900000000000000550010000000098000000077');
+    delete from public.products where id = '98000000-0000-4000-8000-0000000000d2';
     delete from public.payable_product_mapping_corrections where mapping_id = '98000000-0000-4000-8000-0000000000e9';
     delete from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9';
     delete from public.app_profiles where user_id = '98000000-0000-4000-8000-00000000000b';
@@ -579,13 +586,283 @@ select is(
   'uma correcao no historico'
 );
 
+-- Vinculos de NF-e, fase 4: correcao de itens de notas gravadas. Duas
+-- correcoes entram numa fila unica (trava consultiva payable-item-correction);
+-- correcao e classificacao de item pendente disputando o mesmo produto esperam
+-- uma pela outra e terminam sem deadlock, nas duas ordens.
+select extensions.dblink_exec(
+  'draft_holder',
+  $remote$
+    insert into public.products(id, name, category, active, unit, kind, cost_price)
+    values ('98000000-0000-4000-8000-0000000000d2', '[TESTE] Farinha certa concorrente', 'Insumos', true, 'kg', 'insumo', 7.00);
+    insert into public.payable_purchases (
+      id, request_id, store, supplier_id, purchase_date, origin, document_type, payment_method,
+      status, total_value, nfe_key, nfe_number, nfe_issued_at, classification_status, created_by
+    ) values (
+      '98000000-0000-4000-8000-000000000075', '98000000-0000-4000-8000-000000000175', 'jc',
+      '98000000-0000-4000-8000-0000000000f1', '2026-09-14', 'xml', 'nfe', 'boleto', 'aberta', 30.00,
+      '35260900000000000000550010000000098000000075', '75', '2026-09-14', 'pendente',
+      '98000000-0000-4000-8000-00000000000a'
+    );
+    insert into public.payable_purchase_items (
+      id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
+      source_product_code, source_description, source_unit, source_quantity, conversion_basis, mapping_status
+    ) values
+      ('98000000-0000-4000-8000-0000000000c1', '98000000-0000-4000-8000-000000000075', 'PENDENTE 1', 'kg', 2, 10, 1,
+       'PEN-1', '[TESTE] Pendente concorrente 1', 'kg', 2, 'simple', 'pendente'),
+      ('98000000-0000-4000-8000-0000000000c2', '98000000-0000-4000-8000-000000000075', 'PENDENTE 2', 'kg', 1, 10, 2,
+       'PEN-2', '[TESTE] Pendente concorrente 2', 'kg', 1, 'simple', 'pendente');
+    -- Nota de 13/09 que sobra para a farinha quando o item de 14/09 sair dela.
+    insert into public.payable_purchases (
+      id, request_id, store, supplier_id, purchase_date, origin, document_type, payment_method,
+      status, total_value, nfe_key, nfe_number, nfe_issued_at, classification_status, created_by
+    ) values (
+      '98000000-0000-4000-8000-000000000076', '98000000-0000-4000-8000-000000000176', 'jc',
+      '98000000-0000-4000-8000-0000000000f1', '2026-09-13', 'xml', 'nfe', 'boleto', 'aberta', 20.00,
+      '35260900000000000000550010000000098000000076', '76', '2026-09-13', 'pendente',
+      '98000000-0000-4000-8000-00000000000a'
+    );
+    insert into public.payable_purchase_items (
+      id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_line_number,
+      source_product_code, source_description, source_unit, source_quantity, conversion_basis,
+      conversion_factor, usable_quantity, normalized_unit_cost, mapping_status
+    ) values
+      ('98000000-0000-4000-8000-0000000000c3', '98000000-0000-4000-8000-000000000076', null, 'PENDENTE 3', 'kg', 1, 10, 1,
+       'PEN-3', '[TESTE] Pendente concorrente 3', 'kg', 1, 'simple', null, null, null, 'pendente'),
+      ('98000000-0000-4000-8000-0000000000c4', '98000000-0000-4000-8000-000000000076', '98000000-0000-4000-8000-0000000000d1',
+       '[TESTE] Farinha concorrente', 'kg', 1, 10, 2, 'FAR-76', '[TESTE] Farinha de 13/09', 'kg', 1, 'simple', 1, 1, 10, 'mapeado');
+    -- Nota de 08/09 com um item pendente e outro ja na farinha (cenario E).
+    insert into public.payable_purchases (
+      id, request_id, store, supplier_id, purchase_date, origin, document_type, payment_method,
+      status, total_value, nfe_key, nfe_number, nfe_issued_at, classification_status, created_by
+    ) values (
+      '98000000-0000-4000-8000-000000000077', '98000000-0000-4000-8000-000000000177', 'jc',
+      '98000000-0000-4000-8000-0000000000f1', '2026-09-08', 'xml', 'nfe', 'boleto', 'aberta', 20.00,
+      '35260900000000000000550010000000098000000077', '77', '2026-09-08', 'pendente',
+      '98000000-0000-4000-8000-00000000000a'
+    );
+    insert into public.payable_purchase_items (
+      id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_line_number,
+      source_product_code, source_description, source_unit, source_quantity, conversion_basis,
+      conversion_factor, usable_quantity, normalized_unit_cost, mapping_status
+    ) values
+      ('98000000-0000-4000-8000-0000000000c5', '98000000-0000-4000-8000-000000000077', null, 'PENDENTE 5', 'kg', 1, 10, 1,
+       'PEN-5', '[TESTE] Pendente concorrente 5', 'kg', 1, 'simple', null, null, null, 'pendente'),
+      ('98000000-0000-4000-8000-0000000000c6', '98000000-0000-4000-8000-000000000077', '98000000-0000-4000-8000-0000000000d1',
+       '[TESTE] Farinha concorrente', 'kg', 1, 10, 2, 'FAR-77', '[TESTE] Farinha de 08/09', 'kg', 1, 'simple', 1, 1, 10, 'mapeado');
+  $remote$
+);
+
+create function pg_temp.as_admin(p_connection text) returns void
+language plpgsql as $$
+begin
+  perform extensions.dblink_exec(p_connection, 'begin');
+  perform extensions.dblink_exec(p_connection, $t$set local statement_timeout = '15s'$t$);
+  perform extensions.dblink_exec(p_connection, 'set local role authenticated');
+  perform extensions.dblink_exec(p_connection, $sub$set local "request.jwt.claim.sub" = '98000000-0000-4000-8000-00000000000b'$sub$);
+end;
+$$;
+
+-- Item da nota de 12/09 (074) que vai para a farinha certa.
+create temporary table correcao_item as
+select item.id
+from public.payable_purchase_items item
+join public.payable_purchases purchase on purchase.id = item.purchase_id
+where purchase.nfe_key = '35260900000000000000550010000000098000000074';
+
+create function pg_temp.correcao_json() returns text
+language sql as $$
+  select jsonb_build_array(jsonb_build_object(
+    'item_id', (select id from correcao_item),
+    'product_id', '98000000-0000-4000-8000-0000000000d2',
+    'conversion_factor', 1))::text
+$$;
+
+-- A0. O destino vira fabricacao propria enquanto a correcao espera a trava do
+-- produto: a correcao confere o cadastro depois de travar e recusa.
+select extensions.dblink_exec('draft_holder', 'begin');
+select extensions.dblink_exec('draft_holder',
+  $q$update public.products set is_fabricacao_propria = true where id = '98000000-0000-4000-8000-0000000000d2'$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  format($q$select (public.correct_payable_purchase_items(null, 'previa', %L::jsonb) ->> 'mode')$q$, pg_temp.correcao_json()));
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a correcao espera a trava do produto de destino que esta sendo alterado'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table destino_mudou as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select ok(
+  extensions.dblink_error_message('draft_worker') like '%Escolha um produto ativo que se compra%',
+  'com o destino virado fabricacao propria durante a espera, a correcao e recusada'
+);
+create temporary table destino_mudou_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'rollback');
+select extensions.dblink_exec('draft_holder',
+  $q$update public.products set is_fabricacao_propria = false where id = '98000000-0000-4000-8000-0000000000d2'$q$);
+
+-- A. Duas correcoes: a segunda espera a primeira terminar.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder',
+  format($q$do $previa$ begin perform public.correct_payable_purchase_items(null, 'previa', %L::jsonb); end $previa$$q$, pg_temp.correcao_json()));
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  format($q$select (public.correct_payable_purchase_items(null, 'previa', %L::jsonb) ->> 'mode')$q$, pg_temp.correcao_json()));
+select ok(
+  pg_temp.wait_for_advisory((select pid from worker_backend)),
+  'a segunda correcao de notas espera na fila unica enquanto a primeira nao terminou'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table segunda_correcao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a segunda correcao prossegue depois da primeira, sem erro');
+create temporary table segunda_correcao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is((select result from segunda_correcao), 'previa', 'a previa da segunda correcao responde depois da espera');
+
+-- B. Classificacao segura o produto; a correcao que o envolve espera e termina.
+select pg_temp.as_financeiro('draft_holder');
+select extensions.dblink_exec('draft_holder',
+  $q$do $classifica$ begin perform public.classify_payable_item('98000000-0000-4000-8000-0000000000c1', '98000000-0000-4000-8000-0000000000d1', 'simple', 1, 2, false, true); end $classifica$$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  format($q$select (public.correct_payable_purchase_items(null, 'previa', %L::jsonb) ->> 'mode')$q$, pg_temp.correcao_json()));
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a correcao espera a classificacao que segura o mesmo produto'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table correcao_depois_da_classificacao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a correcao prossegue depois da classificacao, sem deadlock');
+create temporary table correcao_depois_da_classificacao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+-- C. Correcao aplicada segura itens e produtos; a classificacao que cai no
+-- produto de destino espera e termina.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder', format($q$do $aplica$
+  declare v_hash text;
+  begin
+    v_hash := public.correct_payable_purchase_items(null, 'previa', %1$L::jsonb) ->> 'impact_hash';
+    perform public.correct_payable_purchase_items('98000000-0000-4000-8000-0000000000c9', 'aplicar', %1$L::jsonb, null, v_hash);
+  end $aplica$$q$, pg_temp.correcao_json()));
+select pg_temp.as_financeiro('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select 'ok'::text from public.classify_payable_item('98000000-0000-4000-8000-0000000000c2', '98000000-0000-4000-8000-0000000000d2', 'simple', 1, 1, false, true)$q$);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a classificacao espera a correcao que segura o produto de destino'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table classificacao_depois_da_correcao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a classificacao prossegue depois da correcao, sem deadlock');
+create temporary table classificacao_depois_da_correcao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+-- E. Classificacao de um item pendente e correcao de outro item da MESMA nota.
+-- A classificacao segura a conta e o item pendente e, ao recalcular o custo,
+-- mexe nos outros itens da conta. A correcao espera pela conta sem segurar
+-- item nenhum dela, e as duas terminam sem deadlock. A sessao da frente faz o
+-- primeiro passo da classificacao (travar item e conta) a mao, para a correcao
+-- chegar no meio, e depois chama a classificacao de verdade.
+select extensions.dblink_exec('draft_holder', 'begin');
+select extensions.dblink_exec('draft_holder', $q$set local statement_timeout = '15s'$q$);
+select extensions.dblink_exec('draft_holder', $q$do $trava$ begin
+  perform 1 from public.payable_purchase_items item
+  join public.payable_purchases purchase on purchase.id = item.purchase_id
+  where item.id = '98000000-0000-4000-8000-0000000000c5'
+  for update of item, purchase;
+end $trava$$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select (public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"98000000-0000-4000-8000-0000000000c6","product_id":"98000000-0000-4000-8000-0000000000d2","conversion_factor":1}]') ->> 'mode')$q$);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a correcao de um item espera a conta que a classificacao de outro item da mesma nota segura'
+);
+select extensions.dblink_exec('draft_holder', 'set local role authenticated');
+select extensions.dblink_exec('draft_holder', $sub$set local "request.jwt.claim.sub" = '98000000-0000-4000-8000-00000000000a'$sub$);
+select is(
+  extensions.dblink_exec('draft_holder', $q$do $classifica$ begin
+    perform public.classify_payable_item('98000000-0000-4000-8000-0000000000c5', '98000000-0000-4000-8000-0000000000d1', 'simple', 1, 1, false, true);
+  end $classifica$$q$, false),
+  'DO',
+  'a classificacao recalcula o custo mexendo no outro item da nota sem esbarrar na correcao'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table correcao_na_mesma_nota as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a correcao prossegue depois da classificacao da mesma nota, sem deadlock');
+create temporary table correcao_na_mesma_nota_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+
+-- D. A correcao tira da farinha o item que dava o custo (nota de 14/09) e
+-- recalcula pela nota de 13/09, que ainda tem um item pendente. A classificacao
+-- desse item espera a correcao e termina, sem deadlock.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder', $q$do $aplica$
+  declare
+    v_items jsonb := '[{"item_id":"98000000-0000-4000-8000-0000000000c1","product_id":"98000000-0000-4000-8000-0000000000d2","conversion_factor":1}]';
+    v_hash text;
+  begin
+    v_hash := public.correct_payable_purchase_items(null, 'previa', v_items) ->> 'impact_hash';
+    perform public.correct_payable_purchase_items('98000000-0000-4000-8000-0000000000ca', 'aplicar', v_items, null, v_hash);
+  end $aplica$$q$);
+select pg_temp.as_financeiro('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select 'ok'::text from public.classify_payable_item('98000000-0000-4000-8000-0000000000c3', '98000000-0000-4000-8000-0000000000d1', 'simple', 1, 1, false, true)$q$);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'a classificacao na nota que sobrou espera a correcao que recalcula a origem'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table classificacao_na_nota_restante as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'a classificacao na nota que sobrou prossegue, sem deadlock');
+create temporary table classificacao_na_nota_restante_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is(
+  (select cost_price from public.products where id = '98000000-0000-4000-8000-0000000000d1'),
+  10.00::numeric,
+  'a farinha fica com o custo da nota de 13/09 (20 / 2), recalculado pela correcao e pela classificacao'
+);
+
+select is(
+  (select product_id from public.payable_purchase_items where id = (select id from correcao_item)),
+  '98000000-0000-4000-8000-0000000000d2'::uuid,
+  'o item corrigido ficou na farinha certa'
+);
+select is(
+  (select count(*)::integer from public.payable_purchase_item_corrections
+   where product_ids @> array['98000000-0000-4000-8000-0000000000d2']::uuid[]),
+  2,
+  'duas correcoes de notas no historico: as previas e a recusada nao gravaram'
+);
+
 -- Limpeza (as outras sessoes gravaram fora desta transacao).
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
+    delete from public.payable_purchase_item_corrections where undoes_correction_id is not null
+      and product_ids && array['98000000-0000-4000-8000-0000000000d1', '98000000-0000-4000-8000-0000000000d2']::uuid[];
+    delete from public.payable_purchase_item_corrections
+      where product_ids && array['98000000-0000-4000-8000-0000000000d1', '98000000-0000-4000-8000-0000000000d2']::uuid[];
     delete from public.payable_purchases where nfe_key in (
       '35260900000000000000550010000000098000000071', '35260900000000000000550010000000098000000072',
-      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074');
+      '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074',
+      '35260900000000000000550010000000098000000075', '35260900000000000000550010000000098000000076',
+      '35260900000000000000550010000000098000000077');
+    delete from public.products where id = '98000000-0000-4000-8000-0000000000d2';
     delete from public.payable_product_mapping_corrections where mapping_id = '98000000-0000-4000-8000-0000000000e9';
     delete from public.payable_product_mappings where id = '98000000-0000-4000-8000-0000000000e9';
     delete from public.app_profiles where user_id = '98000000-0000-4000-8000-00000000000b';

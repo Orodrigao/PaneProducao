@@ -1975,6 +1975,53 @@ on conflict (id) do update set
   active = excluded.active, last_confirmed_by = excluded.last_confirmed_by,
   last_confirmed_at = now(), updated_at = now();
 
+-- Vinculos de NF-e, fase 4: nota ficticia com um item gravado no produto errado
+-- (maionese em balde ligada a "nota errada" com fator 7), para o Financeiro
+-- Catalogo corrigir para "nota certa" e desfazer no navegador. O roteiro
+-- termina desfazendo; aqui o seed apaga o historico desses produtos (o
+-- desfazer antes da correcao que ele aponta) e volta itens e custos ao estado
+-- conhecido.
+delete from public.payable_purchase_item_corrections
+where undoes_correction_id is not null
+  and product_ids && array['96600000-0000-4000-8000-000000000011', '96600000-0000-4000-8000-000000000012']::uuid[];
+delete from public.payable_purchase_item_corrections
+where product_ids && array['96600000-0000-4000-8000-000000000011', '96600000-0000-4000-8000-000000000012']::uuid[];
+delete from public.payable_purchases where id = '96600000-0000-4000-8000-0000000000b1';
+
+insert into public.products(id, name, category, active, unit, kind, cost_price, is_fabricacao_propria) values
+  ('96600000-0000-4000-8000-000000000011', '[TESTE] Vinculo nota errada', 'Insumos', true, 'kg', 'insumo', 5.43, false),
+  ('96600000-0000-4000-8000-000000000012', '[TESTE] Vinculo nota certa', 'Insumos', true, 'kg', 'insumo', 10.00, false)
+on conflict (id) do update set
+  name = excluded.name, category = excluded.category, active = excluded.active,
+  unit = excluded.unit, kind = excluded.kind, cost_price = excluded.cost_price,
+  is_fabricacao_propria = excluded.is_fabricacao_propria;
+
+insert into public.payable_purchases (
+  id, request_id, store, supplier_id, purchase_date, origin, document_type,
+  payment_method, status, total_value, notes, nfe_key, nfe_number, nfe_series,
+  nfe_issued_at, classification_status, created_by
+)
+select '96600000-0000-4000-8000-0000000000b1', '96600000-0000-4000-8000-0000000000c1', 'jc',
+       '40000000-0000-4000-8000-000000000001',
+       private.data_na_padaria() - 20, 'xml', 'nfe', 'boleto', 'aberta', 152,
+       '[TESTE] NF-e com item no produto errado, para a correcao de notas.',
+       '35260912345678000195550010009660011009660011', '966001', '1',
+       private.data_na_padaria() - 20, 'completa', user_account.id
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  and exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');
+
+insert into public.payable_purchase_items (
+  id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_line_number,
+  source_product_code, source_description, source_unit, source_quantity, conversion_basis,
+  conversion_factor, usable_quantity, normalized_unit_cost, category_snapshot, mapping_status, cost_applied
+)
+select '96600000-0000-4000-8000-0000000000d1', '96600000-0000-4000-8000-0000000000b1',
+       '96600000-0000-4000-8000-000000000011', '[TESTE] Vinculo nota errada', 'kg', 4, 38, 1,
+       'TESTE-MAI-BALDE', '[TESTE] Maionese balde 3kg', 'UN', 4, 'simple',
+       7, 28, 5.428571, 'Insumos', 'mapeado', true
+where exists (select 1 from public.payable_purchases purchase where purchase.id = '96600000-0000-4000-8000-0000000000b1');
+
 -- Indicadores da formação de preço: setembro fictício provisório e outubro
 -- fictício completo. As datas fixas permitem conferir os dois estados com
 -- private.pricing_financial_indicators_report('2026-11-01') durante o ensaio.

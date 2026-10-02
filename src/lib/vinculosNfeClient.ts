@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { RecipeUsageIndex } from '@/lib/recipeUsage'
 import type { MemoryCorrectionAction } from '@/lib/vinculosNfe'
+import { parseItemCorrectionImpact, parseItemCorrectionResult, type ItemCorrectionImpact, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
 
 const PAGE_SIZE = 500
 
@@ -9,6 +10,8 @@ export interface ProductOption {
   name: string
   unit: string | null
   active: boolean
+  kind?: string | null
+  is_fabricacao_propria?: boolean | null
 }
 
 export interface LinkAuthor {
@@ -38,6 +41,7 @@ export interface SupplierMapping {
 
 export interface InvoiceLinkHistory {
   id: string
+  purchase_id: string
   supplier_id: string | null
   factor_confirmed: boolean
   supplier_name: string
@@ -56,6 +60,8 @@ export interface InvoiceLinkHistory {
   unit_price: number
   conversion_basis: string | null
   conversion_factor: number | null
+  usable_quantity: number | null
+  normalized_unit_cost: number | null
   mapping_status: string
   mapping_confirmed_at: string | null
   mapping_confirmed_by: string | null
@@ -100,6 +106,7 @@ type MappingRow = Omit<SupplierMapping, 'supplier_name'> & {
 
 type InvoiceRow = {
   id: string
+  purchase_id: string
   item_name: string
   unit: string
   quantity: number
@@ -111,6 +118,8 @@ type InvoiceRow = {
   source_quantity: number | null
   conversion_basis: string | null
   conversion_factor: number | null
+  usable_quantity: number | null
+  normalized_unit_cost: number | null
   mapping_status: string
   mapping_confirmed_at: string | null
   mapping_confirmed_by: string | null
@@ -158,7 +167,7 @@ function relationName(value: { name: string } | { name: string }[] | null): stri
 }
 
 export async function searchLinkProducts(search: string): Promise<ProductOption[]> {
-  let query = supabase.from('products').select('id,name,unit,active').order('name').limit(100)
+  let query = supabase.from('products').select('id,name,unit,active,kind,is_fabricacao_propria').order('name').limit(100)
   const term = search.trim()
   if (term) query = query.ilike('name', `%${term.replace(/[%_]/g, '\\$&')}%`)
   const { data, error } = await query
@@ -178,7 +187,7 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
       .select('id,supplier_id,supplier:suppliers(name),supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,active,last_confirmed_at,last_confirmed_by,updated_at')
       .eq('base_product_id', product.id).order('last_confirmed_at', { ascending: false }).range(start, end)),
     loadAll<InvoiceRow>((start, end) => supabase.from('payable_purchase_items')
-      .select('id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))')
+      .select('id,purchase_id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,usable_quantity,normalized_unit_cost,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))')
       .eq('product_id', product.id).eq('purchase.origin', 'xml').eq('purchase.store', 'jc')
       .order('id').range(start, end)),
     supabase.rpc('list_vinculo_nfe_authors', { p_product_id: product.id }),
@@ -202,6 +211,7 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
     if (!row.purchase) return []
     return [{
       id: row.id,
+      purchase_id: row.purchase_id,
       supplier_id: row.purchase.supplier_id,
       supplier_name: relationName(row.purchase.supplier),
       invoice_number: row.purchase.nfe_number,
@@ -219,6 +229,8 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
       unit_price: Number(row.unit_price),
       conversion_basis: row.conversion_basis,
       conversion_factor: row.conversion_factor === null ? null : Number(row.conversion_factor),
+      usable_quantity: row.usable_quantity === null ? null : Number(row.usable_quantity),
+      normalized_unit_cost: row.normalized_unit_cost === null ? null : Number(row.normalized_unit_cost),
       mapping_status: row.mapping_status,
       mapping_confirmed_at: row.mapping_confirmed_at,
       mapping_confirmed_by: row.mapping_confirmed_by,
@@ -265,4 +277,94 @@ export async function correctSupplierMapping(request: MemoryCorrectionRequest): 
     p_conversion_factor: request.conversionFactor ?? null,
   })
   if (error) throw new Error(error.message || 'Não foi possível gravar a correção.')
+}
+
+export interface ItemCorrectionRequestItem {
+  itemId: string
+  productId: string
+  conversionFactor: number
+}
+
+/** O efeito mudou entre a prévia e a confirmação (código PT409 do banco). */
+export class ItemCorrectionConflictError extends Error {}
+
+export type ItemCorrectionTarget = { items: readonly ItemCorrectionRequestItem[] } | { undoCorrectionId: string }
+
+function itemCorrectionArgs(target: ItemCorrectionTarget) {
+  if ('undoCorrectionId' in target) return { p_items: null, p_undo_correction_id: target.undoCorrectionId }
+  return {
+    p_items: target.items.map(item => ({ item_id: item.itemId, product_id: item.productId, conversion_factor: item.conversionFactor })),
+    p_undo_correction_id: null,
+  }
+}
+
+/**
+ * Prévia: o banco aplica a correção, mede o efeito e desfaz tudo. Por isso é
+ * sempre POST (supabase.rpc), nunca GET.
+ */
+export async function previewItemCorrection(target: ItemCorrectionTarget): Promise<ItemCorrectionResult> {
+  const { data, error } = await supabase.rpc('correct_payable_purchase_items', {
+    p_request_id: null,
+    p_mode: 'previa',
+    ...itemCorrectionArgs(target),
+    p_expected_impact_hash: null,
+  })
+  if (error) throw new Error(error.message || 'Não foi possível calcular a prévia.')
+  return parseItemCorrectionResult(data)
+}
+
+/**
+ * Grava a correção conferida. O mesmo requestId pode ser reenviado (rede que
+ * caiu, toque repetido): o banco devolve a correção já gravada.
+ */
+export async function applyItemCorrection(target: ItemCorrectionTarget, requestId: string, expectedImpactHash: string): Promise<ItemCorrectionResult> {
+  const { data, error } = await supabase.rpc('correct_payable_purchase_items', {
+    p_request_id: requestId,
+    p_mode: 'aplicar',
+    ...itemCorrectionArgs(target),
+    p_expected_impact_hash: expectedImpactHash,
+  })
+  if (error) {
+    if (error.code === 'PT409') throw new ItemCorrectionConflictError(error.message)
+    throw new Error(error.message || 'Não foi possível gravar a correção.')
+  }
+  return parseItemCorrectionResult(data)
+}
+
+export interface ItemCorrectionHistory {
+  id: string
+  action: string
+  undoes_correction_id: string | null
+  corrected_by: string
+  corrected_at: string
+  impact: ItemCorrectionImpact
+  /** Já desfeita por outra correção. */
+  undone: boolean
+}
+
+/** Correções recentes de notas que tiraram itens deste produto ou trouxeram para ele. */
+const ITEM_CORRECTION_LIMIT = 30
+
+type ItemCorrectionRow = Omit<ItemCorrectionHistory, 'impact' | 'undone'> & { impact: unknown }
+
+export async function loadItemCorrections(productId: string): Promise<ItemCorrectionHistory[]> {
+  const { data, error } = await supabase.from('payable_purchase_item_corrections')
+    .select('id,action,undoes_correction_id,corrected_by,corrected_at,impact')
+    .contains('product_ids', [productId])
+    .order('corrected_at', { ascending: false })
+    .limit(ITEM_CORRECTION_LIMIT)
+  if (error) throw new Error(error.message)
+  const rows = (data ?? []) as ItemCorrectionRow[]
+  const undoneIds = await loadUndoneCorrectionIds(rows.filter(row => row.action === 'corrigir').map(row => row.id))
+  return rows.map(row => ({ ...row, impact: parseItemCorrectionImpact(row.impact), undone: undoneIds.has(row.id) }))
+}
+
+/** O desfazer pode ter saído da lista recente; a consulta confere direto. */
+async function loadUndoneCorrectionIds(ids: readonly string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const { data, error } = await supabase.from('payable_purchase_item_corrections')
+    .select('undoes_correction_id')
+    .in('undoes_correction_id', ids)
+  if (error) throw new Error(error.message)
+  return new Set(((data ?? []) as { undoes_correction_id: string | null }[]).flatMap(row => row.undoes_correction_id ? [row.undoes_correction_id] : []))
 }
