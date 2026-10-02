@@ -4,9 +4,9 @@ import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './ap
 // Conversoes de compra na tela Produtos: so leitura, com atalho para a
 // correcao em Catalogo > Vinculos NF-e. Salvar o produto nao toca mais nas
 // memorias do fornecedor (antes reenviava todas e marcava o fator como
-// conferido). A funcao antiga public.update_payable_product_mappings segue a
-// regra de quem corrige vinculos; o Financeiro JC ficticio, sem o Catalogo,
-// serve de bloqueado na Data API.
+// conferido). A funcao antiga public.update_payable_product_mappings foi
+// removida do banco em 02/10/2026: nem o Administrador, que antes podia usa-la,
+// a encontra mais na Data API.
 
 // Insumo e memorias ficticias do seed (supabase/seed.sql, "Vinculos de NF-e, fase 3").
 const INSUMO = '[TESTE] Manteiga contagem'
@@ -111,10 +111,12 @@ test('Salvar o produto nao altera as memorias de vinculo do fornecedor',
     expect(depois).toEqual(antes)
   })
 
-test('Financeiro JC sem o Catalogo e barrado da funcao antiga de conversoes na Data API',
-  matriz('Financeiro JC', 'JC', 'bloqueado', 'update_payable_product_mappings (Data API)'),
+test('A funcao antiga de conversoes nao existe mais na Data API, nem para o Administrador',
+  matriz('Administrador', 'JC', 'bloqueado', 'update_payable_product_mappings removida (Data API)'),
   async ({ page }) => {
-    const acesso = await entrarComo(page, 'financeiroJc')
+    const acesso = await entrarComo(page, 'admin')
+    const antes = await memoriasDoInsumo(page, acesso)
+    expect(antes.length).toBeGreaterThanOrEqual(2)
     const resposta = await page.request.post(`${acesso.url}/rest/v1/rpc/update_payable_product_mappings`, {
       headers: await cabecalhosDaSessao(page, acesso),
       data: {
@@ -124,6 +126,9 @@ test('Financeiro JC sem o Catalogo e barrado da funcao antiga de conversoes na D
       maxRedirects: 0,
     })
     const corpo = await resposta.text()
-    expect(resposta.status(), corpo).toBe(403)
-    expect(JSON.parse(corpo)).toMatchObject({ code: '42501' })
+    // 404 com PGRST202: o PostgREST nao acha a funcao no schema, nao e recusa
+    // de permissao (que seria 403 com 42501).
+    expect(resposta.status(), corpo).toBe(404)
+    expect(JSON.parse(corpo)).toMatchObject({ code: 'PGRST202' })
+    expect(await memoriasDoInsumo(page, acesso)).toEqual(antes)
   })
