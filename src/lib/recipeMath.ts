@@ -51,9 +51,14 @@ export function isPackagingComponent(component: Pick<RecipeComponentLike, 'name'
     || text.includes('adesivo')
 }
 
+// Pré-mistura (pão de mandioquinha, pão de queijo, bolo de milho) faz o papel
+// da farinha: é a base de 100% sobre a qual água, leite e ovo são calculados.
+// Palavra inteira para não pegar "Misto Quente" nem "Mix de sementes".
+const PREMIX_WORD = /\b(mist|misturas?|pre[\s-]?misturas?|pre[\s-]?mix)\b/
+
 export function isFlourComponent(component: Pick<RecipeComponentLike, 'name' | 'category'>): boolean {
   const text = `${normalizeText(component.category)} ${normalizeText(component.name)}`
-  return text.includes('farinha')
+  return text.includes('farinha') || PREMIX_WORD.test(text)
 }
 
 export function calculateRecipeTotals(components: RecipeComponentLike[]): RecipeTotals {

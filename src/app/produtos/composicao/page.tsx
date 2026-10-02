@@ -513,7 +513,7 @@ function ComposicaoInner() {
       ? quantityFromBakersPercentageForComponent(parsedQty, recipeTotals.flourBaseKg, componentForMath)
       : parsedQty
     if (qty === null) {
-      showToast('Adicione primeiro uma farinha ou lance a própria farinha em %')
+      showToast('Adicione primeiro uma farinha ou pré-mistura, ou lance a própria farinha em %')
       return
     }
 
@@ -1632,14 +1632,14 @@ function ComposicaoInner() {
                     ) : (
                       <>
                         <span className="ps-store-chip">
-                          farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'primeira farinha: 100% = 1 kg'}
+                          farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : 'primeira farinha ou pré-mistura: 100% = 1 kg'}
                         </span>
                         {newQtyMode === 'baker_pct' && (
                           <span className="ps-store-chip ja">
                             peso calculado: {newQtyPreviewKg !== null
                               ? `${formatDecimalPtBR(newQtyPreviewKg, 3)} kg`
                               : firstFlourPreviewKg !== null
-                                ? `${formatDecimalPtBR(firstFlourPreviewKg, 3)} kg se for farinha`
+                                ? `${formatDecimalPtBR(firstFlourPreviewKg, 3)} kg se for farinha ou pré-mistura`
                                 : '—'}
                           </span>
                         )}
