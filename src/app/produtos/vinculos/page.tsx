@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Search } from 'lucide-react'
 import { canAccess, getCurrentUserAsync, type AppUser } from '@/lib/auth'
-import { canViewNfeLinks, authorName, correctionActionLabel, currencyLabel, dateLabel, dateTimeLabel, factorLabel, invoiceMappingLabel, mappingStatusLabel, productIdFromNfeLinksSearch } from '@/lib/vinculosNfe'
+import { canViewNfeLinks, authorName, correctionActionLabel, dateTimeLabel, factorLabel, mappingStatusLabel, productIdFromNfeLinksSearch } from '@/lib/vinculosNfe'
 import { loadLinkProduct, loadLinkProductDetails, searchLinkProducts, type LinkProductDetails, type ProductOption } from '@/lib/vinculosNfeClient'
 import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
 import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
 import VinculoNfeCorrecao from '@/components/VinculoNfeCorrecao'
+import VinculoNfeNotas from '@/components/VinculoNfeNotas'
+import VinculoNfeNotasHistorico from '@/components/VinculoNfeNotasHistorico'
 
 export default function VinculosNfePage() {
   const [user, setUser] = useState<AppUser | null>(null)
@@ -23,6 +25,7 @@ export default function VinculosNfePage() {
   const [recipeError, setRecipeError] = useState('')
   const [recipeAttempt, setRecipeAttempt] = useState(0)
   const [notice, setNotice] = useState('')
+  const [itemNotice, setItemNotice] = useState('')
   // Escolha feita pela pessoa vence a resposta atrasada do atalho.
   const manualChoice = useRef(false)
 
@@ -128,15 +131,15 @@ export default function VinculosNfePage() {
         <div className="ps-scroll ps-pad">
           <section className="ps-card" style={{ marginTop: 14, padding: 14 }}>
             <h1 style={{ margin: '0 0 6px', fontSize: 20 }}>Vínculos por produto</h1>
-            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações: notas já gravadas, custos, fichas e contas não mudam.</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações. Itens de notas já gravadas se corrigem na seção deles, sempre com prévia do efeito no custo; contas e pagamentos não mudam.</p>
             <label htmlFor="nfe-product-search" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Buscar produto do catálogo</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { manualChoice.current = true; setSearch(event.target.value); setSelected(null); setNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
+              <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { manualChoice.current = true; setSearch(event.target.value); setSelected(null); setNotice(''); setItemNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
               {loading && <span role="status">Carregando…</span>}
             </div>
             {products.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => { manualChoice.current = true; setSelected(product); setNotice('') }}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
+                {products.map(product => <button key={product.id} type="button" className={`ps-btn ${selected?.id === product.id ? 'primary' : 'ghost'} sm`} onClick={() => { manualChoice.current = true; setSelected(product); setNotice(''); setItemNotice('') }}>{product.name}{product.active ? '' : ' (inativo)'}</button>)}
               </div>
             )}
             {products.length === 100 && <small style={{ display: 'block', marginTop: 8 }}>Mostrando até 100 produtos. Refine a busca para localizar outro item.</small>}
@@ -182,17 +185,15 @@ export default function VinculosNfePage() {
 
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Vínculos efetivamente salvos nas notas</h2>
-                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor.</p>
-                {details.invoices.length === 0 ? <p>Nenhum item de NF-e encontrado para este produto.</p> : details.invoices.map(item => (
-                  <article key={item.id} style={{ borderTop: '1px solid var(--ps-line)', padding: '10px 0' }}>
-                    <b>{item.supplier_name}</b> · {invoiceMappingLabel(item)}
-                    <p style={{ margin: '4px 0' }}>NF {item.invoice_number || 'sem número'}{item.invoice_series ? `, série ${item.invoice_series}` : ''} · emissão {dateLabel(item.invoice_date)} · compra {dateLabel(item.purchase_date)}</p>
-                    <p style={{ margin: '4px 0' }}>{item.source_description || 'Descrição não registrada'} · código {item.source_code || 'não informado'} · EAN {item.source_ean || 'não informado'}</p>
-                    <p style={{ margin: '4px 0' }}>Na nota: {item.source_quantity ?? 'quantidade não registrada'} {item.source_unit || ''} · salvo como {item.quantity} {item.unit} · preço unitário {currencyLabel(item.unit_price)}</p>
-                    <p style={{ margin: '4px 0' }}>Conversão registrada: {item.conversion_factor ?? 'sem fator'} {item.conversion_basis ? `(${item.conversion_basis})` : ''} · vínculo por {authorName(details.authors, item.mapping_confirmed_by)} em {dateTimeLabel(item.mapping_confirmed_at)}</p>
-                    <small>Fator {item.factor_confirmed ? 'marcado como confirmado' : 'não marcado como confirmado'} por {authorName(details.authors, item.factor_confirmed_by)} em {dateTimeLabel(item.factor_confirmed_at)}. Situação da compra: {item.status}.</small>
-                  </article>
-                ))}
+                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor. Marque os itens que entraram no produto ou no fator errado para corrigir; a prévia mostra o efeito em cada item e no custo antes de confirmar.</p>
+                {itemNotice && <p role="status" style={{ margin: '0 0 10px', color: 'var(--teal)', fontWeight: 600 }}>{itemNotice}</p>}
+                <VinculoNfeNotas product={details.product} invoices={details.invoices} authors={details.authors} onSaved={message => { setItemNotice(message); reload() }}/>
+              </section>
+
+              <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Correções de itens de notas</h2>
+                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de notas que saíram deste produto ou vieram para ele, com quem corrigiu e o custo antes e depois. Desfazer volta os itens e recalcula o custo pelas notas de hoje.</p>
+                <VinculoNfeNotasHistorico productId={details.product.id} authors={details.authors} reloadKey={details} onSaved={message => { setItemNotice(message); reload() }}/>
               </section>
 
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>

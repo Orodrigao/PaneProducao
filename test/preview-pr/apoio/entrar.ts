@@ -76,10 +76,14 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
   // dispara varios ao abrir), completar ou abortar esses pedidos estoura
   // "Test ended" e derrubava o teste ja concluido (canario PR 470). Com a
   // pagina fechada nao ha para onde o pedido ir; SO esse erro e descartado.
+  // O mesmo vale para o recarregamento da pagina com pedido em voo: o
+  // navegador cancela o pedido e a resposta buscada e descartada ("Fetch
+  // response has been disposed", PR 486); o pedido ja morreu do lado do
+  // navegador, nada passa.
   // Qualquer outro sobe e reprova o teste, em vez de virar falha de rede
   // calada numa chamada que o roteiro talvez nao confira.
   const semPagina = (erro: unknown) => {
-    if (erro instanceof Error && /Test ended|has been closed/.test(erro.message)) return
+    if (erro instanceof Error && /Test ended|has been closed|Fetch response has been disposed/.test(erro.message)) return
     throw erro
   }
   await page.route('**/*', async (route) => {

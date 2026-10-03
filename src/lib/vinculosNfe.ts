@@ -155,6 +155,6 @@ export function describeCorrectionEffect(input: CorrectionEffectInput): string[]
   lines.push(`Quem estiver com uma NF-e de ${memory.supplier_name} aberta normalmente precisará reabrir a importação antes de confirmar; quem confirmar ao mesmo tempo grava a escolha que fez na nota.`)
   lines.push(input.savedInvoices === 0
     ? 'Nenhuma nota já gravada muda.'
-    : `${input.savedInvoices} item(ns) deste fornecedor já gravado(s) em notas com ${input.currentProductName} continuam como estão: custo, fichas e contas não mudam.`)
+    : `${input.savedInvoices} item(ns) deste fornecedor já gravado(s) em notas com ${input.currentProductName} continuam como estão; para corrigi-los, marque-os em Vínculos efetivamente salvos nas notas.`)
   return lines
 }

@@ -51,8 +51,9 @@ describe('roteiros de test/preview-pr', () => {
     assert.match(ajudante, /route\.fetch\(\{ maxRedirects: 0 \}\)/)
     assert.match(ajudante, /resposta\.status\(\) >= 300 && resposta\.status\(\) < 400\) \{\r?\n\s+await route\.abort\('blockedbyclient'\)/)
     assert.match(ajudante, /route\.abort\('blockedbyclient'\)/)
-    // So o erro de pagina encerrada e descartado; o resto sobe e reprova.
-    assert.match(ajudante, /if \(erro instanceof Error && \/Test ended\|has been closed\/\.test\(erro\.message\)\) return\r?\n\s+throw erro/)
+    // So o erro de pagina encerrada (ou recarregada com pedido em voo) e
+    // descartado; o resto sobe e reprova.
+    assert.match(ajudante, /if \(erro instanceof Error && \/Test ended\|has been closed\|Fetch response has been disposed\/\.test\(erro\.message\)\) return\r?\n\s+throw erro/)
     const config = readFileSync(join(RAIZ, 'playwright.preview-pr.config.ts'), 'utf8')
     assert.match(config, /serviceWorkers: 'block'/)
     assert.match(config, /trace: 'off'/)

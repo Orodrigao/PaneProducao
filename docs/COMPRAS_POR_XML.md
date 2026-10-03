@@ -762,8 +762,9 @@ importação escolher a mais recente sem avisar.
 Antes de confirmar, a tela mostra o efeito: o que a próxima NF-e vai sugerir,
 o que sugere hoje, em quais fichas atuais o produto novo aparece e quantos
 itens de notas já gravadas continuam como estão, e avisa que importações abertas
-desse fornecedor precisarão ser reabertas. Nada muda em notas antigas, custos,
-fichas ou contas; isso é das fases 4 a 6.
+desse fornecedor precisarão ser reabertas. Corrigir a memória não muda notas
+antigas, custos, fichas ou contas; itens de notas já gravadas são corrigidos
+pela fase 4, abaixo.
 
 A escrita passa só pela função `public.correct_payable_product_mapping`, que
 entra na mesma fila por fornecedor da importação e da classificação
@@ -791,6 +792,70 @@ primeiro o site parou de chamá-la (PR 483), depois o banco a apagou. Provas:
 pgTAP `contas_a_pagar_xml.test.sql` (a função não existe mais) e o roteiro
 `test/preview-pr/conversoes-compra.spec.ts` (nem o Administrador a encontra na
 Data API, e salvar o produto não toca nas memórias).
+
+## Correção de itens de notas gravadas (fase 4 de Vínculos, 2026-10-02)
+
+Em Catálogo > Vínculos NF-e, na lista de itens gravados de um produto,
+Administração e o Financeiro autorizado (a mesma regra da fase 3) marcam os
+itens que entraram no produto ou no fator errado e escolhem o produto certo e
+quanto vem em cada unidade da nota. Também dá para manter o produto e corrigir
+só o fator (por exemplo, 20 pacotes de 500 g gravados como 20 kg). O destino
+precisa ser produto ativo de compra: insumo ou revenda, nunca kit nem
+fabricação própria. Itens marcados juntos precisam ter a mesma unidade na nota,
+porque o fator vale por unidade. Item pendente, de uso ou despesa (fase 5) ou
+de conta cancelada não entra.
+
+Antes de confirmar, a tela mostra a prévia calculada pelo banco: cada item com
+produto, fator, quantidade útil e custo por unidade antes e depois, e o custo
+de cada produto envolvido antes e depois, com o motivo. A regra do custo
+(decisão do Rodrigo em 02/10/2026):
+
+- **Produto de destino:** regra da NF-e mais recente, a mesma da importação
+  (`private.apply_xml_purchase_cost`). Se há nota mais nova do produto, o custo
+  não muda.
+- **Produto de origem:** só recalcula se o item que saiu era o que dava o custo,
+  e então vale a nota mais recente que sobrou. Sem outra nota, o custo fica como
+  estava. A marca `cost_applied` não basta para saber isso (ela não é limpa
+  quando chega nota mais nova); a função de custo é chamada como sonda num bloco
+  sempre desfeito, e a correção usa só a resposta. Custo editado à mão depois da
+  nota não é detectado.
+- Notas do mesmo dia sem hora podem não ter ordem clara entre si; se nenhuma
+  nota restante da origem se declara a mais recente, a correção é recusada.
+
+Contas, parcelas, pagamentos e o livro-caixa não mudam: o valor de cada item é
+o mesmo. Consumo semanal e custo de referência da contagem são calculados na
+hora a partir dos itens e passam a usar o produto e o fator corrigidos. Fichas e
+memórias do fornecedor não mudam.
+
+A escrita passa só pela função `public.correct_payable_purchase_items`, que faz
+a prévia e a aplicação com o mesmo código: aplica a correção dentro de um bloco,
+mede o efeito e, na prévia, desfaz o bloco. A confirmação refaz a conta sob
+trava e é recusada (código PT409) se o efeito mudou desde a prévia: outra
+correção, nota nova, custo ou cadastro alterado. Todas as correções de notas
+passam por uma fila única; a ordem das travas (itens e compras, depois produtos
+em ordem de identificador) é a mesma da importação. O identificador do pedido é
+único: repetir o envio devolve a correção gravada. Cada correção fica em
+`payable_purchase_item_corrections` com autor, data, o pedido e o efeito
+inteiro, aparece na tela dos produtos de origem e de destino e registra o evento
+`corrigida` na conta da nota.
+
+**Desfazer** é uma correção inversa: volta produto, fator e quantidade útil que
+o item tinha, com prévia própria, e só vale se o item ainda está como a correção
+o deixou. O custo segue as mesmas regras com as notas de hoje, então pode não
+voltar ao valor antigo (por exemplo, se o destino não tinha outra nota).
+
+Desde esta fase, `classify_payable_item` só classifica item pendente: antes ela
+reapontava item já classificado sem recalcular o custo do produto antigo.
+
+Provas: pgTAP `supabase/tests/vinculos_nfe_correcao_notas.test.sql` (prévia sem
+gravação, PT409, regras de custo, desfazer, recusas, permissão e a trava nova da
+classificação), a espera real entre duas correções e entre correção e
+classificação em `supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql`
+e o roteiro `test/preview-pr/vinculos-nfe-notas.spec.ts` com Financeiro Catálogo
+JC corrigindo e desfazendo, e Financeiro JC, Vendas JA e Expedição JC barrados.
+
+Correção em lote de notas reais só depois da prévia concreta de alvo e impacto
+conferida (decisão do Rodrigo em 28/09/2026).
 
 ## Decisões pendentes
 
