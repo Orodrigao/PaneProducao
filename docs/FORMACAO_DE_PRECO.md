@@ -239,6 +239,41 @@ Decisões de Rodrigo na conversa "Formação de preço: descoberta e plano".
   nas telas de Tabelas de preço e de auditoria de CMV. São números da mesma
   família do chute corrigido em 2026-09-04.
 
+## Decidido em 2026-10-08
+
+Decisões de Rodrigo na conversa "pesos dos pães (fase 0 formação de preço)",
+depois da pesagem de 22 pães assados no mesmo dia.
+
+- **O peso do pão vem da ficha técnica, não de cadastro avulso.** Trocar a
+  receita ajusta o rendimento sem passar por outra tela. A tela de peso médio
+  do pão (cadastro de pães) sai quando indicador e Forno lerem a ficha.
+- **A ficha guarda a massa crua por unidade** (o que a padeira divide) e, à
+  parte, o peso assado, opcional. Rende = massa da receita ÷ massa crua por
+  unidade. A perda de forno varia por pão (Brioche Hamburguer: 80 g → 72 g,
+  10%; pães mais assados perdem mais), então não existe percentual fixo.
+- **Cada variante tem a própria massa crua** sobre a mesma receita
+  (Brioche: Hamburguer 80 g, Forma 400 g, Flor 150 g, Mini 30 g).
+- **A mão de obra de produção é por quilo de massa crua**, não de pão assado.
+  O custo do quilo e o peso de cada unidade usam a mesma régua, então a perda
+  de forno se anula. O peso assado fica para venda e pedido por quilo.
+
+Fatos medidos em produção nesta data (somente leitura):
+
+- A tela da ficha calculava o rendimento como massa crua ÷ peso assado e
+  gravava assado = massa, por isso quase toda ficha mostra perda de forno zero.
+  Digitar o peso assado nessa tela baixaria o custo por unidade sem motivo.
+- A produção é lançada pelo cadastro de pães, e o indicador de mão de obra só
+  lia o peso médio desse cadastro. O Brioche Hamburguer estava com 0,8 kg
+  (corrigido por Rodrigo para 0,072): em setembro isso contava cerca de 1,4 t
+  de pão a mais e fez o Forno prever cerca de 47 peças para 37 kg pedidos por
+  PJ, quando seriam cerca de 500.
+- Com os pesos pesados, a cobertura de peso da produção de setembro iria de
+  62% para cerca de 90%. Faltariam Pão de Hotdog, Pizza Redonda e Hambúrguer
+  Italiano, entre outros.
+- Vários pães pesaram mais assados do que a ficha diz ter de massa (Calabresa
+  436 g contra 330 g na ficha): essas fichas precisam ser conferidas com a
+  lista de divisão da produção.
+
 ## A conta
 
 Todos os percentuais incidem sobre o mesmo preço de venda:
@@ -253,8 +288,9 @@ preço          = custo ajustado / (1 − imposto % − taxa do canal % − desp
   custo. A tela diz isso escrito.
 - **Preço de equilíbrio** é a mesma conta com margem zero. É o que a ficha
   mostra enquanto a margem do tipo e do canal não estiver definida.
-- **Mão de obra** por unidade = custo do quilo × peso médio da unidade; por
-  quilo, o custo do quilo direto.
+- **Mão de obra** por unidade = custo do quilo de massa × massa crua da
+  unidade (decidido em 2026-10-08); por quilo vendido, o custo do quilo de
+  massa ÷ (1 − perda de forno).
 
 ### Cada custo tem uma única fonte
 
@@ -277,7 +313,7 @@ espera as margens.
 
 | Fase | Resultado | Quem |
 | --- | --- | --- |
-| 0. Dados prontos | Pesar os pães sem peso, a começar pelo Croissant; conferir o Brioche Hamburguer; combinar com o Financeiro o lançamento de encargos e diárias por equipe | Operação |
+| 0. Dados prontos | Peso vindo da ficha, em quatro passos: (a) ficha com massa crua por unidade e variante e peso assado opcional; (b) conferir as fichas com a lista de divisão da produção, mostrando o custo por unidade antes e depois; (c) indicador e Forno lendo a ficha, com vínculo de cada pão da produção a um produto e variante; (d) desligar o peso médio do cadastro de pães. Segue pendente combinar com o Financeiro o lançamento de encargos e diárias por equipe | Quem conduz e Operação |
 | 1. Configuração do Sistema | Tela nova em Administração, só admin: imposto, taxa de cartão, comissão do iFood, margem desejada e mínima por tipo e canal (podem ficar vazias); guarda quem mudou e quando | Quem conduz |
 | 2. Números do Financeiro | Por mês fechado: faturamento (Fechamento de caixa mais PJ e Buck do Financeiro), peso das despesas fixas e custo do quilo de mão de obra de produção, com cobertura de peso e meses usados; marcado como provisório enquanto os dados não fecham | Agente de outra família |
 | 3. Formação de preço que salva | Na ficha: sobra por produto, embalagem da ficha, preço por canal, preço de equilíbrio e retrato de todos os números a cada salvamento | Quem conduz |
