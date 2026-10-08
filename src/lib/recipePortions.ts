@@ -44,9 +44,13 @@ export type PortionYieldResult =
       bakeLossPct: number | null
     }
 
-// Diferença abaixo de meio grama na receita inteira é arredondamento, não
-// perda de forno: a ficha antiga grava assado = massa.
-const BAKE_LOSS_TOLERANCE_KG = 0.0005
+// Diferença abaixo de 0,05 g por unidade é arredondamento, não perda de
+// forno: a ficha antiga grava assado = massa.
+const BAKE_LOSS_TOLERANCE_PER_UNIT_KG = 0.00005
+
+// Porção abaixo disso quase sempre é peso digitado em kg no campo de gramas
+// ("0,08" no lugar de "80"), o que multiplicaria o rendimento por mil.
+export const MIN_PORTION_GRAMS = 5
 
 function positiveNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null
@@ -55,12 +59,14 @@ function positiveNumber(value: number | string | null | undefined): number | nul
 }
 
 export function formatGrams(kg: number): string {
-  const grams = Math.round(kg * 1000 * 10) / 10
-  return grams.toLocaleString('pt-BR', { maximumFractionDigits: 1, useGrouping: false })
+  const grams = Math.round(kg * 1000 * 100) / 100
+  return grams.toLocaleString('pt-BR', { maximumFractionDigits: 2, useGrouping: false })
 }
 
 function parseGrams(raw: string): number | null | 'invalid' {
   if (!raw.trim()) return null
+  // "1.200" é ambíguo (1,2 g ou 1200 g?): recusa em vez de adivinhar.
+  if (/^\d{1,3}\.\d{3}$/.test(raw.trim())) return 'invalid'
   const grams = parsePositiveDecimalInput(raw)
   return grams === null ? 'invalid' : grams
 }
@@ -79,7 +85,7 @@ export function portionDraftFromYield(stored: StoredRecipeYield | null): Portion
   const portionKg = dough !== null && units !== null ? dough / units : average
   const hasBakeLoss = stored.basis === 'dough'
     && dough !== null && finished !== null && units !== null
-    && dough - finished > BAKE_LOSS_TOLERANCE_KG
+    && (dough - finished) / units > BAKE_LOSS_TOLERANCE_PER_UNIT_KG
   const bakedKg = hasBakeLoss ? finished / units : null
 
   return {
@@ -116,6 +122,9 @@ export function calculatePortionYield(input: {
     return baked === null
       ? { status: 'empty' }
       : { status: 'invalid', message: 'Informe a massa por unidade antes do peso assado' }
+  }
+  if (portion < MIN_PORTION_GRAMS) {
+    return { status: 'invalid', message: `Massa por unidade é em gramas: ${MIN_PORTION_GRAMS} g ou mais (ex.: 80, não 0,08)` }
   }
   if (recipeKg === null || !(recipeKg > 0)) {
     return { status: 'invalid', message: 'Informe a massa da receita para calcular o rendimento' }

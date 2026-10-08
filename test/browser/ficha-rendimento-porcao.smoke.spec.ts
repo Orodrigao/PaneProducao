@@ -119,7 +119,13 @@ test('ficha calcula rendimento por massa crua de cada variante e grava só as li
   await page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true }).fill('90')
   await expect(rowCard(page, 'Hambúrguer')).toContainText('pão não ganha peso no forno')
   await page.getByRole('button', { name: /^Salvar rendimento/ }).click()
+  // A recusa acontece antes de qualquer gravação: o aviso aparece e nada saiu.
+  await expect(page.locator('.toast').filter({ hasText: 'Hambúrguer: Peso assado maior que a massa crua' })).toBeVisible()
   expect(writes).toHaveLength(0)
+
+  // Peso digitado em kg no campo de gramas também é recusado.
+  await page.getByLabel('Massa crua em gramas: Mini', { exact: true }).fill('0,03')
+  await expect(rowCard(page, 'Mini')).toContainText('Massa por unidade é em gramas')
 
   await page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true }).fill('72')
   await page.getByLabel('Massa crua em gramas: Mini', { exact: true }).fill('30')

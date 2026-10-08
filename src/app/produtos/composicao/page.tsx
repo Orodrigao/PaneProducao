@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, X, Search, AlertTriangle, Copy } from 'lucide-react'
@@ -222,6 +222,9 @@ function ComposicaoInner() {
   const [yieldBasisEdit, setYieldBasisEdit] = useState<RecipeYieldBasis | null>(null)
   const [manualDoughEdit, setManualDoughEdit] = useState<string | null>(null)
   const [savingYields, setSavingYields] = useState(false)
+  const savingYieldsRef = useRef(false)
+  // Linhas cujo rendimento gravou mas o peso de venda não: seguem pendentes.
+  const [saleSyncPending, setSaleSyncPending] = useState<string[]>([])
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [variants, setVariants] = useState<ProductVariant[]>([])
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
@@ -310,6 +313,7 @@ function ComposicaoInner() {
         setPortionEdits({})
         setYieldBasisEdit(null)
         setManualDoughEdit(null)
+        setSaleSyncPending([])
         setSaleOptions((soRes.data || []) as SaleOption[])
         const loadedVariants = (vRes.data || []) as ProductVariant[]
         setVariants(loadedVariants)
@@ -703,8 +707,19 @@ function ComposicaoInner() {
     }
   }
 
+  function changeYieldBasis(next: RecipeYieldBasis) {
+    if (next === yieldBasis) return
+    const affected = recipeYields.filter(y => y.basis !== next).length
+    if (affected > 0 && !confirm(
+      `Trocar a base da ficha muda o cálculo de ${affected} linha${affected === 1 ? '' : 's'} já gravada${affected === 1 ? '' : 's'} ao salvar.`
+      + (next === 'unit' ? ' Em "Unidade pronta" a massa por unidade de cada variante deixa de valer.' : '')
+      + ' Continuar?'
+    )) return
+    setYieldBasisEdit(next)
+  }
+
   async function saveRecipeYields() {
-    if (!parentId || !recipeMetaAvailable || savingYields) return
+    if (!parentId || !recipeMetaAvailable || savingYieldsRef.current) return
     if (recipeTotals.doughWeightKg === null && manualDough.trim() && recipeKg === null) {
       showToast('Massa da receita inválida')
       return
@@ -723,6 +738,7 @@ function ComposicaoInner() {
       }
     }
 
+    savingYieldsRef.current = true
     setSavingYields(true)
     const savedKeys: string[] = []
     try {
@@ -744,9 +760,10 @@ function ComposicaoInner() {
           : await supabase.from('product_recipe_yields').insert(payload).select().single()
         if (error) throw new Error(`${row.label}: ${getErrorMessage(error, 'erro ao salvar rendimento')}`)
         const nextYield = data as RecipeYield
-        setRecipeYields(prev => stored
+        setRecipeYields(prev => prev.some(y => y.id === nextYield.id)
           ? prev.map(y => y.id === nextYield.id ? nextYield : y)
           : [...prev, nextYield])
+        savedKeys.push(row.key)
 
         // A venda por unidade usa o peso médio do pão pronto: o assado quando
         // informado, senão a massa da porção (como sempre foi).
@@ -759,14 +776,17 @@ function ComposicaoInner() {
           const { error: optionError } = row.variantId
             ? await optionUpdate.eq('product_variant_id', row.variantId)
             : await optionUpdate.is('product_variant_id', null)
-          if (optionError) throw new Error(`${row.label}: ${getErrorMessage(optionError, 'erro ao atualizar peso da venda')}`)
+          if (optionError) {
+            setSaleSyncPending(prev => prev.includes(row.key) ? prev : [...prev, row.key])
+            throw new Error(`${row.label}: rendimento salvo, mas o peso de venda não atualizou (${getErrorMessage(optionError, 'erro')}). Salve de novo.`)
+          }
           setSaleOptions(prev => prev.map(option =>
             option.sale_unit === 'un' && (option.product_variant_id ?? null) === row.variantId
               ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg }
               : option
           ))
         }
-        savedKeys.push(row.key)
+        setSaleSyncPending(prev => prev.filter(key => key !== row.key))
       }
       setYieldBasisEdit(null)
       setManualDoughEdit(null)
@@ -779,6 +799,7 @@ function ComposicaoInner() {
         for (const key of savedKeys) delete next[key]
         return next
       })
+      savingYieldsRef.current = false
       setSavingYields(false)
     }
   }
@@ -932,8 +953,9 @@ function ComposicaoInner() {
     const basisChanged = yieldBasisEdit !== null && stored !== null && stored.basis !== yieldBasis
     const doughChanged = recipeTotals.doughWeightKg === null && manualDoughEdit !== null && manualDough !== storedManualDough
     const newReadyUnit = yieldBasis === 'unit' && yieldBasisEdit !== null && stored === null && row.key === selectedYieldKey
-    if (yieldBasis === 'unit') return basisChanged || (stored !== null && doughChanged) || newReadyUnit
-    return draftChanged || basisChanged || (hasContent && doughChanged)
+    const salePending = saleSyncPending.includes(row.key)
+    if (yieldBasis === 'unit') return salePending || basisChanged || (stored !== null && doughChanged) || newReadyUnit
+    return salePending || draftChanged || basisChanged || (hasContent && doughChanged)
   })
   const selectedYieldResult = yieldResults.get(selectedYieldKey) ?? null
   const selectedYieldOk = selectedYieldResult?.status === 'ok' ? selectedYieldResult : null
@@ -1195,16 +1217,18 @@ function ComposicaoInner() {
                               <div className="ps-fieldlabel">Base da ficha</div>
                               <select
                                 value={yieldBasis}
-                                onChange={e=>setYieldBasisEdit(e.target.value as RecipeYieldBasis)}
+                                onChange={e=>changeYieldBasis(e.target.value as RecipeYieldBasis)}
+                                disabled={savingYields}
                                 className="ps-select"
                               >
-                                {RECIPE_BASIS_OPTIONS.map(option => (
+                                {/* Com componentes, a massa somada é crua: "produto assado" dividiria massa crua por peso pronto. */}
+                                {RECIPE_BASIS_OPTIONS.filter(option => option.value !== 'baked' || recipeTotals.doughWeightKg === null || yieldBasis === 'baked').map(option => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
                                 ))}
                               </select>
                             </div>
                             <div className="ps-fieldgroup">
-                              <div className="ps-fieldlabel">{yieldBasis === 'baked' ? 'Peso da receita pronta (kg)' : 'Massa da receita (kg)'}</div>
+                              <div className="ps-fieldlabel">Massa da receita (kg)</div>
                               <input
                                 inputMode="decimal"
                                 value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : manualDough}
@@ -1251,6 +1275,7 @@ function ComposicaoInner() {
                                             aria-label={`${yieldBasis === 'baked' ? 'Peso por unidade' : 'Massa crua'} em gramas: ${row.label}`}
                                             value={draft.portionG}
                                             onChange={e=>editPortion(row.key, 'portionG', e.target.value)}
+                                            disabled={savingYields}
                                             placeholder="ex: 80"
                                             className="ps-input"
                                           />
@@ -1263,6 +1288,7 @@ function ComposicaoInner() {
                                               aria-label={`Peso assado em gramas: ${row.label}`}
                                               value={draft.bakedG}
                                               onChange={e=>editPortion(row.key, 'bakedG', e.target.value)}
+                                              disabled={savingYields}
                                               placeholder="ex: 72"
                                               className="ps-input"
                                             />

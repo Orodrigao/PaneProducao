@@ -52,6 +52,13 @@ describe('calculatePortionYield', () => {
     expect(calculatePortionYield({ basis: 'dough', recipeKg: null, draft: { portionG: '80', bakedG: '' } }).status).toBe('invalid')
   })
 
+  it('recusa peso digitado em kg ou com ponto de milhar no campo de gramas', () => {
+    expect(calculatePortionYield({ basis: 'dough', recipeKg: 1.048, draft: { portionG: '0,08', bakedG: '' } }))
+      .toEqual({ status: 'invalid', message: expect.stringContaining('em gramas') })
+    expect(calculatePortionYield({ basis: 'dough', recipeKg: 1.048, draft: { portionG: '1.200', bakedG: '' } }).status).toBe('invalid')
+    expect(calculatePortionYield({ basis: 'dough', recipeKg: 2.37, draft: { portionG: '14', bakedG: '' } }).status).toBe('ok')
+  })
+
   it('linha vazia não é erro', () => {
     expect(calculatePortionYield({ basis: 'dough', recipeKg: 1, draft: { portionG: '', bakedG: '' } })).toEqual({ status: 'empty' })
   })
@@ -80,13 +87,26 @@ describe('portionDraftFromYield', () => {
   it('ficha com perda de forno de verdade separa massa e assado (Baguete 1 kg → 0,8 kg em 3,33 un)', () => {
     expect(portionDraftFromYield({
       basis: 'dough', dough_weight_kg: 1, finished_weight_kg: 0.8, yield_units: 3.33, average_unit_weight_kg: 0.24024,
-    })).toEqual({ portionG: '300,3', bakedG: '240,2' })
+    })).toEqual({ portionG: '300,3', bakedG: '240,24' })
   })
 
   it('ficha base assado sem massa usa o peso médio', () => {
     expect(portionDraftFromYield({
       basis: 'baked', dough_weight_kg: null, finished_weight_kg: 0.96, yield_units: 12, average_unit_weight_kg: 0.08,
     })).toEqual({ portionG: '80', bakedG: '' })
+  })
+
+  it('perda pequena em receita pequena não some ao reabrir (60 g, porção 30 g, assado 29,9 g)', () => {
+    expect(portionDraftFromYield({
+      basis: 'dough', dough_weight_kg: 0.06, finished_weight_kg: 0.0598, yield_units: 2, average_unit_weight_kg: 0.0299,
+    })).toEqual({ portionG: '30', bakedG: '29,9' })
+  })
+
+  it('porção com centésimo de grama reabre igual (62,55 g)', () => {
+    const saved = calculatePortionYield({ basis: 'dough', recipeKg: 2.37, draft: { portionG: '62,55', bakedG: '' } })
+    if (saved.status !== 'ok') throw new Error('esperava ok')
+    expect(portionDraftFromYield({ basis: 'dough', ...saved.values, average_unit_weight_kg: saved.averageUnitWeightKg }))
+      .toEqual({ portionG: '62,55', bakedG: '' })
   })
 
   it('sem ficha devolve campos vazios', () => {
