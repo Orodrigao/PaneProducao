@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, X, Search, AlertTriangle, Copy } from 'lucide-react'
@@ -17,7 +17,6 @@ import {
   calculateFlourMixAddition,
   calculateFlourMixRebalance,
   calculateFlourSharePercent,
-  calculateYieldUnitsFromRecipeWeight,
   calculateRecipeTotals,
   isFlourComponent,
   isPackagingComponent,
@@ -26,6 +25,14 @@ import {
   quantityFromBakersPercentageForComponent,
   type PriceBase,
 } from '@/lib/recipeMath'
+import {
+  calculatePortionYield,
+  formatGrams,
+  portionDraftFromYield,
+  portionDraftsEqual,
+  type PortionDraft,
+  type PortionYieldResult,
+} from '@/lib/recipePortions'
 
 interface ParentProduct {
   id: string
@@ -90,12 +97,14 @@ interface ProductVariant {
   sort_order: number
   active: boolean
 }
-interface YieldDraft {
-  basis: RecipeYieldBasis
-  dough_weight_kg: string
-  finished_weight_kg: string
-  yield_units: string
+// Linha de rendimento: o produto sem variante (legado) ou uma variante.
+interface YieldRow {
+  key: string
+  variantId: string | null
+  label: string
+  active: boolean
 }
+const LEGACY_YIELD_ROW_KEY = 'legacy'
 type PriceFormationBase = PriceBase
 interface PriceFormationDraft {
   packagingCost: string
@@ -209,7 +218,13 @@ function ComposicaoInner() {
   const [breads, setBreads]       = useState<BreadLite[]>([])
   const [products, setProducts]   = useState<ProductLite[]>([])
   const [recipeYields, setRecipeYields] = useState<RecipeYield[]>([])
-  const [yieldDraft, setYieldDraft] = useState<YieldDraft>({ basis: 'dough', dough_weight_kg: '', finished_weight_kg: '', yield_units: '' })
+  const [portionEdits, setPortionEdits] = useState<Record<string, PortionDraft>>({})
+  const [yieldBasisEdit, setYieldBasisEdit] = useState<RecipeYieldBasis | null>(null)
+  const [manualDoughEdit, setManualDoughEdit] = useState<string | null>(null)
+  const [savingYields, setSavingYields] = useState(false)
+  const savingYieldsRef = useRef(false)
+  // Linhas cujo rendimento gravou mas o peso de venda não: seguem pendentes.
+  const [saleSyncPending, setSaleSyncPending] = useState<string[]>([])
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [variants, setVariants] = useState<ProductVariant[]>([])
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
@@ -295,6 +310,10 @@ function ComposicaoInner() {
         setRecipeMetaAvailable(true)
         setRecipeMetaMessage('')
         setRecipeYields((yRes.data || []) as RecipeYield[])
+        setPortionEdits({})
+        setYieldBasisEdit(null)
+        setManualDoughEdit(null)
+        setSaleSyncPending([])
         setSaleOptions((soRes.data || []) as SaleOption[])
         const loadedVariants = (vRes.data || []) as ProductVariant[]
         setVariants(loadedVariants)
@@ -322,29 +341,44 @@ function ComposicaoInner() {
     [saleOptions, selectedVariantId],
   )
 
-  // Sincroniza o rascunho de rendimento com a variante selecionada: troca de
-  // variante, chegada dos dados ou salvamento reabastecem o mesmo efeito.
-  useEffect(() => {
-    setYieldDraft({
-      basis: isRecipeYieldBasis(recipeYield?.basis) ? recipeYield.basis : 'dough',
-      dough_weight_kg: draftValue(recipeYield?.dough_weight_kg),
-      finished_weight_kg: draftValue(recipeYield?.average_unit_weight_kg ?? recipeYield?.finished_weight_kg),
-      yield_units: draftValue(recipeYield?.yield_units),
-    })
-  }, [recipeYield])
+  // A receita é uma só; cada linha (produto sem variante e cada variante)
+  // divide a mesma massa pela própria porção. Tudo é editado junto.
+  const yieldRows = useMemo<YieldRow[]>(() => [
+    { key: LEGACY_YIELD_ROW_KEY, variantId: null, label: variants.length === 0 ? 'Produto' : 'Produto (sem variante)', active: true },
+    ...variants.map(v => ({ key: v.id, variantId: v.id, label: v.name, active: v.active })),
+  ], [variants])
 
-  const yieldDraftIsDirty =
-    yieldDraft.basis !== (isRecipeYieldBasis(recipeYield?.basis) ? recipeYield.basis : 'dough')
-    || yieldDraft.finished_weight_kg !== draftValue(recipeYield?.average_unit_weight_kg ?? recipeYield?.finished_weight_kg)
+  const storedYieldByKey = useMemo(() => {
+    const map = new Map<string, RecipeYield>()
+    for (const row of recipeYields) map.set(row.product_variant_id ?? LEGACY_YIELD_ROW_KEY, row)
+    return map
+  }, [recipeYields])
 
-  function confirmDiscardYieldDraftIfDirty(): boolean {
-    if (!yieldDraftIsDirty) return true
-    return confirm('Há rendimento editado e não salvo nesta variante. Trocar descarta essa edição sem salvar. Continuar?')
+  const storedYieldBasis: RecipeYieldBasis = useMemo(() => {
+    const bases = recipeYields.map(y => y.basis).filter(isRecipeYieldBasis)
+    if (bases.includes('unit')) return 'unit'
+    if (bases.length > 0 && bases.every(b => b === 'baked')) return 'baked'
+    return 'dough'
+  }, [recipeYields])
+  const yieldBasis = yieldBasisEdit ?? storedYieldBasis
+
+  const storedManualDough = draftValue(recipeYields.find(y => y.dough_weight_kg !== null)?.dough_weight_kg)
+  const manualDough = manualDoughEdit ?? storedManualDough
+
+  function storedPortionDraft(key: string): PortionDraft {
+    return portionDraftFromYield(storedYieldByKey.get(key) ?? null)
+  }
+
+  function portionDraftFor(key: string): PortionDraft {
+    return portionEdits[key] ?? storedPortionDraft(key)
+  }
+
+  function editPortion(key: string, field: keyof PortionDraft, raw: string) {
+    const value = raw.replace(/[^\d,.]/g, '')
+    setPortionEdits(prev => ({ ...prev, [key]: { ...(prev[key] ?? storedPortionDraft(key)), [field]: value } }))
   }
 
   function selectVariant(variantId: string | null) {
-    if (variantId === selectedVariantId) return
-    if (!confirmDiscardYieldDraftIfDirty()) return
     setSelectedVariantId(variantId)
   }
 
@@ -362,7 +396,7 @@ function ComposicaoInner() {
       if (error) throw error
       const created = data as ProductVariant
       setVariants(prev => [...prev, created])
-      if (confirmDiscardYieldDraftIfDirty()) setSelectedVariantId(created.id)
+      setSelectedVariantId(created.id)
       setNewVariantName('')
       showToast('Variante criada')
     } catch (error: unknown) {
@@ -673,60 +707,106 @@ function ComposicaoInner() {
     }
   }
 
-  async function saveRecipeYield() {
-    if (!parentId || !recipeMetaAvailable) return
-    const automaticDough = recipeTotals.doughWeightKg
-    const dough = automaticDough ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
-    const bakedUnitWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
-    const units = calculateYieldUnitsFromRecipeWeight(dough, bakedUnitWeight)
-    const finished = bakedUnitWeight !== null && units !== null ? bakedUnitWeight * units : null
-    if (automaticDough === null && yieldDraft.dough_weight_kg && dough === null) { showToast('Massa crua inválida'); return }
-    if (yieldDraft.finished_weight_kg && bakedUnitWeight === null) { showToast('Peso do pão assado inválido'); return }
-    if (dough === null && finished === null && units === null) { showToast('Informe ao menos um rendimento'); return }
-    if (bakedUnitWeight !== null && units === null) { showToast('Informe a massa da receita para calcular o rendimento'); return }
+  function changeYieldBasis(next: RecipeYieldBasis) {
+    if (next === yieldBasis) return
+    const affected = recipeYields.filter(y => y.basis !== next).length
+    if (affected > 0 && !confirm(
+      `Trocar a base da ficha muda o cálculo de ${affected} linha${affected === 1 ? '' : 's'} já gravada${affected === 1 ? '' : 's'} ao salvar.`
+      + (next === 'unit' ? ' Em "Unidade pronta" a massa por unidade de cada variante deixa de valer.' : '')
+      + ' Continuar?'
+    )) return
+    setYieldBasisEdit(next)
+  }
 
+  async function saveRecipeYields() {
+    if (!parentId || !recipeMetaAvailable || savingYieldsRef.current) return
+    if (recipeTotals.doughWeightKg === null && manualDough.trim() && recipeKg === null) {
+      showToast('Massa da receita inválida')
+      return
+    }
+    const pending = dirtyYieldRows
+    if (pending.length === 0) { showToast('Nada para salvar'); return }
+    for (const row of pending) {
+      const result = yieldResults.get(row.key)
+      if (!result || result.status === 'invalid') {
+        showToast(`${row.label}: ${result?.status === 'invalid' ? result.message : 'rendimento inválido'}`)
+        return
+      }
+      if (result.status === 'empty') {
+        showToast(`${row.label}: informe a massa por unidade`)
+        return
+      }
+    }
+
+    savingYieldsRef.current = true
+    setSavingYields(true)
+    const savedKeys: string[] = []
+    const saleSyncFailures: string[] = []
     try {
-      const payload = {
-        product_id: parentId,
-        product_variant_id: selectedVariantId,
-        basis: yieldDraft.basis,
-        dough_weight_kg: dough,
-        finished_weight_kg: finished,
-        yield_units: units,
-        updated_at: new Date().toISOString(),
+      for (const row of pending) {
+        const result = yieldResults.get(row.key)
+        if (!result || result.status !== 'ok') continue
+        const stored = storedYieldByKey.get(row.key) ?? null
+        const payload = {
+          product_id: parentId,
+          product_variant_id: row.variantId,
+          basis: yieldBasis,
+          ...result.values,
+          updated_at: new Date().toISOString(),
+        }
+        // Os índices únicos de rendimento são parciais (com e sem variante):
+        // upsert por onConflict não os encontra como árbitro. Grava por id.
+        const { data, error } = stored
+          ? await supabase.from('product_recipe_yields').update(payload).eq('id', stored.id).select().single()
+          : await supabase.from('product_recipe_yields').insert(payload).select().single()
+        if (error) throw new Error(`${row.label}: ${getErrorMessage(error, 'erro ao salvar rendimento')}`)
+        const nextYield = data as RecipeYield
+        setRecipeYields(prev => prev.some(y => y.id === nextYield.id)
+          ? prev.map(y => y.id === nextYield.id ? nextYield : y)
+          : [...prev, nextYield])
+        savedKeys.push(row.key)
+
+        // A venda por unidade usa o peso médio do pão pronto: o assado quando
+        // informado, senão a massa da porção (como sempre foi).
+        if (nextYield.average_unit_weight_kg !== null) {
+          const optionUpdate = supabase
+            .from('product_sale_options')
+            .update({ unit_weight_kg: nextYield.average_unit_weight_kg, updated_at: new Date().toISOString() })
+            .eq('product_id', parentId)
+            .eq('sale_unit', 'un')
+          const { error: optionError } = row.variantId
+            ? await optionUpdate.eq('product_variant_id', row.variantId)
+            : await optionUpdate.is('product_variant_id', null)
+          if (optionError) {
+            // O rendimento já gravou: segue para as próximas linhas e deixa
+            // esta pendente, para o peso de venda ser tentado de novo.
+            setSaleSyncPending(prev => prev.includes(row.key) ? prev : [...prev, row.key])
+            saleSyncFailures.push(row.label)
+            continue
+          }
+          setSaleOptions(prev => prev.map(option =>
+            option.sale_unit === 'un' && (option.product_variant_id ?? null) === row.variantId
+              ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg }
+              : option
+          ))
+        }
+        setSaleSyncPending(prev => prev.filter(key => key !== row.key))
       }
-      // A fase 1 trocou o UNIQUE(product_id) por dois índices únicos parciais
-      // (com e sem variante). Upsert por onConflict de uma única coluna não
-      // encontra índice parcial como árbitro sem repetir o predicado da
-      // parcial, e falharia com "no unique or exclusion constraint" mesmo
-      // para produto legado. Grava explícito por id em vez de upsert.
-      const { data, error } = recipeYield
-        ? await supabase.from('product_recipe_yields').update(payload).eq('id', recipeYield.id).select().single()
-        : await supabase.from('product_recipe_yields').insert(payload).select().single()
-      if (error) throw error
-      const nextYield = data as RecipeYield
-      setRecipeYields(prev => recipeYield
-        ? prev.map(y => y.id === nextYield.id ? nextYield : y)
-        : [...prev, nextYield])
-      if (nextYield.average_unit_weight_kg !== null) {
-        const optionUpdate = supabase
-          .from('product_sale_options')
-          .update({ unit_weight_kg: nextYield.average_unit_weight_kg, updated_at: new Date().toISOString() })
-          .eq('product_id', parentId)
-          .eq('sale_unit', 'un')
-        const { error: optionError } = selectedVariantId
-          ? await optionUpdate.eq('product_variant_id', selectedVariantId)
-          : await optionUpdate.is('product_variant_id', null)
-        if (optionError) throw optionError
-        setSaleOptions(prev => prev.map(option =>
-          option.sale_unit === 'un' && (option.product_variant_id ?? null) === selectedVariantId
-            ? { ...option, unit_weight_kg: nextYield.average_unit_weight_kg }
-            : option
-        ))
-      }
-      showToast('Rendimento salvo')
+      setYieldBasisEdit(null)
+      setManualDoughEdit(null)
+      showToast(saleSyncFailures.length > 0
+        ? `Rendimento salvo, mas o peso de venda não atualizou em: ${saleSyncFailures.join(', ')}. Salve de novo.`
+        : savedKeys.length === 1 ? 'Rendimento salvo' : `Rendimento salvo em ${savedKeys.length} linhas`)
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao salvar rendimento'))
+    } finally {
+      setPortionEdits(prev => {
+        const next = { ...prev }
+        for (const key of savedKeys) delete next[key]
+        return next
+      })
+      savingYieldsRef.current = false
+      setSavingYields(false)
     }
   }
 
@@ -863,17 +943,41 @@ function ComposicaoInner() {
   const manualDiff = manualCost !== null ? totalCMV - manualCost : null
   const canEditFicha = !!parent && parent.kind !== 'insumo' && !parent.is_revenda
   const partialCount = enriched.filter(e => (isKit || !isPackagingComponent(e)) && !e.hasCost).length
-  const bakedUnitWeight = nullablePositiveDecimal(yieldDraft.finished_weight_kg)
-  const doughWeight = recipeTotals.doughWeightKg ?? nullablePositiveDecimal(yieldDraft.dough_weight_kg)
-  const calculatedYieldUnits = calculateYieldUnitsFromRecipeWeight(doughWeight, bakedUnitWeight)
-  const yieldUnits = calculatedYieldUnits ?? nullablePositiveDecimal(yieldDraft.yield_units)
-  const calculatedFinishedWeight = bakedUnitWeight !== null && yieldUnits !== null
-    ? bakedUnitWeight * yieldUnits
-    : recipeYield?.finished_weight_kg ?? null
-  const calculatedAverageWeight = bakedUnitWeight ?? recipeYield?.average_unit_weight_kg ?? null
-  const calculatedBakeLoss = doughWeight !== null && calculatedFinishedWeight !== null ? ((doughWeight - calculatedFinishedWeight) / doughWeight) * 100 : recipeYield?.bake_loss_pct ?? null
-  const calculatedUnitCost = isKit && totalCMV > 0 ? totalCMV : costPerUnit(totalCMV, yieldDraft.basis, yieldUnits)
-  const calculatedBakedKgCost = isKit ? null : costPerBakedKg(totalCMV, yieldDraft.basis, calculatedFinishedWeight)
+  const recipeKg = recipeTotals.doughWeightKg ?? nullablePositiveDecimal(manualDough)
+  const yieldResults = new Map<string, PortionYieldResult>(yieldRows.map(row => [
+    row.key,
+    calculatePortionYield({ basis: yieldBasis, recipeKg, draft: portionDraftFor(row.key) }),
+  ]))
+  const selectedYieldKey = selectedVariantId ?? LEGACY_YIELD_ROW_KEY
+  const dirtyYieldRows = yieldRows.filter(row => {
+    const stored = storedYieldByKey.get(row.key) ?? null
+    const draft = portionDraftFor(row.key)
+    const draftChanged = !portionDraftsEqual(draft, storedPortionDraft(row.key))
+    const hasContent = stored !== null || draft.portionG.trim() !== '' || draft.bakedG.trim() !== ''
+    // Só a troca feita agora na tela conta: ficha antiga com base mista
+    // (Brioche) não abre como "não salva".
+    const basisChanged = yieldBasisEdit !== null && stored !== null && stored.basis !== yieldBasis
+    const doughChanged = recipeTotals.doughWeightKg === null && manualDoughEdit !== null && manualDough !== storedManualDough
+    const newReadyUnit = yieldBasis === 'unit' && yieldBasisEdit !== null && stored === null && row.key === selectedYieldKey
+    // Peso de venda diferente do peso médio gravado (ex.: rendimento salvo e
+    // venda falhou antes de recarregar) também fica pendente.
+    const storedAverage = stored?.average_unit_weight_kg ?? null
+    const saleWeightDiverges = storedAverage !== null && saleOptions.some(option =>
+      option.sale_unit === 'un'
+      && (option.product_variant_id ?? null) === row.variantId
+      && (option.unit_weight_kg === null || Math.abs(Number(option.unit_weight_kg) - Number(storedAverage)) > 0.0000005)
+    )
+    const salePending = saleSyncPending.includes(row.key) || saleWeightDiverges
+    if (yieldBasis === 'unit') return salePending || basisChanged || (stored !== null && doughChanged) || newReadyUnit
+    return salePending || draftChanged || basisChanged || (hasContent && doughChanged)
+  })
+  const selectedYieldResult = yieldResults.get(selectedYieldKey) ?? null
+  const selectedYieldOk = selectedYieldResult?.status === 'ok' ? selectedYieldResult : null
+  const yieldUnits = selectedYieldOk?.values.yield_units ?? null
+  const calculatedFinishedWeight = selectedYieldOk?.values.finished_weight_kg ?? recipeYield?.finished_weight_kg ?? null
+  const calculatedAverageWeight = selectedYieldOk?.averageUnitWeightKg ?? recipeYield?.average_unit_weight_kg ?? null
+  const calculatedUnitCost = isKit && totalCMV > 0 ? totalCMV : costPerUnit(totalCMV, yieldBasis, yieldUnits)
+  const calculatedBakedKgCost = isKit ? null : costPerBakedKg(totalCMV, yieldBasis, calculatedFinishedWeight)
   const availablePriceBases = [
     ...(isFinitePositive(calculatedUnitCost) ? [{ value: 'un' as const, label: 'Unidade', suffix: 'un', cmv: calculatedUnitCost }] : []),
     ...(!isKit && isFinitePositive(calculatedBakedKgCost) ? [{ value: 'kg' as const, label: 'Kg assado', suffix: 'kg', cmv: calculatedBakedKgCost }] : []),
@@ -1118,32 +1222,32 @@ function ComposicaoInner() {
                             </div>
                             {variants.length > 0 && (
                               <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:6}}>
-                                Rendimento e formas de venda abaixo são de: <strong>{variants.find(v => v.id === selectedVariantId)?.name ?? 'Produto (sem variante)'}</strong>
+                                Formas de venda abaixo são de: <strong>{variants.find(v => v.id === selectedVariantId)?.name ?? 'Produto (sem variante)'}</strong>
                               </div>
                             )}
                           </div>
-                          <div className="ps-fieldgroup" style={{marginBottom:10}}>
-                            <div className="ps-fieldlabel">Base da ficha</div>
-                            <select
-                              value={yieldDraft.basis}
-                              onChange={e=>setYieldDraft(prev=>({...prev, basis: e.target.value as RecipeYieldBasis}))}
-                              className="ps-select"
-                            >
-                              {RECIPE_BASIS_OPTIONS.map(option => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                          </div>
                           <div className="ps-fieldrow" style={{marginBottom:10}}>
                             <div className="ps-fieldgroup">
-                              <div className="ps-fieldlabel">Massa crua (kg)</div>
+                              <div className="ps-fieldlabel">Base da ficha</div>
+                              <select
+                                value={yieldBasis}
+                                onChange={e=>changeYieldBasis(e.target.value as RecipeYieldBasis)}
+                                disabled={savingYields}
+                                className="ps-select"
+                              >
+                                {/* Com componentes, a massa somada é crua: "produto assado" dividiria massa crua por peso pronto. */}
+                                {RECIPE_BASIS_OPTIONS.filter(option => option.value !== 'baked' || recipeTotals.doughWeightKg === null || yieldBasis === 'baked').map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="ps-fieldgroup">
+                              <div className="ps-fieldlabel">Massa da receita (kg)</div>
                               <input
                                 inputMode="decimal"
-                                value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : yieldDraft.dough_weight_kg}
+                                value={recipeTotals.doughWeightKg !== null ? formatDecimalPtBR(recipeTotals.doughWeightKg, 3) : manualDough}
                                 onChange={e=>{
-                                  if (recipeTotals.doughWeightKg === null) {
-                                    setYieldDraft(prev=>({...prev, dough_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))
-                                  }
+                                  if (recipeTotals.doughWeightKg === null) setManualDoughEdit(e.target.value.replace(/[^\d,.]/g, ''))
                                 }}
                                 placeholder={recipeTotals.doughWeightKg !== null ? 'calculada' : 'ex: 8,5'}
                                 className="ps-input"
@@ -1153,30 +1257,77 @@ function ComposicaoInner() {
                                 {recipeTotals.doughWeightKg !== null ? 'soma automática dos componentes' : 'sem componentes para somar'}
                               </div>
                             </div>
-                            <div className="ps-fieldgroup">
-                              <div className="ps-fieldlabel">Peso pão assado (kg/un)</div>
-                              <input
-                                inputMode="decimal"
-                                value={yieldDraft.finished_weight_kg}
-                                onChange={e=>setYieldDraft(prev=>({...prev, finished_weight_kg:e.target.value.replace(/[^\d,.]/g, '')}))}
-                                placeholder="ex: 0,085"
-                                className="ps-input"
-                              />
+                          </div>
+                          {yieldBasis === 'unit' ? (
+                            <div className="ps-banner honey" style={{marginBottom:12}}>
+                              <span>Unidade pronta: a receita inteira vira uma unidade. O CMV da unidade é o CMV da receita.</span>
                             </div>
-                            <div className="ps-fieldgroup">
-                              <div className="ps-fieldlabel">Rende (un)</div>
-                              <input
-                                inputMode="decimal"
-                                value={yieldUnits !== null ? formatDecimalPtBR(yieldUnits, 2) : ''}
-                                readOnly
-                                placeholder="calculado"
-                                className="ps-input"
-                              />
-                              <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:4}}>
-                                peso da receita ÷ peso assado
+                          ) : (
+                            <div style={{marginBottom:12}}>
+                              <div style={{fontSize:12, color:'var(--ink-soft)', marginBottom:8}}>
+                                {yieldBasis === 'baked'
+                                  ? 'Peso por unidade: quanto pesa cada unidade pronta. Rende = peso da receita ÷ peso por unidade.'
+                                  : 'Massa crua: o peso que a padeira divide. Rende = massa da receita ÷ massa crua. Assado é opcional: mostra a perda de forno e vira o peso de venda.'}
+                              </div>
+                              <div style={{display:'grid', gap:8}}>
+                                {yieldRows.map(row => {
+                                  const draft = portionDraftFor(row.key)
+                                  const result = yieldResults.get(row.key)
+                                  const ok = result?.status === 'ok' ? result : null
+                                  const rowCost = ok ? costPerUnit(totalCMV, yieldBasis, ok.values.yield_units) : null
+                                  const isDirty = dirtyYieldRows.some(dirty => dirty.key === row.key)
+                                  return (
+                                    <div key={row.key} role="group" aria-label={`Rendimento: ${row.label}`} style={{border:'1px solid var(--line-soft)', borderRadius:8, padding:10, opacity:row.active ? 1 : .6, background: isDirty ? 'var(--paper-soft)' : undefined}}>
+                                      <div style={{fontSize:13, fontWeight:600, marginBottom:6}}>
+                                        {row.label}{!row.active ? ' (inativa)' : ''}{isDirty ? ' · não salvo' : ''}
+                                      </div>
+                                      <div className="ps-fieldrow" style={{marginBottom:6}}>
+                                        <div className="ps-fieldgroup">
+                                          <div className="ps-fieldlabel">{yieldBasis === 'baked' ? 'Peso por unidade (g)' : 'Massa crua (g)'}</div>
+                                          <input
+                                            inputMode="decimal"
+                                            aria-label={`${yieldBasis === 'baked' ? 'Peso por unidade' : 'Massa crua'} em gramas: ${row.label}`}
+                                            value={draft.portionG}
+                                            onChange={e=>editPortion(row.key, 'portionG', e.target.value)}
+                                            disabled={savingYields}
+                                            placeholder="ex: 80"
+                                            className="ps-input"
+                                          />
+                                        </div>
+                                        {yieldBasis === 'dough' && (
+                                          <div className="ps-fieldgroup">
+                                            <div className="ps-fieldlabel">Assado (g, opcional)</div>
+                                            <input
+                                              inputMode="decimal"
+                                              aria-label={`Peso assado em gramas: ${row.label}`}
+                                              value={draft.bakedG}
+                                              onChange={e=>editPortion(row.key, 'bakedG', e.target.value)}
+                                              disabled={savingYields}
+                                              placeholder="ex: 72"
+                                              className="ps-input"
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                      {result?.status === 'invalid' ? (
+                                        <div style={{fontSize:12, color:'var(--berry)'}}>{result.message}</div>
+                                      ) : ok ? (
+                                        <div style={{fontSize:12, color:'var(--ink-soft)'}}>
+                                          rende {formatDecimalPtBR(ok.values.yield_units, 2)} un
+                                          {ok.bakeLossPct !== null ? ` · perda de forno ${formatDecimalPtBR(ok.bakeLossPct, 1)}%` : ''}
+                                          {ok.bakeLossPct === null && yieldBasis === 'dough' ? ' · sem peso assado' : ''}
+                                          {` · pronto ${formatGrams(ok.averageUnitWeightKg)} g`}
+                                          {` · CMV/un ${rowCost !== null && Number.isFinite(rowCost) ? formatBRL(rowCost) : '—'}`}
+                                        </div>
+                                      ) : (
+                                        <div style={{fontSize:12, color:'var(--ink-faint)'}}>sem rendimento</div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
-                          </div>
+                          )}
                           <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
                             <span className="ps-store-chip">
                               massa crua: {recipeTotals.doughWeightKg !== null ? `${formatDecimalPtBR(recipeTotals.doughWeightKg, 3)} kg` : '—'}
@@ -1185,21 +1336,22 @@ function ComposicaoInner() {
                               farinha base: {recipeTotals.flourBaseKg !== null ? `${formatDecimalPtBR(recipeTotals.flourBaseKg, 3)} kg` : '—'}
                             </span>
                             <span className="ps-store-chip">
-                              peso médio: {calculatedAverageWeight ? `${formatDecimalPtBR(calculatedAverageWeight, 3)} kg/un` : '—'}
+                              CMV/kg de massa: {recipeKg !== null && totalCMV > 0 ? formatBRL(totalCMV / recipeKg) : '—'}
                             </span>
-                            <span className="ps-store-chip">
-                              perda forno: {calculatedBakeLoss !== null && Number.isFinite(calculatedBakeLoss) ? `${formatDecimalPtBR(calculatedBakeLoss, 1)}%` : '—'}
-                            </span>
-                            <span className="ps-store-chip">
-                              CMV/un: {calculatedUnitCost !== null && Number.isFinite(calculatedUnitCost) ? formatBRL(calculatedUnitCost) : '—'}
-                            </span>
-                            <span className="ps-store-chip">
-                              CMV/kg assado: {calculatedBakedKgCost !== null && Number.isFinite(calculatedBakedKgCost) ? formatBRL(calculatedBakedKgCost) : '—'}
-                            </span>
-                            <button onClick={saveRecipeYield} className="ps-btn sm primary" style={{marginLeft:'auto'}}>
-                              Salvar rendimento
+                            <button
+                              onClick={saveRecipeYields}
+                              disabled={savingYields || dirtyYieldRows.length === 0}
+                              className="ps-btn sm primary"
+                              style={{marginLeft:'auto'}}
+                            >
+                              {savingYields ? 'Salvando...' : dirtyYieldRows.length > 1 ? `Salvar rendimento (${dirtyYieldRows.length})` : 'Salvar rendimento'}
                             </button>
                           </div>
+                          {dirtyYieldRows.length === 0 && (
+                            <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:-8, marginBottom:12, textAlign:'right'}}>
+                              nada alterado para salvar
+                            </div>
+                          )}
                           {flourComponents.length > 0 && recipeTotals.flourBaseKg !== null && (
                             <div style={{border:'1px solid var(--line-soft)', borderRadius:8, padding:10, marginBottom:12, background:'var(--paper-soft)'}}>
                               <div className="ps-flabel" style={{marginBottom:6}}>Mistura de farinhas</div>
