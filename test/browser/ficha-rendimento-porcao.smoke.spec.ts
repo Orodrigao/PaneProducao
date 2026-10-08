@@ -58,6 +58,12 @@ const storedYields = [
   yieldRow({ id: 'y-forma', product_id: productId, product_variant_id: 'v-forma', basis: 'dough', dough_weight_kg: 1.048, finished_weight_kg: 1.048, yield_units: 2.62 }),
 ]
 
+// Peso de venda igual ao peso médio gravado: nenhuma linha abre pendente.
+const saleOptions = [
+  { id: 'o-hamb', product_id: productId, product_variant_id: 'v-hamb', name: 'Hambúrguer Unidade', sale_unit: 'un', reference_quantity: 1, unit_weight_kg: 0.08, is_default: true, active: true },
+  { id: 'o-forma', product_id: productId, product_variant_id: 'v-forma', name: 'Forma Unidade', sale_unit: 'un', reference_quantity: 1, unit_weight_kg: 0.4, is_default: true, active: true },
+]
+
 interface CapturedWrite { method: string; url: string; body: Record<string, unknown> }
 
 async function mockRecipe(page: Page, writes: CapturedWrite[]) {
@@ -70,8 +76,13 @@ async function mockRecipe(page: Page, writes: CapturedWrite[]) {
   await page.route(/\/rest\/v1\/product_variants\?/, route => route.fulfill({ json: variants }))
   await page.route(/\/rest\/v1\/product_sale_options\?/, async (route: Route) => {
     const request = route.request()
-    if (request.method() !== 'GET') {
-      writes.push({ method: request.method(), url: decodeURIComponent(request.url()), body: request.postDataJSON() })
+    if (request.method() === 'GET') return route.fulfill({ json: saleOptions })
+    const url = decodeURIComponent(request.url())
+    const body = request.postDataJSON() as Record<string, unknown>
+    writes.push({ method: request.method(), url, body })
+    const variantId = url.match(/product_variant_id=eq\.([^&]+)/)?.[1]
+    for (const option of saleOptions) {
+      if (option.product_variant_id === variantId) option.unit_weight_kg = body.unit_weight_kg as number
     }
     return route.fulfill({ json: [] })
   })
@@ -160,4 +171,5 @@ test('ficha calcula rendimento por massa crua de cada variante e grava só as li
   await expect(page.locator('.ps-loading')).toHaveCount(0, { timeout: 30_000 })
   await expect(page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true })).toHaveValue('72')
   await expect(page.getByLabel('Massa crua em gramas: Mini', { exact: true })).toHaveValue('30')
+  await expect(page.getByText('nada alterado para salvar')).toBeVisible()
 })

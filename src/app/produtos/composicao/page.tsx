@@ -959,7 +959,15 @@ function ComposicaoInner() {
     const basisChanged = yieldBasisEdit !== null && stored !== null && stored.basis !== yieldBasis
     const doughChanged = recipeTotals.doughWeightKg === null && manualDoughEdit !== null && manualDough !== storedManualDough
     const newReadyUnit = yieldBasis === 'unit' && yieldBasisEdit !== null && stored === null && row.key === selectedYieldKey
-    const salePending = saleSyncPending.includes(row.key)
+    // Peso de venda diferente do peso médio gravado (ex.: rendimento salvo e
+    // venda falhou antes de recarregar) também fica pendente.
+    const storedAverage = stored?.average_unit_weight_kg ?? null
+    const saleWeightDiverges = storedAverage !== null && saleOptions.some(option =>
+      option.sale_unit === 'un'
+      && (option.product_variant_id ?? null) === row.variantId
+      && (option.unit_weight_kg === null || Math.abs(Number(option.unit_weight_kg) - Number(storedAverage)) > 0.0000005)
+    )
+    const salePending = saleSyncPending.includes(row.key) || saleWeightDiverges
     if (yieldBasis === 'unit') return salePending || basisChanged || (stored !== null && doughChanged) || newReadyUnit
     return salePending || draftChanged || basisChanged || (hasContent && doughChanged)
   })
