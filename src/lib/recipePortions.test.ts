@@ -148,6 +148,21 @@ describe('portionYieldDiffersFromStored', () => {
     }, 2.441)).toBe(false)
   })
 
+  it('salvar, reabrir e recalcular não deixa a linha pendente', () => {
+    const cases: Array<{ recipeKg: number; portionG: string; bakedG: string }> = [
+      { recipeKg: 0.06, portionG: '30', bakedG: '29,96' },
+      { recipeKg: 2.37, portionG: '33,337', bakedG: '' },
+      { recipeKg: 1.048, portionG: '5,004', bakedG: '' },
+      { recipeKg: 1.3, portionG: '87,456', bakedG: '79,123' },
+    ]
+    for (const draft of cases) {
+      const saved = calculatePortionYield({ basis: 'dough', recipeKg: draft.recipeKg, draft })
+      if (saved.status !== 'ok') throw new Error(`esperava ok: ${draft.portionG}`)
+      const stored: StoredRecipeYield = { basis: 'dough', ...saved.values, average_unit_weight_kg: saved.averageUnitWeightKg }
+      expect(reopenAndRecalculate(stored, draft.recipeKg), draft.portionG).toBe(false)
+    }
+  })
+
   it('receita que mudou depois de gravar fica pendente', () => {
     expect(reopenAndRecalculate({
       basis: 'dough', dough_weight_kg: 2.37, finished_weight_kg: 2.37, yield_units: 24.947368421052627, average_unit_weight_kg: 0.095,

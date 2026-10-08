@@ -165,10 +165,10 @@ export function calculatePortionYield(input: {
 // de grama, não mudança de rendimento.
 const STORED_VALUE_RELATIVE_TOLERANCE = 0.001
 
-function sameStoredValue(stored: number | string | null, next: number | null): boolean {
+function sameStoredValue(stored: number | string | null, next: number | null, absoluteToleranceKg = 0): boolean {
   const a = positiveNumber(stored)
   if (a === null || next === null) return a === next
-  return Math.abs(a - next) <= Math.abs(a) * STORED_VALUE_RELATIVE_TOLERANCE
+  return Math.abs(a - next) <= Math.max(Math.abs(a) * STORED_VALUE_RELATIVE_TOLERANCE, absoluteToleranceKg)
 }
 
 // A conta de hoje grava algo diferente do que está no banco: a receita mudou
@@ -182,7 +182,9 @@ export function portionYieldDiffersFromStored(
 ): boolean {
   return stored.basis !== basis
     || !sameStoredValue(stored.dough_weight_kg, values.dough_weight_kg)
-    || !sameStoredValue(stored.finished_weight_kg, values.finished_weight_kg)
+    // Perda abaixo da tolerância por unidade some ao reabrir (assado = massa):
+    // não é mudança.
+    || !sameStoredValue(stored.finished_weight_kg, values.finished_weight_kg, BAKE_LOSS_TOLERANCE_PER_UNIT_KG * values.yield_units)
     || !sameStoredValue(stored.yield_units, values.yield_units)
 }
 
