@@ -270,9 +270,13 @@ Fatos medidos em produção nesta data (somente leitura):
 - Com os pesos pesados, a cobertura de peso da produção de setembro iria de
   62% para cerca de 90%. Faltariam Pão de Hotdog, Pizza Redonda e Hambúrguer
   Italiano, entre outros.
-- Vários pães pesaram mais assados do que a ficha diz ter de massa (Calabresa
-  436 g contra 330 g na ficha): essas fichas precisam ser conferidas com a
-  lista de divisão da produção.
+- Vários pães pesaram mais assados do que a ficha diz ter de massa: essas
+  fichas precisam ser conferidas com a lista de divisão da produção. A
+  Calabresa leva 360 g de massa e 100 g de recheio, mas a ficha diz 330 g.
+- A pesagem de um pão só não basta. Na conferência do mesmo dia, o Croissant
+  pesou 78 a 80 g assado (85 a 90 g cru), não 62 g. A Calabresa pesou 436 g e
+  depois 370 g, o que aponta recheio sem porção padrão. Peso assado se mede
+  com três unidades de fornadas diferentes.
 
 ## A conta
 
