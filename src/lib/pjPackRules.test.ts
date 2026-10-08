@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseWholePjPackCount, pjPackPhysicalSize, resolvePjPackRule, type PjPackRule } from './pjPackRules'
+import {
+  parseWholePjPackCount,
+  pjPackPhysicalSize,
+  requiredPriceTablePackSize,
+  resolvePjPackRule,
+  type PjPackRule,
+} from './pjPackRules'
 
 const hamburguer: PjPackRule = {
   productId: 'brioche',
@@ -61,5 +67,19 @@ describe('parseWholePjPackCount', () => {
     expect(parseWholePjPackCount('0,96')).toBeNull()
     expect(parseWholePjPackCount('0')).toBeNull()
     expect(parseWholePjPackCount('dois')).toBeNull()
+  })
+})
+
+describe('requiredPriceTablePackSize', () => {
+  it('em un a tabela precisa guardar o pacote fechado da regra (Brioche Hambúrguer: 12)', () => {
+    expect(requiredPriceTablePackSize(hamburguer, 'un')).toBe(12)
+  })
+
+  it('em kg a regra não fixa o pacote comercial da tabela', () => {
+    expect(requiredPriceTablePackSize(hamburguer, 'kg')).toBeNull()
+  })
+
+  it('sem regra a tabela é livre', () => {
+    expect(requiredPriceTablePackSize(null, 'un')).toBeNull()
   })
 })

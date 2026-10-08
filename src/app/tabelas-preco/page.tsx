@@ -15,6 +15,7 @@ import {
   type PricingUnit,
 } from '@/lib/saleOptions'
 import { isCatalogItemAlreadyPriced, isLegacyBreadUnified } from './catalog'
+import { requiredPriceTablePackSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
 
 interface PriceTier { id:string; name:string; description:string|null; active:boolean }
 interface TierItem {
@@ -36,6 +37,7 @@ interface CatalogItem {
 }
 type BreadCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null }
 type ProductCatalogRow = { id:string; name:string; unit:string|null; cost_price:number|null; legacy_bread_id:string|null }
+type PackRuleRow = { product_id:string; product_variant_id:string|null; pack_size_units:number; min_order_packs:number; order_multiple_packs:number }
 type DbError = { code?: string; message?: string }
 type PriceLineLike = {
   product_source:'bread'|'product'
@@ -89,6 +91,28 @@ function hasPositiveCost(row: { cost_price:number|null } | null | undefined) {
   return Number.isFinite(cost) && cost > 0
 }
 
+// Produto com pacote fechado PJ: o pack não é editável, porque o Pedido PJ
+// recusa qualquer valor diferente da regra. Valor antigo divergente aparece
+// com o motivo e um botão que corrige.
+function LockedPackCell({ current, required, onFix }: { current:number; required:number; onFix:()=>void }) {
+  if (Number(current) === required) {
+    return (
+      <div style={{fontSize:13}}>
+        <b>{required}</b>
+        <div style={{fontSize:11, color:'var(--ink-faint)', lineHeight:1.3}}>pacote fechado PJ</div>
+      </div>
+    )
+  }
+  return (
+    <div style={{minWidth:130}}>
+      <button onClick={onFix} className="ps-btn danger sm">Ajustar para {required}</button>
+      <div style={{fontSize:11, color:'var(--berry)', marginTop:4, lineHeight:1.3}}>
+        Está {Number(current)}; o pacote fechado PJ é {required}. O pedido PJ trava até ajustar.
+      </div>
+    </div>
+  )
+}
+
 export default function TabelasPrecoPage() {
   const [user, setUser] = useState<AppUser | null>(null)
   const [tab, setTab]   = useState<'tabelas'|'precos'>('tabelas')
@@ -107,6 +131,7 @@ export default function TabelasPrecoPage() {
   const [saleOptions, setSaleOptions] = useState<SaleOption[]>([])
   const [productCosts, setProductCosts] = useState<ProductCatalogRow[]>([])
   const [breadCosts, setBreadCosts] = useState<BreadCatalogRow[]>([])
+  const [packRules, setPackRules] = useState<PjPackRule[]>([])
   const addingItemRef = useRef(false)
 
   // Aba preços por cliente
@@ -138,13 +163,18 @@ export default function TabelasPrecoPage() {
       ])
       const firstErr = [tRes, iRes, cRes, oRes, bRes, pRes].find(r => r.error)?.error
       if (firstErr) throw firstErr
-      const [sRes, varRes] = await Promise.all([
+      const [sRes, varRes, rRes] = await Promise.all([
         supabase
           .from('product_sale_options')
           .select('id,product_id,product_variant_id,name,sale_unit,reference_quantity,unit_weight_kg,active,is_default')
           .eq('active', true),
         supabase.from('product_variants').select('id,name'),
+        supabase.from('product_pj_pack_rules').select('product_id,product_variant_id,pack_size_units,min_order_packs,order_multiple_packs'),
       ])
+      // Sem a regra de pacote fechado a tela voltaria a gravar pacote errado
+      // em silêncio; melhor parar e mostrar o erro.
+      if (rRes.error) throw rRes.error
+      if (sRes.error) throw sRes.error
       setTiers((tRes.data || []) as PriceTier[])
       setItems((iRes.data || []) as TierItem[])
       setCustomers((cRes.data || []) as Customer[])
@@ -153,8 +183,12 @@ export default function TabelasPrecoPage() {
       const productRows = (pRes.data || []) as ProductCatalogRow[]
       setBreadCosts(breadRows)
       setProductCosts(productRows)
-      const optionRows = sRes.error ? [] : (sRes.data || []) as SaleOption[]
+      const optionRows = (sRes.data || []) as SaleOption[]
       setSaleOptions(optionRows)
+      setPackRules(((rRes.data || []) as PackRuleRow[]).map(r => ({
+        productId: r.product_id, productVariantId: r.product_variant_id,
+        packSizeUnits: Number(r.pack_size_units), minOrderPacks: Number(r.min_order_packs), orderMultiplePacks: Number(r.order_multiple_packs),
+      })))
       const variantNameById = new Map<string, string>(
         varRes.error ? [] : ((varRes.data || []) as Array<{ id:string; name:string }>).map(v => [v.id, v.name])
       )
@@ -250,6 +284,13 @@ export default function TabelasPrecoPage() {
     saleOptions.forEach(option => map.set(option.id, option))
     return map
   }, [saleOptions])
+  // Pacote que a linha precisa guardar para o Pedido PJ fechar (regra de
+  // pacote fechado, mesma resolução do servidor: variante vem da opção de venda).
+  const requiredPackFor = useCallback((line: { product_source:'bread'|'product'; product_id:string; sale_option_id?:string|null; pricing_unit:PricingUnit }) => {
+    if (line.product_source !== 'product') return null
+    const variantId = line.sale_option_id ? saleOptionsById.get(line.sale_option_id)?.product_variant_id ?? null : null
+    return requiredPriceTablePackSize(resolvePjPackRule(packRules, line.product_id, variantId), line.pricing_unit)
+  }, [packRules, saleOptionsById])
   const saleOptionsByProduct = useMemo(() => {
     const map = new Map<string, SaleOption[]>()
     saleOptions.forEach(option => {
@@ -457,15 +498,22 @@ export default function TabelasPrecoPage() {
     productId: string,
     productSource: 'bread'|'product',
     pricingUnit: PricingUnit,
+    saleOptionId: string | null,
+    packSize: number | null,
   ) => {
-    const { data, error } = await supabase
+    // A opção de venda faz parte da identidade da linha (chave única da
+    // tabela): Brioche Hambúrguer e Brioche Forma são linhas diferentes
+    // mesmo com a mesma unidade, e reativar uma no lugar da outra gravaria o
+    // pack na linha errada.
+    const query = supabase
       .from('price_tier_items')
-      .update({ active: true })
+      .update(packSize === null ? { active: true } : { active: true, pack_size: packSize })
       .eq('tier_id', selTierId!)
       .eq('product_id', productId)
       .eq('product_source', productSource)
       .eq('pricing_unit', pricingUnit)
       .eq('active', false)
+    const { data, error } = await (saleOptionId ? query.eq('sale_option_id', saleOptionId) : query.is('sale_option_id', null))
       .select('id')
       .maybeSingle()
     if (error) throw error
@@ -479,10 +527,15 @@ export default function TabelasPrecoPage() {
 
     addingItemRef.current = true
     const pricingUnit = inferPricingUnit(p.unit, p.sale_unit ? { sale_unit: p.sale_unit } : null)
+    const requiredPack = requiredPackFor({
+      product_source: p._source, product_id: p.id, sale_option_id: p.sale_option_id, pricing_unit: pricingUnit,
+    })
     try {
-      const sameItem = await reactivateInactiveItem(p.id, p._source, pricingUnit)
+      // Item removido e incluído de novo volta com o pack da regra, não com o
+      // valor antigo que pode ter sido justamente o motivo de removê-lo.
+      const sameItem = await reactivateInactiveItem(p.id, p._source, pricingUnit, p.sale_option_id ?? null, requiredPack)
       const legacyItem = !sameItem && p._source === 'product' && p.legacy_bread_id
-        ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit)
+        ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit, null, null)
         : null
       if (sameItem || legacyItem) {
         showToast('Produto reativado nesta tabela')
@@ -498,7 +551,7 @@ export default function TabelasPrecoPage() {
         product_name: p.name,
         unit_price: 0,
         pricing_unit: pricingUnit,
-        pack_size: 1,
+        pack_size: requiredPack ?? 1,
         active: true,
         ...(p.sale_option_id ? { sale_option_id: p.sale_option_id } : {}),
       })
@@ -524,6 +577,19 @@ export default function TabelasPrecoPage() {
     const { error } = await supabase.from('price_tier_items').update(patch).eq('id', it.id)
     if (error) { showToast('Erro: ' + error.message); return }
     setItems(prev => prev.map(x => x.id === it.id ? { ...x, ...patch } : x))
+  }
+
+  // Correção do pack confere que a linha mudou: com a policy filtrando, o
+  // update volta sem erro e sem linha, e a tela diria "corrigido" sem estar.
+  const fixPackSize = async (table: 'price_tier_items'|'customer_price_overrides', id: string, packSize: number) => {
+    const { data, error } = await supabase.from(table).update({ pack_size: packSize }).eq('id', id).select('id')
+    if (error) { showToast('Erro: ' + error.message); return false }
+    if (!data || data.length !== 1) { showToast('Seu perfil não pode alterar este preço. Peça a quem cuida das tabelas.'); return false }
+    return true
+  }
+  const fixItemPack = async (it: TierItem, packSize: number) => {
+    if (!await fixPackSize('price_tier_items', it.id, packSize)) return
+    setItems(prev => prev.map(x => x.id === it.id ? { ...x, pack_size: packSize } : x))
   }
 
   const removeItem = async (it: TierItem) => {
@@ -575,14 +641,19 @@ export default function TabelasPrecoPage() {
   const createOverride = async (row: typeof custRows[number]) => {
     if (!selCustId) return
     const basePrice = row.tier?.unit_price ?? 0
+    const pricingUnit = row.tier?.pricing_unit || 'un'
+    const requiredPack = requiredPackFor({
+      product_source: row.product_source, product_id: row.product_id,
+      sale_option_id: row.tier?.sale_option_id, pricing_unit: pricingUnit,
+    })
     const { error } = await supabase.from('customer_price_overrides').insert({
       customer_id: selCustId,
       product_id: row.product_id,
       product_source: row.product_source,
       product_name: row.product_name,
       unit_price: basePrice,
-      pricing_unit: row.tier?.pricing_unit || 'un',
-      pack_size: row.tier?.pack_size || 1,
+      pricing_unit: pricingUnit,
+      pack_size: requiredPack ?? (row.tier?.pack_size || 1),
       active: true,
       ...(row.tier?.sale_option_id ? { sale_option_id: row.tier.sale_option_id } : {}),
     })
@@ -594,6 +665,11 @@ export default function TabelasPrecoPage() {
     const { error } = await supabase.from('customer_price_overrides').update(patch).eq('id', o.id)
     if (error) { showToast('Erro: ' + error.message); return }
     setOverrides(prev => prev.map(x => x.id === o.id ? { ...x, ...patch } : x))
+  }
+
+  const fixOverridePack = async (o: Override, packSize: number) => {
+    if (!await fixPackSize('customer_price_overrides', o.id, packSize)) return
+    setOverrides(prev => prev.map(x => x.id === o.id ? { ...x, pack_size: packSize } : x))
   }
 
   const removeOverride = async (o: Override) => {
@@ -734,6 +810,7 @@ export default function TabelasPrecoPage() {
                       <tbody>
                         {itemsOfSel.map(it => {
                           const option = it.sale_option_id ? saleOptionsById.get(it.sale_option_id) : null
+                          const requiredPack = requiredPackFor(it)
                           return (
                           <tr key={it.id}>
                             <td>
@@ -748,15 +825,24 @@ export default function TabelasPrecoPage() {
                             </td>
                             <td>{renderMargin(it, it.unit_price)}</td>
                             <td>
-                              <select value={it.pricing_unit} disabled={!!option} onChange={e=>updateItem(it, { pricing_unit: e.target.value as PricingUnit })}
+                              <select value={it.pricing_unit} disabled={!!option} onChange={e=>{
+                                const pricingUnit = e.target.value as PricingUnit
+                                const packForUnit = requiredPackFor({ ...it, pricing_unit: pricingUnit })
+                                updateItem(it, packForUnit === null ? { pricing_unit: pricingUnit } : { pricing_unit: pricingUnit, pack_size: packForUnit })
+                              }}
                                 className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60, opacity:option?0.7:1}}>
                                 <option value="un">un</option><option value="kg">kg</option>
                               </select>
                             </td>
                             <td>
-                              <input type="number" min={1} step={1} value={it.pack_size}
-                                onChange={e=>updateItem(it, { pack_size: Math.max(1, Number(e.target.value) || 1) })}
-                                className="ps-input" style={{width:60, padding:'4px 8px', fontSize:13, textAlign:'center'}}/>
+                              {requiredPack !== null ? (
+                                <LockedPackCell current={it.pack_size} required={requiredPack}
+                                  onFix={()=>fixItemPack(it, requiredPack)}/>
+                              ) : (
+                                <input type="number" min={1} step={1} value={it.pack_size}
+                                  onChange={e=>updateItem(it, { pack_size: Math.max(1, Number(e.target.value) || 1) })}
+                                  className="ps-input" style={{width:60, padding:'4px 8px', fontSize:13, textAlign:'center'}}/>
+                              )}
                             </td>
                             <td>
                               <button onClick={()=>removeItem(it)} title="Remover" className="ps-iconbtn" style={{width:28, height:28, color:'var(--berry)'}}>
@@ -880,6 +966,14 @@ export default function TabelasPrecoPage() {
                             const isOverride = !!r.override
                             const optionId = r.override?.sale_option_id || r.tier?.sale_option_id || null
                             const option = optionId ? saleOptionsById.get(optionId) : null
+                            const requiredPack = finalP ? requiredPackFor({
+                              product_source: r.product_source, product_id: r.product_id,
+                              sale_option_id: optionId, pricing_unit: finalP.unit,
+                            }) : null
+                            const fixPack = requiredPack === null ? null
+                              : r.override ? () => fixOverridePack(r.override!, requiredPack)
+                              : r.tier ? () => fixItemPack(r.tier!, requiredPack)
+                              : null
                             return (
                               <tr key={r.key} style={{background: isOverride ? 'var(--honey-tint)' : undefined}}>
                                 <td>
@@ -914,7 +1008,9 @@ export default function TabelasPrecoPage() {
                                   )}
                                 </td>
                                 <td style={{fontSize:12, color:'var(--ink-faint)'}}>
-                                  {finalP ? `${finalP.unit}/${finalP.pack}` : '—'}
+                                  {finalP && requiredPack !== null && fixPack ? (
+                                    <LockedPackCell current={finalP.pack} required={requiredPack} onFix={fixPack}/>
+                                  ) : finalP ? `${finalP.unit}/${finalP.pack}` : '—'}
                                 </td>
                                 <td>
                                   {r.override && (

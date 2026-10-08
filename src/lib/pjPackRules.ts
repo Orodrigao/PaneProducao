@@ -51,3 +51,16 @@ export function parseWholePjPackCount(rawValue: string): number | null {
   const packs = Number(normalized)
   return Number.isSafeInteger(packs) && packs > 0 ? packs : null
 }
+
+// Pacote que a tabela de preço (ou o preço especial do cliente) precisa
+// guardar para o pedido PJ fechar. Em 'un' o servidor exige que o pack_size
+// da tabela seja o próprio pacote fechado da regra; qualquer outro valor trava
+// todo pedido do produto. Em 'kg' o pack_size é o pacote comercial da tabela e
+// a regra não o fixa. Sem regra, a tabela é livre: retorna null.
+export function requiredPriceTablePackSize(
+  rule: PjPackRule | null,
+  pricingUnit: PricingUnit
+): number | null {
+  if (!rule || pricingUnit !== 'un') return null
+  return rule.packSizeUnits
+}
