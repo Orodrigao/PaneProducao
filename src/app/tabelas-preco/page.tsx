@@ -498,9 +498,14 @@ export default function TabelasPrecoPage() {
     productId: string,
     productSource: 'bread'|'product',
     pricingUnit: PricingUnit,
+    saleOptionId: string | null,
     packSize: number | null,
   ) => {
-    const { data, error } = await supabase
+    // A opção de venda faz parte da identidade da linha (chave única da
+    // tabela): Brioche Hambúrguer e Brioche Forma são linhas diferentes
+    // mesmo com a mesma unidade, e reativar uma no lugar da outra gravaria o
+    // pack na linha errada.
+    const query = supabase
       .from('price_tier_items')
       .update(packSize === null ? { active: true } : { active: true, pack_size: packSize })
       .eq('tier_id', selTierId!)
@@ -508,6 +513,7 @@ export default function TabelasPrecoPage() {
       .eq('product_source', productSource)
       .eq('pricing_unit', pricingUnit)
       .eq('active', false)
+    const { data, error } = await (saleOptionId ? query.eq('sale_option_id', saleOptionId) : query.is('sale_option_id', null))
       .select('id')
       .maybeSingle()
     if (error) throw error
@@ -527,9 +533,9 @@ export default function TabelasPrecoPage() {
     try {
       // Item removido e incluído de novo volta com o pack da regra, não com o
       // valor antigo que pode ter sido justamente o motivo de removê-lo.
-      const sameItem = await reactivateInactiveItem(p.id, p._source, pricingUnit, requiredPack)
+      const sameItem = await reactivateInactiveItem(p.id, p._source, pricingUnit, p.sale_option_id ?? null, requiredPack)
       const legacyItem = !sameItem && p._source === 'product' && p.legacy_bread_id
-        ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit, null)
+        ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit, null, null)
         : null
       if (sameItem || legacyItem) {
         showToast('Produto reativado nesta tabela')

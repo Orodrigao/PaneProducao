@@ -111,7 +111,10 @@ test('incluir produto com pacote fechado grava o pack da regra; sem regra contin
     product_id: briocheId, sale_option_id: saleOptionId, pricing_unit: 'un', pack_size: 12,
   })
   // Item removido antes volta pela reativação, também com o pack da regra.
-  expect(writes.find(write => write.method === 'PATCH')?.body).toEqual({ active: true, pack_size: 12 })
+  // A reativação procura só a mesma opção de venda, nunca outra variante.
+  const reactivation = writes.find(write => write.method === 'PATCH')
+  expect(reactivation?.body).toEqual({ active: true, pack_size: 12 })
+  expect(decodeURIComponent(reactivation?.url ?? '')).toContain(`sale_option_id=eq.${saleOptionId}`)
 
   await expect(search).toHaveValue('')
   await search.fill('sem pacote')
