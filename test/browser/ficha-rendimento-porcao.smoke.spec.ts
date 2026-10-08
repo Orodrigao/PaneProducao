@@ -39,7 +39,7 @@ const variants = [
   { id: 'v-mini', product_id: productId, name: 'Mini', sort_order: 2, active: true },
 ]
 
-function yieldRow(row: Record<string, unknown>) {
+function yieldRow(row: Record<string, unknown>): Record<string, unknown> {
   const dough = row.dough_weight_kg as number | null
   const finished = row.finished_weight_kg as number | null
   const units = row.yield_units as number | null
@@ -83,7 +83,12 @@ async function mockRecipe(page: Page, writes: CapturedWrite[]) {
     const id = request.method() === 'PATCH'
       ? (decodeURIComponent(request.url()).match(/id=eq\.([^&]+)/)?.[1] ?? 'y-novo')
       : `y-novo-${String(body.product_variant_id)}`
-    return route.fulfill({ json: yieldRow({ ...body, id }) })
+    // Guarda o que "gravou" para a releitura da página devolver o mesmo.
+    const saved = yieldRow({ ...body, id })
+    const index = storedYields.findIndex(row => row.id === id)
+    if (index >= 0) storedYields[index] = saved
+    else storedYields.push(saved)
+    return route.fulfill({ json: saved })
   })
 }
 
@@ -150,7 +155,9 @@ test('ficha calcula rendimento por massa crua de cada variante e grava só as li
   expect(saleWrites.find(write => write.url.includes('product_variant_id=eq.v-hamb'))?.body.unit_weight_kg as number).toBeCloseTo(0.072, 6)
   expect(saleWrites.find(write => write.url.includes('product_variant_id=eq.v-mini'))?.body.unit_weight_kg as number).toBeCloseTo(0.03, 6)
 
-  // Depois de salvar, a tela relê o que voltou do banco.
+  // Recarregada, a tela relê o que foi gravado.
+  await page.reload()
+  await expect(page.locator('.ps-loading')).toHaveCount(0, { timeout: 30_000 })
   await expect(page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true })).toHaveValue('72')
   await expect(page.getByLabel('Massa crua em gramas: Mini', { exact: true })).toHaveValue('30')
 })

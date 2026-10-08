@@ -741,6 +741,7 @@ function ComposicaoInner() {
     savingYieldsRef.current = true
     setSavingYields(true)
     const savedKeys: string[] = []
+    const saleSyncFailures: string[] = []
     try {
       for (const row of pending) {
         const result = yieldResults.get(row.key)
@@ -777,8 +778,11 @@ function ComposicaoInner() {
             ? await optionUpdate.eq('product_variant_id', row.variantId)
             : await optionUpdate.is('product_variant_id', null)
           if (optionError) {
+            // O rendimento já gravou: segue para as próximas linhas e deixa
+            // esta pendente, para o peso de venda ser tentado de novo.
             setSaleSyncPending(prev => prev.includes(row.key) ? prev : [...prev, row.key])
-            throw new Error(`${row.label}: rendimento salvo, mas o peso de venda não atualizou (${getErrorMessage(optionError, 'erro')}). Salve de novo.`)
+            saleSyncFailures.push(row.label)
+            continue
           }
           setSaleOptions(prev => prev.map(option =>
             option.sale_unit === 'un' && (option.product_variant_id ?? null) === row.variantId
@@ -790,7 +794,9 @@ function ComposicaoInner() {
       }
       setYieldBasisEdit(null)
       setManualDoughEdit(null)
-      showToast(savedKeys.length === 1 ? 'Rendimento salvo' : `Rendimento salvo em ${savedKeys.length} linhas`)
+      showToast(saleSyncFailures.length > 0
+        ? `Rendimento salvo, mas o peso de venda não atualizou em: ${saleSyncFailures.join(', ')}. Salve de novo.`
+        : savedKeys.length === 1 ? 'Rendimento salvo' : `Rendimento salvo em ${savedKeys.length} linhas`)
     } catch (error: unknown) {
       showToast(getErrorMessage(error, 'Erro ao salvar rendimento'))
     } finally {
