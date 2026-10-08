@@ -293,10 +293,115 @@ Outros clientes PJ, kits, produção da cozinha (lanches e sopas) na mão de obr
 por quilo, arredondamento de preço, envio de preço ao PDV, rateio de energia e
 comparação com a JA enquanto a venda dela não for importada.
 
+## Margens decididas em 2026-10-08 (fase 4)
+
+Decisões de Rodrigo na conversa "Formação de preço — Fase 4: margens", depois
+da conta dos cinco produtos feita fora da tela, com consultas somente leitura
+em produção. **Provisórias:** saem de um único mês confiável (setembro de 2026)
+e de uma mão de obra ainda na régua do pão assado. Revisar quando houver três
+meses fechados ou quando a investigação do Financeiro (abaixo) terminar.
+
+### O salário dos donos é custo fixo
+
+Rodrigo e Suélen precisam retirar **R$ 20 mil por mês**. Esse valor entra nas
+despesas fixas, como o salário de quem faz o trabalho deles, e não sai do
+lucro. A margem passa a medir o que a padaria ganha **depois** de pagar os
+donos. Em setembro o Financeiro tinha só R$ 997 de retirada lançada, abaixo da
+linha do resultado. Com os R$ 20 mil, as despesas fixas vão de cerca de 26%
+para cerca de **35% do faturamento**.
+
+Consequência para a fase 2: o indicador de despesas fixas não enxerga a
+retirada, porque ela fica abaixo da linha. Até ele mudar, a conta manual soma
+os R$ 20 mil.
+
+### Percentuais
+
+Margem é lucro em porcentagem do preço, depois de imposto, taxa do canal e
+despesas fixas (com o salário dos donos). Mínima: abaixo dela o produto é
+revisado. Desejada: o alvo.
+
+| Tipo | Canal | Mínima | Desejada |
+| --- | --- | --- | --- |
+| Pães e laminados | Balcão e iFood | 10% | 20% |
+| Confeitaria | Balcão e iFood | 10% | 18% |
+| Pães e laminados | Buck | 5% | 12% |
+| Revenda | Todos | 5% | 10% |
+
+Na Configuração do Sistema isso vira: margem do canal para Balcão, iFood e Buck
+pela linha de pães, e exceção por categoria para Confeitaria e para as
+categorias de revenda. Gravar é ação do Rodrigo como admin.
+
+Parâmetros usados na conta: Simples Nacional 8,49%; taxa de cartão no balcão
+5,5%, valor conservador escolhido por Rodrigo, que inclui venda em dinheiro e
+Pix sem taxa; Buck sem taxa de canal; **comissão do iFood ainda não informada**.
+
+### Por que esses números
+
+- **Necessidade de caixa.** Além do salário dos donos, o lucro precisa pagar
+  cerca de R$ 8,6 mil por mês de empréstimos e montar, em seis meses, a reserva
+  de giro (cerca de R$ 45 mil para a pior semana, salários e aluguel no começo
+  do mês) e quitar cerca de R$ 20 mil de boletos de fornecedor vencidos, se
+  forem atraso real. Isso dá cerca de R$ 20 mil por mês, perto de 10% do
+  faturamento. Com 65% da receita no balcão e 35% na Buck e PJ, todos na
+  desejada dão perto de 17% de lucro médio; todos na mínima, perto de 8%. Por
+  isso a mínima não desce mais.
+- **Folga para o que a ficha não vê.** A matéria-prima comprada em setembro foi
+  28% do faturamento, enquanto o ingrediente da ficha dos pães é de 6% a 16% do
+  preço. Até essa diferença ser explicada, a desejada guarda folga.
+- **Buck abaixo do balcão.** Venda garantida, sem sobra, sem devolução, sem
+  cartão e paga em dia. Abaixo de 5%, um aumento de farinha ou azeitona zera o
+  lucro.
+- **Revenda.** Sem mão de obra nem sobra; com imposto, cartão e despesas fixas,
+  5% a 10% de lucro resultam em preço de cerca de 2 vezes o custo de compra.
+- **Referência de mercado: fraca.** Não há número da ABIP nem do Sebrae; só
+  páginas de empresas de software, que falam em 5% a 10% de lucro líquido
+  comum em padaria e mais em artesanal, com faixas que se contradizem. Serviu
+  apenas para confirmar a ordem de grandeza.
+
+### Retrato dos cinco produtos (setembro de 2026)
+
+Mão de obra de R$ 5,00 por quilo de pão assado (folha bruta da produção de
+R$ 11.124 mais encargos, férias, 13º e vales ≈ R$ 17 mil, sobre cerca de
+3.300 kg), provisória até a fase 0 entregar o custo do quilo de massa crua.
+Sobra do balcão pelo registro de sobras da JC; Buck sem sobra. Embalagem
+estimada. Croissant com fator 2 na mão de obra, provisório.
+
+| Produto | Balcão: praticado | Balcão: lucro | Buck: praticado | Buck: lucro |
+| --- | --- | --- | --- | --- |
+| Multigrãos | R$ 21,71 | 30% | R$ 9,50 | 20% |
+| Italiano | R$ 13,81 | 26% | R$ 4,50 | **−2%** |
+| Croissant | R$ 8,83 | 20% | R$ 4,65 | 10% |
+| Pão de Azeitona | R$ 21,82 | 19% | R$ 9,50 | **−1%** |
+| Bolo integral de maçã | R$ 21,81 | **−5%** | não vende | — |
+
+Abaixo da mínima hoje: **Italiano e Pão de Azeitona na Buck** (preço mínimo
+R$ 5,09 e R$ 10,64) e o **bolo de maçã** no balcão (mínimo R$ 29,85). Na Buck,
+o Multigrãos tem folga (R$ 9,50 praticado, R$ 7,79 desejado), o que permite
+propor uma tabela rebalanceada. No bolo, o caminho indicado é rever a receita
+(a noz pecan sozinha custa cerca de R$ 3 por bolo), não o preço.
+
+### Fatos medidos nesta conversa (somente leitura)
+
+- **O bolo de maçã não tinha ficha.** O custo de R$ 5,20 era digitado; pela
+  receita (6 bolos, noz pecan) o ingrediente é cerca de R$ 8,30. Outros itens de
+  confeitaria também têm custo digitado sem ficha.
+- **O salário pago é o líquido.** INSS e FGTS aparecem nos encargos, e férias e
+  13º não são provisionados: cerca de R$ 6,5 mil por mês que o Financeiro não
+  mostra até vencerem. Setembro teve R$ 8,2 mil de rescisões. Por isso a mão de
+  obra da produção foi montada pela folha, não pelo caixa.
+- **Contas a pagar só têm fornecedor.** Salário, aluguel, Simples e empréstimo
+  entram no Financeiro só no dia do pagamento, então não há projeção de caixa.
+  Havia R$ 19,7 mil em parcelas de fornecedor vencidas e não baixadas em
+  2026-10-08, sem saber se é atraso ou baixa esquecida.
+- **A soma de setembro não fecha com o caixa curto.** Faturamento de cerca de
+  R$ 210 mil contra despesas lançadas deixa cerca de R$ 40 mil por mês. A
+  hipótese principal é a retirada dos donos não lançada; seguem abertas venda
+  contada duas vezes (campo "site" do fechamento da JC contra PJ), compras
+  fora do Financeiro e dinheiro preso. Investigação separada, somente leitura.
+
 ## O que ainda não está decidido
 
-- Os percentuais de margem, desejada e mínima, por tipo e por canal. Ver "Como
-  definir as margens" e a fase 4.
+- A comissão do iFood.
 - O que a página de Configuração do Sistema vai conter além dos parâmetros de
   preço.
 
