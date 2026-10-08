@@ -30,6 +30,7 @@ import {
   formatGrams,
   portionDraftFromYield,
   portionDraftsEqual,
+  portionYieldDiffersFromStored,
   type PortionDraft,
   type PortionYieldResult,
 } from '@/lib/recipePortions'
@@ -969,7 +970,12 @@ function ComposicaoInner() {
     )
     const salePending = saleSyncPending.includes(row.key) || saleWeightDiverges
     if (yieldBasis === 'unit') return salePending || basisChanged || (stored !== null && doughChanged) || newReadyUnit
-    return salePending || draftChanged || basisChanged || (hasContent && doughChanged)
+    // O rendimento calculado agora difere do gravado (receita mudou depois de
+    // salvar, ou ficha gravada em outra base): as outras telas leem o gravado.
+    const result = yieldResults.get(row.key)
+    const storedDiffers = stored !== null && result?.status === 'ok'
+      && portionYieldDiffersFromStored(stored, yieldBasis, result.values)
+    return salePending || draftChanged || basisChanged || storedDiffers || (hasContent && doughChanged)
   })
   const selectedYieldResult = yieldResults.get(selectedYieldKey) ?? null
   const selectedYieldOk = selectedYieldResult?.status === 'ok' ? selectedYieldResult : null

@@ -115,15 +115,22 @@ test('ficha calcula rendimento por massa crua de cada variante e grava só as li
   await page.goto(`/produtos/composicao?id=${productId}`)
   await expect(page.locator('.ps-loading')).toHaveCount(0, { timeout: 30_000 })
 
-  // Ficha antiga abre igual: o número gravado vira massa crua e nada fica "não salvo".
+  // O número gravado vira massa crua. Forma rende o mesmo que o gravado e abre
+  // salva. Hambúrguer foi gravado como "produto assado" (12 un): pela massa
+  // crua rende 13,1 un, e como as outras telas leem o gravado, abre "não salvo".
   await expect(page.getByLabel('Massa crua em gramas: Hambúrguer', { exact: true })).toHaveValue('80')
   await expect(page.getByLabel('Massa crua em gramas: Forma', { exact: true })).toHaveValue('400')
   await expect(page.getByLabel('Massa crua em gramas: Mini', { exact: true })).toHaveValue('')
   await expect(rowCard(page, 'Hambúrguer')).toContainText('rende 13,1 un')
   await expect(rowCard(page, 'Hambúrguer')).toContainText(/CMV\/un R\$\s0,36/)
+  await expect(rowCard(page, 'Hambúrguer')).toContainText('não salvo')
   await expect(rowCard(page, 'Forma')).toContainText('rende 2,62 un')
-  await expect(page.getByRole('button', { name: /^Salvar rendimento/ })).toBeDisabled()
-  await expect(page.getByText('nada alterado para salvar')).toBeVisible()
+  await expect(rowCard(page, 'Forma')).not.toContainText('não salvo')
+  await expect(page.getByRole('button', { name: 'Salvar rendimento', exact: true })).toBeEnabled()
+
+  // Peso assado digitado em kg no campo de gramas é recusado.
+  await page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true }).fill('0,072')
+  await expect(rowCard(page, 'Hambúrguer')).toContainText('Peso assado é em gramas')
 
   // Peso assado só mostra a perda: o rendimento continua pela massa crua.
   await page.getByLabel('Peso assado em gramas: Hambúrguer', { exact: true }).fill('72')

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { calculatePortionYield, portionDraftFromYield, portionDraftsEqual } from './recipePortions'
+import {
+  calculatePortionYield,
+  portionDraftFromYield,
+  portionDraftsEqual,
+  portionYieldDiffersFromStored,
+  type StoredRecipeYield,
+} from './recipePortions'
 
 const brioche = 1.048
 
@@ -57,6 +63,11 @@ describe('calculatePortionYield', () => {
       .toEqual({ status: 'invalid', message: expect.stringContaining('em gramas') })
     expect(calculatePortionYield({ basis: 'dough', recipeKg: 1.048, draft: { portionG: '1.200', bakedG: '' } }).status).toBe('invalid')
     expect(calculatePortionYield({ basis: 'dough', recipeKg: 2.37, draft: { portionG: '14', bakedG: '' } }).status).toBe('ok')
+  })
+
+  it('recusa peso assado digitado em kg no campo de gramas', () => {
+    expect(calculatePortionYield({ basis: 'dough', recipeKg: brioche, draft: { portionG: '80', bakedG: '0,072' } }))
+      .toEqual({ status: 'invalid', message: expect.stringContaining('Peso assado é em gramas') })
   })
 
   it('linha vazia não é erro', () => {
@@ -118,5 +129,34 @@ describe('portionDraftFromYield', () => {
     if (saved.status !== 'ok') throw new Error('esperava ok')
     const reopened = portionDraftFromYield({ basis: 'dough', ...saved.values, average_unit_weight_kg: saved.averageUnitWeightKg })
     expect(portionDraftsEqual(reopened, { portionG: '80', bakedG: '72' })).toBe(true)
+  })
+})
+
+describe('portionYieldDiffersFromStored', () => {
+  function reopenAndRecalculate(stored: StoredRecipeYield, recipeKg: number) {
+    const result = calculatePortionYield({ basis: 'dough', recipeKg, draft: portionDraftFromYield(stored) })
+    if (result.status !== 'ok') throw new Error('esperava ok')
+    return portionYieldDiffersFromStored(stored, 'dough', result.values)
+  }
+
+  it('ficha antiga com a mesma receita não fica pendente (arredondamento da porção)', () => {
+    expect(reopenAndRecalculate({
+      basis: 'dough', dough_weight_kg: '1.048', finished_weight_kg: '1.048', yield_units: '6.986666666666667', average_unit_weight_kg: '0.15',
+    }, 1.048)).toBe(false)
+    expect(reopenAndRecalculate({
+      basis: 'dough', dough_weight_kg: '2.441', finished_weight_kg: '2.441', yield_units: '27.122222', average_unit_weight_kg: '0.09',
+    }, 2.441)).toBe(false)
+  })
+
+  it('receita que mudou depois de gravar fica pendente', () => {
+    expect(reopenAndRecalculate({
+      basis: 'dough', dough_weight_kg: 2.37, finished_weight_kg: 2.37, yield_units: 24.947368421052627, average_unit_weight_kg: 0.095,
+    }, 2.07)).toBe(true)
+  })
+
+  it('ficha gravada em produto assado fica pendente ao virar massa crua (Brioche Hamburguer 12 → 13,1 un)', () => {
+    expect(reopenAndRecalculate({
+      basis: 'baked', dough_weight_kg: null, finished_weight_kg: 0.96, yield_units: 12, average_unit_weight_kg: 0.08,
+    }, brioche)).toBe(true)
   })
 })

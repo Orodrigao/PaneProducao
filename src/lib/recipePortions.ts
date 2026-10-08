@@ -126,6 +126,9 @@ export function calculatePortionYield(input: {
   if (portion < MIN_PORTION_GRAMS) {
     return { status: 'invalid', message: `Massa por unidade é em gramas: ${MIN_PORTION_GRAMS} g ou mais (ex.: 80, não 0,08)` }
   }
+  if (baked !== null && baked < MIN_PORTION_GRAMS) {
+    return { status: 'invalid', message: `Peso assado é em gramas: ${MIN_PORTION_GRAMS} g ou mais (ex.: 72, não 0,072)` }
+  }
   if (recipeKg === null || !(recipeKg > 0)) {
     return { status: 'invalid', message: 'Informe a massa da receita para calcular o rendimento' }
   }
@@ -156,6 +159,31 @@ export function calculatePortionYield(input: {
     averageUnitWeightKg: bakedKg ?? portionKg,
     bakeLossPct: bakedKg !== null ? ((portionKg - bakedKg) / portionKg) * 100 : null,
   }
+}
+
+// Diferença relativa abaixo disso é o arredondamento da porção a centésimo
+// de grama, não mudança de rendimento.
+const STORED_VALUE_RELATIVE_TOLERANCE = 0.001
+
+function sameStoredValue(stored: number | string | null, next: number | null): boolean {
+  const a = positiveNumber(stored)
+  if (a === null || next === null) return a === next
+  return Math.abs(a - next) <= Math.abs(a) * STORED_VALUE_RELATIVE_TOLERANCE
+}
+
+// A conta de hoje grava algo diferente do que está no banco: a receita mudou
+// depois do último salvamento, ou a ficha foi gravada com outra base (Brioche
+// Hamburguer em "produto assado"). A tela mostra o número novo, mas as outras
+// telas leem o gravado, então a linha precisa ser salva.
+export function portionYieldDiffersFromStored(
+  stored: StoredRecipeYield,
+  basis: RecipePortionBasis,
+  values: PortionYieldValues,
+): boolean {
+  return stored.basis !== basis
+    || !sameStoredValue(stored.dough_weight_kg, values.dough_weight_kg)
+    || !sameStoredValue(stored.finished_weight_kg, values.finished_weight_kg)
+    || !sameStoredValue(stored.yield_units, values.yield_units)
 }
 
 export function portionDraftsEqual(a: PortionDraft, b: PortionDraft): boolean {
