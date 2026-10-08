@@ -53,9 +53,10 @@ async function stubPriceTables(page: Page, items: unknown[], writes: Write[]) {
     const request = route.request()
     if (request.method() === 'GET') return route.fulfill({ json: items })
     writes.push({ method: request.method(), url: request.url(), body: request.postDataJSON() })
-    // Lista vazia também responde a tentativa de reativar item inativo,
-    // que a tela faz antes de inserir.
-    return route.fulfill({ json: [] })
+    // A correção do pack confere a linha devolvida. A tentativa de reativar
+    // item inativo, feita antes de inserir, não encontra nada.
+    const url = decodeURIComponent(request.url())
+    return route.fulfill({ json: url.includes(`id=eq.${tierItemId}`) ? [{ id: tierItemId }] : [] })
   })
   await page.route('**/rest/v1/customers*', route => route.fulfill({ json: [] }))
   await page.route('**/rest/v1/customer_price_overrides*', route => route.fulfill({ json: [] }))
@@ -109,7 +110,10 @@ test('incluir produto com pacote fechado grava o pack da regra; sem regra contin
   expect(inserts()[0].body).toMatchObject({
     product_id: briocheId, sale_option_id: saleOptionId, pricing_unit: 'un', pack_size: 12,
   })
+  // Item removido antes volta pela reativação, também com o pack da regra.
+  expect(writes.find(write => write.method === 'PATCH')?.body).toEqual({ active: true, pack_size: 12 })
 
+  await expect(search).toHaveValue('')
   await search.fill('sem pacote')
   await page.getByText('[TESTE] Pão sem pacote').first().click()
   await expect.poll(() => inserts().length).toBe(2)
@@ -142,7 +146,7 @@ test('Pedido PJ avisa na linha e não envia quando a tabela do cliente tem o pac
   await search.locator('..').locator('span').filter({ hasText: /^\[TESTE\] Brioche · Hambúrguer/ }).first().click()
 
   await expect(page.getByText(
-    'A tabela de preço deste cliente está com pacote de 1 para este produto, mas o pacote fechado PJ é 12.',
+    'Esta linha está com pacote de 1, mas o pacote fechado PJ é 12. O pedido não salva assim.',
     { exact: false },
   )).toBeVisible()
   await page.getByLabel('Pacotes de [TESTE] Brioche · Hambúrguer').fill('9')
@@ -150,7 +154,7 @@ test('Pedido PJ avisa na linha e não envia quando a tabela do cliente tem o pac
 
   await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
   await expect(page.getByText(
-    'A tabela de preço deste cliente está com o pacote errado para "[TESTE] Brioche · Hambúrguer".',
+    'O pacote de "[TESTE] Brioche · Hambúrguer" não confere com o pacote fechado PJ.',
     { exact: false },
   ).first()).toBeVisible()
   expect(writeAttempts).toBe(0)

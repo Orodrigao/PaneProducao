@@ -524,7 +524,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
       return requiredPack !== null && Number(line.pack_size) !== requiredPack
     })
     if (wrongPackLine) {
-      showToast(`A tabela de preço deste cliente está com o pacote errado para "${wrongPackLine.product_name}". Ajuste em Tabelas de Preço e recarregue esta página.`, 6000)
+      showToast(`O pacote de "${wrongPackLine.product_name}" não confere com o pacote fechado PJ. Veja o aviso na linha do produto.`, 6000)
       return
     }
 
@@ -1204,7 +1204,7 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                             )}
                             {tablePackWrong && (
                               <div className="ps-warning" style={{fontSize:11}}>
-                                ⚠️ A tabela de preço deste cliente está com pacote de {Number(l.pack_size)} para este produto, mas o pacote fechado PJ é {requiredTablePack}. O pedido não salva assim: ajuste em <strong>Tabelas de Preço</strong> e recarregue esta página.
+                                ⚠️ Esta linha está com pacote de {Number(l.pack_size)}, mas o pacote fechado PJ é {requiredTablePack}. O pedido não salva assim. Confira o pack em <strong>Tabelas de Preço</strong> (na tabela do cliente ou em Preços por cliente), recarregue esta página, remova o produto e inclua de novo.
                               </div>
                             )}
                             {packRule && packPhysical === null && (
