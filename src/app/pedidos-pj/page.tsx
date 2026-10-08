@@ -14,7 +14,7 @@ import { getCurrentUser, roleColor, RECEIVABLES_ROUTE, type AppUser } from '@/li
 import { showToast } from '@/lib/utils'
 import { formatSaleOptionLabel, saleOptionKey, type PricingUnit } from '@/lib/saleOptions'
 import { orderLinePacksFromStoredQuantity, parseOrderLinePacksInput } from '@/lib/pjOrderQuantity'
-import { parseWholePjPackCount, pjPackPhysicalSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
+import { parseWholePjPackCount, pjPackPhysicalSize, requiredPriceTablePackSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
 import { pjOrderGroupKey } from '@/lib/orderGrouping'
 import {
   canCancelOrder,
@@ -519,6 +519,14 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
     })) { showToast('Digite uma quantidade válida'); return }
     if (lines.some(l => l.packs <= 0)) { showToast('Quantidade inválida'); return }
     if (lines.some(line => physicalQuantityForLine(line) === null)) { showToast('Este pacote precisa do peso da unidade cadastrado'); return }
+    const wrongPackLine = lines.find(line => {
+      const requiredPack = requiredPriceTablePackSize(resolveLineRule(line), line.pricing_unit)
+      return requiredPack !== null && Number(line.pack_size) !== requiredPack
+    })
+    if (wrongPackLine) {
+      showToast(`A tabela de preço deste cliente está com o pacote errado para "${wrongPackLine.product_name}". Ajuste em Tabelas de Preço e recarregue esta página.`, 6000)
+      return
+    }
 
     const rows: PjOrderWriteRow[] = lines.map(l => ({
       bread_id: l.product_id,
@@ -1145,6 +1153,8 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                         const packageWeightKg = packRule && unitWeightKg !== null
                           ? packRule.packSizeUnits * unitWeightKg : null
                         const totalUnits = packRule ? l.packs * packRule.packSizeUnits : null
+                        const requiredTablePack = requiredPriceTablePackSize(packRule, l.pricing_unit)
+                        const tablePackWrong = requiredTablePack !== null && Number(l.pack_size) !== requiredTablePack
                         return (
                           <div key={l.key} className="ps-card" style={{padding:'12px 14px', gap:8}}>
                             <div className="ps-card-head" style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', gap:8}}>
@@ -1187,9 +1197,14 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
                             </div>
                             {packRule && packPhysical !== null && (
                               <div style={{fontSize:11, color:'var(--ink-faint)'}}>
-                                Cada pacote fecha em {packRule.packSizeUnits} unidades e {packageWeightKg?.toFixed(2)} kg.
+                                Cada pacote fecha em {packRule.packSizeUnits} unidades e {packageWeightKg?.toFixed(2)} kg
+                                {packRule.orderMultiplePacks > 1 ? `, em múltiplos de ${packRule.orderMultiplePacks} pacotes` : ''}.
                                 {l.pricing_unit === 'kg' ? ` O preço usa os ${packPhysical} kg equivalentes.` : ' O preço usa as unidades.'}
-                                {packRule.orderMultiplePacks > 1 ? `, múltiplos de ${packRule.orderMultiplePacks} pacotes` : ''}.
+                              </div>
+                            )}
+                            {tablePackWrong && (
+                              <div className="ps-warning" style={{fontSize:11}}>
+                                ⚠️ A tabela de preço deste cliente está com pacote de {Number(l.pack_size)} para este produto, mas o pacote fechado PJ é {requiredTablePack}. O pedido não salva assim: ajuste em <strong>Tabelas de Preço</strong> e recarregue esta página.
                               </div>
                             )}
                             {packRule && packPhysical === null && (
