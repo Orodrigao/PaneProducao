@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Calendar, DollarSign, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { RequestTimeoutError, withTimeout } from '@/lib/supabaseRest'
@@ -9,10 +9,17 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   calculateCashClosingTotals,
+  cashClosingDifferences,
   formatCurrencyBRL,
+  isCashClosingSaveConflict,
+  isUncertainWriteResult,
+  notesWithReplacement,
   parseMoneyInput,
+  wasSavedMeanwhile,
   type CashClosingInput,
 } from '@/lib/cashClosing'
+import { formatRomaneioDateTime } from '@/lib/romaneioDateTime'
+import CashClosingConflictNotice, { type CashClosingComparison } from '@/components/CashClosingConflictNotice'
 
 type StoreKey = 'jc' | 'ja' | 'ex'
 type MoneyField = keyof CashClosingInput
@@ -37,6 +44,7 @@ interface CashClosingRow {
   next_day_cash_amount: number
   notes: string | null
   created_by_name: string
+  updated_by: string | null
   updated_by_name: string | null
   created_at: string
   updated_at: string
@@ -105,6 +113,28 @@ function formToInput(form: Record<MoneyField, string>): CashClosingInput {
 function moneyToInput(value: number): string {
   if (!value) return ''
   return value.toFixed(2).replace('.', ',')
+}
+
+function rowToInput(row: CashClosingRow): CashClosingInput {
+  return formToInput(rowToForm(row))
+}
+
+function savedByName(row: CashClosingRow): string {
+  return row.updated_by_name || row.created_by_name
+}
+
+// Grava com prazo e, no prazo, cancela o envio pendente (null = nao se sabe se
+// chegou). O que ja chegou ao banco ainda pode gravar depois; a trava por
+// versao impede que passe por cima de uma versao mais nova.
+async function writeWithDeadline<T>(write: (signal: AbortSignal) => PromiseLike<T>): Promise<T | null> {
+  const controller = new AbortController()
+  try {
+    return await withTimeout(write(controller.signal))
+  } catch (error) {
+    if (!(error instanceof RequestTimeoutError)) throw error
+    controller.abort()
+    return null
+  }
 }
 
 function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
@@ -194,10 +224,15 @@ export default function FechamentoCaixaPage() {
   const [form, setForm] = useState<Record<MoneyField, string>>(EMPTY_FORM)
   const [notes, setNotes] = useState('')
   const [existing, setExisting] = useState<CashClosingRow | null>(null)
+  const [conflict, setConflict] = useState<CashClosingRow | null>(null)
   const [history, setHistory] = useState<CashClosingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [loadError, setLoadError] = useState('')
+  // Cada troca de loja ou data dispara uma leitura; so a mais recente pode
+  // mexer na tela. Resposta velha chegando por ultimo mostrava o dia errado.
+  const loadSeq = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -216,8 +251,11 @@ export default function FechamentoCaixaPage() {
   const totals = useMemo(() => calculateCashClosingTotals(input), [input])
 
   const loadClosing = useCallback(async () => {
+    const seq = ++loadSeq.current
     setLoading(true)
     setLoadError('')
+    setSaveError('')
+    setConflict(null)
 
     try {
       const [selectedRes, historyRes] = await withTimeout(Promise.all([
@@ -234,6 +272,7 @@ export default function FechamentoCaixaPage() {
           .order('closing_date', { ascending: false })
           .limit(8),
       ]))
+      if (seq !== loadSeq.current) return
 
       if (selectedRes.error) {
         setExisting(null)
@@ -253,13 +292,14 @@ export default function FechamentoCaixaPage() {
         setHistory((historyRes.data ?? []) as CashClosingRow[])
       }
     } catch (error) {
+      if (seq !== loadSeq.current) return
       setExisting(null)
       setHistory([])
       setLoadError(error instanceof RequestTimeoutError
         ? 'A consulta demorou demais. Verifique a internet e tente novamente.'
         : 'Não foi possível carregar o fechamento. Tente novamente.')
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
   }, [date, store])
 
@@ -269,29 +309,94 @@ export default function FechamentoCaixaPage() {
 
   function updateField(key: MoneyField, value: string) {
     setForm(current => ({ ...current, [key]: value }))
+    setSaveError('')
   }
 
-  async function saveClosing() {
+  function hasNegativeCashSale(): boolean {
+    if (totals.cashSalesAmount >= -0.009) return false
+    setSaveError('Revise os valores: a venda em dinheiro ficou negativa.')
+    return true
+  }
+
+  async function fetchSavedClosing(): Promise<CashClosingRow | null> {
+    try {
+      const { data, error } = await withTimeout(supabase
+        .from('cash_closings')
+        .select('*')
+        .eq('store', store)
+        .eq('closing_date', date)
+        .maybeSingle())
+      if (error) return null
+      return (data as CashClosingRow | null) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const conflictIsOwn = Boolean(conflict && user && conflict.updated_by === user.id)
+  const conflictNotesDiffer = Boolean(conflict && (conflict.notes ?? '').trim() !== notes.trim())
+  // Com o aviso aberto, trocar de dia ou loja descartaria o digitado sem a
+  // pessoa escolher.
+  const lockDayAndStore = saving || Boolean(conflict)
+
+  const comparisons = useMemo<CashClosingComparison[]>(() => {
+    if (!conflict) return []
+    const savedInput = rowToInput(conflict)
+    const differing = new Set(cashClosingDifferences(savedInput, input))
+    return [
+      { label: 'Total do dia', saved: conflict.total_amount, mine: totals.declaredTotal },
+      ...CLOSING_FIELDS
+        .filter(field => differing.has(field.key))
+        .map(field => ({ label: field.label, saved: savedInput[field.key], mine: input[field.key] })),
+    ]
+  }, [conflict, input, totals.declaredTotal])
+
+  async function saveClosing(notesText: string = notes) {
+    if (!user || saving) return
+
+    if (hasNegativeCashSale()) return
+
+    // Trava o botao (e a troca de dia e loja) antes de qualquer espera: dois
+    // toques seguidos nao viram duas gravacoes, e a resposta nao cai em outro dia.
+    setSaving(true)
+    setSaveError('')
+    try {
+      await persistClosing(notesText)
+    } catch {
+      setSaveError('Não foi possível salvar. Confira a internet e toque em Salvar de novo.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function applySaved(saved: CashClosingRow, message: string) {
+    setConflict(null)
+    setExisting(saved)
+    setForm(rowToForm(saved))
+    setNotes(saved.notes ?? '')
+    showToastPS(message)
+    loadClosing()
+  }
+
+  async function persistClosing(notesText: string) {
     if (!user) return
 
-    if (totals.cashSalesAmount < -0.009) {
-      showToastPS('Revise os valores: a venda em dinheiro ficou negativa.')
+    // Uma atualizacao so vale para o fechamento que esta na tela.
+    if (existing && (existing.store !== store || existing.closing_date !== date)) {
+      setSaveError('A tela ainda está carregando este dia. Aguarde e toque em Salvar de novo.')
       return
     }
 
-    const { data: sessionData } = await supabase.auth.getSession()
+    const { data: sessionData } = await withTimeout(supabase.auth.getSession())
     const authUser = sessionData.session?.user
     if (!authUser) {
-      showToastPS('Entre com e-mail e senha para salvar o fechamento.')
+      setSaveError('Entre com e-mail e senha para salvar o fechamento.')
       return
     }
 
-    setSaving(true)
-
-    const basePayload = {
-      closing_date: date,
-      weekday_label: weekday,
-      store,
+    // Loja, data e dia da semana so entram na criacao: atualizar nunca move
+    // um fechamento para outro dia.
+    const valuesPayload = {
       sales_amount: totals.declaredTotal,
       banri_amount: input.banriAmount,
       sitef_amount: input.sitefAmount,
@@ -305,41 +410,103 @@ export default function FechamentoCaixaPage() {
       closing_cash_amount: input.closingCashAmount,
       envelope_amount: input.envelopeAmount,
       next_day_cash_amount: input.nextDayCashAmount,
-      notes: notes.trim() || null,
+      notes: notesText.trim() || null,
       updated_by: authUser.id,
       updated_by_name: user.displayName,
     }
 
     const result = existing
-      ? await supabase
+      ? await writeWithDeadline(signal => supabase
         .from('cash_closings')
-        .update(basePayload)
+        .update(valuesPayload)
         .eq('id', existing.id)
+        // So grava sobre a versao que esta tela leu. Se alguem salvou depois,
+        // nenhuma linha casa e o conflito aparece, em vez de apagar o outro.
+        .eq('updated_at', existing.updated_at)
         .select('*')
-        .single()
-      : await supabase
+        .abortSignal(signal)
+        .single())
+      : await writeWithDeadline(signal => supabase
         .from('cash_closings')
         .insert({
-          ...basePayload,
+          closing_date: date,
+          weekday_label: weekday,
+          store,
+          ...valuesPayload,
           created_by: authUser.id,
           created_by_name: user.displayName,
           created_by_email: authUser.email ?? user.email ?? null,
         })
         .select('*')
-        .single()
+        .abortSignal(signal)
+        .single())
 
-    setSaving(false)
-
-    if (result.error) {
-      showToastPS('Erro ao salvar: ' + result.error.message)
+    const savedMessage = existing ? 'Fechamento atualizado.' : 'Fechamento salvo.'
+    if (result && !result.error) {
+      applySaved(result.data as CashClosingRow, savedMessage)
       return
     }
 
-    const saved = result.data as CashClosingRow
-    setExisting(saved)
-    setForm(rowToForm(saved))
-    setNotes(saved.notes ?? '')
-    showToastPS(existing ? 'Fechamento atualizado.' : 'Fechamento salvo.')
+    const uncertain = !result || isUncertainWriteResult(result)
+    if (result?.error && !uncertain && !isCashClosingSaveConflict(result.error)) {
+      setSaveError('Erro ao salvar: ' + result.error.message)
+      return
+    }
+
+    // Recusa por conflito ou gravacao sem resposta: so o banco diz o que
+    // ficou gravado.
+    const latest = await fetchSavedClosing()
+    if (
+      latest
+      && latest.updated_by === authUser.id
+      && cashClosingDifferences(rowToInput(latest), input).length === 0
+      && (latest.notes ?? null) === valuesPayload.notes
+    ) {
+      // E exatamente o que esta tela enviou: chegou ao banco, so a resposta
+      // se perdeu.
+      applySaved(latest, savedMessage)
+      return
+    }
+    if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
+      // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
+      // substituir, parte da versao que acabou de ser lida.
+      setExisting(latest)
+      setConflict(latest)
+      return
+    }
+    setSaveError(uncertain
+      ? 'Não deu para confirmar se o fechamento foi gravado. Confira a internet e toque em Salvar de novo.'
+      : 'Não foi possível confirmar se alguém já salvou este fechamento. Confira a internet e toque em Salvar de novo.')
+  }
+
+  function replaceWithMine() {
+    if (!conflict || hasNegativeCashSale()) return
+    const savedBy = conflictIsOwn ? 'você' : savedByName(conflict)
+    const confirmed = window.confirm(
+      `Trocar o fechamento que ${savedBy} salvou (${formatCurrencyBRL(conflict.total_amount)}) `
+      + `pelos números da sua tela (${formatCurrencyBRL(totals.declaredTotal)})?\n\n`
+      + 'O que estava gravado fica anotado nas observações.',
+    )
+    if (!confirmed) return
+    const savedInput = rowToInput(conflict)
+    const changed = new Set(cashClosingDifferences(savedInput, input))
+    saveClosing(notesWithReplacement(notes, {
+      savedBy: savedByName(conflict),
+      savedAt: formatRomaneioDateTime(conflict.updated_at),
+      totalAmount: conflict.total_amount,
+      fields: CLOSING_FIELDS
+        .filter(field => changed.has(field.key))
+        .map(field => ({ label: field.label, amount: savedInput[field.key] })),
+      savedNotes: conflict.notes,
+    }))
+  }
+
+  function keepSaved() {
+    if (!conflict) return
+    const confirmed = window.confirm(
+      `Descartar os números da sua tela e ficar com o fechamento que ${conflictIsOwn ? 'você' : savedByName(conflict)} salvou?`,
+    )
+    if (!confirmed) return
     loadClosing()
   }
 
@@ -377,6 +544,7 @@ export default function FechamentoCaixaPage() {
                 type="date"
                 value={date}
                 onChange={event => setDate(event.target.value)}
+                disabled={lockDayAndStore}
                 className="ps-input"
               />
             </label>
@@ -392,7 +560,7 @@ export default function FechamentoCaixaPage() {
               <select
                 value={store}
                 onChange={event => setStore(event.target.value as StoreKey)}
-                disabled={!canChangeStore}
+                disabled={!canChangeStore || lockDayAndStore}
                 className="ps-select"
               >
                 {STORE_OPTIONS.map(option => (
@@ -402,6 +570,12 @@ export default function FechamentoCaixaPage() {
             </label>
           </section>
 
+          {conflict && (
+            <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '6px 0 0' }}>
+              Para trocar de dia ou de loja, escolha antes uma saída no aviso de fechamento já salvo, lá embaixo.
+            </p>
+          )}
+
           {loadError && (
             <div className="ps-warning danger">
               <AlertTriangle size={16} />
@@ -410,10 +584,10 @@ export default function FechamentoCaixaPage() {
             </div>
           )}
 
-          {existing && (
+          {existing && !conflict && (
             <div className="ps-banner honey">
               <span>Editando fechamento ja salvo para {formatDateBR(existing.closing_date)}.</span>
-              <span>Atualizado por {existing.updated_by_name || existing.created_by_name}</span>
+              <span>Atualizado por {savedByName(existing)}</span>
             </div>
           )}
 
@@ -465,10 +639,30 @@ export default function FechamentoCaixaPage() {
                   style={{ minHeight: 88 }}
                 />
               </label>
-              <button type="button" onClick={saveClosing} disabled={saving || loading || !!loadError} className="ps-btn primary block">
-                <Save size={16} />
-                {saving ? 'Salvando...' : existing ? 'Atualizar fechamento' : 'Salvar fechamento'}
-              </button>
+              {saveError && (
+                <div className="ps-warning danger" role="alert" style={{ marginBottom: 0 }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{saveError}</span>
+                </div>
+              )}
+              {conflict ? (
+                <CashClosingConflictNotice
+                  savedBy={savedByName(conflict)}
+                  savedAt={conflict.updated_at}
+                  own={conflictIsOwn}
+                  comparisons={comparisons}
+                  savedNotes={conflict.notes}
+                  notesDiffer={conflictNotesDiffer}
+                  busy={saving}
+                  onKeepSaved={keepSaved}
+                  onReplaceWithMine={replaceWithMine}
+                />
+              ) : (
+                <button type="button" onClick={() => saveClosing()} disabled={saving || loading || !!loadError} className="ps-btn primary block">
+                  <Save size={16} />
+                  {saving ? 'Salvando...' : existing ? 'Atualizar fechamento' : 'Salvar fechamento'}
+                </button>
+              )}
             </section>
           </div>
 
@@ -485,6 +679,7 @@ export default function FechamentoCaixaPage() {
                   key={row.id}
                   type="button"
                   onClick={() => setDate(row.closing_date)}
+                  disabled={lockDayAndStore}
                   className="ps-item"
                   style={{ textAlign: 'left', cursor: 'pointer' }}
                 >
