@@ -70,7 +70,7 @@ async function showClosingJa(page: Page, who: Who, date: string) {
   }
 
   const chosenDay = closingLoaded(page, 'ja', date)
-  await page.getByLabel('Data').fill(date)
+  await page.getByLabel('Data', { exact: true }).fill(date)
   await chosenDay
 }
 
@@ -82,8 +82,12 @@ async function openClosingJa(browser: Browser, who: Who, date: string) {
   return { context, page }
 }
 
+// Pelo papel e pelo comeco do nome: o rotulo das Observacoes envolve o texto
+// da caixa, e a anotacao de "Substituir" cita os campos ("1. Total em
+// dinheiro R$ ..."). Busca so por rotulo acharia as Observacoes tambem.
 function moneyField(page: Page, label: string) {
-  return page.getByLabel(label)
+  const escaped = label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  return page.getByRole('textbox', { name: new RegExp(`^${escaped}`) })
 }
 
 function conflictNotice(page: Page) {
