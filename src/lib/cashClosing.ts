@@ -62,6 +62,13 @@ export function isCashClosingSaveConflict(error: { code?: string } | null | unde
   return error?.code === '23505' || error?.code === 'PGRST116'
 }
 
+// Sem resposta do banco (rede caiu, requisicao cancelada) ou com erro do
+// gateway, nao da para saber se a gravacao chegou: a tela precisa reler antes
+// de decidir.
+export function isUncertainWriteResult(result: { status: number }): boolean {
+  return result.status === 0 || result.status >= 500
+}
+
 // Confirma o conflito relendo o banco: houve outra gravacao depois que a tela
 // leu. readVersion null = a tela achou que o fechamento era novo.
 export function wasSavedMeanwhile(readVersion: string | null, latestVersion: string | null): boolean {
@@ -69,9 +76,12 @@ export function wasSavedMeanwhile(readVersion: string | null, latestVersion: str
   return readVersion !== latestVersion
 }
 
-export function describeCashClosingConflict(savedBy: string, savedAtTime: string): string {
-  const who = savedBy.trim() || 'Outra pessoa'
+export function describeCashClosingConflict(savedBy: string, savedAtTime: string, own = false): string {
   const when = savedAtTime ? ` às ${savedAtTime}` : ''
+  if (own) {
+    return `Você já tinha salvo este fechamento${when}, em outra tentativa ou em outro aparelho, com números diferentes. Os números desta tela ainda não foram gravados.`
+  }
+  const who = savedBy.trim() || 'Outra pessoa'
   return `${who} salvou este fechamento${when}, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.`
 }
 
@@ -97,16 +107,29 @@ export function cashClosingDifferences(
   return CASH_CLOSING_INPUT_KEYS.filter(key => toCents(saved[key]) !== toCents(mine[key]))
 }
 
-// Quem substitui deixa nas observacoes o que estava gravado antes: o numero
-// que perdeu nao some sem rastro.
+// Quem substitui deixa nas observacoes o que estava gravado antes (total,
+// cada campo que muda e as observacoes da outra pessoa): o numero que perdeu
+// nao some sem rastro.
 export function notesWithReplacement(
   notes: string,
-  replaced: { savedBy: string; savedAtTime: string; totalAmount: number; cashAmount: number },
+  replaced: {
+    savedBy: string
+    savedAt: string
+    totalAmount: number
+    fields: { label: string; amount: number }[]
+    savedNotes: string | null
+  },
 ): string {
   const who = replaced.savedBy.trim() || 'outra pessoa'
-  const when = replaced.savedAtTime ? ` às ${replaced.savedAtTime}` : ''
-  const line = `[Substituiu o fechamento de ${who}${when}: total do dia ${formatCurrencyBRL(replaced.totalAmount)}, venda em dinheiro ${formatCurrencyBRL(replaced.cashAmount)}]`
+  const when = replaced.savedAt ? ` em ${replaced.savedAt}` : ''
+  const amounts = [
+    `total do dia ${formatCurrencyBRL(replaced.totalAmount)}`,
+    ...replaced.fields.map(field => `${field.label} ${formatCurrencyBRL(field.amount)}`),
+  ]
   const current = notes.trim()
+  const previous = (replaced.savedNotes ?? '').trim()
+  const previousNotes = previous && previous !== current ? ` Obs. de ${who}: ${previous}` : ''
+  const line = `[Substituiu o fechamento que ${who} salvou${when}: ${amounts.join('; ')}.${previousNotes}]`
   return current ? `${current}\n${line}` : line
 }
 

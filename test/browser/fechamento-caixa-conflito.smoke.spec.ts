@@ -87,7 +87,7 @@ function moneyField(page: Page, label: string) {
 }
 
 function conflictNotice(page: Page) {
-  return page.getByRole('region', { name: 'Fechamento salvo por outra pessoa' })
+  return page.getByRole('region', { name: 'Fechamento já salvo' })
 }
 
 // Conta as gravacoes que de fato sairam para o banco: prova que "Cancelar" na
@@ -171,7 +171,10 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
       timeout: slowPreviewDataTimeoutMs,
     })
     await expect(moneyField(second.page, '3. Banrisul credito/debito')).toHaveValue('80,00')
-    await expect(second.page.getByLabel('Observacoes')).toHaveValue(/Substituiu o fechamento de .+ total do dia R\$\s150,00/)
+    // O que estava gravado (total e cada campo que mudou) fica anotado.
+    await expect(second.page.getByLabel('Observacoes')).toHaveValue(
+      /Substituiu o fechamento que .+ salvou em .+: total do dia R\$\s150,00; 1\. Total em dinheiro R\$\s100,00; 3\. Banrisul credito\/debito R\$\s50,00\./,
+    )
 
     // A primeira pessoa ainda esta com a versao dela na tela. Atualizar agora
     // apagaria a substituicao em silencio: a tela precisa recusar e explicar.

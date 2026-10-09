@@ -4,6 +4,7 @@ import {
   cashClosingDifferences,
   describeCashClosingConflict,
   isCashClosingSaveConflict,
+  isUncertainWriteResult,
   notesWithReplacement,
   parseMoneyInput,
   wasSavedMeanwhile,
@@ -125,13 +126,40 @@ describe('cashClosing', () => {
     ])
   })
 
-  it('guarda nas observacoes o fechamento que foi substituido, sem perder o que ja estava escrito', () => {
-    const replaced = { savedBy: 'Suélen', savedAtTime: '20:09', totalAmount: 4294.93, cashAmount: 615.93 }
+  it('guarda nas observacoes o que estava gravado: total, campos que mudam e observacoes da outra pessoa', () => {
+    const replaced = {
+      savedBy: 'Suélen',
+      savedAt: '08/10 20:09',
+      totalAmount: 4294.93,
+      fields: [
+        { label: '1. Total em dinheiro', amount: 272 },
+        { label: '3. Banrisul credito/debito', amount: 300 },
+      ],
+      savedNotes: 'Stone caiu às 14h',
+    }
     const line = notesWithReplacement('', replaced)
 
-    expect(line).toContain('Substituiu o fechamento de Suélen às 20:09')
-    expect(line).toMatch(/total do dia R\$\s4\.294,93/)
-    expect(line).toMatch(/venda em dinheiro R\$\s615,93/)
+    expect(line).toContain('Substituiu o fechamento que Suélen salvou em 08/10 20:09')
+    expect(line).toMatch(/total do dia R\$\s4\.294,93; 1\. Total em dinheiro R\$\s272,00; 3\. Banrisul credito\/debito R\$\s300,00\./)
+    expect(line).toContain('Obs. de Suélen: Stone caiu às 14h]')
+    // O que a pessoa escreveu fica, e a anotacao vem depois.
     expect(notesWithReplacement('  maquininha caiu  ', replaced)).toBe(`maquininha caiu\n${line}`)
+    // Observacao igual a da tela nao se repete.
+    expect(notesWithReplacement('Stone caiu às 14h', replaced)).not.toContain('Obs. de Suélen')
+  })
+
+  it('so trata como incerta a gravacao sem resposta do banco ou com erro do gateway', () => {
+    expect(isUncertainWriteResult({ status: 0 })).toBe(true)
+    expect(isUncertainWriteResult({ status: 504 })).toBe(true)
+    expect(isUncertainWriteResult({ status: 409 })).toBe(false)
+    expect(isUncertainWriteResult({ status: 406 })).toBe(false)
+    expect(isUncertainWriteResult({ status: 403 })).toBe(false)
+    expect(isUncertainWriteResult({ status: 201 })).toBe(false)
+  })
+
+  it('avisa de outro jeito quando a versao gravada e da propria pessoa', () => {
+    expect(describeCashClosingConflict('Rodrigo', '20:09', true)).toBe(
+      'Você já tinha salvo este fechamento às 20:09, em outra tentativa ou em outro aparelho, com números diferentes. Os números desta tela ainda não foram gravados.',
+    )
   })
 })

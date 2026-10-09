@@ -12,12 +12,13 @@ import {
   cashClosingDifferences,
   formatCurrencyBRL,
   isCashClosingSaveConflict,
+  isUncertainWriteResult,
   notesWithReplacement,
   parseMoneyInput,
   wasSavedMeanwhile,
   type CashClosingInput,
 } from '@/lib/cashClosing'
-import { formatRomaneioTime } from '@/lib/romaneioDateTime'
+import { formatRomaneioDateTime } from '@/lib/romaneioDateTime'
 import CashClosingConflictNotice, { type CashClosingComparison } from '@/components/CashClosingConflictNotice'
 
 type StoreKey = 'jc' | 'ja' | 'ex'
@@ -120,6 +121,20 @@ function rowToInput(row: CashClosingRow): CashClosingInput {
 
 function savedByName(row: CashClosingRow): string {
   return row.updated_by_name || row.created_by_name
+}
+
+// Grava com prazo e, no prazo, cancela de verdade (null = nao se sabe se
+// chegou). Uma gravacao so deixada de esperar ainda podia chegar depois e
+// passar por cima da escolha feita na tela.
+async function writeWithDeadline<T>(write: (signal: AbortSignal) => PromiseLike<T>): Promise<T | null> {
+  const controller = new AbortController()
+  try {
+    return await withTimeout(write(controller.signal))
+  } catch (error) {
+    if (!(error instanceof RequestTimeoutError)) throw error
+    controller.abort()
+    return null
+  }
 }
 
 function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
@@ -311,6 +326,14 @@ export default function FechamentoCaixaPage() {
     }
   }
 
+  const conflictIsOwn = Boolean(conflict && user && conflict.updated_by === user.id)
+  const conflictSavedNotes = conflict && (conflict.notes ?? '').trim() !== notes.trim()
+    ? conflict.notes
+    : null
+  // Com o aviso aberto, trocar de dia ou loja descartaria o digitado sem a
+  // pessoa escolher.
+  const lockDayAndStore = saving || Boolean(conflict)
+
   const comparisons = useMemo<CashClosingComparison[]>(() => {
     if (!conflict) return []
     const savedInput = rowToInput(conflict)
@@ -327,7 +350,7 @@ export default function FechamentoCaixaPage() {
     if (!user || saving) return
 
     if (totals.cashSalesAmount < -0.009) {
-      showToastPS('Revise os valores: a venda em dinheiro ficou negativa.')
+      setSaveError('Revise os valores: a venda em dinheiro ficou negativa.')
       return
     }
 
@@ -337,10 +360,8 @@ export default function FechamentoCaixaPage() {
     setSaveError('')
     try {
       await persistClosing(notesText)
-    } catch (error) {
-      setSaveError(error instanceof RequestTimeoutError
-        ? 'A gravação demorou demais. Confira a internet e toque em Salvar de novo.'
-        : 'Não foi possível salvar. Confira a internet e toque em Salvar de novo.')
+    } catch {
+      setSaveError('Não foi possível salvar. Confira a internet e toque em Salvar de novo.')
     } finally {
       setSaving(false)
     }
@@ -393,7 +414,7 @@ export default function FechamentoCaixaPage() {
     }
 
     const result = existing
-      ? await withTimeout(supabase
+      ? await writeWithDeadline(signal => supabase
         .from('cash_closings')
         .update(valuesPayload)
         .eq('id', existing.id)
@@ -401,8 +422,9 @@ export default function FechamentoCaixaPage() {
         // nenhuma linha casa e o conflito aparece, em vez de apagar o outro.
         .eq('updated_at', existing.updated_at)
         .select('*')
+        .abortSignal(signal)
         .single())
-      : await withTimeout(supabase
+      : await writeWithDeadline(signal => supabase
         .from('cash_closings')
         .insert({
           closing_date: date,
@@ -414,56 +436,73 @@ export default function FechamentoCaixaPage() {
           created_by_email: authUser.email ?? user.email ?? null,
         })
         .select('*')
+        .abortSignal(signal)
         .single())
 
-    if (result.error) {
-      if (!isCashClosingSaveConflict(result.error)) {
-        setSaveError('Erro ao salvar: ' + result.error.message)
-        return
-      }
-
-      const latest = await fetchSavedClosing()
-      if (latest && latest.updated_by === authUser.id && cashClosingDifferences(rowToInput(latest), input).length === 0) {
-        // A tentativa anterior desta mesma pessoa chegou ao banco e so a
-        // resposta se perdeu: o que esta na tela ja esta gravado.
-        applySaved(latest, 'Fechamento salvo.')
-        return
-      }
-      if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
-        // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
-        // substituir, parte da versao que acabou de ser lida.
-        setExisting(latest)
-        setConflict(latest)
-        return
-      }
-      setSaveError('Não foi possível confirmar se alguém já salvou este fechamento. Confira a internet e toque em Salvar de novo.')
+    const savedMessage = existing ? 'Fechamento atualizado.' : 'Fechamento salvo.'
+    if (result && !result.error) {
+      applySaved(result.data as CashClosingRow, savedMessage)
       return
     }
 
-    applySaved(result.data as CashClosingRow, existing ? 'Fechamento atualizado.' : 'Fechamento salvo.')
+    const uncertain = !result || isUncertainWriteResult(result)
+    if (result?.error && !uncertain && !isCashClosingSaveConflict(result.error)) {
+      setSaveError('Erro ao salvar: ' + result.error.message)
+      return
+    }
+
+    // Recusa por conflito ou gravacao sem resposta: so o banco diz o que
+    // ficou gravado.
+    const latest = await fetchSavedClosing()
+    if (
+      latest
+      && latest.updated_by === authUser.id
+      && cashClosingDifferences(rowToInput(latest), input).length === 0
+      && (latest.notes ?? null) === valuesPayload.notes
+    ) {
+      // E exatamente o que esta tela enviou: chegou ao banco, so a resposta
+      // se perdeu.
+      applySaved(latest, savedMessage)
+      return
+    }
+    if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
+      // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
+      // substituir, parte da versao que acabou de ser lida.
+      setExisting(latest)
+      setConflict(latest)
+      return
+    }
+    setSaveError(uncertain
+      ? 'Não deu para confirmar se o fechamento foi gravado. Confira a internet e toque em Salvar de novo.'
+      : 'Não foi possível confirmar se alguém já salvou este fechamento. Confira a internet e toque em Salvar de novo.')
   }
 
   function replaceWithMine() {
     if (!conflict) return
-    const savedBy = savedByName(conflict)
+    const savedBy = conflictIsOwn ? 'você' : savedByName(conflict)
     const confirmed = window.confirm(
       `Trocar o fechamento que ${savedBy} salvou (${formatCurrencyBRL(conflict.total_amount)}) `
       + `pelos números da sua tela (${formatCurrencyBRL(totals.declaredTotal)})?\n\n`
-      + `Os números de ${savedBy} ficam anotados nas observações.`,
+      + 'O que estava gravado fica anotado nas observações.',
     )
     if (!confirmed) return
+    const savedInput = rowToInput(conflict)
+    const changed = new Set(cashClosingDifferences(savedInput, input))
     saveClosing(notesWithReplacement(notes, {
-      savedBy,
-      savedAtTime: formatRomaneioTime(conflict.updated_at),
+      savedBy: savedByName(conflict),
+      savedAt: formatRomaneioDateTime(conflict.updated_at),
       totalAmount: conflict.total_amount,
-      cashAmount: conflict.cash_amount,
+      fields: CLOSING_FIELDS
+        .filter(field => changed.has(field.key))
+        .map(field => ({ label: field.label, amount: savedInput[field.key] })),
+      savedNotes: conflict.notes,
     }))
   }
 
   function keepSaved() {
     if (!conflict) return
     const confirmed = window.confirm(
-      `Descartar os números da sua tela e ficar com o fechamento que ${savedByName(conflict)} salvou?`,
+      `Descartar os números da sua tela e ficar com o fechamento que ${conflictIsOwn ? 'você' : savedByName(conflict)} salvou?`,
     )
     if (!confirmed) return
     loadClosing()
@@ -503,7 +542,7 @@ export default function FechamentoCaixaPage() {
                 type="date"
                 value={date}
                 onChange={event => setDate(event.target.value)}
-                disabled={saving}
+                disabled={lockDayAndStore}
                 className="ps-input"
               />
             </label>
@@ -519,7 +558,7 @@ export default function FechamentoCaixaPage() {
               <select
                 value={store}
                 onChange={event => setStore(event.target.value as StoreKey)}
-                disabled={!canChangeStore || saving}
+                disabled={!canChangeStore || lockDayAndStore}
                 className="ps-select"
               >
                 {STORE_OPTIONS.map(option => (
@@ -528,6 +567,12 @@ export default function FechamentoCaixaPage() {
               </select>
             </label>
           </section>
+
+          {conflict && (
+            <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '6px 0 0' }}>
+              Para trocar de dia ou de loja, escolha antes uma saída no aviso de fechamento já salvo, lá embaixo.
+            </p>
+          )}
 
           {loadError && (
             <div className="ps-warning danger">
@@ -602,7 +647,9 @@ export default function FechamentoCaixaPage() {
                 <CashClosingConflictNotice
                   savedBy={savedByName(conflict)}
                   savedAt={conflict.updated_at}
+                  own={conflictIsOwn}
                   comparisons={comparisons}
+                  savedNotes={conflictSavedNotes}
                   busy={saving}
                   onKeepSaved={keepSaved}
                   onReplaceWithMine={replaceWithMine}
@@ -629,7 +676,7 @@ export default function FechamentoCaixaPage() {
                   key={row.id}
                   type="button"
                   onClick={() => setDate(row.closing_date)}
-                  disabled={saving}
+                  disabled={lockDayAndStore}
                   className="ps-item"
                   style={{ textAlign: 'left', cursor: 'pointer' }}
                 >
