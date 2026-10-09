@@ -337,8 +337,9 @@ comparação com a JA enquanto a venda dela não for importada.
 
 Decisões de Rodrigo na conversa "Formação de preço — Fase 4: margens", depois
 da conta dos cinco produtos feita fora da tela, com consultas somente leitura
-em produção. **Provisórias:** saem de um único mês confiável (setembro de 2026)
-e de uma mão de obra ainda na régua do pão assado. Revisar quando houver três
+em produção. **Provisórias:** saem de um único mês confiável (setembro de 2026);
+a mão de obra foi refeita na régua da massa crua em 2026-10-09 (ver "Revisto em
+2026-10-09"). Revisar quando houver três
 meses fechados ou quando a investigação do Financeiro (abaixo) terminar.
 
 ### O salário dos donos é custo fixo
@@ -420,7 +421,35 @@ o Multigrãos tem folga (R$ 9,50 praticado, R$ 7,79 desejado), o que permite
 propor uma tabela rebalanceada. No bolo, o caminho indicado é rever a receita
 (a noz pecan sozinha custa cerca de R$ 3 por bolo), não o preço.
 
+### Revisto em 2026-10-09
+
+- **Mão de obra de produção: R$ 4,60 por quilo de massa crua** (setembro de
+  2026, faixa de R$ 4,25 a R$ 5,00), calculada pela fase 0: os R$ 17 mil de
+  custo da produção divididos por cerca de 3.700 kg de massa crua. Cerca de
+  800 kg desse total são estimados, de itens ainda sem peso cru na ficha. Deixa
+  de ser provisória. Por unidade, quase não muda o retrato: no Italiano a mão de
+  obra vai de R$ 1,76 para R$ 1,66; no Pão de Azeitona, de R$ 2,04 para R$ 2,30.
+  Na Buck, o Italiano passa a cerca de +1% e o Pão de Azeitona a cerca de −4%;
+  os dois seguem abaixo da mínima. A ficha da Ciabatta registra 150 g de massa,
+  e a divisão real é de cerca de 200 g; até a correção, o custo dela aparece
+  cerca de 30% abaixo do real.
+- **Bolo integral de maçã: receita e preço revistos por Rodrigo.** A pecan cai de
+  250 g para **75 g por receita** e o preço no balcão vai de R$ 21,81 para
+  **R$ 26,00**. O custo final fica entre R$ 9,46 e R$ 10,01 por bolo, conforme a
+  receita mantenha 6 bolos menores ou o mesmo tamanho; o lucro fica entre 12% e
+  14%, acima da mínima de 10% e abaixo da desejada de 18%. A sobra (10%) ainda é
+  estimada, porque o bolo não tem registro de sobra. A ficha técnica do bolo
+  ainda não existe: criá-la com a receita nova é ação do Rodrigo ou do Compras,
+  e o preço novo vai para o PDV.
+
 ### Fatos medidos nesta conversa (somente leitura)
+
+- **Conversão errada da uva passa.** A nota de compra do pacote de 500 g
+  (R$ 13,60) entra com fator 1, como se fosse 1 kg. O catálogo fica com
+  R$ 13,60/kg quando o real é R$ 27,20/kg, e toda ficha que usa esse insumo
+  mostra metade do custo das passas. Outros pacotes podem ter o mesmo erro;
+  levantamento em tarefa separada, e a correção é do Compras pelos Vínculos de
+  NF-e.
 
 - **O bolo de maçã não tinha ficha.** O custo de R$ 5,20 era digitado; pela
   receita (6 bolos, noz pecan) o ingrediente é cerca de R$ 8,30. Outros itens de
