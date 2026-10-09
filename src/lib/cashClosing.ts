@@ -76,10 +76,10 @@ export function wasSavedMeanwhile(readVersion: string | null, latestVersion: str
   return readVersion !== latestVersion
 }
 
-export function describeCashClosingConflict(savedBy: string, savedAtTime: string, own = false): string {
-  const when = savedAtTime ? ` às ${savedAtTime}` : ''
+export function describeCashClosingConflict(savedBy: string, savedAt: string, own = false): string {
+  const when = savedAt ? ` em ${savedAt}` : ''
   if (own) {
-    return `Você já tinha salvo este fechamento${when}, em outra tentativa ou em outro aparelho, com números diferentes. Os números desta tela ainda não foram gravados.`
+    return `Você já tinha salvo este fechamento${when}, em outra tentativa ou em outro aparelho, com números ou observações diferentes. O que está nesta tela ainda não foi gravado.`
   }
   const who = savedBy.trim() || 'Outra pessoa'
   return `${who} salvou este fechamento${when}, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.`
@@ -127,11 +127,17 @@ export function notesWithReplacement(
     ...replaced.fields.map(field => `${field.label} ${formatCurrencyBRL(field.amount)}`),
   ]
   const current = notes.trim()
-  const previous = (replaced.savedNotes ?? '').trim()
-  const previousNotes = previous && previous !== current ? ` Obs. de ${who}: ${previous}` : ''
+  let previous = (replaced.savedNotes ?? '').trim()
+  // O que a tela ja traz nao se repete dentro da anotacao: sem isso, trocas
+  // seguidas de "Substituir" aninham e dobram o texto a cada rodada.
+  if (current && previous.startsWith(current)) previous = previous.slice(current.length).trim()
+  if (previous.length > REPLACED_NOTES_LIMIT) previous = `${previous.slice(0, REPLACED_NOTES_LIMIT)}…`
+  const previousNotes = previous ? ` Obs. de ${who}: ${previous}` : ''
   const line = `[Substituiu o fechamento que ${who} salvou${when}: ${amounts.join('; ')}.${previousNotes}]`
   return current ? `${current}\n${line}` : line
 }
+
+const REPLACED_NOTES_LIMIT = 300
 
 export function calculateCashClosingTotals(input: CashClosingInput): CashClosingTotals {
   const cashSalesAmountCents =

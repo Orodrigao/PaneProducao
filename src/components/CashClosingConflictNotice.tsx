@@ -1,6 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import { describeCashClosingConflict, formatCurrencyBRL } from '@/lib/cashClosing'
-import { formatRomaneioTime } from '@/lib/romaneioDateTime'
+import { formatRomaneioDateTime } from '@/lib/romaneioDateTime'
 
 export interface CashClosingComparison {
   label: string
@@ -29,6 +29,7 @@ export default function CashClosingConflictNotice({
   own,
   comparisons,
   savedNotes,
+  notesDiffer,
   busy,
   onKeepSaved,
   onReplaceWithMine,
@@ -37,8 +38,9 @@ export default function CashClosingConflictNotice({
   savedAt: string
   own: boolean
   comparisons: CashClosingComparison[]
-  // Observacoes gravadas, so quando diferem das da tela.
+  // Observacoes gravadas, mostradas quando diferem das da tela.
   savedNotes: string | null
+  notesDiffer: boolean
   busy: boolean
   onKeepSaved: () => void
   onReplaceWithMine: () => void
@@ -52,14 +54,14 @@ export default function CashClosingConflictNotice({
     >
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-        <span role="alert">{describeCashClosingConflict(savedBy, formatRomaneioTime(savedAt), own)}</span>
+        <span role="alert">{describeCashClosingConflict(savedBy, formatRomaneioDateTime(savedAt), own)}</span>
       </div>
       <div style={{ display: 'grid', gap: 6, width: '100%' }}>
         {comparisons.map(item => <ComparisonLine key={item.label} item={item} savedBy={who} />)}
-        {savedNotes && (
+        {notesDiffer && (
           <div style={{ lineHeight: 1.35 }}>
             <b>Observações gravadas</b>
-            <div style={{ whiteSpace: 'pre-wrap' }}>{savedNotes}</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{savedNotes?.trim() || '(nenhuma)'}</div>
           </div>
         )}
       </div>

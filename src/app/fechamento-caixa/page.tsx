@@ -123,9 +123,9 @@ function savedByName(row: CashClosingRow): string {
   return row.updated_by_name || row.created_by_name
 }
 
-// Grava com prazo e, no prazo, cancela de verdade (null = nao se sabe se
-// chegou). Uma gravacao so deixada de esperar ainda podia chegar depois e
-// passar por cima da escolha feita na tela.
+// Grava com prazo e, no prazo, cancela o envio pendente (null = nao se sabe se
+// chegou). O que ja chegou ao banco ainda pode gravar depois; a trava por
+// versao impede que passe por cima de uma versao mais nova.
 async function writeWithDeadline<T>(write: (signal: AbortSignal) => PromiseLike<T>): Promise<T | null> {
   const controller = new AbortController()
   try {
@@ -309,6 +309,13 @@ export default function FechamentoCaixaPage() {
 
   function updateField(key: MoneyField, value: string) {
     setForm(current => ({ ...current, [key]: value }))
+    setSaveError('')
+  }
+
+  function hasNegativeCashSale(): boolean {
+    if (totals.cashSalesAmount >= -0.009) return false
+    setSaveError('Revise os valores: a venda em dinheiro ficou negativa.')
+    return true
   }
 
   async function fetchSavedClosing(): Promise<CashClosingRow | null> {
@@ -327,9 +334,7 @@ export default function FechamentoCaixaPage() {
   }
 
   const conflictIsOwn = Boolean(conflict && user && conflict.updated_by === user.id)
-  const conflictSavedNotes = conflict && (conflict.notes ?? '').trim() !== notes.trim()
-    ? conflict.notes
-    : null
+  const conflictNotesDiffer = Boolean(conflict && (conflict.notes ?? '').trim() !== notes.trim())
   // Com o aviso aberto, trocar de dia ou loja descartaria o digitado sem a
   // pessoa escolher.
   const lockDayAndStore = saving || Boolean(conflict)
@@ -349,10 +354,7 @@ export default function FechamentoCaixaPage() {
   async function saveClosing(notesText: string = notes) {
     if (!user || saving) return
 
-    if (totals.cashSalesAmount < -0.009) {
-      setSaveError('Revise os valores: a venda em dinheiro ficou negativa.')
-      return
-    }
+    if (hasNegativeCashSale()) return
 
     // Trava o botao (e a troca de dia e loja) antes de qualquer espera: dois
     // toques seguidos nao viram duas gravacoes, e a resposta nao cai em outro dia.
@@ -478,7 +480,7 @@ export default function FechamentoCaixaPage() {
   }
 
   function replaceWithMine() {
-    if (!conflict) return
+    if (!conflict || hasNegativeCashSale()) return
     const savedBy = conflictIsOwn ? 'você' : savedByName(conflict)
     const confirmed = window.confirm(
       `Trocar o fechamento que ${savedBy} salvou (${formatCurrencyBRL(conflict.total_amount)}) `
@@ -649,7 +651,8 @@ export default function FechamentoCaixaPage() {
                   savedAt={conflict.updated_at}
                   own={conflictIsOwn}
                   comparisons={comparisons}
-                  savedNotes={conflictSavedNotes}
+                  savedNotes={conflict.notes}
+                  notesDiffer={conflictNotesDiffer}
                   busy={saving}
                   onKeepSaved={keepSaved}
                   onReplaceWithMine={replaceWithMine}

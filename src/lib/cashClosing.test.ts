@@ -102,8 +102,8 @@ describe('cashClosing', () => {
   })
 
   it('explica quem salvou, quando e que os numeros da tela nao foram gravados', () => {
-    expect(describeCashClosingConflict('Suélen', '20:09')).toBe(
-      'Suélen salvou este fechamento às 20:09, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.',
+    expect(describeCashClosingConflict('Suélen', '08/10 20:09')).toBe(
+      'Suélen salvou este fechamento em 08/10 20:09, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.',
     )
     expect(describeCashClosingConflict('  ', '')).toBe(
       'Outra pessoa salvou este fechamento, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.',
@@ -148,6 +148,21 @@ describe('cashClosing', () => {
     expect(notesWithReplacement('Stone caiu às 14h', replaced)).not.toContain('Obs. de Suélen')
   })
 
+  it('nao aninha nem dobra a anotacao em trocas seguidas de substituicao', () => {
+    const base = { savedAt: '08/10 20:09', totalAmount: 100, fields: [] }
+    // B substitui A; depois A substitui B, cujas observacoes ja trazem a 1a anotacao.
+    const bNotes = notesWithReplacement('obs de B', { ...base, savedBy: 'A', savedNotes: 'obs de A' })
+    const aNotes = notesWithReplacement('obs de A', { ...base, savedBy: 'B', savedNotes: bNotes })
+    // B, com a tela ainda trazendo a 1a anotacao, substitui de novo.
+    const again = notesWithReplacement(bNotes, { ...base, savedBy: 'A', savedNotes: aNotes })
+
+    expect(again.match(/obs de B/g)).toHaveLength(2)
+    expect(again.length).toBeLessThan(bNotes.length + 500)
+    // A anotacao de quem ja tinha substituido nao repete o que a tela traz.
+    const sameScreen = notesWithReplacement('minhas obs', { ...base, savedBy: 'Eu', savedNotes: 'minhas obs\n[Substituiu X]' })
+    expect(sameScreen).toBe('minhas obs\n[Substituiu o fechamento que Eu salvou em 08/10 20:09: total do dia R$\u00a0100,00. Obs. de Eu: [Substituiu X]]')
+  })
+
   it('so trata como incerta a gravacao sem resposta do banco ou com erro do gateway', () => {
     expect(isUncertainWriteResult({ status: 0 })).toBe(true)
     expect(isUncertainWriteResult({ status: 504 })).toBe(true)
@@ -158,8 +173,8 @@ describe('cashClosing', () => {
   })
 
   it('avisa de outro jeito quando a versao gravada e da propria pessoa', () => {
-    expect(describeCashClosingConflict('Rodrigo', '20:09', true)).toBe(
-      'Você já tinha salvo este fechamento às 20:09, em outra tentativa ou em outro aparelho, com números diferentes. Os números desta tela ainda não foram gravados.',
+    expect(describeCashClosingConflict('Rodrigo', '08/10 20:09', true)).toBe(
+      'Você já tinha salvo este fechamento em 08/10 20:09, em outra tentativa ou em outro aparelho, com números ou observações diferentes. O que está nesta tela ainda não foi gravado.',
     )
   })
 })
