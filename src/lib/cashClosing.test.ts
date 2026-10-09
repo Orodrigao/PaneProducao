@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCashClosingTotals,
+  cashClosingDifferences,
   describeCashClosingConflict,
   isCashClosingSaveConflict,
+  notesWithReplacement,
   parseMoneyInput,
   wasSavedMeanwhile,
 } from './cashClosing'
@@ -105,5 +107,31 @@ describe('cashClosing', () => {
     expect(describeCashClosingConflict('  ', '')).toBe(
       'Outra pessoa salvou este fechamento, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.',
     )
+  })
+
+  it('aponta os campos diferentes ao centavo, inclusive com o mesmo total', () => {
+    const saved = { ...baseInput, closingCashAmount: 272, banriAmount: 300, siteSalesAmount: 100 }
+
+    expect(cashClosingDifferences(saved, { ...saved })).toEqual([])
+    expect(cashClosingDifferences(saved, { ...saved, closingCashAmount: 272.001 })).toEqual([])
+    // Mesmo total do dia, maquininha trocada.
+    expect(cashClosingDifferences(saved, { ...saved, banriAmount: 100, siteSalesAmount: 300 })).toEqual([
+      'banriAmount',
+      'siteSalesAmount',
+    ])
+    expect(cashClosingDifferences(saved, { ...saved, closingCashAmount: 510, envelopeAmount: 272 })).toEqual([
+      'closingCashAmount',
+      'envelopeAmount',
+    ])
+  })
+
+  it('guarda nas observacoes o fechamento que foi substituido, sem perder o que ja estava escrito', () => {
+    const replaced = { savedBy: 'Suélen', savedAtTime: '20:09', totalAmount: 4294.93, cashAmount: 615.93 }
+    const line = notesWithReplacement('', replaced)
+
+    expect(line).toContain('Substituiu o fechamento de Suélen às 20:09')
+    expect(line).toMatch(/total do dia R\$\s4\.294,93/)
+    expect(line).toMatch(/venda em dinheiro R\$\s615,93/)
+    expect(notesWithReplacement('  maquininha caiu  ', replaced)).toBe(`maquininha caiu\n${line}`)
   })
 })

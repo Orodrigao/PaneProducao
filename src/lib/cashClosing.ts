@@ -75,6 +75,41 @@ export function describeCashClosingConflict(savedBy: string, savedAtTime: string
   return `${who} salvou este fechamento${when}, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.`
 }
 
+const CASH_CLOSING_INPUT_KEYS: (keyof CashClosingInput)[] = [
+  'closingCashAmount',
+  'cashWithdrawalAmount',
+  'banriAmount',
+  'siteSalesAmount',
+  'sitefAmount',
+  'pixAmount',
+  'openingCashAmount',
+  'ifoodSalesAmount',
+  'envelopeAmount',
+  'nextDayCashAmount',
+]
+
+// Campos em que o fechamento salvo e o da tela divergem, ao centavo: mesmo
+// total com divisao diferente (Banrisul x Stone) tambem e diferenca.
+export function cashClosingDifferences(
+  saved: CashClosingInput,
+  mine: CashClosingInput,
+): (keyof CashClosingInput)[] {
+  return CASH_CLOSING_INPUT_KEYS.filter(key => toCents(saved[key]) !== toCents(mine[key]))
+}
+
+// Quem substitui deixa nas observacoes o que estava gravado antes: o numero
+// que perdeu nao some sem rastro.
+export function notesWithReplacement(
+  notes: string,
+  replaced: { savedBy: string; savedAtTime: string; totalAmount: number; cashAmount: number },
+): string {
+  const who = replaced.savedBy.trim() || 'outra pessoa'
+  const when = replaced.savedAtTime ? ` às ${replaced.savedAtTime}` : ''
+  const line = `[Substituiu o fechamento de ${who}${when}: total do dia ${formatCurrencyBRL(replaced.totalAmount)}, venda em dinheiro ${formatCurrencyBRL(replaced.cashAmount)}]`
+  const current = notes.trim()
+  return current ? `${current}\n${line}` : line
+}
+
 export function calculateCashClosingTotals(input: CashClosingInput): CashClosingTotals {
   const cashSalesAmountCents =
     toCents(input.closingCashAmount)

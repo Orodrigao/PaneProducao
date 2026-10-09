@@ -86,10 +86,31 @@ function moneyField(page: Page, label: string) {
   return page.getByLabel(label)
 }
 
+function conflictNotice(page: Page) {
+  return page.getByRole('region', { name: 'Fechamento salvo por outra pessoa' })
+}
+
+// Conta as gravacoes que de fato sairam para o banco: prova que "Cancelar" na
+// confirmacao nao grava nada.
+function countClosingWrites(page: Page) {
+  const writes = { patch: 0, post: 0 }
+  page.on('request', request => {
+    if (!request.url().includes('/rest/v1/cash_closings')) return
+    if (request.method() === 'PATCH') writes.patch += 1
+    if (request.method() === 'POST') writes.post += 1
+  })
+  return writes
+}
+
 test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e gravado por cima sem escolha', async ({ browser }) => {
+  // Dois logins, quatro aberturas da tela e a primeira compilacao da rota no
+  // `next dev`: o limite padrao de 30s nao cabe.
+  test.setTimeout(120_000)
+
   const date = disposableClosingDate()
   const first = await openClosingJa(browser, 'admin', date)
   const second = await openClosingJa(browser, 'vendasJa', date)
+  const secondWrites = countClosingWrites(second.page)
 
   try {
     // As duas telas abriram antes de qualquer gravacao: as duas acham que o
@@ -113,45 +134,58 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await moneyField(second.page, '3. Banrisul credito/debito').fill('80')
     await second.page.getByRole('button', { name: 'Salvar fechamento' }).click()
 
-    const secondAlert = second.page.getByRole('alert').filter({ hasText: 'salvou este fechamento' })
-    await expect(secondAlert).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-    await expect(secondAlert).toContainText('Os números da sua tela ainda não foram gravados.')
-    await expect(secondAlert).toContainText('150,00')
-    await expect(secondAlert).toContainText('280,00')
+    const secondNotice = conflictNotice(second.page)
+    await expect(secondNotice).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+    await expect(secondNotice).toContainText('salvou este fechamento')
+    await expect(secondNotice).toContainText('Os números da sua tela ainda não foram gravados.')
+    await expect(secondNotice).toContainText('150,00')
+    await expect(secondNotice).toContainText('280,00')
+    // Campo a campo: so o que diverge aparece.
+    await expect(secondNotice).toContainText('1. Total em dinheiro')
+    await expect(secondNotice).toContainText('3. Banrisul credito/debito')
+    await expect(secondNotice).not.toContainText('5. SiTef')
     await expect(second.page.getByText('duplicate key')).toHaveCount(0)
     await expect(moneyField(second.page, '1. Total em dinheiro')).toHaveValue('200')
+    expect(secondWrites).toEqual({ patch: 0, post: 1 })
 
     // Desistir na confirmacao nao grava nada.
+    const replaceButton = secondNotice.getByRole('button', { name: 'Substituir pelos meus números' })
     second.page.once('dialog', dialog => dialog.dismiss())
-    await second.page.getByRole('button', { name: 'Substituir pelos meus números' }).click()
-    await expect(secondAlert).toBeVisible()
+    await replaceButton.click()
+    await expect(replaceButton).toBeEnabled()
+    await expect(secondNotice).toBeVisible()
 
     // Confirmar substitui, de proposito.
     second.page.once('dialog', dialog => dialog.accept())
-    await second.page.getByRole('button', { name: 'Substituir pelos meus números' }).click()
-    await expect(secondAlert).toHaveCount(0, { timeout: slowPreviewDataTimeoutMs })
+    await replaceButton.click()
+    await expect(secondNotice).toHaveCount(0, { timeout: slowPreviewDataTimeoutMs })
     await expect(second.page.getByRole('button', { name: 'Atualizar fechamento' })).toBeEnabled({
       timeout: slowPreviewDataTimeoutMs,
     })
+    expect(secondWrites).toEqual({ patch: 1, post: 1 })
 
+    // Relido do banco: os numeros da segunda pessoa, com o que foi substituido
+    // anotado nas observacoes.
     await showClosingJa(second.page, 'vendasJa', date)
     await expect(moneyField(second.page, '1. Total em dinheiro')).toHaveValue('200,00', {
       timeout: slowPreviewDataTimeoutMs,
     })
     await expect(moneyField(second.page, '3. Banrisul credito/debito')).toHaveValue('80,00')
+    await expect(second.page.getByLabel('Observacoes')).toHaveValue(/Substituiu o fechamento de .+ total do dia R\$\s150,00/)
 
     // A primeira pessoa ainda esta com a versao dela na tela. Atualizar agora
     // apagaria a substituicao em silencio: a tela precisa recusar e explicar.
     await moneyField(first.page, '3. Banrisul credito/debito').fill('60')
     await first.page.getByRole('button', { name: 'Atualizar fechamento' }).click()
 
-    const firstAlert = first.page.getByRole('alert').filter({ hasText: 'salvou este fechamento' })
-    await expect(firstAlert).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
-    await expect(firstAlert).toContainText('280,00')
-    await expect(firstAlert).toContainText('160,00')
+    const firstNotice = conflictNotice(first.page)
+    await expect(firstNotice).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+    await expect(firstNotice).toContainText('280,00')
+    await expect(firstNotice).toContainText('160,00')
 
-    await first.page.getByRole('button', { name: 'Ficar com o salvo' }).click()
-    await expect(firstAlert).toHaveCount(0, { timeout: slowPreviewDataTimeoutMs })
+    first.page.once('dialog', dialog => dialog.accept())
+    await firstNotice.getByRole('button', { name: 'Ficar com o salvo' }).click()
+    await expect(firstNotice).toHaveCount(0, { timeout: slowPreviewDataTimeoutMs })
     await expect(moneyField(first.page, '1. Total em dinheiro')).toHaveValue('200,00', {
       timeout: slowPreviewDataTimeoutMs,
     })

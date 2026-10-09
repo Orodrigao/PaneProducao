@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Calendar, DollarSign, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { RequestTimeoutError, withTimeout } from '@/lib/supabaseRest'
@@ -9,13 +9,16 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   calculateCashClosingTotals,
+  cashClosingDifferences,
   formatCurrencyBRL,
   isCashClosingSaveConflict,
+  notesWithReplacement,
   parseMoneyInput,
   wasSavedMeanwhile,
   type CashClosingInput,
 } from '@/lib/cashClosing'
-import CashClosingConflictNotice from '@/components/CashClosingConflictNotice'
+import { formatRomaneioTime } from '@/lib/romaneioDateTime'
+import CashClosingConflictNotice, { type CashClosingComparison } from '@/components/CashClosingConflictNotice'
 
 type StoreKey = 'jc' | 'ja' | 'ex'
 type MoneyField = keyof CashClosingInput
@@ -40,6 +43,7 @@ interface CashClosingRow {
   next_day_cash_amount: number
   notes: string | null
   created_by_name: string
+  updated_by: string | null
   updated_by_name: string | null
   created_at: string
   updated_at: string
@@ -108,6 +112,14 @@ function formToInput(form: Record<MoneyField, string>): CashClosingInput {
 function moneyToInput(value: number): string {
   if (!value) return ''
   return value.toFixed(2).replace('.', ',')
+}
+
+function rowToInput(row: CashClosingRow): CashClosingInput {
+  return formToInput(rowToForm(row))
+}
+
+function savedByName(row: CashClosingRow): string {
+  return row.updated_by_name || row.created_by_name
 }
 
 function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
@@ -201,7 +213,11 @@ export default function FechamentoCaixaPage() {
   const [history, setHistory] = useState<CashClosingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [loadError, setLoadError] = useState('')
+  // Cada troca de loja ou data dispara uma leitura; so a mais recente pode
+  // mexer na tela. Resposta velha chegando por ultimo mostrava o dia errado.
+  const loadSeq = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -220,8 +236,10 @@ export default function FechamentoCaixaPage() {
   const totals = useMemo(() => calculateCashClosingTotals(input), [input])
 
   const loadClosing = useCallback(async () => {
+    const seq = ++loadSeq.current
     setLoading(true)
     setLoadError('')
+    setSaveError('')
     setConflict(null)
 
     try {
@@ -239,6 +257,7 @@ export default function FechamentoCaixaPage() {
           .order('closing_date', { ascending: false })
           .limit(8),
       ]))
+      if (seq !== loadSeq.current) return
 
       if (selectedRes.error) {
         setExisting(null)
@@ -258,13 +277,14 @@ export default function FechamentoCaixaPage() {
         setHistory((historyRes.data ?? []) as CashClosingRow[])
       }
     } catch (error) {
+      if (seq !== loadSeq.current) return
       setExisting(null)
       setHistory([])
       setLoadError(error instanceof RequestTimeoutError
         ? 'A consulta demorou demais. Verifique a internet e tente novamente.'
         : 'Não foi possível carregar o fechamento. Tente novamente.')
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
   }, [date, store])
 
@@ -291,7 +311,19 @@ export default function FechamentoCaixaPage() {
     }
   }
 
-  async function saveClosing() {
+  const comparisons = useMemo<CashClosingComparison[]>(() => {
+    if (!conflict) return []
+    const savedInput = rowToInput(conflict)
+    const differing = new Set(cashClosingDifferences(savedInput, input))
+    return [
+      { label: 'Total do dia', saved: conflict.total_amount, mine: totals.declaredTotal },
+      ...CLOSING_FIELDS
+        .filter(field => differing.has(field.key))
+        .map(field => ({ label: field.label, saved: savedInput[field.key], mine: input[field.key] })),
+    ]
+  }, [conflict, input, totals.declaredTotal])
+
+  async function saveClosing(notesText: string = notes) {
     if (!user || saving) return
 
     if (totals.cashSalesAmount < -0.009) {
@@ -299,30 +331,49 @@ export default function FechamentoCaixaPage() {
       return
     }
 
-    // Trava o botao antes de qualquer espera: dois toques seguidos nao podem
-    // virar duas gravacoes do mesmo fechamento.
+    // Trava o botao (e a troca de dia e loja) antes de qualquer espera: dois
+    // toques seguidos nao viram duas gravacoes, e a resposta nao cai em outro dia.
     setSaving(true)
+    setSaveError('')
     try {
-      await persistClosing()
+      await persistClosing(notesText)
+    } catch (error) {
+      setSaveError(error instanceof RequestTimeoutError
+        ? 'A gravação demorou demais. Confira a internet e toque em Salvar de novo.'
+        : 'Não foi possível salvar. Confira a internet e toque em Salvar de novo.')
     } finally {
       setSaving(false)
     }
   }
 
-  async function persistClosing() {
+  function applySaved(saved: CashClosingRow, message: string) {
+    setConflict(null)
+    setExisting(saved)
+    setForm(rowToForm(saved))
+    setNotes(saved.notes ?? '')
+    showToastPS(message)
+    loadClosing()
+  }
+
+  async function persistClosing(notesText: string) {
     if (!user) return
 
-    const { data: sessionData } = await supabase.auth.getSession()
-    const authUser = sessionData.session?.user
-    if (!authUser) {
-      showToastPS('Entre com e-mail e senha para salvar o fechamento.')
+    // Uma atualizacao so vale para o fechamento que esta na tela.
+    if (existing && (existing.store !== store || existing.closing_date !== date)) {
+      setSaveError('A tela ainda está carregando este dia. Aguarde e toque em Salvar de novo.')
       return
     }
 
-    const basePayload = {
-      closing_date: date,
-      weekday_label: weekday,
-      store,
+    const { data: sessionData } = await withTimeout(supabase.auth.getSession())
+    const authUser = sessionData.session?.user
+    if (!authUser) {
+      setSaveError('Entre com e-mail e senha para salvar o fechamento.')
+      return
+    }
+
+    // Loja, data e dia da semana so entram na criacao: atualizar nunca move
+    // um fechamento para outro dia.
+    const valuesPayload = {
       sales_amount: totals.declaredTotal,
       banri_amount: input.banriAmount,
       sitef_amount: input.sitefAmount,
@@ -336,66 +387,86 @@ export default function FechamentoCaixaPage() {
       closing_cash_amount: input.closingCashAmount,
       envelope_amount: input.envelopeAmount,
       next_day_cash_amount: input.nextDayCashAmount,
-      notes: notes.trim() || null,
+      notes: notesText.trim() || null,
       updated_by: authUser.id,
       updated_by_name: user.displayName,
     }
 
     const result = existing
-      ? await supabase
+      ? await withTimeout(supabase
         .from('cash_closings')
-        .update(basePayload)
+        .update(valuesPayload)
         .eq('id', existing.id)
         // So grava sobre a versao que esta tela leu. Se alguem salvou depois,
         // nenhuma linha casa e o conflito aparece, em vez de apagar o outro.
         .eq('updated_at', existing.updated_at)
         .select('*')
-        .single()
-      : await supabase
+        .single())
+      : await withTimeout(supabase
         .from('cash_closings')
         .insert({
-          ...basePayload,
+          closing_date: date,
+          weekday_label: weekday,
+          store,
+          ...valuesPayload,
           created_by: authUser.id,
           created_by_name: user.displayName,
           created_by_email: authUser.email ?? user.email ?? null,
         })
         .select('*')
-        .single()
+        .single())
 
     if (result.error) {
-      if (isCashClosingSaveConflict(result.error)) {
-        const latest = await fetchSavedClosing()
-        if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
-          // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
-          // substituir, parte da versao que acabou de ser lida.
-          setExisting(latest)
-          setConflict(latest)
-          return
-        }
+      if (!isCashClosingSaveConflict(result.error)) {
+        setSaveError('Erro ao salvar: ' + result.error.message)
+        return
       }
-      showToastPS('Erro ao salvar: ' + result.error.message)
+
+      const latest = await fetchSavedClosing()
+      if (latest && latest.updated_by === authUser.id && cashClosingDifferences(rowToInput(latest), input).length === 0) {
+        // A tentativa anterior desta mesma pessoa chegou ao banco e so a
+        // resposta se perdeu: o que esta na tela ja esta gravado.
+        applySaved(latest, 'Fechamento salvo.')
+        return
+      }
+      if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
+        // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
+        // substituir, parte da versao que acabou de ser lida.
+        setExisting(latest)
+        setConflict(latest)
+        return
+      }
+      setSaveError('Não foi possível confirmar se alguém já salvou este fechamento. Confira a internet e toque em Salvar de novo.')
       return
     }
 
-    const saved = result.data as CashClosingRow
-    setConflict(null)
-    setExisting(saved)
-    setForm(rowToForm(saved))
-    setNotes(saved.notes ?? '')
-    showToastPS(existing ? 'Fechamento atualizado.' : 'Fechamento salvo.')
-    loadClosing()
+    applySaved(result.data as CashClosingRow, existing ? 'Fechamento atualizado.' : 'Fechamento salvo.')
   }
 
   function replaceWithMine() {
     if (!conflict) return
-    const savedBy = conflict.updated_by_name || conflict.created_by_name
+    const savedBy = savedByName(conflict)
     const confirmed = window.confirm(
-      `Substituir o fechamento salvo por ${savedBy} pelos números da sua tela?\n\n`
-      + `Salvo: ${formatCurrencyBRL(conflict.total_amount)}\n`
-      + `Sua tela: ${formatCurrencyBRL(totals.declaredTotal)}`,
+      `Trocar o fechamento que ${savedBy} salvou (${formatCurrencyBRL(conflict.total_amount)}) `
+      + `pelos números da sua tela (${formatCurrencyBRL(totals.declaredTotal)})?\n\n`
+      + `Os números de ${savedBy} ficam anotados nas observações.`,
     )
     if (!confirmed) return
-    saveClosing()
+    saveClosing(notesWithReplacement(notes, {
+      savedBy,
+      savedAtTime: formatRomaneioTime(conflict.updated_at),
+      totalAmount: conflict.total_amount,
+      cashAmount: conflict.cash_amount,
+    }))
+  }
+
+  function keepSaved() {
+    if (!conflict) return
+    const confirmed = window.confirm(
+      `Descartar os números da sua tela e ficar com o fechamento que ${savedByName(conflict)} salvou?`,
+    )
+    if (!confirmed) return
+    loadClosing()
   }
 
   return (
@@ -432,6 +503,7 @@ export default function FechamentoCaixaPage() {
                 type="date"
                 value={date}
                 onChange={event => setDate(event.target.value)}
+                disabled={saving}
                 className="ps-input"
               />
             </label>
@@ -447,7 +519,7 @@ export default function FechamentoCaixaPage() {
               <select
                 value={store}
                 onChange={event => setStore(event.target.value as StoreKey)}
-                disabled={!canChangeStore}
+                disabled={!canChangeStore || saving}
                 className="ps-select"
               >
                 {STORE_OPTIONS.map(option => (
@@ -468,7 +540,7 @@ export default function FechamentoCaixaPage() {
           {existing && !conflict && (
             <div className="ps-banner honey">
               <span>Editando fechamento ja salvo para {formatDateBR(existing.closing_date)}.</span>
-              <span>Atualizado por {existing.updated_by_name || existing.created_by_name}</span>
+              <span>Atualizado por {savedByName(existing)}</span>
             </div>
           )}
 
@@ -520,21 +592,23 @@ export default function FechamentoCaixaPage() {
                   style={{ minHeight: 88 }}
                 />
               </label>
+              {saveError && (
+                <div className="ps-warning danger" role="alert" style={{ marginBottom: 0 }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{saveError}</span>
+                </div>
+              )}
               {conflict ? (
                 <CashClosingConflictNotice
-                  saved={{
-                    savedBy: conflict.updated_by_name || conflict.created_by_name,
-                    savedAt: conflict.updated_at,
-                    totalAmount: conflict.total_amount,
-                    cashAmount: conflict.cash_amount,
-                  }}
-                  mine={totals}
+                  savedBy={savedByName(conflict)}
+                  savedAt={conflict.updated_at}
+                  comparisons={comparisons}
                   busy={saving}
-                  onKeepSaved={loadClosing}
+                  onKeepSaved={keepSaved}
                   onReplaceWithMine={replaceWithMine}
                 />
               ) : (
-                <button type="button" onClick={saveClosing} disabled={saving || loading || !!loadError} className="ps-btn primary block">
+                <button type="button" onClick={() => saveClosing()} disabled={saving || loading || !!loadError} className="ps-btn primary block">
                   <Save size={16} />
                   {saving ? 'Salvando...' : existing ? 'Atualizar fechamento' : 'Salvar fechamento'}
                 </button>
@@ -555,6 +629,7 @@ export default function FechamentoCaixaPage() {
                   key={row.id}
                   type="button"
                   onClick={() => setDate(row.closing_date)}
+                  disabled={saving}
                   className="ps-item"
                   style={{ textAlign: 'left', cursor: 'pointer' }}
                 >
