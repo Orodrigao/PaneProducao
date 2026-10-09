@@ -10,9 +10,12 @@ import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   calculateCashClosingTotals,
   formatCurrencyBRL,
+  isCashClosingSaveConflict,
   parseMoneyInput,
+  wasSavedMeanwhile,
   type CashClosingInput,
 } from '@/lib/cashClosing'
+import CashClosingConflictNotice from '@/components/CashClosingConflictNotice'
 
 type StoreKey = 'jc' | 'ja' | 'ex'
 type MoneyField = keyof CashClosingInput
@@ -194,6 +197,7 @@ export default function FechamentoCaixaPage() {
   const [form, setForm] = useState<Record<MoneyField, string>>(EMPTY_FORM)
   const [notes, setNotes] = useState('')
   const [existing, setExisting] = useState<CashClosingRow | null>(null)
+  const [conflict, setConflict] = useState<CashClosingRow | null>(null)
   const [history, setHistory] = useState<CashClosingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -218,6 +222,7 @@ export default function FechamentoCaixaPage() {
   const loadClosing = useCallback(async () => {
     setLoading(true)
     setLoadError('')
+    setConflict(null)
 
     try {
       const [selectedRes, historyRes] = await withTimeout(Promise.all([
@@ -271,13 +276,41 @@ export default function FechamentoCaixaPage() {
     setForm(current => ({ ...current, [key]: value }))
   }
 
+  async function fetchSavedClosing(): Promise<CashClosingRow | null> {
+    try {
+      const { data, error } = await withTimeout(supabase
+        .from('cash_closings')
+        .select('*')
+        .eq('store', store)
+        .eq('closing_date', date)
+        .maybeSingle())
+      if (error) return null
+      return (data as CashClosingRow | null) ?? null
+    } catch {
+      return null
+    }
+  }
+
   async function saveClosing() {
-    if (!user) return
+    if (!user || saving) return
 
     if (totals.cashSalesAmount < -0.009) {
       showToastPS('Revise os valores: a venda em dinheiro ficou negativa.')
       return
     }
+
+    // Trava o botao antes de qualquer espera: dois toques seguidos nao podem
+    // virar duas gravacoes do mesmo fechamento.
+    setSaving(true)
+    try {
+      await persistClosing()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function persistClosing() {
+    if (!user) return
 
     const { data: sessionData } = await supabase.auth.getSession()
     const authUser = sessionData.session?.user
@@ -285,8 +318,6 @@ export default function FechamentoCaixaPage() {
       showToastPS('Entre com e-mail e senha para salvar o fechamento.')
       return
     }
-
-    setSaving(true)
 
     const basePayload = {
       closing_date: date,
@@ -315,6 +346,9 @@ export default function FechamentoCaixaPage() {
         .from('cash_closings')
         .update(basePayload)
         .eq('id', existing.id)
+        // So grava sobre a versao que esta tela leu. Se alguem salvou depois,
+        // nenhuma linha casa e o conflito aparece, em vez de apagar o outro.
+        .eq('updated_at', existing.updated_at)
         .select('*')
         .single()
       : await supabase
@@ -328,19 +362,40 @@ export default function FechamentoCaixaPage() {
         .select('*')
         .single()
 
-    setSaving(false)
-
     if (result.error) {
+      if (isCashClosingSaveConflict(result.error)) {
+        const latest = await fetchSavedClosing()
+        if (latest && wasSavedMeanwhile(existing?.updated_at ?? null, latest.updated_at)) {
+          // Mantem o que a pessoa digitou; a proxima gravacao, se ela escolher
+          // substituir, parte da versao que acabou de ser lida.
+          setExisting(latest)
+          setConflict(latest)
+          return
+        }
+      }
       showToastPS('Erro ao salvar: ' + result.error.message)
       return
     }
 
     const saved = result.data as CashClosingRow
+    setConflict(null)
     setExisting(saved)
     setForm(rowToForm(saved))
     setNotes(saved.notes ?? '')
     showToastPS(existing ? 'Fechamento atualizado.' : 'Fechamento salvo.')
     loadClosing()
+  }
+
+  function replaceWithMine() {
+    if (!conflict) return
+    const savedBy = conflict.updated_by_name || conflict.created_by_name
+    const confirmed = window.confirm(
+      `Substituir o fechamento salvo por ${savedBy} pelos números da sua tela?\n\n`
+      + `Salvo: ${formatCurrencyBRL(conflict.total_amount)}\n`
+      + `Sua tela: ${formatCurrencyBRL(totals.declaredTotal)}`,
+    )
+    if (!confirmed) return
+    saveClosing()
   }
 
   return (
@@ -410,7 +465,7 @@ export default function FechamentoCaixaPage() {
             </div>
           )}
 
-          {existing && (
+          {existing && !conflict && (
             <div className="ps-banner honey">
               <span>Editando fechamento ja salvo para {formatDateBR(existing.closing_date)}.</span>
               <span>Atualizado por {existing.updated_by_name || existing.created_by_name}</span>
@@ -465,10 +520,25 @@ export default function FechamentoCaixaPage() {
                   style={{ minHeight: 88 }}
                 />
               </label>
-              <button type="button" onClick={saveClosing} disabled={saving || loading || !!loadError} className="ps-btn primary block">
-                <Save size={16} />
-                {saving ? 'Salvando...' : existing ? 'Atualizar fechamento' : 'Salvar fechamento'}
-              </button>
+              {conflict ? (
+                <CashClosingConflictNotice
+                  saved={{
+                    savedBy: conflict.updated_by_name || conflict.created_by_name,
+                    savedAt: conflict.updated_at,
+                    totalAmount: conflict.total_amount,
+                    cashAmount: conflict.cash_amount,
+                  }}
+                  mine={totals}
+                  busy={saving}
+                  onKeepSaved={loadClosing}
+                  onReplaceWithMine={replaceWithMine}
+                />
+              ) : (
+                <button type="button" onClick={saveClosing} disabled={saving || loading || !!loadError} className="ps-btn primary block">
+                  <Save size={16} />
+                  {saving ? 'Salvando...' : existing ? 'Atualizar fechamento' : 'Salvar fechamento'}
+                </button>
+              )}
             </section>
           </div>
 

@@ -53,6 +53,28 @@ export function formatCurrencyBRL(value: number): string {
   return MONEY_FORMATTER.format(Number.isFinite(value) ? value : 0)
 }
 
+// Duas pessoas no mesmo caixa ao mesmo tempo (08/10/2026, JC: uma salvou, a
+// outra tentou salvar por cima de uma tela aberta antes). O banco recusa o
+// fechamento novo repetido (uma loja, um fechamento por dia: 23505) e a tela
+// recusa a atualizacao feita sobre uma versao que ja mudou (nenhuma linha com o
+// updated_at lido: PGRST116). Os dois casos pedem a mesma saida na tela.
+export function isCashClosingSaveConflict(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '23505' || error?.code === 'PGRST116'
+}
+
+// Confirma o conflito relendo o banco: houve outra gravacao depois que a tela
+// leu. readVersion null = a tela achou que o fechamento era novo.
+export function wasSavedMeanwhile(readVersion: string | null, latestVersion: string | null): boolean {
+  if (!latestVersion) return false
+  return readVersion !== latestVersion
+}
+
+export function describeCashClosingConflict(savedBy: string, savedAtTime: string): string {
+  const who = savedBy.trim() || 'Outra pessoa'
+  const when = savedAtTime ? ` às ${savedAtTime}` : ''
+  return `${who} salvou este fechamento${when}, enquanto esta tela estava aberta. Os números da sua tela ainda não foram gravados.`
+}
+
 export function calculateCashClosingTotals(input: CashClosingInput): CashClosingTotals {
   const cashSalesAmountCents =
     toCents(input.closingCashAmount)
