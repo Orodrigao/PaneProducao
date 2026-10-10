@@ -136,12 +136,16 @@ test('Administrador cadastra pao no Catalogo com Lojas e ele chega ao Planejamen
     await page.getByRole('tab', { name: /Fabricação própria/ }).click()
     await page.getByPlaceholder('Buscar fabricação própria...').fill(MARCA)
     const linha = page.locator('div', { has: page.getByRole('button', { name: `Editar ${MARCA}`, exact: true }) }).last()
-    const confirmacao = page.waitForEvent('dialog')
+    // A confirmacao e respondida no proprio aviso: o clique so termina quando
+    // o window.confirm fecha, entao esperar o evento depois do clique trava.
+    let avisoDeInativar = ''
+    page.once('dialog', dialogo => {
+      avisoDeInativar = dialogo.message()
+      void dialogo.accept()
+    })
     await linha.getByRole('button', { name: '✓ Ativo' }).click()
-    const dialogo = await confirmacao
-    expect(dialogo.message()).toContain('vai sair do Planejamento')
-    await dialogo.accept()
     await expect(linha.getByRole('button', { name: 'Inativo' })).toBeVisible({ timeout: 20_000 })
+    expect(avisoDeInativar).toContain('vai sair do Planejamento')
     await expect.poll(async () => (await lerPao(page, acesso, produto.legacy_bread_id!)).active, { timeout: 20_000 }).toBe(false)
   })
 
