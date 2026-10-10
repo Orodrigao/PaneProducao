@@ -17,8 +17,11 @@
 --     quando mudam. O nome curto que a equipe usa hoje ("B.Brasil") fica até
 --     alguém renomear o produto;
 --   * o pão fica ativo enquanto o produto estiver ativo e marcado Lojas;
---   * item PJ antigo (breads.is_pj) não é tocado, e não pode ser marcado Lojas.
--- Unidade, peso médio, prateleira e custo do pão continuam sendo do pão.
+--   * item PJ antigo (breads.is_pj) não é tocado, e não pode ser marcado Lojas;
+--   * produto com produção, estoque ou variação no próprio nome não é ligado
+--     pela tela (o histórico partiria em dois).
+-- Unidade, peso médio, prateleira e custo do pão continuam sendo do pão; o
+-- pão novo nasce com a unidade e o custo do produto.
 
 alter table public.products
   add column is_loja boolean not null default false;
@@ -41,24 +44,56 @@ begin
       return new;
     end if;
 
+    -- Com a ligação, Forno e estoque passam a gravar no pão: confirmação de
+    -- forno converge para o lote do pão e a tela de estoque deixa de listar o
+    -- produto sozinho. Produto que já tem programação, produção, estoque ou
+    -- variação no próprio nome teria o histórico partido em dois, então a
+    -- passagem fica para o administrador. Congelado não entra aqui: chegar ao
+    -- Planejamento pela ligação é o caminho que ele já usa.
+    if tg_op = 'UPDATE' and (
+      exists (select 1 from public.product_variants variant where variant.product_id = new.id)
+      or exists (select 1 from public.pj_production_schedules schedule
+        where schedule.product_source = 'product' and schedule.product_id = new.id::text)
+      or exists (select 1 from public.production_actuals actual
+        where actual.product_source = 'product' and actual.product_id = new.id::text)
+      or exists (select 1 from public.bread_movements movement
+        where movement.product_source = 'product' and movement.product_id = new.id::text)
+    ) then
+      raise exception '"%" já tem produção, estoque ou variações registradas no próprio cadastro. Ligar agora dividiria esse histórico em dois; peça ao administrador para fazer a passagem.', new.name
+        using errcode = 'P0001';
+    end if;
+
     -- Identificador próprio, derivado do produto: não colide com os pães
     -- antigos ("italiano1775678213582") nem se repete entre produtos.
     v_pao_id := 'catalogo_' || replace(new.id::text, '-', '');
 
-    insert into public.breads (id, name, days, active, is_pj, unit)
+    select bread.is_pj
+      into v_pao_pj
+    from public.breads bread
+    where bread.id = v_pao_id;
+
+    if found and v_pao_pj is true then
+      raise exception 'Já existe um item PJ antigo com o identificador de "%". Avise o administrador.', new.name
+        using errcode = 'P0001';
+    end if;
+
+    -- O custo vai junto para Sobras e o simulador de desconto não mostrarem o
+    -- pão novo como "sem custo". Unidade e custo não acompanham mudanças
+    -- depois: são do pão, que pode já ter histórico contado nessa unidade.
+    insert into public.breads (id, name, days, active, is_pj, unit, cost_price)
     values (
       v_pao_id,
       btrim(new.name),
       new.production_days,
       new.active is distinct from false,
       false,
-      case when lower(btrim(coalesce(new.unit, ''))) in ('kg', 'kilo', 'quilo') then 'kg' else 'un' end
+      case when lower(btrim(coalesce(new.unit, ''))) in ('kg', 'kilo', 'quilo') then 'kg' else 'un' end,
+      coalesce(new.cost_price, 0)
     )
     on conflict (id) do update set
       name = excluded.name,
       days = excluded.days,
-      active = excluded.active,
-      is_pj = false;
+      active = excluded.active;
 
     new.legacy_bread_id := v_pao_id;
     return new;
@@ -110,8 +145,12 @@ begin
       when new.production_days is distinct from old.production_days then new.production_days
       else bread.days
     end,
+    -- Só mexe no ativo de quem é ou foi das lojas. Produto ligado que nunca
+    -- foi marcado (pão antigo fora da regra) não perde o pão por ser
+    -- inativado e reativado na lista.
     active = case
-      when new.active is distinct from old.active or new.is_loja is distinct from old.is_loja
+      when (new.is_loja or old.is_loja)
+        and (new.active is distinct from old.active or new.is_loja is distinct from old.is_loja)
         then (new.active is distinct from false) and new.is_loja
       else bread.active
     end

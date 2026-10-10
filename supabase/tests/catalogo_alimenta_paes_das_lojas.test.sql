@@ -153,6 +153,56 @@ select throws_ok(
   'ligação quebrada bloqueia marcar Lojas em vez de fingir que deu certo');
 
 -- ---------------------------------------------------------------------------
+-- Produto com histórico no próprio nome não é ligado pela tela
+-- ---------------------------------------------------------------------------
+
+insert into public.products (
+  id, name, active, unit, kind, is_fabricacao_propria, is_pj, production_days,
+  production_area, production_process, allows_planned_production, allows_unplanned_production
+) values
+  ('95100000-0000-4000-8000-000000000008', '[TESTE] PJ com variação', true, 'un', 'final', true, true, '{1}',
+   'padaria', 'forno', true, true),
+  ('95100000-0000-4000-8000-000000000009', '[TESTE] PJ com estoque', true, 'un', 'final', true, true, '{1}',
+   'padaria', 'forno', true, true);
+insert into public.product_variants (id, product_id, name)
+values ('95100000-0000-4000-8000-000000000081', '95100000-0000-4000-8000-000000000008', 'Pacote com 6');
+insert into public.bread_movements (movement_type, bread_id, product_source, product_id, location, quantity, recorded_by)
+values ('forno_entrada', null, 'product', '95100000-0000-4000-8000-000000000009', 'central', 4, 'Teste');
+
+select throws_ok(
+  $$update public.products set is_loja = true where id = '95100000-0000-4000-8000-000000000008'$$,
+  'P0001', '"[TESTE] PJ com variação" já tem produção, estoque ou variações registradas no próprio cadastro. Ligar agora dividiria esse histórico em dois; peça ao administrador para fazer a passagem.',
+  'produto com variação não ganha pão pela tela (o Forno juntaria as variações num lote só)');
+select throws_ok(
+  $$update public.products set is_loja = true where id = '95100000-0000-4000-8000-000000000009'$$,
+  'P0001', '"[TESTE] PJ com estoque" já tem produção, estoque ou variações registradas no próprio cadastro. Ligar agora dividiria esse histórico em dois; peça ao administrador para fazer a passagem.',
+  'produto com estoque no próprio nome não ganha pão pela tela (o saldo sumiria da tela de estoque)');
+select is((select count(*)::integer from public.breads where id in (
+    'catalogo_95100000000040008000000000000008', 'catalogo_95100000000040008000000000000009')),
+  0, 'a recusa não deixa pão para trás');
+
+-- O pão novo nasce com o custo do produto, para Sobras não mostrar "sem custo".
+insert into public.products (
+  id, name, active, unit, kind, is_fabricacao_propria, production_days, cost_price,
+  production_area, production_process, allows_planned_production, allows_unplanned_production, is_loja
+) values ('95100000-0000-4000-8000-000000000010', '[TESTE] Pão com custo', true, 'un', 'final', true, '{2}', 4.35,
+  'padaria', 'forno', true, true, true);
+select is((select cost_price from public.breads where id = 'catalogo_95100000000040008000000000000010'),
+  4.35::numeric, 'o pão novo nasce com o custo do produto');
+
+-- Produto ligado que nunca foi das lojas (fora da regra) não perde o pão ao
+-- ser inativado e reativado na lista.
+insert into public.breads (id, name, days, active, is_pj, unit)
+values ('teste-ponte-fora-regra', '[TESTE] Pão de kit antigo', '{1,2,3}', true, false, 'un');
+insert into public.products (id, name, active, unit, kind, is_fabricacao_propria, production_days, legacy_bread_id)
+values ('95100000-0000-4000-8000-000000000015', '[TESTE] Kit ligado a pão', true, 'un', 'kit', true, '{1,2,3}',
+  'teste-ponte-fora-regra');
+update public.products set active = false where id = '95100000-0000-4000-8000-000000000015';
+update public.products set active = true where id = '95100000-0000-4000-8000-000000000015';
+select is((select active from public.breads where id = 'teste-ponte-fora-regra'),
+  true, 'inativar e reativar quem não é das lojas não tira o pão da produção');
+
+-- ---------------------------------------------------------------------------
 -- Só pão de forno, fabricação própria e produto final vai para as lojas
 -- ---------------------------------------------------------------------------
 
@@ -221,115 +271,6 @@ select throws_ok(
 reset role;
 select is((select count(*)::integer from public.breads where id = 'catalogo_95100000000040008000000000000021'),
   0, 'a tentativa barrada não deixa pão para trás');
-
--- ---------------------------------------------------------------------------
--- Marcação Lojas (cópia da migration) contra fixtures de cada caso
--- ---------------------------------------------------------------------------
-
-insert into public.breads (id, name, days, active, is_pj, unit) values
-  ('teste-ponte-ativo', '[TESTE] Pão curto', '{1,2,3,4,5,6}', true, false, 'un'),
-  ('teste-ponte-sazonal', '[TESTE] Cuca sazonal', '{4,5,6}', false, false, 'un'),
-  ('teste-ponte-sopa', '[TESTE] Sopa fora de linha', '{1,2,3,4,5,6}', true, false, 'un'),
-  ('teste-ponte-inativos', '[TESTE] Os dois inativos', '{2}', false, false, 'un'),
-  ('teste-ponte-pj-2', '[TESTE] Item PJ ativo', '{0,1,2,3,4,5,6}', true, true, 'un');
-insert into public.products (id, name, active, unit, kind, is_fabricacao_propria, is_pj, production_days,
-    production_area, production_process, allows_planned_production, allows_unplanned_production, legacy_bread_id)
-values
-  ('95100000-0000-4000-8000-000000000031', '[TESTE] Pão com nome longo', true, 'un', 'final', true, true, '{1,2,3,4,5,6}',
-   null, null, null, null, 'teste-ponte-ativo'),
-  ('95100000-0000-4000-8000-000000000032', '[TESTE] Cuca sazonal', true, 'un', 'final', true, false, '{4,5,6}',
-   null, null, null, null, 'teste-ponte-sazonal'),
-  ('95100000-0000-4000-8000-000000000033', '[TESTE] Sopa fora de linha', false, 'un', 'final', true, false, '{1,2,3,4,5,6}',
-   null, null, null, null, 'teste-ponte-sopa'),
-  ('95100000-0000-4000-8000-000000000034', '[TESTE] Os dois inativos', false, 'un', 'final', true, false, '{2}',
-   null, null, null, null, 'teste-ponte-inativos'),
-  ('95100000-0000-4000-8000-000000000035', '[TESTE] Produto de item PJ', true, 'un', 'final', true, true, '{1}',
-   null, null, null, null, 'teste-ponte-pj-2'),
-  -- sem pão ligado
-  ('95100000-0000-4000-8000-000000000041', '[TESTE] Novo de forno', true, 'un', 'final', true, false, '{6}',
-   'padaria', 'forno', true, true, null),
-  ('95100000-0000-4000-8000-000000000042', '[TESTE] Novo de forno PJ', true, 'un', 'final', true, true, '{1}',
-   'padaria', 'forno', true, true, null),
-  ('95100000-0000-4000-8000-000000000043', '[TESTE] Novo sem processo', true, 'un', 'final', true, false, '{1}',
-   null, null, null, null, null),
-  ('95100000-0000-4000-8000-000000000044', '[TESTE] Novo inativo', false, 'un', 'final', true, false, '{1}',
-   'padaria', 'forno', true, true, null),
-  ('95100000-0000-4000-8000-000000000045', '[TESTE] Novo de montagem', true, 'un', 'final', true, false, '{1}',
-   'cozinha', 'montagem', true, true, null);
-
--- migration (cópia)
-update public.products product
-set is_loja = true
-from public.breads bread
-where bread.id = product.legacy_bread_id
-  and not bread.is_pj
-  and (bread.active or product.active = false)
-  and product.is_fabricacao_propria
-  and product.kind = 'final'
-  and coalesce(product.production_process, 'forno') = 'forno';
-
-update public.products product
-set is_loja = true
-where product.legacy_bread_id is null
-  and product.is_fabricacao_propria
-  and product.kind = 'final'
-  and product.production_process = 'forno'
-  and not product.is_pj
-  and product.active is distinct from false;
-
-select is((select row(product.is_loja, bread.name, bread.active)::text from public.products product
-    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000031'),
-  row(true, '[TESTE] Pão curto', true)::text,
-  'pão das lojas ativo fica marcado, com o nome curto e na produção, mesmo vendido também para PJ');
-select is((select row(product.is_loja, bread.active)::text from public.products product
-    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000032'),
-  row(false, false)::text, 'sazonal ativo no catálogo e fora da produção continua fora');
-select is((select row(product.is_loja, bread.active)::text from public.products product
-    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000033'),
-  row(true, false)::text, 'inativo no catálogo sai da produção e fica marcado para voltar se reativado');
-select is((select row(product.is_loja, bread.active)::text from public.products product
-    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000034'),
-  row(true, false)::text, 'inativo dos dois lados fica marcado e fora da produção');
-select is((select row(product.is_loja, bread.active)::text from public.products product
-    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000035'),
-  row(false, true)::text, 'item PJ antigo fica como está');
-select is((select row(product.is_loja, product.legacy_bread_id, bread.name, bread.days, bread.active)::text
-    from public.products product join public.breads bread on bread.id = product.legacy_bread_id
-    where product.id = '95100000-0000-4000-8000-000000000041'),
-  row(true, 'catalogo_95100000000040008000000000000041', '[TESTE] Novo de forno', '{6}'::integer[], true)::text,
-  'pão de forno cadastrado só no catálogo ganha o pão que faltava');
-select is((select array_agg(is_loja::text || ':' || coalesce(legacy_bread_id, '-') order by id) from public.products
-    where id in ('95100000-0000-4000-8000-000000000042', '95100000-0000-4000-8000-000000000043',
-      '95100000-0000-4000-8000-000000000044', '95100000-0000-4000-8000-000000000045')),
-  array['false:-', 'false:-', 'false:-', 'false:-'],
-  'PJ, sem processo, inativo e montagem ficam de fora da marcação automática');
-
--- migration (cópia), de novo: não cria nada a mais
-select set_config('teste.paes_antes_da_repeticao', (select count(*) from public.breads)::text, true);
-
-update public.products product
-set is_loja = true
-from public.breads bread
-where bread.id = product.legacy_bread_id
-  and not bread.is_pj
-  and (bread.active or product.active = false)
-  and product.is_fabricacao_propria
-  and product.kind = 'final'
-  and coalesce(product.production_process, 'forno') = 'forno';
-
-update public.products product
-set is_loja = true
-where product.legacy_bread_id is null
-  and product.is_fabricacao_propria
-  and product.kind = 'final'
-  and product.production_process = 'forno'
-  and not product.is_pj
-  and product.active is distinct from false;
-
-select is((select count(*)::integer from public.breads), current_setting('teste.paes_antes_da_repeticao')::integer,
-  'rodar de novo não cria pão repetido');
-select is((select active from public.breads where id = 'teste-ponte-sazonal'),
-  false, 'rodar de novo não traz o sazonal de volta');
 
 -- ---------------------------------------------------------------------------
 -- Correções pontuais decididas pelo Rodrigo (cópia da migration)
@@ -484,6 +425,126 @@ select is((select row(name, days)::text from public.breads where id = 'paodehotd
   row('Pão de Hotdog Especial', '{0}'::integer[])::text, 'pão com outro nome não é renomeado');
 select is((select production_days from public.products where id = '3e47332b-8be2-42c8-8106-57f5a06ee041'),
   '{5}'::integer[], 'dia já mudado por alguém não é sobrescrito');
+
+-- ---------------------------------------------------------------------------
+-- Marcação Lojas (cópia da migration) contra fixtures de cada caso
+-- ---------------------------------------------------------------------------
+
+insert into public.breads (id, name, days, active, is_pj, unit) values
+  ('teste-ponte-ativo', '[TESTE] Pão curto', '{1,2,3,4,5,6}', true, false, 'un'),
+  ('teste-ponte-sazonal', '[TESTE] Cuca sazonal', '{4,5,6}', false, false, 'un'),
+  ('teste-ponte-sopa', '[TESTE] Sopa fora de linha', '{1,2,3,4,5,6}', true, false, 'un'),
+  ('teste-ponte-inativos', '[TESTE] Os dois inativos', '{2}', false, false, 'un'),
+  ('teste-ponte-pj-2', '[TESTE] Item PJ ativo', '{0,1,2,3,4,5,6}', true, true, 'un');
+insert into public.products (id, name, active, unit, kind, is_fabricacao_propria, is_pj, production_days,
+    production_area, production_process, allows_planned_production, allows_unplanned_production, legacy_bread_id)
+values
+  ('95100000-0000-4000-8000-000000000031', '[TESTE] Pão com nome longo', true, 'un', 'final', true, true, '{1,2,3,4,5,6}',
+   null, null, null, null, 'teste-ponte-ativo'),
+  ('95100000-0000-4000-8000-000000000032', '[TESTE] Cuca sazonal', true, 'un', 'final', true, false, '{4,5,6}',
+   null, null, null, null, 'teste-ponte-sazonal'),
+  ('95100000-0000-4000-8000-000000000033', '[TESTE] Sopa fora de linha', false, 'un', 'final', true, false, '{1,2,3,4,5,6}',
+   null, null, null, null, 'teste-ponte-sopa'),
+  ('95100000-0000-4000-8000-000000000034', '[TESTE] Os dois inativos', false, 'un', 'final', true, false, '{2}',
+   null, null, null, null, 'teste-ponte-inativos'),
+  ('95100000-0000-4000-8000-000000000035', '[TESTE] Produto de item PJ', true, 'un', 'final', true, true, '{1}',
+   null, null, null, null, 'teste-ponte-pj-2'),
+  -- sem pão ligado
+  ('95100000-0000-4000-8000-000000000041', '[TESTE] Novo de forno', true, 'un', 'final', true, false, '{6}',
+   'padaria', 'forno', true, true, null),
+  ('95100000-0000-4000-8000-000000000042', '[TESTE] Novo de forno PJ', true, 'un', 'final', true, true, '{1}',
+   'padaria', 'forno', true, true, null),
+  ('95100000-0000-4000-8000-000000000043', '[TESTE] Novo sem processo', true, 'un', 'final', true, false, '{1}',
+   null, null, null, null, null),
+  ('95100000-0000-4000-8000-000000000044', '[TESTE] Novo inativo', false, 'un', 'final', true, false, '{1}',
+   'padaria', 'forno', true, true, null),
+  ('95100000-0000-4000-8000-000000000045', '[TESTE] Novo de montagem', true, 'un', 'final', true, false, '{1}',
+   'cozinha', 'montagem', true, true, null);
+
+-- migration (cópia)
+update public.products product
+set is_loja = true
+from public.breads bread
+where bread.id = product.legacy_bread_id
+  and not bread.is_pj
+  and (bread.active or product.active = false)
+  and product.is_fabricacao_propria
+  and product.kind = 'final'
+  and coalesce(product.production_process, 'forno') = 'forno';
+
+update public.products product
+set is_loja = true
+where product.legacy_bread_id is null
+  and product.is_fabricacao_propria
+  and product.kind = 'final'
+  and product.production_process = 'forno'
+  and not product.is_pj
+  and product.active is distinct from false;
+
+select is((select row(product.is_loja, bread.name, bread.active)::text from public.products product
+    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000031'),
+  row(true, '[TESTE] Pão curto', true)::text,
+  'pão das lojas ativo fica marcado, com o nome curto e na produção, mesmo vendido também para PJ');
+select is((select row(product.is_loja, bread.active)::text from public.products product
+    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000032'),
+  row(false, false)::text, 'sazonal ativo no catálogo e fora da produção continua fora');
+select is((select row(product.is_loja, bread.active)::text from public.products product
+    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000033'),
+  row(true, false)::text, 'inativo no catálogo sai da produção e fica marcado para voltar se reativado');
+select is((select row(product.is_loja, bread.active)::text from public.products product
+    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000034'),
+  row(true, false)::text, 'inativo dos dois lados fica marcado e fora da produção');
+select is((select row(product.is_loja, bread.active)::text from public.products product
+    join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000035'),
+  row(false, true)::text, 'item PJ antigo fica como está');
+select is((select row(product.is_loja, product.legacy_bread_id, bread.name, bread.days, bread.active)::text
+    from public.products product join public.breads bread on bread.id = product.legacy_bread_id
+    where product.id = '95100000-0000-4000-8000-000000000041'),
+  row(true, 'catalogo_95100000000040008000000000000041', '[TESTE] Novo de forno', '{6}'::integer[], true)::text,
+  'pão de forno cadastrado só no catálogo ganha o pão que faltava');
+select is((select array_agg(is_loja::text || ':' || coalesce(legacy_bread_id, '-') order by id) from public.products
+    where id in ('95100000-0000-4000-8000-000000000042', '95100000-0000-4000-8000-000000000043',
+      '95100000-0000-4000-8000-000000000044', '95100000-0000-4000-8000-000000000045')),
+  array['false:-', 'false:-', 'false:-', 'false:-'],
+  'PJ, sem processo, inativo e montagem ficam de fora da marcação automática');
+
+-- Na ordem da migration, as correções pontuais vêm antes: os gêmeos ligados
+-- e os pães corrigidos também ficam marcados, e o item PJ antigo não.
+select is((select array_agg(product.name || ':' || product.is_loja::text || ':' || bread.active::text order by product.name collate "C")
+    from public.products product join public.breads bread on bread.id = product.legacy_bread_id
+    where product.id in ('a72ab703-1fc0-47e0-a82a-ea04280b120e', '13ceeab0-49d0-4700-aa4d-5015431526c8',
+      '3e47332b-8be2-42c8-8106-57f5a06ee041', '427aa1d5-874e-45ed-92d8-9de8fb0b6e48',
+      '888f9a70-ff75-45eb-b5fc-add486dc287c', 'ab742bbc-3ade-4176-905b-61f27ff940c8')),
+  array['Grand Arome:true:true', 'Pão Originale (Mora):true:true', 'Pão de Abóbora (Baguetinha):false:false',
+    'Pão de Cachorro Quente:true:true', 'Pão de Nozes:true:true', 'Pão de Tapioca:true:true'],
+  'gêmeos e pães corrigidos ficam nas lojas; o item PJ de abóbora fica fora');
+
+-- migration (cópia), de novo: não cria nada a mais
+select set_config('teste.paes_antes_da_repeticao', (select count(*) from public.breads)::text, true);
+
+update public.products product
+set is_loja = true
+from public.breads bread
+where bread.id = product.legacy_bread_id
+  and not bread.is_pj
+  and (bread.active or product.active = false)
+  and product.is_fabricacao_propria
+  and product.kind = 'final'
+  and coalesce(product.production_process, 'forno') = 'forno';
+
+update public.products product
+set is_loja = true
+where product.legacy_bread_id is null
+  and product.is_fabricacao_propria
+  and product.kind = 'final'
+  and product.production_process = 'forno'
+  and not product.is_pj
+  and product.active is distinct from false;
+
+select is((select count(*)::integer from public.breads), current_setting('teste.paes_antes_da_repeticao')::integer,
+  'rodar de novo não cria pão repetido');
+select is((select active from public.breads where id = 'teste-ponte-sazonal'),
+  false, 'rodar de novo não traz o sazonal de volta');
 
 -- A trava existe no estado final.
 select ok((select pg_get_constraintdef(oid) from pg_constraint
