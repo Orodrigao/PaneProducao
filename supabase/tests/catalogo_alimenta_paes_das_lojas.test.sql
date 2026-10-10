@@ -461,6 +461,19 @@ values
   ('95100000-0000-4000-8000-000000000045', '[TESTE] Novo de montagem', true, 'un', 'final', true, false, '{1}',
    'cozinha', 'montagem', true, true, null);
 
+-- Pão de forno das lojas, sem ligação, mas com histórico no próprio nome.
+insert into public.products (id, name, active, unit, kind, is_fabricacao_propria, is_pj, production_days,
+    production_area, production_process, allows_planned_production, allows_unplanned_production)
+values
+  ('95100000-0000-4000-8000-000000000046', '[TESTE] Novo com variação', true, 'un', 'final', true, false, '{6}',
+   'padaria', 'forno', true, true),
+  ('95100000-0000-4000-8000-000000000047', '[TESTE] Novo com estoque', true, 'un', 'final', true, false, '{6}',
+   'padaria', 'forno', true, true);
+insert into public.product_variants (id, product_id, name)
+values ('95100000-0000-4000-8000-000000000461', '95100000-0000-4000-8000-000000000046', 'Metade');
+insert into public.bread_movements (movement_type, bread_id, product_source, product_id, location, quantity, recorded_by)
+values ('forno_entrada', null, 'product', '95100000-0000-4000-8000-000000000047', 'central', 2, 'Teste');
+
 -- migration (cópia)
 update public.products product
 set is_loja = true
@@ -479,7 +492,14 @@ where product.legacy_bread_id is null
   and product.kind = 'final'
   and product.production_process = 'forno'
   and not product.is_pj
-  and product.active is distinct from false;
+  and product.active is distinct from false
+  and not exists (select 1 from public.product_variants variant where variant.product_id = product.id)
+  and not exists (select 1 from public.pj_production_schedules schedule
+    where schedule.product_source = 'product' and schedule.product_id = product.id::text)
+  and not exists (select 1 from public.production_actuals actual
+    where actual.product_source = 'product' and actual.product_id = product.id::text)
+  and not exists (select 1 from public.bread_movements movement
+    where movement.product_source = 'product' and movement.product_id = product.id::text);
 
 select is((select row(product.is_loja, bread.name, bread.active)::text from public.products product
     join public.breads bread on bread.id = product.legacy_bread_id where product.id = '95100000-0000-4000-8000-000000000031'),
@@ -507,6 +527,10 @@ select is((select array_agg(is_loja::text || ':' || coalesce(legacy_bread_id, '-
       '95100000-0000-4000-8000-000000000044', '95100000-0000-4000-8000-000000000045')),
   array['false:-', 'false:-', 'false:-', 'false:-'],
   'PJ, sem processo, inativo e montagem ficam de fora da marcação automática');
+select is((select array_agg(is_loja::text || ':' || coalesce(legacy_bread_id, '-') order by id) from public.products
+    where id in ('95100000-0000-4000-8000-000000000046', '95100000-0000-4000-8000-000000000047')),
+  array['false:-', 'false:-'],
+  'pão com variação ou estoque no próprio nome fica fora da marcação em lote, sem derrubar a migration');
 
 -- Na ordem da migration, as correções pontuais vêm antes: os gêmeos ligados
 -- e os pães corrigidos também ficam marcados, e o item PJ antigo não.
@@ -539,7 +563,14 @@ where product.legacy_bread_id is null
   and product.kind = 'final'
   and product.production_process = 'forno'
   and not product.is_pj
-  and product.active is distinct from false;
+  and product.active is distinct from false
+  and not exists (select 1 from public.product_variants variant where variant.product_id = product.id)
+  and not exists (select 1 from public.pj_production_schedules schedule
+    where schedule.product_source = 'product' and schedule.product_id = product.id::text)
+  and not exists (select 1 from public.production_actuals actual
+    where actual.product_source = 'product' and actual.product_id = product.id::text)
+  and not exists (select 1 from public.bread_movements movement
+    where movement.product_source = 'product' and movement.product_id = product.id::text);
 
 select is((select count(*)::integer from public.breads), current_setting('teste.paes_antes_da_repeticao')::integer,
   'rodar de novo não cria pão repetido');

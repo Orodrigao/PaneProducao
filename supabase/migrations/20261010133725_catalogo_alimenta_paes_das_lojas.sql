@@ -294,6 +294,8 @@ where bread.id = product.legacy_bread_id
 -- Em produção, 10/10/2026: LA Rustico, Croissant romeu e julieta, Bolo de Fubá
 -- Romeu e Julieta e Focaccia de Tomate. Produto PJ fica de fora, porque "PJ" no
 -- catálogo não diz se ele também vai para as lojas; quem decide é a marcação.
+-- Produto com histórico no próprio nome também fica de fora: o gatilho recusaria
+-- a ligação e derrubaria a migration inteira (nenhum em produção, 10/10/2026).
 update public.products product
 set is_loja = true
 where product.legacy_bread_id is null
@@ -301,7 +303,14 @@ where product.legacy_bread_id is null
   and product.kind = 'final'
   and product.production_process = 'forno'
   and not product.is_pj
-  and product.active is distinct from false;
+  and product.active is distinct from false
+  and not exists (select 1 from public.product_variants variant where variant.product_id = product.id)
+  and not exists (select 1 from public.pj_production_schedules schedule
+    where schedule.product_source = 'product' and schedule.product_id = product.id::text)
+  and not exists (select 1 from public.production_actuals actual
+    where actual.product_source = 'product' and actual.product_id = product.id::text)
+  and not exists (select 1 from public.bread_movements movement
+    where movement.product_source = 'product' and movement.product_id = product.id::text);
 
 alter table public.products
   add constraint products_is_loja_requer_pao_de_forno
