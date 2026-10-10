@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import {
   resolveProductionHomeUserKey,
@@ -42,7 +43,7 @@ type Store = 'jc'|'ja'|'ex'|'pj'
 type Screen = 'init'|'login'|'main'|'geolar'
 
 interface Bread { id:string; name:string; days:any; active:boolean; is_pj:boolean }
-interface ProdItem { id:string; name:string; category:string; unit:string|null }
+interface ProdItem { id:string; name:string; category:string; unit:string|null; is_loja?:boolean }
 interface ProdProductionRow { product_id:string; quantity:number; obs:string|null }
 interface OrderRow { store:string; bread_id:string; quantity:number; obs:string; pj_client?:string; pj_delivery_date?:string; order_date:string }
 type OrderMap = Record<string, Record<string, OrderRow>>
@@ -359,8 +360,10 @@ export default function ProducaoPage() {
   const loadProdItems = useCallback(async () => {
     // O servidor ja corta os insumos (a maior parte do cadastro); o filtro
     // normalizado pega o resto e qualquer variacao de maiuscula.
-    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit&order=category.asc,name.asc`)
-    const data = rows.filter(p => !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
+    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit,is_loja&order=category.asc,name.asc`)
+    // Produto marcado Lojas já vai para a produção como pão (Planejamento,
+    // pedido das lojas e Forno); listá-lo aqui também pediria o mesmo item duas vezes.
+    const data = rows.filter(p => !p.is_loja && !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
     setProdItems(data)
     return data
   }, [])
@@ -1390,22 +1393,25 @@ function AdminView({ breads, orders, delivIdx, pjBreads, todayBds, onNewBread, o
 
   return (
     <div>
-      {/* Regular breads */}
+      {/* Pães das lojas: só consulta. Nome, dias e ativo vêm do Catálogo, que
+          cria e mantém o pão (marcação Lojas). Editar aqui fazia os dois
+          cadastros discordarem, e pão novo cadastrado só no Catálogo nunca
+          chegava ao Planejamento. */}
       <div className="section-header">
         <div className="section-label" style={{margin:0}}>Pães das lojas ({regular.length})</div>
-        <button className="btn-save" style={{padding:'6px 14px',fontSize:12}} onClick={()=>onNewBread(false)}>+ Novo pão</button>
+        <Link className="btn-save" style={{padding:'6px 14px',fontSize:12,textDecoration:'none'}} href="/produtos">Abrir o Catálogo</Link>
       </div>
-      {!regular.length&&<div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>Nenhum pão. Clique em &quot;+ Novo pão&quot;.</div>}
+      <div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>
+        Para cadastrar ou mudar nome, dias ou se o pão está na produção, use o Catálogo: Fabricação própria, com <b>Lojas</b> marcado.
+      </div>
       {regular.map(b=>(
         <div key={b.id} className={`admin-item${b.active?'':' inactive'}`}>
           <div className="admin-info">
             <div className="admin-name">{b.name}</div>
-            <div className="admin-meta">{parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}</div>
-          </div>
-          <div className="admin-actions">
-            <button className="icon-btn edit" onClick={()=>onEditBread(b)}>✎</button>
-            <button className="icon-btn del" onClick={()=>onDeleteBread(b)}>✕</button>
-            <button className={`toggle${b.active?' on':''}`} onClick={()=>onToggleBread(b)}/>
+            <div className="admin-meta">
+              {b.active ? '' : 'fora da produção · '}
+              {parseDays(b.days).length===7?'todos os dias':parseDays(b.days).length===0?'sem dias marcados':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}
+            </div>
           </div>
         </div>
       ))}

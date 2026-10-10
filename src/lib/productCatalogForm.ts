@@ -214,6 +214,7 @@ export const PRODUCT_SAVE_COLUMNS = [
   'weekly_count_enabled',
   'is_fabricacao_propria',
   'is_pj',
+  'is_loja',
   'production_days',
   'production_area',
   'production_process',

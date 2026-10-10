@@ -551,6 +551,26 @@ texto legado com o nome dela. Produto novo não salva sem categoria; produto
 antigo continua salvando. A marcação `is_revenda` deixou de ser resposta
 própria e virou espelho do tipo de item, por decisão do Rodrigo em 22/09/2026.
 
+**Catálogo alimenta os pães das lojas (10/10/2026).** Planejamento, pedido das
+lojas (tela inicial), a parte das lojas no Forno e a busca do Romaneio leem a
+lista antiga de pães (`breads`). Desde 26/08/2026 todo pão novo entrava só pelo
+catálogo e nunca chegava a essas telas (relato do LA Rustico). Agora a marcação
+**Lojas** (`products.is_loja`) no cadastro de fabricação própria faz o banco
+criar e ligar o pão (`legacy_bread_id`), e nome, dias de produção e ativo descem
+do produto para o pão só quando mudam (o nome curto que a equipe usa fica até
+alguém renomear o produto). O pão fica ativo enquanto o produto estiver ativo e
+marcado Lojas. Só produto final, de forno (ou ainda sem processo revisado) e de
+fabricação própria pode ser marcado; item PJ antigo (`breads.is_pj`) não é
+tocado. Produto que já tem variação, programação PJ, produção de forno ou
+estoque no próprio nome não é ligado pela tela, porque o Forno e o estoque
+passariam a gravar no pão e o histórico partiria em dois; essa passagem fica
+para uma correção administrativa. A aba Admin da tela inicial ficou só de
+consulta para os pães das lojas, e a lista Itens JC deixou de mostrar produto
+marcado Lojas. O pão nasce com a unidade e o custo do produto; depois disso,
+unidade, peso médio, prateleira e custo continuam sendo do pão. A cópia de
+produto (`duplicate_product_complete`) não leva a marcação: a cópia nasce fora
+das lojas.
+
 O texto livre continua em uso em Sobras, Itens JC, Tabelas de preço e na
 contagem de estoque, e só sai de cena na fase 4. Falta ainda quebrar os 340
 insumos em famílias reais (fase 3) e os relatórios por família (fase 5); nesses

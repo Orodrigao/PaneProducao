@@ -16,6 +16,14 @@ import {
 } from '@/lib/productOperationalClassification'
 import { canonicalInventoryUnit } from '@/lib/inventoryReadiness'
 import {
+  describeMissingProductionDays,
+  describeProductionName,
+  describeUnitMismatch,
+  leavesStorePlanning,
+  resolveIsLojaForSave,
+  storePlanningBlockReason,
+} from '@/lib/productStorePlanning'
+import {
   CATALOG_TYPE_LABELS,
   loadProductCategories,
   type CatalogType,
@@ -44,6 +52,9 @@ interface Product {
   weekly_count_enabled: boolean
   is_fabricacao_propria: boolean
   is_pj: boolean
+  // Vai para as lojas (Planejamento, pedido das lojas, Forno e Romaneio). O
+  // banco cria e mantém o pão ligado em `legacy_bread_id` a partir daqui.
+  is_loja: boolean
   // Classificação controlada do catálogo (fase 2A). A tela escolhe os dois na
   // fase 2B; o texto legado em `category` continua gravado com o nome da
   // categoria até a fase 4 aposentá-lo.
@@ -289,6 +300,13 @@ export default function ProdutosPage() {
         ? 'Este produto já tem uma classificação de produção. Deseja removê-la e deixá-lo como revisão pendente?'
         : 'Este produto já tem uma classificação de produção. Ela será removida porque o produto deixará de ser fabricação própria. Deseja continuar?',
     )) return
+    const isLoja = resolveIsLojaForSave({
+      ...editItem,
+      production_process: operationalClassification.value.production_process,
+    }, linkedBreadOf(editItem))
+    if (leavesStorePlanning(originalProduct?.is_loja, isLoja) && !window.confirm(
+      'Este produto vai sair do Planejamento, do pedido das lojas e do Romaneio. O histórico continua. Deseja continuar?',
+    )) return
     const { cost_price: rawCostPrice, ...rest } = editItem
     // Somente as colunas que esta tela edita viajam. Antes o corpo saía da
     // linha inteira lida com select('*'), então o tipo e a categoria antigos
@@ -296,6 +314,10 @@ export default function ProdutosPage() {
     const body = pickProductSaveColumns({
       ...rest,
       ...operationalClassification.value,
+      is_loja: isLoja,
+      // Tipo vazio aparece na tela como "Produto final"; quem vai para as lojas
+      // grava o que a tela mostrou, porque o banco só aceita Lojas em produto final.
+      kind: isLoja ? (rest.kind ?? 'final') : rest.kind,
       cost_price: normalizeCostPrice(rawCostPrice),
       category: resolveLegacyCategoryText(rest.category_id, categories, rest.category),
       // A trava do banco exige unidade reconhecida para contagem semanal; se a
@@ -321,8 +343,18 @@ export default function ProdutosPage() {
     } catch(error: unknown) { showToast('Erro: '+getErrorMessage(error, 'não foi possível salvar')) }
   }
 
+  // O pão das lojas ligado ao produto, como a tela o carregou: indefinido para
+  // produto sem ligação, nulo quando a ligação aponta para pão que não existe.
+  function linkedBreadOf(product: { legacy_bread_id?: string | null }): Bread | null | undefined {
+    if (!product.legacy_bread_id) return undefined
+    return breads.find(bread => bread.id === product.legacy_bread_id) ?? null
+  }
+
   async function toggleActive(p: Product) {
     const willActivate = !p.active
+    if (!willActivate && p.is_loja && !window.confirm(
+      `${p.name} vai sair do Planejamento, do pedido das lojas e do Romaneio. O histórico continua. Deseja inativar?`,
+    )) return
     // Insumo inativo não pode ficar marcado para a contagem semanal (regra do banco).
     const nextWeeklyCountEnabled = willActivate ? p.weekly_count_enabled : false
     try {
@@ -352,6 +384,9 @@ export default function ProdutosPage() {
       weekly_count_enabled: false,
       is_fabricacao_propria: fabricacaoPropria,
       is_pj: false,
+      // Pão novo de fabricação própria nasce marcado para as lojas, o caso
+      // comum (LA Rustico, Croissant romeu e julieta); item só de PJ desmarca.
+      is_loja: fabricacaoPropria,
       production_days: [],
       production_area: fabricacaoPropria ? 'padaria' : null,
       production_process: null,
@@ -615,8 +650,8 @@ export default function ProdutosPage() {
                           {p.is_shelf && (
                             <span className="ps-store-chip ex">📦 PRATELEIRA</span>
                           )}
-                          {p.legacy_bread_id && (
-                            <span className="ps-store-chip" style={{background:'var(--line-soft)', color:'var(--ink-soft)'}}>MIGRADO</span>
+                          {p.is_loja && (
+                            <span className="ps-store-chip" style={{background:'var(--line-soft)', color:'var(--ink-soft)'}}>🏪 LOJAS</span>
                           )}
                           {canUseTechnicalSheet(p) && (
                             <span
@@ -958,6 +993,7 @@ export default function ProdutosPage() {
                     ...prev,
                     is_fabricacao_propria: e.target.checked,
                     production_area: e.target.checked ? (prev?.production_area || 'padaria') : prev?.production_area || null,
+                    is_loja: e.target.checked && isNew ? true : prev?.is_loja,
                   }))}
                   style={{width:18, height:18, cursor:'pointer'}}
                 />
@@ -967,6 +1003,40 @@ export default function ProdutosPage() {
               </label>
               {editItem.is_fabricacao_propria && (
                 <>
+                  {(() => {
+                    const linkedBread = linkedBreadOf(editItem)
+                    const blockReason = storePlanningBlockReason(editItem, linkedBread)
+                    const showsBreadNotes = editItem.is_loja && !blockReason && linkedBread
+                    const productionName = showsBreadNotes
+                      ? describeProductionName(editItem.name, linkedBread.name)
+                      : null
+                    const unitMismatch = showsBreadNotes
+                      ? describeUnitMismatch(editItem.unit, linkedBread.unit)
+                      : null
+                    return (
+                      <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor: blockReason ? 'not-allowed' : 'pointer', padding:'8px 4px'}}>
+                        <input
+                          type="checkbox"
+                          checked={!!editItem.is_loja && !blockReason}
+                          disabled={!!blockReason}
+                          onChange={e => setEditItem(prev => ({...prev, is_loja: e.target.checked}))}
+                          style={{width:18, height:18, cursor: blockReason ? 'not-allowed' : 'pointer', marginTop:1}}
+                        />
+                        <span style={{fontSize:13, color:'var(--ps-ink)'}}>
+                          🏪 <b>Lojas</b> — entra no Planejamento da produção, no pedido das lojas, no Forno e no Romaneio, nos dias de produção marcados abaixo.
+                          {blockReason && (
+                            <><br/><small style={{color:'var(--ink-faint)'}}>{blockReason}</small></>
+                          )}
+                          {productionName && (
+                            <><br/><small style={{color:'var(--ink-faint)'}}>{productionName}</small></>
+                          )}
+                          {unitMismatch && (
+                            <><br/><small style={{color:'var(--berry)'}}>{unitMismatch}</small></>
+                          )}
+                        </span>
+                      </label>
+                    )
+                  })()}
                   <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', padding:'8px 4px'}}>
                     <input
                       type="checkbox"
@@ -1046,6 +1116,12 @@ export default function ProdutosPage() {
                   )}
                   <div className="ps-fieldgroup">
                     <div className="ps-fieldlabel">Dias de produção</div>
+                    {editItem.is_loja && !storePlanningBlockReason(editItem, linkedBreadOf(editItem)) && (
+                      <small style={{display:'block', marginBottom:6, color: describeMissingProductionDays(editItem.production_days) ? 'var(--berry)' : 'var(--ink-faint)'}}>
+                        {describeMissingProductionDays(editItem.production_days)
+                          ?? 'São os dias em que o pão aparece no Planejamento e no pedido das lojas.'}
+                      </small>
+                    )}
                     <div className="ps-presets" style={{flexWrap:'wrap', marginBottom:0}}>
                       {WEEK_DAYS.map((label, day) => (
                         <button
