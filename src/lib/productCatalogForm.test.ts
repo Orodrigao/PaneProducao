@@ -248,6 +248,18 @@ describe('pickProductSaveColumns', () => {
     expect(Object.keys(payload)).toEqual(['name'])
   })
 
+  it('leva a marcação Lojas e deixa a ligação com o pão para o banco', () => {
+    // Quem cria e liga o pão é o gatilho do banco. Se a tela reenviasse a
+    // ligação lida antes de salvar, um produto recém-marcado voltaria sem pão.
+    const payload = pickProductSaveColumns({
+      name: 'LA Rustico',
+      is_loja: true,
+      legacy_bread_id: null,
+    })
+
+    expect(payload).toEqual({ name: 'LA Rustico', is_loja: true })
+  })
+
   it('não inventa coluna ausente no formulário', () => {
     const payload = pickProductSaveColumns({ name: 'Focaccia', category: 'Pães' })
 

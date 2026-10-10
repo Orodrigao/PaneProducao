@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { getCurrentUser, logout as authLogout, firstAllowedRoute } from '@/lib/auth'
 import {
   resolveProductionHomeUserKey,
@@ -1390,22 +1391,25 @@ function AdminView({ breads, orders, delivIdx, pjBreads, todayBds, onNewBread, o
 
   return (
     <div>
-      {/* Regular breads */}
+      {/* Pães das lojas: só consulta. Nome, dias e ativo vêm do Catálogo, que
+          cria e mantém o pão (marcação Lojas). Editar aqui fazia os dois
+          cadastros discordarem, e pão novo cadastrado só no Catálogo nunca
+          chegava ao Planejamento. */}
       <div className="section-header">
         <div className="section-label" style={{margin:0}}>Pães das lojas ({regular.length})</div>
-        <button className="btn-save" style={{padding:'6px 14px',fontSize:12}} onClick={()=>onNewBread(false)}>+ Novo pão</button>
+        <Link className="btn-save" style={{padding:'6px 14px',fontSize:12,textDecoration:'none'}} href="/produtos">Abrir o Catálogo</Link>
       </div>
-      {!regular.length&&<div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>Nenhum pão. Clique em &quot;+ Novo pão&quot;.</div>}
+      <div style={{color:'var(--text-muted)',fontSize:13,marginBottom:12}}>
+        Para cadastrar ou mudar nome, dias ou se o pão está na produção, use o Catálogo: Fabricação própria, com <b>Lojas</b> marcado.
+      </div>
       {regular.map(b=>(
         <div key={b.id} className={`admin-item${b.active?'':' inactive'}`}>
           <div className="admin-info">
             <div className="admin-name">{b.name}</div>
-            <div className="admin-meta">{parseDays(b.days).length===7?'todos os dias':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}</div>
-          </div>
-          <div className="admin-actions">
-            <button className="icon-btn edit" onClick={()=>onEditBread(b)}>✎</button>
-            <button className="icon-btn del" onClick={()=>onDeleteBread(b)}>✕</button>
-            <button className={`toggle${b.active?' on':''}`} onClick={()=>onToggleBread(b)}/>
+            <div className="admin-meta">
+              {b.active ? '' : 'fora da produção · '}
+              {parseDays(b.days).length===7?'todos os dias':parseDays(b.days).length===0?'sem dias marcados':parseDays(b.days).map(d=>DAYS_PT[d]).join(' · ')}
+            </div>
           </div>
         </div>
       ))}

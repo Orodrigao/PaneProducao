@@ -138,10 +138,12 @@ on conflict (id) do update set
 -- Cenario visivel no Preview para provar a transicao: o congelado nasce pelo
 -- catalogo unificado e chega ao planejamento pelo vinculo explicito, sem um
 -- segundo frozen_product legado para o mesmo pao.
+-- Como em producao, o produto ligado a um pao das lojas fica marcado Lojas
+-- (vende para as lojas e tambem para PJ).
 insert into public.products (
   id, name, category, active, sort_order, unit, kind,
   is_fabricacao_propria, production_days, production_area, is_pj,
-  legacy_bread_id
+  legacy_bread_id, is_loja
 )
 values (
   '10000000-0000-4000-8000-000000000023',
@@ -155,7 +157,8 @@ values (
   '{0,1,2,3,4,5,6}',
   'padaria',
   true,
-  'teste-produto-congelado'
+  'teste-produto-congelado',
+  true
 )
 on conflict (id) do update set
   name = excluded.name,
@@ -168,7 +171,8 @@ on conflict (id) do update set
   production_days = excluded.production_days,
   production_area = excluded.production_area,
   is_pj = excluded.is_pj,
-  legacy_bread_id = excluded.legacy_bread_id;
+  legacy_bread_id = excluded.legacy_bread_id,
+  is_loja = excluded.is_loja;
 
 -- Cenario comercial PJ: tabela de preco, clientes e pedidos.
 --
