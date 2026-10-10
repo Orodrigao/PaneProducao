@@ -43,7 +43,7 @@ type Store = 'jc'|'ja'|'ex'|'pj'
 type Screen = 'init'|'login'|'main'|'geolar'
 
 interface Bread { id:string; name:string; days:any; active:boolean; is_pj:boolean }
-interface ProdItem { id:string; name:string; category:string; unit:string|null }
+interface ProdItem { id:string; name:string; category:string; unit:string|null; is_loja?:boolean }
 interface ProdProductionRow { product_id:string; quantity:number; obs:string|null }
 interface OrderRow { store:string; bread_id:string; quantity:number; obs:string; pj_client?:string; pj_delivery_date?:string; order_date:string }
 type OrderMap = Record<string, Record<string, OrderRow>>
@@ -360,8 +360,10 @@ export default function ProducaoPage() {
   const loadProdItems = useCallback(async () => {
     // O servidor ja corta os insumos (a maior parte do cadastro); o filtro
     // normalizado pega o resto e qualquer variacao de maiuscula.
-    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit&order=category.asc,name.asc`)
-    const data = rows.filter(p => !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
+    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit,is_loja&order=category.asc,name.asc`)
+    // Produto marcado Lojas já vai para a produção como pão (Planejamento,
+    // pedido das lojas e Forno); listá-lo aqui também pediria o mesmo item duas vezes.
+    const data = rows.filter(p => !p.is_loja && !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
     setProdItems(data)
     return data
   }, [])

@@ -561,8 +561,13 @@ do produto para o pão só quando mudam (o nome curto que a equipe usa fica até
 alguém renomear o produto). O pão fica ativo enquanto o produto estiver ativo e
 marcado Lojas. Só produto final, de forno (ou ainda sem processo revisado) e de
 fabricação própria pode ser marcado; item PJ antigo (`breads.is_pj`) não é
-tocado. A aba Admin da tela inicial ficou só de consulta para os pães das lojas.
-Unidade, peso médio, prateleira e custo continuam sendo do pão. A cópia de
+tocado. Produto que já tem variação, programação PJ, produção de forno ou
+estoque no próprio nome não é ligado pela tela, porque o Forno e o estoque
+passariam a gravar no pão e o histórico partiria em dois; essa passagem fica
+para uma correção administrativa. A aba Admin da tela inicial ficou só de
+consulta para os pães das lojas, e a lista Itens JC deixou de mostrar produto
+marcado Lojas. O pão nasce com a unidade e o custo do produto; depois disso,
+unidade, peso médio, prateleira e custo continuam sendo do pão. A cópia de
 produto (`duplicate_product_complete`) não leva a marcação: a cópia nasce fora
 das lojas.
 

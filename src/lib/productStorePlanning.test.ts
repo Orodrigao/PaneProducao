@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  describeMissingProductionDays,
   describeProductionName,
+  describeUnitMismatch,
   leavesStorePlanning,
   resolveIsLojaForSave,
   storePlanningBlockReason,
@@ -27,6 +29,21 @@ describe('storePlanningBlockReason', () => {
   it('barra kit e insumo', () => {
     expect(storePlanningBlockReason({ is_fabricacao_propria: true, kind: 'kit' })).toMatch(/Kit e insumo/)
     expect(storePlanningBlockReason({ is_fabricacao_propria: true, kind: 'insumo' })).toMatch(/Kit e insumo/)
+  })
+
+  it('avisa antes de salvar o que o banco recusaria pela ligação', () => {
+    const pao = { is_fabricacao_propria: true, kind: 'final' as const, production_process: 'forno' as const, legacy_bread_id: 'pao-1' }
+    expect(storePlanningBlockReason(pao, { is_pj: true })).toMatch(/item PJ antigo/)
+    expect(storePlanningBlockReason(pao, null)).toMatch(/não existe mais/)
+    expect(storePlanningBlockReason(pao, { is_pj: false })).toBeNull()
+  })
+
+  it('sem a lista de pães informada, não presume ligação quebrada', () => {
+    expect(storePlanningBlockReason({ is_fabricacao_propria: true, kind: 'final', legacy_bread_id: 'pao-1' })).toBeNull()
+  })
+
+  it('produto ainda sem pão ligado não depende da lista de pães', () => {
+    expect(storePlanningBlockReason({ is_fabricacao_propria: true, kind: 'final', legacy_bread_id: null }, null)).toBeNull()
   })
 
   it('manda montagem e preparo para a Cozinha', () => {
@@ -59,6 +76,34 @@ describe('leavesStorePlanning', () => {
     expect(leavesStorePlanning(true, true)).toBe(false)
     expect(leavesStorePlanning(false, false)).toBe(false)
     expect(leavesStorePlanning(undefined, true)).toBe(false)
+  })
+})
+
+describe('describeUnitMismatch', () => {
+  it('avisa quando produto e pão contam em unidades diferentes', () => {
+    expect(describeUnitMismatch('kg', 'un')).toMatch(/contado em unidade/)
+    expect(describeUnitMismatch('un', 'kg')).toMatch(/contado em quilo/)
+  })
+
+  it('aceita as grafias de produção como a mesma unidade', () => {
+    expect(describeUnitMismatch('KG', 'kg')).toBeNull()
+    expect(describeUnitMismatch('', 'un')).toBeNull()
+    expect(describeUnitMismatch('Un', 'un')).toBeNull()
+  })
+
+  it('fica quieto quando ainda não há pão ligado', () => {
+    expect(describeUnitMismatch('kg', undefined)).toBeNull()
+  })
+})
+
+describe('describeMissingProductionDays', () => {
+  it('avisa quem vai para as lojas sem dia marcado', () => {
+    expect(describeMissingProductionDays([])).toMatch(/só na busca do Romaneio/)
+    expect(describeMissingProductionDays(null)).toMatch(/só na busca do Romaneio/)
+  })
+
+  it('fica quieto com pelo menos um dia', () => {
+    expect(describeMissingProductionDays([6])).toBeNull()
   })
 })
 

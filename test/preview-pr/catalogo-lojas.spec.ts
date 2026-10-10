@@ -131,12 +131,16 @@ test('Administrador cadastra pao no Catalogo com Lojas e ele chega ao Planejamen
     const naLista = page.locator('.ps-card', { hasText: MARCA })
     await expect(naBusca.or(naLista).first()).toBeVisible({ timeout: 20_000 })
 
-    // Inativar no Catalogo tira o pao da producao.
+    // Inativar no Catalogo tira o pao da producao, depois de confirmar.
     await page.goto('/produtos')
     await page.getByRole('tab', { name: /Fabricação própria/ }).click()
-    await page.getByPlaceholder('Buscar produto...').fill(MARCA)
+    await page.getByPlaceholder('Buscar fabricação própria...').fill(MARCA)
     const linha = page.locator('div', { has: page.getByRole('button', { name: `Editar ${MARCA}`, exact: true }) }).last()
+    const confirmacao = page.waitForEvent('dialog')
     await linha.getByRole('button', { name: '✓ Ativo' }).click()
+    const dialogo = await confirmacao
+    expect(dialogo.message()).toContain('vai sair do Planejamento')
+    await dialogo.accept()
     await expect(linha.getByRole('button', { name: 'Inativo' })).toBeVisible({ timeout: 20_000 })
     await expect.poll(async () => (await lerPao(page, acesso, produto.legacy_bread_id!)).active, { timeout: 20_000 }).toBe(false)
   })

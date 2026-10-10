@@ -16,7 +16,9 @@ import {
 } from '@/lib/productOperationalClassification'
 import { canonicalInventoryUnit } from '@/lib/inventoryReadiness'
 import {
+  describeMissingProductionDays,
   describeProductionName,
+  describeUnitMismatch,
   leavesStorePlanning,
   resolveIsLojaForSave,
   storePlanningBlockReason,
@@ -301,7 +303,7 @@ export default function ProdutosPage() {
     const isLoja = resolveIsLojaForSave({
       ...editItem,
       production_process: operationalClassification.value.production_process,
-    })
+    }, linkedBreadOf(editItem))
     if (leavesStorePlanning(originalProduct?.is_loja, isLoja) && !window.confirm(
       'Este produto vai sair do Planejamento, do pedido das lojas e do Romaneio. O histórico continua. Deseja continuar?',
     )) return
@@ -341,8 +343,18 @@ export default function ProdutosPage() {
     } catch(error: unknown) { showToast('Erro: '+getErrorMessage(error, 'não foi possível salvar')) }
   }
 
+  // O pão das lojas ligado ao produto, como a tela o carregou: indefinido para
+  // produto sem ligação, nulo quando a ligação aponta para pão que não existe.
+  function linkedBreadOf(product: { legacy_bread_id?: string | null }): Bread | null | undefined {
+    if (!product.legacy_bread_id) return undefined
+    return breads.find(bread => bread.id === product.legacy_bread_id) ?? null
+  }
+
   async function toggleActive(p: Product) {
     const willActivate = !p.active
+    if (!willActivate && p.is_loja && !window.confirm(
+      `${p.name} vai sair do Planejamento, do pedido das lojas e do Romaneio. O histórico continua. Deseja inativar?`,
+    )) return
     // Insumo inativo não pode ficar marcado para a contagem semanal (regra do banco).
     const nextWeeklyCountEnabled = willActivate ? p.weekly_count_enabled : false
     try {
@@ -992,12 +1004,14 @@ export default function ProdutosPage() {
               {editItem.is_fabricacao_propria && (
                 <>
                   {(() => {
-                    const blockReason = storePlanningBlockReason(editItem)
-                    const linkedBread = editItem.legacy_bread_id
-                      ? breads.find(bread => bread.id === editItem.legacy_bread_id)
-                      : undefined
-                    const productionName = editItem.is_loja && !blockReason
-                      ? describeProductionName(editItem.name, linkedBread?.name)
+                    const linkedBread = linkedBreadOf(editItem)
+                    const blockReason = storePlanningBlockReason(editItem, linkedBread)
+                    const showsBreadNotes = editItem.is_loja && !blockReason && linkedBread
+                    const productionName = showsBreadNotes
+                      ? describeProductionName(editItem.name, linkedBread.name)
+                      : null
+                    const unitMismatch = showsBreadNotes
+                      ? describeUnitMismatch(editItem.unit, linkedBread.unit)
                       : null
                     return (
                       <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor: blockReason ? 'not-allowed' : 'pointer', padding:'8px 4px'}}>
@@ -1015,6 +1029,9 @@ export default function ProdutosPage() {
                           )}
                           {productionName && (
                             <><br/><small style={{color:'var(--ink-faint)'}}>{productionName}</small></>
+                          )}
+                          {unitMismatch && (
+                            <><br/><small style={{color:'var(--berry)'}}>{unitMismatch}</small></>
                           )}
                         </span>
                       </label>
@@ -1099,9 +1116,10 @@ export default function ProdutosPage() {
                   )}
                   <div className="ps-fieldgroup">
                     <div className="ps-fieldlabel">Dias de produção</div>
-                    {editItem.is_loja && !storePlanningBlockReason(editItem) && (
-                      <small style={{display:'block', marginBottom:6, color:'var(--ink-faint)'}}>
-                        São os dias em que o pão aparece no Planejamento e no pedido das lojas.
+                    {editItem.is_loja && !storePlanningBlockReason(editItem, linkedBreadOf(editItem)) && (
+                      <small style={{display:'block', marginBottom:6, color: describeMissingProductionDays(editItem.production_days) ? 'var(--berry)' : 'var(--ink-faint)'}}>
+                        {describeMissingProductionDays(editItem.production_days)
+                          ?? 'São os dias em que o pão aparece no Planejamento e no pedido das lojas.'}
                       </small>
                     )}
                     <div className="ps-presets" style={{flexWrap:'wrap', marginBottom:0}}>
