@@ -5,8 +5,9 @@
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
-regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava. As demais
-seções conservam suas datas de revisão anteriores.
+regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
+11/10/2026, a trava dos agentes. As demais seções conservam suas datas de
+revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -56,6 +57,33 @@ incorporada à `main`.
   data, o `AGENTS.md` cita papéis e funções, não nomes de fornecedor, e as
   regras de banco, fechamento e arquivos saíram para `docs/regras/`, acionadas
   pela tabela de gatilhos.
+
+## Trava dos agentes (11/10/2026)
+
+- **Achado de 11/10/2026, por leitura dos conectores do claude.ai:** além do
+  `Supabase_Leitura` (preso a produção, só ferramentas de leitura), as sessões
+  do Claude tinham um conector `Supabase` com escrita que alcançava os três
+  projetos da organização, produção (`PanePedidosLojas`) inclusive, com
+  "aplicar migration" e "rodar SQL". O conector da Vercel tinha criar deploy,
+  promover, mexer em variável de ambiente, domínio e firewall. Nada disso foi
+  usado; a proibição era só regra escrita.
+- **No repositório:** `.claude/settings.json` nega ao Claude o conector
+  `Supabase` inteiro, `apply_migration` de qualquer conector, as ferramentas de
+  escrita e de leitura de segredo da Vercel, e os comandos de terminal que
+  publicam site, aplicam migration, publicam function ou mexem em segredo. A
+  leitura (`Supabase_Leitura`, deploys e logs da Vercel, GitHub) segue livre.
+  Provado em sessão na nuvem: as ferramentas negadas somem e os comandos são
+  recusados. Limite: vale só para o Claude neste repositório, e editar o
+  arquivo dentro de uma sessão reabre as ferramentas na hora; é trava contra
+  acidente.
+- **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
+  `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
+  claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.
+  Conferir por leitura da lista de ferramentas de uma sessão nova antes de
+  dar como feito.
+- **Fora da trava:** agentes de outra família de modelo e terminais da máquina
+  do Rodrigo. Se a CLI do Supabase ou da Vercel estiver logada lá, ainda
+  alcança produção; não verificado.
 
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 

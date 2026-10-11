@@ -210,3 +210,93 @@ describe('regras: ponteiros e teto de tamanho', () => {
     }
   })
 })
+
+// Lista de bloqueio dos agentes Claude (.claude/settings.json). O casamento
+// abaixo imita a regra do Claude Code: o `*` cobre qualquer texto e o padrao
+// cobre o nome ou o comando inteiro. A prova real fica na sessao de teste da PR.
+function bloqueiaPor(regras: string[], alvo: string): string | undefined {
+  const escapar = (texto: string) => texto.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  const comoRegex = (padrao: string) => new RegExp(`^${padrao.split('*').map(escapar).join('.*')}$`)
+  return regras.find((regra) => {
+    const bash = /^Bash\((.*)\)$/.exec(regra)
+    if (bash) return alvo.startsWith('$ ') && comoRegex(bash[1]).test(alvo.slice(2))
+    return !alvo.startsWith('$ ') && comoRegex(regra).test(alvo)
+  })
+}
+
+describe('trava dos agentes', () => {
+  const settings = JSON.parse(read('.claude/settings.json')) as {
+    permissions?: Record<string, unknown>
+    [chave: string]: unknown
+  }
+  const deny = (settings.permissions?.deny ?? []) as string[]
+
+  it('so tem regra deny: nada de allow, hook, modo de permissao ou variavel', () => {
+    expect(Object.keys(settings).sort()).toEqual(['$schema', 'permissions'])
+    expect(Object.keys(settings.permissions ?? {})).toEqual(['deny'])
+    expect(deny.every((regra) => typeof regra === 'string' && regra.trim() === regra)).toBe(true)
+    expect(new Set(deny).size).toBe(deny.length)
+  })
+
+  // Nomes reais dos conectores em 2026-10-11; na maquina local o Claude Code
+  // prefixa os conectores do claude.ai com `claude_ai_`.
+  const bloqueados = [
+    'mcp__Supabase__apply_migration',
+    'mcp__Supabase__execute_sql',
+    'mcp__Supabase__deploy_edge_function',
+    'mcp__Supabase__create_edge_function_secret',
+    'mcp__claude_ai_Supabase__apply_migration',
+    'mcp__OutroBanco__apply_migration',
+    'mcp__Vercel__create_deployment',
+    'mcp__Vercel__request_rollback',
+    'mcp__Vercel__request_promote',
+    'mcp__Vercel__assign_alias',
+    'mcp__Vercel__create_project_env',
+    'mcp__Vercel__edit_project_env',
+    'mcp__Vercel__get_project_env',
+    'mcp__Vercel__filter_project_envs',
+    'mcp__Vercel__update_project',
+    'mcp__Vercel__update_firewall_config',
+    'mcp__Vercel__buy_domain',
+    'mcp__Vercel__import-claude-design-from-url',
+    'mcp__claude_ai_Vercel__create_deployment',
+    '$ supabase db push --include-all',
+    '$ npx supabase db push',
+    '$ supabase db reset --linked --yes',
+    '$ supabase migration repair --status applied 20260722190516',
+    '$ supabase functions deploy daily-payable-due-report',
+    '$ supabase secrets set RESEND_API_KEY=x',
+    '$ vercel',
+    '$ npx vercel',
+    '$ vercel deploy --prod',
+    '$ vercel --prod',
+    '$ vercel env pull .env.local',
+    '$ vercel rollback',
+  ]
+
+  const liberados = [
+    'mcp__Supabase_Leitura__execute_sql',
+    'mcp__Supabase_Leitura__list_tables',
+    'mcp__claude_ai_Supabase_Leitura__execute_sql',
+    'mcp__Vercel__get_deployment',
+    'mcp__Vercel__list_deployments',
+    'mcp__Vercel__list_deployment_events',
+    'mcp__Vercel__get_runtime_logs',
+    'mcp__Vercel__web_fetch_vercel_url',
+    'mcp__github__create_pull_request',
+    'mcp__github__merge_pull_request',
+    '$ supabase db reset --local',
+    '$ supabase migration list',
+    '$ vercel logs https://exemplo.vercel.app',
+    '$ npm test',
+    '$ git push -u origin feat/exemplo',
+  ]
+
+  it.each(bloqueados)('bloqueia %s', (alvo) => {
+    expect(bloqueiaPor(deny, alvo)).toBeDefined()
+  })
+
+  it.each(liberados)('deixa passar %s', (alvo) => {
+    expect(bloqueiaPor(deny, alvo)).toBeUndefined()
+  })
+})
