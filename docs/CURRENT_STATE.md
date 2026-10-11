@@ -65,17 +65,20 @@ incorporada à `main`.
   do Claude tinham um conector `Supabase` com escrita que alcançava os três
   projetos da organização, produção (`PanePedidosLojas`) inclusive, com
   "aplicar migration" e "rodar SQL". O conector da Vercel tinha criar deploy,
-  promover, mexer em variável de ambiente, domínio e firewall. Nada disso foi
-  usado; a proibição era só regra escrita.
-- **No repositório:** `.claude/settings.json` nega ao Claude o conector
-  `Supabase` inteiro, `apply_migration` de qualquer conector, as ferramentas de
-  escrita e de leitura de segredo da Vercel, e os comandos de terminal que
-  publicam site, aplicam migration, publicam function ou mexem em segredo. A
-  leitura (`Supabase_Leitura`, deploys e logs da Vercel, GitHub) segue livre.
-  Provado em sessão na nuvem: as ferramentas negadas somem e os comandos são
-  recusados. Limite: vale só para o Claude neste repositório, e editar o
-  arquivo dentro de uma sessão reabre as ferramentas na hora; é trava contra
-  acidente.
+  promover, mexer em variável de ambiente, domínio e firewall. Não há registro
+  de uso; a proibição era só regra escrita.
+- **No repositório:** `.claude/settings.json` nega ao Claude Code o conector
+  `Supabase` inteiro, as ferramentas de migration, function, segredo e branch
+  de qualquer conector, as ferramentas de escrita e as que entregam segredo ou
+  acesso da Vercel, a CLI da Vercel inteira e os comandos da CLI do Supabase
+  que alcançam o projeto remoto (`db push`, `--linked`, `--db-url`, `config
+  push`, functions, secrets, backups, branches, projects). A leitura
+  (`Supabase_Leitura`, deploys e logs pelo conector da Vercel, GitHub) e os
+  comandos locais do Supabase seguem livres. Provado em sessão na nuvem: as
+  ferramentas negadas somem, os comandos são recusados, e afrouxar o arquivo
+  reabre as ferramentas na hora. Limites: vale só para o Claude Code neste
+  repositório; a regra de terminal pega a forma usual do comando, não um
+  embrulho (`bash -c`, caminho absoluto); é trava contra acidente.
 - **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
   `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
   claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.

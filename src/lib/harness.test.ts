@@ -211,12 +211,15 @@ describe('regras: ponteiros e teto de tamanho', () => {
   })
 })
 
-// Lista de bloqueio dos agentes Claude (.claude/settings.json). O casamento
-// abaixo imita a regra do Claude Code: o `*` cobre qualquer texto e o padrao
-// cobre o nome ou o comando inteiro. A prova real fica na sessao de teste da PR.
+// Lista de bloqueio dos agentes (.claude/settings.json). O casamento abaixo
+// imita a regra do Claude Code: o `*` cobre qualquer texto e o padrao cobre o
+// nome da ferramenta ou o comando inteiro. Nao imita a separacao de comando
+// composto nem a remocao de `timeout`/variavel na frente, que o Claude Code faz
+// antes de comparar; por isso cada caso de Bash e um comando so. A prova real
+// fica na sessao de teste da PR.
 function bloqueiaPor(regras: string[], alvo: string): string | undefined {
   const escapar = (texto: string) => texto.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-  const comoRegex = (padrao: string) => new RegExp(`^${padrao.split('*').map(escapar).join('.*')}$`)
+  const comoRegex = (padrao: string) => new RegExp(`^${padrao.split('*').map(escapar).join('.*')}$`, 's')
   return regras.find((regra) => {
     const bash = /^Bash\((.*)\)$/.exec(regra)
     if (bash) return alvo.startsWith('$ ') && comoRegex(bash[1]).test(alvo.slice(2))
@@ -224,70 +227,130 @@ function bloqueiaPor(regras: string[], alvo: string): string | undefined {
   })
 }
 
+// Ferramentas de escrita e as que entregam segredo ou acesso, no conector da
+// Vercel em 2026-10-11.
+const VERCEL_BLOQUEADAS = [
+  'accept_project_transfer_request', 'activate_kms_signing_key', 'add_project_domain', 'add_route',
+  'approve_rolling_release_stage', 'assign_alias', 'buy_domain', 'cancel_deployment',
+  'change_toolbar_thread_resolve_status', 'complete_rolling_release', 'create_deployment',
+  'create_project_env', 'create_or_transfer_domain', 'create_sandboxes_v4', 'edit_project_env',
+  'extend_session_timeout', 'generate_route', 'import-claude-design-from-url', 'invalidate_by_tags',
+  'issue_cert', 'kill_session_command', 'patch_url_protection_bypass', 'pause_project',
+  'put_firewall_config', 'record_events', 'replace_domain_dns_records', 'reply_to_toolbar_thread',
+  'request_promote', 'request_rollback', 'rerequest_check', 'restore_edge_config_backup',
+  'retry_vercel_ci_invocation', 'revoke_kms_signing_key', 'run_session_command', 'stage_routes',
+  'start_rolling_release', 'stop_session', 'test_drain', 'unpause_project', 'update_firewall_config',
+  'update_project', 'upload_file', 'upsert_connector_project_connection', 'verify_project_domain',
+  'write_session_files', 'get_access_to_vercel_url', 'get_drain', 'get_edge_config_item',
+  'get_edge_config_items', 'get_edge_config_token', 'get_edge_config_tokens',
+  'get_project_deletion_link', 'get_project_env', 'get_shared_env_var', 'get_webhooks',
+  'filter_project_envs', 'list_feature_flag_sdk_keys',
+]
+
+// Verbos de escrita sem ferramenta hoje: a lista ja barra quando a Vercel criar.
+const VERCEL_FUTURAS = [
+  'connect_git_repository', 'delete_project', 'deploy_project', 'disable_protection',
+  'enable_protection', 'link_project', 'merge_branch_alias', 'move_project', 'promote_deployment',
+  'publish_project', 'purge_cache', 'remove_domain', 'rename_project', 'reset_project',
+  'rollback_deployment', 'set_env', 'transfer_domain',
+]
+
 describe('trava dos agentes', () => {
-  const settings = JSON.parse(read('.claude/settings.json')) as {
-    permissions?: Record<string, unknown>
-    [chave: string]: unknown
-  }
-  const deny = (settings.permissions?.deny ?? []) as string[]
+  const settings = JSON.parse(read('.claude/settings.json')) as Record<string, unknown>
+  const permissions = (settings.permissions ?? {}) as Record<string, unknown>
+  const denyBruto: unknown[] = Array.isArray(permissions.deny) ? permissions.deny : []
+  const deny = denyBruto.filter((regra): regra is string => typeof regra === 'string')
 
   it('so tem regra deny: nada de allow, hook, modo de permissao ou variavel', () => {
     expect(Object.keys(settings).sort()).toEqual(['$schema', 'permissions'])
-    expect(Object.keys(settings.permissions ?? {})).toEqual(['deny'])
-    expect(deny.every((regra) => typeof regra === 'string' && regra.trim() === regra)).toBe(true)
+    expect(Object.keys(permissions)).toEqual(['deny'])
+    expect(deny.length).toBeGreaterThan(0)
+    expect(deny.length).toBe(denyBruto.length)
+    expect(deny.every((regra) => regra.trim() === regra)).toBe(true)
     expect(new Set(deny).size).toBe(deny.length)
   })
 
-  // Nomes reais dos conectores em 2026-10-11; na maquina local o Claude Code
-  // prefixa os conectores do claude.ai com `claude_ai_`.
+  // Conectores do claude.ai chegam como `mcp__<Nome>__` na nuvem e como
+  // `mcp__claude_ai_<Nome>__` na maquina local. `OutroBanco` e nome inventado:
+  // prova a regra generica, que vale para qualquer conector.
   const bloqueados = [
-    'mcp__Supabase__apply_migration',
     'mcp__Supabase__execute_sql',
-    'mcp__Supabase__deploy_edge_function',
-    'mcp__Supabase__create_edge_function_secret',
     'mcp__claude_ai_Supabase__apply_migration',
+    'mcp__plugin_supabase_supabase__execute_sql',
     'mcp__OutroBanco__apply_migration',
-    'mcp__Vercel__create_deployment',
-    'mcp__Vercel__request_rollback',
-    'mcp__Vercel__request_promote',
-    'mcp__Vercel__assign_alias',
-    'mcp__Vercel__create_project_env',
-    'mcp__Vercel__edit_project_env',
-    'mcp__Vercel__get_project_env',
-    'mcp__Vercel__filter_project_envs',
-    'mcp__Vercel__update_project',
-    'mcp__Vercel__update_firewall_config',
-    'mcp__Vercel__buy_domain',
-    'mcp__Vercel__import-claude-design-from-url',
+    'mcp__OutroBanco__deploy_edge_function',
+    'mcp__OutroBanco__create_edge_function_secret',
+    'mcp__OutroBanco__merge_branch',
+    'mcp__OutroBanco__reset_branch',
+    'mcp__OutroBanco__rebase_branch',
+    'mcp__OutroBanco__restore_project',
+    ...VERCEL_BLOQUEADAS.map((nome) => `mcp__Vercel__${nome}`),
+    ...VERCEL_FUTURAS.map((nome) => `mcp__Vercel__${nome}`),
     'mcp__claude_ai_Vercel__create_deployment',
     '$ supabase db push --include-all',
-    '$ npx supabase db push',
-    '$ supabase db reset --linked --yes',
+    '$ supabase --debug db push',
+    '$ supabase db query --linked --file supabase/migrations/x.sql',
+    '$ supabase migration up --db-url postgresql://exemplo',
     '$ supabase migration repair --status applied 20260722190516',
+    '$ supabase config push',
     '$ supabase functions deploy daily-payable-due-report',
+    '$ supabase functions delete daily-payable-due-report',
     '$ supabase secrets set RESEND_API_KEY=x',
+    '$ supabase backups restore --timestamp 1',
+    '$ supabase branches delete exemplo',
+    '$ supabase projects delete exemplo',
+    '$ npx supabase@2.109.1 db push',
+    '$ npx supabase db query --linked -f x.sql',
+    '$ npx supabase migration down --db-url postgresql://exemplo',
+    '$ npx supabase migration repair --status reverted 1',
+    '$ npx -y supabase config push',
+    '$ npx supabase functions deploy x',
+    '$ npx supabase functions delete x',
+    '$ npx supabase secrets unset X',
+    '$ npx supabase backups list',
+    '$ npx supabase branches create x',
+    '$ npx supabase projects api-keys',
     '$ vercel',
-    '$ npx vercel',
-    '$ vercel deploy --prod',
-    '$ vercel --prod',
-    '$ vercel env pull .env.local',
-    '$ vercel rollback',
+    '$ vercel --prebuilt --prod',
+    '$ vercel --target=production',
+    '$ vercel alias set dpl exemplo.com',
+    '$ vercel api /v9/projects -X POST',
+    '$ vercel logs https://exemplo.vercel.app',
+    '$ npx vercel@latest deploy --prod',
+    '$ npx -y vercel --prod',
+    '$ npx --yes vercel pull --environment=production',
+    '$ npx --no-install vercel@latest deploy',
+    '$ ./node_modules/.bin/vercel',
+    '$ ./node_modules/.bin/vercel deploy --prod',
   ]
 
   const liberados = [
     'mcp__Supabase_Leitura__execute_sql',
-    'mcp__Supabase_Leitura__list_tables',
+    'mcp__Supabase_Leitura__list_migrations',
     'mcp__claude_ai_Supabase_Leitura__execute_sql',
     'mcp__Vercel__get_deployment',
+    'mcp__Vercel__get_project',
+    'mcp__Vercel__get_edge_config',
     'mcp__Vercel__list_deployments',
     'mcp__Vercel__list_deployment_events',
     'mcp__Vercel__get_runtime_logs',
     'mcp__Vercel__web_fetch_vercel_url',
+    'mcp__Vercel__search_vercel_documentation',
     'mcp__github__create_pull_request',
     'mcp__github__merge_pull_request',
+    '$ supabase db start',
     '$ supabase db reset --local',
+    '$ npx supabase db reset --local',
+    '$ supabase migration new remove_trigger_kit',
     '$ supabase migration list',
-    '$ vercel logs https://exemplo.vercel.app',
+    '$ supabase test db',
+    '$ supabase stop',
+    '$ node scripts/supabase-api-config.mjs',
+    '$ git commit -m "nunca rode supabase db push"',
+    '$ gh pr create --body "vercel deploy e proibido"',
+    '$ rg "vercel deploy" docs',
+    '$ npx vitest run src/lib/harness.test.ts',
+    '$ npx vitest run src/lib/vercelConfig.test.ts',
     '$ npm test',
     '$ git push -u origin feat/exemplo',
   ]
@@ -298,5 +361,17 @@ describe('trava dos agentes', () => {
 
   it.each(liberados)('deixa passar %s', (alvo) => {
     expect(bloqueiaPor(deny, alvo)).toBeUndefined()
+  })
+
+  // Apagar qualquer regra precisa reprovar: cada uma barra um caso que so ela barra.
+  it('cada regra e a unica a barrar algum caso conhecido', () => {
+    const semCasoProprio = deny.filter(
+      (regra) =>
+        !bloqueados.some((alvo) => {
+          const quemBarra = deny.filter((outra) => bloqueiaPor([outra], alvo))
+          return quemBarra.length === 1 && quemBarra[0] === regra
+        }),
+    )
+    expect(semCasoProprio).toEqual([])
   })
 })

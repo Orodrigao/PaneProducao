@@ -27,16 +27,17 @@ depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
 - **`supabase/`:** migrations e testes pgTAP, nos formatos já definidos.
 - **`.claude/skills/`:** skills compartilhadas do harness de IA, uma por
   pasta com `SKILL.md`. Skill nunca contém segredo.
-- **`.claude/settings.json`:** a lista de bloqueio dos agentes Claude neste
-  repositório — ferramentas de escrita dos conectores do Supabase e da Vercel
-  e os comandos de terminal que publicam site, aplicam migration, publicam
-  function ou mexem em segredo. Só regra `deny`: nunca `allow`, hook, modo de
-  permissão ou segredo. Afrouxar exige aprovação do Rodrigo (Segurança
-  obrigatória do `AGENTS.md`), e o teste do harness confere o mínimo. Vale só
-  para o Claude; travar o banco e o site para qualquer agente é papel do
-  GitHub e dos conectores. Com as skills, é o único conteúdo de `.claude/`
-  versionado; as configurações locais por máquina (`settings.local.json`,
-  `launch.json`) seguem ignoradas.
+- **`.claude/settings.json`:** a lista de bloqueio do Claude Code neste
+  repositório — ferramentas de escrita e de segredo dos conectores do Supabase
+  e da Vercel e os comandos de terminal que publicam site ou alcançam o banco
+  remoto. Só regra `deny`: nunca `allow`, hook, modo de permissão ou segredo.
+  Afrouxar exige aprovação do Rodrigo (Segurança obrigatória do `AGENTS.md`).
+  O teste do harness exige que cada regra barre um caso que só ela barra, e
+  que a leitura e os comandos locais passem: regra nova entra com o seu caso.
+  Vale só para o Claude Code; travar o banco e o site para qualquer agente é
+  papel do GitHub e dos conectores. Com as skills, é o único conteúdo de
+  `.claude/` versionado; as configurações locais por máquina
+  (`settings.local.json`, `launch.json`) seguem ignoradas.
 - **Proibido em qualquer lugar:** markdown dentro de `src/`, arquivos de
   rascunho ou anotação (`NOTES.md`, `TODO.md`, `RESUMO.md`, `PLANO_V2.md`),
   relatório de tarefa como arquivo novo (o PR é o relatório) e qualquer
