@@ -49,6 +49,11 @@ describe('folha de pães com produção PJ', () => {
   })
 
   it('faz o texto copiado pela Geolar usar a mesma data exibida na folha', () => {
+    // A assinatura entra junto: um parâmetro de texto opcional antes da data
+    // faria a chamada abaixo compilar com a data no lugar errado.
+    expect(productionPageSource).toContain(
+      'const generateWhatsApp = (ordMap: OrderMap, selectedDate?: string) =>',
+    )
     expect(productionPageSource).toContain(
       'generateWhatsApp(geolarOrders, geolarDate)',
     )

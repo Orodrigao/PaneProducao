@@ -125,9 +125,8 @@ async function sbGet(table:string, params='') {
   const r = await supabaseRestFetch(`${table}?${params}`)
   return r.json()
 }
-async function sbUpsert(table:string, data:any, onConflict?:string) {
-  const qs = onConflict ? `?on_conflict=${onConflict}` : ''
-  const r = await supabaseRestFetch(`${table}${qs}`, {
+async function sbUpsert(table:string, data:any) {
+  const r = await supabaseRestFetch(table, {
     method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
   })
   return r.json()
@@ -1511,7 +1510,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
           Conferir sobras e reaproveitamento
         </button>
 
-        <div className="print-card print-breads">
+        <div className="print-card">
           <h3>Pane &amp; Salute — Produção</h3>
           <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
           <div className="print-row print-row-pj ph"><span>Produto</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
@@ -1539,7 +1538,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
 
         {/* Encomendas marcadas pra produção neste dia */}
         {enc.length > 0 && (
-          <div className="print-card print-breads" style={{marginTop:16}}>
+          <div className="print-card" style={{marginTop:16}}>
             <h3>🎂 Encomendas a produzir</h3>
             <div className="pmeta">Para {dLabel}</div>
             {Array.from(new Set(enc.map(e=>e.client))).map(client => (

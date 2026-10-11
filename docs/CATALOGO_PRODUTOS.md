@@ -119,7 +119,7 @@ no fim desta seção.
 - o campo Categoria virou uma lista das 21 categorias controladas, agrupadas
   pelo tipo de item. Escolher a categoria grava os três campos no mesmo
   salvamento: `category_id`, `catalog_type` e o texto legado com o nome dela,
-  para Sobras, Itens JC, Tabelas de preço e a contagem de estoque continuarem
+  para Sobras, Tabelas de preço e a contagem de estoque continuarem
   agrupando certo;
 - **o salvamento deixou de sair de `select('*')`.** O corpo agora é uma lista
   explícita de colunas (`PRODUCT_SAVE_COLUMNS`, em

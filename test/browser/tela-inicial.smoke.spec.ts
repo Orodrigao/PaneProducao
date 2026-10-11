@@ -87,6 +87,13 @@ test('Geolar imprime e copia a folha de paes, sem bloco de Itens JC', async ({ p
   const prints = () => page.evaluate(() => (window as Window & { __prints?: number }).__prints)
   await expect.poll(prints).toBe(1)
 
+  // No papel fica a folha; a barra do topo e os botões somem.
+  await page.emulateMedia({ media: 'print' })
+  await expect(breadRow).toBeVisible()
+  await expect(page.locator('.topbar')).toBeHidden()
+  await expect(printBreads).toBeHidden()
+  await page.emulateMedia({ media: 'screen' })
+
   const copied = () => page.evaluate(() => (window as Window & { __copied?: string }).__copied ?? '')
   await page.getByRole('button', { name: '📋 Copiar texto' }).click()
   await expect.poll(copied).toContain(`${visualBreadName}  1+2+3`)

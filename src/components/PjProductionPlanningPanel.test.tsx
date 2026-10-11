@@ -74,13 +74,12 @@ describe('painel de programação PJ', () => {
 
   // Em 02/09/2026 a Geolar programou 10 linhas, clicou em "Imprimir paes" e
   // recebeu 24 paginas com a fila de pendencias, alguns pedidos de junho. O painel
-  // inteiro estava marcado como imprimivel, e a regra de impressao so sabe separar
-  // "paes" de "itens": ela nao tem como distinguir pendencia de producao do dia.
+  // inteiro estava marcado como imprimivel, e a impressao nao tem como distinguir
+  // pendencia de producao do dia: so o que esta fora de "no-print" vai ao papel.
   // Uma folha dessas pode fazer alguem assar pedido ja entregue e cobrado.
   it('fica de fora da impressao, porque mostra pendencia e nao a producao do dia', () => {
     expect(source).toContain('<section className="no-print"')
     expect(source).not.toContain('print-card')
-    expect(source).not.toContain('print-breads')
   })
 
   it('diz de onde vem o congelado oferecido, sem deixar o número solto', () => {
