@@ -25,6 +25,7 @@ import {
   buildPjPrintSheet,
   type PjProductionPrintSource,
 } from '@/lib/pjPrintSheet'
+import { createPjPrintLoadTracker } from '@/lib/pjPrintWait'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
 
@@ -1390,8 +1391,9 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
   const regularBreadIds = new Set(todayBds.map(bread => bread.id))
   const [pjPrintProduction, setPjPrintProduction] = useState<PjProductionPrintSource[]>([])
   const pjPrintRequestRef = useRef(0)
+  const [pjPrintLoads] = useState(createPjPrintLoadTracker)
 
-  const loadPjPrintProduction = useCallback(async () => {
+  const readPjPrintProduction = useCallback(async () => {
     const requestId = ++pjPrintRequestRef.current
     // A folha das lojas precisa continuar útil para quem não pode consultar a
     // programação PJ e também quando a rede falha. Por isso esta leitura é opcional.
@@ -1423,6 +1425,12 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
     }
   }, [])
 
+  // Registra cada leitura para o botão de imprimir esperar a mais recente.
+  const loadPjPrintProduction = useCallback(
+    () => pjPrintLoads.track(readPjPrintProduction()),
+    [pjPrintLoads, readPjPrintProduction],
+  )
+
   useEffect(() => {
     void loadPjPrintProduction()
   }, [loadPjPrintProduction])
@@ -1451,6 +1459,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
 
   // A impressão espera a folha redesenhar com a programação PJ recém-lida.
   const [printPending, setPrintPending] = useState(false)
+  const [preparingPrint, setPreparingPrint] = useState(false)
   useEffect(() => {
     if (!printPending) return
     window.print()
@@ -1458,7 +1467,12 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
   }, [printPending])
 
   const printBreads = async () => {
-    await loadPjPrintProduction()
+    setPreparingPrint(true)
+    void loadPjPrintProduction()
+    // Com a conexão parada sem erro, a leitura do PJ pode não terminar. Passado
+    // o prazo, a folha sai com o que já está na tela.
+    await pjPrintLoads.waitForLatest()
+    setPreparingPrint(false)
     setPrintPending(true)
   }
 
@@ -1532,7 +1546,9 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
 
         {/* Botões da lista de pães */}
         <div className="btn-row" style={{marginTop:10}}>
-          <button className="btn-save" disabled={!hasBreads} onClick={()=>void printBreads()}>🖨 Imprimir pães</button>
+          <button className="btn-save" disabled={!hasBreads || preparingPrint} onClick={()=>void printBreads()}>
+            {preparingPrint ? 'Preparando impressão…' : '🖨 Imprimir pães'}
+          </button>
           <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp()}>📋 Copiar texto</button>
         </div>
 
