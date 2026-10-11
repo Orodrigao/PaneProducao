@@ -64,7 +64,7 @@ incorporada à `main`.
   `Supabase_Leitura` (preso a produção, só ferramentas de leitura), as sessões
   do Claude tinham um conector `Supabase` com escrita que alcançava os três
   projetos da organização, produção (`PanePedidosLojas`) inclusive, com
-  "aplicar migration" e "rodar SQL". O conector da Vercel tinha criar deploy,
+  "aplicar migration" e "rodar SQL". O conector da Vercel podia criar deploy,
   promover, mexer em variável de ambiente, domínio e firewall. Não há registro
   de uso; a proibição era só regra escrita.
 - **No repositório:** `.claude/settings.json` nega ao Claude Code o conector

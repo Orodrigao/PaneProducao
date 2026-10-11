@@ -217,9 +217,15 @@ describe('regras: ponteiros e teto de tamanho', () => {
 // composto nem a remocao de `timeout`/variavel na frente, que o Claude Code faz
 // antes de comparar; por isso cada caso de Bash e um comando so. A prova real
 // fica na sessao de teste da PR.
-function bloqueiaPor(regras: string[], alvo: string): string | undefined {
+const regexDoPadrao = new Map<string, RegExp>()
+function comoRegex(padrao: string): RegExp {
   const escapar = (texto: string) => texto.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-  const comoRegex = (padrao: string) => new RegExp(`^${padrao.split('*').map(escapar).join('.*')}$`, 's')
+  const pronto = regexDoPadrao.get(padrao) ?? new RegExp(`^${padrao.split('*').map(escapar).join('.*')}$`, 's')
+  regexDoPadrao.set(padrao, pronto)
+  return pronto
+}
+
+function bloqueiaPor(regras: string[], alvo: string): string | undefined {
   return regras.find((regra) => {
     const bash = /^Bash\((.*)\)$/.exec(regra)
     if (bash) return alvo.startsWith('$ ') && comoRegex(bash[1]).test(alvo.slice(2))
@@ -271,8 +277,9 @@ describe('trava dos agentes', () => {
   })
 
   // Conectores do claude.ai chegam como `mcp__<Nome>__` na nuvem e como
-  // `mcp__claude_ai_<Nome>__` na maquina local. `OutroBanco` e nome inventado:
-  // prova a regra generica, que vale para qualquer conector.
+  // `mcp__claude_ai_<Nome>__` na maquina local; plugins chegam em minusculas
+  // (`mcp__plugin_vercel_vercel__`). `OutroBanco` e nome inventado: prova a
+  // regra generica, que vale para qualquer conector.
   const bloqueados = [
     'mcp__Supabase__execute_sql',
     'mcp__claude_ai_Supabase__apply_migration',
@@ -286,6 +293,7 @@ describe('trava dos agentes', () => {
     'mcp__OutroBanco__restore_project',
     ...VERCEL_BLOQUEADAS.map((nome) => `mcp__Vercel__${nome}`),
     ...VERCEL_FUTURAS.map((nome) => `mcp__Vercel__${nome}`),
+    ...[...VERCEL_BLOQUEADAS, ...VERCEL_FUTURAS].map((nome) => `mcp__plugin_vercel_vercel__${nome}`),
     'mcp__claude_ai_Vercel__create_deployment',
     '$ supabase db push --include-all',
     '$ supabase --debug db push',
@@ -336,6 +344,8 @@ describe('trava dos agentes', () => {
     'mcp__Vercel__get_runtime_logs',
     'mcp__Vercel__web_fetch_vercel_url',
     'mcp__Vercel__search_vercel_documentation',
+    'mcp__plugin_vercel_vercel__get_deployment',
+    'mcp__plugin_vercel_vercel__list_deployments',
     'mcp__github__create_pull_request',
     'mcp__github__merge_pull_request',
     '$ supabase db start',
@@ -365,13 +375,12 @@ describe('trava dos agentes', () => {
 
   // Apagar qualquer regra precisa reprovar: cada uma barra um caso que so ela barra.
   it('cada regra e a unica a barrar algum caso conhecido', () => {
-    const semCasoProprio = deny.filter(
-      (regra) =>
-        !bloqueados.some((alvo) => {
-          const quemBarra = deny.filter((outra) => bloqueiaPor([outra], alvo))
-          return quemBarra.length === 1 && quemBarra[0] === regra
-        }),
+    const unicaQueBarra = new Set(
+      bloqueados
+        .map((alvo) => deny.filter((regra) => bloqueiaPor([regra], alvo)))
+        .filter((quemBarra) => quemBarra.length === 1)
+        .map(([regra]) => regra),
     )
-    expect(semCasoProprio).toEqual([])
+    expect(deny.filter((regra) => !unicaQueBarra.has(regra))).toEqual([])
   })
 })
