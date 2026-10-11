@@ -227,12 +227,10 @@ h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; }
 .status-completed { background: #d4edda; color: var(--success); border: 1px solid #c3e6cb; }
 
 /* ── IMPRESSÃO ─────────────────────────────────────────────────── */
-/* Botões "Imprimir pães" / "Imprimir Itens JC" no Geolar aplicam .print-only-* no #app
-   pra imprimir só o card desejado. Esconde a UI (topbar, botões, date picker). */
+/* Na impressão some a interface (topbar, botões, seletor de data e o que for no-print);
+   no Geolar, "Imprimir pães" leva ao papel só as folhas. */
 @media print {
   .topbar, .btn-row, .nav-tabs, .no-print, .loading-overlay, .toast { display: none !important; }
-  #app.print-only-breads .print-itens { display: none !important; }
-  #app.print-only-itens  .print-breads { display: none !important; }
 }
 
 /* Relatório financeiro de contas a pagar — a tela é substituída por uma tabela A4. */

@@ -133,7 +133,7 @@ export function resolveIsRevenda(
 
 /**
  * Efeito de escolher uma categoria na tela. O texto legado passa a ser o nome
- * da categoria para Sobras, Itens JC, Tabelas de preço e a contagem de estoque,
+ * da categoria para Sobras, Tabelas de preço e a contagem de estoque,
  * que ainda leem `products.category`, continuarem agrupando certo.
  */
 export function applyCategoryChoice(

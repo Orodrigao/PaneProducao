@@ -18,7 +18,6 @@ import {
   type ProductionPlanStore,
 } from '@/lib/productionPlanning'
 import { supabase } from '@/lib/supabase'
-import { INSUMOS_CATEGORY, isSameProductCategory } from '@/lib/productCategories'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import { todayKey, showToast } from '@/lib/utils'
 import { bakeryDayKey, readBakeryClock, shiftDateKey } from '@/lib/bakeryClock'
@@ -33,18 +32,11 @@ const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:'Quinta',5:'Sexta',6:'Sábado'}
 const DELIVERY_MAP: Record<number,number> = {0:1,1:2,2:3,3:4,4:6,5:6,6:1}
 
-// Categorias de products que NAO entram em "Itens JC" (lista de producao nao-pao).
-// Insumos = ingredientes; Paes* = ja tem fluxo em /forno via tabela breads.
-// A comparacao ignora maiuscula e acento: "INSUMOS" e "Insumos" sao a mesma.
-const NON_PRODUCT_CATS = [INSUMOS_CATEGORY,'Pães Branco','Pães Integ.','Pães Recheados']
-
 type UserKey = ProductionHomeUserKey
 type Store = 'jc'|'ja'|'ex'|'pj'
 type Screen = 'init'|'login'|'main'|'geolar'
 
 interface Bread { id:string; name:string; days:any; active:boolean; is_pj:boolean }
-interface ProdItem { id:string; name:string; category:string; unit:string|null; is_loja?:boolean }
-interface ProdProductionRow { product_id:string; quantity:number; obs:string|null }
 interface OrderRow { store:string; bread_id:string; quantity:number; obs:string; pj_client?:string; pj_delivery_date?:string; order_date:string }
 type OrderMap = Record<string, Record<string, OrderRow>>
 type ModalMode = 'none'|'new-bread'|'edit-bread'|'confirm-delete'
@@ -133,9 +125,8 @@ async function sbGet(table:string, params='') {
   const r = await supabaseRestFetch(`${table}?${params}`)
   return r.json()
 }
-async function sbUpsert(table:string, data:any, onConflict?:string) {
-  const qs = onConflict ? `?on_conflict=${onConflict}` : ''
-  const r = await supabaseRestFetch(`${table}${qs}`, {
+async function sbUpsert(table:string, data:any) {
+  const r = await supabaseRestFetch(table, {
     method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=representation'}, body:JSON.stringify(data)
   })
   return r.json()
@@ -198,12 +189,6 @@ export default function ProducaoPage() {
   const [geolarReuseGate, setGeolarReuseGate] = useState<GeolarReuseGateState>({ status: 'loading', hasPendingProposal: false })
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
   const [geolarEnc, setGeolarEnc] = useState<{client:string;name:string;qty:number}[]>([])
-  // Itens JC (producao de nao-paes — bolos, salgados, doces, etc)
-  const [prodItems, setProdItems] = useState<ProdItem[]>([])
-  const [prodQtys, setProdQtys]   = useState<Record<string,number>>({})
-  const [prodObs, setProdObs]     = useState('')
-  const [prodDate, setProdDate]   = useState(todayKey())
-  const [prodSaving, setProdSaving] = useState(false)
   const geolarReuseRequestRef = useRef(0)
 
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
@@ -356,57 +341,6 @@ export default function ProducaoPage() {
     } catch { setGeolarEnc([]) }
   }, [])
 
-  // Itens JC — carregar produtos elegiveis (uma vez) + producao do dia
-  const loadProdItems = useCallback(async () => {
-    // O servidor ja corta os insumos (a maior parte do cadastro); o filtro
-    // normalizado pega o resto e qualquer variacao de maiuscula.
-    const rows: ProdItem[] = await sbGet('products', `active=eq.true&category=not.ilike.${encodeURIComponent(INSUMOS_CATEGORY)}&select=id,name,category,unit,is_loja&order=category.asc,name.asc`)
-    // Produto marcado Lojas já vai para a produção como pão (Planejamento,
-    // pedido das lojas e Forno); listá-lo aqui também pediria o mesmo item duas vezes.
-    const data = rows.filter(p => !p.is_loja && !NON_PRODUCT_CATS.some(c => isSameProductCategory(p.category, c)))
-    setProdItems(data)
-    return data
-  }, [])
-
-  const loadProdProduction = useCallback(async (dateKey: string, items: ProdItem[]) => {
-    const rows: ProdProductionRow[] = await sbGet('product_production', `store=eq.jc&production_date=eq.${dateKey}&select=product_id,quantity,obs`)
-    const qs: Record<string,number> = {}
-    items.forEach(p => { qs[p.id] = 0 })
-    let firstObs = ''
-    rows.forEach(r => {
-      qs[r.product_id] = Number(r.quantity) || 0
-      if (!firstObs && r.obs) firstObs = r.obs
-    })
-    setProdQtys(qs)
-    setProdObs(firstObs)
-  }, [])
-
-  const saveItensJC = async () => {
-    if (!prodItems.length) return
-    setProdSaving(true)
-    setSyncState('syncing')
-    try {
-      await sbDel('product_production', { store: 'jc', production_date: prodDate })
-      const rows = prodItems
-        .map(p => ({
-          store: 'jc',
-          product_id: p.id,
-          quantity: prodQtys[p.id] || 0,
-          production_date: prodDate,
-          obs: prodObs || null,
-        }))
-        .filter(r => r.quantity > 0)
-      if (rows.length > 0) {
-        await sbUpsert('product_production', rows, 'store,product_id,production_date')
-      }
-      setSyncState('')
-      showToast('Lista de itens salva!')
-    } catch(e) {
-      setSyncState('error')
-      showToast('Erro ao salvar. Tente novamente.')
-    } finally { setProdSaving(false) }
-  }
-
   const initOrderState = useCallback((map: OrderMap, bds: Bread[]) => {
     const newQtys: Record<string,number> = {}
     const newObs: Record<string,string> = {}
@@ -442,13 +376,7 @@ export default function ProducaoPage() {
         const map = await loadOrders(defDate)
         setGeolarOrders(map)
         setOrders(map)
-        // Carrega Itens JC pra mesma data — Geolar precisa ver não-pães também
-        try {
-          const items = await loadProdItems()
-          setProdDate(defDate)
-          await loadProdProduction(defDate, items)
-          await loadGeolarExtras(defDate)
-        } catch(e) { /* não bloqueia login */ }
+        await loadGeolarExtras(defDate)
         hideLoad()
         setScreen('geolar')
         return
@@ -461,13 +389,6 @@ export default function ProducaoPage() {
       await loadReuseContext(defDate)
       await loadProductionPlanForOrders(defDate)
       setActiveTab(0)
-      // Rodrigão: pré-carrega catálogo de Itens JC pra evitar lag ao clicar a aba
-      if (user === 'rodrigo') {
-        try {
-          const items = await loadProdItems()
-          await loadProdProduction(prodDate, items)
-        } catch(e) { /* não bloqueia login */ }
-      }
       hideLoad()
       setScreen('main')
     } catch(e) {
@@ -743,7 +664,6 @@ export default function ProducaoPage() {
   // ── geolar ───────────────────────────────────────────────────────
   const loadGeolar = async (dateKey: string) => {
     setGeolarDate(dateKey)
-    setProdDate(dateKey)
     showLoad('Carregando produção...')
     try {
       await loadGeolarReuseGate(dateKey)
@@ -751,51 +671,31 @@ export default function ProducaoPage() {
       const map = await loadOrders(dateKey)
       setGeolarOrders(map)
       setOrders(map)
-      // Recarrega Itens JC pra mesma data
-      const items = await loadProdItems()
-      await loadProdProduction(dateKey, items)
       await loadGeolarExtras(dateKey)
     } catch(e) { showToast('Erro ao carregar.') }
     finally { hideLoad() }
   }
 
-  const generateWhatsApp = (ordMap: OrderMap, scope: 'all'|'breads'|'itens' = 'all', selectedDate?: string) => {
+  const generateWhatsApp = (ordMap: OrderMap, selectedDate?: string) => {
     const stores: Store[] = ['ex','jc','ja']
     const dLabel = selectedDate ? dateLabel(selectedDate) : deliveryDayLabel(delivIdx)
     const lines: string[] = []
-    if (scope !== 'itens') {
-      const bds = breads.filter(b=>!b.is_pj&&b.active)
-      lines.push(`*Pane & Salute — Produção ${dLabel}*\n`)
-      bds.forEach(b => {
-        const vals = stores.map(s => ordMap[s]?.[b.id]?.quantity || 0)
-        if (vals.reduce((a,c)=>a+c,0) > 0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`)
-      })
-      const oEX = Object.values(ordMap['ex']||{})[0]?.obs
-      const oJC = Object.values(ordMap['jc']||{})[0]?.obs
-      const oJA = Object.values(ordMap['ja']||{})[0]?.obs
-      if (oEX||oJC||oJA) { lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`) }
-      const pjSv = ordMap['pj'] || {}
-      const pjItems = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
-      if (pjItems.length) {
-        const fr = Object.values(pjSv)[0] as any
-        lines.push(''); lines.push(`*PJ — ${fr?.pj_client||'—'} · ${fr?.pj_delivery_date||'—'}*`)
-        pjItems.forEach(p => lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`))
-      }
-    }
-    // Itens JC (não-pães) — só inclui se algum tem qty > 0
-    if (scope !== 'breads') {
-      const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
-      if (itensWithQty.length) {
-        const groupedJC: Record<string, ProdItem[]> = {}
-        itensWithQty.forEach(p => { (groupedJC[p.category] ??= []).push(p) })
-        if (lines.length) lines.push('')
-        lines.push(`*Itens JC — Produção*`)
-        Object.keys(groupedJC).forEach(cat => {
-          lines.push(`_${cat}_`)
-          groupedJC[cat].forEach(p => lines.push(`${p.name}: ${prodQtys[p.id]||0}`))
-        })
-        if (prodObs) lines.push(`📝 ${prodObs}`)
-      }
+    const bds = breads.filter(b=>!b.is_pj&&b.active)
+    lines.push(`*Pane & Salute — Produção ${dLabel}*\n`)
+    bds.forEach(b => {
+      const vals = stores.map(s => ordMap[s]?.[b.id]?.quantity || 0)
+      if (vals.reduce((a,c)=>a+c,0) > 0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`)
+    })
+    const oEX = Object.values(ordMap['ex']||{})[0]?.obs
+    const oJC = Object.values(ordMap['jc']||{})[0]?.obs
+    const oJA = Object.values(ordMap['ja']||{})[0]?.obs
+    if (oEX||oJC||oJA) { lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`) }
+    const pjSv = ordMap['pj'] || {}
+    const pjItems = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
+    if (pjItems.length) {
+      const fr = Object.values(pjSv)[0] as any
+      lines.push(''); lines.push(`*PJ — ${fr?.pj_client||'—'} · ${fr?.pj_delivery_date||'—'}*`)
+      pjItems.forEach(p => lines.push(`${p.name}: ${pjSv[p.id]?.quantity||0}`))
     }
     const text = lines.join('\n')
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(()=>showToast('Copiado! Cole no WhatsApp.')).catch(()=>prompt('Copie:',text))
@@ -811,23 +711,12 @@ export default function ProducaoPage() {
   }
 
   const tabDefs = currentUser === 'rodrigo'
-    ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Itens JC',store:null},{label:'Relatório',store:null},{label:'Admin',store:null}]
+    ? [{label:'JC',store:'jc'},{label:'JA',store:'ja'},{label:'Relatório',store:null},{label:'Admin',store:null}]
     : currentUser === 'marselle'
     ? [{label:'Loja EX',store:'ex'},{label:'Histórico',store:null}]
     : currentUser === 'gustavo'
     ? [{label:'Loja JC',store:'jc'},{label:'Histórico',store:null}]
     : [{label:'Histórico',store:null}]  // Elis: pedidos PJ migraram pro módulo dedicado /pedidos-pj
-
-  const changeProdDate = async (newDate: string) => {
-    setProdDate(newDate)
-    showLoad('Carregando lista...')
-    try {
-      await loadProdProduction(newDate, prodItems)
-    } catch(e) { showToast('Erro ao carregar.') }
-    finally { hideLoad() }
-  }
-  const setProdQty = (id: string, val: number) => setProdQtys(prev => ({ ...prev, [id]: Math.max(0, val) }))
-  const calcProdTotal = () => prodItems.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
 
   // ── histórico: carrega ao abrir a aba e a cada troca de data ──────
   const reportTabLabel = tabDefs[activeTab]?.label
@@ -879,10 +768,9 @@ export default function ProducaoPage() {
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
       enc={geolarEnc}
       delivIdx={delivIdx}
-      prodItems={prodItems} prodQtys={prodQtys} prodObs={prodObs}
       reuseGate={geolarReuseGate}
       onDateChange={loadGeolar}
-      onWhatsApp={(scope)=>generateWhatsApp(geolarOrders, scope, geolarDate)}
+      onWhatsApp={()=>generateWhatsApp(geolarOrders, geolarDate)}
       onOpenPending={()=>router.push(`/sobras/pendencias?date=${encodeURIComponent(geolarDate)}&store=jc`)}
       onRefreshReuse={()=>void loadGeolarReuseGate(geolarDate)}
       onLogout={logout}
@@ -895,7 +783,6 @@ export default function ProducaoPage() {
   const isOrderTab = activeStore === 'jc' || activeStore === 'ja' || activeStore === 'ex' || activeStore === 'pj'
   const isReportTab = reportTabActive
   const isAdminTab = tabDefs[activeTab]?.label === 'Admin'
-  const isItensTab = tabDefs[activeTab]?.label === 'Itens JC'
   const planningImport = (activeStore === 'jc' || activeStore === 'ja') && productionPlanForOrder?.productionDate === orderDate
     && storeNeedsOrderConversion(productionPlanForOrder.items, activeStore)
     ? {
@@ -1007,17 +894,6 @@ export default function ProducaoPage() {
               onWhatsApp={()=>generateWhatsApp(orders)}
             />
           )}
-          {isItensTab && (
-            <ItensJCForm
-              prodItems={prodItems}
-              prodQtys={prodQtys}
-              prodObs={prodObs}
-              prodDate={prodDate}
-              onDateChange={changeProdDate}
-              onQtyChange={setProdQty}
-              onObsChange={setProdObs}
-            />
-          )}
         </div>
 
         {/* Barra de total */}
@@ -1026,14 +902,6 @@ export default function ProducaoPage() {
             <div className="ps-total-num"><b>{calcTotal(activeStore as Store)}</b><span>unidades</span></div>
             <button className="ps-save" disabled={saving} onClick={()=>saveOrder(activeStore as Store)}>
               <Save size={19} strokeWidth={1.85}/>{saving ? 'Salvando...' : activeStore==='pj'?'Salvar pedido PJ':'Salvar pedido'}
-            </button>
-          </div>
-        )}
-        {isItensTab && (
-          <div className="ps-totalbar">
-            <div className="ps-total-num"><b>{calcProdTotal()}</b><span>unidades</span></div>
-            <button className="ps-save" disabled={prodSaving} onClick={saveItensJC}>
-              <Save size={19} strokeWidth={1.85}/>{prodSaving ? 'Salvando...' : 'Salvar lista'}
             </button>
           </div>
         )}
@@ -1508,80 +1376,15 @@ function BreadFormModal({ editingBread, form, onChange, onSave, onCancel, saving
   )
 }
 
-interface ItensJCFormProps {
-  prodItems: ProdItem[]
-  prodQtys: Record<string, number>
-  prodObs: string
-  prodDate: string
-  onDateChange: (d: string) => void
-  onQtyChange: (id: string, val: number) => void
-  onObsChange: (obs: string) => void
-}
-
-function ItensJCForm({ prodItems, prodQtys, prodObs, prodDate, onDateChange, onQtyChange, onObsChange }: ItensJCFormProps) {
-  // Agrupa por categoria preservando ordem alfabética (do query)
-  const grouped = prodItems.reduce<Record<string, ProdItem[]>>((acc, p) => {
-    (acc[p.category] ??= []).push(p)
-    return acc
-  }, {})
-  const cats = Object.keys(grouped) // já ordenado pela query
-  const isToday = prodDate === todayKey()
-
-  return (
-    <div className="ps-fadein">
-      <div className="ps-label">Data de produção</div>
-      <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <input type="date" value={prodDate} className="ps-input" onChange={e=>onDateChange(e.target.value)}/>
-        {isToday && <span style={{fontSize:11,color:'var(--sage)',background:'var(--honey-tint)',border:'1px solid var(--honey-line)',padding:'3px 10px',borderRadius:999,fontWeight:700}}>hoje</span>}
-      </div>
-
-      {prodItems.length === 0 ? (
-        <div className="ps-empty">Nenhum produto ativo no catálogo (categorias não-pão).</div>
-      ) : cats.map(cat => (
-        <div key={cat}>
-          <div className="ps-section">
-            <div className="bar"/>
-            <b>{cat}</b>
-            <span className="meta">{grouped[cat].length} {grouped[cat].length===1?'item':'itens'}</span>
-          </div>
-          <div className="ps-grid">
-            {grouped[cat].map(p => {
-              const val = prodQtys[p.id] || 0
-              return (
-                <div key={p.id} className={'ps-card'+(val>0?' active':'')}>
-                  <div className="ps-card-head">
-                    <div className="ps-pname">{p.name}</div>
-                    {p.unit && <div className="ps-pdays"><span className="ps-pday">{p.unit}</span></div>}
-                  </div>
-                  <div className="ps-stepper">
-                    <button className="ps-step" disabled={val<=0} onClick={()=>onQtyChange(p.id, val-1)} aria-label="Diminuir"><Minus size={20} strokeWidth={1.85}/></button>
-                    <input className={'ps-qty'+(val===0?' zero':'')} type="number" inputMode="numeric" min={0} value={val || ''} placeholder="0"
-                      onChange={e=>onQtyChange(p.id, parseInt(e.target.value) || 0)}/>
-                    <button className="ps-step" onClick={()=>onQtyChange(p.id, val+1)} aria-label="Aumentar"><Plus size={20} strokeWidth={1.85}/></button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-
-      <div className="ps-label">Observações</div>
-      <textarea className="ps-textarea" placeholder="Notas para a equipe de produção..." value={prodObs} onChange={e=>onObsChange(e.target.value)}/>
-    </div>
-  )
-}
-
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
   enc:{client:string;name:string;qty:number}[]
-  prodItems:ProdItem[]; prodQtys:Record<string,number>; prodObs:string
   reuseGate:GeolarReuseGateState
-  onDateChange:(d:string)=>void; onWhatsApp:(scope:'all'|'breads'|'itens')=>void; onOpenPending:()=>void; onRefreshReuse:()=>void; onLogout:()=>void
+  onDateChange:(d:string)=>void; onWhatsApp:()=>void; onOpenPending:()=>void; onRefreshReuse:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, prodQtys, prodObs, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   const regularBreadIds = new Set(todayBds.map(bread => bread.id))
@@ -1644,20 +1447,19 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
 
   const dLabel = (() => { const d=new Date(geolarDate+'T12:00:00'); return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'}) })()
 
-  const itensWithQty = prodItems.filter(p => (prodQtys[p.id] || 0) > 0)
   const hasBreads = printRows.length > 0
 
-  // Impressão de listas separadas: aplica classe no #app que oculta o outro card via @media print
-  const [printScope, setPrintScope] = useState<''|'breads'|'itens'>('')
+  // A impressão espera a folha redesenhar com a programação PJ recém-lida.
+  const [printPending, setPrintPending] = useState(false)
   useEffect(() => {
-    if (!printScope) return
+    if (!printPending) return
     window.print()
-    setPrintScope('')
-  }, [printScope])
+    setPrintPending(false)
+  }, [printPending])
 
   const printBreads = async () => {
     await loadPjPrintProduction()
-    setPrintScope('breads')
+    setPrintPending(true)
   }
 
   if (reuseGate.status !== 'ready' || reuseGate.hasPendingProposal) {
@@ -1693,7 +1495,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
   }
 
   return (
-    <div id="app" className={printScope==='breads' ? 'print-only-breads' : printScope==='itens' ? 'print-only-itens' : ''}>
+    <div id="app">
       <div className="topbar">
         <div className="topbar-logo" onClick={onLogout} style={{cursor:'pointer'}}>Pane &amp; Salute</div>
         <span className="topbar-badge tb-gray">Geolar</span>
@@ -1708,7 +1510,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
           Conferir sobras e reaproveitamento
         </button>
 
-        <div className="print-card print-breads">
+        <div className="print-card">
           <h3>Pane &amp; Salute — Produção</h3>
           <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
           <div className="print-row print-row-pj ph"><span>Produto</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
@@ -1731,12 +1533,12 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
         {/* Botões da lista de pães */}
         <div className="btn-row" style={{marginTop:10}}>
           <button className="btn-save" disabled={!hasBreads} onClick={()=>void printBreads()}>🖨 Imprimir pães</button>
-          <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp('breads')}>📋 Copiar texto</button>
+          <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp()}>📋 Copiar texto</button>
         </div>
 
         {/* Encomendas marcadas pra produção neste dia */}
         {enc.length > 0 && (
-          <div className="print-card print-breads" style={{marginTop:16}}>
+          <div className="print-card" style={{marginTop:16}}>
             <h3>🎂 Encomendas a produzir</h3>
             <div className="pmeta">Para {dLabel}</div>
             {Array.from(new Set(enc.map(e=>e.client))).map(client => (
@@ -1753,45 +1555,6 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, prodItems, pr
         )}
 
         <PjProductionPlanningPanel />
-
-        {/* Print-card: Itens JC (não-pães) — só renderiza se há items planejados pra esta data */}
-        {(() => {
-          if (!itensWithQty.length) return null
-          const grouped: Record<string, ProdItem[]> = {}
-          itensWithQty.forEach(p => { (grouped[p.category] ??= []).push(p) })
-          const cats = Object.keys(grouped)
-          const totalQty = itensWithQty.reduce((a, p) => a + (prodQtys[p.id] || 0), 0)
-          return (
-            <div className="print-card print-itens" style={{marginTop:16}}>
-              <h3>Itens JC — Produção</h3>
-              <div className="pmeta">Para {dLabel} · {totalQty} unidades</div>
-              {cats.map(cat => (
-                <div key={cat} style={{marginTop:10}}>
-                  <div style={{fontSize:12,fontWeight:600,color:'var(--text-muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:'.04em'}}>{cat}</div>
-                  {grouped[cat].map(p => (
-                    <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:13}}>
-                      <span>{p.name}</span>
-                      <strong>{prodQtys[p.id]}</strong>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {prodObs && (
-                <div style={{marginTop:10,fontSize:12,color:'var(--text-muted)',padding:'8px 10px',background:'var(--amber-bg)',borderRadius:'var(--radius-sm)'}}>
-                  📝 {prodObs}
-                </div>
-              )}
-            </div>
-          )
-        })()}
-
-        {/* Botões da lista de Itens JC */}
-        {itensWithQty.length > 0 && (
-          <div className="btn-row" style={{marginTop:10}}>
-            <button className="btn-save" onClick={()=>setPrintScope('itens')}>🖨 Imprimir Itens JC</button>
-            <button className="btn-action" onClick={()=>onWhatsApp('itens')}>📋 Copiar texto</button>
-          </div>
-        )}
 
         <div className="btn-row" style={{marginTop:16}}>
           <button className="btn-action" onClick={()=>onDateChange(geolarDate)}>↻ Atualizar</button>
