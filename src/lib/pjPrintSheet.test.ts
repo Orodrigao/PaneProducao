@@ -50,7 +50,7 @@ describe('folha de pães com produção PJ', () => {
 
   it('faz o texto copiado pela Geolar usar a mesma data exibida na folha', () => {
     expect(productionPageSource).toContain(
-      'generateWhatsApp(geolarOrders, scope, geolarDate)',
+      'generateWhatsApp(geolarOrders, geolarDate)',
     )
     expect(productionPageSource).toContain(
       'const dLabel = selectedDate ? dateLabel(selectedDate) : deliveryDayLabel(delivIdx)',

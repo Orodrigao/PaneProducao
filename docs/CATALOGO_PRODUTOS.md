@@ -187,7 +187,7 @@ sobre um recorte menor e com a estrutura pronta para receber.
 ### Fase 4 — Aposentar a categoria em texto livre
 
 Só depois de a 2B estar no ar e de nenhuma tela depender mais do texto livre.
-Hoje Sobras, Itens JC, Tabelas de preço e a contagem de estoque ainda leem
+Hoje Sobras, Tabelas de preço e a contagem de estoque ainda leem
 `products.category`. Remoção de coluna em uso é
 mudança destrutiva e segue a regra de duas fases do AGENTS.md: primeiro o site
 para de usar, em um PR, depois o banco remove, em outro.

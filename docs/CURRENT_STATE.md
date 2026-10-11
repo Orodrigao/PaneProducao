@@ -565,13 +565,12 @@ tocado. Produto que já tem variação, programação PJ, produção de forno ou
 estoque no próprio nome não é ligado pela tela, porque o Forno e o estoque
 passariam a gravar no pão e o histórico partiria em dois; essa passagem fica
 para uma correção administrativa. A aba Admin da tela inicial ficou só de
-consulta para os pães das lojas, e a lista Itens JC deixou de mostrar produto
-marcado Lojas. O pão nasce com a unidade e o custo do produto; depois disso,
+consulta para os pães das lojas. O pão nasce com a unidade e o custo do produto; depois disso,
 unidade, peso médio, prateleira e custo continuam sendo do pão. A cópia de
 produto (`duplicate_product_complete`) não leva a marcação: a cópia nasce fora
 das lojas.
 
-O texto livre continua em uso em Sobras, Itens JC, Tabelas de preço e na
+O texto livre continua em uso em Sobras, Tabelas de preço e na
 contagem de estoque, e só sai de cena na fase 4. Falta ainda quebrar os 340
 insumos em famílias reais (fase 3) e os relatórios por família (fase 5); nesses
 relatórios, soma por tipo de item precisa excluir `kind = 'kit'`, senão conta o
@@ -598,6 +597,13 @@ Produto inativado depois de um pedido aceito continua atendível, com aviso; a
 inativação impede novos pedidos, não apaga o compromisso existente. A
 classificação não gera ordens de componentes ou semiacabados e nenhum lançamento
 da Cozinha movimenta estoque nesta fase.
+
+Produto de forno chega às lojas pela marcação **Lojas** (seção do catálogo
+acima). Produto de montagem ou preparo não tem pedido das lojas: a Cozinha só
+recebe a programação PJ e o lançamento livre. A aba "Itens JC" da tela inicial,
+lista manual dos não-pães da JC, saiu em 11/10/2026; não tinha lançamento desde
+16/06/2026 e apagava ao salvar o dia as linhas de produto que ela não mostrava.
+As 36 linhas antigas de `product_production` ficam no banco, sem tela.
 
 ### CNM
 
