@@ -223,16 +223,25 @@ test('Geolar nao imprime o aviso de sobras quando a conferencia abre durante a e
   // Esgotado o prazo do PJ, nada vai para a impressora e o motivo fica escrito.
   // Soft: no código antigo o aviso não existe, e o relatório ainda mostra que o
   // aviso de bloqueio foi impresso, que é o defeito que este roteiro guarda.
-  const cancelled = page.getByRole('status').filter({ hasText: 'A impressão dos pães não saiu' })
+  const cancelled = page.getByRole('status').filter({ hasText: 'A impressão dos pães foi cancelada' })
   await expect.soft(cancelled).toBeVisible({ timeout: 15_000 })
   expect(await printCount(page)).toBe(0)
   expect(pj.calls).toBe(1)
 
   // Com a lista liberada de novo, o aviso continua até a próxima tentativa,
-  // não vai para o papel, e imprimir volta a funcionar.
+  // não vai para o papel, e imprimir volta a funcionar. A outra data tem
+  // pedidos diferentes (2+3+4) para provar que a folha nova terminou de chegar.
   gate.pending = false
+  await page.route('**/rest/v1/orders*', route => {
+    if (!decodeURIComponent(route.request().url()).includes('order_date=eq.2000-01-03')) return route.fallback()
+    return route.fulfill({
+      json: (['ex', 'jc', 'ja'] as const).map((store, index) => ({
+        store, bread_id: visualBreadId, quantity: index + 2, obs: '', order_date: '2000-01-03',
+      })),
+    })
+  })
   await page.locator('input[type="date"]').fill('2000-01-03')
-  await expect(breadTotal).toHaveText('11 (5 PJ)')
+  await expect(breadTotal).toHaveText('14 (5 PJ)')
   await expect(cancelled).toBeVisible()
   await page.emulateMedia({ media: 'print' })
   await expect(cancelled).toBeHidden()
@@ -240,7 +249,14 @@ test('Geolar nao imprime o aviso de sobras quando a conferencia abre durante a e
 
   await printBreads.click()
   await expect(cancelled).toBeHidden()
-  await expect.poll(() => printCount(page), { timeout: 3_000 }).toBe(1)
+  await expect.poll(() => printCount(page)).toBe(1)
   expect(pj.calls).toBe(2)
-  expect(await printedTotals(page)).toEqual(['14 (8 PJ)'])
+  expect(await printedTotals(page)).toEqual(['17 (8 PJ)'])
+
+  // A leitura do PJ que travou, quando enfim responde, é descartada e não
+  // imprime de novo.
+  pj.release()
+  await page.waitForTimeout(1_000)
+  await expect(breadTotal).toHaveText('17 (8 PJ)')
+  expect(await printCount(page)).toBe(1)
 })

@@ -1475,7 +1475,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
 
   const printCancelledNotice = printCancelled && (
     <div className="ps-card no-print" role="status" style={{marginTop:12,borderColor:'var(--honey-line)',background:'var(--honey-tint)',fontSize:13}}>
-      A impressão dos pães não saiu: a conferência de sobras abriu enquanto a folha era preparada. Quando a lista estiver liberada, toque em Imprimir pães de novo.
+      A impressão dos pães foi cancelada porque a lista de produção ficou bloqueada enquanto a folha era preparada. Quando ela estiver liberada, toque em Imprimir pães de novo.
     </div>
   )
 
