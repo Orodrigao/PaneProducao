@@ -6,10 +6,10 @@ import { cabecalhosDaSessao, entrarComo, hojeNaPadaria, matriz } from './apoio/e
 // total do Planejamento e mandou separar 8. Agora o pao novo vem do pedido, mesmo
 // editado depois; do Planejamento ficam so congelado e sobra, e o cartao do pao
 // avisa que o pedido difere do Planejamento. Rascunho salvo no aparelho tambem
-// rele o pedido ao ser recuperado.
+// rele o pedido ao ser recuperado e nao fecha se essa leitura falhar.
 //
 // O Administrador monta o caso num dia livre: Planejamento com 10 Baguetes da JC,
-// pedido gerado pelo proprio Planejamento e depois editado para 4 e para 6. A
+// pedido gerado pelo proprio Planejamento e depois editado para 4, 6 e 5. A
 // Expedicao JC confere a tela. No fim o Administrador apaga pedido e Planejamento.
 
 const MARCA = `[TESTE] Romaneio pedido editado ${Date.now().toString(36)}`
@@ -65,14 +65,14 @@ test('Expedicao JC separa o pedido editado depois do Planejamento e ve o aviso',
         expect(await editar.json(), 'o pedido editado e uma linha').toHaveLength(1)
       }
 
-      const plano = await admin.request.post(`${rest}/production_plans`, {
-        headers: { ...cabecalhos, Prefer: 'return=representation' },
-        data: { production_date: dia, status: 'rascunho', created_by_name: MARCA },
-        maxRedirects: 0,
-      })
-      expect(plano.status(), await plano.text()).toBe(201)
-
+      // Tudo que grava fica dentro do try: a limpeza apaga pelo dia, livre no inicio.
       try {
+        const plano = await admin.request.post(`${rest}/production_plans`, {
+          headers: { ...cabecalhos, Prefer: 'return=representation' },
+          data: { production_date: dia, status: 'rascunho', created_by_name: MARCA },
+          maxRedirects: 0,
+        })
+        expect(plano.status(), await plano.text()).toBe(201)
         const [{ id: planoId }] = await plano.json() as Array<{ id: string }>
         const item = await admin.request.post(`${rest}/production_plan_items`, {
           headers: cabecalhos,
@@ -134,14 +134,43 @@ test('Expedicao JC separa o pedido editado depois do Planejamento e ve o aviso',
         await expect(cartao.getByText(/Pão novo: 6 un/)).toBeVisible()
         await expect(cartao.getByRole('note'))
           .toHaveText('Pedido diferente do Planejamento: pão novo planejado 10 un.')
+
+        // Pedido muda para 5 e a leitura do pedido falha ao recuperar o rascunho:
+        // aviso fixo, o romaneio nao fecha com a meta antiga e "Tentar de novo"
+        // traz o pedido atual sem perder o que foi digitado.
+        await editarPedido(5)
+        const pedidosDaLoja = (endereco: URL) => endereco.pathname.endsWith('/rest/v1/orders')
+        await page.route(pedidosDaLoja, rota => rota.abort('failed'))
+        await page.goto('/romaneio')
+        await page.getByRole('button', { name: 'Novo Romaneio' }).click({ timeout: 60_000 })
+        const semAtualizar = page.locator('.ps-banner.crust', { hasText: 'Não foi possível atualizar o pedido desta loja.' })
+        await expect(semAtualizar).toBeVisible({ timeout: 60_000 })
+        // O aparelho guardou o rascunho de quando o pedido era 4.
+        await expect(cartao.getByText('1 de 4 (faltam 3)'), 'sem atualizar, a meta antiga fica marcada pelo aviso').toBeVisible()
+        await page.getByRole('button', { name: 'Fechar', exact: true }).click()
+        await expect(page.getByText('Atualize o pedido desta loja antes de fechar o romaneio')).toBeVisible()
+        const romaneiosDoDia = await admin.request.get(`${rest}/romaneios?record_date=eq.${dia}&select=id`, {
+          headers: cabecalhos, maxRedirects: 0,
+        })
+        expect(romaneiosDoDia.status(), await romaneiosDoDia.text()).toBe(200)
+        expect(await romaneiosDoDia.json(), 'o romaneio nao fecha sem atualizar o pedido').toEqual([])
+
+        await page.unroute(pedidosDaLoja)
+        await semAtualizar.getByRole('button', { name: 'Tentar de novo' }).click()
+        await expect(semAtualizar).toHaveCount(0, { timeout: 60_000 })
+        await expect(cartao.getByText('1 de 5 (faltam 4)'), 'depois de atualizar vale o pedido atual').toBeVisible()
       } finally {
         // Limpezas independentes: falhar uma nao impede a outra.
         const falhas: string[] = []
         await semFalha('apagar pedido', admin.request.delete(pedidoDoPao, { headers: cabecalhos, maxRedirects: 0 }), falhas)
         await semFalha('apagar planejamento', admin.request.delete(planosDoDia, { headers: cabecalhos, maxRedirects: 0 }), falhas)
         for (const [nome, endereco] of [['pedido', `${pedidoDoPao}&select=id`], ['planejamento', `${planosDoDia}&select=id`]]) {
-          const sobra = await admin.request.get(endereco, { headers: cabecalhos, maxRedirects: 0 })
-          if (sobra.status() !== 200 || (await sobra.json() as unknown[]).length > 0) falhas.push(`${nome} continua no dia ${dia}`)
+          try {
+            const sobra = await admin.request.get(endereco, { headers: cabecalhos, maxRedirects: 0 })
+            if (sobra.status() !== 200 || (await sobra.json() as unknown[]).length > 0) falhas.push(`${nome} continua no dia ${dia}`)
+          } catch (erro) {
+            falhas.push(`conferir ${nome}: ${erro instanceof Error ? erro.message : String(erro)}`)
+          }
         }
         expect(falhas, 'a limpeza desta execucao precisa terminar').toEqual([])
       }

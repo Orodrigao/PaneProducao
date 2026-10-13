@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildRomaneioProductOptions,
+  compositionsFollowingOrder,
   exceedsRomaneioWeightLimit,
   filterPendingRomaneioBreads,
   filterCatalogBreadsForSearch,
@@ -14,7 +15,10 @@ import {
   romaneioEmptyDraftReason,
   romaneioExcessOverRequestedQty,
   parseRomaneioQty,
+  romaneioOrderDiffersFromPlan,
   romaneioOrderProgressLabel,
+  romaneioRequestedQuantities,
+  restoreRomaneioDraft,
   sentQuantitiesByProductId,
 } from './romaneioDraft'
 
@@ -143,6 +147,129 @@ describe('romaneioDraft', () => {
       ['ciabatta'],
       [],
     )).toEqual(['baguete', 'ciabatta'])
+  })
+
+  // 08/10/2026: o pedido da JC baixou o gorgonzola de 8 para 4 depois de gerado
+  // pelo Planejamento; Producao, Forno e Geolar mostraram 4 e o Romaneio pediu 8.
+  it('segue o pedido editado depois do Planejamento e guarda o pao novo planejado', () => {
+    const compositions = compositionsFollowingOrder(
+      { gorgonzola: { total: 8, newQuantity: 8, leftoverQuantity: 0, frozenQuantity: 0 } },
+      { gorgonzola: 4 },
+    )
+
+    expect(compositions.gorgonzola).toEqual({
+      total: 4, newQuantity: 4, leftoverQuantity: 0, frozenQuantity: 0, plannedNewQuantity: 8,
+    })
+    expect(romaneioRequestedQuantities({ gorgonzola: 4 }, compositions)).toEqual({ gorgonzola: 4 })
+    expect(romaneioOrderDiffersFromPlan(compositions.gorgonzola)).toBe(true)
+  })
+
+  it('soma congelado e sobra ao pedido: sem edicao, a meta e o planejado', () => {
+    const planejado = { baguete: { total: 10, newQuantity: 3, leftoverQuantity: 2, frozenQuantity: 5 } }
+
+    const semEdicao = compositionsFollowingOrder(planejado, { baguete: 3 })
+    expect(romaneioRequestedQuantities({ baguete: 3 }, semEdicao)).toEqual({ baguete: 10 })
+    expect(romaneioOrderDiffersFromPlan(semEdicao.baguete)).toBe(false)
+
+    const editado = compositionsFollowingOrder(planejado, { baguete: 1 })
+    expect(romaneioRequestedQuantities({ baguete: 1 }, editado)).toEqual({ baguete: 8 })
+    expect(editado.baguete).toMatchObject({ newQuantity: 1, frozenQuantity: 5, leftoverQuantity: 2 })
+  })
+
+  it('loja so com congelado e sobra, sem pedido, continua com a meta do Planejamento', () => {
+    const compositions = compositionsFollowingOrder(
+      { ciabatta: { total: 10, newQuantity: 0, leftoverQuantity: 2, frozenQuantity: 8 } },
+      {},
+    )
+
+    expect(romaneioRequestedQuantities({}, compositions)).toEqual({ ciabatta: 10 })
+    expect(romaneioOrderDiffersFromPlan(compositions.ciabatta)).toBe(false)
+  })
+
+  it('pao tirado do pedido sai da meta; pao pedido fora do Planejamento fica com o pedido', () => {
+    const pedido = { rugbrod: 5, sarraceno: 4 }
+    const compositions = compositionsFollowingOrder({
+      multi: { total: 16, newQuantity: 16, leftoverQuantity: 0, frozenQuantity: 0 },
+      rugbrod: { total: 0, newQuantity: 0, leftoverQuantity: 0, frozenQuantity: 0 },
+    }, pedido)
+
+    expect(romaneioRequestedQuantities(pedido, compositions)).toEqual({ rugbrod: 5, sarraceno: 4 })
+    expect(compositions.multi).toMatchObject({ total: 0, newQuantity: 0, plannedNewQuantity: 16 })
+    expect(romaneioOrderDiffersFromPlan(compositions.multi)).toBe(true)
+    expect(romaneioOrderDiffersFromPlan(compositions.rugbrod)).toBe(true)
+  })
+
+  it('reaplicar o pedido numa composicao ja ajustada nao perde o pao novo planejado', () => {
+    const ajustada = compositionsFollowingOrder(
+      { gorgonzola: { total: 8, newQuantity: 8, leftoverQuantity: 0, frozenQuantity: 0 } },
+      { gorgonzola: 4 },
+    )
+
+    expect(compositionsFollowingOrder(ajustada, { gorgonzola: 4 }).gorgonzola.plannedNewQuantity).toBe(8)
+    expect(romaneioOrderDiffersFromPlan(undefined)).toBe(false)
+    expect(romaneioOrderDiffersFromPlan({ total: 8, newQuantity: 8, leftoverQuantity: 0, frozenQuantity: 0 })).toBe(false)
+  })
+
+  // Seed do proximo dia: 10 baguetes, 5 congeladas e 2 sobras propostas ainda
+  // nao conferidas; o pedido gerado tem 3. A composicao so conta sobra conferida.
+  it('sobra proposta e ainda nao conferida fica fora da meta e aparece como diferenca', () => {
+    const compositions = compositionsFollowingOrder(
+      { baguete: { total: 10, newQuantity: 5, leftoverQuantity: 0, frozenQuantity: 5 } },
+      { baguete: 3 },
+    )
+
+    expect(romaneioRequestedQuantities({ baguete: 3 }, compositions)).toEqual({ baguete: 8 })
+    expect(romaneioOrderDiffersFromPlan(compositions.baguete)).toBe(true)
+  })
+
+  it('pao tirado do pedido continua na lista, sem meta, para o aviso aparecer', () => {
+    const compositions = compositionsFollowingOrder(
+      { multi: { total: 16, newQuantity: 16, leftoverQuantity: 0, frozenQuantity: 0 } },
+      {},
+    )
+    const requested = romaneioRequestedQuantities({}, compositions)
+
+    expect(requested).toEqual({})
+    expect(filterPendingRomaneioBreads([{ id: 'multi', name: 'Multi' }], requested, {}))
+      .toEqual([{ id: 'multi', name: 'Multi' }])
+  })
+
+  it('rascunho recuperado mantem o que foi digitado e pega pedido e composicao atuais', () => {
+    const salvo = {
+      breads: [{ id: 'baguete' }, { id: 'focaccia' }],
+      qtys: { baguete: 1, focaccia: 2, extra_1: 3 },
+      extras: { extra_1: 'Pao de mortadela' },
+      obs: 'Levar cedo',
+      extraInput: 'pao',
+      orderQtys: { baguete: 4 },
+      trip: 1,
+    }
+    const atual = {
+      breads: [{ id: 'baguete' }],
+      qtys: {},
+      extras: {},
+      obs: '',
+      extraInput: '',
+      orderQtys: { baguete: 6 },
+      trip: 2,
+    }
+
+    expect(restoreRomaneioDraft(salvo, atual)).toEqual({
+      breads: [{ id: 'baguete' }, { id: 'focaccia' }],
+      qtys: { baguete: 1, focaccia: 2, extra_1: 3 },
+      extras: { extra_1: 'Pao de mortadela' },
+      obs: 'Levar cedo',
+      extraInput: 'pao',
+      orderQtys: { baguete: 6 },
+      trip: 2,
+    })
+  })
+
+  it('total zero nao sobrepoe o pedido (bug de 15/09)', () => {
+    expect(romaneioRequestedQuantities(
+      { baguete: 12 },
+      { baguete: { total: 0, newQuantity: 0, leftoverQuantity: 0, frozenQuantity: 0 } },
+    )).toEqual({ baguete: 12 })
   })
 
   it('soma o que ja foi enviado nas viagens anteriores', () => {
