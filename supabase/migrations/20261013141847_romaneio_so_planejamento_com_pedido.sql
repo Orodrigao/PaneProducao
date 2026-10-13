@@ -1,6 +1,9 @@
 -- O Romaneio de JC e JA passa a ler o Planejamento de producao somente da loja
 -- que ja teve o pedido gerado a partir dele (order_created_at, gravado por
--- import_production_plan_order para todos os itens da loja).
+-- import_production_plan_order para todos os itens da loja) ou que nao tem pao
+-- novo a gerar: loja so com congelado e sobra nunca recebe o botao
+-- "Transformar em Pedido" (storeNeedsOrderConversion na tela de Producao) e
+-- continua aparecendo no Romaneio como antes.
 --
 -- Motivo: em 10/10/2026 o Planejamento ficou em rascunho com 67 paes digitados
 -- para a JA, mas o pedido da JA nunca foi gerado (a loja nao abriu). Producao,
@@ -10,9 +13,10 @@
 -- cada loja; o Planejamento continua dando a composicao (pao novo, sobra e
 -- congelado) de quem ja virou pedido.
 --
--- Nos 40 planejamentos fechados ate 13/10/2026 todo item com quantidade ja tem
--- order_created_at; a regra nova so deixa de fora o que ficou em rascunho sem
--- pedido.
+-- "Pao novo a gerar" usa a mesma conta da importacao e da tela: planejado menos
+-- congelado menos sobra (confirmada, senao proposta). Nos 40 planejamentos
+-- fechados ate 13/10/2026 todo item com quantidade ja tem order_created_at; a
+-- regra nova so deixa de fora loja de rascunho com pao novo sem pedido.
 
 create or replace function public.get_romaneio_production_composition(
   p_production_date date,
@@ -75,7 +79,22 @@ begin
   ) reuse on reuse.bread_id = item.bread_id
   where plan.production_date = p_production_date
     and item.store = v_store
-    and item.order_created_at is not null
+    and (
+      item.order_created_at is not null
+      or not exists (
+        select 1
+        from public.production_plan_items pending
+        where pending.plan_id = plan.id
+          and pending.store = v_store
+          and pending.order_created_at is null
+          and greatest(
+            0,
+            pending.planned_quantity
+              - pending.frozen_quantity
+              - coalesce(pending.leftover_confirmed_quantity, pending.leftover_proposed_quantity, 0)
+          ) > 0
+      )
+    )
   order by item.bread_id;
 end;
 $$;
@@ -85,7 +104,7 @@ revoke all on function public.get_romaneio_production_composition(date, text) fr
 grant execute on function public.get_romaneio_production_composition(date, text) to authenticated;
 
 -- Explica para a Expedicao por que o Romaneio da loja nao traz os numeros do
--- Planejamento: ha planejamento em andamento com pao para a loja que ainda nao
+-- Planejamento: ha planejamento em andamento com pao novo para a loja que nao
 -- virou pedido. Responde so sim ou nao; o planejamento completo continua
 -- restrito ao acesso administrativo.
 create or replace function public.get_romaneio_plan_without_order(
@@ -125,7 +144,12 @@ begin
       and plan.status <> 'fechado'
       and item.store = v_store
       and item.order_created_at is null
-      and item.planned_quantity > 0
+      and greatest(
+        0,
+        item.planned_quantity
+          - item.frozen_quantity
+          - coalesce(item.leftover_confirmed_quantity, item.leftover_proposed_quantity, 0)
+      ) > 0
   );
 end;
 $$;

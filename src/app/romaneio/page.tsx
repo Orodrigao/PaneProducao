@@ -1246,8 +1246,8 @@ export default function RomaneioPage() {
                 <div className="ps-banner crust" role="note" style={{justifyContent:'flex-start',alignItems:'flex-start',flexWrap:'nowrap'}}>
                   <AlertTriangle size={18} style={{flexShrink:0,marginTop:1}}/>
                   <span style={{fontWeight:500,lineHeight:1.4}}>
-                    <b>O Planejamento tem pão para esta loja que ainda não virou pedido.</b>{' '}
-                    O Romaneio mostra só o que virou pedido. Se a loja vai receber esse pão, peça ao administrador para tocar em “Transformar em Pedido” na Produção, aba {normalizeDestination(dests.find(d=>d.id===criarDestId)?.code) || 'da loja'}.
+                    <b>O Planejamento tem pão para esta loja que não virou pedido.</b>{' '}
+                    Esse pão não entrou no Forno nem na Geolar, e o Romaneio mostra só o que virou pedido. Antes de mandar pão a mais, confirme com o administrador; se precisar, adicione pela busca do catálogo abaixo.
                   </span>
                 </div>
               )}

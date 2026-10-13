@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(24);
 
 select ok(
   has_function_privilege(
@@ -90,8 +90,11 @@ select
 -- aparecia no banco compartilhado, porque o planejamento do seed so nasce
 -- quando existem contas no Auth, e o ensaio das PRs roda sem elas.
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
-values ('teste-baguete-composicao', '[TESTE] Baguete Composicao',
-  '{0,1,2,3,4,5,6}', true, 'un', false, false);
+values
+  ('teste-baguete-composicao', '[TESTE] Baguete Composicao',
+    '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-sobra-composicao', '[TESTE] Pao So Sobra Composicao',
+    '{0,1,2,3,4,5,6}', true, 'un', false, false);
 
 insert into public.frozen_products (
   id, product_id, product_source, product_name, unit, active, store, visible_stores
@@ -136,6 +139,19 @@ values
     7,
     0,
     0,
+    null,
+    null,
+    null
+  ),
+  -- Pao so de sobra: nao tem pao novo, entao nunca vira pedido sozinho.
+  (
+    '71000000-0000-4000-8000-000000000003',
+    '70000000-0000-4000-8000-000000000001',
+    'ja',
+    'teste-sobra-composicao',
+    3,
+    0,
+    3,
     null,
     null,
     null
@@ -312,6 +328,36 @@ select set_config(
 select ok(
   not public.get_romaneio_plan_without_order(private.data_na_padaria() + 60, 'ja'),
   'Planejamento fechado nao gera aviso'
+);
+select is(
+  (select count(*)::int from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'ja')),
+  0,
+  'Fechar o planejamento nao devolve ao Romaneio o pao que nao virou pedido (caso de 10/10)'
+);
+
+-- Loja so com congelado e sobra nao tem o que virar pedido: segue no Romaneio.
+reset role;
+update public.production_plans
+set status = 'aguardando_geolar'
+where id = '70000000-0000-4000-8000-000000000001';
+update public.production_plan_items
+set planned_quantity = 0
+where id = '71000000-0000-4000-8000-000000000002';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  current_setting('test.expedicao_jc_id'),
+  true
+);
+select is(
+  (select planned_quantity from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'ja') where bread_id = 'teste-sobra-composicao'),
+  3::numeric,
+  'Loja so com sobra continua com a composicao no Romaneio'
+);
+select ok(
+  not public.get_romaneio_plan_without_order(private.data_na_padaria() + 60, 'ja'),
+  'Loja so com sobra nao gera aviso de pedido pendente'
 );
 
 reset role;
