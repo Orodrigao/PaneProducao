@@ -72,8 +72,9 @@ values (
   '[TESTE] Rodrigo'
 );
 
--- Copia do caso real: JC convertida, JA com 67 paes so no Planejamento; o pao
--- B da JC esta zerado e sem pedido, como os itens sem quantidade de producao.
+-- Copia do caso real: JC convertida, JA com 67 paes so no Planejamento. O pao B
+-- da JC esta zerado e sem pedido, como um pao incluido no Planejamento depois da
+-- conversao (addExtraBread); zerado, ele nao impede o fechamento.
 insert into public.production_plan_items (
   id, plan_id, store, bread_id, planned_quantity, frozen_quantity,
   leftover_proposed_quantity, order_created_at, order_created_by_name
@@ -97,15 +98,14 @@ select pg_temp.aplicar_migration();
 select is(pg_temp.status_1010(), 'rascunho', 'JA com pedido no dia: planejamento continua aberto');
 delete from public.orders where id = '75000000-0000-4000-8000-000000000001';
 
--- Recusa 2: a JC tem pao com quantidade que nao virou pedido.
-update public.production_plan_items
-set order_created_at = null, order_created_by_name = null
-where id = '74000000-0000-4000-8000-000000000001';
+-- Recusa 2: a JC continua convertida, mas tem pao com quantidade que nao virou
+-- pedido (pao incluido depois da conversao). So a trava desse caso segura.
+update public.production_plan_items set planned_quantity = 5
+where id = '74000000-0000-4000-8000-000000000002';
 select pg_temp.aplicar_migration();
-select is(pg_temp.status_1010(), 'rascunho', 'JC sem pedido gerado: planejamento continua aberto');
-update public.production_plan_items
-set order_created_at = now(), order_created_by_name = '[TESTE] Rodrigo'
-where id = '74000000-0000-4000-8000-000000000001';
+select is(pg_temp.status_1010(), 'rascunho', 'JC com pao sem pedido gerado: planejamento continua aberto');
+update public.production_plan_items set planned_quantity = 0
+where id = '74000000-0000-4000-8000-000000000002';
 
 -- Recusa 3: o total da JA nao e o do caso real.
 update public.production_plan_items set planned_quantity = 8

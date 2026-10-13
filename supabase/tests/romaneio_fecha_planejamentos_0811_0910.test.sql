@@ -6,7 +6,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(8);
+select plan(12);
 
 create function pg_temp.aplicar_migration() returns void
 language plpgsql
@@ -133,6 +133,36 @@ select is(pg_temp.status_do('fdf0f77f-a8c4-4600-bf3d-9d4d0c63de0f'), 'rascunho',
 select is(pg_temp.status_do('548fa119-81f4-4106-8a81-62e78e688fa5'), 'rascunho', '10/09 com total da JA diferente de 73: continua aberto');
 update public.production_plan_items set planned_quantity = 51 where id = '76000000-0000-4000-8000-000000000004';
 update public.production_plan_items set planned_quantity = 3 where id = '76000000-0000-4000-8000-000000000008';
+
+-- Recusa 3: a loja convertida tem pao com quantidade que nao virou pedido.
+update public.production_plan_items
+set planned_quantity = 5, order_created_at = null, order_created_by_name = null
+where id in ('76000000-0000-4000-8000-000000000002', '76000000-0000-4000-8000-000000000006');
+select pg_temp.aplicar_migration();
+select is(pg_temp.status_do('fdf0f77f-a8c4-4600-bf3d-9d4d0c63de0f'), 'rascunho', '11/08 com pao da JA sem pedido: continua aberto');
+select is(pg_temp.status_do('548fa119-81f4-4106-8a81-62e78e688fa5'), 'rascunho', '10/09 com pao da JC sem pedido: continua aberto');
+update public.production_plan_items
+set planned_quantity = 0, order_created_at = now(), order_created_by_name = '[TESTE] Rodrigo'
+where id in ('76000000-0000-4000-8000-000000000002', '76000000-0000-4000-8000-000000000006');
+
+-- Recusa 4: planejamento que ja nao esta em rascunho nao e mexido.
+update public.production_plans set status = 'aguardando_geolar'
+where id in ('fdf0f77f-a8c4-4600-bf3d-9d4d0c63de0f', '548fa119-81f4-4106-8a81-62e78e688fa5');
+select pg_temp.aplicar_migration();
+select is(pg_temp.status_do('fdf0f77f-a8c4-4600-bf3d-9d4d0c63de0f'), 'aguardando_geolar', '11/08 fora de rascunho: status preservado');
+select is(pg_temp.status_do('548fa119-81f4-4106-8a81-62e78e688fa5'), 'aguardando_geolar', '10/09 fora de rascunho: status preservado');
+update public.production_plans set status = 'rascunho'
+where id in ('fdf0f77f-a8c4-4600-bf3d-9d4d0c63de0f', '548fa119-81f4-4106-8a81-62e78e688fa5');
+
+-- Pedido cancelado da JA em 10/09 nao conta como pedido.
+insert into public.orders (
+  id, store, bread_id, quantity, order_date, obs,
+  order_type, product_source, product_name, needs_production, cancelled_at
+)
+values (
+  '77000000-0000-4000-8000-000000000002', 'ja', 'teste-fecha-antigo-a', 5, date '2026-09-10',
+  '[TESTE] pedido cancelado da JA em 10/09', 'producao', 'bread', '[TESTE] Pao Fechamento Antigo A', true, now()
+);
 
 -- Casos reais: fecham.
 select pg_temp.aplicar_migration();
