@@ -26,6 +26,7 @@ import {
   type PjProductionPrintSource,
 } from '@/lib/pjPrintSheet'
 import { createPjPrintLoadTracker } from '@/lib/pjPrintWait'
+import { buildOrderCopy, orderCopyConfirmation, type OrderCopyResult, type OrderCopyStore } from '@/lib/orderCopy'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
 
@@ -177,7 +178,24 @@ export default function ProducaoPage() {
   // report
   const [reportDate, setReportDate] = useState(todayKey())
   const [reportOrders, setReportOrders] = useState<OrderMap>({})
+  const [reportOrdersDate, setReportOrdersDate] = useState('')
   const reportReqRef = useRef(0) // descarta respostas fora de ordem ao trocar de data rápido
+  // cópia de um pedido do relatório ainda não salva, por loja
+  const [copyNotice, setCopyNotice] = useState<Partial<Record<Store, { sourceDate: string; targetDate: string; leftOut: string[] }>>>({})
+  const copyInFlightRef = useRef(false) // segundo toque enquanto a cópia confere o Planejamento
+  // Muda a cada troca de dia, edição, Salvar ou Planejamento no formulário de
+  // pedido: a cópia que esperou a rede só vale se ninguém mexeu nele no meio.
+  const orderFormChangeRef = useRef(0)
+  const orderFormLoadsRef = useRef(0) // recargas do formulário ainda sem resposta
+  // Dia cujas quantidades estão no formulário. Só muda quando a leitura dá
+  // certo: com erro ou resposta atrasada de outro dia, o Salvar recusa.
+  const orderFormLoadedDateRef = useRef('')
+  const saveInFlightRef = useRef(false)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   // admin modal
   const [modal, setModal] = useState<ModalMode>('none')
   const [editingBread, setEditingBread] = useState<Bread|null>(null)
@@ -197,6 +215,7 @@ export default function ProducaoPage() {
 
   const loadBreads = useCallback(async () => {
     const data = await sbGet('breads','order=name.asc')
+    orderFormChangeRef.current++ // a lista de pães do formulário mudou
     setBreads(data)
     return data as Bread[]
   }, [])
@@ -387,6 +406,7 @@ export default function ProducaoPage() {
       setOrders(map)
       setOrderDate(defDate)
       initOrderState(map, bds)
+      orderFormLoadedDateRef.current = defDate
       await loadReuseContext(defDate)
       await loadProductionPlanForOrders(defDate)
       setActiveTab(0)
@@ -405,10 +425,12 @@ export default function ProducaoPage() {
   }
 
   const logout = () => {
+    orderFormChangeRef.current++
     setCurrentUser(null)
     setBreads([]); setOrders({}); setQtys({}); setObsMap({})
     setPendingLeftovers({}); setReuseProposalQtys({}); setReusePlans({})
     setProductionPlanForOrder(null)
+    setCopyNotice({})
     setActiveTab(0)
     setScreen('login')
     authLogout()
@@ -430,18 +452,23 @@ export default function ProducaoPage() {
 
   // ── day change ──────────────────────────────────────────────────
   const changeDelivDay = async (idx: number) => {
+    orderFormChangeRef.current++
+    orderFormLoadsRef.current++
     setDelivIdx(idx)
     const newDate = deliveryDateKey(idx)
     setOrderDate(newDate)
+    setCopyNotice({}) // o formulário recarrega do banco; a cópia não salva some junto
+    orderFormLoadedDateRef.current = ''
     showLoad('Carregando pedidos...')
     try {
       const map = await loadOrders(newDate)
       setOrders(map)
       initOrderState(map, breads)
+      orderFormLoadedDateRef.current = newDate
       await loadReuseContext(newDate)
       await loadProductionPlanForOrders(newDate)
     } catch(e) { showToast('Erro ao carregar pedidos.') }
-    finally { hideLoad() }
+    finally { hideLoad(); orderFormLoadsRef.current-- }
   }
 
   // ── save order ──────────────────────────────────────────────────
@@ -487,9 +514,26 @@ export default function ProducaoPage() {
       }
     }
 
+    // O formulário foi carregado para `orderDate`; depois da meia-noite a mesma
+    // conta aponta para a semana seguinte e gravaria as quantidades lá.
+    if (date !== orderDate) {
+      showToast('O dia virou desde que o pedido foi aberto. Toque no dia em "Pães para qual dia?" para recarregar.', 6000)
+      return
+    }
+    if (orderFormLoadsRef.current > 0) { showToast('Aguarde o pedido do dia carregar.'); return }
+    if (orderFormLoadedDateRef.current !== date) {
+      showToast('O pedido deste dia não carregou. Toque no dia em "Pães para qual dia?" para carregar de novo.', 6000)
+      return
+    }
+    // Marca a gravação antes da primeira espera: nem outro Salvar nem a cópia do
+    // relatório entram entre a leitura das quantidades acima e o fim do Salvar.
+    if (saveInFlightRef.current) return
+    orderFormChangeRef.current++
+    saveInFlightRef.current = true
     if (hasReuseContext) {
-      const { data: sessionData } = await supabase.auth.getSession()
-      if (!sessionData.session) {
+      const session = await supabase.auth.getSession().then(result => result.data.session, () => null)
+      if (!session) {
+        saveInFlightRef.current = false
         showToast('Entre com e-mail para salvar o reaproveitamento junto com o pedido.')
         return
       }
@@ -510,12 +554,13 @@ export default function ProducaoPage() {
       const newMap = { ...orders, [store]: {} }
       rows.forEach(r => { (newMap[store] as any)[r.bread_id] = r })
       setOrders(newMap)
+      setCopyNotice(prev => { const next = { ...prev }; delete next[store]; return next })
       setSyncState('')
       showToast(hasReuseContext ? 'Pedido e reaproveitamento salvos!' : 'Pedido salvo!')
     } catch(e) {
       setSyncState('error')
       showToast(operationalErrorMessage(e, 'Erro ao salvar. Tente novamente.'))
-    } finally { setSaving(false) }
+    } finally { setSaving(false); saveInFlightRef.current = false }
   }
 
   const importPlanningAsOrder = async (store: ProductionPlanStore) => {
@@ -535,6 +580,8 @@ export default function ProducaoPage() {
     if (existingTotal > 0 && !window.confirm(`Substituir o pedido ${store.toUpperCase()} de ${dateLabel(date)} pelo Planejamento?\n\nPedido atual: ${existingTotal}\nPlanejamento: ${plan.storeTotals[store]}`)) {
       return
     }
+    orderFormChangeRef.current++
+    orderFormLoadsRef.current++
 
     setPlanningImportSaving(true)
     setSyncState('syncing')
@@ -546,10 +593,13 @@ export default function ProducaoPage() {
         p_actor_name: actorName,
       })
       if (importError) throw importError
+      orderFormLoadedDateRef.current = '' // o banco mudou; o formulário só vale relido
 
       const map = await loadOrders(date)
       setOrders(map)
       initOrderState(map, breads)
+      orderFormLoadedDateRef.current = date
+      setCopyNotice({}) // o formulário inteiro recarregou do banco
       await loadReuseContext(date)
 
       await loadProductionPlanForOrders(date)
@@ -560,6 +610,7 @@ export default function ProducaoPage() {
       showToast(operationalErrorMessage(e, 'Erro ao transformar o Planejamento em Pedido.'))
     } finally {
       setPlanningImportSaving(false)
+      orderFormLoadsRef.current--
     }
   }
 
@@ -571,7 +622,7 @@ export default function ProducaoPage() {
     setLoadingMsg('Carregando...'); setLoading(true)
     try {
       const map = await loadOrders(dateKey)
-      if (reqId === reportReqRef.current) setReportOrders(map)
+      if (reqId === reportReqRef.current) { setReportOrders(map); setReportOrdersDate(dateKey) }
     } catch(e) {
       if (reqId === reportReqRef.current) showToast('Erro ao carregar.')
     } finally {
@@ -582,34 +633,111 @@ export default function ProducaoPage() {
   // Só troca a data; o carregamento é feito pelo efeito que observa reportDate.
   const changeReportDate = (dateKey: string) => setReportDate(dateKey)
 
-  const duplicateOrders = async (storeFilter?: string) => {
-    const src = reportOrders
-    const stores = storeFilter ? [storeFilter] : ['ex','jc','ja','pj']
-    const date = todayKey()
-    const allRows: any[] = []
-    stores.forEach(s => {
-      const sv = src[s] || {}
-      Object.values(sv).forEach((r:any) => {
-        if ((r.quantity||0) > 0) {
-          const row:any = { store:r.store, bread_id:r.bread_id, quantity:r.quantity, order_date:date, obs:r.obs||'' }
-          if (s==='pj') { row.pj_client=r.pj_client||''; row.pj_delivery_date=r.pj_delivery_date||null }
-          allRows.push(row)
+  // Lojas com pedido gerado pelo Planejamento nesta data; null quando não deu para conferir.
+  const loadStoresOrderedFromPlanning = async (dateKey: string): Promise<Set<string> | null> => {
+    try {
+      const { data: plan, error: planError } = await supabase
+        .from('production_plans')
+        .select('id')
+        .eq('production_date', dateKey)
+        .maybeSingle()
+      if (planError) throw planError
+      if (!plan) return new Set()
+      const { data: items, error: itemsError } = await supabase
+        .from('production_plan_items')
+        .select('store')
+        .eq('plan_id', plan.id)
+        .not('order_created_at', 'is', null)
+      if (itemsError) throw itemsError
+      return new Set((items ?? []).map(item => String(item.store)))
+    } catch {
+      return null
+    }
+  }
+
+  // "Usar como base": preenche o formulário do dia escolhido em "Pães para qual
+  // dia?" com o pedido do relatório. Não grava nada; quem salva é o Salvar
+  // pedido, loja por loja. Ver src/lib/orderCopy.ts para o porquê.
+  const copyReportToOrderForm = async (stores: OrderCopyStore[]) => {
+    if (copyInFlightRef.current) return
+    if (saveInFlightRef.current || planningImportSaving) { showToast('Aguarde o pedido terminar de salvar.'); return }
+    // Troca de dia ou Planejamento ainda carregando: a resposta pendente vai
+    // reescrever o formulário depois da cópia.
+    if (orderFormLoadsRef.current > 0) { showToast('Aguarde o pedido do dia carregar.'); return }
+    if (reportOrdersDate !== reportDate) { showToast('Aguarde o relatório deste dia carregar.'); return }
+    // Uma data só para anunciar, copiar e salvar: a mesma conta do Salvar pedido.
+    // Se o dia virou com a tela aberta, o formulário é de outra semana.
+    const targetDate = orderDate
+    const formChange = orderFormChangeRef.current
+    const blockReason = () => {
+      if (deliveryDateKey(delivIdx) !== targetDate) {
+        return 'O dia virou desde que o pedido foi aberto. Toque no dia em "Pães para qual dia?" para recarregar.'
+      }
+      if (orderFormChangeRef.current !== formChange || saveInFlightRef.current || orderFormLoadsRef.current > 0) {
+        return 'O pedido mudou enquanto eu conferia o Planejamento. Toque de novo em Usar como base.'
+      }
+      if (orderFormLoadedDateRef.current !== targetDate) {
+        return 'O pedido deste dia não carregou. Toque no dia em "Pães para qual dia?" para carregar de novo.'
+      }
+      return null
+    }
+    const initialBlock = blockReason()
+    if (initialBlock) { showToast(initialBlock, 6000); return }
+    if (reportDate === targetDate) return
+    const copies = stores.map(store => buildOrderCopy(store, reportOrders[store] ?? {}, todayBreads, breads))
+    if (copies.every(copy => copy.copiedTotal === 0)) {
+      showToast(`Nenhum pão de ${dateLabel(targetDate)} pedido em ${dateLabel(reportDate)}.`)
+      return
+    }
+
+    copyInFlightRef.current = true
+    try {
+      let fromPlanning: Set<string> | null = new Set<string>()
+      if (stores.some(store => store === 'jc' || store === 'ja')) {
+        showLoad('Conferindo o Planejamento...')
+        try {
+          fromPlanning = await loadStoresOrderedFromPlanning(targetDate)
+        } finally {
+          hideLoad()
+        }
+        // A tela coberta barra o toque, não o teclado nem o relógio: confere de
+        // novo, porque os totais e a data abaixo são os do momento do clique e
+        // só valem se nada mexeu no formulário durante a consulta.
+        if (!mountedRef.current) return
+        const afterWait = blockReason()
+        if (afterWait) { showToast(afterWait, 6000); return }
+      }
+      const confirmation = orderCopyConfirmation(dateLabel(reportDate), dateLabel(targetDate), copies.map(copy => ({
+        store: copy.store,
+        currentTotal: calcTotal(copy.store),
+        copiedTotal: copy.copiedTotal,
+        fromPlanning: fromPlanning ? fromPlanning.has(copy.store) : null,
+      })))
+      if (confirmation && !window.confirm(confirmation)) return
+      // A confirmação pode ficar aberta até depois da meia-noite.
+      const afterConfirm = blockReason()
+      if (afterConfirm) { showToast(afterConfirm, 6000); return }
+      applyOrderCopy(copies, targetDate)
+    } finally {
+      copyInFlightRef.current = false
+    }
+  }
+
+  const applyOrderCopy = (copies: OrderCopyResult[], targetDate: string) => {
+    copies.forEach(copy => Object.entries(copy.quantities).forEach(([key, quantity]) => setQty(key, quantity)))
+    setCopyNotice(prev => {
+      const next = { ...prev }
+      copies.forEach(copy => {
+        next[copy.store] = {
+          sourceDate: reportDate,
+          targetDate,
+          leftOut: copy.leftOut.map(item => `${item.name} (${item.quantity})`),
         }
       })
+      return next
     })
-    if (!allRows.length) { showToast('Nenhum item para duplicar.'); return }
-    setSyncState('syncing')
-    try {
-      await Promise.all(stores.map(s => sbDel('orders', { store: s, order_date: date })))
-      await sbInsert('orders', allRows)
-      const map = await loadOrders(todayKey())
-      setOrders(map)
-      initOrderState(map, breads)
-      setOrderDate(todayKey())
-      setSyncState('')
-      showToast('Pedido duplicado para hoje!')
-      setActiveTab(0)
-    } catch(e) { setSyncState('error'); showToast('Erro ao duplicar.') }
+    const firstTab = tabDefs.findIndex(tab => tab.store === copies[0]?.store)
+    if (firstTab >= 0) setActiveTab(firstTab)
   }
 
   // ── admin ────────────────────────────────────────────────────────
@@ -728,6 +856,7 @@ export default function ProducaoPage() {
 
   // ── render helpers ───────────────────────────────────────────────
   const setQty = (key: string, val: number) => {
+    orderFormChangeRef.current++
     const quantity = Math.max(0, val)
     setQtys(prev=>({...prev,[key]:quantity}))
     if (key.startsWith('jc-') || key.startsWith('ja-')) {
@@ -742,6 +871,7 @@ export default function ProducaoPage() {
 
   const setReuseProposal = (key: string, val: number) => {
     if (reusePlans[key]?.status === 'confirmed') return
+    orderFormChangeRef.current++
     setReuseProposalQtys(prev => ({
       ...prev,
       [key]: clampReuseProposal(val, qtys[key] ?? 0, (pendingLeftovers[key] ?? 0) + (prev[key] ?? 0)),
@@ -840,6 +970,18 @@ export default function ProducaoPage() {
             ))}
           </div>
 
+          {isOrderTab && activeStore && copyNotice[activeStore as Store]?.targetDate === orderDate && (() => {
+            const notice = copyNotice[activeStore as Store]!
+            return (
+              <div role="status" style={{ marginBottom: 12, padding: '12px 14px', border: '1px solid var(--honey-line)', borderRadius: 'var(--r-ctrl)', background: 'var(--honey-tint)', fontSize: 13 }}>
+                <b style={{ display: 'block', fontSize: 14 }}>Cópia de {dateLabel(notice.sourceDate)} ainda não salva</b>
+                <span>Confira as quantidades e aperte Salvar pedido. Sem salvar, o pedido de {dateLabel(notice.targetDate)} continua como estava.</span>
+                {notice.leftOut.length > 0 && (
+                  <span style={{ display: 'block', marginTop: 6 }}>Ficaram de fora porque não são feitos neste dia: {notice.leftOut.join(', ')}.</span>
+                )}
+              </div>
+            )
+          })()}
           {isOrderTab && activeStore && (
             <OrderForm
               store={activeStore as Store}
@@ -877,7 +1019,8 @@ export default function ProducaoPage() {
               pjBreads={pjBreads}
               todayBds={todayBreads}
               onDateChange={changeReportDate}
-              onDuplicate={duplicateOrders}
+              baseTargetDate={orderDate}
+              onUseAsBase={stores=>void copyReportToOrderForm(stores)}
               onRefresh={()=>loadReport(reportDate)}
             />
           )}
@@ -1120,11 +1263,25 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLefto
 interface ReportProps {
   currentUser:string; storeFilter?:string; breads:Bread[]; reportDate:string
   reportOrders:OrderMap; pjBreads:Bread[]; todayBds:Bread[]
-  onDateChange:(d:string)=>void; onDuplicate:(s?:string)=>void; onRefresh:()=>void
+  onDateChange:(d:string)=>void; baseTargetDate:string; onUseAsBase:(stores:OrderCopyStore[])=>void; onRefresh:()=>void
 }
 
-function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, todayBds, onDateChange, onDuplicate, onRefresh }:ReportProps) {
+// Substitui o antigo "Duplicar para hoje", que apagava o pedido de hoje. Este só
+// preenche o formulário do dia escolhido; nada é gravado até o Salvar pedido.
+function UseAsBaseButton({ label, baseTargetDate, onClick }:{ label:string; baseTargetDate:string; onClick:()=>void }) {
+  return (
+    <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border)'}}>
+      <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>
+        Copia estas quantidades para o pedido de {dateLabel(baseTargetDate)}. Nada é salvo até você conferir e apertar Salvar pedido.
+      </div>
+      <button className="btn-save" onClick={onClick}>{label}</button>
+    </div>
+  )
+}
+
+function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, todayBds, onDateChange, baseTargetDate, onUseAsBase, onRefresh }:ReportProps) {
   const isToday = reportDate === todayKey()
+  const canUseAsBase = reportDate !== baseTargetDate
   const pjSv = reportOrders['pj'] || {}
   const pjItems = pjBreads.filter(b=>(pjSv[b.id]?.quantity||0)>0)
 
@@ -1156,10 +1313,10 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
               </table>
             </>
           )}
-          {!isToday&&<div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border)'}}>
-            <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>Repetir este pedido hoje?</div>
-            <button className="btn-save" onClick={()=>onDuplicate('pj')}>Duplicar para hoje</button>
-          </div>}
+          {/* Sem cópia aqui: pedido PJ tem tela e regras próprias. */}
+          <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border)',fontSize:13,color:'var(--text-muted)'}}>
+            Pedido PJ novo ou alterado se faz na tela <Link href="/pedidos-pj">Pedidos PJ</Link>.
+          </div>
         </>
       )}
 
@@ -1185,10 +1342,9 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
                 </tbody>
               </table>
             </>}
-            {!isToday&&<div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border)'}}>
-              <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>Repetir este pedido hoje?</div>
-              <button className="btn-save" onClick={()=>onDuplicate(storeFilter)}>Duplicar para hoje</button>
-            </div>}
+            {canUseAsBase && (storeFilter==='ex'||storeFilter==='jc') && (
+              <UseAsBaseButton label="Usar como base do pedido" baseTargetDate={baseTargetDate} onClick={()=>onUseAsBase([storeFilter])}/>
+            )}
           </>
         )
       })()}
@@ -1230,10 +1386,9 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
                 </table>
               </>}
             </>}
-            {!isToday&&<div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border)'}}>
-              <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>Repetir esta produção hoje?</div>
-              <button className="btn-save" onClick={()=>onDuplicate()}>Duplicar para hoje</button>
-            </div>}
+            {canUseAsBase && (
+              <UseAsBaseButton label="Usar JC e JA como base do pedido" baseTargetDate={baseTargetDate} onClick={()=>onUseAsBase(['jc','ja'])}/>
+            )}
           </>
         )
       })()}
