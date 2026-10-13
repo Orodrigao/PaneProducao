@@ -58,7 +58,7 @@ interface RomaneioProductionComposition { total:number; newQuantity:number; left
 interface RomaneioProductionCompositionRow { bread_id:string; planned_quantity:number|string|null; frozen_quantity:number|string|null; leftover_quantity:number|string|null; new_quantity:number|string|null }
 interface CriarDraftCompositionStorage { [breadId:string]: RomaneioProductionComposition }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
-interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; productionCompositions?:CriarDraftCompositionStorage; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; productionCompositions?:CriarDraftCompositionStorage; planWithoutOrder?:boolean; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
@@ -341,6 +341,23 @@ async function loadProductionCompositions(date: string, destinationCode: string 
   return compositions
 }
 
+// Aviso, não trava: se a consulta falhar, o Romaneio abre igual, só sem o aviso.
+async function loadPlanWithoutOrder(date: string, destinationCode: string | null | undefined) {
+  const store = normalizeDestination(destinationCode).toLowerCase()
+  if (store !== 'jc' && store !== 'ja') return false
+
+  try {
+    const response = await supabaseRestFetch('rpc/get_romaneio_plan_without_order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_production_date: date, p_store: store }),
+    })
+    return (await response.json()) === true
+  } catch {
+    return false
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────
 export default function RomaneioPage() {
   const router = useRouter()
@@ -521,10 +538,11 @@ export default function RomaneioPage() {
       ? sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
       : Promise.resolve([])
     const compositionRequest = loadProductionCompositions(date, destinationCode)
-    const [existing, orders, productionCompositions] = await Promise.all([
+    const [existing, orders, productionCompositions, planWithoutOrder] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
       orderRequest,
       compositionRequest,
+      loadPlanWithoutOrder(date, destinationCode),
     ])
     const existingRows = existing as RomaneioDraftExistingRow[]
     const replacementRows = destinationCode === 'EX' && date === todayKey()
@@ -535,10 +553,11 @@ export default function RomaneioPage() {
       : []
     const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
     const requestedQtys = { ...orderQtys }
-    // Planejamento de produção ainda em rascunho chega com total 0 para todo
-    // o cardápio: só sobrepõe o pedido real quando a cozinha já planejou de
-    // fato (total > 0), senão o pedido da loja some da tela (ver bug do dia
-    // 15/09: JC e JA zerados, EX certo porque não usa planejamento).
+    // A composição só chega para a loja cujo pedido já foi gerado pelo
+    // Planejamento (bug de 10/10: rascunho com pães da JA sem pedido mandou
+    // separar pão que ninguém pediu nem assou). O total do Planejamento inclui
+    // congelado e sobra, que o pedido não tem; total 0 não sobrepõe o pedido
+    // (bug de 15/09: JC e JA zerados).
     Object.entries(productionCompositions as Record<string, RomaneioProductionComposition>).forEach(([breadId, composition]) => {
       if (composition.total > 0) requestedQtys[breadId] = composition.total
     })
@@ -562,6 +581,7 @@ export default function RomaneioPage() {
       previouslySentQtys,
       replacementPendingQtys,
       productionCompositions: productionCompositions as Record<string, RomaneioProductionComposition>,
+      planWithoutOrder,
       extras: {},
       trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
       obs: '',
@@ -1219,6 +1239,16 @@ export default function RomaneioPage() {
               {activeDraft && (
                 <div className="ps-banner honey" style={{marginTop:14}}>
                   <span>{entregaLabel(activeDraft.trip)} para {dests.find(d=>d.id===criarDestId)?.name || 'esta loja'}</span>
+                </div>
+              )}
+
+              {activeDraft?.planWithoutOrder && (
+                <div className="ps-banner crust" role="note" style={{justifyContent:'flex-start',alignItems:'flex-start',flexWrap:'nowrap'}}>
+                  <AlertTriangle size={18} style={{flexShrink:0,marginTop:1}}/>
+                  <span style={{fontWeight:500,lineHeight:1.4}}>
+                    <b>O Planejamento tem pão para esta loja que ainda não virou pedido.</b>{' '}
+                    O Romaneio mostra só o que virou pedido. Se a loja vai receber esse pão, peça ao administrador para tocar em “Transformar em Pedido” na Produção, aba {normalizeDestination(dests.find(d=>d.id===criarDestId)?.code) || 'da loja'}.
+                  </span>
                 </div>
               )}
 
