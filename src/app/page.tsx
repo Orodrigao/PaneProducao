@@ -1457,16 +1457,30 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
 
   const hasBreads = printRows.length > 0
 
+  const sheetUnlocked = reuseGate.status === 'ready' && !reuseGate.hasPendingProposal
+
   // A impressão espera a folha redesenhar com a programação PJ recém-lida.
   const [printPending, setPrintPending] = useState(false)
   const [preparingPrint, setPreparingPrint] = useState(false)
+  const [printCancelled, setPrintCancelled] = useState(false)
   useEffect(() => {
     if (!printPending) return
-    window.print()
     setPrintPending(false)
-  }, [printPending])
+    // A trava de sobras pode fechar durante a espera (↻ Atualizar, troca de
+    // data). Aí a tela já é o aviso de bloqueio, e imprimir poria o aviso no
+    // papel no lugar da folha.
+    if (sheetUnlocked) window.print()
+    else setPrintCancelled(true)
+  }, [printPending, sheetUnlocked])
+
+  const printCancelledNotice = printCancelled && (
+    <div className="ps-card no-print" role="status" style={{marginTop:12,borderColor:'var(--honey-line)',background:'var(--honey-tint)',fontSize:13}}>
+      A impressão dos pães foi cancelada porque a lista de produção ficou bloqueada enquanto a folha era preparada. Quando ela estiver liberada, toque em Imprimir pães de novo.
+    </div>
+  )
 
   const printBreads = async () => {
+    setPrintCancelled(false)
     setPreparingPrint(true)
     void loadPjPrintProduction()
     // Com a conexão parada sem erro, a leitura do PJ pode não terminar. Passado
@@ -1476,7 +1490,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
     setPrintPending(true)
   }
 
-  if (reuseGate.status !== 'ready' || reuseGate.hasPendingProposal) {
+  if (!sheetUnlocked) {
     return (
       <div id="app">
         <div className="topbar">
@@ -1503,6 +1517,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
               <button className="btn-action" onClick={onOpenPending}>Conferir sobras e reaproveitamento</button>
             </div>
           </div>
+          {printCancelledNotice}
         </div>
       </div>
     )
@@ -1551,6 +1566,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
           </button>
           <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp()}>📋 Copiar texto</button>
         </div>
+        {printCancelledNotice}
 
         {/* Encomendas marcadas pra produção neste dia */}
         {enc.length > 0 && (
