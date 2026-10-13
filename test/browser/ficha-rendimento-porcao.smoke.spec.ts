@@ -154,6 +154,9 @@ test('ficha calcula rendimento por massa crua de cada variante e grava só as li
   await page.getByLabel('Massa crua em gramas: Mini', { exact: true }).fill('30')
   await expect(rowCard(page, 'Mini')).toContainText('rende 34,93 un')
   await page.getByRole('button', { name: 'Salvar rendimento (2)' }).click()
+  // "nada alterado" aparece quando o último rendimento grava, antes do peso de
+  // venda dessa linha; o toast só sai depois de todas as gravações.
+  await expect(page.locator('.toast').filter({ hasText: 'Rendimento salvo em 2 linhas' })).toBeVisible()
   await expect(page.getByText('nada alterado para salvar')).toBeVisible()
 
   const yieldWrites = writes.filter(write => write.url.includes('product_recipe_yields'))

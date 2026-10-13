@@ -80,7 +80,7 @@ insert into public.production_plan_items (
 )
 values
   ('74000000-0000-4000-8000-000000000001', '73078a7f-76d4-4411-88cf-f9fa7a5acb2a', 'jc', 'teste-fecha-1010-a', 30, 0, 0, now(), '[TESTE] Rodrigo'),
-  ('74000000-0000-4000-8000-000000000002', '73078a7f-76d4-4411-88cf-f9fa7a5acb2a', 'jc', 'teste-fecha-1010-b', 0, 0, 0, now(), '[TESTE] Rodrigo'),
+  ('74000000-0000-4000-8000-000000000002', '73078a7f-76d4-4411-88cf-f9fa7a5acb2a', 'jc', 'teste-fecha-1010-b', 0, 0, 0, null, null),
   ('74000000-0000-4000-8000-000000000003', '73078a7f-76d4-4411-88cf-f9fa7a5acb2a', 'ja', 'teste-fecha-1010-a', 60, 0, 0, null, null),
   ('74000000-0000-4000-8000-000000000004', '73078a7f-76d4-4411-88cf-f9fa7a5acb2a', 'ja', 'teste-fecha-1010-b', 7, 0, 0, null, null);
 
