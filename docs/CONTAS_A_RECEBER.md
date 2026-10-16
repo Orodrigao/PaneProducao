@@ -632,7 +632,9 @@ silêncio os romaneios de um segundo cadastro. Ver `lessons.md`.
 **Dívida assumida:** a conta da Buck existe em `src/lib/romaneioBilling.ts` e
 em `private.calcular_cobranca_buck`. São a mesma regra em duas linguagens e
 precisam mudar juntas; a comparação de totais na geração é o alarme que dispara
-se um lado mudar sozinho.
+se um lado mudar sozinho. **Atualização (Fase 6A, 16/10/2026):** o Fechamento
+EX passou a ler a conta do banco; a versão do navegador sobrou só como reserva
+enquanto a função nova não chega ao banco no deploy.
 
 
 **Objetivo:** a cobrança semanal da Buck deixar de sumir na impressora.
@@ -766,9 +768,44 @@ arquivamento das tabelas duplicadas e das cópias.
 
 **Depende de:** nada do módulo. Pode ser adiada sem prejuízo.
 
-**Observação:** os pedidos já gravam o preço praticado na própria linha, então
-cobrança antiga não é afetada por mudança de tabela. Esta fase é melhoria de
-gestão, não correção de risco.
+**Observação:** os pedidos PJ já gravam o preço praticado na própria linha,
+então cobrança antiga deles não é afetada por mudança de tabela. A **Tabela
+Buck era a exceção**: o romaneio não guarda preço, e a conta da EX era refeita
+com o preço de hoje (ver Fase 6A).
+
+## Fase 6A — Tabela Buck com data de validade
+
+Nasceu de um caso real (15/10/2026): o Italiano subiu de 4,50 para 5,89 e o
+Pão de Azeitonas de 9,50 para 12,32 em 09/10, o Italiano de Queijo e Orégano de
+7,50 para 11,00 em 01/10, e o Fechamento EX de setembro mudou de valor. As
+semanas de 21/09 e 28/09, confirmadas depois das trocas, saíram com o preço
+novo (R$ 80,50 e R$ 257,44 a mais, pelo combinado de que o preço vale do dia da
+troca). O acerto dessas duas semanas é decisão do Rodrigo, por ajuste manual.
+
+Decisões do Rodrigo (15/10/2026): o preço novo vale a partir de uma data
+escolhida por quem troca, já preenchida com hoje; sem data futura nesta versão;
+a carga inicial usa o dia da troca no sistema; cobrança confirmada não muda.
+
+**Fase 1 (migration `20261016131454_historico_preco_buck`):**
+
+- `buck_price_history`, só de acréscimo: o preço de uma linha numa data é o
+  registro mais recente com validade até aquela data. Leitura só para admin e
+  financeiro;
+- gatilho em `price_tier_items`: troca de um preço positivo por outro vale de
+  hoje; primeiro preço (cadastro, 0 → X, reativação) preenche o período em que
+  a linha ficou sem preço, para destravar semana parada; troca de unidade
+  corrige o período vigente; remoção e exclusão tiram o preço de hoje em
+  diante; mudar produto ou tabela de uma linha da Buck é recusado;
+- a conta (`private.calcular_cobranca_buck_detalhada`) usa o preço do dia de
+  cada romaneio e mostra uma linha por preço; a impressão digital da semana
+  ordena também pelo preço;
+- o Fechamento EX lê a mesma conta pelo `public.list_romaneio_ex_billing`
+  (exige ler a Tabela Buck e os romaneios da EX). A conta em
+  `src/lib/romaneioBilling.ts` ficou só como reserva para a janela do deploy.
+
+**Fase 2:** trocar preço com "vale a partir de" e motivo, e o histórico de
+cada pão na tela. **Fase 3:** semana já cobrada mostra no Fechamento EX o valor
+cobrado; a Tabela Buck passa a aceitar troca de preço só pelo caminho com data.
 
 ---
 

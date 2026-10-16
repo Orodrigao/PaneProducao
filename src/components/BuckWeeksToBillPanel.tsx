@@ -223,8 +223,9 @@ export default function BuckWeeksToBillPanel({ weeks, onBilled }: BuckWeeksToBil
                           </tr>
                         </thead>
                         <tbody>
-                          {lines.map(line => (
-                            <tr key={`${line.produto}:${line.unidade}`}>
+                          {/* Troca de preço no meio da semana traz o mesmo produto em duas linhas. */}
+                          {lines.map((line, index) => (
+                            <tr key={`${line.produto}:${line.unidade}:${line.preco_unitario ?? 'sem-preco'}:${index}`}>
                               <td>{line.produto}</td>
                               <td style={{ textAlign: 'right' }}>{formatQuantity(line.quantidade, line.unidade)}</td>
                               <td style={{ textAlign: 'right' }}>{line.preco_unitario === null ? '—' : formatReceivableMoney(line.preco_unitario)}</td>

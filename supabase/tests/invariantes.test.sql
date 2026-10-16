@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(134);
+select plan(138);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 53,
@@ -575,6 +575,49 @@ select is(
                                                  '([0-9]+(?:[.,][0-9]+)?)\s*KG'))[1], ',', '.')::numeric),
   0,
   'insumo de receita comprado por unidade converte pelo peso declarado na nota');
+
+-- Tabela Buck com data de validade (20261016131454). A cobranca e o Fechamento
+-- EX leem o preco do historico; linha da Buck sem historico, ou com historico
+-- que nao bate com a tabela, cobraria errado em silencio.
+select is(
+  (select count(*)::int
+     from public.price_tier_items linha
+    where linha.tier_id = private.buck_tier_id()
+      and not exists (select 1 from public.buck_price_history historico
+                       where historico.price_tier_item_id = linha.id)),
+  0,
+  'toda linha da Tabela Buck tem historico de preco');
+
+select is(
+  (select count(*)::int
+     from public.price_tier_items linha
+     cross join lateral (
+       select historico.unit_price, historico.pricing_unit
+         from public.buck_price_history historico
+        where historico.price_tier_item_id = linha.id
+        order by historico.seq desc
+        limit 1
+     ) ultimo
+    where linha.tier_id = private.buck_tier_id()
+      and (ultimo.unit_price is distinct from case when linha.active then linha.unit_price end
+           or ultimo.pricing_unit is distinct from case when linha.active then linha.pricing_unit end)),
+  0,
+  'o ultimo registro do historico de cada linha da Buck e o preco que a tabela mostra');
+
+select ok(
+  exists (select 1 from pg_trigger
+           where tgrelid = 'public.price_tier_items'::regclass
+             and tgname = 'price_tier_items_historico_buck'
+             and not tgisinternal and tgenabled <> 'D'),
+  'gatilho que grava o historico da Tabela Buck ligado');
+
+select ok(
+  (select relrowsecurity and relforcerowsecurity from pg_class
+    where oid = 'public.buck_price_history'::regclass)
+  and not has_table_privilege('authenticated', 'public.buck_price_history', 'insert')
+  and not has_table_privilege('authenticated', 'public.buck_price_history', 'update')
+  and not has_table_privilege('authenticated', 'public.buck_price_history', 'delete'),
+  'historico de preco da Buck com RLS forcada e so de leitura para quem esta logado');
 
 select * from finish();
 rollback;
