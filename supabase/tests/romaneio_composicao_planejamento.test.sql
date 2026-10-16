@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(29);
 
 select ok(
   has_function_privilege(
@@ -241,6 +241,67 @@ select throws_ok(
   '22023',
   'Data ou loja inválida para a composição do Romaneio.',
   'Data ausente e rejeitada'
+);
+
+-- Pedido editado depois de gerado pelo Planejamento (08/10/2026: a JC baixou o
+-- gorgonzola de 8 para 4). O Romaneio soma o pao novo do pedido com o congelado
+-- e a sobra da composicao; para isso a Expedicao precisa ler o pedido editado e
+-- a composicao nao pode mudar nem sumir quando o pedido muda.
+select set_config('request.jwt.claim.sub', current_setting('test.admin_id'), true);
+select is(
+  (select (public.import_production_plan_order(
+    '70000000-0000-4000-8000-000000000001', 'jc', 'Teste composicao'
+  )->>'order_count')::integer),
+  1,
+  'Gerar o pedido da JC pelo Planejamento cria o pedido da Baguete'
+);
+
+select set_config('request.jwt.claim.sub', current_setting('test.expedicao_jc_id'), true);
+select is(
+  (select sum(quantity) from public.orders
+   where store = 'jc' and order_date = private.data_na_padaria() + 60
+     and bread_id = 'teste-baguete-composicao' and cancelled_at is null),
+  3::numeric,
+  'O pedido gerado leva so o pao novo: 10 planejadas menos 5 congeladas menos 2 sobras'
+);
+
+-- Edicao pela tela de Pedidos: apaga o pedido da loja no dia e grava de novo.
+reset role;
+delete from public.orders
+where store = 'jc' and order_date = private.data_na_padaria() + 60;
+insert into public.orders (store, bread_id, quantity, order_date, order_type, obs)
+select 'jc', 'teste-baguete-composicao', 1, private.data_na_padaria() + 60, 'producao', 'Gerado pelo Planejamento';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', current_setting('test.expedicao_jc_id'), true);
+select is(
+  (select sum(quantity) from public.orders
+   where store = 'jc' and order_date = private.data_na_padaria() + 60
+     and bread_id = 'teste-baguete-composicao' and cancelled_at is null),
+  1::numeric,
+  'Expedicao JC le o pedido editado depois da conversao'
+);
+select results_eq(
+  $$ select planned_quantity, frozen_quantity, leftover_quantity
+     from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc')
+     where bread_id = 'teste-baguete-composicao' $$,
+  $$ values (10::numeric, 5::numeric, 2::numeric) $$,
+  'Pedido editado: congelado e sobra continuam chegando ao Romaneio da JC'
+);
+
+reset role;
+update public.orders
+set cancelled_at = now(), cancelled_by = 'Teste composicao', cancel_reason = 'Teste composicao'
+where store = 'jc' and order_date = private.data_na_padaria() + 60;
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', current_setting('test.expedicao_jc_id'), true);
+select results_eq(
+  $$ select frozen_quantity, leftover_quantity
+     from public.get_romaneio_production_composition(private.data_na_padaria() + 60, 'jc')
+     where bread_id = 'teste-baguete-composicao' $$,
+  $$ values (5::numeric, 2::numeric) $$,
+  'Pedido cancelado depois da conversao: o Romaneio ainda recebe congelado e sobra'
 );
 
 -- Planejamento sem pedido gerado nao vira numero no Romaneio.

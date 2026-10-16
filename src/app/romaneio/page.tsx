@@ -7,6 +7,7 @@ import { todayKey, formatDateBR, showToastPS } from '@/lib/utils'
 import { SupabaseRestError, supabaseRestFetch } from '@/lib/supabaseRest'
 import {
   buildRomaneioProductOptions,
+  compositionsFollowingOrder,
   exceedsRomaneioWeightLimit,
   filterCatalogBreadsForSearch,
   filterPendingRomaneioBreads,
@@ -22,10 +23,14 @@ import {
   romaneioCandidateBreadIds,
   romaneioEmptyDraftReason,
   romaneioExcessOverRequestedQty,
+  romaneioOrderDiffersFromPlan,
   romaneioOrderProgressLabel,
+  romaneioRequestedQuantities,
+  restoreRomaneioDraft,
   ROMANEIO_WEIGHT_LIMIT_KG,
   sentQuantitiesByProductId,
   type RomaneioOrderRow,
+  type RomaneioProductionComposition,
   type RomaneioReplacementPendingRow,
   type RomaneioSentItemRow,
   type RomaneioProductOption,
@@ -54,11 +59,10 @@ interface Romaneio { id:string; record_date:string; destination_id:string; trip_
 interface RomaneioTripRow { trip_number:number|null }
 interface RomaneioDraftExistingRow extends RomaneioTripRow { id:string }
 interface RomItem { id:string; romaneio_id:string; product_id:string; product_source:string; product_name:string; qty_sent:number; qty_received?:number; qty_accepted?:number; divergence_reason?:string; obs?:string; item_status?:string; unit_price?:number }
-interface RomaneioProductionComposition { total:number; newQuantity:number; leftoverQuantity:number; frozenQuantity:number }
 interface RomaneioProductionCompositionRow { bread_id:string; planned_quantity:number|string|null; frozen_quantity:number|string|null; leftover_quantity:number|string|null; new_quantity:number|string|null }
 interface CriarDraftCompositionStorage { [breadId:string]: RomaneioProductionComposition }
 interface ConfEntry { rec:number; acc:number; motivo:string; itemObs:string; refused:boolean; refuseReason:string }
-interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; productionCompositions?:CriarDraftCompositionStorage; planWithoutOrder?:boolean; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
+interface CriarDraft { destId:string; breads:Bread[]; qtys:Record<string,number>; orderQtys:Record<string,number>; previouslySentQtys:Record<string,number>; replacementPendingQtys?:Record<string,number>; productionCompositions?:CriarDraftCompositionStorage; planWithoutOrder?:boolean; orderRefreshFailed?:boolean; extras:Record<string,string>; trip:number; obs:string; extraInput:string }
 interface CriarDraftStorage { date:string; activeDestId:string; drafts:Record<string,CriarDraft> }
 
 const ROMANEIO_DRAFT_KEY = 'pane_romaneio_drafts_v1'
@@ -318,6 +322,11 @@ async function loadOpenReplacementPendings(destId: string, sourceRomaneioIds: st
   return await sbGet('romaneio_replacement_pending', params) as RomaneioReplacementPendingRow[]
 }
 
+async function loadStoreOrders(date: string, store: string): Promise<RomaneioOrderRow[]> {
+  if (!store) return []
+  return await sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${store}&quantity=gt.0&select=bread_id,quantity`) as RomaneioOrderRow[]
+}
+
 async function loadProductionCompositions(date: string, destinationCode: string | null | undefined) {
   const store = normalizeDestination(destinationCode).toLowerCase()
   if (store !== 'jc' && store !== 'ja') return {} as Record<string, RomaneioProductionComposition>
@@ -362,6 +371,8 @@ async function loadPlanWithoutOrder(date: string, destinationCode: string | null
 export default function RomaneioPage() {
   const router = useRouter()
   const savingRomaneioRef = useRef(false)
+  // Cada abertura do Novo Romaneio ou troca de data é uma rodada nova.
+  const criarRoundRef = useRef(0)
   const [screen, setScreen] = useState<Screen>('init')
   const [permissions, setPermissions] = useState<RomaneioPermissions>([])
   const [dests, setDests] = useState<Destination[]>([])
@@ -494,7 +505,11 @@ export default function RomaneioPage() {
         && rom.record_date === todayKey()
         ? await loadOpenReplacementPendings(rom.destination_id, [rom.id])
         : []
-      const compositions = rom ? await loadProductionCompositions(rom.record_date, rom.destinations?.code) : {}
+      const plannedCompositions = rom ? await loadProductionCompositions(rom.record_date, rom.destinations?.code) : {}
+      const detailOrders = rom && Object.keys(plannedCompositions).length
+        ? await loadStoreOrders(rom.record_date, normalizeDestination(rom.destinations?.code).toLowerCase())
+        : []
+      const compositions = compositionsFollowingOrder(plannedCompositions, orderQuantitiesByBreadId(detailOrders))
       setDetailRom(rom ?? null)
       setDetailItems(items)
       setDetailCompositions(compositions)
@@ -515,33 +530,55 @@ export default function RomaneioPage() {
   }, [detailItems.length, detailRom, printAfterOpen, screen])
 
   // ── criar ──────────────────────────────────────────────────────
-  const openCriar = () => {
+  // O rascunho salvo traz só o que foi digitado; pedido, composição, viagens e
+  // pendências são relidos, senão ele segue um pedido que já mudou. A loja que
+  // não atualizar fica marcada e não fecha até atualizar.
+  const refreshDraftOrders = async (destIds: string[], date: string) => {
+    const round = criarRoundRef.current
+    showLoad('Atualizando pedidos...')
+    try {
+      const results = await Promise.allSettled(destIds.map(destId => buildDraftForDest(destId, date)))
+      // Data trocada ou romaneio reaberto no meio: a resposta é de outro rascunho.
+      if (round !== criarRoundRef.current) return
+      setCriarDrafts(prev => {
+        const next = { ...prev }
+        results.forEach((result, index) => {
+          const current = next[destIds[index]]
+          if (!current) return
+          next[destIds[index]] = result.status === 'fulfilled'
+            ? restoreRomaneioDraft(current, result.value)
+            : { ...current, orderRefreshFailed: true }
+        })
+        return next
+      })
+    } finally { hideLoad() }
+  }
+
+  const openCriar = async () => {
+    criarRoundRef.current += 1
     const saved = readDraftStorage()
     if (saved && Object.keys(saved.drafts).length > 0) {
       const firstDest = saved.activeDestId || Object.keys(saved.drafts)[0] || ''
       setCriarDate(saved.date)
       setCriarDrafts(saved.drafts)
       setCriarDestId(firstDest)
+      setScreen('criar')
       showToastPS('Rascunho recuperado')
-    } else {
-      setCriarDate(todayKey())
-      setCriarDestId('')
-      setCriarDrafts({})
+      await refreshDraftOrders(Object.keys(saved.drafts), saved.date)
+      return
     }
+    setCriarDate(todayKey())
+    setCriarDestId('')
+    setCriarDrafts({})
     setScreen('criar')
   }
 
   const buildDraftForDest = async (destId: string, date = criarDate): Promise<CriarDraft> => {
     const destinationCode = normalizeDestination(dests.find(destination => destination.id === destId)?.code)
-    const orderStore = destinationCode.toLowerCase()
-    const orderRequest = orderStore
-      ? sbGet('orders',`cancelled_at=is.null&order_date=eq.${date}&store=eq.${orderStore}&quantity=gt.0&select=bread_id,quantity`)
-      : Promise.resolve([])
-    const compositionRequest = loadProductionCompositions(date, destinationCode)
-    const [existing, orders, productionCompositions, planWithoutOrder] = await Promise.all([
+    const [existing, orders, plannedCompositions, planWithoutOrder] = await Promise.all([
       sbGet('romaneios',`record_date=eq.${date}&destination_id=eq.${destId}&select=id,trip_number`),
-      orderRequest,
-      compositionRequest,
+      loadStoreOrders(date, destinationCode.toLowerCase()),
+      loadProductionCompositions(date, destinationCode),
       loadPlanWithoutOrder(date, destinationCode),
     ])
     const existingRows = existing as RomaneioDraftExistingRow[]
@@ -551,23 +588,19 @@ export default function RomaneioPage() {
     const previousItemRows = existingRows.length
       ? await sbGet('romaneio_items',`romaneio_id=in.(${existingRows.map(row => row.id).join(',')})&product_source=eq.bread&select=product_id,qty_sent`)
       : []
-    const orderQtys = orderQuantitiesByBreadId(orders as RomaneioOrderRow[])
-    const requestedQtys = { ...orderQtys }
+    const orderQtys = orderQuantitiesByBreadId(orders)
     // A composição só chega para a loja cujo pedido já foi gerado pelo
     // Planejamento (bug de 10/10: rascunho com pães da JA sem pedido mandou
-    // separar pão que ninguém pediu nem assou). O total do Planejamento inclui
-    // congelado e sobra, que o pedido não tem; total 0 não sobrepõe o pedido
-    // (bug de 15/09: JC e JA zerados).
-    Object.entries(productionCompositions as Record<string, RomaneioProductionComposition>).forEach(([breadId, composition]) => {
-      if (composition.total > 0) requestedQtys[breadId] = composition.total
-    })
+    // separar pão que ninguém pediu nem assou). O pão novo vem do pedido, mesmo
+    // editado depois; do Planejamento ficam congelado e sobra.
+    const productionCompositions = compositionsFollowingOrder(plannedCompositions, orderQtys)
+    const requestedQtys = romaneioRequestedQuantities(orderQtys, productionCompositions)
     const previouslySentQtys = sentQuantitiesByProductId(previousItemRows as RomaneioSentItemRow[])
     const replacementPendingQtys = pendingReplacementQuantitiesByProductId(replacementRows as RomaneioReplacementPendingRow[])
     let bds = breads
-    const orderRows = orders as RomaneioOrderRow[]
-    const compositionIds = Object.keys(productionCompositions as Record<string, RomaneioProductionComposition>)
+    const compositionIds = Object.keys(productionCompositions)
     const pendingIds = Object.keys(replacementPendingQtys)
-    const ids = romaneioCandidateBreadIds(orderRows, compositionIds, pendingIds)
+    const ids = romaneioCandidateBreadIds(orders, compositionIds, pendingIds)
     if (ids.length) {
       const byOrder = await sbGet('breads',`id=in.(${ids.join(',')})&active=eq.true&is_pj=eq.false&order=name.asc`) as Bread[]
       if (byOrder.length) bds = byOrder
@@ -580,7 +613,7 @@ export default function RomaneioPage() {
       orderQtys: requestedQtys,
       previouslySentQtys,
       replacementPendingQtys,
-      productionCompositions: productionCompositions as Record<string, RomaneioProductionComposition>,
+      productionCompositions,
       planWithoutOrder,
       extras: {},
       trip: nextRomaneioTripNumber(existingRows.map(row => row.trip_number)),
@@ -617,6 +650,7 @@ export default function RomaneioPage() {
 
   const onCriarDateChange = (date: string) => {
     if (hasAnyDraftItems(criarDrafts) && !confirm('Trocar a data limpa os rascunhos abertos. Continuar?')) return
+    criarRoundRef.current += 1
     setCriarDate(date)
     setCriarDestId('')
     setCriarDrafts({})
@@ -697,6 +731,7 @@ export default function RomaneioPage() {
   const saveRomaneio = async () => {
     const draft = criarDrafts[criarDestId]
     if (!draft) { showToastPS('Selecione uma loja'); return }
+    if (draft.orderRefreshFailed) { showToastPS('⚠️ Atualize o pedido desta loja antes de fechar o romaneio'); return }
     const items = Object.entries(draft.qtys).filter(([,v])=>v>0)
     if (!items.length) { showToastPS('⚠️ Adicione ao menos um produto'); return }
     if (!criarDestId) { showToastPS('⚠️ Selecione o destino'); return }
@@ -1242,6 +1277,19 @@ export default function RomaneioPage() {
                 </div>
               )}
 
+              {activeDraft?.orderRefreshFailed && (
+                <div className="ps-banner crust" role="alert" style={{justifyContent:'flex-start',alignItems:'flex-start',flexWrap:'wrap',gap:8}}>
+                  <AlertTriangle size={18} style={{flexShrink:0,marginTop:1}}/>
+                  <span style={{fontWeight:500,lineHeight:1.4,flex:'1 1 200px'}}>
+                    <b>Não foi possível atualizar o pedido desta loja.</b>{' '}
+                    As metas abaixo podem estar antigas; o romaneio só fecha depois de atualizar. O que já foi digitado continua aqui.
+                  </span>
+                  <button className="ps-btn ghost sm" onClick={()=>void refreshDraftOrders([criarDestId], criarDate)}>
+                    <RotateCw size={14}/> Tentar de novo
+                  </button>
+                </div>
+              )}
+
               {activeDraft?.planWithoutOrder && (
                 <div className="ps-banner crust" role="note" style={{justifyContent:'flex-start',alignItems:'flex-start',flexWrap:'nowrap'}}>
                   <AlertTriangle size={18} style={{flexShrink:0,marginTop:1}}/>
@@ -1287,6 +1335,12 @@ export default function RomaneioPage() {
                           {productionComposition && (
                             <div style={{marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(142, 78, 34, 0.08)',color:'var(--ink-soft)',fontSize:12,fontWeight:700,lineHeight:1.45}}>
                               {compositionLabel(productionComposition, option.unit)}
+                            </div>
+                          )}
+                          {romaneioOrderDiffersFromPlan(productionComposition) && (
+                            <div role="note" style={{display:'flex',alignItems:'center',gap:6,marginTop:8,padding:'8px 10px',borderRadius:12,background:'rgba(178, 103, 40, 0.12)',color:'#8E4E22',fontSize:12,fontWeight:700,lineHeight:1.35}}>
+                              <AlertTriangle size={13}/>
+                              <span>Pedido diferente do Planejamento: pão novo planejado {formatRomaneioQty(productionComposition.plannedNewQuantity)} {option.unit}.</span>
                             </div>
                           )}
                           <div className="ps-stepper">
