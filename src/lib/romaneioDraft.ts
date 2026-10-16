@@ -44,6 +44,19 @@ export interface RomaneioExcessRequest {
   currentSent: number
 }
 
+export interface RomaneioProductionComposition {
+  total: number
+  newQuantity: number
+  leftoverQuantity: number
+  frozenQuantity: number
+  /**
+   * Pão novo do Planejamento descontando só a sobra conferida. Difere do pedido
+   * quando o pedido mudou depois da conversão ou a sobra proposta ainda não foi
+   * conferida (a Geolar não imprime antes disso).
+   */
+  plannedNewQuantity?: number
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -177,6 +190,69 @@ export function orderQuantitiesByBreadId(rows: RomaneioOrderRow[]): Record<strin
     quantities[row.bread_id] = (quantities[row.bread_id] ?? 0) + quantity
     return quantities
   }, {})
+}
+
+// O pedido manda no pão novo: Produção, Forno e Geolar leem o pedido, e em
+// 08/10/2026 a JC baixou o gorgonzola de 8 para 4 depois de gerar o pedido pelo
+// Planejamento enquanto o Romaneio seguia mandando separar 8. Do Planejamento
+// ficam só congelado e sobra, que o pedido não tem; sem pedido editado, o total
+// continua igual ao planejado.
+export function compositionsFollowingOrder(
+  compositions: Record<string, RomaneioProductionComposition>,
+  orderQuantities: Record<string, number>,
+): Record<string, RomaneioProductionComposition> {
+  return Object.fromEntries(Object.entries(compositions).map(([breadId, composition]) => {
+    const ordered = Math.max(0, orderQuantities[breadId] ?? 0)
+    return [breadId, {
+      ...composition,
+      newQuantity: ordered,
+      total: ordered + composition.frozenQuantity + composition.leftoverQuantity,
+      plannedNewQuantity: composition.plannedNewQuantity ?? composition.newQuantity,
+    }]
+  }))
+}
+
+// Meta de separação por pão: o pedido, ou o total da composição quando ela
+// existe. Total 0 não sobrepõe o pedido (bug de 15/09: JC e JA zerados).
+export function romaneioRequestedQuantities(
+  orderQuantities: Record<string, number>,
+  compositions: Record<string, RomaneioProductionComposition>,
+): Record<string, number> {
+  const requested = { ...orderQuantities }
+  Object.entries(compositions).forEach(([breadId, composition]) => {
+    if (composition.total > 0) requested[breadId] = composition.total
+  })
+  return requested
+}
+
+export function romaneioOrderDiffersFromPlan(
+  composition: RomaneioProductionComposition | undefined,
+): composition is RomaneioProductionComposition & { plannedNewQuantity: number } {
+  return composition?.plannedNewQuantity !== undefined
+    && composition.plannedNewQuantity !== composition.newQuantity
+}
+
+export interface RomaneioRestorableDraft {
+  breads: Array<{ id: string }>
+  qtys: Record<string, number>
+  extras: Record<string, string>
+  obs: string
+  extraInput: string
+}
+
+// Rascunho salvo no aparelho guarda só o que a pessoa digitou; pedido,
+// composição, viagens e pendências vêm do banco de novo, senão o rascunho
+// recuperado segue um pedido que já mudou. Pão que só estava no rascunho
+// (adicionado pela busca ou já todo enviado) continua na lista.
+export function restoreRomaneioDraft<D extends RomaneioRestorableDraft>(saved: D, fresh: D): D {
+  const freshIds = new Set(fresh.breads.map(bread => bread.id))
+  return Object.assign({}, fresh, {
+    breads: [...fresh.breads, ...saved.breads.filter(bread => !freshIds.has(bread.id))],
+    qtys: saved.qtys,
+    extras: saved.extras,
+    obs: saved.obs,
+    extraInput: saved.extraInput,
+  })
 }
 
 export function romaneioCandidateBreadIds(
