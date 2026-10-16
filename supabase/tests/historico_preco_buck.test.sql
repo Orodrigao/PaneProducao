@@ -20,7 +20,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(52);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -152,6 +152,14 @@ select is(
 
 -- 2. Gatilho da tabela -------------------------------------------------------
 
+-- A tela salva a cada tecla e gravacoes da mesma pessoa em ate 10 minutos sao
+-- uma edicao so. Para separar acoes, o teste empurra para tras o horario dos
+-- registros da linha, como se a edicao anterior tivesse terminado ha uma hora.
+create function pg_temp.encerrar_edicao(p_item uuid) returns void language sql as $$
+  update public.buck_price_history set created_at = created_at - interval '1 hour'
+  where price_tier_item_id = p_item;
+$$;
+
 insert into public.price_tier_items (
   id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
 ) values
@@ -164,8 +172,9 @@ insert into public.price_tier_items (
 select is(
   (select event || '/' || valid_from from public.buck_price_history
     where price_tier_item_id = '98100000-0000-4000-8000-0000000000a5' order by seq desc limit 1),
-  'cadastro/2000-01-01', 'linha nova vale desde sempre');
+  'cadastro/2000-01-01', 'produto que nunca teve preco na Buck vale desde sempre');
 
+select pg_temp.encerrar_edicao('98100000-0000-4000-8000-0000000000a5');
 update public.price_tier_items set unit_price = 2.50 where id = '98100000-0000-4000-8000-0000000000a5';
 
 select is(
@@ -185,7 +194,7 @@ select is(
   (select count(*)::int from public.buck_price_history where price_tier_item_id = '98100000-0000-4000-8000-0000000000a5'),
   2, 'mudar so o pacote nao gera registro');
 
--- A tela antiga salva a cada tecla: apagar o campo grava zero antes do novo.
+-- Na mesma edicao: apagar o campo grava zero antes do valor novo.
 update public.price_tier_items set unit_price = 0 where id = '98100000-0000-4000-8000-0000000000a5';
 update public.price_tier_items set unit_price = 3.10 where id = '98100000-0000-4000-8000-0000000000a5';
 
@@ -196,16 +205,21 @@ select is(
   (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a5', private.data_na_padaria() - 1)),
   2.00::numeric, 'e o passado nao muda');
 
-update public.price_tier_items set unit_price = 4.00 where id = '98100000-0000-4000-8000-0000000000a6';
+-- Primeiro preco digitado tecla a tecla: "12,32" chega como 1, 12, 12.3, 12.32.
+update public.price_tier_items set unit_price = 1 where id = '98100000-0000-4000-8000-0000000000a6';
+update public.price_tier_items set unit_price = 12 where id = '98100000-0000-4000-8000-0000000000a6';
+update public.price_tier_items set unit_price = 12.3 where id = '98100000-0000-4000-8000-0000000000a6';
+update public.price_tier_items set unit_price = 12.32 where id = '98100000-0000-4000-8000-0000000000a6';
 
-select is(
-  (select event || '/' || valid_from from public.buck_price_history
-    where price_tier_item_id = '98100000-0000-4000-8000-0000000000a6' order by seq desc limit 1),
-  'primeiro_preco/2000-01-01', 'primeiro preco preenche o buraco desde o cadastro');
 select is(
   (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a6', date '2026-09-08')),
-  4.00::numeric, 'e destrava semana passada que estava sem preco');
+  12.32::numeric, 'o primeiro preco digitado tecla a tecla destrava o passado com o valor inteiro, nao com o primeiro digito');
+select is(
+  (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a6', private.data_na_padaria())),
+  12.32::numeric, 'e vale hoje tambem');
 
+-- Remocao numa edicao nova tira o preco de hoje em diante.
+select pg_temp.encerrar_edicao('98100000-0000-4000-8000-0000000000a6');
 update public.price_tier_items set active = false where id = '98100000-0000-4000-8000-0000000000a6';
 
 select is(
@@ -213,21 +227,30 @@ select is(
   null::numeric, 'remover tira o preco de hoje em diante');
 select is(
   (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a6', private.data_na_padaria() - 1)),
-  4.00::numeric, 'mas ontem continua com preco');
+  12.32::numeric, 'mas ontem continua com preco');
 
-update public.price_tier_items set active = true where id = '98100000-0000-4000-8000-0000000000a6';
+-- Remocao feita em 01/10; reativar em outro dia, com preco novo, preenche
+-- desde a remocao e nao mexe no que veio antes.
+update public.buck_price_history set valid_from = date '2026-10-01'
+where seq = (select max(seq) from public.buck_price_history where price_tier_item_id = '98100000-0000-4000-8000-0000000000a6');
+select pg_temp.encerrar_edicao('98100000-0000-4000-8000-0000000000a6');
+update public.price_tier_items set active = true, unit_price = 13 where id = '98100000-0000-4000-8000-0000000000a6';
 
 select is(
-  (select event || '/' || (valid_from = private.data_na_padaria()) || '/' || unit_price from public.buck_price_history
+  (select event || '/' || valid_from || '/' || unit_price from public.buck_price_history
     where price_tier_item_id = '98100000-0000-4000-8000-0000000000a6' order by seq desc limit 1),
-  'primeiro_preco/true/4.00', 'reativar preenche desde a remocao');
+  'primeiro_preco/2026-10-01/13', 'reativar preenche desde a remocao');
+select is(
+  (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a6', date '2026-09-30')),
+  12.32::numeric, 'antes da remocao continua o preco antigo');
 
+select pg_temp.encerrar_edicao('98100000-0000-4000-8000-0000000000a6');
 update public.price_tier_items set pricing_unit = 'kg' where id = '98100000-0000-4000-8000-0000000000a6';
 
 select is(
   (select event || '/' || valid_from from public.buck_price_history
     where price_tier_item_id = '98100000-0000-4000-8000-0000000000a6' order by seq desc limit 1),
-  'troca_de_unidade/' || private.data_na_padaria(), 'troca de unidade corrige o periodo vigente');
+  'troca_de_unidade/2026-10-01', 'troca de unidade corrige o periodo vigente, desde o seu comeco');
 
 select throws_ok(
   $$ update public.price_tier_items set product_id = 'teste-hist-outro' where id = '98100000-0000-4000-8000-0000000000a6' $$,
@@ -236,12 +259,68 @@ select throws_ok(
   'mudar o produto de uma linha da Buck e recusado'
 );
 
+-- Apagar a opcao de venda poe null na linha (ON DELETE SET NULL): permitido.
+select lives_ok(
+  $$ update public.price_tier_items set sale_option_id = null where id = '98100000-0000-4000-8000-0000000000a6' $$,
+  'opcao de venda apagada nao trava a linha da Buck'
+);
+
+select pg_temp.encerrar_edicao('98100000-0000-4000-8000-0000000000a6');
 delete from public.price_tier_items where id = '98100000-0000-4000-8000-0000000000a6';
 
 select is(
   (select event || '/' || coalesce(unit_price::text, 'sem preco') from public.buck_price_history
     where price_tier_item_id = '98100000-0000-4000-8000-0000000000a6' order by seq desc limit 1),
   'exclusao/sem preco', 'excluir a linha deixa registro, e o historico fica');
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values (
+  '98100000-0000-4000-8000-0000000000a6', '98100000-0000-4000-8000-0000000000a0',
+  'teste-hist-novo', 'bread', '[TESTE] Pao Novo Historico', 20, 'un', 1, true
+);
+
+select is(
+  (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a6', date '2026-09-30')),
+  12.32::numeric, 'incluir de novo a mesma linha nao apaga o passado: vale de hoje');
+
+-- Ponte pao legado <-> produto: o romaneio grava o produto unificado e a Buck
+-- tinha o preco no pao legado. Incluir hoje uma linha direta do produto nao
+-- muda o preco das semanas que ja passaram.
+insert into public.products (id, name, category, active, unit, kind, is_pj, legacy_bread_id)
+values ('98100000-0000-4000-8000-0000000000c2', '[TESTE] Pao Unificado Historico', 'PAES', true, 'un', 'final', false, 'teste-hist-legado');
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values (
+  '98100000-0000-4000-8000-0000000000a7', '98100000-0000-4000-8000-0000000000a0',
+  'teste-hist-legado', 'bread', '[TESTE] Pao Legado Historico', 5.00, 'un', 1, true
+);
+
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select '98100000-0000-4000-8000-0000000000b3', d.id, date '2026-09-15', 1, 'enviado', 'Teste'
+from public.destinations d where upper(d.code) = 'EX' and d.active order by d.id limit 1;
+
+insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
+values ('98100000-0000-4000-8000-0000000000d4', '98100000-0000-4000-8000-0000000000b3',
+        '98100000-0000-4000-8000-0000000000c2', 'product', '[TESTE] Pao Unificado Historico', 10, null);
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values (
+  '98100000-0000-4000-8000-0000000000a8', '98100000-0000-4000-8000-0000000000a0',
+  '98100000-0000-4000-8000-0000000000c2', 'product', '[TESTE] Pao Unificado Historico', 0, 'un', 1, true
+);
+update public.price_tier_items set unit_price = 7 where id = '98100000-0000-4000-8000-0000000000a8';
+
+select is(
+  (select event || '/' || (valid_from = private.data_na_padaria()) from public.buck_price_history
+    where price_tier_item_id = '98100000-0000-4000-8000-0000000000a8' order by seq limit 1),
+  'cadastro/true', 'linha nova de produto que ja tinha preco pela ponte vale de hoje');
+select is(
+  (select total from private.calcular_cobranca_buck_detalhada(date '2026-09-14', date '2026-09-20')
+    where product_id = '98100000-0000-4000-8000-0000000000c2'),
+  50.00::numeric, 'a semana de 14/09 continua com o preco do pao legado: 10 x 5,00');
 
 -- 3. A conta pelo preco do dia ----------------------------------------------
 
@@ -287,7 +366,7 @@ select is(
   (select string_agg(produto || ' ' || quantidade || ' x ' || preco_unitario || ' = ' || total, ' | '
                      order by produto, preco_unitario)
      from private.calcular_cobranca_buck_detalhada(date '2026-09-07', date '2026-09-13')),
-  'Italiano 10 x 4.50 = 45.00 | Italiano 20 x 5.00 = 100.00 | Pão de Azeitonas 4 x 9.50 = 38.00',
+  'Italiano 10 x 4.5 = 45.00 | Italiano 20 x 5 = 100.00 | Pão de Azeitonas 4 x 9.5 = 38.00',
   'cada romaneio paga o preco do seu dia; o Italiano vira duas linhas'
 );
 
@@ -337,7 +416,7 @@ select is(
      from public.receivable_romaneio_lines linha
      join public.receivables cobranca on cobranca.id = linha.receivable_id
     where cobranca.request_id = '98100000-0000-4000-8000-0000000000f1'),
-  'Italiano 4.50 | Italiano 5.00 | Pão de Azeitonas 9.50',
+  'Italiano 4.5 | Italiano 5 | Pão de Azeitonas 9.5',
   'a foto da cobranca guarda os dois precos do Italiano'
 );
 select is(
@@ -431,6 +510,32 @@ select ok(
   and not has_table_privilege('anon', 'public.buck_price_history', 'select'),
   'ninguem logado altera ou apaga o historico, e anonimo nao le'
 );
+
+-- 6. Troca da tabela BUCK por outra com o mesmo nome ------------------------
+
+-- Copiar a tabela, renomear e desativar a antiga e renomear a copia: as linhas da copia
+-- nasceram fora da Buck, sem historico, e precisam continuar cobrando.
+insert into public.price_tiers (id, name, description, active)
+values ('98100000-0000-4000-8000-0000000000b9', 'BUCK (copia)', 'Copia de teste', true);
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values (
+  '98100000-0000-4000-8000-0000000000ab', '98100000-0000-4000-8000-0000000000b9',
+  'teste-hist-italiano', 'bread', 'Italiano', 5.89, 'un', 1, true
+);
+-- O nome e unico: a antiga sai do caminho antes.
+update public.price_tiers set active = false, name = 'BUCK (antiga)' where id = '98100000-0000-4000-8000-0000000000a0';
+update public.price_tiers set name = 'BUCK' where id = '98100000-0000-4000-8000-0000000000b9';
+
+select is(
+  (select count(*)::int from public.price_tier_items linha
+    where linha.tier_id = private.buck_tier_id()
+      and not exists (select 1 from public.buck_price_history h where h.price_tier_item_id = linha.id)),
+  0, 'a tabela que vira Buck ganha o historico das linhas que ainda nao tinham');
+select is(
+  (select preco_unitario from private.calcular_cobranca_buck_detalhada(date '2026-09-07', date '2026-09-13')
+    where product_id = 'teste-hist-italiano' limit 1),
+  5.89::numeric, 'e a cobranca continua com preco, em vez de travar por falta dele');
 
 select * from finish();
 rollback;

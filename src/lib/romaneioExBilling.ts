@@ -111,6 +111,12 @@ export function billingResultFromBuckLines(lines: readonly BuckBillingLine[]): R
     }
   })
 
+  // Ordem de leitura da padaria: nome em português e, no mesmo produto, a
+  // linha do preço mais antigo primeiro. O banco ordena pela collation dele.
+  rows.sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR')
+    || a.billingUnit.localeCompare(b.billingUnit)
+    || (a.firstDate ?? '').localeCompare(b.firstDate ?? ''))
+
   return {
     rows,
     total: totalCents / 100,
@@ -132,8 +138,12 @@ export function billingRowPeriodLabel(row: Pick<RomaneioExBillingRow, 'firstDate
   return `de ${dayMonth(row.firstDate)} a ${dayMonth(row.lastDate)}`
 }
 
-/** A função ainda não existe no banco (janela do deploy): a tela usa a conta antiga. */
+/**
+ * A função ainda não existe no banco (janela do deploy): a tela usa a conta
+ * antiga. Só pelo código do erro: falta de permissão (42501) também cita o
+ * nome da função e nunca pode cair em silêncio na conta antiga.
+ */
 export function isMissingBuckBillingFunction(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
-  return error.code === 'PGRST202' || error.code === '42883' || (error.message ?? '').includes('list_romaneio_ex_billing')
+  return error.code === 'PGRST202' || error.code === '42883'
 }

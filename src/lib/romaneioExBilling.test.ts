@@ -64,8 +64,8 @@ describe('billingResultFromBuckLines', () => {
 
     expect(result.hasBlockingIssues).toBe(true)
     expect(result.total).toBe(22.5)
-    expect(result.rows[1]).toMatchObject({ productSource: 'extra', itemIds: ['i2'], unitPrice: null, issues: ['missing_price'] })
-    expect(result.rows[2]).toMatchObject({ billingUnit: 'kg', unitPrice: null, total: null, issues: ['suspicious_quantity'] })
+    expect(result.rows.find(row => row.productName === 'Parmesão')).toMatchObject({ productSource: 'extra', itemIds: ['i2'], unitPrice: null, issues: ['missing_price'] })
+    expect(result.rows.find(row => row.productName === 'Ciabatta (kg)')).toMatchObject({ billingUnit: 'kg', unitPrice: null, total: null, issues: ['suspicious_quantity'] })
   })
 
   it('problema desconhecido do banco bloqueia, nunca libera', () => {
@@ -75,6 +75,18 @@ describe('billingResultFromBuckLines', () => {
     expect(result.hasBlockingIssues).toBe(true)
     expect(result.total).toBe(0)
     expect(result.rows[0].issues).toEqual(['missing_price'])
+  })
+
+  it('ordena pelo nome em português e, no mesmo produto, pela data', () => {
+    const result = billingResultFromBuckLines([
+      line({ product_id: 'z', produto: 'Zebra', itens: [{ record_date: '2026-10-01' }] }),
+      line({ product_id: 'i', produto: 'Italiano', preco_unitario: 5.89, itens: [{ record_date: '2026-10-09' }] }),
+      line({ product_id: 'e', produto: 'Éclair', itens: [{ record_date: '2026-10-01' }] }),
+      line({ product_id: 'i', produto: 'Italiano', preco_unitario: 4.5, itens: [{ record_date: '2026-10-05' }] }),
+    ])
+    expect(result.rows.map(row => `${row.productName} ${row.firstDate}`)).toEqual([
+      'Éclair 2026-10-01', 'Italiano 2026-10-05', 'Italiano 2026-10-09', 'Zebra 2026-10-01',
+    ])
   })
 
   it('soma em centavos, sem erro de ponto flutuante', () => {
@@ -99,6 +111,7 @@ describe('isMissingBuckBillingFunction', () => {
     expect(isMissingBuckBillingFunction({ code: 'PGRST202', message: 'Could not find the function' })).toBe(true)
     expect(isMissingBuckBillingFunction({ code: '42883' })).toBe(true)
     expect(isMissingBuckBillingFunction({ code: '42501', message: 'Sem permissão para ver o Fechamento EX.' })).toBe(false)
+    expect(isMissingBuckBillingFunction({ code: '42501', message: 'permission denied for function list_romaneio_ex_billing' })).toBe(false)
     expect(isMissingBuckBillingFunction(null)).toBe(false)
   })
 })

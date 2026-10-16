@@ -425,7 +425,7 @@ export default function RelatorioRomaneiosEX() {
       setActionMessage('Este nome reúne mais de um lançamento. Corrija cada lançamento separadamente.')
       return
     }
-    if (!confirm(`Vincular este lançamento a “${target.productName}” por ${formatBRL(target.unitPrice)}/${target.pricingUnit}?`)) return
+    if (!confirm(`Vincular este lançamento a “${target.productName}”? Preço de hoje na Tabela Buck: ${formatBRL(target.unitPrice)}/${target.pricingUnit}. A cobrança usa o preço do dia do romaneio.`)) return
 
     setSavingLink(true)
     setActionMessage(null)
@@ -520,6 +520,7 @@ export default function RelatorioRomaneiosEX() {
           <div className="ps-scroll ps-pad">
             <h1 className="ps-page-title">🚚 Fechamento EX</h1>
             <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela BUCK, com o preço do dia de cada romaneio.</p>
+            <p className="ps-hint" style={{ marginTop: -6 }}>Semana já cobrada: o valor cobrado fica no Contas a receber e pode diferir desta conta.</p>
 
             <div className="ps-filters" style={{ alignItems: 'center' }}>
               <PeriodFilter defaultPreset="30d" onChange={setRange} />
