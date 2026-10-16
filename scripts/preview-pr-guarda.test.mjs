@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join, relative } from 'node:path'
+import { delimiter, dirname, join, relative } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -17,6 +17,8 @@ const AJUDANTE = 'test/preview-pr/apoio/entrar.ts'
 const WORKFLOW = join(RAIZ, '.github', 'workflows', 'usuarios-banco-por-pr.yml')
 const NOME_DO_JOB = 'Navegador no preview desta PR'
 const SENHA = 'SUPABASE_TEST_USER_PASSWORD'
+const PASSO_DOS_ROTEIROS = 'Rodar os roteiros no preview desta PR'
+const PASSO_DO_ARTEFATO = 'Guardar a foto da tela quando o navegador falhar'
 
 function arquivosDe(pasta) {
   const saida = []
@@ -107,6 +109,15 @@ function passosDoJob(bloco) {
   return passos
 }
 
+/** O comando de limpeza dentro do passo dos roteiros: `node <script> <pasta>`. */
+function comandoDaLimpeza(passos) {
+  const passo = passos.find((p) => p.nome === PASSO_DOS_ROTEIROS)
+  assert.ok(passo, `passo "${PASSO_DOS_ROTEIROS}" sumiu`)
+  const achado = /\n {10}node (scripts\/apagar-valores-de-campos\.mjs) (test-results\/[\w./-]+)\n/.exec(passo.texto)
+  assert.ok(achado, 'o passo dos roteiros precisa rodar `node scripts/apagar-valores-de-campos.mjs <pasta de test-results>`')
+  return { script: achado[1], pasta: achado[2] }
+}
+
 describe(`job "${NOME_DO_JOB}" no workflow real`, () => {
   const texto = readFileSync(WORKFLOW, 'utf8')
   const job = blocoDoJob(texto, 'navegador-preview-pr')
@@ -153,10 +164,44 @@ describe(`job "${NOME_DO_JOB}" no workflow real`, () => {
 
   it('o resumo roda mesmo com falha e o artefato leva so o error-context.md', () => {
     assert.match(passo('Resumir perfis e resultados').texto, /if: always\(\) && steps\.pronto\.outcome == 'success'/)
-    const artefato = passo('Guardar a foto da tela quando o navegador falhar').texto
-    assert.match(artefato, /if: failure\(\)/)
+    const artefato = passo(PASSO_DO_ARTEFATO).texto
+    assert.match(artefato, /\n {8}if: failure\(\) && steps\.roteiros\.outputs\.limpo == 'sim'\n/)
     assert.match(artefato, /path: test-results\/preview-pr\/saida\/\*\*\/error-context\.md\n/)
     assert.match(artefato, /retention-days: 7/)
+  })
+
+  // O artefato abre para qualquer conta do GitHub e o error-context.md mostra o
+  // valor dos campos e repete o que o roteiro digitou (`fill("...")`): na tela
+  // de login, a senha das contas ficticias (run 38425196586, 13/10/2026). A
+  // limpeza roda no mesmo passo do Playwright, onde a senha existe, e o upload so
+  // roda depois dela.
+  it('a limpeza roda depois do Playwright, antes de marcar limpo, e o upload so sobe se ela terminou', () => {
+    const roteiros = passo(PASSO_DOS_ROTEIROS).texto
+    assert.match(roteiros, /\n {8}id: roteiros\n/)
+    const ordem = [
+      'npx playwright test --config playwright.preview-pr.config.ts',
+      'node scripts/apagar-valores-de-campos.mjs test-results/preview-pr/saida',
+      'echo "limpo=sim" >> "$GITHUB_OUTPUT"',
+      'exit "$resultado"',
+    ].map((trecho) => {
+      const posicao = roteiros.indexOf(trecho)
+      assert.ok(posicao >= 0, `faltou no passo dos roteiros: ${trecho}`)
+      return posicao
+    })
+    assert.deepEqual([...ordem].sort((a, b) => a - b), ordem, 'a ordem do passo dos roteiros mudou')
+    assert.match(roteiros, /resultado=\$\?\n/)
+    assert.equal(job.match(/echo "limpo=sim" >> "\$GITHUB_OUTPUT"/g)?.length, 1, 'so o passo dos roteiros pode marcar limpo')
+    assert.doesNotMatch(roteiros, /continue-on-error/)
+    assert.doesNotMatch(passo(PASSO_DO_ARTEFATO).texto, /continue-on-error/)
+    // Nenhum outro caminho de artefato pode contornar a limpeza.
+    assert.deepEqual(passos.filter((p) => /upload-artifact/.test(p.texto)).map((p) => p.nome), [PASSO_DO_ARTEFATO])
+  })
+
+  it('a limpeza olha a pasta de onde o upload tira os arquivos e onde o Playwright escreve', () => {
+    const { pasta } = comandoDaLimpeza(passos)
+    assert.ok(passo(PASSO_DO_ARTEFATO).texto.includes(`path: ${pasta}/**/error-context.md\n`))
+    const config = readFileSync(join(RAIZ, 'playwright.preview-pr.config.ts'), 'utf8')
+    assert.ok(config.includes(`outputDir: '${pasta}'`), 'o outputDir do Playwright mudou')
   })
 
   it('o provisionamento publica endereco e commit para o navegador', () => {
@@ -280,6 +325,114 @@ describe(`passo "${PASSO_DO_BANCO}" executado`, () => {
       const r = publicarBanco({ saidaDaCli: envDaCli(`SUPABASE_URL=https://${REF_DA_PR}.supabase.co`), sha })
       assert.equal(r.status, 1, sha)
       assert.equal(r.saida, '', sha)
+    }
+  })
+})
+
+// O passo dos roteiros e o unico que tem a senha, e tambem o que limpa o
+// artefato publico. Aqui o bloco `run` DE VERDADE e recortado do YAML e
+// executado no bash, com um `npx` falso que escreve os tres vazamentos que o
+// Playwright real produziu no ensaio de 16/10/2026: a linha do campo, o
+// `fill("...")` do registro de chamadas e o `Received: "..."` de uma asercao.
+// So existe senha FALSA aqui.
+const SENHA_FALSA = 'Falsa#Senha-7qZ!Nunca-Real'
+
+function rodarPassoDosRoteiros({ playwrightSai, comScript = true, linhaExtra = '' }) {
+  const raiz = mkdtempSync(join(tmpdir(), 'passo-roteiros-'))
+  try {
+    const bin = join(raiz, 'bin')
+    mkdirSync(bin, { recursive: true })
+    const falso = join(bin, 'npx')
+    writeFileSync(falso, [
+      '#!/usr/bin/env bash',
+      'dir=test-results/preview-pr/saida/login-falhou',
+      'mkdir -p "$dir"',
+      "cat <<'CONTEXTO' | sed \"s|@@SENHA@@|$SUPABASE_TEST_USER_PASSWORD|g\" > \"$dir/error-context.md\"",
+      'Call log:',
+      '  - fill("@@SENHA@@")',
+      'Received: "@@SENHA@@"',
+      '```yaml',
+      '- textbox "nome@paneesalute.com.br": fulano+teste@example.com',
+      '- textbox: @@SENHA@@',
+      '- button "Entrar"',
+      '- paragraph: E-mail ou senha inválidos.',
+      '```',
+      'CONTEXTO',
+      'printf "%s\\n" "$NPX_FALSO_LINHA_EXTRA" >> "$dir/error-context.md"',
+      'exit "$NPX_FALSO_SAIDA"',
+      '',
+    ].join('\n'))
+    chmodSync(falso, 0o755)
+    if (comScript) {
+      mkdirSync(join(raiz, 'scripts'), { recursive: true })
+      writeFileSync(join(raiz, 'scripts', 'apagar-valores-de-campos.mjs'), readFileSync(join(RAIZ, 'scripts', 'apagar-valores-de-campos.mjs')))
+    }
+    const saidaDoPasso = join(raiz, 'github_output')
+    writeFileSync(saidaDoPasso, '')
+
+    const env = {}
+    for (const [chave, valor] of Object.entries(process.env)) {
+      if (chave.toUpperCase() !== 'PATH') env[chave] = valor
+    }
+    Object.assign(env, {
+      PATH: `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ''}`,
+      SUPABASE_TEST_USER_PASSWORD: SENHA_FALSA,
+      GITHUB_OUTPUT: saidaDoPasso,
+      NPX_FALSO_SAIDA: String(playwrightSai),
+      NPX_FALSO_LINHA_EXTRA: linhaExtra,
+    })
+    // `bash -e`, como o GitHub roda um `run` sem `shell:` no Linux.
+    const execucao = spawnSync('bash', ['-e', '-c', blocoRun(PASSO_DOS_ROTEIROS)], { cwd: raiz, env, encoding: 'utf8' })
+    assert.ifError(execucao.error)
+    const arquivo = join(raiz, 'test-results', 'preview-pr', 'saida', 'login-falhou', 'error-context.md')
+    return {
+      status: execucao.status,
+      log: `${execucao.stdout}${execucao.stderr}`,
+      saida: readFileSync(saidaDoPasso, 'utf8'),
+      contexto: existsSync(arquivo) ? readFileSync(arquivo, 'utf8') : '',
+    }
+  } finally {
+    rmSync(raiz, { recursive: true, force: true })
+  }
+}
+
+describe(`passo "${PASSO_DOS_ROTEIROS}" executado`, () => {
+  it('Playwright reprova: o passo continua vermelho e o artefato sai sem a senha falsa nos tres lugares', () => {
+    const r = rodarPassoDosRoteiros({ playwrightSai: 1 })
+    assert.equal(r.status, 1, r.log)
+    assert.equal(r.saida, 'limpo=sim\n')
+    assert.ok(r.contexto.length > 0, 'o contexto fabricado sumiu')
+    assert.ok(!r.contexto.includes(SENHA_FALSA), 'a senha falsa sobrou no artefato')
+    assert.ok(!r.log.includes(SENHA_FALSA), 'o log nao pode mostrar a senha')
+    assert.match(r.contexto, /- textbox: \[segredo apagado\]/)
+    assert.match(r.contexto, /- textbox "nome@paneesalute\.com\.br": \[valor apagado\]/)
+    assert.match(r.contexto, /- fill\("\[segredo apagado\]"\)/)
+    assert.match(r.contexto, /Received: "\[segredo apagado\]"/)
+    assert.match(r.contexto, /- paragraph: E-mail ou senha inválidos\./)
+  })
+
+  it('Playwright passa: o passo termina verde, tambem limpo', () => {
+    const r = rodarPassoDosRoteiros({ playwrightSai: 0 })
+    assert.equal(r.status, 0, r.log)
+    assert.equal(r.saida, 'limpo=sim\n')
+    assert.ok(!r.contexto.includes(SENHA_FALSA))
+  })
+
+  // Achado da revisao independente: uma senha reescrita de jeito que a limpeza
+  // literal nao conhece (aqui, o `#` virou #) nao pode passar em silencio.
+  it('se sobrar pedaco da senha reescrito, o passo falha e NAO marca limpo', () => {
+    const r = rodarPassoDosRoteiros({ playwrightSai: 1, linhaExtra: 'Received: "Falsa\\u0023Senha-7qZ!Nunca-Real"' })
+    assert.notEqual(r.status, 0, r.log)
+    assert.equal(r.saida, '', 'com pedaco de senha no arquivo nao pode haver limpo=sim')
+    assert.match(r.log, /pedaco de segredo/)
+    assert.ok(!r.log.includes('Senha-7qZ'), 'o log nao pode mostrar o pedaco')
+  })
+
+  it('se a limpeza nao roda, o passo falha e NAO marca limpo, com o Playwright verde ou vermelho', () => {
+    for (const playwrightSai of [0, 1]) {
+      const r = rodarPassoDosRoteiros({ playwrightSai, comScript: false })
+      assert.notEqual(r.status, 0, `playwrightSai=${playwrightSai}\n${r.log}`)
+      assert.equal(r.saida, '', 'sem limpeza nao pode haver limpo=sim')
     }
   })
 })
