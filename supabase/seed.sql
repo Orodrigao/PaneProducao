@@ -2181,3 +2181,5 @@ values
 on conflict (product_source, product_id, record_date, product_variant_id) do update
 set quantity_baked = excluded.quantity_baked,
     production_unit = excluded.production_unit;
+
+-- CANARIO PR do artefato sem senha: comentario inofensivo para criar o banco isolado. Nunca integrar.

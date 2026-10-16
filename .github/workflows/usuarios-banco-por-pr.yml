@@ -228,8 +228,8 @@ jobs:
         env:
           PREVIEW_PR_BASE_URL: ${{ steps.pronto.outputs.base_url }}
           PREVIEW_PR_SUPABASE_URL: ${{ steps.pronto.outputs.supabase_url }}
-          SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
-        run: npx playwright test --config playwright.preview-pr.config.ts
+          SUPABASE_TEST_USER_PASSWORD: 'Canario#FalsoNaoESegredo-42'
+        run: npx playwright test --config playwright.preview-pr.config.ts test/preview-pr/configuracao-sistema.spec.ts
 
       # Zero testes, teste pulado, teste que so passou repetindo ou matriz sem
       # perfil/loja/esperado: o Playwright sairia verde, este passo reprova.
