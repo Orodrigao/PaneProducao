@@ -224,12 +224,30 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # A senha so existe neste passo, e e aqui que o artefato e limpo. O
+      # error-context.md mostra o valor dos campos (na tela de login, a senha) e
+      # repete o que o roteiro digitou no registro de chamadas (`fill("...")`):
+      # o artefato de 13/10/2026 (run 38425196586) ficou 3 dias aberto, num
+      # repositorio publico, para qualquer conta do GitHub baixar. A limpeza roda
+      # com o Playwright verde ou vermelho; o passo so grava limpo=sim depois
+      # dela, o upload exige isso (falha fechada) e o passo continua vermelho
+      # quando o Playwright reprovou.
+      #
+      # O teste scripts/preview-pr-guarda.test.mjs executa ESTE bloco `run`.
       - name: Rodar os roteiros no preview desta PR
+        id: roteiros
         env:
           PREVIEW_PR_BASE_URL: ${{ steps.pronto.outputs.base_url }}
           PREVIEW_PR_SUPABASE_URL: ${{ steps.pronto.outputs.supabase_url }}
           SUPABASE_TEST_USER_PASSWORD: ${{ secrets.SUPABASE_TEST_USER_PASSWORD }}
-        run: npx playwright test --config playwright.preview-pr.config.ts
+        run: |
+          set +e
+          npx playwright test --config playwright.preview-pr.config.ts
+          resultado=$?
+          set -e
+          node scripts/apagar-valores-de-campos.mjs test-results/preview-pr/saida
+          echo "limpo=sim" >> "$GITHUB_OUTPUT"
+          exit "$resultado"
 
       # Zero testes, teste pulado, teste que so passou repetindo ou matriz sem
       # perfil/loja/esperado: o Playwright sairia verde, este passo reprova.
@@ -237,10 +255,11 @@ jobs:
         if: always() && steps.pronto.outcome == 'success'
         run: node scripts/preview-pr-resumo.mjs test-results/preview-pr/relatorio.json
 
-      # So a arvore de acessibilidade da tela na falha, como no ci.yml. Trace,
-      # video e screenshot guardariam a sessao num repositorio publico.
+      # So a arvore de acessibilidade da tela na falha, como no ci.yml, e so
+      # depois da limpeza do passo dos roteiros. Trace, video e screenshot
+      # guardariam a sessao num repositorio publico.
       - name: Guardar a foto da tela quando o navegador falhar
-        if: failure()
+        if: failure() && steps.roteiros.outputs.limpo == 'sim'
         uses: actions/upload-artifact@v4
         with:
           name: navegador-preview-pr-falha-${{ github.run_id }}-${{ github.run_attempt }}
