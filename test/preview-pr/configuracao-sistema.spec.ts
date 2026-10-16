@@ -15,6 +15,15 @@ const TITULO = 'Configuração do Sistema'
 const CAMPO_IMPOSTO = 'Imposto sobre a venda (vale para todos os canais)'
 const PERCENTUAL = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
+// Folga de tudo que espera o banco desta PR pela tela: abrir, recarregar e
+// salvar (uma gravacao seguida da mesma releitura que a tela faz ao abrir).
+// No preview, abrir passou de 5 s numa execucao (PR 467) e salvar passou de
+// 5 s em outra (run 38597083060, PR 499), provavelmente por lentidao
+// passageira: naquela janela o teste levou 19 s e a repeticao 13 s, contra 6
+// a 8 s nas demais execucoes desde 10/10, e os outros roteiros do mesmo job
+// rodaram no tempo de sempre.
+const ESPERA_DO_BANCO = 20_000
+
 // Salvar vazio nao grava nada (o banco so grava o que mudou), mas passa pela
 // mesma trava de admin que um salvamento de verdade.
 const PEDIDOS = {
@@ -55,7 +64,14 @@ function numeroDoCampo(texto: string): number | null {
 
 async function salvar(page: Page) {
   await page.getByRole('button', { name: 'Salvar configuração' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'Configuração salva: 1 valor mudou.' })).toBeVisible()
+  // O aviso so aparece quando gravar e reler terminam: "status" se deu certo,
+  // "alert" se nao. A espera mira esse fim; o texto e conferido depois, para
+  // recusa, erro de rede ou contagem errada falharem sem consumir a folga
+  // inteira, mostrando o que a tela disse.
+  const tela = page.getByRole('main')
+  const aviso = tela.getByRole('status').filter({ hasText: 'Configuração salva' }).or(tela.getByRole('alert'))
+  await expect(aviso).toBeVisible({ timeout: ESPERA_DO_BANCO })
+  await expect(aviso).toHaveText('Configuração salva: 1 valor mudou.')
 }
 
 async function impostoNoBanco(page: Page, acesso: AcessoAoBanco): Promise<string> {
@@ -95,7 +111,7 @@ test('Administrador grava e rele o imposto na Configuracao do Sistema',
   async ({ page }) => {
     const acesso = await entrarComo(page, 'admin')
     await page.goto(TELA)
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible({ timeout: ESPERA_DO_BANCO })
 
     const campo = page.getByLabel(CAMPO_IMPOSTO)
     await expect(campo).toBeEnabled()
@@ -106,10 +122,9 @@ test('Administrador grava e rele o imposto na Configuracao do Sistema',
     try {
       await campo.fill(marca)
       await salvar(page)
-      // Pagina nova le tudo do banco. O carregamento no preview frio passou
-      // de 5 s numa execucao (PR 467), dai a folga maior so aqui.
+      // Pagina nova le tudo do banco.
       await page.reload()
-      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca, { timeout: 20_000 })
+      await expect(page.getByLabel(CAMPO_IMPOSTO)).toHaveValue(marca, { timeout: ESPERA_DO_BANCO })
       // A tela pode mostrar o rascunho; o banco diz o que ficou gravado.
       expect(await impostoNoBanco(page, acesso)).toBe(marca)
 

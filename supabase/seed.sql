@@ -2181,3 +2181,4 @@ values
 on conflict (product_source, product_id, record_date, product_variant_id) do update
 set quantity_baked = excluded.quantity_baked,
     production_unit = excluded.production_unit;
+-- Canario da PR 502 (nunca integrar): comentario inofensivo so para esta PR de prova ganhar banco isolado e rodar o job Navegador no preview desta PR.
