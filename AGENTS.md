@@ -382,6 +382,7 @@ no escopo autorizado; esta lista não exige um novo OK a cada execução.
 - dependência nova de produção;
 - alterar, desativar ou pôr exceção no ruleset `Trava da main`, ou renomear
   ou remover job que é check exigido (toda PR ficaria esperando para sempre);
+- afrouxar a lista de bloqueio dos agentes (`.claude/settings.json`);
 - ampliar aplicativo do GitHub para outro repositório ou habilitar produto
   cobrado por uso;
 - exclusão de branch ou worktree — exceto o fecho de ciclo pós-merge
