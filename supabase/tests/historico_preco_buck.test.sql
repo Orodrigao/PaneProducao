@@ -20,7 +20,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(52);
+select plan(54);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -513,8 +513,9 @@ select ok(
 
 -- 6. Troca da tabela BUCK por outra com o mesmo nome ------------------------
 
--- Copiar a tabela, renomear e desativar a antiga e renomear a copia: as linhas da copia
--- nasceram fora da Buck, sem historico, e precisam continuar cobrando.
+-- Copiar a tabela, renomear e desativar a antiga e renomear a copia: as linhas
+-- da copia nasceram fora da Buck, sem historico. O passado continua com o
+-- historico da tabela antiga; a copia vale de hoje.
 insert into public.price_tiers (id, name, description, active)
 values ('98100000-0000-4000-8000-0000000000b9', 'BUCK (copia)', 'Copia de teste', true);
 insert into public.price_tier_items (
@@ -533,9 +534,14 @@ select is(
       and not exists (select 1 from public.buck_price_history h where h.price_tier_item_id = linha.id)),
   0, 'a tabela que vira Buck ganha o historico das linhas que ainda nao tinham');
 select is(
-  (select preco_unitario from private.calcular_cobranca_buck_detalhada(date '2026-09-07', date '2026-09-13')
-    where product_id = 'teste-hist-italiano' limit 1),
-  5.89::numeric, 'e a cobranca continua com preco, em vez de travar por falta dele');
+  (select sum(total) from private.calcular_cobranca_buck_detalhada(date '2026-09-07', date '2026-09-13')),
+  183.00::numeric, 'a semana passada continua com os precos da epoca, da tabela antiga');
+select is(
+  (select unit_price from private.buck_preco_na_data('98100000-0000-4000-8000-0000000000a1', private.data_na_padaria())),
+  null::numeric, 'a tabela que deixou de ser a Buck fica sem preco de hoje em diante');
+select is(
+  (select valid_from from public.buck_price_history where price_tier_item_id = '98100000-0000-4000-8000-0000000000ab' order by seq desc limit 1),
+  private.data_na_padaria(), 'a linha da copia, de produto que ja tinha preco, vale de hoje');
 
 select * from finish();
 rollback;

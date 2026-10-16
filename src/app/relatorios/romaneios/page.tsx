@@ -120,7 +120,7 @@ function issueLabel(row: RomaneioBillingRow) {
 
 function rowSubtitle(row: RomaneioExBillingRow) {
   const period = row.priceChanged ? billingRowPeriodLabel(row) : null
-  return period ? `${row.tripCount} viagem(ns) · preço de ${period}` : `${row.tripCount} viagem(ns)`
+  return period ? `${row.tripCount} viagem(ns) · preço ${period}` : `${row.tripCount} viagem(ns)`
 }
 
 function correctionOptionKey(option: Pick<CorrectionOption, 'productSource' | 'productId'>) {
@@ -243,6 +243,9 @@ export default function RelatorioRomaneiosEX() {
   // Conta do banco (preço do dia de cada romaneio). Fica nula só enquanto a
   // função ainda não chegou ao banco, na janela do deploy.
   const [serverBilling, setServerBilling] = useState<RomaneioExBillingResult | null>(null)
+  // Reserva da janela do deploy: conta antiga, com o preço de hoje. Serve para
+  // olhar, nunca para imprimir cobrança.
+  const [usingFallback, setUsingFallback] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [canCorrectExtra, setCanCorrectExtra] = useState(false)
@@ -277,6 +280,7 @@ export default function RelatorioRomaneiosEX() {
       setDestination(exDestination)
       setBuckTier(tier)
 
+      setUsingFallback(false)
       if (!exDestination) {
         setItems([])
         setPrices([])
@@ -308,6 +312,7 @@ export default function RelatorioRomaneiosEX() {
       }
       if (!isMissingBuckBillingFunction(billingRes.error)) throw billingRes.error
       setServerBilling(null)
+      setUsingFallback(true)
 
       const [romaneiosRes, pricesRes, linksRes] = await Promise.all([
         supabase
@@ -399,7 +404,7 @@ export default function RelatorioRomaneiosEX() {
   const missingPriceRows = billing.rows.filter(row => row.issues.includes('missing_price'))
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))
   const suspiciousRows = billing.rows.filter(row => row.issues.includes('suspicious_quantity'))
-  const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues
+  const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues && !usingFallback
 
   const startLinking = (row: RomaneioBillingRow) => {
     const options = correctionOptionsForRow(row, prices)
@@ -537,6 +542,12 @@ export default function RelatorioRomaneiosEX() {
 
             {loadError && (
               <div className="ps-warning danger" role="alert">{loadError}</div>
+            )}
+            {usingFallback && !loadError && (
+              <div className="ps-warning danger" role="alert">
+                <AlertTriangle size={16}/>
+                O sistema está sendo atualizado: esta conta usa o preço de hoje, não o do dia de cada romaneio. A impressão fica bloqueada; atualize em alguns minutos.
+              </div>
             )}
             {actionMessage && (
               <div className="ps-warning" role="status">{actionMessage}</div>

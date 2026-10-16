@@ -78,8 +78,10 @@ test('Financeiro troca o preco hoje e o Fechamento EX dos dias anteriores contin
     expect(briocheAntes.map(item => Number(item.preco_unitario)), 'o brioche dos ultimos dias sai pelo preco da tabela').toEqual([linha.preco])
 
     const precoNovo = Math.round((linha.preco + 0.15) * 100) / 100
-    await gravarPreco(page, acesso, linha.id, precoNovo)
+    // A devolucao do preco cobre tambem a gravacao: se ela gravar e a
+    // conferencia da resposta falhar, o preco volta mesmo assim.
     try {
+      await gravarPreco(page, acesso, linha.id, precoNovo)
       const depois = await contaDoPeriodo(page, acesso, de, ate)
       expect(depois.status(), await depois.text()).toBe(200)
       const briocheDepois = (await depois.json() as LinhaDaConta[]).filter(item => item.product_id === BRIOCHE)
