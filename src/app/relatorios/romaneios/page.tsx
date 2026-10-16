@@ -15,6 +15,14 @@ import {
   type RomaneioBillingRow,
 } from '@/lib/romaneioBilling'
 import type { ProductLegacyLink } from '@/lib/productIdentity'
+import {
+  billingResultFromBuckLines,
+  billingRowPeriodLabel,
+  isMissingBuckBillingFunction,
+  type BuckBillingLine,
+  type RomaneioExBillingResult,
+  type RomaneioExBillingRow,
+} from '@/lib/romaneioExBilling'
 import PeriodFilter from '@/components/reports/PeriodFilter'
 import KPICard from '@/components/reports/KPICard'
 
@@ -110,6 +118,11 @@ function issueLabel(row: RomaneioBillingRow) {
   return 'Sem preço ativo na Tabela Buck para este produto.'
 }
 
+function rowSubtitle(row: RomaneioExBillingRow) {
+  const period = row.priceChanged ? billingRowPeriodLabel(row) : null
+  return period ? `${row.tripCount} viagem(ns) · preço de ${period}` : `${row.tripCount} viagem(ns)`
+}
+
 function correctionOptionKey(option: Pick<CorrectionOption, 'productSource' | 'productId'>) {
   return `${option.productSource}:${option.productId}`
 }
@@ -133,13 +146,18 @@ function correctionOptionsForRow(row: RomaneioBillingRow, prices: PriceTierItem[
   return Array.from(options.values()).sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR'))
 }
 
+function rowNameWithPeriod(row: RomaneioExBillingRow) {
+  const period = row.priceChanged ? billingRowPeriodLabel(row) : null
+  return period ? `${row.productName} (${period})` : row.productName
+}
+
 function BillingPrint({
   rows,
   total,
   period,
   tripCount,
 }: {
-  rows: RomaneioBillingRow[]
+  rows: RomaneioExBillingRow[]
   total: number
   period: { from: Date; to: Date }
   tripCount: number
@@ -174,7 +192,7 @@ function BillingPrint({
         </section>
       </div>
 
-      <p className="rom-ex-print-note">Preços da Tabela BUCK. Quantidade cobrada: aceita na conferência ou, sem conferência, enviada.</p>
+      <p className="rom-ex-print-note">Preço da Tabela BUCK no dia de cada romaneio. Quantidade cobrada: aceita na conferência ou, sem conferência, enviada.</p>
 
       <table className="rom-ex-print-table">
         <thead>
@@ -189,7 +207,7 @@ function BillingPrint({
         <tbody>
           {rows.map(row => (
             <tr key={row.key}>
-              <td>{row.productName}</td>
+              <td>{rowNameWithPeriod(row)}</td>
               <td>{formatQuantity(row.sentQuantity, row.billingUnit)}</td>
               <td>{formatQuantity(row.billedQuantity, row.billingUnit)}</td>
               <td>{row.unitPrice === null ? '—' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</td>
@@ -222,6 +240,9 @@ export default function RelatorioRomaneiosEX() {
   const [items, setItems] = useState<RomaneioItem[]>([])
   const [prices, setPrices] = useState<PriceTierItem[]>([])
   const [legacyLinks, setLegacyLinks] = useState<ProductLegacyLink[]>([])
+  // Conta do banco (preço do dia de cada romaneio). Fica nula só enquanto a
+  // função ainda não chegou ao banco, na janela do deploy.
+  const [serverBilling, setServerBilling] = useState<RomaneioExBillingResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [canCorrectExtra, setCanCorrectExtra] = useState(false)
@@ -260,11 +281,34 @@ export default function RelatorioRomaneiosEX() {
         setItems([])
         setPrices([])
         setLegacyLinks([])
+        setServerBilling(null)
         return
       }
 
       const from = toISODate(range.from)
       const to = toISODate(range.to)
+      const [billingRes, tierPricesRes] = await Promise.all([
+        supabase.rpc('list_romaneio_ex_billing', { p_de: from, p_ate: to }),
+        // Preços de hoje: só para as opções de vínculo do avulso.
+        tier
+          ? supabase
+            .from('price_tier_items')
+            .select('product_id,product_source,product_name,unit_price,pricing_unit,active')
+            .eq('tier_id', tier.id)
+            .eq('active', true)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (tierPricesRes.error) throw tierPricesRes.error
+      if (!billingRes.error) {
+        setPrices((tierPricesRes.data || []) as PriceTierItem[])
+        setServerBilling(billingResultFromBuckLines((billingRes.data || []) as BuckBillingLine[]))
+        setItems([])
+        setLegacyLinks([])
+        return
+      }
+      if (!isMissingBuckBillingFunction(billingRes.error)) throw billingRes.error
+      setServerBilling(null)
+
       const [romaneiosRes, pricesRes, linksRes] = await Promise.all([
         supabase
           .from('romaneios')
@@ -317,6 +361,7 @@ export default function RelatorioRomaneiosEX() {
       setItems([])
       setPrices([])
       setLegacyLinks([])
+      setServerBilling(null)
     } finally {
       setLoading(false)
     }
@@ -326,7 +371,7 @@ export default function RelatorioRomaneiosEX() {
     loadReport()
   }, [loadReport, reloadKey])
 
-  const billing = useMemo(() => calculateRomaneioBilling(
+  const clientBilling = useMemo(() => calculateRomaneioBilling(
     items.map(item => ({
       id: item.id,
       romaneioId: item.romaneio_id,
@@ -345,6 +390,11 @@ export default function RelatorioRomaneiosEX() {
     } satisfies RomaneioBillingPrice)),
     legacyLinks,
   ), [items, prices, legacyLinks])
+
+  const billing: RomaneioExBillingResult = useMemo(() => serverBilling ?? {
+    ...clientBilling,
+    rows: clientBilling.rows.map(row => ({ ...row, firstDate: null, lastDate: null, priceChanged: false })),
+  }, [serverBilling, clientBilling])
 
   const missingPriceRows = billing.rows.filter(row => row.issues.includes('missing_price'))
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))
@@ -469,7 +519,7 @@ export default function RelatorioRomaneiosEX() {
 
           <div className="ps-scroll ps-pad">
             <h1 className="ps-page-title">🚚 Fechamento EX</h1>
-            <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela BUCK.</p>
+            <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela BUCK, com o preço do dia de cada romaneio.</p>
 
             <div className="ps-filters" style={{ alignItems: 'center' }}>
               <PeriodFilter defaultPreset="30d" onChange={setRange} />
@@ -552,7 +602,7 @@ export default function RelatorioRomaneiosEX() {
                       <td>
                         <b>{row.productName}</b>
                         <div style={{ color: row.issues.length ? 'var(--berry)' : 'var(--ink-soft)', fontSize: 11, marginTop: 3 }}>
-                          {row.issues.length ? issueLabel(row) : `${row.tripCount} viagem(ns)`}
+                          {row.issues.length ? issueLabel(row) : rowSubtitle(row)}
                         </div>
                         {renderExtraCorrection(row)}
                       </td>
@@ -581,7 +631,7 @@ export default function RelatorioRomaneiosEX() {
               {billing.rows.map(row => (
                 <div key={row.key} className="ps-report-row-card">
                   <div className="ps-report-row-head">
-                    <div className="ps-report-row-title">{row.productName}</div>
+                    <div className="ps-report-row-title">{rowNameWithPeriod(row)}</div>
                     <span className={row.issues.length ? 'ps-status com_divergencia' : 'ps-status conferido'}>{row.billingUnit}</span>
                   </div>
                   <div className="ps-report-row-grid">
