@@ -1,4 +1,4 @@
-import { expect, type Page, type Request } from '@playwright/test'
+import { expect, type Page, type Request, type Response } from '@playwright/test'
 
 // UNICO lugar de test/preview-pr que le a senha das contas ficticias. A guarda
 // em scripts/preview-pr-guarda.test.mjs reprova qualquer outro arquivo daqui
@@ -118,6 +118,97 @@ async function cercarRede(page: Page, destino: Destino): Promise<void> {
   })
 }
 
+/** Uma linha so, sem a senha nem texto com cara de JWT, com no maximo `limite` caracteres. */
+function curto(texto: string, senha: string, limite = 80): string {
+  const linha = texto
+    .split(senha).join('***')
+    .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '[jwt]')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return linha.length > limite ? `${linha.slice(0, limite)}...` : linha
+}
+
+/**
+ * O evento `response` chega com os cabecalhos; o corpo pode nunca terminar. Sem
+ * prazo, a espera pelo corpo esconderia o diagnostico atras do limite do teste.
+ */
+async function lerCorpoComPrazo(resposta: Response, prazoMs = 3_000): Promise<string | null> {
+  let relogio: ReturnType<typeof setTimeout> | undefined
+  const esgotou = new Promise<null>((resolver) => {
+    relogio = setTimeout(() => resolver(null), prazoMs)
+  })
+  try {
+    return await Promise.race([resposta.text(), esgotou])
+  } finally {
+    clearTimeout(relogio)
+  }
+}
+
+/**
+ * O que o Supabase Auth devolveu ao pedido de login. O corpo de um login que
+ * deu certo carrega o token da sessao: so se le a recusa (status >= 400), e dela
+ * sai apenas codigo e mensagem curtos. Corpo que nao e JSON fica so com o status.
+ */
+async function resumirRespostaDoAuth(resposta: Response, senha: string): Promise<string> {
+  const resumo = `HTTP ${resposta.status()}`
+  if (resposta.status() < 400) return resumo
+  try {
+    const texto = await lerCorpoComPrazo(resposta)
+    if (texto === null) return `${resumo} (corpo indisponivel no prazo)`
+    const corpo: unknown = JSON.parse(texto)
+    if (corpo === null || typeof corpo !== 'object') return resumo
+    const campos = corpo as Record<string, unknown>
+    const primeiro = (...chaves: string[]) => {
+      for (const chave of chaves) {
+        const valor = campos[chave]
+        if (typeof valor === 'string' && valor !== '') return curto(valor, senha)
+      }
+      return ''
+    }
+    // O codigo do Auth e um identificador curto (invalid_credentials); qualquer
+    // outra coisa nesse campo nao e impressa.
+    const bruto = primeiro('error_code', 'error', 'code')
+    const codigo = /^[\w.-]{1,80}$/.test(bruto) ? bruto : ''
+    const mensagem = primeiro('msg', 'error_description', 'message')
+    return [resumo, codigo, mensagem && `"${mensagem}"`].filter(Boolean).join(' ')
+  } catch {
+    return resumo
+  }
+}
+
+/**
+ * Mensagem da falha quando o login nao sai de /login: o que o Auth respondeu
+ * (ou "sem resposta") e o texto que a tela mostrou. A tela diz "E-mail ou senha
+ * invalidos." para qualquer erro do Auth, entao so o status separa senha
+ * recusada de limite de tentativas ou queda do servico.
+ */
+async function explicarLoginPreso(
+  page: Page,
+  perfil: Perfil,
+  senha: string,
+  pedido: Request,
+  respostas: Response[],
+): Promise<string> {
+  // So a resposta DESTE pedido de login conta: outro pedido ao mesmo endereco
+  // (renovacao de sessao, por exemplo) nao pode ser atribuido ao login.
+  const resposta = respostas.find((candidata) => candidata.request() === pedido)
+  let auth: string
+  if (resposta) {
+    auth = await resumirRespostaDoAuth(resposta, senha)
+  } else {
+    const falha = pedido.failure()?.errorText
+    auth = falha ? `sem resposta (${curto(falha, senha)})` : 'sem resposta ate o fim da espera'
+  }
+  let tela = 'nao foi possivel ler o campo de mensagem (pagina fechada ou campo ausente)'
+  try {
+    const texto = curto(await page.locator('.ps-login-err').first().innerText({ timeout: 2_000 }), senha, 120)
+    tela = texto ? `"${texto}"` : 'nenhuma mensagem'
+  } catch {
+    // fica a frase acima
+  }
+  return `O login de "${perfil}" nao saiu de /login. Supabase Auth: ${auth}. A tela mostrou: ${tela}`
+}
+
 /**
  * Entra no preview desta PR com a conta ficticia do perfil. Falha, nunca pula,
  * quando falta senha, link provado ou banco provado.
@@ -132,7 +223,12 @@ export async function entrarComo(page: Page, perfil: Perfil): Promise<AcessoAoBa
   const anotar = (pedido: Request) => {
     if (new URL(pedido.url()).hostname.endsWith('.supabase.co')) pedidosAoSupabase.push(pedido)
   }
+  const respostasDoLogin: Response[] = []
+  const guardarResposta = (resposta: Response) => {
+    if (resposta.url().startsWith(`${destino.banco.origin}/auth/v1/token`)) respostasDoLogin.push(resposta)
+  }
   page.on('request', anotar)
+  page.on('response', guardarResposta)
 
   try {
     await page.goto(new URL('/login', destino.base).toString())
@@ -146,7 +242,20 @@ export async function entrarComo(page: Page, perfil: Perfil): Promise<AcessoAoBa
     await page.locator('input[type="password"]').fill(senha)
     await page.getByRole('button', { name: 'Entrar', exact: true }).click()
     const pedidoDeLogin = await login
-    await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
+    try {
+      await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
+    } catch (erro) {
+      const original = erro instanceof Error ? erro.message : String(erro)
+      // O diagnostico nunca esconde o erro original: se ele mesmo falhar, a
+      // falha original sobe do mesmo jeito. A senha sai da mensagem inteira.
+      let diagnostico = `O login de "${perfil}" nao saiu de /login. Nao foi possivel resumir a resposta do Auth.`
+      try {
+        diagnostico = await explicarLoginPreso(page, perfil, senha, pedidoDeLogin, respostasDoLogin)
+      } catch {
+        // fica a frase acima
+      }
+      throw new Error(`${diagnostico}\n${original}`.split(senha).join('***'))
+    }
 
     const origens = [...new Set(pedidosAoSupabase.map((pedido) => new URL(pedido.url()).origin))]
     expect(origens, 'todo pedido ao Supabase precisa ir ao banco desta PR').toEqual([destino.banco.origin])
@@ -155,6 +264,7 @@ export async function entrarComo(page: Page, perfil: Perfil): Promise<AcessoAoBa
     return { url: destino.banco.origin, anonKey }
   } finally {
     page.off('request', anotar)
+    page.off('response', guardarResposta)
   }
 }
 
