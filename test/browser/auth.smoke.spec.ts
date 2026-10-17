@@ -771,6 +771,12 @@ function productPhotoPreviewUrl(): Promise<string | undefined> {
       repositorio: process.env.GITHUB_REPOSITORY ?? event.repository?.full_name,
       prNumber: event.pull_request?.number,
       headSha: event.pull_request?.head?.sha,
+      // Token so de leitura do job, dado so ao passo do smoke no CI. Sem ele a
+      // consulta divide o limite anonimo do IP do runner (provavel causa do
+      // 403 na PR 465). Vai so no fetch do Node para a API do GitHub: nunca na
+      // pagina nem na mensagem, e o servidor do site nao o herda
+      // (playwright.config.ts).
+      githubToken: process.env.PREVIEW_DA_PR_GITHUB_TOKEN,
     })
   })()
   return productPhotoPreviewUrlPromise
