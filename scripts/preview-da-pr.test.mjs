@@ -389,4 +389,12 @@ describe('o job Navegador entrega o token so a consulta do preview', () => {
     const webServer = config.slice(config.indexOf('webServer:'))
     assert.match(webServer, new RegExp(`env: \\{ ${NOME_VARIAVEL}: '' \\}`))
   })
+
+  it('o Chrome, lancado pelo Playwright, tambem nao herda o token', () => {
+    // Sem launchOptions.env o Playwright lanca o navegador com o process.env
+    // inteiro do teste, token incluido (revisao do Codex em 17/10).
+    const config = readFileSync(new URL('../playwright.config.ts', import.meta.url), 'utf8')
+    const use = config.slice(config.indexOf('use:'), config.indexOf('webServer:'))
+    assert.match(use, new RegExp(`launchOptions: \\{\\s+env: \\{ \\.\\.\\.process\\.env, ${NOME_VARIAVEL}: '' \\},\\s+\\}`))
+  })
 })
