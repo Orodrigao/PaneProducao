@@ -213,7 +213,12 @@ jobs:
     # de deixar o "needs" pular o job em silencio quando algo anterior falhou.
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # O smoke roda com um so worker e cresce com cada teste novo. Em 17/10/2026
+    # eram 88 testes, de 4,25 a 7,21 s cada conforme a maquina do runner, e o
+    # teto antigo de 10 min cancelava o job com todos os testes verdes. A guarda
+    # scripts/navegador-teto.test.mjs (npm test) reprova quando a estimativa
+    # conservadora da suite, tirada dessas medicoes, passa deste teto.
+    timeout-minutes: 20
     # Mesmo grupo do workflow Banco Preview: o smoke le o banco compartilhado e
     # a reconstrucao o APAGA (db reset derruba schema, dados e contas do Auth).
     # Sem isto, um smoke que caia dentro da janela de reset falha com
