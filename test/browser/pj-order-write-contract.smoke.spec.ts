@@ -1,20 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
 const financeiroJc = 'rodrigao+teste-financeiro-jc@gmail.com'
 const slowPreviewDataTimeoutMs = 15_000
-
-async function enterWithPreviewAccount(page: Page, email = financeiroJc) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas fictícias existe somente no secret do GitHub.')
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: slowPreviewDataTimeoutMs })
-}
 
 function futureDelivery(): string {
   const date = new Date()
@@ -44,7 +35,7 @@ async function openOrderManagement(page: Page, groupId: string) {
 
 test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo pedido', async ({ page, request }) => {
   test.setTimeout(120_000)
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, financeiroJc)
 
   const createBodies: Array<{ p_request_id: string; p_order_group_id: string }> = []
   let firstCreate = true
@@ -194,7 +185,7 @@ test('cria sem duplicar após resposta perdida, altera, relê e cancela o mesmo 
 })
 
 test('sucesso no modo padrão abre o pedido na nova jornada', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, financeiroJc)
   const groupId = '97000000-0000-4000-8000-000000000001'
   const customerId = '97000000-0000-4000-8000-000000000004'
   const tierId = '97000000-0000-4000-8000-000000000005'
@@ -323,7 +314,7 @@ test('sucesso no modo padrão abre o pedido na nova jornada', async ({ page }) =
 })
 
 test('URL direta não libera gerenciamento de pedido acompanhado', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, financeiroJc)
   const groupId = '97000000-0000-4000-8000-000000000011'
   let activationMode: 'controlled_real' | 'standard' = 'controlled_real'
   let version = 0
@@ -358,7 +349,7 @@ test('URL direta não libera gerenciamento de pedido acompanhado', async ({ page
 })
 
 test('URL direta não libera gerenciamento standard para Expedição', async ({ page }) => {
-  await enterWithPreviewAccount(page, 'rodrigao+teste-expedicao-jc@gmail.com')
+  await entrarComSessaoGuardada(page, 'rodrigao+teste-expedicao-jc@gmail.com')
   const groupId = '97000000-0000-4000-8000-000000000012'
   await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [{
     id: groupId, version: 0, customer: '[TESTE] Pedido standard protegido', delivery_date: futureDelivery(),
@@ -379,7 +370,7 @@ test('URL direta não libera gerenciamento standard para Expedição', async ({ 
 })
 
 test('recusa confirmada libera a correção do rascunho', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, financeiroJc)
   const bodies: Array<{ p_request_id: string; p_order_group_id: string }> = []
   await page.route('**/rest/v1/rpc/create_pj_order_atomic', async route => {
     bodies.push(route.request().postDataJSON() as { p_request_id: string; p_order_group_id: string })

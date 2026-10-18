@@ -1,34 +1,19 @@
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
 })
 
-// Login espelhado de auth.smoke.spec.ts de propósito: aquele arquivo pertence
-// à frente de contas a pagar e importar de um spec acoplaria os dois.
 const financeiroJc = 'rodrigao+teste-financeiro-jc@gmail.com'
 
 const slowPreviewDataTimeoutMs = 15_000
 
-async function enterWithPreviewAccount(
-  page: import('@playwright/test').Page,
-  email: string,
-) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
-
 // Fase 0 de contas a receber: somente leitura, para o cenario compartilhado do
 // Preview sobreviver a duas execucoes seguidas sem reconstruir o banco.
 test('Financeiro JC ve o cenario semeado de Pedidos PJ e o total do relatorio', async ({ page }) => {
-  await enterWithPreviewAccount(page, financeiroJc)
+  await entrarComSessaoGuardada(page, financeiroJc)
 
   await page.goto('/pedidos-pj?legado=1')
 
@@ -100,7 +85,7 @@ function longOrderRows() {
 
 test('ficha no celular encontra pedido antigo e todos os 601 itens', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await enterWithPreviewAccount(page, financeiroJc)
+  await entrarComSessaoGuardada(page, financeiroJc)
   const rows = longOrderRows()
   await page.route('**/rest/v1/orders?**', async route => {
     const query = new URL(route.request().url()).searchParams
@@ -120,7 +105,7 @@ test('ficha no celular encontra pedido antigo e todos os 601 itens', async ({ pa
 })
 
 test('falha na segunda página não deixa abrir ficha parcial', async ({ page }) => {
-  await enterWithPreviewAccount(page, financeiroJc)
+  await entrarComSessaoGuardada(page, financeiroJc)
   await page.route('**/rest/v1/orders?**', async route => {
     const from = Number(new URL(route.request().url()).searchParams.get('offset') || 0)
     if (from > 0) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Falha fictícia de leitura' }) })
@@ -134,7 +119,7 @@ test('falha na segunda página não deixa abrir ficha parcial', async ({ page })
 
 test('Expedição JC abre a ficha sem buscar ou mostrar valores financeiros', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await enterWithPreviewAccount(page, 'rodrigao+teste-expedicao-jc@gmail.com')
+  await entrarComSessaoGuardada(page, 'rodrigao+teste-expedicao-jc@gmail.com')
   const financialRequests: string[] = []
   page.on('request', request => {
     if (/\/rest\/v1\/(receivables|receivable_receipts)(?:\?|$)/.test(request.url())) financialRequests.push(request.url())

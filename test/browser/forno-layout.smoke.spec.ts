@@ -1,21 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
 const authorizedEmail = 'rodrigao+teste@gmail.com'
 const visualProductId = 'teste-layout-forno'
 const visualProductName = '[TESTE] Produto visual do Forno'
-
-async function enterWithPreviewAccount(page: import('@playwright/test').Page) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha da conta ficticia existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(authorizedEmail)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 async function stubPlannedProduct(page: import('@playwright/test').Page, confirmed = false) {
   await page.route('**/rest/v1/orders*', route => {
@@ -75,7 +65,7 @@ async function expectResponsiveLayout(page: import('@playwright/test').Page) {
 }
 
 test('Forno mantém cartões, editor e escolha do dia acessíveis em várias larguras', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, authorizedEmail)
   await stubPlannedProduct(page)
   await page.goto('/forno')
 
@@ -101,7 +91,7 @@ test('Forno mantém cartões, editor e escolha do dia acessíveis em várias lar
 })
 
 test('Forno diferencia uma saída já confirmada', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, authorizedEmail)
   await stubPlannedProduct(page, true)
   await page.goto('/forno')
 
@@ -113,7 +103,7 @@ test('Forno diferencia uma saída já confirmada', async ({ page }) => {
 })
 
 test('Forno mostra estado vazio quando a data não tem produção prevista', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, authorizedEmail)
   await stubPlannedProduct(page)
   await page.route('**/rest/v1/orders*', route => route.fulfill({ json: [] }))
   await page.goto('/forno')
@@ -123,7 +113,7 @@ test('Forno mostra estado vazio quando a data não tem produção prevista', asy
 })
 
 test('Forno permite tentar novamente depois de erro ao carregar', async ({ page }) => {
-  await enterWithPreviewAccount(page)
+  await entrarComSessaoGuardada(page, authorizedEmail)
   await stubPlannedProduct(page)
 
   let failFirstLoad = true

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({
   browserName: 'chromium',
@@ -34,6 +35,9 @@ function romaneioCardByObs(page: import('@playwright/test').Page, obs: string) {
   return page.locator('.ps-card', { hasText: obs }).first()
 }
 
+// Entrada pela tela, so para o que prova o proprio login: onde cada perfil cai
+// depois de entrar e o smoke de fotos, que entra no preview da Vercel, outro
+// endereco. O resto comeca com a sessao guardada (test/browser/apoio/sessao.ts).
 async function enterWithPreviewAccount(
   page: import('@playwright/test').Page,
   email: string,
@@ -170,7 +174,7 @@ test('link de uma parcela preserva a compra e a parcela até o login', async ({ 
 })
 
 test('administrador encontra JC e JA ao registrar Sobras', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.admin)
+  await entrarComSessaoGuardada(page, previewAccounts.admin)
   await page.goto('/sobras')
 
   await expect(page.getByRole('heading', { name: /O que registrar/ })).toBeVisible()
@@ -272,7 +276,7 @@ test('Romaneio EX sugere reposicao pendente da mesma data', async ({ page }) => 
   // chamada. É o teto operacional que não reprova entrega legítima.
   test.setTimeout(120_000)
 
-  await enterWithPreviewAccount(page, previewAccounts.admin)
+  await entrarComSessaoGuardada(page, previewAccounts.admin)
   await page.goto('/romaneio')
 
   // O helper entra pelo "Novo Romaneio" e reentra se a tela for resetada.
@@ -319,7 +323,7 @@ test('Romaneio EX abre conferencia pendente da propria loja', async ({ page }) =
 })
 
 test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await entrarComSessaoGuardada(page, previewAccounts.vendasJa)
   await page.goto('/producao-cozinha')
 
   await expect(page).toHaveURL(/\/romaneio$/)
@@ -327,7 +331,7 @@ test('Vendas JA nao entra na Producao da Cozinha', async ({ page }) => {
 })
 
 test('Financeiro JC vincula produto vendido, rele e devolve para pendente', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await skipWithoutSalesProductMappings(page, await dataApiHeaders(page))
   await page.goto('/relatorios/vendas-balcao')
 
@@ -369,7 +373,7 @@ test('Financeiro JC vincula produto vendido, rele e devolve para pendente', asyn
 })
 
 test('Vendas JA nao ve produtos nem curva ABC do balcao', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await entrarComSessaoGuardada(page, previewAccounts.vendasJa)
   await page.goto('/relatorios/vendas-balcao')
 
   await expect(page).toHaveURL(/\/romaneio$/)
@@ -378,7 +382,7 @@ test('Vendas JA nao ve produtos nem curva ABC do balcao', async ({ page }) => {
 })
 
 test('Financeiro JC registra compra manual paga a vista sem baixar estoque', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
 
   await expect(page.getByRole('banner').getByText('Contas a pagar', { exact: true })).toBeVisible()
@@ -405,7 +409,7 @@ test('Financeiro JC registra compra manual paga a vista sem baixar estoque', asy
 })
 
 test('Financeiro JC visualiza os itens da NF-e sem alterar a conta', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
 
   const purchaseCard = page.locator('.ps-card', { hasText: 'NF-e 999001' }).first()
@@ -423,7 +427,7 @@ test('Financeiro JC visualiza os itens da NF-e sem alterar a conta', async ({ pa
 })
 
 test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
@@ -499,7 +503,7 @@ async function skipWithoutFiscalCostColumns(page: import('@playwright/test').Pag
 }
 
 test('Financeiro JC ve a recusa explicada de NF-e sem o bloco de totais', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
@@ -520,7 +524,7 @@ test('Financeiro JC ve a recusa explicada de NF-e sem o bloco de totais', async 
 })
 
 test('Financeiro JC importa NF-e com imposto por fora e cada item guarda o valor pago com ST, IPI e outras despesas', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   const headers = await dataApiHeaders(page)
   await skipWithoutFiscalCostColumns(page, headers)
 
@@ -572,7 +576,7 @@ test('Financeiro JC importa NF-e com imposto por fora e cada item guarda o valor
 })
 
 test('Vendas JA nao entra no livro financeiro', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await entrarComSessaoGuardada(page, previewAccounts.vendasJa)
   await page.goto('/financeiro')
 
   await expect(page).toHaveURL(/\/romaneio$/)
@@ -580,7 +584,7 @@ test('Vendas JA nao entra no livro financeiro', async ({ page }) => {
 })
 
 test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/financeiro')
 
   await expect(page.getByText('livro de entradas e saídas')).toBeVisible()
@@ -620,7 +624,7 @@ test('Financeiro JC lanca uma saida avulsa e estorna sem apagar o original', asy
 })
 
 test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
@@ -662,7 +666,7 @@ test('Financeiro JC reconhece o insumo e confere a embalagem antes de importar',
 })
 
 test('Financeiro JC cadastra item novo mesmo quando a busca acha parente', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
 
@@ -718,18 +722,16 @@ function previewApi(): { url: string; anonKey: string } {
 }
 
 // O token da sessao aberta no navegador: e com ele que a Data API decide, pela
-// RLS e pelos grants, o que a pessoa logada pode ler e escrever.
+// RLS e pelos grants, o que a pessoa logada pode ler e escrever. Lido do
+// contexto, e nao da pagina: com a sessao guardada o teste ainda nao abriu tela
+// nenhuma, e a pagina em branco nao alcanca o localStorage do site.
 async function sessionAccessToken(page: import('@playwright/test').Page): Promise<string> {
-  return page.evaluate(() => {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index) ?? ''
-      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as { access_token?: string }
-        return parsed.access_token ?? ''
-      }
-    }
-    return ''
-  })
+  const { origins } = await page.context().storageState()
+  for (const { localStorage } of origins) {
+    const item = localStorage.find(({ name }) => name.startsWith('sb-') && name.endsWith('-auth-token'))
+    if (item) return (JSON.parse(item.value) as { access_token?: string }).access_token ?? ''
+  }
+  return ''
 }
 
 async function dataApiHeaders(
@@ -989,7 +991,7 @@ async function importarXmlComFornecedorNovo(page: import('@playwright/test').Pag
 }
 
 test('Financeiro JC salva a NF-e para conferir depois, retoma com a decisao guardada e descarta sem criar conta', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   const headers = await dataApiHeaders(page)
   await skipWithoutImportDraftsTable(page, headers)
 
@@ -1045,7 +1047,7 @@ test('Financeiro JC salva a NF-e para conferir depois, retoma com a decisao guar
 })
 
 test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica vez', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.financeiroJc)
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
   const headers = await dataApiHeaders(page)
   await skipWithoutImportDraftsTable(page, headers)
 
@@ -1085,7 +1087,7 @@ test('Financeiro JC confirma a NF-e retomada e o rascunho vira conta uma unica v
 })
 
 test('Vendas JA nao enxerga nem salva importacao pendente, nem pela Data API', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.vendasJa)
+  await entrarComSessaoGuardada(page, previewAccounts.vendasJa)
   const headers = await dataApiHeaders(page)
   await skipWithoutImportDraftsTable(page, headers)
 

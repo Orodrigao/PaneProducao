@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
@@ -14,19 +15,8 @@ const previewAccounts = {
 const visualBreadId = 'teste-tela-inicial-pao'
 const visualBreadName = '[TESTE] Pão visual da tela inicial'
 
-async function enterWithPreviewAccount(page: import('@playwright/test').Page, email: string) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
-
 test('Administrador ve JC, JA, Relatorio e Admin na tela inicial, sem Itens JC', async ({ page }) => {
-  await enterWithPreviewAccount(page, previewAccounts.admin)
+  await entrarComSessaoGuardada(page, previewAccounts.admin)
   await page.goto('/')
 
   const tabs = page.getByRole('tablist').getByRole('tab')
@@ -107,7 +97,7 @@ async function stallPjAfterOpening(page: import('@playwright/test').Page) {
 }
 
 async function openGeolarWithPj(page: import('@playwright/test').Page) {
-  await enterWithPreviewAccount(page, previewAccounts.geolarJc)
+  await entrarComSessaoGuardada(page, previewAccounts.geolarJc)
   await page.goto('/')
 
   // O rótulo muda durante a espera; o localizador aceita os dois.
@@ -122,7 +112,7 @@ test('Geolar imprime e copia a folha de paes, sem bloco de Itens JC', async ({ p
   await mockGeolarSheet(page)
   await page.route('**/rest/v1/rpc/list_pj_production_for_oven_v2', route => route.fulfill({ json: [] }))
 
-  await enterWithPreviewAccount(page, previewAccounts.geolarJc)
+  await entrarComSessaoGuardada(page, previewAccounts.geolarJc)
   await page.goto('/')
 
   const printBreads = page.getByRole('button', { name: '🖨 Imprimir pães' })

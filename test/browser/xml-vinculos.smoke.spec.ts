@@ -1,18 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
 test('Financeiro JC consulta o uso do cadastro e escolhe categoria controlada na NF fictícia', async ({ page }) => {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas fictícias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill('rodrigao+teste-financeiro-jc@gmail.com')
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
+  await entrarComSessaoGuardada(page, 'rodrigao+teste-financeiro-jc@gmail.com')
 
   await page.goto('/contas-pagar')
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()

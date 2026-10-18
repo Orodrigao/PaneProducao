@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
@@ -31,16 +32,6 @@ const wrongPackItem = {
   id: tierItemId, tier_id: tierId, product_id: briocheId, product_source: 'product',
   product_name: '[TESTE] Brioche · Hambúrguer', unit_price: 2.6, pricing_unit: 'un',
   pack_size: 1, active: true, sale_option_id: saleOptionId,
-}
-
-async function enterWithPreviewAccount(page: Page, email: string) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas fictícias existe somente no secret do GitHub.')
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: slowPreviewDataTimeoutMs })
 }
 
 type Write = { method: string; url: string; body: unknown }
@@ -76,7 +67,7 @@ async function openTier(page: Page) {
 }
 
 test('Tabelas de Preço trava o pack do produto com pacote fechado e corrige o valor errado', async ({ page }) => {
-  await enterWithPreviewAccount(page, adminEmail)
+  await entrarComSessaoGuardada(page, adminEmail)
   const writes: Write[] = []
   await stubPriceTables(page, [wrongPackItem], writes)
   await openTier(page)
@@ -96,7 +87,7 @@ test('Tabelas de Preço trava o pack do produto com pacote fechado e corrige o v
 })
 
 test('incluir produto com pacote fechado grava o pack da regra; sem regra continua 1', async ({ page }) => {
-  await enterWithPreviewAccount(page, adminEmail)
+  await entrarComSessaoGuardada(page, adminEmail)
   const writes: Write[] = []
   await stubPriceTables(page, [], writes)
   await openTier(page)
@@ -124,7 +115,7 @@ test('incluir produto com pacote fechado grava o pack da regra; sem regra contin
 })
 
 test('Pedido PJ avisa na linha e não envia quando a tabela do cliente tem o pacote errado', async ({ page }) => {
-  await enterWithPreviewAccount(page, financeiroJc)
+  await entrarComSessaoGuardada(page, financeiroJc)
   let writeAttempts = 0
   await page.route('**/rest/v1/customers*', route => route.fulfill({ json: [{
     id: customerId, name: '[TESTE] Cliente pacote fechado', default_tier_id: tierId,

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
@@ -50,17 +51,6 @@ interface Scenario {
   failOrdersOf?: string
 }
 
-async function enterWithPreviewAccount(page: Page, email: string) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
-
 async function mockScenario(page: Page, scenario: Scenario): Promise<OrderWrite[]> {
   const writes: OrderWrite[] = []
   await page.route('**/rest/v1/sobras*', route => route.fulfill({ json: [] }))
@@ -109,7 +99,7 @@ async function openReportOf(page: Page, tabName: string, date: string) {
 }
 
 test('Usar como base preenche o pedido de terça sem apagar o pedido de hoje do Planejamento', async ({ page }) => {
-  await enterWithPreviewAccount(page, accounts.admin)
+  await entrarComSessaoGuardada(page, accounts.admin)
   await page.clock.setFixedTime(mondayMorning)
   let releasePlanning = () => {}
   const scenario: Scenario = {
@@ -198,7 +188,7 @@ test('Usar como base preenche o pedido de terça sem apagar o pedido de hoje do 
 })
 
 test('Pedido mexido ou ainda carregando durante a cópia cancela a cópia', async ({ page }) => {
-  await enterWithPreviewAccount(page, accounts.admin)
+  await entrarComSessaoGuardada(page, accounts.admin)
   await page.clock.setFixedTime(mondayMorning)
   const wednesday = '2026-10-14'
   const thursday = '2026-10-15'
@@ -276,7 +266,7 @@ test('Pedido mexido ou ainda carregando durante a cópia cancela a cópia', asyn
 })
 
 test('Expedição JC: a virada do dia recusa a cópia e o dia recarregado recebe sem perguntar', async ({ page }) => {
-  await enterWithPreviewAccount(page, accounts.expedicaoJc)
+  await entrarComSessaoGuardada(page, accounts.expedicaoJc)
   await page.clock.setFixedTime(mondayLastMinute)
   const dialogs: string[] = []
   page.on('dialog', dialog => { dialogs.push(dialog.message()); void dialog.dismiss() })
@@ -312,7 +302,7 @@ test('Expedição JC: a virada do dia recusa a cópia e o dia recarregado recebe
 })
 
 test('Financeiro no histórico PJ não tem cópia e é levado à tela Pedidos PJ', async ({ page }) => {
-  await enterWithPreviewAccount(page, accounts.financeiroJc)
+  await entrarComSessaoGuardada(page, accounts.financeiroJc)
   await page.clock.setFixedTime(mondayMorning)
   const writes = await mockScenario(page, { ordersByDate: { [sourceDate]: sourceRows }, plannedStoresByDate: {} })
   await page.goto('/')
