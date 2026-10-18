@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome', viewport: { width: 390, height: 844 } })
 
@@ -10,7 +11,18 @@ test.beforeEach(async ({ page }) => {
 
 type Profile = 'admin' | 'financeiro' | 'expedicao' | 'vendas'
 
+function emailOf(profile: Profile) {
+  return profile === 'admin' ? 'rodrigao+teste@gmail.com'
+    : `rodrigao+teste-${profile}-${profile === 'vendas' ? 'ja' : 'jc'}@gmail.com`
+}
+
 async function enter(page: Page, profile: Profile) {
+  await entrarComSessaoGuardada(page, emailOf(profile))
+}
+
+// Pela tela so nos testes que trocam de conta com Sair: Sair numa sessao
+// guardada a encerraria para os testes seguintes (test/browser/apoio/sessao.ts).
+async function enterThroughLoginScreen(page: Page, profile: Profile) {
   await page.goto('/login')
   await signInOnCurrentPage(page, profile)
 }
@@ -18,9 +30,7 @@ async function enter(page: Page, profile: Profile) {
 async function signInOnCurrentPage(page: Page, profile: Profile) {
   const password = process.env.SUPABASE_TEST_USER_PASSWORD
   test.skip(!password, 'Credencial fictícia disponível apenas no GitHub.')
-  const email = profile === 'admin' ? 'rodrigao+teste@gmail.com'
-    : `rodrigao+teste-${profile}-${profile === 'vendas' ? 'ja' : 'jc'}@gmail.com`
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
+  await page.getByPlaceholder('nome@paneesalute.com.br').fill(emailOf(profile))
   await page.locator('input[type="password"]').fill(password!)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
   await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
@@ -36,7 +46,7 @@ const fixture = {
 
 test('trocar Expedição e Financeiro mantém o piloto; saída comum não força o piloto', async ({ page }) => {
   test.setTimeout(90_000)
-  await enter(page, 'expedicao')
+  await enterThroughLoginScreen(page, 'expedicao')
   await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [fixture] }))
   await page.goto('/pedidos-pj?piloto=1')
   await expect(page.getByRole('navigation', { name: 'Escolher pedido' })).toBeVisible()
@@ -66,7 +76,7 @@ test('trocar Expedição e Financeiro mantém o piloto; saída comum não força
 })
 
 test('Admin pode iniciar pedido; perfil bloqueado não abre o formulário por URL direta', async ({ page }) => {
-  await enter(page, 'admin')
+  await enterThroughLoginScreen(page, 'admin')
   await page.route('**/rest/v1/rpc/read_pj_flow_pilot', route => route.fulfill({ json: [fixture] }))
   await page.goto('/pedidos-pj?piloto=1')
   await expect(page.getByRole('link', { name: 'Novo pedido', exact: true })).toBeVisible()

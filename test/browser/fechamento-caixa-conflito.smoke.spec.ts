@@ -1,27 +1,15 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
 })
 
-// Login espelhado dos outros specs de propósito: importar de um spec vizinho
-// acoplaria duas frentes que precisam poder mudar sozinhas.
 const admin = 'rodrigao+teste@gmail.com'
 const vendasJa = 'rodrigao+teste-vendas-ja@gmail.com'
 
 const slowPreviewDataTimeoutMs = 15_000
-
-async function enterWithPreviewAccount(page: Page, email: string) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 // O Banco Preview e compartilhado e o caixa nao tem como apagar fechamento.
 // Cada execucao usa um dia sorteado entre 1990 e 2019: passado (fechamento e
@@ -77,7 +65,7 @@ async function showClosingJa(page: Page, who: Who, date: string) {
 async function openClosingJa(browser: Browser, who: Who, date: string) {
   const context = await browser.newContext()
   const page = await context.newPage()
-  await enterWithPreviewAccount(page, who === 'admin' ? admin : vendasJa)
+  await entrarComSessaoGuardada(page, who === 'admin' ? admin : vendasJa)
   await showClosingJa(page, who, date)
   return { context, page }
 }
@@ -107,8 +95,9 @@ function countClosingWrites(page: Page) {
 }
 
 test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e gravado por cima sem escolha', async ({ browser }) => {
-  // Dois logins, quatro aberturas da tela e a primeira compilacao da rota no
-  // `next dev`: o limite padrao de 30s nao cabe.
+  // Ate dois logins (quando a conta ainda nao tem sessao guardada), quatro
+  // aberturas da tela e a primeira compilacao da rota no `next dev`: o limite
+  // padrao de 30s nao cabe.
   test.setTimeout(120_000)
 
   const date = disposableClosingDate()

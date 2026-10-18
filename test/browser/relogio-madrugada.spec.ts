@@ -1,6 +1,5 @@
-import { mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 // O defeito da issue 438 só aparece entre meia-noite e 05:59: fora dessa faixa
 // voltar 6 horas ainda cai no mesmo dia, e a tela abre certo por acidente.
@@ -19,54 +18,21 @@ test.use({
   timezoneId: 'America/Sao_Paulo',
 })
 
-// A dispensa fica no nível do arquivo, não dentro de um teste. O Playwright lê
-// o `storageState` ao criar o contexto, ANTES de rodar o corpo do teste: uma
-// dispensa lá dentro chegaria tarde e cada caso quebraria por arquivo de sessão
-// inexistente em vez de ser pulado.
-test.skip(
-  !process.env.SUPABASE_TEST_USER_PASSWORD,
-  'A senha das contas fictícias existe somente no cofre local e no secret do GitHub.',
-)
-
 const previewAccounts = {
   admin: 'rodrigao+teste@gmail.com',
   romaneioEx: 'rodrigao+teste-romaneio-ex@gmail.com',
 } as const
 
-// Entrar uma vez por conta e reaproveitar a sessão. Seis logins de senha
-// seguidos contra o Preview compartilhado esbarram no limite de tentativas do
-// Supabase Auth, e a suíte falha na porta em vez de falhar no que ela prova.
-const stateDir = resolve(__dirname, '../../test-results/browser-state')
-const sessionState = {
-  admin: resolve(stateDir, 'relogio-admin.json'),
-  romaneioEx: resolve(stateDir, 'relogio-romaneio-ex.json'),
-} as const
+// Cada caso começa com a sessão guardada da conta (test/browser/apoio/sessao.ts):
+// seis logins de senha seguidos contra o Preview compartilhado esbarravam no
+// limite de tentativas do Supabase Auth, e a suíte falhava na porta em vez de
+// falhar no que ela prova.
 
 // Quarta-feira, 01:30 da manhã em São Paulo. Com a conta antiga o sistema
 // respondia terça, 22/09 — e o romaneio nascia com a data de ontem.
 const MADRUGADA = new Date('2026-09-23T04:30:00.000Z')
 const HOJE_NA_PADARIA = '2026-09-23'
 const ONTEM = '2026-09-22'
-
-test.beforeAll(async ({ browser }) => {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  if (!password) return // os testes se declaram pulados adiante
-
-  mkdirSync(stateDir, { recursive: true })
-  for (const [conta, email] of Object.entries(previewAccounts)) {
-    // `storageState: undefined` explícito: sem isso o contexto herda o arquivo
-    // de sessão que este laço ainda vai criar, e a suíte morre no primeiro teste.
-    const context = await browser.newContext({ storageState: undefined })
-    const page = await context.newPage()
-    await page.goto('/login')
-    await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-    await page.locator('input[type="password"]').fill(password)
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-    await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 30_000 })
-    await context.storageState({ path: sessionState[conta as keyof typeof sessionState] })
-    await context.close()
-  }
-})
 
 async function abrirComRelogioNaMadrugada(page: Page, rota: string) {
   // `setFixedTime` congela `Date.now()` sem congelar os timers, então o React
@@ -76,7 +42,7 @@ async function abrirComRelogioNaMadrugada(page: Page, rota: string) {
 }
 
 test.describe('o dia padrão das telas que gravam registro', () => {
-  test.use({ storageState: sessionState.admin })
+  test.beforeEach(({ page }) => entrarComSessaoGuardada(page, previewAccounts.admin))
 
   test('Romaneio abre o dia de hoje, e não o de ontem', async ({ page }) => {
     await abrirComRelogioNaMadrugada(page, '/romaneio')
@@ -161,7 +127,7 @@ test.describe('o dia padrão das telas que gravam registro', () => {
 // A matriz de docs/regras/FECHAMENTO.md pede ao menos um perfil restrito, não só administrador.
 // Quem monta romaneio da Exposição de madrugada é justamente quem sofria o defeito.
 test.describe('perfil restrito', () => {
-  test.use({ storageState: sessionState.romaneioEx })
+  test.beforeEach(({ page }) => entrarComSessaoGuardada(page, previewAccounts.romaneioEx))
 
   test('Romaneio da Exposição também abre no dia de hoje', async ({ page }) => {
     await abrirComRelogioNaMadrugada(page, '/romaneio')

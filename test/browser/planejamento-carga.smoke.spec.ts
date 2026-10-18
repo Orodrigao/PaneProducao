@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 // Corridas de carregamento da tela de Planejamento. As respostas do banco são
 // seguradas e soltas pelo teste, na ordem que a rede real às vezes produz; o
@@ -8,17 +9,6 @@ test.use({
   browserName: 'chromium',
   channel: 'chrome',
 })
-
-async function enterAsAdmin(page: Page) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha da conta ficticia existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill('rodrigao+teste@gmail.com')
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 function planDateOf(route: Route): string | null {
   const request = route.request()
@@ -56,7 +46,7 @@ async function refuseWrites(page: Page, writes: string[]) {
 }
 
 test('Criar rascunho espera a lista de pães do dia', async ({ page }) => {
-  await enterAsAdmin(page)
+  await entrarComSessaoGuardada(page, 'rodrigao+teste@gmail.com')
 
   const writes: string[] = []
   await refuseWrites(page, writes)
@@ -97,7 +87,7 @@ test('Criar rascunho espera a lista de pães do dia', async ({ page }) => {
 
 for (const undo of ['desfeito', 'não desfeito'] as const) {
   test(`Rascunho cujos pães não gravam é ${undo} e a tela avisa`, async ({ page }) => {
-    await enterAsAdmin(page)
+    await entrarComSessaoGuardada(page, 'rodrigao+teste@gmail.com')
 
     const fakeId = '0c0c0c0c-0000-4000-8000-00000000000c'
     let createdDate: string | null = null
@@ -188,7 +178,7 @@ for (const undo of ['desfeito', 'não desfeito'] as const) {
 }
 
 test('Resposta atrasada do dia anterior não toma o lugar do dia escolhido', async ({ page }) => {
-  await enterAsAdmin(page)
+  await entrarComSessaoGuardada(page, 'rodrigao+teste@gmail.com')
 
   const writes: string[] = []
   await refuseWrites(page, writes)

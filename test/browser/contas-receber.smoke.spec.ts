@@ -1,37 +1,22 @@
 import { expect, test } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
 })
 
-// Login espelhado dos outros specs de propósito: importar de um spec vizinho
-// acoplaria duas frentes que precisam poder mudar sozinhas.
 const financeiroJc = 'rodrigao+teste-financeiro-jc@gmail.com'
 const vendasJa = 'rodrigao+teste-vendas-ja@gmail.com'
 
 const slowPreviewDataTimeoutMs = 15_000
-
-async function enterWithPreviewAccount(
-  page: import('@playwright/test').Page,
-  email: string,
-) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 // Fase 2 de contas a receber: somente leitura, para o cenario compartilhado do
 // Preview sobreviver a duas execucoes seguidas sem reconstruir o banco. Lancar
 // e baixar sao testados por supabase/tests/contas_a_receber.test.sql, que roda
 // dentro de uma transacao e nao suja o Preview.
 test('Financeiro JC ve as cobrancas semeadas, com atrasada e a vencer separadas', async ({ page }) => {
-  await enterWithPreviewAccount(page, financeiroJc)
+  await entrarComSessaoGuardada(page, financeiroJc)
 
   await page.goto('/contas-receber')
 
@@ -93,8 +78,11 @@ test('Financeiro JC ve as cobrancas semeadas, com atrasada e a vencer separadas'
 })
 
 test('Vendas JA nao chega em Contas a receber', async ({ page }) => {
-  await enterWithPreviewAccount(page, vendasJa)
+  await entrarComSessaoGuardada(page, vendasJa)
+  await page.goto('/')
 
+  // O menu do perfil ja montou (o Romaneio e dele): so entao a ausencia do link prova algo.
+  await expect(page.locator('a[href="/romaneio"]').first()).toBeAttached({ timeout: slowPreviewDataTimeoutMs })
   await expect(page.locator('a[href="/contas-receber"]')).toHaveCount(0)
 
   await page.goto('/contas-receber')

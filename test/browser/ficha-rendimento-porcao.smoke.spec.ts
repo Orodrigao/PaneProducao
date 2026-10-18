@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
@@ -8,17 +9,6 @@ test.use({ browserName: 'chromium', channel: 'chrome' })
 // gravações são interceptadas para conferir exatamente o que viajaria ao banco.
 const adminEmail = 'rodrigao+teste@gmail.com'
 const productId = 'teste-brioche-porcao'
-
-async function enterWithPreviewAccount(page: Page, email: string) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha das contas ficticias existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill(email)
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 const parent = {
   id: productId, name: '[TESTE] Brioche', kind: 'final', category: 'Pães', unit: 'un',
@@ -108,7 +98,7 @@ function rowCard(page: Page, label: string) {
 }
 
 test('ficha calcula rendimento por massa crua de cada variante e grava só as linhas alteradas', async ({ page }) => {
-  await enterWithPreviewAccount(page, adminEmail)
+  await entrarComSessaoGuardada(page, adminEmail)
   const writes: CapturedWrite[] = []
   await mockRecipe(page, writes)
 

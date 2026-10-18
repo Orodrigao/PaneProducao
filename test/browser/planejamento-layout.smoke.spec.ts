@@ -1,20 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
+import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
 })
-
-async function enterAsAdmin(page: Page) {
-  const password = process.env.SUPABASE_TEST_USER_PASSWORD
-  test.skip(!password, 'A senha da conta ficticia existe somente no secret do GitHub.')
-
-  await page.goto('/login')
-  await page.getByPlaceholder('nome@paneesalute.com.br').fill('rodrigao+teste@gmail.com')
-  await page.locator('input[type="password"]').fill(password!)
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-  await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 15_000 })
-}
 
 async function expectLayoutFitsViewport(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height })
@@ -68,7 +58,7 @@ test('Planejamento preserva leitura e toque no computador, tablet e celular', as
   // Pode precisar percorrer alguns dias até achar um com pães; a folga também
   // deixa tempo para a limpeza do rascunho criado pelo teste.
   test.setTimeout(180_000)
-  await enterAsAdmin(page)
+  await entrarComSessaoGuardada(page, 'rodrigao+teste@gmail.com')
 
   // O teste só troca de dia depois que a consulta do dia atual voltou e a tela
   // mostra o conteúdo com a data dele. Assim cada decisão (criar, usar ou pular
