@@ -809,5 +809,6 @@ export function ledgerAccountPrefill(
   if (ledger.status === 'varias') {
     return { accountKey: '', notice: 'No livro esta parcela aparece em mais de um banco. Escolha de onde o dinheiro saiu.' }
   }
-  return { accountKey: '', notice: 'Não encontrei no livro de qual banco esta parcela saiu. Escolha de onde o dinheiro saiu.' }
+  // Vazio também quando o acesso ao livro esconde a linha: por isso "confirmar".
+  return { accountKey: '', notice: 'Não consegui confirmar no livro de qual banco esta parcela saiu. Escolha de onde o dinheiro saiu.' }
 }

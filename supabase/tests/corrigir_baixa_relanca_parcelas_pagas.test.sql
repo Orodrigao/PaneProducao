@@ -16,7 +16,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(67);
+select plan(73);
 
 -- Leituras do livro, do jeito que as telas do Financeiro somam: o estorno
 -- desconta o lançamento original no mesmo mês, banco e categoria.
@@ -432,6 +432,51 @@ select is(
   (select status from public.payable_installments where id = '97500000-0000-4000-8000-0000000000e7'::uuid),
   'pendente',
   'a parcela 2 continua por pagar');
+
+-- Baixa recusada DEPOIS de relançar a parcela 1: valor abaixo do boleto. A
+-- troca de categoria já tinha estornado e relançado a parcela 1 quando a baixa
+-- recusou; nada disso pode ficar.
+set local role authenticated;
+
+select throws_ok(
+  $$ select public.record_payable_payment_and_classification(
+    '97500000-0000-4000-8000-0000000000e7'::uuid, date '2026-08-15', 150.00, 'boleto', null,
+    'banco_sicredi_jc',
+    '[{"category_key":"cmv_revenda","amount":400}]'::jsonb
+  ) $$,
+  '22023',
+  'O valor pago não pode ser menor que o valor original da parcela.',
+  'baixa abaixo do boleto e recusada depois do relancamento'
+);
+
+reset role;
+
+select is(pg_temp.estornos('97500000-0000-4000-8000-0000000000e6'), 0,
+  'a recusa da baixa desfaz o estorno da parcela 1');
+select is(pg_temp.ativo('97500000-0000-4000-8000-0000000000e6', 'cmv_materia_prima')
+    || '|' || pg_temp.bancos('97500000-0000-4000-8000-0000000000e6'),
+  '200.00|banco_caixa_jc',
+  'a parcela 1 segue na categoria e no banco de antes');
+select is(
+  (select string_agg(category.key || ':' || split.amount::text, ',')
+   from public.payable_purchase_categories split
+   join public.finance_categories category on category.id = split.category_id
+   where split.purchase_id = '97500000-0000-4000-8000-0000000000a2'::uuid)
+    || '|' || (select account.key from public.payable_purchases purchase
+               join public.finance_accounts account on account.id = purchase.finance_account_id
+               where purchase.id = '97500000-0000-4000-8000-0000000000a2'::uuid),
+  'cmv_materia_prima:400.00|banco_caixa_jc',
+  'o rateio e a conta da compra seguem os de antes');
+select is(
+  (select count(*)::int from public.payable_events
+   where purchase_id = '97500000-0000-4000-8000-0000000000a2'::uuid
+     and jsonb_array_length(coalesce(details -> 'parcelas_relancadas', '[]'::jsonb)) > 0),
+  0,
+  'o historico nao registra relancamento que nao aconteceu');
+select is(
+  (select status from public.payable_installments where id = '97500000-0000-4000-8000-0000000000e7'::uuid),
+  'pendente',
+  'a parcela 2 continua por pagar depois da segunda recusa');
 
 -- Permissões ----------------------------------------------------------------
 

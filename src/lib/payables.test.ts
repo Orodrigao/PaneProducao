@@ -585,6 +585,6 @@ describe('troca de categoria em conta com parcelas ja pagas', () => {
     })
     expect(ledgerAccountPrefill({ status: 'encontrada', accountId: 'inativa' }, contas).accountKey).toBe('')
     expect(ledgerAccountPrefill({ status: 'varias' }, contas).notice).toMatch(/mais de um banco/)
-    expect(ledgerAccountPrefill({ status: 'sem_lancamento' }, contas).notice).toMatch(/Não encontrei no livro/)
+    expect(ledgerAccountPrefill({ status: 'sem_lancamento' }, contas).notice).toMatch(/Não consegui confirmar no livro/)
   })
 })
