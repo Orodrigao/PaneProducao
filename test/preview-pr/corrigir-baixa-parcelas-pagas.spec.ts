@@ -144,7 +144,9 @@ test('Financeiro JC troca a categoria ao corrigir e ao baixar: todas as parcelas
 
     page.once('dialog', confirmacao => void confirmacao.accept())
     await dialogo.getByRole('button', { name: 'Confirmar' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Baixa corrigida e registrada no histórico. Parcela 1 relançada na categoria nova.' }))
+    // O aviso do Contas a pagar e o showToast de src/lib/utils.ts: uma caixa
+    // .toast sem papel de status, que some em 2,8 s.
+    await expect(page.locator('.toast', { hasText: 'Baixa corrigida e registrada no histórico. Parcela 1 relançada na categoria nova.' }))
       .toBeVisible({ timeout: 20_000 })
 
     const livro1 = await livroDaParcela(page, acesso, p1)
@@ -175,7 +177,7 @@ test('Financeiro JC troca a categoria ao corrigir e ao baixar: todas as parcelas
     await expect(dialogo.getByRole('note')).toContainText('as parcelas 1 e 2, já pagas, também serão estornadas e relançadas na categoria nova')
     page.once('dialog', confirmacao => void confirmacao.accept())
     await dialogo.getByRole('button', { name: 'Confirmar' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Boleto baixado. Parcelas 1 e 2 relançadas na categoria nova.' }))
+    await expect(page.locator('.toast', { hasText: 'Boleto baixado. Parcelas 1 e 2 relançadas na categoria nova.' }))
       .toBeVisible({ timeout: 20_000 })
 
     const final1 = await livroDaParcela(page, acesso, p1)
