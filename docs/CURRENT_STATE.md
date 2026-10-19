@@ -5,8 +5,9 @@
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
-regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava. As demais
-seções conservam suas datas de revisão anteriores.
+regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
+11/10/2026, a trava dos agentes, revista em 19/10/2026. As demais seções
+conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -56,6 +57,55 @@ incorporada à `main`.
   data, o `AGENTS.md` cita papéis e funções, não nomes de fornecedor, e as
   regras de banco, fechamento e arquivos saíram para `docs/regras/`, acionadas
   pela tabela de gatilhos.
+
+## Trava dos agentes (11/10/2026, revista em 19/10/2026)
+
+- **Achado de 11/10/2026, por leitura dos conectores do claude.ai:** além do
+  `Supabase_Leitura` (preso a produção, só ferramentas de leitura), as sessões
+  do Claude tinham um conector `Supabase` com escrita que alcançava os três
+  projetos da organização, produção (`PanePedidosLojas`) inclusive, com
+  "aplicar migration" e "rodar SQL". O conector da Vercel podia criar deploy,
+  promover, mexer em variável de ambiente, domínio e firewall. Não há registro
+  de uso; a proibição era só regra escrita.
+- **No repositório:** `.claude/settings.json` nega ao Claude Code o conector
+  `Supabase` inteiro, as ferramentas de migration, function, segredo e branch
+  de qualquer conector, as ferramentas de escrita e as que entregam segredo ou
+  acesso da Vercel, a CLI da Vercel inteira e os comandos da CLI do Supabase
+  que alcançam o projeto remoto (`db push`, `--linked`, `--db-url`, `config
+  push`, functions, secrets, backups, branches, projects), no Bash e no
+  PowerShell. A leitura (`Supabase_Leitura`, deploys e logs pelo conector da
+  Vercel, GitHub) e os comandos locais usuais do Supabase (`start`, `db reset
+  --local`, `test db`, `migration new`) seguem livres; `db push` e `migration
+  repair` ficam barrados mesmo com `--local`. Provado em sessão na nuvem em
+  11/10/2026: as ferramentas negadas somem, os comandos são recusados, e
+  afrouxar o arquivo reabre as ferramentas na hora. Limites: vale só para o
+  Claude Code neste repositório; a regra de terminal pega a forma usual do
+  comando e, no PowerShell, qualquer comando que cite pelo caminho os
+  lançadores do npm da Vercel e do Supabase (para conferir onde estão, use
+  `Get-Command`), mas não um embrulho (`bash -c`, caminho absoluto no Bash); é
+  trava contra acidente.
+- **No app desktop (achado de 19/10/2026):** os conectores chegam pelo código
+  da conta (`mcp__<código>__`), não pelo nome, e nenhuma regra por nome os
+  pega; o terminal é o PowerShell, que regra de Bash não cobre, e a CLI do
+  Supabase da máquina está logada e ligada a produção. As regras por código
+  ficam no settings global da máquina (`~/.claude/settings.json`), que o app
+  carrega em toda sessão, de qualquer pasta: o conector `Supabase` com escrita
+  inteiro e, na Vercel, os mesmos verbos e leituras de segredo do arquivo do
+  repositório. Ficam fora do repositório público porque o código é da conta e
+  porque o conector com escrita alcança produção de qualquer pasta. Instaladas
+  com aval do Rodrigo e provadas no app em 19/10/2026: o conector com escrita e
+  uma leitura de segredo da Vercel foram recusados na chamada (a ferramenta
+  segue listada), e o conector de leitura e as consultas da Vercel seguiram
+  respondendo. Recriar um conector troca o código: refazer as regras e a prova.
+- **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
+  `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
+  claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.
+  Em 19/10/2026 ainda não estava feito: o conector com escrita seguia ligado no
+  app desktop. Conferir numa sessão nova que ele sumiu da lista de conectores
+  antes de dar como feito. A lista prova o desligamento, não a regra: no app,
+  ferramenta negada por regra continua listada e só é recusada na chamada.
+- **Fora da trava:** agentes de outra família de modelo e comandos rodados
+  fora do Claude Code.
 
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 
