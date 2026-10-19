@@ -74,12 +74,14 @@ incorporada à `main`.
   que alcançam o projeto remoto (`db push`, `--linked`, `--db-url`, `config
   push`, functions, secrets, backups, branches, projects), no Bash e no
   PowerShell. A leitura (`Supabase_Leitura`, deploys e logs pelo conector da
-  Vercel, GitHub) e os comandos locais do Supabase seguem livres. Provado em
-  sessão na nuvem em 11/10/2026: as ferramentas negadas somem, os comandos são
-  recusados, e afrouxar o arquivo reabre as ferramentas na hora. Limites: vale
-  só para o Claude Code neste repositório; a regra de terminal pega a forma
-  usual do comando, não um embrulho (`bash -c`, caminho absoluto); é trava
-  contra acidente.
+  Vercel, GitHub) e os comandos locais usuais do Supabase (`start`, `db reset
+  --local`, `test db`, `migration new`) seguem livres; `db push` e `migration
+  repair` ficam barrados mesmo com `--local`. Provado em sessão na nuvem em
+  11/10/2026: as ferramentas negadas somem, os comandos são recusados, e
+  afrouxar o arquivo reabre as ferramentas na hora. Limites: vale só para o
+  Claude Code neste repositório; a regra de terminal pega a forma usual do
+  comando e, no PowerShell, os lançadores do npm chamados pelo caminho, mas não
+  um embrulho (`bash -c`, caminho absoluto no Bash); é trava contra acidente.
 - **No app desktop (achado de 19/10/2026):** os conectores chegam pelo código
   da conta (`mcp__<código>__`), não pelo nome, e nenhuma regra por nome os
   pega; o terminal é o PowerShell, que regra de Bash não cobre, e a CLI do
@@ -88,16 +90,18 @@ incorporada à `main`.
   carrega em toda sessão, de qualquer pasta: o conector `Supabase` com escrita
   inteiro e, na Vercel, os mesmos verbos e leituras de segredo do arquivo do
   repositório. Ficam fora do repositório público porque o código é da conta e
-  porque o conector com escrita alcança produção de qualquer pasta. Provado no
-  app em 19/10/2026: a ferramenta negada continua listada, mas a chamada é
-  recusada, e o conector de leitura segue respondendo. Recriar um conector
-  troca o código: refazer as regras e a prova.
+  porque o conector com escrita alcança produção de qualquer pasta. Instaladas
+  com aval do Rodrigo e provadas no app em 19/10/2026: o conector com escrita e
+  uma leitura de segredo da Vercel foram recusados na chamada (a ferramenta
+  segue listada), e o conector de leitura e as consultas da Vercel seguiram
+  respondendo. Recriar um conector troca o código: refazer as regras e a prova.
 - **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
   `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
   claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.
   Em 19/10/2026 ainda não estava feito: o conector com escrita seguia ligado no
-  app desktop. Conferir por leitura da lista de ferramentas de uma sessão nova
-  antes de dar como feito.
+  app desktop. Conferir numa sessão nova que ele sumiu da lista de conectores
+  antes de dar como feito. A lista prova o desligamento, não a regra: no app,
+  ferramenta negada por regra continua listada e só é recusada na chamada.
 - **Fora da trava:** agentes de outra família de modelo e comandos rodados
   fora do Claude Code.
 

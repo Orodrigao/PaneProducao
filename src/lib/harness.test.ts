@@ -370,6 +370,12 @@ describe('trava dos agentes', () => {
     'PS> ./node_modules/.bin/vercel deploy --prod',
     'PS> .\\node_modules\\.bin\\vercel',
     'PS> .\\node_modules\\.bin\\vercel deploy --prod',
+    // Lancadores do npm no Windows chamados pelo caminho: barra a CLI inteira.
+    'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\vercel.cmd deploy --prod',
+    'PS> .\\node_modules\\.bin\\vercel.ps1 deploy --prod',
+    'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.cmd db push',
+    'PS> .\\node_modules\\.bin\\supabase.ps1 db query --linked -f x.sql',
+    'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\node_modules\\supabase\\bin\\supabase.exe db push',
   ]
 
   const liberados = [
@@ -409,6 +415,7 @@ describe('trava dos agentes', () => {
     'PS> git commit -m "nunca rode supabase db push"',
     'PS> git log --oneline -1 --grep "vercel deploy"',
     'PS> Get-Content .\\vercel.json',
+    'PS> Test-Path C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.ps1',
     'PS> npx vitest run src/lib/harness.test.ts',
     'PS> npm test',
   ]
@@ -422,8 +429,9 @@ describe('trava dos agentes', () => {
   })
 
   // O app desktop no Windows usa o PowerShell como terminal: regra so de Bash
-  // deixaria o mesmo comando passar por la.
-  it('toda regra de terminal vale no Bash e no PowerShell', () => {
+  // deixaria o mesmo comando passar por la. O PowerShell pode ter regras a mais
+  // (caminho com barra invertida, lancadores do npm no Windows).
+  it('toda regra de Bash tem a mesma regra no PowerShell', () => {
     const doTerminal = (ferramenta: string) =>
       deny.filter((regra) => regra.startsWith(`${ferramenta}(`)).map((regra) => regra.slice(ferramenta.length))
     const powershell = new Set(doTerminal('PowerShell'))

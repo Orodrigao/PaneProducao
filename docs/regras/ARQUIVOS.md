@@ -33,9 +33,9 @@ depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
   site ou alcançam o banco remoto. Só regra `deny`: nunca `allow`, hook, modo
   de permissão ou segredo. Afrouxar exige aprovação do Rodrigo (Segurança
   obrigatória do `AGENTS.md`). O teste do harness exige que cada regra barre
-  um caso que só ela barra, que toda regra de terminal valha nos dois
-  terminais e que a leitura e os comandos locais passem: regra nova entra com
-  o seu caso. No app desktop os conectores chegam pelo código da conta, que
+  um caso que só ela barra, que toda regra de Bash tenha o par no PowerShell
+  e que a leitura e os comandos locais usuais passem: regra nova entra com o
+  seu caso. No app desktop os conectores chegam pelo código da conta, que
   nenhum nome pega: essas regras ficam no settings global da máquina
   (`~/.claude/settings.json`), espelhando as daqui, e afrouxá-las também exige
   aprovação. Vale só para o Claude Code; travar o banco e o site para qualquer
