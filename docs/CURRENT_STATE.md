@@ -122,7 +122,9 @@ incorporada à `main`.
   ferramenta negada por regra continua listada e só é recusada na chamada.
 - **Fora da trava:** agentes de outra família de modelo e comandos rodados
   fora do Claude Code. Para eles, a CLI sem login (item acima) fecha o caminho
-  pela CLI da máquina, não o dos conectores de cada agente.
+  que dependia do login e do vínculo guardados na máquina; não impede comando
+  que receba a senha do banco direto, como `--db-url`, nem o acesso pelos
+  conectores de cada agente.
 
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 
