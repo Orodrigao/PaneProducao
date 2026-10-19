@@ -215,8 +215,10 @@ describe('regras: ponteiros e teto de tamanho', () => {
 // imita a regra do Claude Code: o `*` cobre qualquer texto e o padrao cobre o
 // nome da ferramenta ou o comando inteiro. Nao imita a separacao de comando
 // composto nem a remocao de `timeout`/variavel na frente, que o Claude Code faz
-// antes de comparar; por isso cada caso de Bash e um comando so. A prova real
-// fica na sessao de teste da PR.
+// antes de comparar; por isso cada caso de terminal e um comando so. Caso que
+// comeca com `$ ` e do Bash; com `PS> `, do PowerShell, o terminal do app
+// desktop no Windows. A barra invertida da regra e literal. A prova real fica
+// nas sessoes de teste da PR.
 const regexDoPadrao = new Map<string, RegExp>()
 function comoRegex(padrao: string): RegExp {
   const escapar = (texto: string) => texto.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
@@ -225,16 +227,22 @@ function comoRegex(padrao: string): RegExp {
   return pronto
 }
 
+const TERMINAIS = [
+  { marca: '$ ', ferramenta: 'Bash' },
+  { marca: 'PS> ', ferramenta: 'PowerShell' },
+]
+
 function bloqueiaPor(regras: string[], alvo: string): string | undefined {
+  const terminal = TERMINAIS.find(({ marca }) => alvo.startsWith(marca))
   return regras.find((regra) => {
-    const bash = /^Bash\((.*)\)$/.exec(regra)
-    if (bash) return alvo.startsWith('$ ') && comoRegex(bash[1]).test(alvo.slice(2))
-    return !alvo.startsWith('$ ') && comoRegex(regra).test(alvo)
+    const comando = /^(Bash|PowerShell)\((.*)\)$/.exec(regra)
+    if (!comando) return !terminal && comoRegex(regra).test(alvo)
+    return terminal?.ferramenta === comando[1] && comoRegex(comando[2]).test(alvo.slice(terminal.marca.length))
   })
 }
 
 // Ferramentas de escrita e as que entregam segredo ou acesso, no conector da
-// Vercel em 2026-10-11.
+// Vercel em 2026-10-11, mais a copia de seguranca do Edge Config (2026-10-19).
 const VERCEL_BLOQUEADAS = [
   'accept_project_transfer_request', 'activate_kms_signing_key', 'add_project_domain', 'add_route',
   'approve_rolling_release_stage', 'assign_alias', 'buy_domain', 'cancel_deployment',
@@ -250,7 +258,8 @@ const VERCEL_BLOQUEADAS = [
   'write_session_files', 'get_access_to_vercel_url', 'get_drain', 'get_edge_config_item',
   'get_edge_config_items', 'get_edge_config_token', 'get_edge_config_tokens',
   'get_project_deletion_link', 'get_project_env', 'get_shared_env_var', 'get_webhooks',
-  'filter_project_envs', 'list_feature_flag_sdk_keys',
+  'filter_project_envs', 'list_feature_flag_sdk_keys', 'get_edge_config_backup',
+  'get_edge_config_backups',
 ]
 
 // Verbos de escrita sem ferramenta hoje: a lista ja barra quando a Vercel criar.
@@ -279,7 +288,9 @@ describe('trava dos agentes', () => {
   // Conectores do claude.ai chegam como `mcp__<Nome>__` na nuvem e como
   // `mcp__claude_ai_<Nome>__` na maquina local; plugins chegam em minusculas
   // (`mcp__plugin_vercel_vercel__`). `OutroBanco` e nome inventado: prova a
-  // regra generica, que vale para qualquer conector.
+  // regra generica, que vale para qualquer conector. No app desktop o conector
+  // chega pelo codigo (`mcp__<codigo>__`), que nenhum nome pega; essa grafia fica
+  // no settings global da maquina (ver docs/CURRENT_STATE.md).
   const bloqueados = [
     'mcp__Supabase__execute_sql',
     'mcp__claude_ai_Supabase__apply_migration',
@@ -330,6 +341,35 @@ describe('trava dos agentes', () => {
     '$ npx --no-install vercel@latest deploy',
     '$ ./node_modules/.bin/vercel',
     '$ ./node_modules/.bin/vercel deploy --prod',
+    'PS> supabase db push --include-all',
+    'PS> supabase db query --linked --file supabase/migrations/x.sql',
+    'PS> supabase migration up --db-url postgresql://exemplo',
+    'PS> supabase migration repair --status applied 20260722190516',
+    'PS> supabase config push',
+    'PS> supabase functions deploy daily-payable-due-report',
+    'PS> supabase functions delete daily-payable-due-report',
+    'PS> supabase secrets set RESEND_API_KEY=x',
+    'PS> supabase backups restore --timestamp 1',
+    'PS> supabase branches delete exemplo',
+    'PS> supabase projects delete exemplo',
+    'PS> npx supabase@2.109.1 db push',
+    'PS> npx supabase db query --linked -f x.sql',
+    'PS> npx supabase migration down --db-url postgresql://exemplo',
+    'PS> npx supabase migration repair --status reverted 1',
+    'PS> npx -y supabase config push',
+    'PS> npx supabase functions deploy x',
+    'PS> npx supabase functions delete x',
+    'PS> npx supabase secrets unset X',
+    'PS> npx supabase backups list',
+    'PS> npx supabase branches create x',
+    'PS> npx supabase projects api-keys',
+    'PS> vercel deploy --prod',
+    'PS> vercel.cmd --prod',
+    'PS> npx --no-install vercel@latest deploy',
+    'PS> ./node_modules/.bin/vercel',
+    'PS> ./node_modules/.bin/vercel deploy --prod',
+    'PS> .\\node_modules\\.bin\\vercel',
+    'PS> .\\node_modules\\.bin\\vercel deploy --prod',
   ]
 
   const liberados = [
@@ -363,6 +403,14 @@ describe('trava dos agentes', () => {
     '$ npx vitest run src/lib/vercelConfig.test.ts',
     '$ npm test',
     '$ git push -u origin feat/exemplo',
+    'PS> supabase db reset --local',
+    'PS> supabase migration new remove_trigger_kit',
+    'PS> supabase test db',
+    'PS> git commit -m "nunca rode supabase db push"',
+    'PS> git log --oneline -1 --grep "vercel deploy"',
+    'PS> Get-Content .\\vercel.json',
+    'PS> npx vitest run src/lib/harness.test.ts',
+    'PS> npm test',
   ]
 
   it.each(bloqueados)('bloqueia %s', (alvo) => {
@@ -371,6 +419,15 @@ describe('trava dos agentes', () => {
 
   it.each(liberados)('deixa passar %s', (alvo) => {
     expect(bloqueiaPor(deny, alvo)).toBeUndefined()
+  })
+
+  // O app desktop no Windows usa o PowerShell como terminal: regra so de Bash
+  // deixaria o mesmo comando passar por la.
+  it('toda regra de terminal vale no Bash e no PowerShell', () => {
+    const doTerminal = (ferramenta: string) =>
+      deny.filter((regra) => regra.startsWith(`${ferramenta}(`)).map((regra) => regra.slice(ferramenta.length))
+    const powershell = new Set(doTerminal('PowerShell'))
+    expect(doTerminal('Bash').filter((regra) => !powershell.has(regra))).toEqual([])
   })
 
   // Apagar qualquer regra precisa reprovar: cada uma barra um caso que so ela barra.

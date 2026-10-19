@@ -6,8 +6,8 @@
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
 regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
-11/10/2026, a trava dos agentes. As demais seções conservam suas datas de
-revisão anteriores.
+11/10/2026, a trava dos agentes, revista em 19/10/2026. As demais seções
+conservam suas datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -58,7 +58,7 @@ incorporada à `main`.
   regras de banco, fechamento e arquivos saíram para `docs/regras/`, acionadas
   pela tabela de gatilhos.
 
-## Trava dos agentes (11/10/2026)
+## Trava dos agentes (11/10/2026, revista em 19/10/2026)
 
 - **Achado de 11/10/2026, por leitura dos conectores do claude.ai:** além do
   `Supabase_Leitura` (preso a produção, só ferramentas de leitura), as sessões
@@ -72,21 +72,34 @@ incorporada à `main`.
   de qualquer conector, as ferramentas de escrita e as que entregam segredo ou
   acesso da Vercel, a CLI da Vercel inteira e os comandos da CLI do Supabase
   que alcançam o projeto remoto (`db push`, `--linked`, `--db-url`, `config
-  push`, functions, secrets, backups, branches, projects). A leitura
-  (`Supabase_Leitura`, deploys e logs pelo conector da Vercel, GitHub) e os
-  comandos locais do Supabase seguem livres. Provado em sessão na nuvem: as
-  ferramentas negadas somem, os comandos são recusados, e afrouxar o arquivo
-  reabre as ferramentas na hora. Limites: vale só para o Claude Code neste
-  repositório; a regra de terminal pega a forma usual do comando, não um
-  embrulho (`bash -c`, caminho absoluto); é trava contra acidente.
+  push`, functions, secrets, backups, branches, projects), no Bash e no
+  PowerShell. A leitura (`Supabase_Leitura`, deploys e logs pelo conector da
+  Vercel, GitHub) e os comandos locais do Supabase seguem livres. Provado em
+  sessão na nuvem em 11/10/2026: as ferramentas negadas somem, os comandos são
+  recusados, e afrouxar o arquivo reabre as ferramentas na hora. Limites: vale
+  só para o Claude Code neste repositório; a regra de terminal pega a forma
+  usual do comando, não um embrulho (`bash -c`, caminho absoluto); é trava
+  contra acidente.
+- **No app desktop (achado de 19/10/2026):** os conectores chegam pelo código
+  da conta (`mcp__<código>__`), não pelo nome, e nenhuma regra por nome os
+  pega; o terminal é o PowerShell, que regra de Bash não cobre, e a CLI do
+  Supabase da máquina está logada e ligada a produção. As regras por código
+  ficam no settings global da máquina (`~/.claude/settings.json`), que o app
+  carrega em toda sessão, de qualquer pasta: o conector `Supabase` com escrita
+  inteiro e, na Vercel, os mesmos verbos e leituras de segredo do arquivo do
+  repositório. Ficam fora do repositório público porque o código é da conta e
+  porque o conector com escrita alcança produção de qualquer pasta. Provado no
+  app em 19/10/2026: a ferramenta negada continua listada, mas a chamada é
+  recusada, e o conector de leitura segue respondendo. Recriar um conector
+  troca o código: refazer as regras e a prova.
 - **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
   `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
   claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.
-  Conferir por leitura da lista de ferramentas de uma sessão nova antes de
-  dar como feito.
-- **Fora da trava:** agentes de outra família de modelo e terminais da máquina
-  do Rodrigo. Se a CLI do Supabase ou da Vercel estiver logada lá, ainda
-  alcança produção; não verificado.
+  Em 19/10/2026 ainda não estava feito: o conector com escrita seguia ligado no
+  app desktop. Conferir por leitura da lista de ferramentas de uma sessão nova
+  antes de dar como feito.
+- **Fora da trava:** agentes de outra família de modelo e comandos rodados
+  fora do Claude Code.
 
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 

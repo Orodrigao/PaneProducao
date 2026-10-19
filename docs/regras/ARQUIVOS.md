@@ -28,15 +28,19 @@ depósito de markdown órfão. Todo arquivo novo tem um único lugar legítimo:
 - **`.claude/skills/`:** skills compartilhadas do harness de IA, uma por
   pasta com `SKILL.md`. Skill nunca contém segredo.
 - **`.claude/settings.json`:** a lista de bloqueio do Claude Code neste
-  repositório — ferramentas de escrita e de segredo dos conectores do Supabase
-  e da Vercel e os comandos de terminal que publicam site ou alcançam o banco
-  remoto. Só regra `deny`: nunca `allow`, hook, modo de permissão ou segredo.
-  Afrouxar exige aprovação do Rodrigo (Segurança obrigatória do `AGENTS.md`).
-  O teste do harness exige que cada regra barre um caso que só ela barra, e
-  que a leitura e os comandos locais passem: regra nova entra com o seu caso.
-  Vale só para o Claude Code; travar o banco e o site para qualquer agente é
-  papel do GitHub e dos conectores. Com as skills, é o único conteúdo de
-  `.claude/` versionado; as configurações locais por máquina
+  repositório: ferramentas de escrita e de segredo dos conectores do Supabase
+  e da Vercel e os comandos de terminal, no Bash e no PowerShell, que publicam
+  site ou alcançam o banco remoto. Só regra `deny`: nunca `allow`, hook, modo
+  de permissão ou segredo. Afrouxar exige aprovação do Rodrigo (Segurança
+  obrigatória do `AGENTS.md`). O teste do harness exige que cada regra barre
+  um caso que só ela barra, que toda regra de terminal valha nos dois
+  terminais e que a leitura e os comandos locais passem: regra nova entra com
+  o seu caso. No app desktop os conectores chegam pelo código da conta, que
+  nenhum nome pega: essas regras ficam no settings global da máquina
+  (`~/.claude/settings.json`), espelhando as daqui, e afrouxá-las também exige
+  aprovação. Vale só para o Claude Code; travar o banco e o site para qualquer
+  agente é papel do GitHub e dos conectores. Com as skills, é o único conteúdo
+  de `.claude/` versionado; as configurações locais por máquina
   (`settings.local.json`, `launch.json`) seguem ignoradas.
 - **Proibido em qualquer lugar:** markdown dentro de `src/`, arquivos de
   rascunho ou anotação (`NOTES.md`, `TODO.md`, `RESUMO.md`, `PLANO_V2.md`),
