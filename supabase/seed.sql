@@ -2026,6 +2026,91 @@ select '96600000-0000-4000-8000-0000000000d1', '96600000-0000-4000-8000-00000000
        7, 28, 5.428571, 'Insumos', 'mapeado', true
 where exists (select 1 from public.payable_purchases purchase where purchase.id = '96600000-0000-4000-8000-0000000000b1');
 
+-- Vinculos de NF-e, fase 5: (1) margarina lancada como uso ou despesa numa
+-- conta PAGA, com rateio em CMV, lancamentos no livro e memoria de uso ou
+-- despesa ligada, para o Financeiro Catalogo tirar de uso ou despesa e desfazer;
+-- (2) pano ligado a um produto, para marcar como uso ou despesa e desfazer. Os
+-- roteiros terminam desfazendo; aqui o seed apaga o historico desses produtos
+-- e volta itens, custos, livro e memoria ao estado conhecido. Datas fixas em
+-- marco de 2025, longe dos meses que os indicadores de preco conferem.
+delete from public.payable_purchase_item_corrections
+where undoes_correction_id is not null
+  and product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[];
+delete from public.payable_purchase_item_corrections
+where product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[];
+delete from public.finance_entries
+where source = 'contas_pagar' and source_ref = '96700000-0000-4000-8000-0000000000e1';
+delete from public.payable_purchases
+where id in ('96700000-0000-4000-8000-0000000000b1', '96700000-0000-4000-8000-0000000000b2');
+delete from public.payable_non_catalog_mappings where id = '96700000-0000-4000-8000-0000000000f1';
+
+insert into public.products(id, name, category, active, unit, kind, cost_price, is_fabricacao_propria) values
+  ('96700000-0000-4000-8000-000000000011', '[TESTE] Vinculo uso destino', 'Insumos', true, 'kg', 'insumo', 8.00, false),
+  ('96700000-0000-4000-8000-000000000012', '[TESTE] Vinculo uso pano', 'Higiene e limpeza', true, 'un', 'insumo', 95.00, false)
+on conflict (id) do update set
+  name = excluded.name, category = excluded.category, active = excluded.active,
+  unit = excluded.unit, kind = excluded.kind, cost_price = excluded.cost_price,
+  is_fabricacao_propria = excluded.is_fabricacao_propria;
+
+insert into public.payable_purchases (
+  id, request_id, store, supplier_id, purchase_date, origin, document_type,
+  payment_method, status, total_value, notes, nfe_key, nfe_number, nfe_series,
+  nfe_issued_at, classification_status, created_by
+)
+select fixture.id, fixture.request_id, 'jc', '40000000-0000-4000-8000-000000000001',
+       fixture.issued, 'xml', 'nfe', 'boleto', fixture.status, fixture.total,
+       fixture.notes, fixture.nfe_key, fixture.nfe_number, '1', fixture.issued, 'completa', user_account.id
+from (values
+  ('96700000-0000-4000-8000-0000000000b1'::uuid, '96700000-0000-4000-8000-0000000000c1'::uuid, date '2025-03-10', 'paga', 270::numeric,
+   '[TESTE] NF-e paga com margarina lancada como uso ou despesa.', '35260912345678000195550010009670011009670011', '967001'),
+  ('96700000-0000-4000-8000-0000000000b2'::uuid, '96700000-0000-4000-8000-0000000000c2'::uuid, date '2025-03-12', 'aberta', 95::numeric,
+   '[TESTE] NF-e com pano ligado a produto, para virar uso ou despesa.', '35260912345678000195550010009670021009670021', '967002')
+) as fixture(id, request_id, issued, status, total, notes, nfe_key, nfe_number)
+join auth.users user_account on lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+where exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');
+
+insert into public.payable_purchase_items (
+  id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_line_number,
+  source_product_code, source_description, source_unit, source_quantity, conversion_basis,
+  conversion_factor, usable_quantity, normalized_unit_cost, category_snapshot, mapping_status, cost_applied
+)
+select fixture.*
+from (values
+  ('96700000-0000-4000-8000-0000000000d1'::uuid, '96700000-0000-4000-8000-0000000000b1'::uuid, null::uuid,
+   '[TESTE] Margarina caixa uso', 'CX', 1::numeric, 270::numeric, 1, 'TESTE-MARG-USO', '[TESTE] Margarina caixa uso',
+   'CX', 1::numeric, null::text, null::numeric, null::numeric, null::numeric, null::text, 'nao_aplicavel', null::boolean),
+  ('96700000-0000-4000-8000-0000000000d2'::uuid, '96700000-0000-4000-8000-0000000000b2'::uuid, '96700000-0000-4000-8000-000000000012'::uuid,
+   '[TESTE] Vinculo uso pano', 'un', 1::numeric, 95::numeric, 1, 'TESTE-PANO-USO', '[TESTE] Pano multiuso rolao',
+   'UN', 1::numeric, 'simple', 1::numeric, 1::numeric, 95::numeric, 'Higiene e limpeza', 'mapeado', true)
+) as fixture
+where exists (select 1 from public.payable_purchases purchase where purchase.id = fixture.column2);
+
+-- Parcela paga com R$ 5 de juros, rateio em CMV e lancamentos gerados pela
+-- funcao oficial da baixa (principal em CMV e juros em Financeiras).
+insert into public.payable_installments (id, purchase_id, installment_number, due_date, amount, status, paid_date, paid_amount, paid_method)
+select '96700000-0000-4000-8000-0000000000e1', '96700000-0000-4000-8000-0000000000b1', 1,
+       date '2025-03-20', 270, 'paga', date '2025-03-22', 275, 'boleto'
+where exists (select 1 from public.payable_purchases purchase where purchase.id = '96700000-0000-4000-8000-0000000000b1');
+insert into public.payable_purchase_categories (purchase_id, category_id, amount)
+select '96700000-0000-4000-8000-0000000000b1', category.id, 270
+from public.finance_categories category
+where category.key = 'cmv_materia_prima'
+  and exists (select 1 from public.payable_purchases purchase where purchase.id = '96700000-0000-4000-8000-0000000000b1');
+select private.sync_payable_finance_entries('96700000-0000-4000-8000-0000000000e1', user_account.id, null)
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  and exists (select 1 from public.payable_installments installment where installment.id = '96700000-0000-4000-8000-0000000000e1');
+
+-- Memoria de uso ou despesa ligada para a margarina: a correcao a desliga.
+insert into public.payable_non_catalog_mappings (
+  id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit, active, last_confirmed_by
+)
+select '96700000-0000-4000-8000-0000000000f1', '40000000-0000-4000-8000-000000000001', 'TESTE-MARG-USO', null,
+       '[TESTE] Margarina caixa uso', 'CX', true, user_account.id
+from auth.users user_account
+where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
+  and exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');
+
 -- Indicadores da formação de preço: setembro fictício provisório e outubro
 -- fictício completo. As datas fixas permitem conferir os dois estados com
 -- private.pricing_financial_indicators_report('2026-11-01') durante o ensaio.

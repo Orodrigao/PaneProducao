@@ -181,13 +181,74 @@ export async function loadLinkProduct(productId: string): Promise<ProductOption 
   return (data ?? null) as ProductOption | null
 }
 
+function invoiceFromRow(row: InvoiceRow & { purchase: NonNullable<InvoiceRow['purchase']> }): InvoiceLinkHistory {
+  return {
+    id: row.id,
+    purchase_id: row.purchase_id,
+    supplier_id: row.purchase.supplier_id,
+    supplier_name: relationName(row.purchase.supplier),
+    invoice_number: row.purchase.nfe_number,
+    invoice_series: row.purchase.nfe_series,
+    invoice_date: row.purchase.nfe_issued_at,
+    purchase_date: row.purchase.purchase_date,
+    status: row.purchase.status,
+    source_description: row.source_description,
+    source_code: row.source_product_code,
+    source_ean: row.source_ean,
+    source_unit: row.source_unit,
+    source_quantity: row.source_quantity === null ? null : Number(row.source_quantity),
+    quantity: Number(row.quantity),
+    unit: row.unit,
+    unit_price: Number(row.unit_price),
+    conversion_basis: row.conversion_basis,
+    conversion_factor: row.conversion_factor === null ? null : Number(row.conversion_factor),
+    usable_quantity: row.usable_quantity === null ? null : Number(row.usable_quantity),
+    normalized_unit_cost: row.normalized_unit_cost === null ? null : Number(row.normalized_unit_cost),
+    mapping_status: row.mapping_status,
+    mapping_confirmed_at: row.mapping_confirmed_at,
+    mapping_confirmed_by: row.mapping_confirmed_by,
+    factor_confirmed: row.factor_confirmed_at !== null,
+    factor_confirmed_at: row.factor_confirmed_at,
+    factor_confirmed_by: row.factor_confirmed_by,
+  }
+}
+
+const INVOICE_COLUMNS = 'id,purchase_id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,usable_quantity,normalized_unit_cost,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))'
+
+export interface NonCatalogItem extends InvoiceLinkHistory {
+  /** Valor do item na nota (com os impostos que entram no custo, quando há). */
+  item_value: number
+}
+
+type NonCatalogRow = InvoiceRow & { line_total: number | null, acquisition_value: number | null }
+
+/**
+ * Itens de NF-e da JC lançados como uso ou despesa, de contas não canceladas,
+ * da nota mais nova para a mais antiga. Lê com a permissão de quem está na
+ * tela (Contas a pagar da JC ou administrador).
+ */
+export async function loadNonCatalogItems(): Promise<NonCatalogItem[]> {
+  const rows = await loadAll<NonCatalogRow>((start, end) => supabase.from('payable_purchase_items')
+    .select(`${INVOICE_COLUMNS},line_total,acquisition_value`)
+    .eq('mapping_status', 'nao_aplicavel')
+    .eq('purchase.origin', 'xml').eq('purchase.store', 'jc').neq('purchase.status', 'cancelada')
+    .order('id').range(start, end))
+  return rows.flatMap(row => {
+    if (!row.purchase) return []
+    return [{
+      ...invoiceFromRow({ ...row, purchase: row.purchase }),
+      item_value: Number(row.acquisition_value ?? row.line_total ?? 0),
+    }]
+  }).sort((a, b) => (b.invoice_date ?? b.purchase_date).localeCompare(a.invoice_date ?? a.purchase_date) || a.id.localeCompare(b.id))
+}
+
 export async function loadLinkProductDetails(product: ProductOption, recipeUsageIndex: RecipeUsageIndex): Promise<LinkProductDetails> {
   const [mappingRows, invoiceRows, authorsResult, correctionsResult] = await Promise.all([
     loadAll<MappingRow>((start, end) => supabase.from('payable_product_mappings')
       .select('id,supplier_id,supplier:suppliers(name),supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,active,last_confirmed_at,last_confirmed_by,updated_at')
       .eq('base_product_id', product.id).order('last_confirmed_at', { ascending: false }).range(start, end)),
     loadAll<InvoiceRow>((start, end) => supabase.from('payable_purchase_items')
-      .select('id,purchase_id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,usable_quantity,normalized_unit_cost,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))')
+      .select(INVOICE_COLUMNS)
       .eq('product_id', product.id).eq('purchase.origin', 'xml').eq('purchase.store', 'jc')
       .order('id').range(start, end)),
     supabase.rpc('list_vinculo_nfe_authors', { p_product_id: product.id }),
@@ -207,38 +268,7 @@ export async function loadLinkProductDetails(product: ProductOption, recipeUsage
     conversion_factor: Number(mapping.conversion_factor),
     supplier_name: relationName(supplier),
   }))
-  const invoices = invoiceRows.flatMap(row => {
-    if (!row.purchase) return []
-    return [{
-      id: row.id,
-      purchase_id: row.purchase_id,
-      supplier_id: row.purchase.supplier_id,
-      supplier_name: relationName(row.purchase.supplier),
-      invoice_number: row.purchase.nfe_number,
-      invoice_series: row.purchase.nfe_series,
-      invoice_date: row.purchase.nfe_issued_at,
-      purchase_date: row.purchase.purchase_date,
-      status: row.purchase.status,
-      source_description: row.source_description,
-      source_code: row.source_product_code,
-      source_ean: row.source_ean,
-      source_unit: row.source_unit,
-      source_quantity: row.source_quantity === null ? null : Number(row.source_quantity),
-      quantity: Number(row.quantity),
-      unit: row.unit,
-      unit_price: Number(row.unit_price),
-      conversion_basis: row.conversion_basis,
-      conversion_factor: row.conversion_factor === null ? null : Number(row.conversion_factor),
-      usable_quantity: row.usable_quantity === null ? null : Number(row.usable_quantity),
-      normalized_unit_cost: row.normalized_unit_cost === null ? null : Number(row.normalized_unit_cost),
-      mapping_status: row.mapping_status,
-      mapping_confirmed_at: row.mapping_confirmed_at,
-      mapping_confirmed_by: row.mapping_confirmed_by,
-      factor_confirmed: row.factor_confirmed_at !== null,
-      factor_confirmed_at: row.factor_confirmed_at,
-      factor_confirmed_by: row.factor_confirmed_by,
-    }]
-  })
+  const invoices = invoiceRows.flatMap(row => row.purchase ? [invoiceFromRow({ ...row, purchase: row.purchase })] : [])
 
   const corrections = ((correctionsResult.data ?? []) as CorrectionRow[]).map(({ mapping, ...correction }) => {
     const memory = Array.isArray(mapping) ? mapping[0] : mapping
@@ -279,10 +309,14 @@ export async function correctSupplierMapping(request: MemoryCorrectionRequest): 
   if (error) throw new Error(error.message || 'Não foi possível gravar a correção.')
 }
 
+/**
+ * Um item do pedido de correção. productId nulo = uso ou despesa, e então o
+ * fator também vai nulo; o banco recusa campo ausente.
+ */
 export interface ItemCorrectionRequestItem {
   itemId: string
-  productId: string
-  conversionFactor: number
+  productId: string | null
+  conversionFactor: number | null
 }
 
 /** O efeito mudou entre a prévia e a confirmação (código PT409 do banco). */
@@ -293,7 +327,11 @@ export type ItemCorrectionTarget = { items: readonly ItemCorrectionRequestItem[]
 function itemCorrectionArgs(target: ItemCorrectionTarget) {
   if ('undoCorrectionId' in target) return { p_items: null, p_undo_correction_id: target.undoCorrectionId }
   return {
-    p_items: target.items.map(item => ({ item_id: item.itemId, product_id: item.productId, conversion_factor: item.conversionFactor })),
+    p_items: target.items.map(item => ({
+      item_id: item.itemId,
+      product_id: item.productId,
+      conversion_factor: item.productId === null ? null : item.conversionFactor,
+    })),
     p_undo_correction_id: null,
   }
 }

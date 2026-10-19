@@ -78,7 +78,7 @@ test('Financeiro Catalogo corrige o item de uma nota gravada, a correcao persist
     await expect(previa.getByText(/→ \[TESTE\] Vinculo nota certa, fator 3, 12 kg/)).toBeVisible()
     await expect(previa.getByText(/Custo de \[TESTE\] Vinculo nota errada continua .*não sobrou outra nota/)).toBeVisible()
     await expect(previa.getByText(/Custo de \[TESTE\] Vinculo nota certa/)).toBeVisible()
-    await expect(previa.getByText(/Contas, parcelas, pagamentos e o livro-caixa não mudam/)).toBeVisible()
+    await expect(previa.getByText(/Contas, parcelas, pagamentos, rateio e o livro-caixa não mudam/)).toBeVisible()
     await previa.getByRole('button', { name: 'Voltar' }).click()
     await page.reload()
     await abrirProduto(page, ERRADO)

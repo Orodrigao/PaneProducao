@@ -1,6 +1,7 @@
 'use client'
 
 import { describeItemImpact, describeProductImpact, IMPACT_FOOTNOTES, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
+import { describeConsumption, describeMemories, describePurchaseFinance } from '@/lib/vinculosNfeUsoDespesa'
 
 interface Props {
   title: string
@@ -18,6 +19,8 @@ interface Props {
 /** O efeito calculado pelo banco, dito antes do clique que confirma. */
 export default function VinculoNfeNotasPrevia({ title, result, confirmLabel, saving, error, conflict, onConfirm, onBack, onRefreshPreview }: Props) {
   const { impact } = result
+  const consumption = describeConsumption(impact.consumption)
+  const memories = describeMemories(impact)
   return (
     <div role="region" aria-label={title} className="ps-card" style={{ marginTop: 8, padding: 10, background: 'var(--cream-raise)', borderLeft: '4px solid var(--teal)' }}>
       <b>{title}</b>
@@ -29,6 +32,26 @@ export default function VinculoNfeNotasPrevia({ title, result, confirmLabel, sav
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {impact.products.map(product => <li key={product.product_id}>{describeProductImpact(product, impact)}</li>)}
       </ul>
+      {impact.purchases.length > 0 && (
+        <>
+          <p style={{ margin: '8px 0 2px', fontWeight: 600 }}>Conta e livro-caixa</p>
+          <ul aria-label="Conta e livro-caixa" style={{ margin: 0, paddingLeft: 18 }}>
+            {impact.purchases.map(purchase => <li key={purchase.purchase_id}>{describePurchaseFinance(purchase, impact)}</li>)}
+          </ul>
+        </>
+      )}
+      <p style={{ margin: '8px 0 2px', fontWeight: 600 }}>Consumo semanal (contagens fechadas)</p>
+      <ul aria-label="Consumo semanal" style={{ margin: 0, paddingLeft: 18 }}>
+        {consumption.map(line => <li key={line}>{line}</li>)}
+      </ul>
+      {memories.length > 0 && (
+        <>
+          <p style={{ margin: '8px 0 2px', fontWeight: 600 }}>Memória do fornecedor</p>
+          <ul aria-label="Memória do fornecedor" style={{ margin: 0, paddingLeft: 18 }}>
+            {memories.map(line => <li key={line}>{line}</li>)}
+          </ul>
+        </>
+      )}
       <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--ink-soft)' }}>
         {IMPACT_FOOTNOTES.map(line => <li key={line}>{line}</li>)}
       </ul>

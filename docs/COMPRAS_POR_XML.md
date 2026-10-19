@@ -802,8 +802,8 @@ quanto vem em cada unidade da nota. Também dá para manter o produto e corrigir
 só o fator (por exemplo, 20 pacotes de 500 g gravados como 20 kg). O destino
 precisa ser produto ativo de compra: insumo ou revenda, nunca kit nem
 fabricação própria. Itens marcados juntos precisam ter a mesma unidade na nota,
-porque o fator vale por unidade. Item pendente, de uso ou despesa (fase 5) ou
-de conta cancelada não entra.
+porque o fator vale por unidade. Item pendente ou de conta cancelada não entra;
+item de uso ou despesa entra desde a fase 5, abaixo.
 
 Antes de confirmar, a tela mostra a prévia calculada pelo banco: cada item com
 produto, fator, quantidade útil e custo por unidade antes e depois, e o custo
@@ -856,6 +856,95 @@ JC corrigindo e desfazendo, e Financeiro JC, Vendas JA e Expedição JC barrados
 
 Correção em lote de notas reais só depois da prévia concreta de alvo e impacto
 conferida (decisão do Rodrigo em 28/09/2026).
+
+## Item entre uso ou despesa e insumo (fase 5 de Vínculos, 2026-10-19)
+
+Item marcado como uso ou despesa fica fora da receita, do estoque e do custo.
+Em 19/10/2026 havia em produção 88 itens assim (R$ 8.475, 19 contas, 9 já
+pagas), e parte deles era insumo ou revenda: margarina de 30 kg, filé de frango,
+presunto, queijos fatiados, queijo ralado, bebidas de revenda. A memória do
+fornecedor continuava ligada e a nota seguinte voltava como uso ou despesa.
+
+Em Catálogo > Vínculos NF-e, Administração e o Financeiro autorizado (a mesma
+regra das fases 3 e 4) corrigem nos dois sentidos, inclusive em conta paga:
+
+- **Uso ou despesa para produto:** a seção "Itens lançados como uso ou
+  despesa" lista os itens de NF-e da JC de contas não canceladas, com filtro por
+  fornecedor, descrição ou nota. Marcam-se itens da mesma unidade, escolhe-se o
+  produto ativo de compra (insumo ou revenda, sem kit nem fabricação própria) e
+  quanto vem em cada unidade da nota.
+- **Produto para uso ou despesa:** na lista de notas de um produto, o destino
+  "Uso ou despesa" grava o item como a classificação do Contas a pagar grava:
+  sem produto, fator, quantidade útil, custo e categoria, com o nome e a unidade
+  da nota. A quantidade não muda, porque o valor do item sai dela.
+
+A prévia, calculada pelo banco antes de confirmar, mostra:
+
+- cada item, de onde sai e para onde vai, com fator, quantidade útil e custo por
+  unidade;
+- o custo de cada produto antes e depois, pelas regras da fase 4. Quando o item
+  que sai era o único que dava o custo, o custo fica como estava e a prévia
+  avisa que ele veio da nota que saiu;
+- a conta de cada nota: em aberto ou paga, parcelas pagas, quanto saiu do caixa,
+  juros ou multa, a categoria de DRE da conta e os lançamentos do livro-caixa,
+  com a afirmação de que nada disso muda. Quando a categoria da conta não combina
+  com o novo destino (item vira insumo numa conta sem categoria de CMV, ou vira
+  uso ou despesa numa conta toda em CMV), a prévia avisa para o Financeiro
+  revisar a categoria no Contas a pagar;
+- o consumo semanal das contagens fechadas: para cada produto e semana que
+  mudam, entrada, consumo, valor e situação antes e depois, e os totais de
+  compras do período (contadas, fora da contagem, não é estoque). Uma nota antiga
+  pode mudar o custo de referência de semanas seguintes, por isso todas as
+  contagens fechadas entram na conta;
+- o que a próxima nota do fornecedor vai sugerir para cada item.
+
+**Decisão sobre o livro-caixa (19/10/2026).** A correção do item não muda
+conta, parcela, pagamento, rateio nem livro-caixa: a categoria de DRE é da conta,
+escolhida pelo Financeiro, e não dos itens. Em produção, todas as contas pagas
+com itens de uso ou despesa já estavam rateadas em categorias de CMV, então tirar
+esses itens de uso ou despesa não pede mudança no livro. Limite conhecido: a
+correção da baixa no Contas a pagar troca o rateio da conta inteira, mas só
+relança a parcela escolhida; em conta com várias parcelas pagas, as outras
+ficam na categoria antiga. A prévia não aponta esse caminho como solução
+completa.
+
+**Memória do fornecedor.** Tirar item de uso ou despesa para um produto
+desliga, na mesma gravação, a memória de uso ou despesa ligada desse item do
+fornecedor: a próxima nota chega sem essa sugestão e quem importa escolhe. A
+memória de insumo continua só com a função da fase 3; ao virar uso ou despesa, a
+prévia avisa se ela ainda sugere o produto. Desfazer não religa memória
+desligada, porque religar poderia deixar duas respostas ligadas para o mesmo
+item.
+
+**Desfazer** volta o item exatamente como estava (produto, fator, quantidade
+útil e base de conversão, ou uso ou despesa), com prévia própria, e só vale se
+o item ainda está como a correção o deixou. As correções gravadas antes da fase
+5 continuam desfazíveis.
+
+A escrita continua só em `public.correct_payable_purchase_items`, redefinida
+pela migration `20261019163500_vinculos_nfe_uso_despesa_insumo`. O pedido traz,
+por item, o produto e o fator sempre presentes; produto nulo explícito é uso ou
+despesa, e então o fator também é nulo. Campo ausente é recusado, para um campo
+esquecido nunca virar uso ou despesa. A correção entra na fila das memórias do
+fornecedor (`payable-mapping-supplier:`), entre os itens e os produtos, na
+mesma ordem da classificação, e segura as contagens fechadas enquanto mede o
+consumo. O hash da prévia inclui a versão da conta, das parcelas, dos
+lançamentos e das memórias: baixa, correção de baixa, troca de conta de
+pagamento ou memória alterada entre a prévia e a confirmação recusam a
+confirmação (PT409).
+
+Provas: pgTAP `supabase/tests/vinculos_nfe_uso_despesa.test.sql` (os dois
+sentidos, conta paga com livro, parcela, rateio e total intactos, custo da
+origem e do destino, memória desligada e não religada, desfazer, recusas,
+contrato do pedido, PT409 por troca de conta de pagamento, permissão retirada
+entre a prévia e a confirmação, perfil inativo), a espera real entre correção e
+classificação como uso ou despesa do mesmo fornecedor em
+`supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql` e o
+roteiro `test/preview-pr/vinculos-nfe-uso-despesa.spec.ts` com Financeiro
+Catálogo JC nos dois sentidos, com descarte, persistência e desfazer, e
+Financeiro JC, Vendas JA e Expedição JC barrados na Data API.
+
+Itens pendentes continuam sendo classificados no Contas a pagar.
 
 ## Decisões pendentes
 
