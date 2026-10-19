@@ -515,7 +515,10 @@ disputavam um único banco de teste compartilhado.
   romaneio de pão já cobrado. O banco recusa qualquer outra gravação de preço
   da Buck vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
   nas semanas cobradas) e o acerto de R$ 337,94 cobrados a mais nas semanas de
-  21/09 e 28/09, decisão do Rodrigo por ajuste manual;
+  21/09 e 28/09, decisão do Rodrigo por ajuste manual. Risco conhecido: o
+  Brioche tem duas linhas "un" na Tabela Buck (Hambúrguer e Forma), e a conta
+  não separa opção de venda; a troca de preço do Brioche fica recusada até uma
+  delas sair da tabela;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;
