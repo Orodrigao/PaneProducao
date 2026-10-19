@@ -173,7 +173,7 @@ select throws_ok(
   $$select public.correct_payable_purchase_items('97200000-0000-4000-8000-0000000000a1', 'aplicar',
     '[{"item_id":"97200000-0000-4000-8000-000000000062","product_id":"97200000-0000-4000-8000-000000000022","conversion_factor":3}]',
     null, 'hash-de-outra-previa')$$,
-  'PT409', 'O efeito mudou desde a prévia (outra correção, nota nova ou cadastro alterado). Veja a prévia de novo antes de confirmar.',
+  'PT409', 'O efeito mudou desde a prévia (outra correção, nota nova, pagamento, memória ou cadastro alterado). Veja a prévia de novo antes de confirmar.',
   'efeito diferente da prévia é recusado');
 select is((select product_id::text from public.payable_purchase_items where id = '97200000-0000-4000-8000-000000000062'),
   '97200000-0000-4000-8000-000000000021', 'recusa por efeito diferente não grava nada');
@@ -255,11 +255,13 @@ select throws_ok(
 select throws_ok(
   $$select public.correct_payable_purchase_items(null, 'previa',
     '[{"item_id":"97200000-0000-4000-8000-000000000068","product_id":"97200000-0000-4000-8000-000000000022","conversion_factor":1}]')$$,
-  '22023', 'Só itens ligados a um produto do catálogo são corrigidos aqui.', 'item pendente é recusado');
-select throws_ok(
+  '22023', 'Item sem classificação: classifique em Contas a pagar.', 'item pendente é recusado');
+-- Desde a fase 5 o item de uso ou despesa também é corrigido (a prova inteira
+-- está em vinculos_nfe_uso_despesa.test.sql); aqui só a prévia, que não grava.
+select lives_ok(
   $$select public.correct_payable_purchase_items(null, 'previa',
     '[{"item_id":"97200000-0000-4000-8000-000000000069","product_id":"97200000-0000-4000-8000-000000000022","conversion_factor":1}]')$$,
-  '22023', 'Só itens ligados a um produto do catálogo são corrigidos aqui.', 'item de uso ou despesa fica para a fase 5');
+  'item de uso ou despesa tem prévia desde a fase 5');
 select throws_ok(
   $$select public.correct_payable_purchase_items(null, 'previa',
     '[{"item_id":"97200000-0000-4000-8000-000000000060","product_id":"97200000-0000-4000-8000-000000000022","conversion_factor":1},
@@ -371,7 +373,7 @@ select throws_ok(
   $$select public.correct_payable_purchase_items('97200000-0000-4000-8000-0000000000a4', 'aplicar',
     '[{"item_id":"97200000-0000-4000-8000-000000000065","product_id":"97200000-0000-4000-8000-000000000027","conversion_factor":0.5}]',
     null, current_setting('teste.p4')::jsonb ->> 'impact_hash')$$,
-  'PT409', 'O efeito mudou desde a prévia (outra correção, nota nova ou cadastro alterado). Veja a prévia de novo antes de confirmar.',
+  'PT409', 'O efeito mudou desde a prévia (outra correção, nota nova, pagamento, memória ou cadastro alterado). Veja a prévia de novo antes de confirmar.',
   'nota nova entre a prévia e a confirmação recusa a confirmação');
 select set_config('teste.p4', public.correct_payable_purchase_items(null, 'previa',
   '[{"item_id":"97200000-0000-4000-8000-000000000065","product_id":"97200000-0000-4000-8000-000000000027","conversion_factor":0.5}]')::text, true);

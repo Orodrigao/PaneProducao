@@ -2,15 +2,20 @@ import { currencyLabel, dateLabel, factorLabel } from '@/lib/vinculosNfe'
 import type { InvoiceLinkHistory } from '@/lib/vinculosNfeClient'
 
 /**
- * Correção de itens de notas já gravadas (fase 4 dos Vínculos de NF-e). O banco
- * calcula o efeito (public.correct_payable_purchase_items); aqui só ficam as
- * regras de seleção da tela e a leitura do efeito que ele devolve.
+ * Correção de itens de notas já gravadas (fases 4 e 5 dos Vínculos de NF-e). O
+ * banco calcula o efeito (public.correct_payable_purchase_items); aqui só ficam
+ * as regras de seleção da tela e a leitura do efeito que ele devolve. A parte
+ * financeira, o consumo semanal e a memória da fase 5 são descritos em
+ * src/lib/vinculosNfeUsoDespesa.ts.
  */
 
 /** Limite da função do banco por pedido. */
 export const MAX_ITEMS_PER_CORRECTION = 100
 
 export interface ItemSnapshot {
+  /** 'mapeado' (produto) ou 'nao_aplicavel' (uso ou despesa). Fotos da fase 4 não trazem: eram sempre produto. */
+  mapping_status: string
+  /** Vazio quando o item é uso ou despesa. */
   product_id: string
   product_name: string | null
   product_unit: string | null
@@ -32,6 +37,80 @@ export interface ItemImpact {
   item_value: number
   before: ItemSnapshot
   after: ItemSnapshot
+  /** Memórias ligadas que a importação usaria para este item, antes e depois. */
+  memories_before: MemoryRef[]
+  memories_after: MemoryRef[]
+}
+
+export interface MemoryRef {
+  kind: 'insumo' | 'uso_despesa' | string
+  mapping_id: string
+  product_name: string | null
+  conversion_factor: number | null
+}
+
+export interface FinanceSlice {
+  key: string
+  label: string
+  group: string | null
+  competence_month: string | null
+  amount: number
+}
+
+/** Situação da conta da nota: a correção do item nunca muda nada disto. */
+export interface PurchaseFinance {
+  purchase_id: string
+  status: string
+  total_value: number
+  competence_month: string | null
+  installments: number
+  installments_paid: number
+  paid_total: number
+  late_fees: number
+  last_paid_date: string | null
+  split: FinanceSlice[]
+  ledger: FinanceSlice[]
+}
+
+export interface ConsumptionRow {
+  qty_in: number | null
+  qty_consumed: number | null
+  unit_cost: number | null
+  value_consumed: number | null
+  status: string
+}
+
+export interface ConsumptionItemChange {
+  period_end_count_id: string
+  start_date: string | null
+  end_date: string | null
+  product_id: string
+  product_name: string
+  unit: string | null
+  before: ConsumptionRow | null
+  after: ConsumptionRow | null
+}
+
+export interface ConsumptionTotals {
+  counted: number
+  outside: number
+  not_stock: number
+  unclassified: number
+}
+
+export interface ConsumptionPeriodChange {
+  period_end_count_id: string
+  start_date: string | null
+  end_date: string | null
+  before: ConsumptionTotals
+  after: ConsumptionTotals
+}
+
+/** Consumo semanal (contagens fechadas) que muda com a correção. */
+export interface ConsumptionImpact {
+  closed_periods: number
+  items: ConsumptionItemChange[]
+  periods: ConsumptionPeriodChange[]
 }
 
 export interface ProductImpact {
@@ -57,6 +136,11 @@ export interface ItemCorrectionImpact {
   items: ItemImpact[]
   products: ProductImpact[]
   decisions: CostDecision[]
+  /** Memórias de uso ou despesa desligadas pela correção. */
+  memories_off: string[]
+  purchases: PurchaseFinance[]
+  /** Nulo em correções gravadas antes da fase 5. */
+  consumption: ConsumptionImpact | null
 }
 
 export interface ItemCorrectionResult {
@@ -85,9 +169,76 @@ function list(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(record) : []
 }
 
+function memories(value: unknown): MemoryRef[] {
+  return list(value).map(memory => ({
+    kind: text(memory.kind) ?? '',
+    mapping_id: text(memory.mapping_id) ?? '',
+    product_name: text(memory.product_name),
+    conversion_factor: numberOrNull(memory.conversion_factor),
+  }))
+}
+
+function slices(value: unknown): FinanceSlice[] {
+  return list(value).map(slice => ({
+    key: text(slice.key) ?? '',
+    label: text(slice.label) ?? 'Categoria sem nome',
+    group: text(slice.group),
+    competence_month: text(slice.competence_month),
+    amount: numberOrNull(slice.amount) ?? 0,
+  }))
+}
+
+function consumptionRow(value: unknown): ConsumptionRow | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = record(value)
+  return {
+    qty_in: numberOrNull(raw.qty_in),
+    qty_consumed: numberOrNull(raw.qty_consumed),
+    unit_cost: numberOrNull(raw.unit_cost),
+    value_consumed: numberOrNull(raw.value_consumed),
+    status: text(raw.status) ?? '',
+  }
+}
+
+function totals(value: unknown): ConsumptionTotals {
+  const raw = record(value)
+  return {
+    counted: numberOrNull(raw.counted) ?? 0,
+    outside: numberOrNull(raw.outside) ?? 0,
+    not_stock: numberOrNull(raw.not_stock) ?? 0,
+    unclassified: numberOrNull(raw.unclassified) ?? 0,
+  }
+}
+
+function consumption(value: unknown): ConsumptionImpact | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = record(value)
+  return {
+    closed_periods: numberOrNull(raw.closed_periods) ?? 0,
+    items: list(raw.items).map(item => ({
+      period_end_count_id: text(item.period_end_count_id) ?? '',
+      start_date: text(item.start_date),
+      end_date: text(item.end_date),
+      product_id: text(item.product_id) ?? '',
+      product_name: text(item.product_name) ?? 'Produto sem nome',
+      unit: text(item.unit),
+      before: consumptionRow(item.before),
+      after: consumptionRow(item.after),
+    })),
+    periods: list(raw.periods).map(period => ({
+      period_end_count_id: text(period.period_end_count_id) ?? '',
+      start_date: text(period.start_date),
+      end_date: text(period.end_date),
+      before: totals(period.before),
+      after: totals(period.after),
+    })),
+  }
+}
+
 function snapshot(value: unknown): ItemSnapshot {
   const raw = record(value)
   return {
+    mapping_status: text(raw.mapping_status) ?? 'mapeado',
     product_id: text(raw.product_id) ?? '',
     product_name: text(raw.product_name),
     product_unit: text(raw.product_unit),
@@ -115,6 +266,8 @@ export function parseItemCorrectionImpact(value: unknown): ItemCorrectionImpact 
       item_value: numberOrNull(item.item_value) ?? 0,
       before: snapshot(item.before),
       after: snapshot(item.after),
+      memories_before: memories(item.memories_before),
+      memories_after: memories(item.memories_after),
     })),
     products: list(raw.products).map(product => ({
       product_id: text(product.product_id) ?? '',
@@ -130,6 +283,21 @@ export function parseItemCorrectionImpact(value: unknown): ItemCorrectionImpact 
       purchase_id: text(decision.purchase_id),
       cost_from_this_note: decision.cost_from_this_note === true,
     })),
+    memories_off: Array.isArray(raw.memories_off) ? raw.memories_off.filter((id): id is string => typeof id === 'string') : [],
+    purchases: list(raw.purchases).map(purchase => ({
+      purchase_id: text(purchase.purchase_id) ?? '',
+      status: text(purchase.status) ?? '',
+      total_value: numberOrNull(purchase.total_value) ?? 0,
+      competence_month: text(purchase.competence_month),
+      installments: numberOrNull(purchase.installments) ?? 0,
+      installments_paid: numberOrNull(purchase.installments_paid) ?? 0,
+      paid_total: numberOrNull(purchase.paid_total) ?? 0,
+      late_fees: numberOrNull(purchase.late_fees) ?? 0,
+      last_paid_date: text(purchase.last_paid_date),
+      split: slices(purchase.split),
+      ledger: slices(purchase.ledger),
+    })),
+    consumption: consumption(raw.consumption),
   }
 }
 
@@ -149,20 +317,31 @@ export function parseItemCorrectionResult(value: unknown): ItemCorrectionResult 
 /** Por que um item gravado não pode ser escolhido; vazio quando pode. */
 export function itemBlockReason(item: Pick<InvoiceLinkHistory, 'status' | 'mapping_status'>): string {
   if (item.status === 'cancelada') return 'Conta cancelada: não é corrigida.'
-  if (item.mapping_status !== 'mapeado') return 'Item sem vínculo confirmado: classifique em Contas a pagar.'
-  return ''
+  if (item.mapping_status === 'mapeado' || item.mapping_status === 'nao_aplicavel') return ''
+  return 'Item sem vínculo confirmado: classifique em Contas a pagar.'
 }
+
+/** Os itens marcados vêm em unidades diferentes na nota (o fator vale por unidade). */
+export function mixedUnits(items: readonly Pick<InvoiceLinkHistory, 'source_unit'>[]): boolean {
+  return new Set(items.map(item => (item.source_unit ?? '').trim().toUpperCase())).size > 1
+}
+
+export const MIXED_UNITS_REASON = 'Os itens marcados vêm em unidades diferentes na nota; corrija um grupo de cada vez.'
 
 /**
  * Por que a seleção ainda não pode seguir. O fator diz quanto vem em uma
  * unidade da nota, então itens com unidades diferentes não dividem um fator.
  */
-export function selectionBlockReason(items: readonly Pick<InvoiceLinkHistory, 'source_unit' | 'status' | 'mapping_status'>[]): string {
+export function selectionBlockReason(
+  items: readonly Pick<InvoiceLinkHistory, 'source_unit' | 'status' | 'mapping_status'>[],
+  options: { sameUnit?: boolean } = {},
+): string {
   if (items.length === 0) return 'Marque os itens que entraram errados.'
   if (items.length > MAX_ITEMS_PER_CORRECTION) return `Corrija no máximo ${MAX_ITEMS_PER_CORRECTION} itens de cada vez.`
   if (items.some(item => itemBlockReason(item))) return 'Há item marcado que não pode ser corrigido.'
-  const units = new Set(items.map(item => (item.source_unit ?? '').trim().toUpperCase()))
-  if (units.size > 1) return 'Os itens marcados vêm em unidades diferentes na nota; corrija um grupo de cada vez.'
+  // Virar uso ou despesa não tem fator, então unidades diferentes podem ir
+  // juntas; quem chama confere a unidade quando o destino é um produto.
+  if ((options.sameUnit ?? true) && mixedUnits(items)) return MIXED_UNITS_REASON
   return ''
 }
 
@@ -193,11 +372,16 @@ function costLabel(value: number | null): string {
   return value === null ? 'sem custo' : currencyLabel(value)
 }
 
+/** Rótulo de uso ou despesa nas linhas de efeito. */
+export const NON_CATALOG_LABEL = 'uso ou despesa (fora da receita, do estoque e do custo)'
+
 /** Uma linha por item: de onde sai, para onde vai, com quantidade e custo. */
 export function describeItemImpact(item: ItemImpact): string {
   const note = `NF ${item.nfe_number || 'sem número'} de ${dateLabel(item.issue_date)}`
   const source = `${item.source_description || 'Item sem descrição'} (${item.quantity.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.source_unit || ''})`.trim()
-  const side = (state: ItemSnapshot) => `${state.product_name ?? 'produto sem nome'}, fator ${state.conversion_factor === null ? '?' : factorLabel(state.conversion_factor)}, ${quantityLabel(state.usable_quantity, state.product_unit)}, ${unitCostLabel(state.normalized_unit_cost, state.product_unit)}`
+  const side = (state: ItemSnapshot) => state.mapping_status === 'nao_aplicavel'
+    ? NON_CATALOG_LABEL
+    : `${state.product_name ?? 'produto sem nome'}, fator ${state.conversion_factor === null ? '?' : factorLabel(state.conversion_factor)}, ${quantityLabel(state.usable_quantity, state.product_unit)}, ${unitCostLabel(state.normalized_unit_cost, state.product_unit)}`
   return `${note} · ${source}: ${side(item.before)} → ${side(item.after)}.`
 }
 
@@ -215,7 +399,7 @@ export function describeProductImpact(product: ProductImpact, impact: ItemCorrec
   const changed = product.cost_before !== product.cost_after
   const head = changed ? `Custo de ${product.name}: ${from} → ${to}` : `Custo de ${product.name} continua ${from}`
   const origin = decisions.find(decision => decision.kind === 'origem_recalculada' || decision.kind === 'origem_sem_nota')
-  if (origin?.kind === 'origem_sem_nota') return `${head}: não sobrou outra nota deste produto, então o custo fica como estava.`
+  if (origin?.kind === 'origem_sem_nota') return `${head}: não sobrou outra nota deste produto, então o custo fica como estava. Atenção: esse custo veio da nota que saiu; confira o cadastro até chegar uma compra nova.`
   if (origin?.kind === 'origem_recalculada') {
     const note = impact.items.some(item => item.purchase_id === origin.purchase_id) ? noteOf(impact, origin.purchase_id) : 'a nota mais recente que sobrou'
     return `${head}: o item que saiu era o que dava o custo; vale agora ${note}.`
@@ -228,7 +412,7 @@ export function describeProductImpact(product: ProductImpact, impact: ItemCorrec
 
 /** Linhas fixas da prévia: o que a correção nunca muda e o que muda junto. */
 export const IMPACT_FOOTNOTES: readonly string[] = [
-  'Contas, parcelas, pagamentos e o livro-caixa não mudam: o valor de cada item é o mesmo.',
+  'Contas, parcelas, pagamentos, rateio e o livro-caixa não mudam: o valor de cada item é o mesmo.',
   'O consumo semanal e o custo de referência da contagem passam a contar o item no produto e no fator corrigidos.',
-  'Fichas de receita e memórias do fornecedor não mudam; a memória se corrige nas Memórias de vínculo, acima.',
+  'Fichas de receita não mudam. A memória de insumo do fornecedor se corrige em Memórias de vínculo, na página do produto.',
 ]

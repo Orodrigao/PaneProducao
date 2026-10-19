@@ -43,7 +43,10 @@ select extensions.dblink_exec(
       '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074',
       '35260900000000000000550010000000098000000075', '35260900000000000000550010000000098000000076',
       '35260900000000000000550010000000098000000077', '35260900000000000000550010000000098000000078',
-      '35260900000000000000550010000000098000000079');
+      '35260900000000000000550010000000098000000079', '35260900000000000000550010000000098000000080',
+      '35260900000000000000550010000000098000000081');
+    delete from public.payable_non_catalog_mappings where supplier_id = '98000000-0000-4000-8000-0000000000f1';
+    delete from public.inventory_weekly_counts where id in ('98000000-0000-4000-8000-0000000000b7', '98000000-0000-4000-8000-0000000000b8');
     delete from public.products where id in (
       '98000000-0000-4000-8000-0000000000d2', '98000000-0000-4000-8000-0000000000d3',
       '98000000-0000-4000-8000-0000000000d4');
@@ -945,6 +948,171 @@ select is(
   'duas correcoes de notas no historico: as previas e a recusada nao gravaram'
 );
 
+-- Vinculos de NF-e, fase 5: tirar item de uso ou despesa desliga a memoria de
+-- uso ou despesa do fornecedor, entao a correcao entra na fila das memorias do
+-- fornecedor (payable-mapping-supplier:), depois dos itens e antes dos produtos,
+-- na mesma ordem da classificacao. Correcao e classificacao como uso ou despesa
+-- do mesmo fornecedor esperam uma pela outra e terminam sem deadlock, nas duas
+-- ordens; a memoria ligada do item corrigido termina desligada.
+select extensions.dblink_exec(
+  'draft_holder',
+  $remote$
+    insert into public.payable_purchases (
+      id, request_id, store, supplier_id, purchase_date, origin, document_type, payment_method,
+      status, total_value, nfe_key, nfe_number, nfe_issued_at, classification_status, created_by
+    ) values
+      ('98000000-0000-4000-8000-000000000080', '98000000-0000-4000-8000-000000000180', 'jc',
+       '98000000-0000-4000-8000-0000000000f1', '2026-09-17', 'xml', 'nfe', 'boleto', 'paga', 10.00,
+       '35260900000000000000550010000000098000000080', '80', '2026-09-17', 'completa',
+       '98000000-0000-4000-8000-00000000000a'),
+      ('98000000-0000-4000-8000-000000000081', '98000000-0000-4000-8000-000000000181', 'jc',
+       '98000000-0000-4000-8000-0000000000f1', '2026-09-18', 'xml', 'nfe', 'boleto', 'aberta', 20.00,
+       '35260900000000000000550010000000098000000081', '81', '2026-09-18', 'pendente',
+       '98000000-0000-4000-8000-00000000000a');
+    insert into public.payable_purchase_items (
+      id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
+      source_product_code, source_description, source_unit, source_quantity, mapping_status
+    ) values
+      ('98000000-0000-4000-8000-0000000000a1', '98000000-0000-4000-8000-000000000080', 'USO 1', 'kg', 1, 10, 1,
+       'USO-1', '[TESTE] Uso ou despesa concorrente 1', 'kg', 1, 'nao_aplicavel'),
+      ('98000000-0000-4000-8000-0000000000a2', '98000000-0000-4000-8000-000000000081', 'PENDENTE USO 2', 'un', 1, 10, 1,
+       'USO-2', '[TESTE] Pendente uso concorrente 2', 'un', 1, 'pendente'),
+      ('98000000-0000-4000-8000-0000000000a3', '98000000-0000-4000-8000-000000000081', 'PENDENTE USO 3', 'un', 1, 10, 2,
+       'USO-3', '[TESTE] Pendente uso concorrente 3', 'un', 1, 'pendente'),
+      ('98000000-0000-4000-8000-0000000000a4', '98000000-0000-4000-8000-000000000080', 'USO 4', 'kg', 1, 10, 2,
+       'USO-4', '[TESTE] Uso ou despesa concorrente 4', 'kg', 1, 'nao_aplicavel'),
+      ('98000000-0000-4000-8000-0000000000a5', '98000000-0000-4000-8000-000000000080', 'USO 5', 'kg', 1, 10, 3,
+       'USO-5', '[TESTE] Uso ou despesa concorrente 5', 'kg', 1, 'nao_aplicavel');
+    -- Duas contagens abertas, longe das semanas do seed, para fechar durante a correcao.
+    insert into public.inventory_weekly_counts (id, store, week_start, status, opened_by, opened_by_name) values
+      ('98000000-0000-4000-8000-0000000000b7', 'jc', '2025-02-03', 'aberta', '98000000-0000-4000-8000-00000000000a', 'Financeiro rascunho concorrente'),
+      ('98000000-0000-4000-8000-0000000000b8', 'jc', '2025-02-10', 'aberta', '98000000-0000-4000-8000-00000000000a', 'Financeiro rascunho concorrente');
+    insert into public.payable_non_catalog_mappings (
+      id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit, active, last_confirmed_by
+    ) values (
+      '98000000-0000-4000-8000-0000000000e8', '98000000-0000-4000-8000-0000000000f1', 'USO-1', null,
+      '[TESTE] Uso ou despesa concorrente 1', 'kg', true, '98000000-0000-4000-8000-00000000000a'
+    );
+  $remote$
+);
+
+create function pg_temp.uso_para_insumo_json() returns text
+language sql as $$
+  select '[{"item_id":"98000000-0000-4000-8000-0000000000a1","product_id":"98000000-0000-4000-8000-0000000000d2","conversion_factor":1}]'::text
+$$;
+
+-- F1. A classificacao como uso ou despesa, com memoria, segura a fila do
+-- fornecedor; a correcao que tira outro item dele de uso ou despesa espera.
+select pg_temp.as_financeiro('draft_holder');
+select extensions.dblink_exec('draft_holder',
+  $q$do $classifica$ begin perform public.classify_payable_item_without_product('98000000-0000-4000-8000-0000000000a2', true); end $classifica$$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  format($q$select (public.correct_payable_purchase_items(null, 'previa', %L::jsonb) ->> 'mode')$q$, pg_temp.uso_para_insumo_json()));
+select ok(
+  pg_temp.wait_for_advisory((select pid from worker_backend)),
+  'fase 5: a correcao de uso ou despesa espera a fila do fornecedor que a classificacao segura'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table f1_correcao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'fase 5: a correcao prossegue depois da classificacao, sem deadlock');
+create temporary table f1_correcao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is((select result from f1_correcao), 'previa', 'fase 5: a previa responde depois da espera');
+
+-- F2. A correcao aplicada segura a fila do fornecedor ate o fim; a
+-- classificacao de outro item do mesmo fornecedor como uso ou despesa espera.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder', format($q$do $aplica$
+  declare v_hash text;
+  begin
+    v_hash := public.correct_payable_purchase_items(null, 'previa', %1$L::jsonb) ->> 'impact_hash';
+    perform public.correct_payable_purchase_items('98000000-0000-4000-8000-0000000000cb', 'aplicar', %1$L::jsonb, null, v_hash);
+  end $aplica$$q$, pg_temp.uso_para_insumo_json()));
+select pg_temp.as_financeiro('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select 'ok'::text from public.classify_payable_item_without_product('98000000-0000-4000-8000-0000000000a3', true)$q$);
+select ok(
+  pg_temp.wait_for_advisory((select pid from worker_backend)),
+  'fase 5: a classificacao como uso ou despesa espera a correcao que segura a fila do fornecedor'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table f2_classificacao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'fase 5: a classificacao prossegue depois da correcao, sem deadlock');
+create temporary table f2_classificacao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is(
+  (select mapping_status || ':' || product_id::text from public.payable_purchase_items where id = '98000000-0000-4000-8000-0000000000a1'),
+  'mapeado:98000000-0000-4000-8000-0000000000d2',
+  'fase 5: o item saiu de uso ou despesa para o produto'
+);
+select is(
+  (select active from public.payable_non_catalog_mappings where id = '98000000-0000-4000-8000-0000000000e8'),
+  false,
+  'fase 5: a memoria de uso ou despesa do item corrigido terminou desligada'
+);
+select is(
+  (select count(*)::int from public.payable_non_catalog_mappings
+   where supplier_id = '98000000-0000-4000-8000-0000000000f1' and active and supplier_product_code in ('USO-2', 'USO-3')),
+  2,
+  'fase 5: as duas classificacoes gravaram a memoria delas, sem atropelo'
+);
+
+-- G. Fechar contagem enquanto a correcao mede o consumo semanal. A correcao
+-- segura todas as contagens da JC (abertas e fechadas) ate o fim, para medir o
+-- antes e o depois sobre as mesmas contagens fechadas; fechar uma contagem
+-- trava a linha dela. As duas esperam uma pela outra e terminam sem deadlock.
+-- G1. Correcao aplicada em andamento: fechar espera.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder', $q$do $aplica$
+  declare
+    v_items jsonb := '[{"item_id":"98000000-0000-4000-8000-0000000000a4","product_id":"98000000-0000-4000-8000-0000000000d2","conversion_factor":1}]';
+    v_hash text;
+  begin
+    v_hash := public.correct_payable_purchase_items(null, 'previa', v_items) ->> 'impact_hash';
+    perform public.correct_payable_purchase_items('98000000-0000-4000-8000-0000000000cc', 'aplicar', v_items, null, v_hash);
+  end $aplica$$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select (public.close_inventory_weekly_count('98000000-0000-4000-8000-0000000000b7')).status$q$);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'fase 5: fechar contagem espera a correcao que mede o consumo semanal'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table g1_fechamento as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'fase 5: o fechamento prossegue depois da correcao, sem deadlock');
+create temporary table g1_fechamento_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is((select result from g1_fechamento), 'fechada', 'fase 5: a contagem fechou depois da espera');
+
+-- G2. Fechamento em andamento: a correcao espera.
+select pg_temp.as_admin('draft_holder');
+select extensions.dblink_exec('draft_holder',
+  $q$do $fecha$ begin perform public.close_inventory_weekly_count('98000000-0000-4000-8000-0000000000b8'); end $fecha$$q$);
+select pg_temp.as_admin('draft_worker');
+select extensions.dblink_send_query('draft_worker',
+  $q$select (public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"98000000-0000-4000-8000-0000000000a5","product_id":"98000000-0000-4000-8000-0000000000d2","conversion_factor":1}]') ->> 'mode')$q$);
+select ok(
+  pg_temp.wait_for_lock((select pid from worker_backend)),
+  'fase 5: a correcao espera o fechamento de contagem em andamento'
+);
+select extensions.dblink_exec('draft_holder', 'commit');
+create temporary table g2_correcao as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select is(extensions.dblink_error_message('draft_worker'), 'OK', 'fase 5: a correcao prossegue depois do fechamento, sem deadlock');
+create temporary table g2_correcao_fim as
+select result from extensions.dblink_get_result('draft_worker', false) as response(result text);
+select extensions.dblink_exec('draft_worker', 'commit');
+select is((select result from g2_correcao), 'previa', 'fase 5: a previa responde depois do fechamento');
+
 -- Limpeza (as outras sessoes gravaram fora desta transacao).
 select extensions.dblink_exec(
   'draft_holder',
@@ -958,7 +1126,10 @@ select extensions.dblink_exec(
       '35260900000000000000550010000000098000000073', '35260900000000000000550010000000098000000074',
       '35260900000000000000550010000000098000000075', '35260900000000000000550010000000098000000076',
       '35260900000000000000550010000000098000000077', '35260900000000000000550010000000098000000078',
-      '35260900000000000000550010000000098000000079');
+      '35260900000000000000550010000000098000000079', '35260900000000000000550010000000098000000080',
+      '35260900000000000000550010000000098000000081');
+    delete from public.payable_non_catalog_mappings where supplier_id = '98000000-0000-4000-8000-0000000000f1';
+    delete from public.inventory_weekly_counts where id in ('98000000-0000-4000-8000-0000000000b7', '98000000-0000-4000-8000-0000000000b8');
     delete from public.products where id in (
       '98000000-0000-4000-8000-0000000000d2', '98000000-0000-4000-8000-0000000000d3',
       '98000000-0000-4000-8000-0000000000d4');
