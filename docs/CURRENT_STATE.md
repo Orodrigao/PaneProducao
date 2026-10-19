@@ -87,7 +87,8 @@ incorporada à `main`.
 - **No app desktop (achado de 19/10/2026):** os conectores chegam pelo código
   da conta (`mcp__<código>__`), não pelo nome, e nenhuma regra por nome os
   pega; o terminal é o PowerShell, que regra de Bash não cobre, e a CLI do
-  Supabase da máquina está logada e ligada a produção. As regras por código
+  Supabase da máquina estava logada e ligada a produção (desfeito no mesmo
+  dia, item abaixo). As regras por código
   ficam no settings global da máquina (`~/.claude/settings.json`), que o app
   carrega em toda sessão, de qualquer pasta: o conector `Supabase` com escrita
   inteiro e, na Vercel, os mesmos verbos e leituras de segredo do arquivo do
@@ -97,6 +98,21 @@ incorporada à `main`.
   uma leitura de segredo da Vercel foram recusados na chamada (a ferramenta
   segue listada), e o conector de leitura e as consultas da Vercel seguiram
   respondendo. Recriar um conector troca o código: refazer as regras e a prova.
+- **CLI do Supabase da máquina (19/10/2026):** com aval do Rodrigo, o login e
+  o vínculo com produção foram desfeitos no Windows e no WSL: `supabase
+  logout` nos dois lados (Gerenciador de Credenciais do Windows e
+  `~/.supabase/access-token` no WSL) e `supabase unlink` nas quatro pastas
+  ligadas (`C:\repos\PaneERP`, `C:\repos\PaneERP_backup`,
+  `C:\repos\PaneProducao` e `~/code/PaneERP` no WSL). Conferido no mesmo dia:
+  a CLI responde "Access token not provided" nos dois lados, nenhuma pasta de
+  `C:\repos` nem do WSL segue ligada e `migration new` funciona sem login numa
+  pasta descartável. `start`, `db reset` e `test db` não foram reexecutados
+  sem login; pela fonte da CLI, não usam login. As Actions de banco têm chave
+  própria no GitHub e não dependem da máquina; a leitura de produção é só pelo
+  `Supabase_Leitura`. Voltar a logar a CLI ou a ligar uma pasta a produção
+  exige aval explícito do Rodrigo; o login passa pela conta dele no navegador.
+  Limites: `supabase login` e `supabase link` não estão na lista de bloqueio,
+  e o logout apaga a chave da máquina sem revogá-la no site do Supabase.
 - **Nos conectores (pedido ao Rodrigo em 11/10/2026):** desligar o conector
   `Supabase` com escrita e bloquear as ferramentas de escrita da Vercel no
   claude.ai, o que vale para toda sessão do Claude, em qualquer repositório.
@@ -105,7 +121,8 @@ incorporada à `main`.
   antes de dar como feito. A lista prova o desligamento, não a regra: no app,
   ferramenta negada por regra continua listada e só é recusada na chamada.
 - **Fora da trava:** agentes de outra família de modelo e comandos rodados
-  fora do Claude Code.
+  fora do Claude Code. Para eles, a CLI sem login (item acima) fecha o caminho
+  pela CLI da máquina, não o dos conectores de cada agente.
 
 ## Jornada PJ padrão para novos pedidos (11/09/2026)
 
