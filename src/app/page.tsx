@@ -29,6 +29,7 @@ import { createPjPrintLoadTracker } from '@/lib/pjPrintWait'
 import { buildOrderCopy, orderCopyConfirmation, type OrderCopyResult, type OrderCopyStore } from '@/lib/orderCopy'
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
+import { ProductionOrderHistory } from '@/components/ProductionOrderHistory'
 
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:'Quinta',5:'Sexta',6:'Sábado'}
@@ -1017,7 +1018,6 @@ export default function ProducaoPage() {
               reportDate={reportDate}
               reportOrders={reportOrders}
               pjBreads={pjBreads}
-              todayBds={todayBreads}
               onDateChange={changeReportDate}
               baseTargetDate={orderDate}
               onUseAsBase={stores=>void copyReportToOrderForm(stores)}
@@ -1262,7 +1262,7 @@ function OrderForm({ store, breads, isPJ, delivIdx, isLocked, qtys, pendingLefto
 
 interface ReportProps {
   currentUser:string; storeFilter?:string; breads:Bread[]; reportDate:string
-  reportOrders:OrderMap; pjBreads:Bread[]; todayBds:Bread[]
+  reportOrders:OrderMap; pjBreads:Bread[]
   onDateChange:(d:string)=>void; baseTargetDate:string; onUseAsBase:(stores:OrderCopyStore[])=>void; onRefresh:()=>void
 }
 
@@ -1279,7 +1279,7 @@ function UseAsBaseButton({ label, baseTargetDate, onClick }:{ label:string; base
   )
 }
 
-function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, todayBds, onDateChange, baseTargetDate, onUseAsBase, onRefresh }:ReportProps) {
+function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders, pjBreads, onDateChange, baseTargetDate, onUseAsBase, onRefresh }:ReportProps) {
   const isToday = reportDate === todayKey()
   const canUseAsBase = reportDate !== baseTargetDate
   const pjSv = reportOrders['pj'] || {}
@@ -1324,24 +1324,9 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
       {storeFilter&&storeFilter!=='pj' && (() => {
         const sv = reportOrders[storeFilter] || {}
         const storeLabel = {ex:'Exposição',jc:'Julio de Castilhos',ja:'Jardim América'}[storeFilter]||storeFilter.toUpperCase()
-        const rows = todayBds.filter(b=>(sv[b.id]?.quantity||0)>0)
-        const total = rows.reduce((a,b)=>a+(sv[b.id]?.quantity||0),0)
         return (
           <>
-            <div className="stat-row">
-              <div className="stat-card" style={{gridColumn:'1/-1'}}>
-                <div className="lbl">{storeLabel}</div><div className="val">{total}</div>
-              </div>
-            </div>
-            {!rows.length ? <div style={{color:'var(--text-muted)',fontSize:13}}>Nenhum pedido nesta data.</div> : <>
-              {Object.values(sv)[0] && (Object.values(sv)[0] as any).obs && <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8,padding:'8px 12px',background:'var(--amber-bg)',borderRadius:'var(--radius-sm)'}}>Obs: {(Object.values(sv)[0] as any).obs}</div>}
-              <table className="report-table"><thead><tr><th>Pão</th><th className="num">Qtd</th></tr></thead>
-                <tbody>
-                  {rows.map(b=><tr key={b.id}><td>{b.name}</td><td className="num">{sv[b.id]?.quantity||0}</td></tr>)}
-                  <tr><td>Total</td><td className="num">{total}</td></tr>
-                </tbody>
-              </table>
-            </>}
+            <ProductionOrderHistory storeLabel={storeLabel} breads={breads} orders={sv}/>
             {canUseAsBase && (storeFilter==='ex'||storeFilter==='jc') && (
               <UseAsBaseButton label="Usar como base do pedido" baseTargetDate={baseTargetDate} onClick={()=>onUseAsBase([storeFilter])}/>
             )}
