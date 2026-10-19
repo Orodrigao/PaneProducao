@@ -11,6 +11,7 @@ import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
 import VinculoNfeCorrecao from '@/components/VinculoNfeCorrecao'
 import VinculoNfeNotas from '@/components/VinculoNfeNotas'
 import VinculoNfeNotasHistorico from '@/components/VinculoNfeNotasHistorico'
+import VinculoNfeUsoDespesa from '@/components/VinculoNfeUsoDespesa'
 
 export default function VinculosNfePage() {
   const [user, setUser] = useState<AppUser | null>(null)
@@ -115,6 +116,16 @@ export default function VinculosNfePage() {
     if (selected) setSelected({ ...selected })
   }
 
+  // Depois de tirar itens de uso ou despesa, o produto de destino abre aqui
+  // mesmo, com o histórico e o desfazer.
+  function openProduct(product: ProductOption) {
+    manualChoice.current = true
+    setSearch(product.name)
+    setSelected({ ...product })
+    setNotice('')
+    setItemNotice('')
+  }
+
   if (!authReady) return <main className="ps-canvas"><div className="ps-shell"><p className="ps-pad">Carregando seu acesso…</p></div></main>
   if (!user) return <main className="ps-canvas"><div className="ps-shell"><section className="ps-pad"><h1>Entre no ERP</h1><Link href="/login" className="ps-btn primary">Ir para o login</Link></section></div></main>
   if (!allowed) return <main className="ps-canvas"><div className="ps-shell"><section className="ps-pad"><h1>Acesso não liberado</h1><p>Esta consulta está disponível para Administração e para o Financeiro autorizado.</p><Link href="/" className="ps-btn ghost">Voltar ao início</Link></section></div></main>
@@ -131,7 +142,7 @@ export default function VinculosNfePage() {
         <div className="ps-scroll ps-pad">
           <section className="ps-card" style={{ marginTop: 14, padding: 14 }}>
             <h1 style={{ margin: '0 0 6px', fontSize: 20 }}>Vínculos por produto</h1>
-            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações. Itens de notas já gravadas se corrigem na seção deles, sempre com prévia do efeito no custo; contas e pagamentos não mudam.</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações. Itens de notas já gravadas se corrigem na seção deles, inclusive entre uso ou despesa e insumo, sempre com prévia do efeito no custo, na conta e no consumo semanal; contas, pagamentos e livro-caixa não mudam.</p>
             <label htmlFor="nfe-product-search" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Buscar produto do catálogo</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { manualChoice.current = true; setSearch(event.target.value); setSelected(null); setNotice(''); setItemNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
@@ -146,6 +157,12 @@ export default function VinculosNfePage() {
             {recipeError && <p role="alert" style={{ color: 'var(--berry)', marginBottom: 0 }}>Fichas de receita: {recipeError}<button type="button" className="ps-btn ghost sm" style={{ marginLeft: 8 }} onClick={() => setRecipeAttempt(attempt => attempt + 1)}>Carregar fichas de novo</button></p>}
             {error && <p role="alert" style={{ color: 'var(--berry)', marginBottom: 0 }}>{error}<button type="button" className="ps-btn ghost sm" style={{ marginLeft: 8 }} onClick={() => selected ? setSelected({ ...selected }) : void searchProducts(search)}>Tentar novamente</button></p>}
             {!loading && !error && products.length === 0 && <p style={{ marginBottom: 0, color: 'var(--ink-soft)' }}>Nenhum produto encontrado.</p>}
+          </section>
+
+          <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Itens lançados como uso ou despesa</h2>
+            <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de NF-e marcados como uso ou despesa ficam fora da receita, do estoque e do custo. Se algum era insumo ou revenda (margarina, frios, bebidas de revenda), corrija aqui para o produto certo. O contrário, tirar um item de um produto e marcar como uso ou despesa, fica na lista de notas de cada produto, abaixo.</p>
+            <VinculoNfeUsoDespesa onOpenProduct={openProduct}/>
           </section>
 
           {details && (
@@ -185,7 +202,7 @@ export default function VinculosNfePage() {
 
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Vínculos efetivamente salvos nas notas</h2>
-                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor. Marque os itens que entraram no produto ou no fator errado para corrigir; a prévia mostra o efeito em cada item e no custo antes de confirmar.</p>
+                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor. Marque os itens que entraram no produto ou no fator errado, ou que na verdade são uso ou despesa, para corrigir; a prévia mostra o efeito em cada item, no custo, na conta e no consumo semanal antes de confirmar.</p>
                 {itemNotice && <p role="status" style={{ margin: '0 0 10px', color: 'var(--teal)', fontWeight: 600 }}>{itemNotice}</p>}
                 <VinculoNfeNotas product={details.product} invoices={details.invoices} authors={details.authors} onSaved={message => { setItemNotice(message); reload() }}/>
               </section>

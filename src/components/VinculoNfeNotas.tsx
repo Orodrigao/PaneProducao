@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { authorName, currencyLabel, dateLabel, dateTimeLabel, factorInputText, factorLabel, invoiceMappingLabel, parseFactorInput } from '@/lib/vinculosNfe'
 import { applyItemCorrection, ItemCorrectionConflictError, previewItemCorrection, searchLinkProducts, type InvoiceLinkHistory, type ItemCorrectionTarget, type ProductOption } from '@/lib/vinculosNfeClient'
-import { canReceiveInvoiceItem, itemBlockReason, selectionBlockReason, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
+import { canReceiveInvoiceItem, itemBlockReason, MIXED_UNITS_REASON, mixedUnits, selectionBlockReason, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
 import VinculoNfeNotasPrevia from '@/components/VinculoNfeNotasPrevia'
 
 const PRODUCT_CHOICES = 8
@@ -17,8 +17,9 @@ interface Props {
 
 /**
  * Itens de NF-e gravados neste produto, com a correção de itens que entraram no
- * produto ou no fator errado. Toda correção passa pela prévia calculada pelo
- * banco; a confirmação é recusada se o efeito mudou desde a prévia.
+ * produto ou no fator errado, ou que eram uso ou despesa (fase 5). Toda correção
+ * passa pela prévia calculada pelo banco; a confirmação é recusada se o efeito
+ * mudou desde a prévia.
  */
 export default function VinculoNfeNotas({ product, invoices, authors, onSaved }: Props) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
@@ -27,10 +28,12 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
   const [options, setOptions] = useState<ProductOption[]>([])
   const [searching, setSearching] = useState(false)
   const [chosen, setChosen] = useState<ProductOption | null>(null)
+  // Destino "uso ou despesa": sem produto e sem fator.
+  const [toExpense, setToExpense] = useState(false)
   const [factorText, setFactorText] = useState('')
   // A prévia guarda o pedido exato que a gerou: a confirmação envia esse
   // pedido, nunca o formulário de agora.
-  const [preview, setPreview] = useState<{ request: ItemCorrectionTarget; result: ItemCorrectionResult; requestId: string; count: number } | null>(null)
+  const [preview, setPreview] = useState<{ request: ItemCorrectionTarget; result: ItemCorrectionResult; requestId: string; count: number; expense: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   // Resposta que chega depois de a seleção ou a lista mudar é descartada.
   const generation = useRef(0)
@@ -61,15 +64,32 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
   }, [mode, search, product.id])
 
   const selectedItems = useMemo(() => invoices.filter(item => selected.has(item.id)), [invoices, selected])
-  const selectionBlock = selectionBlockReason(selectedItems)
+  // Unidades diferentes só travam quando o destino é um produto (o fator vale por unidade).
+  const selectionBlock = selectionBlockReason(selectedItems, { sameUnit: false })
   const factor = parseFactorInput(factorText)
   const sourceUnit = selectedItems[0]?.source_unit || 'unidade da nota'
-  const formBlock = !chosen ? 'Escolha o produto certo, ou mantenha este para corrigir só o fator.'
+  const formBlock = toExpense ? ''
+    : !chosen ? 'Escolha o produto certo, mantenha este para corrigir só o fator, ou marque como uso ou despesa.'
+    : mixedUnits(selectedItems) ? MIXED_UNITS_REASON
     : factor === null ? 'Informe quanto vem em cada unidade da nota: maior que zero, até seis casas, com vírgula para decimal (1.000 é recusado; escreva 1000).'
     : ''
 
   function target(): ItemCorrectionTarget {
-    return { items: selectedItems.map(item => ({ itemId: item.id, productId: chosen?.id ?? '', conversionFactor: factor ?? 0 })) }
+    return {
+      items: selectedItems.map(item => toExpense
+        ? { itemId: item.id, productId: null, conversionFactor: null }
+        : { itemId: item.id, productId: chosen?.id ?? '', conversionFactor: factor ?? 0 }),
+    }
+  }
+
+  function chooseProduct(option: ProductOption) {
+    setToExpense(false)
+    setChosen(option)
+  }
+
+  function chooseExpense() {
+    setChosen(null)
+    setToExpense(true)
   }
 
   function toggle(itemId: string) {
@@ -83,6 +103,7 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
 
   function openForm() {
     setChosen(null)
+    setToExpense(false)
     setSearch('')
     setFactorText(selectedItems[0]?.conversion_factor ? factorInputText(selectedItems[0].conversion_factor) : '')
     setError('')
@@ -98,7 +119,7 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
     setConflict(false)
   }
 
-  async function loadPreview(request: ItemCorrectionTarget, count: number) {
+  async function loadPreview(request: ItemCorrectionTarget, count: number, expense: boolean) {
     if (busy) return
     const current = ++generation.current
     setBusy(true)
@@ -108,7 +129,7 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
       const result = await previewItemCorrection(request)
       if (current !== generation.current) return
       // Um identificador por prévia: reenviar depois de erro de rede não grava duas vezes.
-      setPreview({ request, result, requestId: crypto.randomUUID(), count })
+      setPreview({ request, result, requestId: crypto.randomUUID(), count, expense })
       setMode('preview')
     } catch (cause) {
       if (current === generation.current) setError(cause instanceof Error ? cause.message : 'Não foi possível calcular a prévia.')
@@ -127,7 +148,9 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
       if (current !== generation.current) return
       reset()
       setSelected(new Set())
-      onSaved(`Correção gravada: ${preview.count} item(ns) de nota. Os custos foram atualizados como na prévia.`)
+      onSaved(preview.expense
+        ? `Correção gravada: ${preview.count} item(ns) de nota passaram a uso ou despesa. Os custos foram atualizados como na prévia; para desfazer, use Correções de itens de notas, abaixo.`
+        : `Correção gravada: ${preview.count} item(ns) de nota. Os custos foram atualizados como na prévia.`)
     } catch (cause) {
       if (current !== generation.current) return
       setConflict(cause instanceof ItemCorrectionConflictError)
@@ -170,27 +193,36 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
           <b>Corrigir {selectedItems.length} item(ns) de nota</b>
           <p style={{ margin: '6px 0 0', fontWeight: 600 }}>Produto certo</p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-            <button type="button" className={`ps-btn ${chosen?.id === product.id ? 'primary' : 'ghost'} sm`} aria-pressed={chosen?.id === product.id} disabled={busy} onClick={() => setChosen(product)}>
+            <button type="button" className={`ps-btn ${chosen?.id === product.id ? 'primary' : 'ghost'} sm`} aria-pressed={chosen?.id === product.id} disabled={busy} onClick={() => chooseProduct(product)}>
               Manter em {product.name}: corrigir só o fator
+            </button>
+            <button type="button" className={`ps-btn ${toExpense ? 'primary' : 'ghost'} sm`} aria-pressed={toExpense} disabled={busy} onClick={chooseExpense}>
+              Uso ou despesa: não entra em receita, estoque nem custo
             </button>
           </div>
           <label htmlFor={`notas-busca-${product.id}`} style={{ display: 'block', marginTop: 8 }}>Ou buscar outro produto</label>
-          <input id={`notas-busca-${product.id}`} className="ps-input" value={search} disabled={busy} onChange={event => { setSearch(event.target.value); if (chosen?.id !== product.id) setChosen(null) }} placeholder="Digite o nome do produto" style={{ width: '100%' }}/>
+          <input id={`notas-busca-${product.id}`} className="ps-input" value={search} disabled={busy} onChange={event => { setSearch(event.target.value); if (chosen && chosen.id !== product.id) setChosen(null) }} placeholder="Digite o nome do produto" style={{ width: '100%' }}/>
           {searching && <small role="status">Buscando…</small>}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
             {options.map(option => (
-              <button key={option.id} type="button" className={`ps-btn ${chosen?.id === option.id ? 'primary' : 'ghost'} sm`} aria-pressed={chosen?.id === option.id} disabled={busy} onClick={() => setChosen(option)}>
+              <button key={option.id} type="button" className={`ps-btn ${chosen?.id === option.id ? 'primary' : 'ghost'} sm`} aria-pressed={chosen?.id === option.id} disabled={busy} onClick={() => chooseProduct(option)}>
                 {option.name} ({option.unit || 'un'})
               </button>
             ))}
             {!searching && options.length === 0 && <small>Nenhum produto ativo de compra encontrado.</small>}
           </div>
-          <label htmlFor={`notas-fator-${product.id}`} style={{ display: 'block', marginTop: 10, fontWeight: 600 }}>
-            Quanto vem em 1 {sourceUnit} da nota, em {chosen?.unit || 'unidade do produto'}
-          </label>
-          <input id={`notas-fator-${product.id}`} className="ps-input" inputMode="decimal" value={factorText} disabled={busy} onChange={event => setFactorText(event.target.value)} style={{ width: 140 }}/>
+          {toExpense
+            ? <p style={{ margin: '10px 0 0' }}>Os itens marcados saem de {product.name} e passam a uso ou despesa: sem produto, sem fator e fora do consumo semanal.</p>
+            : (
+              <>
+                <label htmlFor={`notas-fator-${product.id}`} style={{ display: 'block', marginTop: 10, fontWeight: 600 }}>
+                  Quanto vem em 1 {sourceUnit} da nota, em {chosen?.unit || 'unidade do produto'}
+                </label>
+                <input id={`notas-fator-${product.id}`} className="ps-input" inputMode="decimal" value={factorText} disabled={busy} onChange={event => setFactorText(event.target.value)} style={{ width: 140 }}/>
+              </>
+            )}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-            <button type="button" className="ps-btn primary sm" disabled={Boolean(formBlock) || busy} onClick={() => void loadPreview(target(), selectedItems.length)}>{busy ? 'Calculando…' : 'Ver prévia'}</button>
+            <button type="button" className="ps-btn primary sm" disabled={Boolean(formBlock) || busy} onClick={() => void loadPreview(target(), selectedItems.length, toExpense)}>{busy ? 'Calculando…' : 'Ver prévia'}</button>
             <button type="button" className="ps-btn ghost sm" disabled={busy} onClick={reset}>Cancelar</button>
             {formBlock && <small style={{ color: 'var(--ink-soft)' }}>{formBlock}</small>}
           </div>
@@ -208,7 +240,7 @@ export default function VinculoNfeNotas({ product, invoices, authors, onSaved }:
           conflict={conflict}
           onConfirm={() => void confirm()}
           onBack={() => { generation.current += 1; setBusy(false); setMode('form'); setPreview(null); setError(''); setConflict(false) }}
-          onRefreshPreview={() => void loadPreview(preview.request, preview.count)}
+          onRefreshPreview={() => void loadPreview(preview.request, preview.count, preview.expense)}
         />
       )}
     </>
