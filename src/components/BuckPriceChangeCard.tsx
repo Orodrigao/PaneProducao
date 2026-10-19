@@ -13,8 +13,8 @@ import {
   formatDateBR,
   formatSince,
   loadBuckPricePreview,
+  confirmationNeeded,
   minimumDateReason,
-  needsBigChangeConfirmation,
   parseBuckPriceInput,
   priceChangeRatio,
   validateBuckPriceDraft,
@@ -73,7 +73,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
   const preview = base.status === 'pronta' ? base.preview : null
   const parsed = parseBuckPriceInput(draft.priceText)
   const currentPrice = preview?.vigente?.unit_price ?? null
-  const bigChange = parsed.value !== null && needsBigChangeConfirmation(currentPrice, parsed.value)
+  const confirmation = parsed.value === null ? null : confirmationNeeded(preview?.vigente ?? null, { price: parsed.value, unit: draft.unit })
 
   // A prévia do banco (efeito em R$ e trocas que deixam de valer) só depende
   // de preço, unidade e data; o motivo não muda a conta.
@@ -134,7 +134,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
             {preview?.vigente && <> · em vigor {formatBuckPrice(preview.vigente.unit_price, preview.vigente.pricing_unit)} {formatSince(preview.vigente.valid_from)}</>}
           </small>
         </div>
-        <button type="button" className="ps-iconbtn" onClick={onClose} aria-label="Fechar troca de preço"><X size={16} /></button>
+        <button type="button" className="ps-iconbtn" onClick={onClose} disabled={saving} aria-label="Fechar troca de preço"><X size={16} /></button>
       </div>
 
       {base.status === 'carregando' && <div className="ps-hint" style={{ marginTop: 12 }}>Carregando o preço em vigor...</div>}
@@ -169,7 +169,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
               id="buck-price-unit"
               className="ps-select"
               value={draft.unit}
-              onChange={event => setDraft(current => ({ ...current, unit: event.target.value as BuckPricingUnit }))}
+              onChange={event => setDraft(current => ({ ...current, unit: event.target.value as BuckPricingUnit, bigChangeConfirmed: false }))}
             >
               <option value="un">un</option>
               <option value="kg">kg</option>
@@ -220,7 +220,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
             />
           </fieldset>
 
-          {bigChange && ratio !== null && currentPrice !== null && parsed.value !== null && (
+          {confirmation && currentPrice !== null && parsed.value !== null && (
             <label className="ps-alert" style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -228,8 +228,14 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
                 onChange={event => setDraft(current => ({ ...current, bigChangeConfirmed: event.target.checked }))}
               />
               <span>
-                Confirmo: o preço {parsed.value > currentPrice ? 'sobe' : 'desce'} {Math.round(ratio * 100)}%,
-                de {formatBuckPrice(currentPrice, preview.vigente?.pricing_unit ?? draft.unit)} para {formatBuckPrice(parsed.value, draft.unit)}.
+                {confirmation === 'unidade' ? (
+                  <>Confirmo: a unidade muda de {preview.vigente?.pricing_unit} para {draft.unit}; o preço passa a ser {formatBuckPrice(parsed.value, draft.unit)}.</>
+                ) : (
+                  <>
+                    Confirmo: o preço {parsed.value > currentPrice ? 'sobe' : 'desce'} {Math.round((ratio ?? 0) * 100)}%,
+                    de {formatBuckPrice(currentPrice, preview.vigente?.pricing_unit ?? draft.unit)} para {formatBuckPrice(parsed.value, draft.unit)}.
+                  </>
+                )}
               </span>
             </label>
           )}
@@ -237,13 +243,19 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
           {effect && !effect.problema && (
             <div className="ps-alert" role="status" style={{ marginTop: 12 }}>
               {(effect.semanas ?? []).length === 0 ? (
-                <div>Nenhuma semana em aberto muda de valor: não há romaneio deste pão no período.</div>
+                <div>Este pão não saiu para a EX de {formatDateBR(draft.validFrom)} até hoje: a troca vale para os próximos romaneios.</div>
               ) : (
                 <>
-                  <b>O que muda na cobrança da Buck</b>
+                  <b>O que muda na cobrança da Buck, só deste pão</b>
                   {(effect.semanas ?? []).map(week => (
-                    <div key={week.de}>
-                      Semana de {formatDateBR(week.de)} a {formatDateBR(week.ate)}: {formatCurrencyBRL(week.antes)} → {formatCurrencyBRL(week.depois)} ({signedBRL(week.depois - week.antes)})
+                    <div key={week.de} style={{ marginTop: 4 }}>
+                      Semana de {formatDateBR(week.de)} a {formatDateBR(week.ate)}: {Number(week.quantidade).toLocaleString('pt-BR')} {week.unidade ?? ''}
+                      {week.problema_depois ? (
+                        <> · <span style={{ color: 'var(--berry)' }}>a conta deste pão na semana fica com problema (sem preço, unidade diferente ou peso) e não entra na cobrança até ser resolvida no Fechamento EX</span></>
+                      ) : (
+                        <> · {week.problema_antes ? 'antes sem conta' : formatCurrencyBRL(Number(week.antes))} → {formatCurrencyBRL(Number(week.depois))}
+                          {!week.problema_antes && <> ({signedBRL(Number(week.depois) - Number(week.antes))})</>}</>
+                      )}
                     </div>
                   ))}
                 </>

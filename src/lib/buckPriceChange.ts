@@ -45,11 +45,17 @@ export interface BuckPriceInEffect {
   valid_from: string
 }
 
+// Uma semana em que este pão saiu para a EX: quanto ele soma na conta antes e
+// depois da troca, e se a conta dele tem problema (sem preço, unidade, peso).
 export interface BuckPriceWeekEffect {
   de: string
   ate: string
+  quantidade: number
+  unidade: string | null
   antes: number
   depois: number
+  problema_antes: boolean
+  problema_depois: boolean
 }
 
 export interface BuckPricePreview {
@@ -117,6 +123,9 @@ export function parseBuckPriceInput(raw: string): { value: number | null; error:
   if (!/^\d[\d.]*(,\d*)?$/.test(clean) && !/^\d+(\.\d*)?$/.test(clean)) {
     return { value: null, error: 'Digite só números, com vírgula nos centavos.' }
   }
+  if (/^\d{1,3}(\.\d{3})+$/.test(clean)) {
+    return { value: null, error: 'Para milhar, use vírgula nos centavos: 1.000,00.' }
+  }
   const decimals = clean.includes(',') ? clean.split(',')[1] : (clean.match(/\.(\d*)$/)?.[1] ?? '')
   if (decimals.length > 2) return { value: null, error: 'Use no máximo duas casas depois da vírgula.' }
   const value = parseMoneyInput(clean)
@@ -135,6 +144,19 @@ export function needsBigChangeConfirmation(current: number | null, next: number)
   return ratio !== null && ratio > BUCK_BIG_CHANGE_RATIO
 }
 
+// O que pede a confirmação a mais antes de gravar. Unidade trocada vem
+// primeiro: preço por quilo e por unidade não se comparam em porcentagem.
+export function confirmationNeeded(
+  current: BuckPriceInEffect | null,
+  next: { price: number; unit: BuckPricingUnit },
+): 'unidade' | 'variacao' | null {
+  const currentPrice = current?.unit_price ?? null
+  if (currentPrice !== null && Number(currentPrice) > 0 && current?.pricing_unit && current.pricing_unit !== next.unit) {
+    return 'unidade'
+  }
+  return needsBigChangeConfirmation(currentPrice, next.price) ? 'variacao' : null
+}
+
 // O que impede gravar, na mesma ordem em que a pessoa preenche. O banco
 // confere tudo de novo; isto só evita a viagem quando o erro é óbvio.
 export function validateBuckPriceDraft(draft: BuckPriceDraft, preview: BuckPricePreview | null): string | null {
@@ -151,9 +173,11 @@ export function validateBuckPriceDraft(draft: BuckPriceDraft, preview: BuckPrice
   const detail = draft.detail.trim()
   if (draft.reason === 'outro' && detail.length < 3) return 'Escreva o motivo da troca.'
   if (detail.length > BUCK_PRICE_DETAIL_MAX) return `Escreva o motivo em até ${BUCK_PRICE_DETAIL_MAX} caracteres.`
-  const current = preview?.vigente?.unit_price ?? null
-  if (price.value !== null && needsBigChangeConfirmation(current, price.value) && !draft.bigChangeConfirmed) {
-    return 'Confirme a variação grande do preço antes de gravar.'
+  const confirmation = price.value === null ? null : confirmationNeeded(preview?.vigente ?? null, { price: price.value, unit: draft.unit })
+  if (confirmation && !draft.bigChangeConfirmed) {
+    return confirmation === 'unidade'
+      ? 'Confirme a troca de unidade antes de gravar.'
+      : 'Confirme a variação grande do preço antes de gravar.'
   }
   return null
 }
@@ -172,6 +196,22 @@ export function effectiveHistorySeqs(entries: BuckPriceHistoryEntry[]): Set<numb
   return effective
 }
 
+type BuckLineIdentity = { product_source: string; product_id: string }
+
+// Mesmo pão para a conta da Buck: a mesma linha de catálogo (duas opções de
+// venda) ou a ponte pão legado ↔ produto. Espelha private.buck_identidades.
+export function sameBuckProduct(
+  a: BuckLineIdentity,
+  b: BuckLineIdentity,
+  legacyBreadByProduct: ReadonlyMap<string, string>,
+): boolean {
+  if (a.product_source === b.product_source && a.product_id === b.product_id) return true
+  const bridged = (product: BuckLineIdentity, bread: BuckLineIdentity) =>
+    product.product_source === 'product' && bread.product_source === 'bread'
+    && legacyBreadByProduct.get(product.product_id) === bread.product_id
+  return bridged(a, b) || bridged(b, a)
+}
+
 export function latestHistoryByItem(entries: BuckPriceHistoryEntry[]): Map<string, BuckPriceHistoryEntry> {
   const latest = new Map<string, BuckPriceHistoryEntry>()
   for (const entry of entries) {
@@ -183,11 +223,13 @@ export function latestHistoryByItem(entries: BuckPriceHistoryEntry[]): Map<strin
 
 // Na janela do deploy o site novo pode chegar antes da função no banco.
 export const BUCK_PRICE_UPDATING_MESSAGE = 'O sistema está sendo atualizado. Tente de novo em alguns minutos.'
+export const BUCK_PRICE_OFFLINE_MESSAGE = 'Sem conexão com o servidor. Confira a internet e tente de novo.'
 
 export function buckPriceErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object') {
     const { code, message } = error as { code?: unknown; message?: unknown }
     if (code === 'PGRST202' || code === '42883') return BUCK_PRICE_UPDATING_MESSAGE
+    if (typeof message === 'string' && /failed to fetch|networkerror|load failed/i.test(message)) return BUCK_PRICE_OFFLINE_MESSAGE
     if (typeof message === 'string' && message) return message
   }
   return fallback

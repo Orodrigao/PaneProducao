@@ -21,6 +21,7 @@ import {
   BUCK_PRICE_HISTORY_COLUMNS,
   formatSince,
   latestHistoryByItem,
+  sameBuckProduct,
   type BuckPriceHistoryEntry,
 } from '@/lib/buckPriceChange'
 import BuckPriceChangeCard from '@/components/BuckPriceChangeCard'
@@ -292,11 +293,13 @@ export default function TabelasPrecoPage() {
   const isBuckTier = !!selTier && selTier.active && isBuckPriceTierName(selTier.name)
   const loadBuckHistory = useCallback(async (tierId: string) => {
     setBuckHistoryError(null)
+    // Mais novos primeiro: se a leitura for cortada no limite da API, perde-se
+    // o começo antigo, nunca o preço em vigor.
     const { data, error } = await supabase
       .from('buck_price_history')
       .select(BUCK_PRICE_HISTORY_COLUMNS)
       .eq('tier_id', tierId)
-      .order('seq')
+      .order('seq', { ascending: false })
     if (error) { setBuckHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.')); return }
     setBuckHistory((data || []) as BuckPriceHistoryEntry[])
   }, [])
@@ -637,8 +640,22 @@ export default function TabelasPrecoPage() {
     setItems(prev => prev.map(x => x.id === it.id ? { ...x, pack_size: packSize } : x))
   }
 
+  const legacyBreadByProduct = useMemo(() => new Map(
+    productCosts.flatMap(product => product.legacy_bread_id ? [[product.id, product.legacy_bread_id] as [string, string]] : []),
+  ), [productCosts])
+
   const removeItem = async (it: TierItem) => {
-    if (!confirm(`Remover "${it.product_name}" desta tabela?`)) return
+    // A cobrança da Buck não separa duas linhas do mesmo pão na mesma unidade:
+    // tirar uma pode fazer a conta passar a usar a outra.
+    const twin = isBuckTier && Number(it.unit_price) > 0
+      ? itemsOfSel.find(other => other.id !== it.id && other.pricing_unit === it.pricing_unit
+          && Number(other.unit_price) > 0 && sameBuckProduct(other, it, legacyBreadByProduct))
+      : undefined
+    const twinOption = twin?.sale_option_id ? saleOptionsById.get(twin.sale_option_id) : null
+    const question = twin
+      ? `Remover "${it.product_name}" desta tabela?\n\nEste pão tem outra linha com preço na Tabela Buck (${twin.product_name}${twinOption ? ` · ${formatSaleOptionLabel(twinOption)}` : ''}, ${formatBRL(Number(twin.unit_price))}/${twin.pricing_unit}). Se a cobrança da Buck usava esta linha, passa a usar a outra a partir de hoje.`
+      : `Remover "${it.product_name}" desta tabela?`
+    if (!confirm(question)) return
     const { error } = await supabase.from('price_tier_items').update({ active: false }).eq('id', it.id)
     if (error) { showToast('Erro: ' + error.message); return }
     showToast('Removido')

@@ -6,6 +6,8 @@ vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 import {
   buckPriceErrorMessage,
   buckPriceEventLabel,
+  confirmationNeeded,
+  sameBuckProduct,
   effectiveHistorySeqs,
   formatSince,
   latestHistoryByItem,
@@ -51,7 +53,9 @@ describe('parseBuckPriceInput', () => {
 
   it('recusa casas a mais em vez de arredondar', () => {
     expect(parseBuckPriceInput('5,899').error).toBe('Use no máximo duas casas depois da vírgula.')
-    expect(parseBuckPriceInput('5.899').error).toBe('Use no máximo duas casas depois da vírgula.')
+    expect(parseBuckPriceInput('5.89900').error).toBe('Use no máximo duas casas depois da vírgula.')
+    // Ambíguo (milhar ou três casas): nos dois casos a vírgula resolve.
+    expect(parseBuckPriceInput('5.899').error).toBe('Para milhar, use vírgula nos centavos: 1.000,00.')
   })
 
   it('recusa vazio, zero, negativo, texto e acima do teto', () => {
@@ -101,7 +105,37 @@ describe('validateBuckPriceDraft', () => {
   })
 })
 
+describe('confirmationNeeded e milhar', () => {
+  it('troca de unidade pede confirmacao propria, sem comparar porcentagem', () => {
+    const vigente = { unit_price: 2, pricing_unit: 'un' as const, valid_from: '2000-01-01' }
+    expect(confirmationNeeded(vigente, { price: 30, unit: 'kg' })).toBe('unidade')
+    expect(confirmationNeeded(vigente, { price: 2.1, unit: 'un' })).toBeNull()
+    expect(confirmationNeeded(vigente, { price: 3, unit: 'un' })).toBe('variacao')
+    expect(validateBuckPriceDraft({ ...draft, priceText: '30', unit: 'kg' }, { ...preview, vigente }))
+      .toBe('Confirme a troca de unidade antes de gravar.')
+  })
+
+  it('"1.000" sem centavos pede a virgula em vez de virar 1 real', () => {
+    expect(parseBuckPriceInput('1.000').error).toBe('Para milhar, use vírgula nos centavos: 1.000,00.')
+    expect(parseBuckPriceInput('1.000,00')).toEqual({ value: 1000, error: null })
+  })
+})
+
+describe('sameBuckProduct', () => {
+  const legacy = new Map([['prod-brioche', 'pao-brioche']])
+  it('mesma linha de catalogo ou a ponte pao legado e produto', () => {
+    expect(sameBuckProduct({ product_source: 'product', product_id: 'prod-brioche' }, { product_source: 'product', product_id: 'prod-brioche' }, legacy)).toBe(true)
+    expect(sameBuckProduct({ product_source: 'bread', product_id: 'pao-brioche' }, { product_source: 'product', product_id: 'prod-brioche' }, legacy)).toBe(true)
+    expect(sameBuckProduct({ product_source: 'bread', product_id: 'outro' }, { product_source: 'product', product_id: 'prod-brioche' }, legacy)).toBe(false)
+  })
+})
+
 describe('buckPriceErrorMessage', () => {
+  it('queda de rede vira texto em portugues', () => {
+    expect(buckPriceErrorMessage(new TypeError('Failed to fetch'), 'x'))
+      .toBe('Sem conexão com o servidor. Confira a internet e tente de novo.')
+  })
+
   it('funcao que ainda nao chegou ao banco vira aviso de atualizacao', () => {
     expect(buckPriceErrorMessage({ code: 'PGRST202', message: 'Could not find the function' }, 'x'))
       .toBe('O sistema está sendo atualizado. Tente de novo em alguns minutos.')
