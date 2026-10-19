@@ -19,7 +19,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(63);
+select plan(73);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -345,6 +345,11 @@ select lives_ok(
 reset role;
 select is(pg_temp.preco('98200000-0000-4000-8000-0000000000a2', date '2026-09-26'), 6.80::numeric, 'em 26/09 vale a correcao, nao o 7,00');
 select is(pg_temp.preco('98200000-0000-4000-8000-0000000000a2', date '2026-09-21'), 6.50::numeric, 'e antes de 22/09 fica o 6,50');
+select is(
+  (select previous_unit_price from public.buck_price_history
+    where price_tier_item_id = '98200000-0000-4000-8000-0000000000a2' order by seq desc limit 1),
+  6.50::numeric, 'o "antes" da correcao e o que valia em 22/09 (6,50), nao o ultimo gravado (7,00)'
+);
 
 -- 6. Trava: gravacao direta pela API ------------------------------------------
 
@@ -375,14 +380,14 @@ select lives_ok(
 );
 select lives_ok(
   $$ insert into public.price_tier_items (tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active)
-     values ('98200000-0000-4000-8000-0000000000a0', 'teste-troca-novo', 'bread', '[TESTE] Pao Novo Troca', 8, 'un', 1, true) $$,
-  'incluir pao que nunca teve preco na Buck segue livre'
+     values ('98200000-0000-4000-8000-0000000000a0', 'teste-troca-novo', 'bread', '[TESTE] Pao Novo Troca', 8, 'un', 1, true),
+            ('98200000-0000-4000-8000-0000000000a0', 'teste-troca-g', 'bread', '[TESTE] Pao G Troca', 9, 'un', 1, true) $$,
+  'incluir paes na Buck segue livre, inclusive varios num comando so'
 );
-select throws_ok(
-  $$ insert into public.price_tier_items (tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active)
-     values ('98200000-0000-4000-8000-0000000000a0', 'teste-troca-a', 'bread', '[TESTE] Pao A Troca', 9, 'kg', 1, true) $$,
-  '22023', 'O preço da Tabela Buck só muda pelo botão "Trocar preço", com data e motivo. Inclua o produto sem preço e use o botão.',
-  'incluir de novo, com preco, pao que ja teve preco na Buck e barrado'
+select is(
+  (select string_agg(product_id || ' ' || unit_price, ' | ' order by product_id) from public.price_tier_items
+    where tier_id = '98200000-0000-4000-8000-0000000000a0' and product_id in ('teste-troca-novo', 'teste-troca-g')),
+  'teste-troca-g 0 | teste-troca-novo 0', 'mas entram sem preco: o preco vem pelo botao, com data'
 );
 select lives_ok(
   $$ update public.price_tier_items set unit_price = 9.50 where id = '98200000-0000-4000-8000-0000000000b1' $$,
@@ -402,6 +407,23 @@ select lives_ok(
   $$ update public.price_tiers set description = 'Descricao nova' where id = '98200000-0000-4000-8000-0000000000a0' $$,
   'mudar a descricao da Tabela Buck segue livre'
 );
+select throws_ok(
+  $$ insert into public.price_tiers (name, description, active) values ('Buck ', 'outra Buck', true) $$,
+  '22023', 'A Tabela Buck não pode ser renomeada, desativada nem trocada por outra pela tela: isso mudaria o preço cobrado da Buck sem data nem motivo.',
+  'criar outra tabela ativa chamada Buck e barrado'
+);
+select throws_ok(
+  $$ delete from public.price_tiers where id = '98200000-0000-4000-8000-0000000000a0' $$,
+  '42501', 'permission denied for table price_tiers',
+  'apagar a Tabela Buck pela API e negado: ninguem logado apaga tabela de preco'
+);
+reset role;
+select is(
+  (select count(*)::int from public.price_tiers where id = '98200000-0000-4000-8000-0000000000a0' and active),
+  1, 'e a Tabela Buck continua la'
+);
+set local role authenticated;
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
 
 -- Pao C: a linha antiga foi excluida e a atual nasceu hoje (o pao ja tinha
 -- preco), entao a data minima e hoje.
@@ -476,8 +498,122 @@ select is(
      join public.products produto on produto.id::text = linha.product_id and produto.name = '[TESTE] Produto Copia Troca 2'
      join public.buck_price_history historico on historico.price_tier_item_id = linha.id
     where linha.tier_id = '98200000-0000-4000-8000-0000000000a0'),
-  '12.50|cadastro|2000-01-01', 'a copia entra na Buck com o preco do original, desde sempre (produto novo)'
+  '0|cadastro|2000-01-01', 'a copia entra na Buck sem preco (o preco vem pelo botao, com data)'
 );
+
+-- 8. Cobranca sem foto tambem trava a data ------------------------------------
+
+-- A funcao antiga create_receivable_from_romaneio cria cobranca da EX sem as
+-- linhas da foto. A troca nao pode voltar para dentro dela.
+insert into public.breads (id, name, days, active, unit, is_special, is_shelf)
+values
+  ('teste-troca-d', '[TESTE] Pao D Troca', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-troca-e', '[TESTE] Pao E Troca', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-troca-f', '[TESTE] Pao F Troca', '{0,1,2,3,4,5,6}', true, 'un', false, false),
+  ('teste-troca-h', '[TESTE] Pao H Troca', '{0,1,2,3,4,5,6}', true, 'un', false, false)
+on conflict (id) do nothing;
+
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values
+  ('98200000-0000-4000-8000-0000000000a4', '98200000-0000-4000-8000-0000000000a0',
+   'teste-troca-d', 'bread', '[TESTE] Pao D Troca', 5.00, 'un', 1, true),
+  ('98200000-0000-4000-8000-0000000000a5', '98200000-0000-4000-8000-0000000000a0',
+   'teste-troca-e', 'bread', '[TESTE] Pao E Troca', 3.00, 'un', 1, true),
+  ('98200000-0000-4000-8000-0000000000a6', '98200000-0000-4000-8000-0000000000a0',
+   'teste-troca-f', 'bread', '[TESTE] Pao F Troca', 2.00, 'un', 1, true),
+  ('98200000-0000-4000-8000-0000000000a7', '98200000-0000-4000-8000-0000000000a0',
+   'teste-troca-h', 'bread', '[TESTE] Pao H Troca', 2.00, 'un', 1, true);
+
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select romaneio.id, d.id, romaneio.record_date, 1, 'enviado', 'Teste'
+from (values
+  ('98200000-0000-4000-8000-0000000000f4'::uuid, date '2026-10-06'),
+  ('98200000-0000-4000-8000-0000000000f5'::uuid, date '2026-10-13')
+) as romaneio(id, record_date)
+cross join lateral (
+  select id from public.destinations where upper(code) = 'EX' and active order by id limit 1
+) d;
+
+insert into public.romaneio_items (id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted)
+values
+  ('98200000-0000-4000-8000-0000000000d5', '98200000-0000-4000-8000-0000000000f4',
+   'teste-troca-d', 'bread', '[TESTE] Pao D Troca', 3, null),
+  ('98200000-0000-4000-8000-0000000000d6', '98200000-0000-4000-8000-0000000000f5',
+   'teste-troca-h', 'bread', '[TESTE] Pao H Troca', 7, null);
+
+insert into public.receivables (
+  id, request_id, customer_id, origin, finance_category_id, description,
+  invoice_date, original_due_date, due_date, amount, created_by, period_start, period_end
+)
+select '98200000-0000-4000-8000-0000000000ca', '98200000-0000-4000-8000-0000000000cb', cliente.id, 'romaneio_ex',
+       categoria.id, '[TESTE] Buck sem foto', date '2026-10-11', date '2026-10-26', date '2026-10-26', 15.00,
+       '98200000-0000-4000-8000-000000000001', date '2026-10-05', date '2026-10-11'
+from (select id from public.customers where lower(trim(name)) = 'buck' order by id limit 1) cliente
+cross join (select id from public.finance_categories where key = 'buck_ex') categoria;
+
+set local role authenticated;
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
+
+select throws_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a4', 6, 'un', date '2026-10-06', 'reajuste_combinado', null) $$,
+  '22023',
+  'Escolha 12/10/2026 ou depois: antes disso este pão já entrou numa cobrança da Buck confirmada. Diferença de semana cobrada vai como acerto na próxima cobrança.',
+  'cobranca sem foto, com romaneio deste pao no periodo, tambem trava a data'
+);
+
+-- 9. Duas linhas com preco para o mesmo pao (pao legado e produto) -------------
+
+reset role;
+insert into public.products (id, name, category, active, unit, kind, is_pj, legacy_bread_id)
+values ('98200000-0000-4000-8000-0000000000ea', '[TESTE] Produto E Troca', 'PAES', true, 'un', 'final', false, 'teste-troca-e');
+insert into public.price_tier_items (
+  id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active
+) values (
+  '98200000-0000-4000-8000-0000000000a8', '98200000-0000-4000-8000-0000000000a0',
+  '98200000-0000-4000-8000-0000000000ea', 'product', '[TESTE] Produto E Troca', 4.00, 'un', 1, true
+);
+set local role authenticated;
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
+
+select throws_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a5', 3.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null) $$,
+  '22023',
+  'Este pão tem outra linha com preço na Tabela Buck ([TESTE] Produto E Troca, R$ 4,00/un). A cobrança não separa as duas, porque o romaneio não diz a opção de venda. Remova da Tabela Buck a linha que a Buck não compra e troque o preço na que ficar.',
+  'troca recusada quando o mesmo pao tem outra linha com preco na mesma unidade'
+);
+
+-- 10. So a unidade; previa com problema na conta deste pao ---------------------
+
+select lives_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a6', 2.00, 'kg', private.data_na_padaria(), 'correcao_digitacao', 'era por quilo') $$,
+  'trocar so a unidade pela funcao'
+);
+reset role;
+select is(
+  (select event || '|' || pricing_unit from public.buck_price_history
+    where price_tier_item_id = '98200000-0000-4000-8000-0000000000a6' order by seq desc limit 1),
+  'troca_de_unidade|kg', 'fica registrada como troca de unidade'
+);
+set local role authenticated;
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
+
+-- Pao H saiu em 13/10 em unidades; trocar a linha para kg deixa a conta dele
+-- com unidade incompativel. A previa diz isso, so para este pao.
+select is(
+  (select (previa -> 'semanas' -> 0 ->> 'de') || ' ' || (previa -> 'semanas' -> 0 ->> 'quantidade') || ' '
+          || (previa -> 'semanas' -> 0 ->> 'antes') || ' ' || (previa -> 'semanas' -> 0 ->> 'problema_antes') || ' '
+          || (previa -> 'semanas' -> 0 ->> 'problema_depois') || ' ' || jsonb_array_length(previa -> 'semanas')
+     from (select public.previa_troca_preco_buck('98200000-0000-4000-8000-0000000000a7', 3, 'kg', date '2026-10-13') as previa) p),
+  '2026-10-12 7 14.00 false true 1', 'a previa mostra a semana do pao H: 7 un, 14,00 antes, e o problema que a troca cria'
+);
+select is(
+  (select jsonb_array_length(previa -> 'semanas')
+     from (select public.previa_troca_preco_buck('98200000-0000-4000-8000-0000000000a7', 3, 'un', private.data_na_padaria()) as previa) p),
+  0, 'sem romaneio deste pao entre a data e hoje, a previa nao lista semana'
+);
+
+reset role;
 
 select ok(
   (select count(*) = 0 from public.buck_price_history where reason = 'Prévia da troca'),
