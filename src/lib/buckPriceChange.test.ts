@@ -1,0 +1,140 @@
+import { describe, expect, it, vi } from 'vitest'
+
+// O módulo cria o cliente Supabase ao ser importado; aqui ele é substituído.
+vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
+
+import {
+  buckPriceErrorMessage,
+  buckPriceEventLabel,
+  effectiveHistorySeqs,
+  formatSince,
+  latestHistoryByItem,
+  needsBigChangeConfirmation,
+  parseBuckPriceInput,
+  validateBuckPriceDraft,
+  type BuckPriceDraft,
+  type BuckPriceHistoryEntry,
+  type BuckPricePreview,
+} from './buckPriceChange'
+
+const preview: BuckPricePreview = {
+  hoje: '2026-10-19',
+  data_minima: '2026-10-05',
+  motivo_data_minima: 'semana_cobrada',
+  vigente: { unit_price: 4.5, pricing_unit: 'un', valid_from: '2000-01-01' },
+}
+
+const draft: BuckPriceDraft = {
+  priceText: '5,89',
+  unit: 'un',
+  validFrom: '2026-10-09',
+  reason: 'reajuste_combinado',
+  detail: '',
+  bigChangeConfirmed: false,
+}
+
+function entry(seq: number, item: string, validFrom: string, price: number | null = 1): BuckPriceHistoryEntry {
+  return {
+    seq, price_tier_item_id: item, unit_price: price, pricing_unit: price === null ? null : 'un',
+    valid_from: validFrom, previous_unit_price: null, previous_pricing_unit: null,
+    event: 'troca_de_preco', origin: 'troca_com_data', reason: null, created_by_name: null,
+    created_at: '2026-10-19T12:00:00Z',
+  }
+}
+
+describe('parseBuckPriceInput', () => {
+  it('le o preco com virgula, com ponto de milhar e com R$', () => {
+    expect(parseBuckPriceInput('5,89')).toEqual({ value: 5.89, error: null })
+    expect(parseBuckPriceInput('R$ 1.234,50')).toEqual({ value: 1234.5, error: null })
+    expect(parseBuckPriceInput('12.32')).toEqual({ value: 12.32, error: null })
+  })
+
+  it('recusa casas a mais em vez de arredondar', () => {
+    expect(parseBuckPriceInput('5,899').error).toBe('Use no máximo duas casas depois da vírgula.')
+    expect(parseBuckPriceInput('5.899').error).toBe('Use no máximo duas casas depois da vírgula.')
+  })
+
+  it('recusa vazio, zero, negativo, texto e acima do teto', () => {
+    expect(parseBuckPriceInput('  ').error).toBe('Informe o preço novo.')
+    expect(parseBuckPriceInput('0,00').error).toBe('Informe um preço maior que zero.')
+    expect(parseBuckPriceInput('-5').error).toBe('Digite só números, com vírgula nos centavos.')
+    expect(parseBuckPriceInput('cinco').error).toBe('Digite só números, com vírgula nos centavos.')
+    expect(parseBuckPriceInput('10000,01').error).toBe('Preço acima de R$ 10.000,00. Confira o valor.')
+  })
+})
+
+describe('needsBigChangeConfirmation', () => {
+  it('pede confirmacao acima de 30% de variacao, para cima ou para baixo', () => {
+    expect(needsBigChangeConfirmation(4.5, 5.89)).toBe(true)
+    expect(needsBigChangeConfirmation(4.5, 5.85)).toBe(false)
+    expect(needsBigChangeConfirmation(5.89, 589)).toBe(true)
+    expect(needsBigChangeConfirmation(10, 6.9)).toBe(true)
+  })
+
+  it('primeiro preco nao tem com o que comparar', () => {
+    expect(needsBigChangeConfirmation(null, 50)).toBe(false)
+    expect(needsBigChangeConfirmation(0, 50)).toBe(false)
+  })
+})
+
+describe('validateBuckPriceDraft', () => {
+  it('libera a troca completa e conferida', () => {
+    expect(validateBuckPriceDraft({ ...draft, bigChangeConfirmed: true }, preview)).toBeNull()
+  })
+
+  it('exige confirmar a variacao grande (4,50 para 5,89 e +31%)', () => {
+    expect(validateBuckPriceDraft(draft, preview)).toBe('Confirme a variação grande do preço antes de gravar.')
+  })
+
+  it('recusa data futura e data antes da minima, dizendo o porque', () => {
+    expect(validateBuckPriceDraft({ ...draft, validFrom: '2026-10-20' }, preview))
+      .toBe('O preço novo não pode valer a partir de uma data futura.')
+    expect(validateBuckPriceDraft({ ...draft, validFrom: '2026-10-04' }, preview))
+      .toBe('Escolha 05/10/2026 ou depois: antes disso este pão já entrou numa cobrança da Buck confirmada.')
+  })
+
+  it('exige motivo, e texto quando o motivo e "outro"', () => {
+    expect(validateBuckPriceDraft({ ...draft, reason: '' }, preview)).toBe('Escolha o motivo da troca.')
+    expect(validateBuckPriceDraft({ ...draft, reason: 'outro', detail: ' a ' }, preview)).toBe('Escreva o motivo da troca.')
+    expect(validateBuckPriceDraft({ ...draft, detail: 'x'.repeat(151), bigChangeConfirmed: true }, preview))
+      .toBe('Escreva o motivo em até 150 caracteres.')
+  })
+})
+
+describe('buckPriceErrorMessage', () => {
+  it('funcao que ainda nao chegou ao banco vira aviso de atualizacao', () => {
+    expect(buckPriceErrorMessage({ code: 'PGRST202', message: 'Could not find the function' }, 'x'))
+      .toBe('O sistema está sendo atualizado. Tente de novo em alguns minutos.')
+  })
+
+  it('recusa do banco chega com a mensagem dele', () => {
+    expect(buckPriceErrorMessage({ code: '22023', message: 'Informe um preço maior que zero.' }, 'x'))
+      .toBe('Informe um preço maior que zero.')
+    expect(buckPriceErrorMessage(null, 'Não foi possível trocar o preço.')).toBe('Não foi possível trocar o preço.')
+  })
+})
+
+describe('historico', () => {
+  it('registro coberto por outro gravado depois, com data igual ou anterior, nao vale mais', () => {
+    const entries = [
+      entry(1, 'a', '2000-01-01'),
+      entry(2, 'a', '2026-09-25'),
+      entry(3, 'a', '2026-09-22'),
+      entry(4, 'b', '2026-09-30'),
+    ]
+    expect([...effectiveHistorySeqs(entries)].sort()).toEqual([1, 3, 4])
+  })
+
+  it('o registro mais recente de cada linha e o preco em vigor', () => {
+    const latest = latestHistoryByItem([entry(5, 'a', '2026-09-22', 6.8), entry(2, 'a', '2026-09-25', 7), entry(4, 'b', '2026-09-30')])
+    expect(latest.get('a')?.seq).toBe(5)
+    expect(latest.get('b')?.seq).toBe(4)
+  })
+
+  it('rotulos de evento com saida para chave nova', () => {
+    expect(buckPriceEventLabel('troca_de_preco')).toBe('Troca de preço')
+    expect(buckPriceEventLabel('evento_novo')).toBe('evento_novo')
+    expect(formatSince('2000-01-01')).toBe('desde o início da tabela')
+    expect(formatSince('2026-10-09')).toBe('desde 09/10/2026')
+  })
+})
