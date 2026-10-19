@@ -151,6 +151,14 @@ test('Financeiro Catalogo marca como uso ou despesa um item ligado a produto, a 
       await abrirProduto(page, PANO_PRODUTO)
     }
 
+    // A lista de uso ou despesa fica aberta na mesma página enquanto o pano
+    // muda pela lista do produto: ela precisa reler sozinha.
+    await abrirUsoDespesa(page, 'Pano multiuso rolao')
+    await expect(secaoUso(page).getByLabel(CAIXA_PANO)).toHaveCount(0)
+    await page.getByLabel('Buscar produto do catálogo').fill('Vinculo uso pano')
+    await page.getByRole('button', { name: PANO_PRODUTO, exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Vínculos efetivamente salvos nas notas' })).toBeVisible({ timeout: 20_000 })
+
     await page.getByLabel(CAIXA_PANO).check()
     await page.getByRole('button', { name: 'Corrigir itens marcados' }).click()
     await page.getByRole('button', { name: 'Uso ou despesa: não entra em receita, estoque nem custo' }).click()
@@ -163,6 +171,7 @@ test('Financeiro Catalogo marca como uso ou despesa um item ligado a produto, a 
     await expect(previa.getByRole('list', { name: 'Conta e livro-caixa' }).getByText(/conta em aberto \(R\$\s95,00\), nenhuma parcela paga/)).toBeVisible()
     await previa.getByRole('button', { name: 'Confirmar correção' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'passaram a uso ou despesa' })).toBeVisible({ timeout: 20_000 })
+    await expect(secaoUso(page).getByLabel(CAIXA_PANO)).toBeVisible({ timeout: 20_000 })
 
     // Persistencia: o item sai do produto e aparece na lista de uso ou despesa.
     await page.reload()

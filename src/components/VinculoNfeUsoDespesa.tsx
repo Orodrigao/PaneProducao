@@ -12,6 +12,8 @@ const PRODUCT_CHOICES = 8
 interface Props {
   /** Abre o produto de destino na página, onde ficam o histórico e o desfazer. */
   onOpenProduct: (product: ProductOption) => void
+  /** Muda quando a página relê o produto (correção ou desfazer na lista dele), para esta lista reler junto. */
+  reloadKey?: unknown
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * cada unidade da nota, confere a prévia (custo, conta, livro-caixa, consumo
  * semanal e memória do fornecedor) e confirma.
  */
-export default function VinculoNfeUsoDespesa({ onOpenProduct }: Props) {
+export default function VinculoNfeUsoDespesa({ onOpenProduct, reloadKey }: Props) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NonCatalogItem[] | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -42,20 +44,23 @@ export default function VinculoNfeUsoDespesa({ onOpenProduct }: Props) {
   // Resposta que chega depois de a lista ou a seleção mudar é descartada.
   const generation = useRef(0)
 
+  // Lê ao abrir, depois de corrigir aqui (attempt) e quando a página relê o
+  // produto (reloadKey): uma correção ou um desfazer na lista do produto muda o
+  // que é uso ou despesa. A lista anterior fica na tela até a nova chegar, e só
+  // continuam marcados os itens que seguem como uso ou despesa.
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
-    setItems(null)
     setLoadError('')
     void loadNonCatalogItems().then(result => {
       if (!active) return
       setItems(result)
-      setSelected(new Set())
+      setSelected(previous => new Set([...previous].filter(id => result.some(item => item.id === id))))
     }).catch(cause => {
       if (active) setLoadError(cause instanceof Error ? cause.message : 'Não foi possível carregar os itens de uso ou despesa.')
     })
     return () => { active = false }
-  }, [open, attempt])
+  }, [open, attempt, reloadKey])
 
   useEffect(() => {
     let active = true

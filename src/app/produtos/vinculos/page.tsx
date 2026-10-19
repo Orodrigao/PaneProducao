@@ -162,7 +162,7 @@ export default function VinculosNfePage() {
           <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
             <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Itens lançados como uso ou despesa</h2>
             <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de NF-e marcados como uso ou despesa ficam fora da receita, do estoque e do custo. Se algum era insumo ou revenda (margarina, frios, bebidas de revenda), corrija aqui para o produto certo. O contrário, tirar um item de um produto e marcar como uso ou despesa, fica na lista de notas de cada produto, abaixo.</p>
-            <VinculoNfeUsoDespesa onOpenProduct={openProduct}/>
+            <VinculoNfeUsoDespesa onOpenProduct={openProduct} reloadKey={details}/>
           </section>
 
           {details && (
