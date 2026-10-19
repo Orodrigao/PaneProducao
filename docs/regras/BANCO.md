@@ -73,8 +73,17 @@ A Action `Banco (migrations)` é o único caminho do schema até produção.
   contarem histórias diferentes até 2026-07-22.
 - MCP do Supabase no desktop é ferramenta de leitura (consultar dados,
   conferir policies). Escrita de schema por MCP: nunca.
-- Estado real do banco: `supabase migration list` (com o projeto linkado) ou
-  auditoria live somente leitura — nunca deduzido de arquivo local.
+- Estado real do banco: conector de leitura `Supabase_Leitura` (ferramenta
+  `list_migrations` e SQL somente leitura) ou auditoria live somente leitura,
+  nunca deduzido de arquivo local. A CLI do Supabase da máquina fica sem login
+  e sem vínculo com produção, de propósito: sem senha do banco guardada, o
+  login basta para a CLI criar um usuário temporário com escrita, e login com
+  pasta ligada é caminho direto para produção fora da Action. Comando remoto
+  que falhar por falta de login ou de vínculo é o esperado, não defeito a
+  consertar; os comandos locais (`start`, `db reset`, `test db`, `migration
+  new`) não usam login. Essa ausência é uma camada a mais contra acidente e não
+  substitui as proibições acima. Voltar a logar a CLI ou a ligar uma pasta a
+  produção exige aval do Rodrigo.
 
 Se o preview de uma PR sem migration falhar depois de um período sem uso,
 confira primeiro se o projeto `PaneERP Preview` foi pausado antes de
