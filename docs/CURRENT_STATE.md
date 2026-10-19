@@ -80,8 +80,10 @@ incorporada à `main`.
   11/10/2026: as ferramentas negadas somem, os comandos são recusados, e
   afrouxar o arquivo reabre as ferramentas na hora. Limites: vale só para o
   Claude Code neste repositório; a regra de terminal pega a forma usual do
-  comando e, no PowerShell, os lançadores do npm chamados pelo caminho, mas não
-  um embrulho (`bash -c`, caminho absoluto no Bash); é trava contra acidente.
+  comando e, no PowerShell, qualquer comando que cite pelo caminho os
+  lançadores do npm da Vercel e do Supabase (para conferir onde estão, use
+  `Get-Command`), mas não um embrulho (`bash -c`, caminho absoluto no Bash); é
+  trava contra acidente.
 - **No app desktop (achado de 19/10/2026):** os conectores chegam pelo código
   da conta (`mcp__<código>__`), não pelo nome, e nenhuma regra por nome os
   pega; o terminal é o PowerShell, que regra de Bash não cobre, e a CLI do

@@ -201,9 +201,9 @@
       "PowerShell(*\\vercel *)",
       "PowerShell(*\\vercel.cmd*)",
       "PowerShell(*\\vercel.ps1*)",
-      "PowerShell(*\\supabase.cmd *)",
-      "PowerShell(*\\supabase.ps1 *)",
-      "PowerShell(*\\supabase.exe *)"
+      "PowerShell(*\\supabase.cmd*)",
+      "PowerShell(*\\supabase.ps1*)",
+      "PowerShell(*\\supabase.exe*)"
     ]
   }
 }

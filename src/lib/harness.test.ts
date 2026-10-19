@@ -370,11 +370,15 @@ describe('trava dos agentes', () => {
     'PS> ./node_modules/.bin/vercel deploy --prod',
     'PS> .\\node_modules\\.bin\\vercel',
     'PS> .\\node_modules\\.bin\\vercel deploy --prod',
-    // Lancadores do npm no Windows chamados pelo caminho: barra a CLI inteira.
+    // Lancadores do npm no Windows citados pelo caminho, com ou sem aspas: barra
+    // a CLI inteira, inclusive conferir o arquivo (para isso, `Get-Command`).
     'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\vercel.cmd deploy --prod',
+    'PS> & "C:\\Users\\exemplo\\AppData\\Roaming\\npm\\vercel.cmd" --prod',
     'PS> .\\node_modules\\.bin\\vercel.ps1 deploy --prod',
     'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.cmd db push',
+    'PS> & "C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.cmd" db push',
     'PS> .\\node_modules\\.bin\\supabase.ps1 db query --linked -f x.sql',
+    'PS> & "C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.ps1" db push',
     'PS> C:\\Users\\exemplo\\AppData\\Roaming\\npm\\node_modules\\supabase\\bin\\supabase.exe db push',
   ]
 
@@ -415,7 +419,8 @@ describe('trava dos agentes', () => {
     'PS> git commit -m "nunca rode supabase db push"',
     'PS> git log --oneline -1 --grep "vercel deploy"',
     'PS> Get-Content .\\vercel.json',
-    'PS> Test-Path C:\\Users\\exemplo\\AppData\\Roaming\\npm\\supabase.ps1',
+    'PS> Get-Command supabase',
+    'PS> Get-Command vercel',
     'PS> npx vitest run src/lib/harness.test.ts',
     'PS> npm test',
   ]
