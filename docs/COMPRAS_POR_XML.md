@@ -902,11 +902,10 @@ A prévia, calculada pelo banco antes de confirmar, mostra:
 conta, parcela, pagamento, rateio nem livro-caixa: a categoria de DRE é da conta,
 escolhida pelo Financeiro, e não dos itens. Em produção, todas as contas pagas
 com itens de uso ou despesa já estavam rateadas em categorias de CMV, então tirar
-esses itens de uso ou despesa não pede mudança no livro. Limite conhecido: a
-correção da baixa no Contas a pagar troca o rateio da conta inteira, mas só
-relança a parcela escolhida; em conta com várias parcelas pagas, as outras
-ficam na categoria antiga. A prévia não aponta esse caminho como solução
-completa.
+esses itens de uso ou despesa não pede mudança no livro. Para trocar a categoria
+de uma conta paga, o Financeiro usa a correção da baixa no Contas a pagar: desde
+19/10/2026 ela relança no livro todas as parcelas já pagas na categoria nova,
+cada uma no banco de onde saiu (ver [FINANCEIRO.md](FINANCEIRO.md), fase 1).
 
 **Memória do fornecedor.** Tirar item de uso ou despesa para um produto
 desliga, na mesma gravação, a memória de uso ou despesa ligada desse item do

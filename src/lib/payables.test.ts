@@ -13,7 +13,14 @@ import {
   getPayableErrorMessage,
   isDueSoon,
   isOverdue,
+  ledgerAccountPrefill,
+  loadPaidInstallmentLedgerAccount,
   loadPayablePurchaseItems,
+  otherPaidInstallmentNumbers,
+  reclassificationDoneMessage,
+  reclassificationNotice,
+  recordPayablePaymentAndClassification,
+  sameCategorySlices,
   overdueDays,
   payableDetailUrl,
   prioritizeOverduePayablePurchases,
@@ -487,5 +494,97 @@ describe('rateio escrito do jeito brasileiro', () => {
 
   it('recusa texto que nao e dinheiro', () => {
     expect(validateCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: 'abc' }], 89.9)).toMatch(/maior que zero/i)
+  })
+})
+
+describe('troca de categoria em conta com parcelas ja pagas', () => {
+  const parcela = (id: string, installment_number: number, status: 'pendente' | 'paga' | 'cancelada') =>
+    ({ id, installment_number, due_date: '2026-08-10', amount: 1000, status })
+
+  beforeEach(() => {
+    supabaseMocks.from.mockReset()
+    supabaseMocks.rpc.mockReset()
+  })
+
+  // A tela reenvia o rateio salvo a cada baixa; so a troca de verdade relanca.
+  it('o mesmo rateio em outra ordem ou com outros centavos continua o mesmo', () => {
+    const salvo = [{ categoryKey: 'cmv_materia_prima', amount: '2000.00' }, { categoryKey: 'cmv_embalagem', amount: '1000.00' }]
+    expect(sameCategorySlices([{ categoryKey: 'cmv_embalagem', amount: '1000' }, { categoryKey: 'cmv_materia_prima', amount: '2.000,00' }], salvo)).toBe(true)
+    expect(sameCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '3000' }], salvo)).toBe(false)
+    expect(sameCategorySlices([{ categoryKey: 'cmv_materia_prima', amount: '2000' }, { categoryKey: 'cmv_revenda', amount: '1000' }], salvo)).toBe(false)
+  })
+
+  it('conta sem categoria salva e linha ainda vazia nao contam como troca', () => {
+    expect(sameCategorySlices([{ categoryKey: '', amount: '3000.00' }], [])).toBe(true)
+    expect(sameCategorySlices([{ categoryKey: 'manutencao', amount: '3000.00' }], [])).toBe(false)
+  })
+
+  it('as parcelas relancadas sao as outras ja pagas, em ordem, nunca a do clique', () => {
+    const parcelas = [parcela('p3', 3, 'pendente'), parcela('p2', 2, 'paga'), parcela('p1', 1, 'paga'), parcela('p4', 4, 'cancelada')]
+    expect(otherPaidInstallmentNumbers(parcelas, 'p2')).toEqual([1])
+    expect(otherPaidInstallmentNumbers(parcelas, 'p3')).toEqual([1, 2])
+    expect(otherPaidInstallmentNumbers(null, 'p3')).toEqual([])
+  })
+
+  it('o aviso diz quais parcelas mudam, em que mes pesam e que o banco fica', () => {
+    expect(reclassificationNotice([], 'julho de 2026')).toBeNull()
+    expect(reclassificationNotice([1], 'julho de 2026')).toBe(
+      'A categoria vale para a conta inteira: a parcela 1, já paga, também será estornada e relançada na categoria nova, no DRE de julho de 2026. O banco de onde ela saiu não muda.',
+    )
+    expect(reclassificationNotice([1, 2, 3], 'julho de 2026')).toMatch(/as parcelas 1, 2 e 3, já pagas, também serão estornadas e relançadas/)
+    expect(reclassificationDoneMessage([])).toBe('')
+    expect(reclassificationDoneMessage([1, 2])).toBe(' Parcelas 1 e 2 relançadas na categoria nova.')
+  })
+
+  it('baixa e classificacao vao numa chamada so, com o rateio em numero', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: null })
+    await recordPayablePaymentAndClassification(
+      'parcela-3',
+      { paidDate: '2026-10-01', paidAmount: '1000', paidMethod: 'pix', currentDueDate: '' },
+      'banco_nubank_jc',
+      [{ categoryKey: 'cmv_revenda', amount: '3.000,00' }, { categoryKey: '', amount: '' }],
+    )
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('record_payable_payment_and_classification', {
+      p_installment_id: 'parcela-3', p_paid_date: '2026-10-01', p_paid_amount: 1000,
+      p_paid_method: 'pix', p_current_due_date: null, p_account_key: 'banco_nubank_jc',
+      p_categories: [{ category_key: 'cmv_revenda', amount: 3000 }],
+    })
+  })
+
+  it('le no livro o banco da parcela, so dos lancamentos ativos dela', async () => {
+    const is = vi.fn().mockResolvedValue({ data: [{ account_id: 'caixa' }, { account_id: 'caixa' }], error: null })
+    const eq3 = vi.fn().mockReturnValue({ is })
+    const eq2 = vi.fn().mockReturnValue({ eq: eq3 })
+    const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
+    const select = vi.fn().mockReturnValue({ eq: eq1 })
+    supabaseMocks.from.mockReturnValue({ select })
+
+    await expect(loadPaidInstallmentLedgerAccount('parcela-1')).resolves.toEqual({ status: 'encontrada', accountId: 'caixa' })
+    expect(supabaseMocks.from).toHaveBeenCalledWith('finance_entries')
+    expect(eq1).toHaveBeenCalledWith('source', 'contas_pagar')
+    expect(eq2).toHaveBeenCalledWith('source_ref', 'parcela-1')
+    expect(eq3).toHaveBeenCalledWith('entry_type', 'lancamento')
+    expect(is).toHaveBeenCalledWith('reversed_at', null)
+  })
+
+  it('erro na leitura do livro chega a tela em vez de virar banco errado', async () => {
+    const is = vi.fn().mockResolvedValue({ data: null, error: new Error('sem rede') })
+    const eq3 = vi.fn().mockReturnValue({ is })
+    const eq2 = vi.fn().mockReturnValue({ eq: eq3 })
+    const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
+    supabaseMocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq: eq1 }) })
+    await expect(loadPaidInstallmentLedgerAccount('parcela-1')).rejects.toThrow('sem rede')
+  })
+
+  it('na correcao o banco vem do livro; sem confirmacao o campo fica vazio com o motivo', () => {
+    const contas = [{ id: 'caixa', key: 'banco_caixa_jc' }, { id: 'sicredi', key: 'banco_sicredi_jc' }]
+    expect(ledgerAccountPrefill({ status: 'encontrada', accountId: 'caixa' }, contas)).toEqual({ accountKey: 'banco_caixa_jc', notice: null })
+    expect(ledgerAccountPrefill({ status: 'encontrada', accountId: null }, contas)).toEqual({
+      accountKey: '', notice: 'No livro esta parcela está sem banco informado. Escolha de onde o dinheiro saiu.',
+    })
+    expect(ledgerAccountPrefill({ status: 'encontrada', accountId: 'inativa' }, contas).accountKey).toBe('')
+    expect(ledgerAccountPrefill({ status: 'varias' }, contas).notice).toMatch(/mais de um banco/)
+    expect(ledgerAccountPrefill({ status: 'sem_lancamento' }, contas).notice).toMatch(/Não encontrei no livro/)
   })
 })

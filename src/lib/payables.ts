@@ -690,3 +690,124 @@ export async function reclassifyPayableEntries(
   if (error) throw error
   return (data as number) ?? 0
 }
+
+/**
+ * Baixa com a classificação numa chamada só. Trocar a categoria relança as
+ * parcelas já pagas; se a baixa for recusada depois disso, nada fica gravado.
+ */
+export async function recordPayablePaymentAndClassification(
+  installmentId: string,
+  details: PayableInstallmentPaymentDetails,
+  accountKey: string,
+  slices: readonly PayableCategorySlice[],
+): Promise<void> {
+  const { error } = await supabase.rpc('record_payable_payment_and_classification', {
+    p_installment_id: installmentId, p_paid_date: details.paidDate, p_paid_amount: Number(details.paidAmount),
+    p_paid_method: details.paidMethod, p_current_due_date: details.currentDueDate || null,
+    p_account_key: accountKey || null,
+    p_categories: slices.filter(slice => slice.categoryKey).map(slice => ({ category_key: slice.categoryKey, amount: parseMoneyInput(slice.amount) })),
+  })
+  if (error) throw error
+}
+
+// --- Troca de categoria em conta já paga -----------------------------------
+// A categoria é da conta inteira: ao trocá-la na baixa ou na correção de uma
+// parcela, o banco estorna e relança as outras parcelas já pagas. O banco de
+// onde cada parcela saiu fica no livro e não muda.
+
+/** Mesma divisão em outra ordem, ou escrita como 1000 e 1000,00, é o mesmo rateio (o banco compara assim). */
+function categorySlicesFingerprint(slices: readonly PayableCategorySlice[]): string {
+  return slices
+    .filter(slice => slice.categoryKey)
+    .map(slice => `${slice.categoryKey}:${roundMoney(parseMoneyInput(slice.amount)).toFixed(2)}`)
+    .sort()
+    .join('|')
+}
+
+export function sameCategorySlices(a: readonly PayableCategorySlice[], b: readonly PayableCategorySlice[]): boolean {
+  return categorySlicesFingerprint(a) === categorySlicesFingerprint(b)
+}
+
+/** As parcelas já pagas da conta, menos a do clique: são as que a troca de categoria relança. */
+export function otherPaidInstallmentNumbers(
+  installments: readonly PayableInstallmentRow[] | null | undefined,
+  currentInstallmentId: string,
+): number[] {
+  return (installments ?? [])
+    .filter(installment => installment.status === 'paga' && installment.id !== currentInstallmentId)
+    .map(installment => installment.installment_number)
+    .sort((a, b) => a - b)
+}
+
+export function formatInstallmentNumbers(numbers: readonly number[]): string {
+  if (numbers.length <= 1) return numbers.join('')
+  return `${numbers.slice(0, -1).join(', ')} e ${numbers[numbers.length - 1]}`
+}
+
+/**
+ * O aviso aparece antes do clique: a mudança pesa num mês que a tela não mostra
+ * (o da compra) e alcança parcelas que a pessoa não abriu.
+ */
+export function reclassificationNotice(relaunchedNumbers: readonly number[], competenceMonthLabel: string): string | null {
+  if (relaunchedNumbers.length === 0) return null
+  const lista = formatInstallmentNumbers(relaunchedNumbers)
+  const varias = relaunchedNumbers.length > 1
+  return varias
+    ? `A categoria vale para a conta inteira: as parcelas ${lista}, já pagas, também serão estornadas e relançadas na categoria nova, no DRE de ${competenceMonthLabel}. O banco de onde cada uma saiu não muda.`
+    : `A categoria vale para a conta inteira: a parcela ${lista}, já paga, também será estornada e relançada na categoria nova, no DRE de ${competenceMonthLabel}. O banco de onde ela saiu não muda.`
+}
+
+export function reclassificationDoneMessage(relaunchedNumbers: readonly number[]): string {
+  if (relaunchedNumbers.length === 0) return ''
+  const lista = formatInstallmentNumbers(relaunchedNumbers)
+  return relaunchedNumbers.length > 1
+    ? ` Parcelas ${lista} relançadas na categoria nova.`
+    : ` Parcela ${lista} relançada na categoria nova.`
+}
+
+export type PaidInstallmentLedgerAccount =
+  | { status: 'encontrada'; accountId: string | null }
+  | { status: 'sem_lancamento' }
+  | { status: 'varias' }
+
+/**
+ * De qual banco a parcela paga saiu, pelo livro. A compra guarda só a última
+ * conta escolhida, e há contas com parcelas pagas por bancos diferentes.
+ */
+export async function loadPaidInstallmentLedgerAccount(installmentId: string): Promise<PaidInstallmentLedgerAccount> {
+  const { data, error } = await supabase
+    .from('finance_entries')
+    .select('account_id')
+    .eq('source', 'contas_pagar')
+    .eq('source_ref', installmentId)
+    .eq('entry_type', 'lancamento')
+    .is('reversed_at', null)
+  if (error) throw error
+  const contas = new Set((data ?? []).map(row => (row as { account_id: string | null }).account_id))
+  if (contas.size === 0) return { status: 'sem_lancamento' }
+  if (contas.size > 1) return { status: 'varias' }
+  return { status: 'encontrada', accountId: [...contas][0] }
+}
+
+/**
+ * Na correção, o banco vem do livro daquela parcela. Sem ele, o campo fica vazio
+ * com o motivo escrito: preencher com a última conta da compra moveria a parcela
+ * de banco sem ninguém perceber.
+ */
+export function ledgerAccountPrefill(
+  ledger: PaidInstallmentLedgerAccount,
+  accounts: readonly { id: string; key: string }[],
+): { accountKey: string; notice: string | null } {
+  if (ledger.status === 'encontrada' && ledger.accountId) {
+    const key = accounts.find(account => account.id === ledger.accountId)?.key
+    if (key) return { accountKey: key, notice: null }
+    return { accountKey: '', notice: 'O banco desta parcela no livro não está mais ativo. Escolha de onde o dinheiro saiu.' }
+  }
+  if (ledger.status === 'encontrada') {
+    return { accountKey: '', notice: 'No livro esta parcela está sem banco informado. Escolha de onde o dinheiro saiu.' }
+  }
+  if (ledger.status === 'varias') {
+    return { accountKey: '', notice: 'No livro esta parcela aparece em mais de um banco. Escolha de onde o dinheiro saiu.' }
+  }
+  return { accountKey: '', notice: 'Não encontrei no livro de qual banco esta parcela saiu. Escolha de onde o dinheiro saiu.' }
+}
