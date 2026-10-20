@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { ChevronLeft, Plus, Copy, Trash2, Save, AlertTriangle, RotateCw, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { INSUMOS_CATEGORY } from '@/lib/productCategories'
@@ -16,6 +16,16 @@ import {
 } from '@/lib/saleOptions'
 import { isCatalogItemAlreadyPriced, isLegacyBreadUnified } from './catalog'
 import { requiredPriceTablePackSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
+import { isBuckPriceTierName } from '@/lib/romaneioBilling'
+import {
+  BUCK_PRICE_HISTORY_COLUMNS,
+  formatSince,
+  latestHistoryByItem,
+  sameBuckProduct,
+  type BuckPriceHistoryEntry,
+} from '@/lib/buckPriceChange'
+import BuckPriceChangeCard from '@/components/BuckPriceChangeCard'
+import BuckPriceHistoryList from '@/components/BuckPriceHistoryList'
 
 interface PriceTier { id:string; name:string; description:string|null; active:boolean }
 interface TierItem {
@@ -133,6 +143,12 @@ export default function TabelasPrecoPage() {
   const [breadCosts, setBreadCosts] = useState<BreadCatalogRow[]>([])
   const [packRules, setPackRules] = useState<PjPackRule[]>([])
   const addingItemRef = useRef(false)
+
+  // Tabela Buck: preço só muda pela troca com data e motivo.
+  const [buckHistory, setBuckHistory] = useState<BuckPriceHistoryEntry[]>([])
+  const [buckHistoryError, setBuckHistoryError] = useState<string|null>(null)
+  const [changingPriceItemId, setChangingPriceItemId] = useState<string|null>(null)
+  const [historyItemId, setHistoryItemId] = useState<string|null>(null)
 
   // Aba preços por cliente
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -272,6 +288,35 @@ export default function TabelasPrecoPage() {
     updateTier({ description: v || null })
   }
   const itemsOfSel = useMemo(() => items.filter(i => i.tier_id === selTierId).sort((a,b) => a.product_name.localeCompare(b.product_name)), [items, selTierId])
+
+  // Mesmo critério do banco (private.buck_tier_id): nome "buck" e ativa.
+  const isBuckTier = !!selTier && selTier.active && isBuckPriceTierName(selTier.name)
+  const loadBuckHistory = useCallback(async (tierId: string) => {
+    setBuckHistoryError(null)
+    // Mais novos primeiro: se a leitura for cortada no limite da API, perde-se
+    // o começo antigo, nunca o preço em vigor.
+    const { data, error } = await supabase
+      .from('buck_price_history')
+      .select(BUCK_PRICE_HISTORY_COLUMNS)
+      .eq('tier_id', tierId)
+      .order('seq', { ascending: false })
+    if (error) { setBuckHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.')); return }
+    setBuckHistory((data || []) as BuckPriceHistoryEntry[])
+  }, [])
+  useEffect(() => {
+    setChangingPriceItemId(null)
+    setHistoryItemId(null)
+    setBuckHistory([])
+    if (isBuckTier && selTier) loadBuckHistory(selTier.id)
+  }, [isBuckTier, selTier?.id, loadBuckHistory])  // eslint-disable-line react-hooks/exhaustive-deps
+  const buckLatestByItem = useMemo(() => latestHistoryByItem(buckHistory), [buckHistory])
+  const changingPriceItem = isBuckTier ? itemsOfSel.find(it => it.id === changingPriceItemId) ?? null : null
+  const afterBuckPriceChange = async () => {
+    setChangingPriceItemId(null)
+    await loadAll()
+    if (selTier) await loadBuckHistory(selTier.id)
+  }
+
   const catalogItemAlreadyPriced = useCallback((item: CatalogItem) => isCatalogItemAlreadyPriced({
     id: item.id,
     _source: item._source,
@@ -505,9 +550,12 @@ export default function TabelasPrecoPage() {
     // tabela): Brioche Hambúrguer e Brioche Forma são linhas diferentes
     // mesmo com a mesma unidade, e reativar uma no lugar da outra gravaria o
     // pack na linha errada.
+    // Na Tabela Buck o produto volta sem preço: o preço antigo voltando sozinho
+    // seria troca sem data nem motivo, e o banco recusa.
+    const reactivation = isBuckTier ? { active: true, unit_price: 0 } : { active: true }
     const query = supabase
       .from('price_tier_items')
-      .update(packSize === null ? { active: true } : { active: true, pack_size: packSize })
+      .update(packSize === null ? reactivation : { ...reactivation, pack_size: packSize })
       .eq('tier_id', selTierId!)
       .eq('product_id', productId)
       .eq('product_source', productSource)
@@ -538,7 +586,7 @@ export default function TabelasPrecoPage() {
         ? await reactivateInactiveItem(p.legacy_bread_id, 'bread', pricingUnit, null, null)
         : null
       if (sameItem || legacyItem) {
-        showToast('Produto reativado nesta tabela')
+        showToast(isBuckTier ? 'Produto de volta na Tabela Buck, sem preço. Use "Trocar preço" para definir.' : 'Produto reativado nesta tabela', isBuckTier ? 4800 : undefined)
         setSearch('')
         await loadAll()
         return
@@ -592,8 +640,22 @@ export default function TabelasPrecoPage() {
     setItems(prev => prev.map(x => x.id === it.id ? { ...x, pack_size: packSize } : x))
   }
 
+  const legacyBreadByProduct = useMemo(() => new Map(
+    productCosts.flatMap(product => product.legacy_bread_id ? [[product.id, product.legacy_bread_id] as [string, string]] : []),
+  ), [productCosts])
+
   const removeItem = async (it: TierItem) => {
-    if (!confirm(`Remover "${it.product_name}" desta tabela?`)) return
+    // A cobrança da Buck não separa duas linhas do mesmo pão na mesma unidade:
+    // tirar uma pode fazer a conta passar a usar a outra.
+    const twin = isBuckTier && Number(it.unit_price) > 0
+      ? itemsOfSel.find(other => other.id !== it.id && other.pricing_unit === it.pricing_unit
+          && Number(other.unit_price) > 0 && sameBuckProduct(other, it, legacyBreadByProduct))
+      : undefined
+    const twinOption = twin?.sale_option_id ? saleOptionsById.get(twin.sale_option_id) : null
+    const question = twin
+      ? `Remover "${it.product_name}" desta tabela?\n\nEste pão tem outra linha com preço na Tabela Buck (${twin.product_name}${twinOption ? ` · ${formatSaleOptionLabel(twinOption)}` : ''}, ${formatBRL(Number(twin.unit_price))}/${twin.pricing_unit}). Se a cobrança da Buck usava esta linha, passa a usar a outra a partir de hoje.`
+      : `Remover "${it.product_name}" desta tabela?`
+    if (!confirm(question)) return
     const { error } = await supabase.from('price_tier_items').update({ active: false }).eq('id', it.id)
     if (error) { showToast('Erro: ' + error.message); return }
     showToast('Removido')
@@ -750,6 +812,8 @@ export default function TabelasPrecoPage() {
                     onChange={e=>setTierNameDraft(e.target.value)}
                     onBlur={commitTierName}
                     onKeyDown={e=>{ if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    readOnly={isBuckTier}
+                    aria-label="Nome da tabela"
                     className="ps-input"
                     style={{fontWeight:700, fontSize:16, fontFamily:'var(--font-display)'}}/>
                   <input value={tierDescDraft}
@@ -761,15 +825,40 @@ export default function TabelasPrecoPage() {
                     <button onClick={duplicateTier} className="ps-btn ghost sm">
                       <Copy size={12}/> Copiar tabela
                     </button>
-                    <button onClick={deleteTier} className="ps-btn danger sm">
-                      <Trash2 size={12}/> Excluir
-                    </button>
-                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:13, color:'var(--ink-soft)', cursor:'pointer', marginLeft:'auto'}}>
-                      <input type="checkbox" checked={selTier.active} onChange={e=>updateTier({active:e.target.checked})}/>
+                    {!isBuckTier && (
+                      <button onClick={deleteTier} className="ps-btn danger sm">
+                        <Trash2 size={12}/> Excluir
+                      </button>
+                    )}
+                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:13, color:'var(--ink-soft)', cursor:isBuckTier ? 'default' : 'pointer', marginLeft:'auto'}}>
+                      <input type="checkbox" checked={selTier.active} disabled={isBuckTier} onChange={e=>updateTier({active:e.target.checked})}/>
                       Ativa
                     </label>
                   </div>
+                  {isBuckTier && (
+                    <small className="ps-hint">
+                      Na Tabela Buck o preço muda pelo botão &quot;Trocar preço&quot;, com data e motivo, e semana já cobrada não muda.
+                      O nome, a exclusão e o &quot;Ativa&quot; ficam travados: mexer neles mudaria o preço cobrado da Buck sem data nem motivo.
+                    </small>
+                  )}
                 </div>
+
+                {changingPriceItem && (
+                  <BuckPriceChangeCard
+                    key={changingPriceItem.id}
+                    item={changingPriceItem}
+                    onClose={() => setChangingPriceItemId(null)}
+                    onSaved={afterBuckPriceChange}
+                  />
+                )}
+                {isBuckTier && buckHistoryError && (
+                  <div className="ps-alert error" role="alert" style={{marginTop:12}}>
+                    {buckHistoryError}
+                    <div className="ps-fieldrow" style={{marginTop:8}}>
+                      <button type="button" className="ps-btn ghost sm" onClick={() => selTier && loadBuckHistory(selTier.id)}>Tentar de novo</button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="ps-card" style={{marginTop:12, position:'relative', overflow:'visible'}}>
                   <div className="ps-flabel">+ Adicionar produto</div>
@@ -811,28 +900,56 @@ export default function TabelasPrecoPage() {
                         {itemsOfSel.map(it => {
                           const option = it.sale_option_id ? saleOptionsById.get(it.sale_option_id) : null
                           const requiredPack = requiredPackFor(it)
+                          // Na Buck, unidade de linha com preço muda junto com o
+                          // preço, pela troca com data.
+                          const unitLocked = !!option || (isBuckTier && Number(it.unit_price) > 0)
+                          const latest = isBuckTier ? buckLatestByItem.get(it.id) : undefined
+                          const historyOpen = isBuckTier && historyItemId === it.id
                           return (
-                          <tr key={it.id}>
+                          <Fragment key={it.id}>
+                          <tr>
                             <td>
                               {it.product_name}
                               {it.product_source === 'bread' && <span className="ps-store-chip jc" style={{marginLeft:6}}>🥖</span>}
                               {option && <span className="ps-store-chip ja" style={{marginLeft:6}}>{formatSaleOptionLabel(option)}</span>}
                             </td>
                             <td className="right">
-                              <input type="number" step={0.01} min={0} value={it.unit_price}
-                                onChange={e=>updateItem(it, { unit_price: Number(e.target.value) || 0 })}
-                                className="ps-input" style={{width:90, padding:'4px 8px', fontSize:13, textAlign:'right'}}/>
+                              {isBuckTier ? (
+                                <div style={{minWidth:120}}>
+                                  <b style={{fontSize:13}}>{Number(it.unit_price) > 0 ? formatBRL(Number(it.unit_price)) : 'sem preço'}</b>
+                                  {latest && Number(it.unit_price) > 0 && (
+                                    <div style={{fontSize:11, color:'var(--ink-faint)', lineHeight:1.3}}>{formatSince(latest.valid_from)}</div>
+                                  )}
+                                  <div style={{display:'flex', gap:4, justifyContent:'flex-end', marginTop:4, flexWrap:'wrap'}}>
+                                    <button type="button" className="ps-btn primary sm" onClick={() => setChangingPriceItemId(it.id)}>
+                                      Trocar preço
+                                    </button>
+                                    <button type="button" className="ps-btn ghost sm" aria-expanded={historyOpen}
+                                      onClick={() => setHistoryItemId(historyOpen ? null : it.id)}>
+                                      Histórico
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <input type="number" step={0.01} min={0} value={it.unit_price}
+                                  onChange={e=>updateItem(it, { unit_price: Number(e.target.value) || 0 })}
+                                  className="ps-input" style={{width:90, padding:'4px 8px', fontSize:13, textAlign:'right'}}/>
+                              )}
                             </td>
                             <td>{renderMargin(it, it.unit_price)}</td>
                             <td>
-                              <select value={it.pricing_unit} disabled={!!option} onChange={e=>{
+                              <select value={it.pricing_unit} disabled={unitLocked} onChange={e=>{
                                 const pricingUnit = e.target.value as PricingUnit
                                 const packForUnit = requiredPackFor({ ...it, pricing_unit: pricingUnit })
                                 updateItem(it, packForUnit === null ? { pricing_unit: pricingUnit } : { pricing_unit: pricingUnit, pack_size: packForUnit })
                               }}
-                                className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60, opacity:option?0.7:1}}>
+                                aria-label={`Unidade de ${it.product_name}`}
+                                className="ps-select" style={{padding:'4px 6px', fontSize:13, width:60, opacity:unitLocked?0.7:1}}>
                                 <option value="un">un</option><option value="kg">kg</option>
                               </select>
+                              {isBuckTier && Number(it.unit_price) > 0 && !option && (
+                                <div style={{fontSize:11, color:'var(--ink-faint)', lineHeight:1.3}}>muda em &quot;Trocar preço&quot;</div>
+                              )}
                             </td>
                             <td>
                               {requiredPack !== null ? (
@@ -850,6 +967,14 @@ export default function TabelasPrecoPage() {
                               </button>
                             </td>
                           </tr>
+                          {historyOpen && (
+                            <tr>
+                              <td colSpan={6} style={{background:'var(--cream-raise)'}}>
+                                <BuckPriceHistoryList entries={buckHistory.filter(entry => entry.price_tier_item_id === it.id)} />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                           )
                         })}
                       </tbody>

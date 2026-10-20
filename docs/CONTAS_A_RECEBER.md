@@ -803,9 +803,57 @@ a carga inicial usa o dia da troca no sistema; cobrança confirmada não muda.
   (exige ler a Tabela Buck e os romaneios da EX). A conta em
   `src/lib/romaneioBilling.ts` ficou só como reserva para a janela do deploy.
 
-**Fase 2:** trocar preço com "vale a partir de" e motivo, e o histórico de
-cada pão na tela. **Fase 3:** semana já cobrada mostra no Fechamento EX o valor
-cobrado; a Tabela Buck passa a aceitar troca de preço só pelo caminho com data.
+Plano das fases 2 e 3 revisto em 19/10/2026, depois de revisão independente:
+a trava que estava na fase 3 subiu para a fase 2, para não existirem dois
+caminhos de troca de preço ao mesmo tempo. Decisões do Rodrigo (19/10/2026):
+fases 2 e 3 autorizadas até o ar; quem não tem acesso ao Contas a receber
+(como a vendas da EX) continua vendo o Fechamento EX pelo preço do dia, sem o
+valor cobrado.
+
+**Fase 2 (migration `20261019122339_tabela_buck_troca_com_data`):**
+
+- `public.trocar_preco_buck` é a única porta para mudar preço ou unidade de
+  uma linha da Buck: admin e financeiro, valor positivo com até duas casas e
+  até R$ 10.000,00, unidade, motivo (reajuste combinado, correção de
+  digitação ou outro com texto) e "vale a partir de", nunca no futuro;
+- a data mínima é por pão: dia seguinte à última cobrança confirmada que tem
+  este pão (na foto ou com romaneio dele no período, porque a função antiga
+  `create_receivable_from_romaneio` ainda cria cobrança sem foto); antes da
+  primeira linha deste pão na Buck; e nunca antes de 07/09/2026, porque até
+  ali a Buck foi acertada fora do Contas a receber.
+  Por pão porque a lista do Contas a receber confirma semanas fora de ordem:
+  uma semana parada por pão sem preço destrava mesmo com semana mais nova
+  cobrada. Diferença de semana cobrada vai como acerto na próxima cobrança;
+- a troca pega as mesmas travas de semana da confirmação semanal, da semana
+  da data até hoje, e trava a linha antes de conferir;
+- a troca é recusada quando o mesmo pão tem outra linha com preço na mesma
+  unidade (duas opções de venda, ou pão legado e produto): o romaneio não diz
+  a opção de venda, então a conta não separa as duas e usa uma pela ordem do
+  id. Em produção, em 19/10/2026, o Brioche tinha duas linhas "un"
+  (Hambúrguer a 1,37 e Forma a 8,50); as cobranças usaram 1,37 e a Forma
+  nunca apareceu num romaneio da EX. Trocar o preço do Brioche exige antes
+  remover da Tabela Buck a linha que a Buck não compra;
+- `public.previa_troca_preco_buck` mostra antes de gravar a data mínima, o
+  preço em vigor, as trocas que deixam de valer e, só deste pão, a
+  quantidade e o valor antes e depois em cada semana em que ele saiu, com o
+  aviso quando a conta dele fica com problema. A conta é a de verdade (a troca
+  é aplicada e desfeita);
+- trava no banco: gravação vinda da API que deixe linha da Buck com preço
+  positivo diferente do que estava é recusada, assim como renomear, desativar
+  ou trocar qual tabela é a Buck. Inclusão pela API na Buck entra sempre sem
+  preço (inclusive a cópia de produto). Remover da tabela, zerar e mudar pacote
+  seguem livres; remover uma de duas linhas duplicadas pode mudar o preço
+  cobrado a partir de hoje, e a tela avisa. Migration grava direto como antes:
+  correção futura de preço por migration deve gravar o registro do histórico
+  com a data certa;
+- na tela, a Tabela Buck mostra o preço com "desde dd/mm", o botão "Trocar
+  preço" e o histórico de cada pão; nome, exclusão e "Ativa" ficam travados.
+
+**Fase 3 (a fazer):** para quem tem acesso ao Contas a receber, semana já
+cobrada aparece no Fechamento EX com o que foi cobrado (rótulo "Cobrado", não
+"pago"), inteira no período que contém o domingo dela, com os ajustes; romaneio
+lançado ou editado depois da cobrança aparece como "entregue depois, não
+cobrado"; sai a reserva que recalculava no navegador com o preço de hoje.
 
 ---
 
