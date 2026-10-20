@@ -50,6 +50,9 @@ interface GeolarReuseGateState {
   status: 'loading' | 'ready' | 'error'
   hasPendingProposal: boolean
 }
+// Pedidos e encomendas da folha do Geolar só valem para a data escolhida
+// depois que a recarga mais recente termina bem.
+type GeolarSheetStatus = 'loading' | 'ready' | 'error'
 interface ProductionPlanForOrder {
   id: string
   productionDate: string
@@ -209,6 +212,8 @@ export default function ProducaoPage() {
   const [geolarReuseGate, setGeolarReuseGate] = useState<GeolarReuseGateState>({ status: 'loading', hasPendingProposal: false })
   const [geolarOrders, setGeolarOrders] = useState<OrderMap>({})
   const [geolarEnc, setGeolarEnc] = useState<{client:string;name:string;qty:number}[]>([])
+  const [geolarSheetStatus, setGeolarSheetStatus] = useState<GeolarSheetStatus>('loading')
+  const geolarSheetRequestRef = useRef(0)
   const geolarReuseRequestRef = useRef(0)
 
   const showLoad = (msg='Carregando...') => { setLoadingMsg(msg); setLoading(true) }
@@ -355,11 +360,11 @@ export default function ProducaoPage() {
 
   // Geolar: encomendas marcadas para esta data. A programacao PJ deixou de ser
   // inferida pela entrega e vive no painel proprio, logo abaixo das lojas.
+  // Devolve as encomendas para quem carrega a folha publicá-las junto com os
+  // pedidos. Falha sobe: uma folha sem as encomendas da data não vale.
   const loadGeolarExtras = useCallback(async (dateKey: string) => {
-    try {
-      const encRows = await sbGet('orders', `cancelled_at=is.null&order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`)
-      setGeolarEnc((encRows as any[]).map(r => ({ client: r.pj_client || 'Encomenda', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 })))
-    } catch { setGeolarEnc([]) }
+    const encRows = await sbGet('orders', `cancelled_at=is.null&order_type=eq.encomenda&needs_production=eq.true&production_date=eq.${dateKey}&quantity=gt.0&select=product_name,bread_id,quantity,pj_client`)
+    return (encRows as any[]).map(r => ({ client: r.pj_client || 'Encomenda', name: r.product_name || r.bread_id, qty: Number(r.quantity)||0 }))
   }, [])
 
   const initOrderState = useCallback((map: OrderMap, bds: Bread[]) => {
@@ -382,22 +387,33 @@ export default function ProducaoPage() {
   }, [])
 
   const login = async (user: UserKey) => {
+    // No Geolar vale a regra da recarga: só a carga mais recente publica a
+    // folha ou o erro. Uma abertura atrasada não desfaz a data já escolhida.
+    const geolarRequestId = user === 'geolar' ? ++geolarSheetRequestRef.current : null
+    const staleGeolar = () => geolarRequestId !== null && geolarRequestId !== geolarSheetRequestRef.current
     setCurrentUser(user)
     setInitialLoadError('')
     showLoad('Carregando cardápio...')
     try {
-      const bds = await loadBreads()
+      const bds: Bread[] = await sbGet('breads','order=name.asc')
+      if (staleGeolar()) return
+      orderFormChangeRef.current++ // a lista de pães do formulário mudou
+      setBreads(bds)
       const todayDelivIdx = DELIVERY_MAP[readBakeryClock().dayOfWeek] ?? 1
       setDelivIdx(todayDelivIdx)
       setIsLocked(checkDeadline())
       if (user === 'geolar') {
         const defDate = requestedProductionDate() ?? nextProductionPlanDate(bakeryDayKey())
         setGeolarDate(defDate)
+        setGeolarSheetStatus('loading')
         await loadGeolarReuseGate(defDate)
         const map = await loadOrders(defDate)
+        const enc = await loadGeolarExtras(defDate)
+        if (staleGeolar()) return
         setGeolarOrders(map)
         setOrders(map)
-        await loadGeolarExtras(defDate)
+        setGeolarEnc(enc)
+        setGeolarSheetStatus('ready')
         hideLoad()
         setScreen('geolar')
         return
@@ -414,6 +430,7 @@ export default function ProducaoPage() {
       hideLoad()
       setScreen('main')
     } catch(e) {
+      if (staleGeolar()) return
       hideLoad()
       if (e instanceof SupabaseRestError && e.status === 401) {
         showToast('Sua sessão expirou. Entre novamente.')
@@ -793,17 +810,31 @@ export default function ProducaoPage() {
 
   // ── geolar ───────────────────────────────────────────────────────
   const loadGeolar = async (dateKey: string) => {
+    // A data do cabeçalho muda na hora. Catálogo, pedidos e encomendas só
+    // entram juntos, e somente da recarga mais recente; até lá a folha não
+    // vale para imprimir.
+    const requestId = ++geolarSheetRequestRef.current
     setGeolarDate(dateKey)
+    setGeolarSheetStatus('loading')
     showLoad('Carregando produção...')
     try {
       await loadGeolarReuseGate(dateKey)
-      await loadBreads()
+      const bds: Bread[] = await sbGet('breads','order=name.asc')
       const map = await loadOrders(dateKey)
+      const enc = await loadGeolarExtras(dateKey)
+      if (requestId !== geolarSheetRequestRef.current) return
+      orderFormChangeRef.current++ // a lista de pães do formulário mudou
+      setBreads(bds)
       setGeolarOrders(map)
       setOrders(map)
-      await loadGeolarExtras(dateKey)
-    } catch(e) { showToast('Erro ao carregar.') }
-    finally { hideLoad() }
+      setGeolarEnc(enc)
+      setGeolarSheetStatus('ready')
+    } catch(e) {
+      if (requestId !== geolarSheetRequestRef.current) return
+      setGeolarSheetStatus('error')
+      showToast('Erro ao carregar.')
+    }
+    finally { if (requestId === geolarSheetRequestRef.current) hideLoad() }
   }
 
   const generateWhatsApp = (ordMap: OrderMap, selectedDate?: string) => {
@@ -898,7 +929,7 @@ export default function ProducaoPage() {
   if (screen === 'geolar') return (
     <GeolarScreen
       breads={breads} orders={geolarOrders} geolarDate={geolarDate}
-      enc={geolarEnc}
+      enc={geolarEnc} sheetStatus={geolarSheetStatus}
       delivIdx={delivIdx}
       reuseGate={geolarReuseGate}
       onDateChange={loadGeolar}
@@ -1520,12 +1551,13 @@ function BreadFormModal({ editingBread, form, onChange, onSave, onCancel, saving
 interface GeolarProps {
   breads:Bread[]; orders:OrderMap; geolarDate:string; delivIdx:number
   enc:{client:string;name:string;qty:number}[]
+  sheetStatus:GeolarSheetStatus
   reuseGate:GeolarReuseGateState
   onDateChange:(d:string)=>void; onWhatsApp:()=>void; onOpenPending:()=>void; onRefreshReuse:()=>void; onLogout:()=>void
   loading:boolean; loadingMsg:string
 }
 
-function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
+function GeolarScreen({ breads, orders, enc, sheetStatus, geolarDate, delivIdx, reuseGate, onDateChange, onWhatsApp, onOpenPending, onRefreshReuse, onLogout, loading, loadingMsg }:GeolarProps) {
   const todayBds = breads.filter(b=>!b.is_pj&&b.active)
   const stores: Store[] = ['ex','jc','ja']
   const regularBreadIds = new Set(todayBds.map(bread => bread.id))
@@ -1598,6 +1630,7 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
   const hasBreads = printRows.length > 0
 
   const sheetUnlocked = reuseGate.status === 'ready' && !reuseGate.hasPendingProposal
+  const sheetReady = sheetUnlocked && sheetStatus === 'ready'
 
   // A impressão espera a folha redesenhar com a programação PJ recém-lida.
   const [printPending, setPrintPending] = useState(false)
@@ -1606,16 +1639,16 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
   useEffect(() => {
     if (!printPending) return
     setPrintPending(false)
-    // A trava de sobras pode fechar durante a espera (↻ Atualizar, troca de
-    // data). Aí a tela já é o aviso de bloqueio, e imprimir poria o aviso no
-    // papel no lugar da folha.
-    if (sheetUnlocked) window.print()
+    // ↻ Atualizar e a troca de data durante a espera podem fechar a trava de
+    // sobras (a tela vira o aviso de bloqueio) ou deixar a folha com a data
+    // nova no cabeçalho e os pedidos da anterior. Nos dois casos, nada de papel.
+    if (sheetReady) window.print()
     else setPrintCancelled(true)
-  }, [printPending, sheetUnlocked])
+  }, [printPending, sheetReady])
 
   const printCancelledNotice = printCancelled && (
     <div className="ps-card no-print" role="status" style={{marginTop:12,borderColor:'var(--honey-line)',background:'var(--honey-tint)',fontSize:13}}>
-      A impressão dos pães foi cancelada porque a lista de produção ficou bloqueada enquanto a folha era preparada. Quando ela estiver liberada, toque em Imprimir pães de novo.
+      A impressão dos pães foi cancelada porque a lista de produção estava sendo atualizada ou ficou bloqueada enquanto a folha era preparada. Espere a lista carregar, confira a data e, com ela liberada, toque em Imprimir pães de novo.
     </div>
   )
 
@@ -1679,37 +1712,52 @@ function GeolarScreen({ breads, orders, enc, geolarDate, delivIdx, reuseGate, on
           Conferir sobras e reaproveitamento
         </button>
 
-        <div className="print-card">
-          <h3>Pane &amp; Salute — Produção</h3>
-          <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
-          <div className="print-row print-row-pj ph"><span>Produto</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
-          {!printRows.length && <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0',textAlign:'center'}}>Nenhum pedido para esta data.</div>}
-          {printRows.map(b=>(
-            <div key={b.breadId} className="print-row print-row-pj">
-              <span className="pname">{b.breadName}</span>
-              {b.storeQuantities.map((quantity,index)=><span key={index}>{quantity}</span>)}
-              <span className="ptotal">
-                {b.total}
-                {b.pjQuantity !== null && <span className="print-pj-quantity"> ({b.pjQuantity} PJ)</span>}
-              </span>
+        {/* Folha, imprimir e copiar só com pedidos e encomendas da data escolhida. */}
+        {sheetStatus === 'error' ? (
+          <div className="ps-card" role="alert" style={{borderColor:'#E6B5AC',background:'var(--berry-tint)'}}>
+            <h3 style={{marginTop:0}}>Não foi possível carregar os pedidos</h3>
+            <p style={{marginBottom:12}}>Os pedidos das lojas ou as encomendas de {dLabel} não carregaram. Tente de novo para ver, imprimir ou copiar a lista.</p>
+            <div className="btn-row">
+              <button className="btn-action" onClick={()=>onDateChange(geolarDate)}>Tentar novamente</button>
             </div>
-          ))}
-          {printRows.length>0&&<div className="print-row print-row-pj" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
-            <span>TOTAL GERAL</span><span/><span/><span/><span className="ptotal">{grand}</span>
-          </div>}
-        </div>
+          </div>
+        ) : sheetStatus === 'loading' ? (
+          <div className="ps-card" role="status" style={{fontSize:13}}>
+            Carregando a lista de produção de {dLabel}…
+          </div>
+        ) : (<>
+          <div className="print-card">
+            <h3>Pane &amp; Salute — Produção</h3>
+            <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>
+            <div className="print-row print-row-pj ph"><span>Produto</span><span>EX</span><span>JC</span><span>JA</span><span>Total</span></div>
+            {!printRows.length && <div style={{color:'var(--text-muted)',fontSize:13,padding:'12px 0',textAlign:'center'}}>Nenhum pedido para esta data.</div>}
+            {printRows.map(b=>(
+              <div key={b.breadId} className="print-row print-row-pj">
+                <span className="pname">{b.breadName}</span>
+                {b.storeQuantities.map((quantity,index)=><span key={index}>{quantity}</span>)}
+                <span className="ptotal">
+                  {b.total}
+                  {b.pjQuantity !== null && <span className="print-pj-quantity"> ({b.pjQuantity} PJ)</span>}
+                </span>
+              </div>
+            ))}
+            {printRows.length>0&&<div className="print-row print-row-pj" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
+              <span>TOTAL GERAL</span><span/><span/><span/><span className="ptotal">{grand}</span>
+            </div>}
+          </div>
 
-        {/* Botões da lista de pães */}
-        <div className="btn-row" style={{marginTop:10}}>
-          <button className="btn-save" disabled={!hasBreads || preparingPrint} onClick={()=>void printBreads()}>
-            {preparingPrint ? 'Preparando impressão…' : '🖨 Imprimir pães'}
-          </button>
-          <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp()}>📋 Copiar texto</button>
-        </div>
+          {/* Botões da lista de pães */}
+          <div className="btn-row" style={{marginTop:10}}>
+            <button className="btn-save" disabled={!hasBreads || preparingPrint} onClick={()=>void printBreads()}>
+              {preparingPrint ? 'Preparando impressão…' : '🖨 Imprimir pães'}
+            </button>
+            <button className="btn-action" disabled={!hasBreads} onClick={()=>onWhatsApp()}>📋 Copiar texto</button>
+          </div>
+        </>)}
         {printCancelledNotice}
 
         {/* Encomendas marcadas pra produção neste dia */}
-        {enc.length > 0 && (
+        {sheetStatus === 'ready' && enc.length > 0 && (
           <div className="print-card" style={{marginTop:16}}>
             <h3>🎂 Encomendas a produzir</h3>
             <div className="pmeta">Para {dLabel}</div>
