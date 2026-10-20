@@ -303,6 +303,20 @@ a pagar; reclassificar deixa trilha.
 
 **Recuperação:** migration nova.
 
+**Troca de categoria em conta já paga (19/10/2026).** A categoria é da conta
+inteira: trocar o rateio ao baixar uma parcela ou ao corrigir a baixa de uma
+estorna e relança, na mesma transação, todas as outras parcelas já pagas na
+categoria nova. Antes só a parcela do clique era relançada e o DRE deixava de
+bater com o rateio. Reenviar o mesmo rateio não estorna nada. O banco de onde
+cada parcela saiu fica no livro e não muda numa reclassificação, nem quando
+estava "não informado": a compra guarda só a última conta escolhida, e há
+contas com parcelas pagas por bancos diferentes. A tela avisa antes do clique
+quais parcelas mudam e em que mês do DRE; na correção, o banco vem do livro
+daquela parcela. Relançar as parcelas da mesma conta faz parte da baixa e da
+correção (`contas_pagar.baixar`); a reclassificação avulsa continua exigindo
+`financeiro.lancar` e `financeiro.estornar`. Conta classificada em Financeiras
+segue juntando principal e juros numa linha só, no mês da compra.
+
 ## Fase 2 — Recorrências
 
 **Objetivo:** aluguel, luz, contador, parcela de empréstimo e folha por
