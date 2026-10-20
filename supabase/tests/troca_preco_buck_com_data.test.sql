@@ -19,7 +19,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(73);
+select plan(86);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -139,11 +139,16 @@ create function pg_temp.registros(p_item uuid) returns int language sql as $$
   select count(*)::int from public.buck_price_history where price_tier_item_id = p_item;
 $$;
 
+-- A versao que a tela recebeu na previa: o ultimo registro do historico.
+create function pg_temp.versao(p_item uuid) returns bigint language sql as $$
+  select coalesce(max(seq), 0) from public.buck_price_history where price_tier_item_id = p_item;
+$$;
+
 -- 0. Quem chama ---------------------------------------------------------------
 
 select ok(
-  not has_function_privilege('anon', 'public.trocar_preco_buck(uuid, numeric, text, date, text, text)', 'execute')
-  and has_function_privilege('authenticated', 'public.trocar_preco_buck(uuid, numeric, text, date, text, text)', 'execute'),
+  not has_function_privilege('anon', 'public.trocar_preco_buck(uuid, numeric, text, date, text, text, bigint)', 'execute')
+  and has_function_privilege('authenticated', 'public.trocar_preco_buck(uuid, numeric, text, date, text, text, bigint)', 'execute'),
   'anonimo nao troca preco; logado chama e a funcao decide'
 );
 select ok(
@@ -156,7 +161,7 @@ set local role authenticated;
 
 select pg_temp.como('98200000-0000-4000-8000-000000000003');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '42501', 'Sem permissão para trocar preço da Tabela Buck.',
   'Vendas da EX le o Fechamento EX, mas nao troca preco'
 );
@@ -168,7 +173,7 @@ select throws_ok(
 
 select pg_temp.como('98200000-0000-4000-8000-000000000004');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '42501', 'Sem permissão para trocar preço da Tabela Buck.',
   'Expedicao da EX tambem nao'
 );
@@ -178,35 +183,35 @@ select throws_ok(
 select pg_temp.como('98200000-0000-4000-8000-000000000001');
 
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 0, 'un', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 0, 'un', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Informe um preço maior que zero.', 'preco zero e recusado');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 4.555, 'un', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 4.555, 'un', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Use no máximo duas casas depois da vírgula.', 'tres casas e recusado');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 10000.01, 'un', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 10000.01, 'un', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Preço acima de R$ 10.000,00. Confira o valor.', 'acima do teto e recusado');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'cx', date '2026-09-21', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'cx', date '2026-09-21', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Escolha a unidade: un ou kg.', 'unidade desconhecida e recusada');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'porque sim', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'porque sim', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Escolha o motivo da troca.', 'motivo fora da lista e recusado');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'outro', '  ') $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'outro', '  ', pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Escreva o motivo da troca.', 'motivo "outro" sem texto e recusado');
 select throws_ok(
-  format($$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'outro', %L) $$, repeat('x', 151)),
+  format($$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-21', 'outro', %L, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$, repeat('x', 151)),
   '22023', 'Escreva o motivo em até 150 caracteres.', 'motivo comprido demais e recusado');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', private.data_na_padaria() + 1, 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', private.data_na_padaria() + 1, 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'O preço novo não pode valer a partir de uma data futura.', 'data futura e recusada');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-06', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-06', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Escolha 07/09/2026 ou depois: antes disso a Buck foi acertada fora do Contas a receber.',
   'antes de 07/09/2026 e recusado: a Buck foi acertada fora do Contas a receber');
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 4.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 4.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023', 'Nada muda: R$ 4,50/un já é o preço em vigor nessa data.', 'troca que nao muda nada e recusada');
 
 -- 2. Semana cobrada trava so o pao que estava nela ----------------------------
@@ -223,7 +228,7 @@ select lives_ok(
 );
 
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-16', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5, 'un', date '2026-09-16', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   '22023',
   'Escolha 21/09/2026 ou depois: antes disso este pão já entrou numa cobrança da Buck confirmada. Diferença de semana cobrada vai como acerto na próxima cobrança.',
   'o pao A ja cobrado na semana de 14/09 nao volta para dentro dela'
@@ -235,7 +240,7 @@ select is(
 );
 
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 6.50, 'un', date '2026-09-16', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 6.50, 'un', date '2026-09-16', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a2')) $$,
   'o pao B, que nao estava na semana cobrada, aceita data dentro dela'
 );
 
@@ -266,7 +271,7 @@ select pg_temp.como('98200000-0000-4000-8000-000000000001');
 -- 4. A troca com data ---------------------------------------------------------
 
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.00, 'un', date '2026-09-21', 'reajuste_combinado', 'combinado por telefone') $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.00, 'un', date '2026-09-21', 'reajuste_combinado', 'combinado por telefone', pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   'o financeiro troca o pao A para 5,00 a partir de 21/09'
 );
 select is(current_setting('pane.buck_troca_item', true), '', 'o sinal da troca nao sobra na transacao');
@@ -319,7 +324,7 @@ select is(
   'corrigir o valor na mesma data avisa que o 5,00 de 21/09 deixa de valer'
 );
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.20, 'un', date '2026-09-21', 'correcao_digitacao', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.20, 'un', date '2026-09-21', 'correcao_digitacao', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
   'corrigir a digitacao na mesma data'
 );
 reset role;
@@ -329,7 +334,7 @@ select is(pg_temp.preco('98200000-0000-4000-8000-0000000000a1', date '2026-09-22
 set local role authenticated;
 select pg_temp.como('98200000-0000-4000-8000-000000000001');
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 7.00, 'un', date '2026-09-25', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 7.00, 'un', date '2026-09-25', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a2')) $$,
   'pao B a 7,00 a partir de 25/09'
 );
 select is(
@@ -339,7 +344,7 @@ select is(
   'voltar a data avisa que a troca de 25/09 deixa de valer'
 );
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 6.80, 'un', date '2026-09-22', 'outro', 'data errada na primeira troca') $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a2', 6.80, 'un', date '2026-09-22', 'outro', 'data errada na primeira troca', pg_temp.versao('98200000-0000-4000-8000-0000000000a2')) $$,
   'corrigir a data para 22/09'
 );
 reset role;
@@ -439,7 +444,7 @@ set local role authenticated;
 select pg_temp.como('98200000-0000-4000-8000-000000000001');
 
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000c3', 30, 'kg', private.data_na_padaria() - 1, 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000c3', 30, 'kg', private.data_na_padaria() - 1, 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000c3')) $$,
   '22023',
   format('Escolha %s ou depois: antes disso o preço deste pão estava em outra linha da Tabela Buck.', to_char(private.data_na_padaria(), 'DD/MM/YYYY')),
   'linha nova de pao que ja tinha preco em outra linha nao volta para antes de existir'
@@ -482,7 +487,7 @@ set local role authenticated;
 select pg_temp.como('98200000-0000-4000-8000-000000000002');
 
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a9', 12.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a9', 12.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a9')) $$,
   'o admin tambem troca preco'
 );
 select lives_ok(
@@ -556,7 +561,7 @@ set local role authenticated;
 select pg_temp.como('98200000-0000-4000-8000-000000000001');
 
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a4', 6, 'un', date '2026-10-06', 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a4', 6, 'un', date '2026-10-06', 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a4')) $$,
   '22023',
   'Escolha 12/10/2026 ou depois: antes disso este pão já entrou numa cobrança da Buck confirmada. Diferença de semana cobrada vai como acerto na próxima cobrança.',
   'cobranca sem foto, com romaneio deste pao no periodo, tambem trava a data'
@@ -577,7 +582,7 @@ set local role authenticated;
 select pg_temp.como('98200000-0000-4000-8000-000000000001');
 
 select throws_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a5', 3.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null) $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a5', 3.50, 'un', private.data_na_padaria(), 'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a5')) $$,
   '22023',
   'Este pão tem outra linha com preço na Tabela Buck ([TESTE] Produto E Troca, R$ 4,00/un). A cobrança não separa as duas, porque o romaneio não diz a opção de venda. Remova da Tabela Buck a linha que a Buck não compra e troque o preço na que ficar.',
   'troca recusada quando o mesmo pao tem outra linha com preco na mesma unidade'
@@ -586,7 +591,7 @@ select throws_ok(
 -- 10. So a unidade; previa com problema na conta deste pao ---------------------
 
 select lives_ok(
-  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a6', 2.00, 'kg', private.data_na_padaria(), 'correcao_digitacao', 'era por quilo') $$,
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a6', 2.00, 'kg', private.data_na_padaria(), 'correcao_digitacao', 'era por quilo', pg_temp.versao('98200000-0000-4000-8000-0000000000a6')) $$,
   'trocar so a unidade pela funcao'
 );
 reset role;
@@ -611,6 +616,91 @@ select is(
   (select jsonb_array_length(previa -> 'semanas')
      from (select public.previa_troca_preco_buck('98200000-0000-4000-8000-0000000000a7', 3, 'un', private.data_na_padaria()) as previa) p),
   0, 'sem romaneio deste pao entre a data e hoje, a previa nao lista semana'
+);
+
+-- 11. A troca exige a versao da previa (revisao de outra familia, 20/10) ------
+
+-- Elis abre a troca do pao A e a previa diz a versao; o Rodrigo troca o mesmo
+-- pao antes de ela gravar. A confirmacao de variacao que ela viu era contra o
+-- preco antigo: a troca dela e recusada e pede nova conferencia.
+select ok(
+  to_regprocedure('public.trocar_preco_buck(uuid, numeric, text, date, text, text)') is null,
+  'a troca sem versao deixou de existir'
+);
+select is(
+  (select (public.previa_troca_preco_buck('98200000-0000-4000-8000-0000000000a1') ->> 'versao')::bigint),
+  pg_temp.versao('98200000-0000-4000-8000-0000000000a1'),
+  'a previa devolve a versao: o ultimo registro do historico do pao'
+);
+select is(
+  (select (public.previa_troca_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.50, 'un', private.data_na_padaria()) ->> 'versao')::bigint),
+  pg_temp.versao('98200000-0000-4000-8000-0000000000a1'),
+  'a previa com preco e data devolve a mesma versao'
+);
+select set_config('teste.versao_da_tela', pg_temp.versao('98200000-0000-4000-8000-0000000000a1')::text, true);
+
+select pg_temp.como('98200000-0000-4000-8000-000000000002');
+select is(
+  (select (public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 10.00, 'un', private.data_na_padaria(),
+             'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) ->> 'versao')::bigint),
+  pg_temp.versao('98200000-0000-4000-8000-0000000000a1'),
+  'o admin troca para 10,00 com a versao certa, e a troca devolve a versao nova'
+);
+select set_config('teste.registros_antes', pg_temp.registros('98200000-0000-4000-8000-0000000000a1')::text, true);
+
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
+select throws_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.50, 'un', private.data_na_padaria(),
+       'reajuste_combinado', null, current_setting('teste.versao_da_tela')::bigint) $$,
+  'PZ002',
+  format('O preço deste pão foi trocado depois que esta tela calculou a prévia (agora: R$ 10,00/un a partir de %s). Nada foi gravado. Confira a prévia nova e confirme de novo.',
+    to_char(private.data_na_padaria(), 'DD/MM/YYYY')),
+  'a tela velha (confirmou contra 5,40) e recusada depois da troca do admin'
+);
+select throws_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.50, 'un', private.data_na_padaria(),
+       'reajuste_combinado', null, null) $$,
+  '22023', 'A troca precisa da prévia calculada agora. Atualize a tela e confira a prévia antes de trocar.',
+  'troca sem versao e recusada'
+);
+select is(pg_temp.registros('98200000-0000-4000-8000-0000000000a1'), current_setting('teste.registros_antes')::int,
+  'as recusas nao gravaram nada no historico');
+reset role;
+select is((select unit_price from public.price_tier_items where id = '98200000-0000-4000-8000-0000000000a1'),
+  10.00::numeric, 'e o preco continua o do admin');
+set local role authenticated;
+select pg_temp.como('98200000-0000-4000-8000-000000000001');
+select lives_ok(
+  $$ select public.trocar_preco_buck('98200000-0000-4000-8000-0000000000a1', 5.50, 'un', private.data_na_padaria(),
+       'reajuste_combinado', null, pg_temp.versao('98200000-0000-4000-8000-0000000000a1')) $$,
+  'com a previa nova (versao atual), a troca grava'
+);
+
+-- 12. Preco em vigor de cada linha, sem o limite da API sobre o historico -----
+
+select ok(
+  not has_function_privilege('anon', 'public.buck_precos_em_vigor(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.buck_precos_em_vigor(uuid)', 'execute'),
+  'anonimo nao le o preco em vigor; logado chama e a policy do historico decide'
+);
+select is(
+  (select vigor.seq || '|' || vigor.valid_from || '|' || vigor.unit_price
+     from public.buck_precos_em_vigor('98200000-0000-4000-8000-0000000000a0') vigor
+    where vigor.price_tier_item_id = '98200000-0000-4000-8000-0000000000a1'),
+  (select seq || '|' || valid_from || '|' || unit_price from public.buck_price_history
+    where price_tier_item_id = '98200000-0000-4000-8000-0000000000a1' order by seq desc limit 1),
+  'o preco em vigor do pao A e o ultimo registro dele'
+);
+select is(
+  (select count(*)::int from public.buck_precos_em_vigor('98200000-0000-4000-8000-0000000000a0')),
+  (select count(distinct price_tier_item_id)::int from public.buck_price_history
+    where tier_id = '98200000-0000-4000-8000-0000000000a0'),
+  'uma linha por item da tabela, nao uma por registro'
+);
+select pg_temp.como('98200000-0000-4000-8000-000000000003');
+select is(
+  (select count(*)::int from public.buck_precos_em_vigor('98200000-0000-4000-8000-0000000000a0')),
+  0, 'Vendas da EX nao le o preco em vigor pelo historico (a policy decide)'
 );
 
 reset role;
