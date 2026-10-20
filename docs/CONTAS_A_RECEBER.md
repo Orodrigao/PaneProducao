@@ -848,17 +848,18 @@ valor cobrado.
   aviso quando a conta dele fica com problema. A conta é a de verdade (a troca
   é aplicada e desfeita). Com preço e data, a prévia pega as mesmas travas da
   troca antes de ler, então o antes, o depois e a versão saem do mesmo estado.
-  Os romaneios não passam por essas travas: se um romaneio do pão for
-  conferido no meio da conta, a prévia percebe e refaz (até três vezes, depois
-  pede para conferir de novo);
+  O resto da conta (romaneio conferido, destino, cadastro do pão) não passa
+  por essas travas: a prévia mede o antes de novo depois do depois e, se mudou,
+  refaz (até três vezes, depois pede para conferir de novo);
 - trava no banco: gravação vinda da API que deixe linha da Buck com preço
   positivo diferente do que estava é recusada, assim como renomear, desativar
   ou trocar qual tabela é a Buck. Inclusão pela API na Buck entra sempre sem
   preço (inclusive a cópia de produto). Remover da tabela, zerar e mudar pacote
   seguem livres; remover uma de duas linhas duplicadas pode mudar o preço
   cobrado a partir de hoje, e a tela avisa. Uma linha da Buck não muda de
-  identificador (nenhum papel): o histórico e a conta acham o preço pelo id da
-  linha, e com outro id o histórico antigo continuaria concorrendo. Migration grava direto como antes:
+  identificador (nenhum papel) e, pela API, não nasce com o identificador de
+  uma linha que já teve histórico: o histórico e a conta acham o preço pelo id
+  da linha, e dois históricos no mesmo id concorreriam na conta. Migration grava direto como antes:
   correção futura de preço por migration deve gravar o registro do histórico
   com a data certa;
 - na tela, a Tabela Buck mostra o preço com "desde dd/mm", o botão "Trocar

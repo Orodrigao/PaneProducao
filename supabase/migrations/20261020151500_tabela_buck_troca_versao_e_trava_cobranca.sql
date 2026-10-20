@@ -16,8 +16,9 @@
 -- Segunda rodada da mesma revisao:
 --   5. Uma linha da Buck nao muda de identificador: com outro id ela ganhava
 --      historico novo e o antigo continuava concorrendo na conta da cobranca.
---   6. A previa confere se os romaneios do pao mudaram entre o antes e o
---      depois (conferencia de quantidade ao mesmo tempo) e refaz a conta.
+--      Pela API, tambem nao nasce com o id de uma linha que ja teve historico.
+--   6. A previa refaz o antes depois de medir o depois; se mudou (romaneio
+--      conferido, destino, cadastro do pao ao mesmo tempo), refaz a conta.
 --
 -- As travas formam uma ordem so: semanas em ordem crescente e, depois, a
 -- linha da tabela. A troca, a previa e as duas cobrancas seguem essa ordem.
@@ -310,43 +311,10 @@ grant execute on function public.trocar_preco_buck(uuid, numeric, text, date, te
 -- ---------------------------------------------------------------------------
 -- 4. A previa trava antes de ler e devolve a versao
 -- ---------------------------------------------------------------------------
--- Retrato dos romaneios de um pao num periodo: muda a cada inclusao, edicao
--- ou exclusao de item ou de romaneio (xmin muda em toda gravacao da linha).
--- A conferencia de quantidade nao passa pelas travas de semana; a previa usa
--- este retrato para saber se o antes e o depois viram os mesmos romaneios.
-create or replace function private.buck_composicao_do_pao(p_item_id uuid, p_de date, p_ate date)
-returns text
-language sql
-stable
-security definer
-set search_path = ''
-as $fn$
-  with linha as (
-    select item.product_source, item.product_id
-    from public.price_tier_items item
-    where item.id = p_item_id
-  ),
-  identidades as (
-    select ident.fonte, ident.pid
-    from linha
-    cross join lateral private.buck_identidades(linha.product_source, linha.product_id) ident
-  )
-  select md5(coalesce(string_agg(
-           item.id::text || '/' || item.xmin::text || '/' || romaneio.xmin::text,
-           ',' order by item.id), ''))
-  from public.romaneio_items item
-  join public.romaneios romaneio on romaneio.id = item.romaneio_id
-  join identidades ident
-    on ident.fonte = item.product_source and ident.pid = item.product_id
-  where romaneio.record_date between p_de and p_ate;
-$fn$;
-
-revoke all on function private.buck_composicao_do_pao(uuid, date, date) from public, anon, authenticated;
-
 -- Partida de 20261019160524; mudancas: com preco e data na janela, as travas
 -- da troca (semanas e linha) antes de ler qualquer coisa; `versao` no
 -- resultado, do mesmo registro que da o preco em vigor; o efeito e refeito
--- (ate tres vezes) se os romaneios do pao mudarem durante a conta.
+-- (ate tres vezes) se o antes mudar durante a conta.
 create or replace function public.previa_troca_preco_buck(
   p_item_id uuid,
   p_preco numeric default null,
@@ -374,7 +342,6 @@ declare
   v_depois jsonb;
   v_semanas jsonb := '[]'::jsonb;
   v_resultado jsonb;
-  v_composicao text;
   v_estavel boolean := false;
 begin
   if not private.pode_trocar_preco_buck() then
@@ -443,13 +410,11 @@ begin
         and depois.valid_from <= historico.valid_from
     );
 
-  -- Os precos nao mudam ate o fim (travas acima), mas os romaneios podem:
-  -- se mudarem entre o antes e o depois, a diferenca nao seria so do preco.
-  -- O retrato cobre as semanas inteiras, da semana da data ate a de hoje.
+  -- Os precos nao mudam ate o fim (travas acima), mas o resto da conta pode
+  -- (romaneio conferido, destino, cadastro do pao). O antes e medido de novo
+  -- depois do depois: se mudou, os dois lados nao sairam do mesmo estado e a
+  -- conta e refeita.
   for v_tentativa in 1..3 loop
-    v_composicao := private.buck_composicao_do_pao(
-      p_item_id, date_trunc('week', p_vale_a_partir)::date, date_trunc('week', v_hoje)::date + 6);
-
     -- Semanas em que este pao saiu para a EX entre a data e hoje.
     select coalesce(array_agg(distinct date_trunc('week', romaneio.record_date)::date
                               order by date_trunc('week', romaneio.record_date)::date), array[]::date[])
@@ -465,6 +430,7 @@ begin
       and romaneio.record_date between p_vale_a_partir and v_hoje;
 
     v_semanas := '[]'::jsonb;
+    v_estavel := true;
     if cardinality(v_segundas) > 0 then
       -- Efeito pela conta de verdade: aplica, mede e desfaz.
       v_antes := private.buck_resumo_do_pao(p_item_id, v_segundas);
@@ -476,7 +442,10 @@ begin
         when sqlstate 'PZ001' then
           null;
       end;
+      v_estavel := v_antes = private.buck_resumo_do_pao(p_item_id, v_segundas);
+    end if;
 
+    if v_estavel and cardinality(v_segundas) > 0 then
       select coalesce(jsonb_agg(jsonb_build_object(
                'de', antes.key::date,
                'ate', antes.key::date + 6,
@@ -491,14 +460,12 @@ begin
       from jsonb_each(v_antes) antes;
     end if;
 
-    v_estavel := v_composicao = private.buck_composicao_do_pao(
-      p_item_id, date_trunc('week', p_vale_a_partir)::date, date_trunc('week', v_hoje)::date + 6);
     exit when v_estavel;
   end loop;
 
   if not v_estavel then
     return v_resultado || jsonb_build_object('problema',
-      'Os romaneios deste pão estão sendo conferidos agora e a prévia não fechou. Espere um instante e confira de novo.');
+      'Os romaneios deste pão estão mudando agora e a prévia não fechou. Espere um instante e confira de novo.');
   end if;
 
   return v_resultado || jsonb_build_object(
@@ -515,10 +482,11 @@ grant execute on function public.previa_troca_preco_buck(uuid, numeric, text, da
 -- ---------------------------------------------------------------------------
 -- 5. Uma linha da Buck nao muda de identificador
 -- ---------------------------------------------------------------------------
--- Partida de 20261019160524; mudanca: o identificador da linha da Buck nao
--- muda, para nenhum papel. O historico e a conta da cobranca acham o preco
--- pelo id da linha; com outro id, o historico antigo continuava valendo junto
--- com o novo, e a conta escolhia um deles pela ordem do id.
+-- Partida de 20261019160524; mudancas: o identificador da linha da Buck nao
+-- muda, para nenhum papel, e a inclusao pela API nao reusa o id de uma linha
+-- que ja teve historico. O historico e a conta da cobranca acham o preco pelo
+-- id da linha; com outro id (ou um id reusado), dois historicos concorriam e
+-- a conta escolhia um deles pela ordem do id.
 create or replace function private.buck_trava_troca_sem_data()
 returns trigger
 language plpgsql
@@ -546,6 +514,15 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
+    -- O historico e a conta acham o preco pelo id da linha: um id que ja foi
+    -- de uma linha da Buck traria o historico dela junto.
+    if new.tier_id = v_buck and exists (
+      select 1 from public.buck_price_history historico
+      where historico.price_tier_item_id = new.id
+    ) then
+      raise exception using errcode = '22023',
+        message = 'Este identificador já foi de uma linha da Tabela Buck. Inclua o produto sem informar o identificador.';
+    end if;
     if new.tier_id = v_buck and coalesce(new.unit_price, 0) > 0 then
       new.unit_price := 0;
     end if;

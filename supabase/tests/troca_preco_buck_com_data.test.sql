@@ -19,7 +19,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(88);
+select plan(89);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -459,6 +459,16 @@ select throws_ok(
   '22023',
   format('Escolha %s ou depois: antes disso o preço deste pão estava em outra linha da Tabela Buck.', to_char(private.data_na_padaria(), 'DD/MM/YYYY')),
   'linha nova de pao que ja tinha preco em outra linha nao volta para antes de existir'
+);
+-- A linha antiga do pao C foi excluida (so migration exclui), mas o historico
+-- dela continua. Incluir outra linha com o mesmo identificador misturaria os
+-- dois historicos na conta da cobranca (revisao de outra familia, 20/10).
+select throws_ok(
+  $$ insert into public.price_tier_items (id, tier_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size, active)
+     values ('98200000-0000-4000-8000-0000000000a3', '98200000-0000-4000-8000-0000000000a0',
+             'teste-troca-novo', 'bread', '[TESTE] Pao Novo Troca', 0, 'un', 1, true) $$,
+  '22023', 'Este identificador já foi de uma linha da Tabela Buck. Inclua o produto sem informar o identificador.',
+  'reusar pela API o identificador de uma linha excluida da Buck e barrado'
 );
 
 set local role service_role;
