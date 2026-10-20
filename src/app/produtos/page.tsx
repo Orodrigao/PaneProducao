@@ -752,7 +752,7 @@ export default function ProdutosPage() {
             <div className="ps-sheet-grab"/>
             <h3 id="duplicate-product-title">Duplicar produto</h3>
             <p style={{fontSize:13, color:'var(--ink-soft)', lineHeight:1.5, margin:'0 0 14px'}}>
-              A cópia leva a ficha técnica e os preços de venda, mas começa inativa para não entrar em operação ou na vitrine sem revisão. Estoque, pedidos, compras e histórico não são copiados.
+              A cópia leva a ficha técnica, os preços de venda e a marcação Lojas, mas começa inativa para não entrar em operação ou na vitrine sem revisão. Ao ativar, a cópia marcada Lojas entra no Planejamento, no pedido das lojas, no Forno e no Romaneio. Estoque, pedidos, compras e histórico não são copiados.
             </p>
             <div className="ps-fieldgroup" style={{marginBottom:16}}>
               <label className="ps-fieldlabel" htmlFor="duplicate-product-name">Novo nome</label>

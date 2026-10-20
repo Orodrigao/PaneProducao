@@ -649,9 +649,12 @@ estoque no próprio nome não é ligado pela tela, porque o Forno e o estoque
 passariam a gravar no pão e o histórico partiria em dois; essa passagem fica
 para uma correção administrativa. A aba Admin da tela inicial ficou só de
 consulta para os pães das lojas. O pão nasce com a unidade e o custo do produto; depois disso,
-unidade, peso médio, prateleira e custo continuam sendo do pão. A cópia de
-produto (`duplicate_product_complete`) não leva a marcação: a cópia nasce fora
-das lojas.
+unidade, peso médio, prateleira e custo continuam sendo do pão. Desde
+20/10/2026 a cópia de produto (`duplicate_product_complete`) leva a marcação:
+a cópia de um pão das lojas nasce inativa, com o pão ligado já criado e
+desligado, e entra nas lojas quando for ativada. Antes a cópia nascia fora das
+lojas sem aviso (Panetone de Frutas V1, fora da busca do Romaneio em
+20/10/2026).
 
 O texto livre continua em uso em Sobras, Tabelas de preço e na
 contagem de estoque, e só sai de cena na fase 4. Falta ainda quebrar os 340
