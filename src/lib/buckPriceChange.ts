@@ -278,33 +278,38 @@ export async function changeBuckPrice(itemId: string, draft: BuckPriceDraft, ver
 }
 
 // A API corta cada leitura em 1.000 linhas sem avisar. Páginas menores que
-// esse limite, em ordem estável, até uma vir incompleta.
+// esse limite, cada uma continuando depois da última chave lida (não por
+// posição: uma troca gravada no meio da leitura empurraria as posições e
+// repetiria um registro), até uma vir incompleta.
 export const BUCK_HISTORY_PAGE_SIZE = 500
 
-export async function collectAllPages<T>(
-  fetchPage: (from: number, to: number) => Promise<T[]>,
+export async function collectAllPages<T, K>(
+  fetchPage: (after: K | null, limit: number) => Promise<T[]>,
+  keyOf: (row: T) => K,
   pageSize = BUCK_HISTORY_PAGE_SIZE,
 ): Promise<T[]> {
   const all: T[] = []
-  for (let from = 0; ; from += pageSize) {
-    const page = await fetchPage(from, from + pageSize - 1)
+  let after: K | null = null
+  for (;;) {
+    const page = await fetchPage(after, pageSize)
     all.push(...page)
     if (page.length < pageSize) return all
+    after = keyOf(page[page.length - 1])
   }
 }
 
 // Histórico inteiro de uma linha, do mais novo para o mais antigo.
 export async function loadBuckItemHistory(itemId: string): Promise<BuckPriceHistoryEntry[]> {
-  return collectAllPages(async (from, to) => {
-    const { data, error } = await supabase
+  return collectAllPages<BuckPriceHistoryEntry, number>(async (afterSeq, limit) => {
+    let query = supabase
       .from('buck_price_history')
       .select(BUCK_PRICE_HISTORY_COLUMNS)
       .eq('price_tier_item_id', itemId)
-      .order('seq', { ascending: false })
-      .range(from, to)
+    if (afterSeq !== null) query = query.lt('seq', afterSeq)
+    const { data, error } = await query.order('seq', { ascending: false }).limit(limit)
     if (error) throw error
     return (data ?? []) as unknown as BuckPriceHistoryEntry[]
-  })
+  }, entry => entry.seq)
 }
 
 export interface BuckPriceInEffectRow {
@@ -318,13 +323,12 @@ export interface BuckPriceInEffectRow {
 // O último registro de cada linha (public.buck_precos_em_vigor), para o
 // "desde" de cada pão sem ler o histórico inteiro da tabela.
 export async function loadBuckPricesInEffect(tierId: string): Promise<Map<string, BuckPriceInEffectRow>> {
-  const rows = await collectAllPages(async (from, to) => {
-    const { data, error } = await supabase
-      .rpc('buck_precos_em_vigor', { p_tier_id: tierId })
-      .order('price_tier_item_id')
-      .range(from, to)
+  const rows = await collectAllPages<BuckPriceInEffectRow, string>(async (afterItemId, limit) => {
+    let query = supabase.rpc('buck_precos_em_vigor', { p_tier_id: tierId })
+    if (afterItemId !== null) query = query.gt('price_tier_item_id', afterItemId)
+    const { data, error } = await query.order('price_tier_item_id').limit(limit)
     if (error) throw error
     return (data ?? []) as BuckPriceInEffectRow[]
-  })
+  }, row => row.price_tier_item_id)
   return new Map(rows.map(row => [row.price_tier_item_id, row]))
 }

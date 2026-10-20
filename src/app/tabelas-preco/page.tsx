@@ -305,13 +305,20 @@ export default function TabelasPrecoPage() {
       setBuckInEffectError(errorMessage(error, 'Não foi possível carregar desde quando vale cada preço.'))
     }
   }, [])
+  // Só a resposta do pão aberto por último vale: abrir outro pão antes de a
+  // primeira leitura chegar não pode deixar o histórico errado na tela.
+  const historyRequestRef = useRef<string|null>(null)
   const loadItemHistory = useCallback(async (itemId: string) => {
+    historyRequestRef.current = itemId
     setItemHistoryError(null)
     setItemHistory(null)
     try {
-      setItemHistory({ itemId, entries: await loadBuckItemHistory(itemId) })
+      const entries = await loadBuckItemHistory(itemId)
+      if (historyRequestRef.current === itemId) setItemHistory({ itemId, entries })
     } catch (error) {
-      setItemHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.'))
+      if (historyRequestRef.current === itemId) {
+        setItemHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.'))
+      }
     }
   }, [])
   useEffect(() => {
@@ -322,7 +329,7 @@ export default function TabelasPrecoPage() {
   }, [isBuckTier, selTier?.id, loadBuckInEffect])  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (historyItemId) loadItemHistory(historyItemId)
-    else { setItemHistory(null); setItemHistoryError(null) }
+    else { historyRequestRef.current = null; setItemHistory(null); setItemHistoryError(null) }
   }, [historyItemId, loadItemHistory])
   const changingPriceItem = isBuckTier ? itemsOfSel.find(it => it.id === changingPriceItemId) ?? null : null
   const afterBuckPriceChange = async () => {

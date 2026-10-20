@@ -200,31 +200,47 @@ describe('confirmacao amarrada a versao da previa', () => {
 })
 
 describe('collectAllPages', () => {
-  function fonte(total: number) {
-    const pedidos: Array<[number, number]> = []
-    const linhas = Array.from({ length: total }, (_, i) => i)
-    const ler = async (from: number, to: number) => {
-      pedidos.push([from, to])
-      return linhas.slice(from, to + 1)
+  // Historico em ordem de seq decrescente, lido depois da ultima chave.
+  function fonte(seqs: number[]) {
+    const pedidos: Array<number | null> = []
+    const tabela = { seqs: [...seqs] }
+    const ler = async (depoisDe: number | null, limite: number) => {
+      pedidos.push(depoisDe)
+      return [...tabela.seqs].sort((a, b) => b - a)
+        .filter(seq => depoisDe === null || seq < depoisDe)
+        .slice(0, limite)
     }
-    return { pedidos, ler }
+    return { pedidos, ler, tabela }
   }
+  const chave = (seq: number) => seq
 
   it('lista vazia: uma leitura so', async () => {
-    const { pedidos, ler } = fonte(0)
-    expect(await collectAllPages(ler, 3)).toEqual([])
-    expect(pedidos).toEqual([[0, 2]])
+    const { pedidos, ler } = fonte([])
+    expect(await collectAllPages(ler, chave, 3)).toEqual([])
+    expect(pedidos).toEqual([null])
   })
 
   it('pagina exatamente cheia tem continuacao, mesmo que venha vazia', async () => {
-    const { pedidos, ler } = fonte(3)
-    expect(await collectAllPages(ler, 3)).toEqual([0, 1, 2])
-    expect(pedidos).toEqual([[0, 2], [3, 5]])
+    const { pedidos, ler } = fonte([1, 2, 3])
+    expect(await collectAllPages(ler, chave, 3)).toEqual([3, 2, 1])
+    expect(pedidos).toEqual([null, 1])
   })
 
-  it('le todas as paginas ate a incompleta, sem perder nem repetir linha', async () => {
-    const { pedidos, ler } = fonte(7)
-    expect(await collectAllPages(ler, 3)).toEqual([0, 1, 2, 3, 4, 5, 6])
-    expect(pedidos).toEqual([[0, 2], [3, 5], [6, 8]])
+  it('le todas as paginas ate a incompleta, sem perder nem repetir registro', async () => {
+    const { pedidos, ler } = fonte([1, 2, 3, 4, 5, 6, 7])
+    expect(await collectAllPages(ler, chave, 3)).toEqual([7, 6, 5, 4, 3, 2, 1])
+    expect(pedidos).toEqual([null, 5, 2])
+  })
+
+  it('troca gravada no meio da leitura nao repete registro', async () => {
+    const { ler, tabela } = fonte([1, 2, 3, 4, 5, 6])
+    const lerComTrocaNoMeio = async (depoisDe: number | null, limite: number) => {
+      const pagina = await ler(depoisDe, limite)
+      if (depoisDe === null) tabela.seqs.push(7)
+      return pagina
+    }
+    const lidos = await collectAllPages(lerComTrocaNoMeio, chave, 3)
+    expect(lidos).toEqual([6, 5, 4, 3, 2, 1])
+    expect(new Set(lidos).size).toBe(lidos.length)
   })
 })

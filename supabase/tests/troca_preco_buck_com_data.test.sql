@@ -19,7 +19,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(86);
+select plan(88);
 
 -- Cenario ------------------------------------------------------------------
 
@@ -397,6 +397,17 @@ select is(
 select lives_ok(
   $$ update public.price_tier_items set unit_price = 9.50 where id = '98200000-0000-4000-8000-0000000000b1' $$,
   'as outras tabelas seguem gravando direto'
+);
+-- Revisao de outra familia (20/10): com outro identificador, a linha ganha
+-- historico novo e o antigo continua concorrendo na conta da cobranca.
+select throws_ok(
+  $$ update public.price_tier_items set id = '98200000-0000-4000-8000-0000000000af' where id = '98200000-0000-4000-8000-0000000000a2' $$,
+  '22023', 'Uma linha da Tabela Buck não muda de identificador: o histórico de preço é dela. Remova a linha e inclua o produto de novo.',
+  'trocar o identificador de uma linha da Buck e barrado'
+);
+select lives_ok(
+  $$ update public.price_tier_items set id = '98200000-0000-4000-8000-0000000000bf' where id = '98200000-0000-4000-8000-0000000000b1' $$,
+  'nas outras tabelas o identificador segue como antes'
 );
 select throws_ok(
   $$ update public.price_tiers set name = 'BUCK antiga' where id = '98200000-0000-4000-8000-0000000000a0' $$,

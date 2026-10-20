@@ -12,7 +12,9 @@ select no_plan();
 --   B. troca primeiro, cobranca antiga depois: a cobranca espera e sai pelo
 --      preco novo, o mesmo que o historico da para o periodo;
 --   C. troca primeiro, previa depois: a previa espera e calcula o antes e o
---      depois sobre o mesmo estado, com a versao da troca que terminou.
+--      depois sobre o mesmo estado, com a versao da troca que terminou;
+--   D. previa primeiro, conferencia do romaneio no meio do calculo: a previa
+--      percebe a mudanca entre o antes e o depois e calcula de novo.
 -- Tudo o que as conexoes gravam e apagado no fim (e no comeco, se uma rodada
 -- anterior parou no meio).
 
@@ -44,6 +46,7 @@ create function pg_temp.limpar() returns void language sql as $$
                    '98300000-0000-4000-8000-0000000000f3');
     delete from public.price_tier_items where id = '98300000-0000-4000-8000-0000000000a1';
     delete from public.buck_price_history where price_tier_item_id = '98300000-0000-4000-8000-0000000000a1';
+    delete from public.breads where id = 'teste-pr511-concorrencia';
     delete from public.app_user_permissions where user_id = '98300000-0000-4000-8000-000000000001';
     delete from public.app_profiles where user_id = '98300000-0000-4000-8000-000000000001';
     delete from auth.users where id = '98300000-0000-4000-8000-000000000001';
@@ -110,7 +113,7 @@ select extensions.dblink_exec('pr511_setup', $remote$
   language plpgsql set search_path='' as $trigger$
   begin
     if pg_catalog.current_setting('application_name')
-       in ('pr511-cobranca-primeira', 'pr511-troca-primeira') then
+       in ('pr511-cobranca-primeira', 'pr511-troca-primeira', 'pr511-previa-primeira') then
       perform pg_catalog.pg_advisory_xact_lock(
         pg_catalog.hashtextextended('test:pr511:portao', 0));
     end if;
@@ -342,6 +345,38 @@ select is(
   (select (resultado::jsonb -> 'vigente' ->> 'unit_price') || ' v' || (resultado::jsonb ->> 'versao')
      from pr511_resultado where corrida = 'C' and conexao = 'segunda'),
   '8.00 v' || pg_temp.versao_agora(), 'C: a previa devolve o preco em vigor e a versao do mesmo estado');
+
+-- D. Previa primeiro; conferencia do romaneio no meio do calculo -------------
+
+-- A previa calcula o antes (10 x 8,00) e para no portao ao aplicar a troca que
+-- ela desfaz no fim. Enquanto isso, o romaneio de 22/09 e conferido: 8 aceitos
+-- de 10. O depois enxergaria 8; a previa refaz a conta inteira com 8.
+select pg_temp.fechar_portao();
+select pg_temp.preparar('pr511_primeira', 'pr511-previa-primeira');
+select extensions.dblink_send_query('pr511_primeira', $q$
+  select public.previa_troca_preco_buck(
+    '98300000-0000-4000-8000-0000000000a1', 9.00, 'un', date '2026-09-22')::text
+$q$);
+select ok(pg_temp.parou_em_trava('primeira'),
+  'D: a previa calculou o antes e parou no portao');
+select extensions.dblink_exec('pr511_setup', $remote$
+  update public.romaneio_items set qty_accepted = 8
+  where id = '98300000-0000-4000-8000-0000000000d3';
+$remote$);
+select pg_temp.abrir_portao();
+insert into pr511_resultado
+select 'D', 'primeira', resposta.valor,
+       pg_temp.mensagem(extensions.dblink_error_message('pr511_primeira')), null
+from extensions.dblink_get_result('pr511_primeira', false) as resposta(valor text);
+select count(*) from extensions.dblink_get_result('pr511_primeira', false) as resposta(valor text);
+
+select is((select erro from pr511_resultado where corrida = 'D'),
+  'OK', 'D: a previa respondeu');
+select is(
+  (select (resultado::jsonb -> 'semanas' -> 0 ->> 'quantidade') || ' un: '
+          || (resultado::jsonb -> 'semanas' -> 0 ->> 'antes') || ' -> ' || (resultado::jsonb -> 'semanas' -> 0 ->> 'depois')
+     from pr511_resultado where corrida = 'D'),
+  '8 un: 64.00 -> 72.00', 'D: antes e depois saem da mesma conferencia (8 x 8,00 e 8 x 9,00)');
 
 -- Limpeza ---------------------------------------------------------------------
 
