@@ -574,8 +574,22 @@ disputavam um único banco de teste compartilhado.
   mesma composição de romaneios que a tela mostrou. O botão do Fechamento EX saiu da tela, mas a função
   antiga `create_receivable_from_romaneio` ainda existe no banco até uma PR
   própria desligá-la. A soma vive em `private.calcular_cobranca_buck_detalhada`
-  (a versão curta lê dela) e em `src/lib/romaneioBilling.ts`, que ainda
-  imprime o Fechamento EX: dívida assumida, precisam mudar juntas;
+  (a versão curta lê dela); o Fechamento EX lê a mesma conta, e
+  `src/lib/romaneioBilling.ts` ficou só como reserva sem impressão na janela
+  do deploy (sai na fase 3 da Tabela Buck com data de validade);
+- Tabela Buck com data de validade (fases 1 e 2 da Fase 6A de
+  [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)): cada romaneio é cobrado pelo
+  preço do seu dia, guardado em `buck_price_history`, e o preço da Buck só
+  muda por `public.trocar_preco_buck`, com data e motivo, sem alcançar
+  romaneio de pão já cobrado e com a versão da prévia que a pessoa conferiu.
+  A troca, a prévia e as duas funções de cobrança da Buck pegam as mesmas
+  travas de semana. O banco recusa qualquer outra gravação de preço da Buck
+  vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
+  nas semanas cobradas) e o acerto de R$ 337,94 cobrados a mais nas semanas de
+  21/09 e 28/09, decisão do Rodrigo por ajuste manual. Risco conhecido: o
+  Brioche tem duas linhas "un" na Tabela Buck (Hambúrguer e Forma), e a conta
+  não separa opção de venda; a troca de preço do Brioche fica recusada até uma
+  delas sair da tabela;
 - catálogo unificado com `products.kind`;
 - componentes de ficha técnica, rendimentos e cálculo de CMV;
 - auditoria de cobertura/qualidade do CMV;

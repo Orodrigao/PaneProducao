@@ -88,3 +88,7 @@ jobs:
       - name: Provar idempotencia financeira sob concorrencia real
         if: steps.escopo.outputs.banco != 'false'
         run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql
+
+      - name: Provar concorrencia real da troca de preco da Buck
+        if: steps.escopo.outputs.banco != 'false'
+        run: supabase test db supabase/tests-local/troca_preco_buck_concorrente.test.sql
