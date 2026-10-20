@@ -62,6 +62,9 @@ export interface BuckPricePreview {
   hoje: string
   data_minima: string
   motivo_data_minima: string
+  // Último registro do histórico do pão quando a prévia foi calculada. A troca
+  // manda esta versão de volta e o banco recusa se o preço mudou desde então.
+  versao: number
   vigente: BuckPriceInEffect | null
   problema?: string | null
   deixam_de_valer?: BuckPriceInEffect[]
@@ -157,6 +160,18 @@ export function confirmationNeeded(
   return needsBigChangeConfirmation(currentPrice, next.price) ? 'variacao' : null
 }
 
+// Uma confirmação vale só para o preço em vigor que a pessoa viu: se outra
+// pessoa trocou o preço (versão nova), a comparação é outra e precisa ser
+// confirmada de novo.
+export function confirmationKey(
+  reference: BuckPricePreview | null,
+  next: { price: number; unit: BuckPricingUnit },
+): string | null {
+  if (!reference) return null
+  const kind = confirmationNeeded(reference.vigente, next)
+  return kind ? `${reference.versao}|${kind}|${next.price}|${next.unit}` : null
+}
+
 // O que impede gravar, na mesma ordem em que a pessoa preenche. O banco
 // confere tudo de novo; isto só evita a viagem quando o erro é óbvio.
 export function validateBuckPriceDraft(draft: BuckPriceDraft, preview: BuckPricePreview | null): string | null {
@@ -212,18 +227,15 @@ export function sameBuckProduct(
   return bridged(a, b) || bridged(b, a)
 }
 
-export function latestHistoryByItem(entries: BuckPriceHistoryEntry[]): Map<string, BuckPriceHistoryEntry> {
-  const latest = new Map<string, BuckPriceHistoryEntry>()
-  for (const entry of entries) {
-    const current = latest.get(entry.price_tier_item_id)
-    if (!current || entry.seq > current.seq) latest.set(entry.price_tier_item_id, entry)
-  }
-  return latest
-}
-
 // Na janela do deploy o site novo pode chegar antes da função no banco.
 export const BUCK_PRICE_UPDATING_MESSAGE = 'O sistema está sendo atualizado. Tente de novo em alguns minutos.'
 export const BUCK_PRICE_OFFLINE_MESSAGE = 'Sem conexão com o servidor. Confira a internet e tente de novo.'
+// O banco recusou porque o preço mudou depois da prévia (public.trocar_preco_buck).
+export const BUCK_PRICE_STALE_CODE = 'PZ002'
+
+export function isStaleBuckPreviewError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === BUCK_PRICE_STALE_CODE
+}
 
 export function buckPriceErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object') {
@@ -249,7 +261,8 @@ export async function loadBuckPricePreview(
   return data as BuckPricePreview
 }
 
-export async function changeBuckPrice(itemId: string, draft: BuckPriceDraft): Promise<void> {
+// `versao` é a da prévia que a pessoa conferiu (BuckPricePreview.versao).
+export async function changeBuckPrice(itemId: string, draft: BuckPriceDraft, versao: number): Promise<void> {
   const price = parseBuckPriceInput(draft.priceText)
   if (price.value === null) throw new Error(price.error ?? 'Informe o preço novo.')
   const { error } = await supabase.rpc('trocar_preco_buck', {
@@ -259,6 +272,59 @@ export async function changeBuckPrice(itemId: string, draft: BuckPriceDraft): Pr
     p_vale_a_partir: draft.validFrom,
     p_motivo: draft.reason,
     p_detalhe: draft.detail.trim() || null,
+    p_versao: versao,
   })
   if (error) throw error
+}
+
+// A API corta cada leitura em 1.000 linhas sem avisar. Páginas menores que
+// esse limite, em ordem estável, até uma vir incompleta.
+export const BUCK_HISTORY_PAGE_SIZE = 500
+
+export async function collectAllPages<T>(
+  fetchPage: (from: number, to: number) => Promise<T[]>,
+  pageSize = BUCK_HISTORY_PAGE_SIZE,
+): Promise<T[]> {
+  const all: T[] = []
+  for (let from = 0; ; from += pageSize) {
+    const page = await fetchPage(from, from + pageSize - 1)
+    all.push(...page)
+    if (page.length < pageSize) return all
+  }
+}
+
+// Histórico inteiro de uma linha, do mais novo para o mais antigo.
+export async function loadBuckItemHistory(itemId: string): Promise<BuckPriceHistoryEntry[]> {
+  return collectAllPages(async (from, to) => {
+    const { data, error } = await supabase
+      .from('buck_price_history')
+      .select(BUCK_PRICE_HISTORY_COLUMNS)
+      .eq('price_tier_item_id', itemId)
+      .order('seq', { ascending: false })
+      .range(from, to)
+    if (error) throw error
+    return (data ?? []) as unknown as BuckPriceHistoryEntry[]
+  })
+}
+
+export interface BuckPriceInEffectRow {
+  price_tier_item_id: string
+  seq: number
+  valid_from: string
+  unit_price: number | null
+  pricing_unit: BuckPricingUnit | null
+}
+
+// O último registro de cada linha (public.buck_precos_em_vigor), para o
+// "desde" de cada pão sem ler o histórico inteiro da tabela.
+export async function loadBuckPricesInEffect(tierId: string): Promise<Map<string, BuckPriceInEffectRow>> {
+  const rows = await collectAllPages(async (from, to) => {
+    const { data, error } = await supabase
+      .rpc('buck_precos_em_vigor', { p_tier_id: tierId })
+      .order('price_tier_item_id')
+      .range(from, to)
+    if (error) throw error
+    return (data ?? []) as BuckPriceInEffectRow[]
+  })
+  return new Map(rows.map(row => [row.price_tier_item_id, row]))
 }

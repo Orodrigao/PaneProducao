@@ -18,11 +18,12 @@ import { isCatalogItemAlreadyPriced, isLegacyBreadUnified } from './catalog'
 import { requiredPriceTablePackSize, resolvePjPackRule, type PjPackRule } from '@/lib/pjPackRules'
 import { isBuckPriceTierName } from '@/lib/romaneioBilling'
 import {
-  BUCK_PRICE_HISTORY_COLUMNS,
   formatSince,
-  latestHistoryByItem,
+  loadBuckItemHistory,
+  loadBuckPricesInEffect,
   sameBuckProduct,
   type BuckPriceHistoryEntry,
+  type BuckPriceInEffectRow,
 } from '@/lib/buckPriceChange'
 import BuckPriceChangeCard from '@/components/BuckPriceChangeCard'
 import BuckPriceHistoryList from '@/components/BuckPriceHistoryList'
@@ -145,8 +146,11 @@ export default function TabelasPrecoPage() {
   const addingItemRef = useRef(false)
 
   // Tabela Buck: preço só muda pela troca com data e motivo.
-  const [buckHistory, setBuckHistory] = useState<BuckPriceHistoryEntry[]>([])
-  const [buckHistoryError, setBuckHistoryError] = useState<string|null>(null)
+  const [buckInEffect, setBuckInEffect] = useState<Map<string, BuckPriceInEffectRow>>(new Map())
+  const [buckInEffectError, setBuckInEffectError] = useState<string|null>(null)
+  // Histórico de um pão só, lido inteiro (com paginação) quando a pessoa abre.
+  const [itemHistory, setItemHistory] = useState<{ itemId: string; entries: BuckPriceHistoryEntry[] } | null>(null)
+  const [itemHistoryError, setItemHistoryError] = useState<string|null>(null)
   const [changingPriceItemId, setChangingPriceItemId] = useState<string|null>(null)
   const [historyItemId, setHistoryItemId] = useState<string|null>(null)
 
@@ -291,30 +295,41 @@ export default function TabelasPrecoPage() {
 
   // Mesmo critério do banco (private.buck_tier_id): nome "buck" e ativa.
   const isBuckTier = !!selTier && selTier.active && isBuckPriceTierName(selTier.name)
-  const loadBuckHistory = useCallback(async (tierId: string) => {
-    setBuckHistoryError(null)
-    // Mais novos primeiro: se a leitura for cortada no limite da API, perde-se
-    // o começo antigo, nunca o preço em vigor.
-    const { data, error } = await supabase
-      .from('buck_price_history')
-      .select(BUCK_PRICE_HISTORY_COLUMNS)
-      .eq('tier_id', tierId)
-      .order('seq', { ascending: false })
-    if (error) { setBuckHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.')); return }
-    setBuckHistory((data || []) as BuckPriceHistoryEntry[])
+  // O "desde" de cada pão vem do último registro dele (public.buck_precos_em_vigor),
+  // não de uma leitura do histórico da tabela inteira, que a API corta em 1.000.
+  const loadBuckInEffect = useCallback(async (tierId: string) => {
+    setBuckInEffectError(null)
+    try {
+      setBuckInEffect(await loadBuckPricesInEffect(tierId))
+    } catch (error) {
+      setBuckInEffectError(errorMessage(error, 'Não foi possível carregar desde quando vale cada preço.'))
+    }
+  }, [])
+  const loadItemHistory = useCallback(async (itemId: string) => {
+    setItemHistoryError(null)
+    setItemHistory(null)
+    try {
+      setItemHistory({ itemId, entries: await loadBuckItemHistory(itemId) })
+    } catch (error) {
+      setItemHistoryError(errorMessage(error, 'Não foi possível carregar o histórico de preço.'))
+    }
   }, [])
   useEffect(() => {
     setChangingPriceItemId(null)
     setHistoryItemId(null)
-    setBuckHistory([])
-    if (isBuckTier && selTier) loadBuckHistory(selTier.id)
-  }, [isBuckTier, selTier?.id, loadBuckHistory])  // eslint-disable-line react-hooks/exhaustive-deps
-  const buckLatestByItem = useMemo(() => latestHistoryByItem(buckHistory), [buckHistory])
+    setBuckInEffect(new Map())
+    if (isBuckTier && selTier) loadBuckInEffect(selTier.id)
+  }, [isBuckTier, selTier?.id, loadBuckInEffect])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (historyItemId) loadItemHistory(historyItemId)
+    else { setItemHistory(null); setItemHistoryError(null) }
+  }, [historyItemId, loadItemHistory])
   const changingPriceItem = isBuckTier ? itemsOfSel.find(it => it.id === changingPriceItemId) ?? null : null
   const afterBuckPriceChange = async () => {
     setChangingPriceItemId(null)
     await loadAll()
-    if (selTier) await loadBuckHistory(selTier.id)
+    if (selTier) await loadBuckInEffect(selTier.id)
+    if (historyItemId) await loadItemHistory(historyItemId)
   }
 
   const catalogItemAlreadyPriced = useCallback((item: CatalogItem) => isCatalogItemAlreadyPriced({
@@ -851,11 +866,11 @@ export default function TabelasPrecoPage() {
                     onSaved={afterBuckPriceChange}
                   />
                 )}
-                {isBuckTier && buckHistoryError && (
+                {isBuckTier && buckInEffectError && (
                   <div className="ps-alert error" role="alert" style={{marginTop:12}}>
-                    {buckHistoryError}
+                    {buckInEffectError}
                     <div className="ps-fieldrow" style={{marginTop:8}}>
-                      <button type="button" className="ps-btn ghost sm" onClick={() => selTier && loadBuckHistory(selTier.id)}>Tentar de novo</button>
+                      <button type="button" className="ps-btn ghost sm" onClick={() => selTier && loadBuckInEffect(selTier.id)}>Tentar de novo</button>
                     </div>
                   </div>
                 )}
@@ -903,7 +918,7 @@ export default function TabelasPrecoPage() {
                           // Na Buck, unidade de linha com preço muda junto com o
                           // preço, pela troca com data.
                           const unitLocked = !!option || (isBuckTier && Number(it.unit_price) > 0)
-                          const latest = isBuckTier ? buckLatestByItem.get(it.id) : undefined
+                          const latest = isBuckTier ? buckInEffect.get(it.id) : undefined
                           const historyOpen = isBuckTier && historyItemId === it.id
                           return (
                           <Fragment key={it.id}>
@@ -970,7 +985,18 @@ export default function TabelasPrecoPage() {
                           {historyOpen && (
                             <tr>
                               <td colSpan={6} style={{background:'var(--cream-raise)'}}>
-                                <BuckPriceHistoryList entries={buckHistory.filter(entry => entry.price_tier_item_id === it.id)} />
+                                {itemHistoryError ? (
+                                  <div className="ps-alert error" role="alert">
+                                    {itemHistoryError}
+                                    <div className="ps-fieldrow" style={{marginTop:8}}>
+                                      <button type="button" className="ps-btn ghost sm" onClick={() => loadItemHistory(it.id)}>Tentar de novo</button>
+                                    </div>
+                                  </div>
+                                ) : itemHistory?.itemId === it.id ? (
+                                  <BuckPriceHistoryList entries={itemHistory.entries} />
+                                ) : (
+                                  <div className="ps-hint">Carregando o histórico...</div>
+                                )}
                               </td>
                             </tr>
                           )}

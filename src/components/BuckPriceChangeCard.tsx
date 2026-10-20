@@ -9,11 +9,13 @@ import {
   BUCK_PRICE_REASONS,
   buckPriceErrorMessage,
   changeBuckPrice,
+  confirmationKey,
   formatBuckPrice,
   formatDateBR,
   formatSince,
   loadBuckPricePreview,
   confirmationNeeded,
+  isStaleBuckPreviewError,
   minimumDateReason,
   parseBuckPriceInput,
   priceChangeRatio,
@@ -40,9 +42,13 @@ function signedBRL(value: number): string {
 export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPriceChangeCardProps) {
   const [base, setBase] = useState<BaseState>({ status: 'carregando' })
   const [attempt, setAttempt] = useState(0)
-  const [draft, setDraft] = useState<BuckPriceDraft>({
-    priceText: '', unit: item.pricing_unit, validFrom: '', reason: '', detail: '', bigChangeConfirmed: false,
+  // Outra pessoa trocou o preço depois da prévia: recalcula tudo sem apagar o
+  // que esta pessoa digitou.
+  const [refresh, setRefresh] = useState(0)
+  const [draft, setDraft] = useState<Omit<BuckPriceDraft, 'bigChangeConfirmed'>>({
+    priceText: '', unit: item.pricing_unit, validFrom: '', reason: '', detail: '',
   })
+  const [confirmedKey, setConfirmedKey] = useState<string | null>(null)
   const [effect, setEffect] = useState<BuckPricePreview | null>(null)
   const [effectLoading, setEffectLoading] = useState(false)
   const [effectError, setEffectError] = useState<string | null>(null)
@@ -57,7 +63,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
 
   useEffect(() => {
     let active = true
-    setBase({ status: 'carregando' })
+    setBase(current => current.status === 'pronta' ? current : { status: 'carregando' })
     loadBuckPricePreview(item.id)
       .then(preview => {
         if (!active) return
@@ -68,12 +74,10 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
         if (active) setBase({ status: 'erro', message: errorText(error, 'Não foi possível abrir a troca de preço.') })
       })
     return () => { active = false }
-  }, [item.id, attempt])
+  }, [item.id, attempt, refresh])
 
   const preview = base.status === 'pronta' ? base.preview : null
   const parsed = parseBuckPriceInput(draft.priceText)
-  const currentPrice = preview?.vigente?.unit_price ?? null
-  const confirmation = parsed.value === null ? null : confirmationNeeded(preview?.vigente ?? null, { price: parsed.value, unit: draft.unit })
 
   // A prévia do banco (efeito em R$ e trocas que deixam de valer) só depende
   // de preço, unidade e data; o motivo não muda a conta.
@@ -92,30 +96,43 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
         .finally(() => { if (active) setEffectLoading(false) })
     }, 400)
     return () => { active = false; clearTimeout(timer); setEffectLoading(false) }
-  }, [effectKey, item.id, base.status])
+  }, [effectKey, item.id, base.status, refresh])
+
+  // O preço em vigor e a versão vêm da prévia mais nova: é contra eles que a
+  // variação é conferida e é a versão deles que vai para o banco.
+  const reference = effect ?? preview
+  const currentPrice = reference?.vigente?.unit_price ?? null
+  const next = parsed.value === null ? null : { price: parsed.value, unit: draft.unit }
+  const confirmation = next ? confirmationNeeded(reference?.vigente ?? null, next) : null
+  const currentConfirmationKey = next ? confirmationKey(reference, next) : null
+  const bigChangeConfirmed = currentConfirmationKey !== null && confirmedKey === currentConfirmationKey
 
   const blocker = useMemo(() => {
-    if (!preview) return 'Carregando o preço em vigor.'
-    const local = validateBuckPriceDraft(draft, preview)
+    if (!reference) return 'Carregando o preço em vigor.'
+    const local = validateBuckPriceDraft({ ...draft, bigChangeConfirmed }, reference)
     if (local) return local
     if (effectLoading || (!effect && !effectError)) return 'Calculando o efeito da troca.'
     if (effectError) return effectError
     if (effect?.problema) return effect.problema
     return null
-  }, [draft, preview, effect, effectLoading, effectError])
+  }, [draft, bigChangeConfirmed, reference, effect, effectLoading, effectError])
 
   const save = async () => {
-    if (savingRef.current || blocker) return
+    if (savingRef.current || blocker || !effect) return
     savingRef.current = true
     setSaving(true)
     setSaveError(null)
     try {
-      await changeBuckPrice(item.id, draft)
+      await changeBuckPrice(item.id, { ...draft, bigChangeConfirmed }, effect.versao)
       const price = parseBuckPriceInput(draft.priceText).value ?? 0
       showToast(`Preço trocado: ${formatBuckPrice(price, draft.unit)} a partir de ${formatDateBR(draft.validFrom)}. Semanas em aberto desde então já usam o preço novo.`, 5200)
       await onSaved()
     } catch (error) {
       setSaveError(errorText(error, 'Não foi possível trocar o preço.'))
+      if (isStaleBuckPreviewError(error)) {
+        setConfirmedKey(null)
+        setRefresh(current => current + 1)
+      }
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -131,7 +148,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
           <b>Trocar preço</b>
           <small>
             {item.product_name}
-            {preview?.vigente && <> · em vigor {formatBuckPrice(preview.vigente.unit_price, preview.vigente.pricing_unit)} {formatSince(preview.vigente.valid_from)}</>}
+            {reference?.vigente && <> · em vigor {formatBuckPrice(reference.vigente.unit_price, reference.vigente.pricing_unit)} {formatSince(reference.vigente.valid_from)}</>}
           </small>
         </div>
         <button type="button" className="ps-iconbtn" onClick={onClose} disabled={saving} aria-label="Fechar troca de preço"><X size={16} /></button>
@@ -158,7 +175,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
               autoComplete="off"
               placeholder="0,00"
               value={draft.priceText}
-              onChange={event => setDraft(current => ({ ...current, priceText: event.target.value, bigChangeConfirmed: false }))}
+              onChange={event => setDraft(current => ({ ...current, priceText: event.target.value }))}
             />
             {draft.priceText.trim() && parsed.error && <small className="ps-hint" style={{ color: 'var(--berry)' }}>{parsed.error}</small>}
           </div>
@@ -169,7 +186,7 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
               id="buck-price-unit"
               className="ps-select"
               value={draft.unit}
-              onChange={event => setDraft(current => ({ ...current, unit: event.target.value as BuckPricingUnit, bigChangeConfirmed: false }))}
+              onChange={event => setDraft(current => ({ ...current, unit: event.target.value as BuckPricingUnit }))}
             >
               <option value="un">un</option>
               <option value="kg">kg</option>
@@ -224,16 +241,16 @@ export default function BuckPriceChangeCard({ item, onClose, onSaved }: BuckPric
             <label className="ps-alert" style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                checked={draft.bigChangeConfirmed}
-                onChange={event => setDraft(current => ({ ...current, bigChangeConfirmed: event.target.checked }))}
+                checked={bigChangeConfirmed}
+                onChange={event => setConfirmedKey(event.target.checked ? currentConfirmationKey : null)}
               />
               <span>
                 {confirmation === 'unidade' ? (
-                  <>Confirmo: a unidade muda de {preview.vigente?.pricing_unit} para {draft.unit}; o preço passa a ser {formatBuckPrice(parsed.value, draft.unit)}.</>
+                  <>Confirmo: a unidade muda de {reference?.vigente?.pricing_unit} para {draft.unit}; o preço passa a ser {formatBuckPrice(parsed.value, draft.unit)}.</>
                 ) : (
                   <>
                     Confirmo: o preço {parsed.value > currentPrice ? 'sobe' : 'desce'} {Math.round((ratio ?? 0) * 100)}%,
-                    de {formatBuckPrice(currentPrice, preview.vigente?.pricing_unit ?? draft.unit)} para {formatBuckPrice(parsed.value, draft.unit)}.
+                    de {formatBuckPrice(currentPrice, reference?.vigente?.pricing_unit ?? draft.unit)} para {formatBuckPrice(parsed.value, draft.unit)}.
                   </>
                 )}
               </span>

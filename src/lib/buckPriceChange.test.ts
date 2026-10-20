@@ -6,11 +6,13 @@ vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 import {
   buckPriceErrorMessage,
   buckPriceEventLabel,
+  collectAllPages,
+  confirmationKey,
   confirmationNeeded,
+  isStaleBuckPreviewError,
   sameBuckProduct,
   effectiveHistorySeqs,
   formatSince,
-  latestHistoryByItem,
   needsBigChangeConfirmation,
   parseBuckPriceInput,
   validateBuckPriceDraft,
@@ -23,6 +25,7 @@ const preview: BuckPricePreview = {
   hoje: '2026-10-19',
   data_minima: '2026-10-05',
   motivo_data_minima: 'semana_cobrada',
+  versao: 41,
   vigente: { unit_price: 4.5, pricing_unit: 'un', valid_from: '2000-01-01' },
 }
 
@@ -159,16 +162,69 @@ describe('historico', () => {
     expect([...effectiveHistorySeqs(entries)].sort()).toEqual([1, 3, 4])
   })
 
-  it('o registro mais recente de cada linha e o preco em vigor', () => {
-    const latest = latestHistoryByItem([entry(5, 'a', '2026-09-22', 6.8), entry(2, 'a', '2026-09-25', 7), entry(4, 'b', '2026-09-30')])
-    expect(latest.get('a')?.seq).toBe(5)
-    expect(latest.get('b')?.seq).toBe(4)
-  })
-
   it('rotulos de evento com saida para chave nova', () => {
     expect(buckPriceEventLabel('troca_de_preco')).toBe('Troca de preço')
     expect(buckPriceEventLabel('evento_novo')).toBe('evento_novo')
     expect(formatSince('2000-01-01')).toBe('desde o início da tabela')
     expect(formatSince('2026-10-09')).toBe('desde 09/10/2026')
+  })
+})
+
+describe('confirmacao amarrada a versao da previa', () => {
+  // Revisao de outra familia (20/10/2026): a tela abriu com 5,00; outra pessoa
+  // trocou para 10,00; quem digitou 5,50 comparava com os 5,00 antigos (+10%,
+  // sem confirmacao) e gravava uma queda de 45%.
+  it('a variacao e conferida contra o preco em vigor da previa mais nova', () => {
+    const aberta = { ...preview, versao: 7, vigente: { unit_price: 5, pricing_unit: 'un' as const, valid_from: '2026-10-01' } }
+    const depoisDaOutraTroca = { ...preview, versao: 8, vigente: { unit_price: 10, pricing_unit: 'un' as const, valid_from: '2026-10-19' } }
+    const proximo = { price: 5.5, unit: 'un' as const }
+    expect(confirmationKey(aberta, proximo)).toBeNull()
+    expect(confirmationKey(depoisDaOutraTroca, proximo)).toBe('8|variacao|5.5|un')
+    expect(validateBuckPriceDraft({ ...draft, priceText: '5,50' }, depoisDaOutraTroca))
+      .toBe('Confirme a variação grande do preço antes de gravar.')
+  })
+
+  it('a confirmacao dada numa versao nao vale para a seguinte', () => {
+    const proximo = { price: 5.89, unit: 'un' as const }
+    const dada = confirmationKey(preview, proximo)
+    expect(dada).toBe('41|variacao|5.89|un')
+    expect(confirmationKey({ ...preview, versao: 42 }, proximo)).not.toBe(dada)
+    expect(confirmationKey(null, proximo)).toBeNull()
+  })
+
+  it('reconhece a recusa do banco por previa velha', () => {
+    expect(isStaleBuckPreviewError({ code: 'PZ002', message: 'O preço deste pão foi trocado...' })).toBe(true)
+    expect(isStaleBuckPreviewError({ code: '22023', message: 'Nada muda' })).toBe(false)
+    expect(isStaleBuckPreviewError(null)).toBe(false)
+  })
+})
+
+describe('collectAllPages', () => {
+  function fonte(total: number) {
+    const pedidos: Array<[number, number]> = []
+    const linhas = Array.from({ length: total }, (_, i) => i)
+    const ler = async (from: number, to: number) => {
+      pedidos.push([from, to])
+      return linhas.slice(from, to + 1)
+    }
+    return { pedidos, ler }
+  }
+
+  it('lista vazia: uma leitura so', async () => {
+    const { pedidos, ler } = fonte(0)
+    expect(await collectAllPages(ler, 3)).toEqual([])
+    expect(pedidos).toEqual([[0, 2]])
+  })
+
+  it('pagina exatamente cheia tem continuacao, mesmo que venha vazia', async () => {
+    const { pedidos, ler } = fonte(3)
+    expect(await collectAllPages(ler, 3)).toEqual([0, 1, 2])
+    expect(pedidos).toEqual([[0, 2], [3, 5]])
+  })
+
+  it('le todas as paginas ate a incompleta, sem perder nem repetir linha', async () => {
+    const { pedidos, ler } = fonte(7)
+    expect(await collectAllPages(ler, 3)).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(pedidos).toEqual([[0, 2], [3, 5], [6, 8]])
   })
 })
