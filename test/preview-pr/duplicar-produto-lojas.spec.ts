@@ -105,7 +105,7 @@ test('Administrador duplica pao das lojas; a copia editada e ativada chega a bus
           name: ORIGEM, category: 'Pães Integ.', category_id: categoria.id, catalog_type: categoria.catalog_type,
           unit: 'un', kind: 'final', active: true, is_fabricacao_propria: true, is_pj: true, is_loja: true,
           production_area: 'padaria', production_process: 'forno', allows_planned_production: true,
-          production_days: [1, 2, 3, 4, 5, 6],
+          allows_unplanned_production: true, production_days: [1, 2, 3, 4, 5, 6],
         },
         maxRedirects: 0,
       })
