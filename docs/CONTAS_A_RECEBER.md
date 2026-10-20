@@ -848,9 +848,11 @@ valor cobrado.
   aviso quando a conta dele fica com problema. A conta é a de verdade (a troca
   é aplicada e desfeita). Com preço e data, a prévia pega as mesmas travas da
   troca antes de ler, então o antes, o depois e a versão saem do mesmo estado.
-  O resto da conta (romaneio conferido, destino, cadastro do pão) não passa
-  por essas travas: a prévia mede o antes de novo depois do depois e, se mudou,
-  refaz (até três vezes, depois pede para conferir de novo);
+  O resto da conta (romaneio conferido ou enviado, destino, ponte pão e
+  produto, outra linha do mesmo pão) não passa por essas travas: a prévia tira
+  um retrato de tudo o que a conta do pão lê antes de escolher as semanas e de
+  novo no fim e, se mudou, refaz (até três vezes, depois pede para conferir de
+  novo);
 - trava no banco: gravação vinda da API que deixe linha da Buck com preço
   positivo diferente do que estava é recusada, assim como renomear, desativar
   ou trocar qual tabela é a Buck. Inclusão pela API na Buck entra sempre sem

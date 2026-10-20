@@ -14,7 +14,9 @@ select no_plan();
 --   C. troca primeiro, previa depois: a previa espera e calcula o antes e o
 --      depois sobre o mesmo estado, com a versao da troca que terminou;
 --   D. previa primeiro, conferencia do romaneio no meio do calculo: a previa
---      percebe a mudanca entre o antes e o depois e calcula de novo.
+--      percebe a mudanca entre o antes e o depois e calcula de novo;
+--   E. previa primeiro, romaneio de outra semana passa de separado para
+--      enviado no meio do calculo: a previa refaz e mostra as duas semanas.
 -- Tudo o que as conexoes gravam e apagado no fim (e no comeco, se uma rodada
 -- anterior parou no meio).
 
@@ -39,11 +41,13 @@ create function pg_temp.limpar() returns void language sql as $$
     delete from public.romaneio_items
       where id in ('98300000-0000-4000-8000-0000000000d1',
                    '98300000-0000-4000-8000-0000000000d2',
-                   '98300000-0000-4000-8000-0000000000d3');
+                   '98300000-0000-4000-8000-0000000000d3',
+                   '98300000-0000-4000-8000-0000000000d4');
     delete from public.romaneios
       where id in ('98300000-0000-4000-8000-0000000000f1',
                    '98300000-0000-4000-8000-0000000000f2',
-                   '98300000-0000-4000-8000-0000000000f3');
+                   '98300000-0000-4000-8000-0000000000f3',
+                   '98300000-0000-4000-8000-0000000000f4');
     delete from public.price_tier_items where id = '98300000-0000-4000-8000-0000000000a1';
     delete from public.buck_price_history where price_tier_item_id = '98300000-0000-4000-8000-0000000000a1';
     delete from public.breads where id = 'teste-pr511-concorrencia';
@@ -56,7 +60,8 @@ $$;
 select pg_temp.limpar();
 
 -- Pao proprio na Tabela Buck a 5,00/un e tres romaneios da EX, um em cada
--- semana: 07/09 (corrida A), 14/09 (B) e 21/09 (C). Datas fixas, longe das
+-- semana: 07/09 (corrida A), 14/09 (B) e 21/09 (C e D); o quarto, de 05/10,
+-- nasce separado (fora da conta) para a corrida E. Datas fixas, longe das
 -- relativas a "hoje" e das cobrancas do seed (31/08 e 28/09).
 select extensions.dblink_exec('pr511_setup', $remote$
   insert into auth.users(
@@ -88,12 +93,13 @@ select extensions.dblink_exec('pr511_setup', $remote$
   );
 
   insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
-  select romaneio.id, destino.id, romaneio.record_date, 1, 'enviado', 'Teste PR 511'
+  select romaneio.id, destino.id, romaneio.record_date, 1, romaneio.status, 'Teste PR 511'
   from (values
-    ('98300000-0000-4000-8000-0000000000f1'::uuid, date '2026-09-08'),
-    ('98300000-0000-4000-8000-0000000000f2'::uuid, date '2026-09-15'),
-    ('98300000-0000-4000-8000-0000000000f3'::uuid, date '2026-09-22')
-  ) as romaneio(id, record_date)
+    ('98300000-0000-4000-8000-0000000000f1'::uuid, date '2026-09-08', 'enviado'),
+    ('98300000-0000-4000-8000-0000000000f2'::uuid, date '2026-09-15', 'enviado'),
+    ('98300000-0000-4000-8000-0000000000f3'::uuid, date '2026-09-22', 'enviado'),
+    ('98300000-0000-4000-8000-0000000000f4'::uuid, date '2026-10-06', 'separado')
+  ) as romaneio(id, record_date, status)
   cross join lateral (
     select id from public.destinations where upper(code) = 'EX' and active order by id limit 1
   ) destino;
@@ -105,7 +111,9 @@ select extensions.dblink_exec('pr511_setup', $remote$
     ('98300000-0000-4000-8000-0000000000d2', '98300000-0000-4000-8000-0000000000f2',
      'teste-pr511-concorrencia', 'bread', '[TESTE] Pao Concorrencia PR 511', 10, null),
     ('98300000-0000-4000-8000-0000000000d3', '98300000-0000-4000-8000-0000000000f3',
-     'teste-pr511-concorrencia', 'bread', '[TESTE] Pao Concorrencia PR 511', 10, null);
+     'teste-pr511-concorrencia', 'bread', '[TESTE] Pao Concorrencia PR 511', 10, null),
+    ('98300000-0000-4000-8000-0000000000d4', '98300000-0000-4000-8000-0000000000f4',
+     'teste-pr511-concorrencia', 'bread', '[TESTE] Pao Concorrencia PR 511', 5, null);
 
   -- Portao: a primeira conexao para aqui, ja com as travas que pegou, ate o
   -- teste soltar.
@@ -377,6 +385,40 @@ select is(
           || (resultado::jsonb -> 'semanas' -> 0 ->> 'antes') || ' -> ' || (resultado::jsonb -> 'semanas' -> 0 ->> 'depois')
      from pr511_resultado where corrida = 'D'),
   '8 un: 64.00 -> 72.00', 'D: antes e depois saem da mesma conferencia (8 x 8,00 e 8 x 9,00)');
+
+-- E. Previa primeiro; romaneio de outra semana entra na conta no meio --------
+
+-- A previa escolhe as semanas (so 21/09: o romaneio de 06/10 esta separado),
+-- calcula o antes e para no portao. O romaneio de 06/10 e enviado. A previa
+-- percebe que a conta mudou e refaz, agora com as duas semanas.
+select pg_temp.fechar_portao();
+select pg_temp.preparar('pr511_primeira', 'pr511-previa-primeira');
+select extensions.dblink_send_query('pr511_primeira', $q$
+  select public.previa_troca_preco_buck(
+    '98300000-0000-4000-8000-0000000000a1', 9.00, 'un', date '2026-09-22')::text
+$q$);
+select ok(pg_temp.parou_em_trava('primeira'),
+  'E: a previa escolheu as semanas, calculou o antes e parou no portao');
+select extensions.dblink_exec('pr511_setup', $remote$
+  update public.romaneios set status = 'enviado'
+  where id = '98300000-0000-4000-8000-0000000000f4';
+$remote$);
+select pg_temp.abrir_portao();
+insert into pr511_resultado
+select 'E', 'primeira', resposta.valor,
+       pg_temp.mensagem(extensions.dblink_error_message('pr511_primeira')), null
+from extensions.dblink_get_result('pr511_primeira', false) as resposta(valor text);
+select count(*) from extensions.dblink_get_result('pr511_primeira', false) as resposta(valor text);
+
+select is((select erro from pr511_resultado where corrida = 'E'),
+  'OK', 'E: a previa respondeu');
+select is(
+  (select string_agg((semana ->> 'de') || ' ' || (semana ->> 'antes') || ' -> ' || (semana ->> 'depois'), ' | '
+                     order by semana ->> 'de')
+     from pr511_resultado, jsonb_array_elements(resultado::jsonb -> 'semanas') semana
+    where corrida = 'E'),
+  '2026-09-21 64.00 -> 72.00 | 2026-10-05 40.00 -> 45.00',
+  'E: a semana que entrou na conta no meio aparece (5 x 8,00 -> 5 x 9,00)');
 
 -- Limpeza ---------------------------------------------------------------------
 

@@ -17,8 +17,9 @@
 --   5. Uma linha da Buck nao muda de identificador: com outro id ela ganhava
 --      historico novo e o antigo continuava concorrendo na conta da cobranca.
 --      Pela API, tambem nao nasce com o id de uma linha que ja teve historico.
---   6. A previa refaz o antes depois de medir o depois; se mudou (romaneio
---      conferido, destino, cadastro do pao ao mesmo tempo), refaz a conta.
+--   6. A previa tira um retrato de tudo o que a conta do pao le (romaneios,
+--      destinos, ponte pao/produto, historico das linhas do pao) antes de
+--      escolher as semanas e de novo no fim; se mudou, refaz a conta.
 --
 -- As travas formam uma ordem so: semanas em ordem crescente e, depois, a
 -- linha da tabela. A troca, a previa e as duas cobrancas seguem essa ordem.
@@ -311,10 +312,61 @@ grant execute on function public.trocar_preco_buck(uuid, numeric, text, date, te
 -- ---------------------------------------------------------------------------
 -- 4. A previa trava antes de ler e devolve a versao
 -- ---------------------------------------------------------------------------
+-- Retrato de tudo o que a conta da Buck le para um pao num periodo
+-- (`calcular_cobranca_buck_detalhada`): as identidades do pao, os produtos da
+-- ponte pao/produto, os destinos EX, os romaneios e itens do pao (qualquer
+-- destino e situacao) e o historico de preco das linhas do pao. Toda gravacao
+-- numa dessas linhas troca o xmin dela (mesmo a que volta ao valor antigo), e
+-- o historico so cresce: retratos iguais em dois momentos querem dizer que
+-- nada disso mudou entre eles.
+create or replace function private.buck_retrato_da_conta(p_item_id uuid, p_de date, p_ate date)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $fn$
+  with linha as (
+    select item.product_source, item.product_id
+    from public.price_tier_items item
+    where item.id = p_item_id
+  ),
+  identidades as (
+    select ident.fonte, ident.pid
+    from linha
+    cross join lateral private.buck_identidades(linha.product_source, linha.product_id) ident
+  )
+  select md5(concat_ws('|',
+    coalesce((select string_agg(ident.fonte || ':' || ident.pid, ',' order by ident.fonte, ident.pid)
+                from identidades ident), ''),
+    coalesce((select string_agg(produto.id::text || '/' || produto.xmin::text, ',' order by produto.id)
+                from public.products produto
+               where exists (
+                 select 1 from identidades ident
+                 where (ident.fonte = 'product' and ident.pid = produto.id::text)
+                    or (ident.fonte = 'bread' and ident.pid = produto.legacy_bread_id))), ''),
+    coalesce((select string_agg(destino.id::text || '/' || destino.xmin::text, ',' order by destino.id)
+                from public.destinations destino
+               where upper(destino.code) = 'EX'), ''),
+    coalesce((select string_agg(item.id::text || '/' || item.xmin::text || '/' || romaneio.xmin::text, ',' order by item.id)
+                from public.romaneio_items item
+                join public.romaneios romaneio on romaneio.id = item.romaneio_id
+                join identidades ident
+                  on ident.fonte = item.product_source and ident.pid = item.product_id
+               where romaneio.record_date between p_de and p_ate), ''),
+    coalesce((select max(historico.seq)::text
+                from public.buck_price_history historico
+                join identidades ident
+                  on ident.fonte = historico.product_source and ident.pid = historico.product_id), '')
+  ));
+$fn$;
+
+revoke all on function private.buck_retrato_da_conta(uuid, date, date) from public, anon, authenticated;
+
 -- Partida de 20261019160524; mudancas: com preco e data na janela, as travas
 -- da troca (semanas e linha) antes de ler qualquer coisa; `versao` no
 -- resultado, do mesmo registro que da o preco em vigor; o efeito e refeito
--- (ate tres vezes) se o antes mudar durante a conta.
+-- (ate tres vezes) se o retrato da conta mudar durante o calculo.
 create or replace function public.previa_troca_preco_buck(
   p_item_id uuid,
   p_preco numeric default null,
@@ -342,6 +394,7 @@ declare
   v_depois jsonb;
   v_semanas jsonb := '[]'::jsonb;
   v_resultado jsonb;
+  v_retrato text;
   v_estavel boolean := false;
 begin
   if not private.pode_trocar_preco_buck() then
@@ -410,11 +463,15 @@ begin
         and depois.valid_from <= historico.valid_from
     );
 
-  -- Os precos nao mudam ate o fim (travas acima), mas o resto da conta pode
-  -- (romaneio conferido, destino, cadastro do pao). O antes e medido de novo
-  -- depois do depois: se mudou, os dois lados nao sairam do mesmo estado e a
-  -- conta e refeita.
+  -- As trocas e cobrancas esperam as travas acima, mas o resto da conta pode
+  -- mudar no meio (romaneio conferido ou enviado, destino, ponte pao/produto,
+  -- outra linha do mesmo pao). O retrato e tirado antes de escolher as semanas
+  -- e de novo no fim: se mudou, a escolha das semanas, o antes e o depois
+  -- podem ter visto estados diferentes, e a conta e refeita.
   for v_tentativa in 1..3 loop
+    v_retrato := private.buck_retrato_da_conta(
+      p_item_id, date_trunc('week', p_vale_a_partir)::date, date_trunc('week', v_hoje)::date + 6);
+
     -- Semanas em que este pao saiu para a EX entre a data e hoje.
     select coalesce(array_agg(distinct date_trunc('week', romaneio.record_date)::date
                               order by date_trunc('week', romaneio.record_date)::date), array[]::date[])
@@ -430,7 +487,6 @@ begin
       and romaneio.record_date between p_vale_a_partir and v_hoje;
 
     v_semanas := '[]'::jsonb;
-    v_estavel := true;
     if cardinality(v_segundas) > 0 then
       -- Efeito pela conta de verdade: aplica, mede e desfaz.
       v_antes := private.buck_resumo_do_pao(p_item_id, v_segundas);
@@ -442,10 +498,7 @@ begin
         when sqlstate 'PZ001' then
           null;
       end;
-      v_estavel := v_antes = private.buck_resumo_do_pao(p_item_id, v_segundas);
-    end if;
 
-    if v_estavel and cardinality(v_segundas) > 0 then
       select coalesce(jsonb_agg(jsonb_build_object(
                'de', antes.key::date,
                'ate', antes.key::date + 6,
@@ -460,6 +513,8 @@ begin
       from jsonb_each(v_antes) antes;
     end if;
 
+    v_estavel := v_retrato = private.buck_retrato_da_conta(
+      p_item_id, date_trunc('week', p_vale_a_partir)::date, date_trunc('week', v_hoje)::date + 6);
     exit when v_estavel;
   end loop;
 
