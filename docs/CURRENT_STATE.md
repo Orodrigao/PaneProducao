@@ -581,8 +581,10 @@ disputavam um único banco de teste compartilhado.
   [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)): cada romaneio é cobrado pelo
   preço do seu dia, guardado em `buck_price_history`, e o preço da Buck só
   muda por `public.trocar_preco_buck`, com data e motivo, sem alcançar
-  romaneio de pão já cobrado. O banco recusa qualquer outra gravação de preço
-  da Buck vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
+  romaneio de pão já cobrado e com a versão da prévia que a pessoa conferiu.
+  A troca, a prévia e as duas funções de cobrança da Buck pegam as mesmas
+  travas de semana. O banco recusa qualquer outra gravação de preço da Buck
+  vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
   nas semanas cobradas) e o acerto de R$ 337,94 cobrados a mais nas semanas de
   21/09 e 28/09, decisão do Rodrigo por ajuste manual. Risco conhecido: o
   Brioche tem duas linhas "un" na Tabela Buck (Hambúrguer e Forma), e a conta

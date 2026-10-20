@@ -6,10 +6,13 @@ import { cabecalhosDaSessao, entrarComo, hojeNaPadaria, matriz, type AcessoAoBan
 // cada romaneio paga o preco do seu dia; desde a fase 2 o preco da Buck so
 // muda pelo botao "Trocar preco", com data e motivo.
 //
-// Dados do seed: o [TESTE] Brioche PJ sai para a EX em "hoje - 5" e
-// "hoje - 3", a 1,20 na Tabela Buck. O roteiro troca o preco pela tela a
-// partir de "hoje - 4", confere que so o romaneio de "hoje - 3" muda, na conta
-// do banco e no Fechamento EX, e devolve o preco pela mesma funcao da tela.
+// Dados do seed: o [TESTE] Brioche PJ sai para a EX em "hoje - 5" (100 un) e
+// "hoje - 3" (50 aceitos de 60), a 1,20 na Tabela Buck. O roteiro troca o
+// preco pela tela a partir de "hoje - 4", confere na previa os numeros da
+// semana antes de gravar, confere que so o romaneio de "hoje - 3" muda, na
+// conta do banco e no Fechamento EX, e devolve o preco pela mesma funcao da
+// tela. Um segundo roteiro troca o preco "em outra sessao" com o cartao
+// aberto: a gravacao e recusada e a variacao e confirmada de novo.
 
 const BRIOCHE = 'teste-brioche-pj'
 const NOME_BRIOCHE = '[TESTE] Brioche PJ'
@@ -24,6 +27,17 @@ function somarDias(data: string, dias: number): string {
 
 function reais(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function centavos(valor: number): number {
+  return Math.round(valor * 100) / 100
+}
+
+// Segunda-feira da semana (como date_trunc('week') do banco).
+function segundaDaSemana(data: string): string {
+  const [ano, mes, dia] = data.split('-').map(Number)
+  const diaDaSemana = new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay()
+  return somarDias(data, -((diaDaSemana + 6) % 7))
 }
 
 function dataBR(iso: string): string {
@@ -58,15 +72,42 @@ async function linhaDoBriocheNaBuck(page: Page, acesso: AcessoAoBanco) {
   return { id: linhas[0].id, preco: Number(linhas[0].unit_price) }
 }
 
-async function trocarPeloBanco(page: Page, acesso: AcessoAoBanco, id: string, preco: number, valeAPartir: string) {
+// A troca exige a versao que a previa devolveu; o roteiro le a versao como a
+// tela faz.
+async function versaoDoPreco(page: Page, acesso: AcessoAoBanco, id: string): Promise<number> {
+  const previa = await page.request.post(`${acesso.url}/rest/v1/rpc/previa_troca_preco_buck`, {
+    headers: await cabecalhosDaSessao(page, acesso),
+    data: { p_item_id: id },
+    maxRedirects: 0,
+  })
+  if (previa.status() !== 200) return 0
+  return Number((await previa.json() as { versao: number }).versao)
+}
+
+async function trocarPeloBanco(
+  page: Page, acesso: AcessoAoBanco, id: string, preco: number, valeAPartir: string,
+  detalhe = 'roteiro do preview devolve o preco',
+) {
   return page.request.post(`${acesso.url}/rest/v1/rpc/trocar_preco_buck`, {
     headers: await cabecalhosDaSessao(page, acesso),
     data: {
       p_item_id: id, p_preco: preco, p_unidade: 'un', p_vale_a_partir: valeAPartir,
-      p_motivo: 'correcao_digitacao', p_detalhe: 'roteiro do preview devolve o preco',
+      p_motivo: 'correcao_digitacao', p_detalhe: detalhe,
+      p_versao: await versaoDoPreco(page, acesso, id),
     },
     maxRedirects: 0,
   })
+}
+
+async function abrirTrocaDoBrioche(page: Page) {
+  await page.goto('/tabelas-preco')
+  await page.getByText('BUCK', { exact: true }).first().click({ timeout: 60_000 })
+  const linhaDaTabela = page.locator('tr', { hasText: NOME_BRIOCHE })
+  await expect(linhaDaTabela.first()).toBeVisible({ timeout: 30_000 })
+  await linhaDaTabela.first().getByRole('button', { name: 'Trocar preço', exact: true }).click()
+  const cartao = page.getByRole('region', { name: `Trocar preço de ${NOME_BRIOCHE}` })
+  await expect(cartao).toBeVisible()
+  return { linhaDaTabela, cartao }
 }
 
 test('Financeiro troca o preco com data pelo botao e o Fechamento EX cobra cada romaneio pelo preco do seu dia',
@@ -95,23 +136,30 @@ test('Financeiro troca o preco com data pelo botao e o Fechamento EX cobra cada 
     expect(direto.status(), corpoDireto).toBe(400)
     expect(JSON.parse(corpoDireto)).toMatchObject({ code: '22023', message: RECUSA_SEM_DATA })
 
-    const precoNovo = Math.round((linha.preco + 0.15) * 100) / 100
+    const precoNovo = centavos(linha.preco + 0.15)
+    // Semana de "hoje - 3" na previa: so ela tem romaneio do brioche desde
+    // "hoje - 4". Ela soma tambem "hoje - 5" quando as duas datas caem na
+    // mesma semana; so os 50 de "hoje - 3" mudam de preco.
+    const semana = segundaDaSemana(somarDias(hoje, -3))
+    const mesmaSemana = segundaDaSemana(somarDias(hoje, -5)) === semana
+    const quantidadeDaSemana = 50 + (mesmaSemana ? 100 : 0)
+    const totalAntes = centavos(quantidadeDaSemana * linha.preco)
+    const totalDepois = centavos(totalAntes + 50 * (precoNovo - linha.preco))
+    const linhaDaPrevia = `Semana de ${dataBR(semana)} a ${dataBR(somarDias(semana, 6))}: `
+      + `${quantidadeDaSemana.toLocaleString('pt-BR')} un · ${reais(totalAntes)} → ${reais(totalDepois)} `
+      + `(+${reais(centavos(totalDepois - totalAntes))})`
     // A devolucao do preco cobre tambem a troca: se ela gravar e uma
     // conferencia depois falhar, o preco volta mesmo assim.
     try {
-      await page.goto('/tabelas-preco')
-      await page.getByText('BUCK', { exact: true }).first().click({ timeout: 60_000 })
-      const linhaDaTabela = page.locator('tr', { hasText: NOME_BRIOCHE })
-      await expect(linhaDaTabela.first()).toBeVisible({ timeout: 30_000 })
+      const { linhaDaTabela, cartao } = await abrirTrocaDoBrioche(page)
       await expect(linhaDaTabela.first().locator('input[type="number"][step="0.01"]'), 'na Buck o preco nao se digita na linha').toHaveCount(0)
-      await linhaDaTabela.first().getByRole('button', { name: 'Trocar preço', exact: true }).click()
-
-      const cartao = page.getByRole('region', { name: `Trocar preço de ${NOME_BRIOCHE}` })
-      await expect(cartao).toBeVisible()
       await cartao.getByLabel('Preço novo (R$) *').fill(precoNovo.toFixed(2).replace('.', ','))
       await cartao.getByLabel('Vale a partir de *').fill(valeAPartir)
       await cartao.getByLabel('Reajuste combinado com a Buck').check()
-      await expect(cartao.getByText('O que muda na cobrança da Buck'), 'a previa mostra o efeito em R$ antes de gravar').toBeVisible({ timeout: 30_000 })
+      const previaNaTela = cartao.getByRole('status')
+      await expect(previaNaTela.getByText('O que muda na cobrança da Buck'), 'a previa mostra o efeito em R$ antes de gravar').toBeVisible({ timeout: 30_000 })
+      await expect(previaNaTela, 'semana, quantidade, antes, depois e diferenca da previa').toContainText(linhaDaPrevia)
+      await expect(previaNaTela.getByText(/^Semana de /), 'uma semana so na previa').toHaveCount(1)
       await cartao.getByRole('button', { name: 'Trocar preço', exact: true }).click()
       await expect(cartao, 'gravou e fechou').toBeHidden({ timeout: 30_000 })
       await expect(linhaDaTabela.first()).toContainText(reais(precoNovo))
@@ -150,6 +198,61 @@ test('Financeiro troca o preco com data pelo botao e o Fechamento EX cobra cada 
       await expect(page.getByText('com o preço do dia de cada romaneio')).toBeVisible()
     } finally {
       const devolvido = await trocarPeloBanco(page, acesso, linha.id, linha.preco, valeAPartir)
+      expect([200, 400], await devolvido.text()).toContain(devolvido.status())
+    }
+    const conferido = await linhaDoBriocheNaBuck(page, acesso)
+    expect(conferido.preco, 'o preco do brioche voltou').toBe(linha.preco)
+  })
+
+test('Outra sessao troca o preco com o cartao aberto: a gravacao e recusada e a variacao e confirmada de novo',
+  matriz('Financeiro', 'EX', 'permitido', 'Tabela Buck (Trocar preco), previa_troca_preco_buck e trocar_preco_buck com a versao da previa'),
+  async ({ page }) => {
+    test.setTimeout(180_000)
+    const acesso = await entrarComo(page, 'financeiroJc')
+    const hoje = hojeNaPadaria()
+    const linha = await linhaDoBriocheNaBuck(page, acesso)
+    // Na tela, 1,20 para 1,30 e +8%: sem confirmacao. Depois da troca da
+    // outra sessao (2,40), o mesmo 1,30 e uma queda de 46%.
+    const precoDaTela = centavos(linha.preco + 0.1)
+    const precoDaOutraSessao = centavos(linha.preco * 2)
+    try {
+      const { linhaDaTabela, cartao } = await abrirTrocaDoBrioche(page)
+      await cartao.getByLabel('Preço novo (R$) *').fill(precoDaTela.toFixed(2).replace('.', ','))
+      await cartao.getByLabel('Vale a partir de *').fill(hoje)
+      await cartao.getByLabel('Reajuste combinado com a Buck').check()
+      const botao = cartao.getByRole('button', { name: 'Trocar preço', exact: true })
+      await expect(botao, 'a previa terminou e a troca esta liberada').toBeEnabled({ timeout: 30_000 })
+      await expect(cartao.getByRole('checkbox'), 'variacao pequena nao pede confirmacao').toHaveCount(0)
+
+      const outraSessao = await trocarPeloBanco(page, acesso, linha.id, precoDaOutraSessao, hoje, 'roteiro do preview: outra sessao')
+      expect(outraSessao.status(), await outraSessao.text()).toBe(200)
+
+      await botao.click()
+      await expect(cartao.getByRole('alert'), 'o banco recusa a decisao tomada sobre o preco antigo')
+        .toContainText('O preço deste pão foi trocado depois que esta tela calculou a prévia')
+      await expect(cartao.getByRole('alert')).toContainText('Nada foi gravado.')
+      const confirmacao = cartao.getByRole('checkbox')
+      await expect(confirmacao, 'a previa nova pede a confirmacao da queda').toBeVisible({ timeout: 30_000 })
+      await expect(cartao).toContainText(`de ${reais(precoDaOutraSessao)}/un para ${reais(precoDaTela)}/un`)
+      await expect(cartao.getByTestId('buck-price-blocker')).toHaveText('Confirme a variação grande do preço antes de gravar.')
+      await expect(cartao.getByLabel('Preço novo (R$) *'), 'o que a pessoa digitou continua la').toHaveValue(precoDaTela.toFixed(2).replace('.', ','))
+
+      await confirmacao.check()
+      await botao.click()
+      await expect(cartao, 'gravou e fechou').toBeHidden({ timeout: 30_000 })
+      await expect(linhaDaTabela.first()).toContainText(reais(precoDaTela))
+
+      const historico = await page.request.get(
+        `${acesso.url}/rest/v1/buck_price_history?price_tier_item_id=eq.${linha.id}&order=seq.desc&limit=2&select=unit_price,origin,reason`,
+        { headers: await cabecalhosDaSessao(page, acesso), maxRedirects: 0 },
+      )
+      expect(historico.status(), await historico.text()).toBe(200)
+      expect(await historico.json(), 'a troca da outra sessao e a reconfirmada ficaram no historico, nessa ordem').toEqual([
+        { unit_price: precoDaTela, origin: 'troca_com_data', reason: 'Reajuste combinado com a Buck' },
+        { unit_price: precoDaOutraSessao, origin: 'troca_com_data', reason: 'Correção de digitação: roteiro do preview: outra sessao' },
+      ])
+    } finally {
+      const devolvido = await trocarPeloBanco(page, acesso, linha.id, linha.preco, hoje)
       expect([200, 400], await devolvido.text()).toContain(devolvido.status())
     }
     const conferido = await linhaDoBriocheNaBuck(page, acesso)

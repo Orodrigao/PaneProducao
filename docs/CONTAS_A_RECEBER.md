@@ -825,7 +825,16 @@ valor cobrado.
   uma semana parada por pão sem preço destrava mesmo com semana mais nova
   cobrada. Diferença de semana cobrada vai como acerto na próxima cobrança;
 - a troca pega as mesmas travas de semana da confirmação semanal, da semana
-  da data até hoje, e trava a linha antes de conferir;
+  da data até hoje, e trava a linha antes de conferir. A função antiga
+  `create_receivable_from_romaneio` pega as mesmas travas para o período antes
+  de calcular (migration `20261020151500`): uma troca ao mesmo tempo ou termina
+  antes e a cobrança já usa o preço novo, ou espera e passa a ver a cobrança na
+  data mínima. As travas seguem uma ordem só (semanas em ordem crescente, depois
+  a linha), em `private.buck_travar_semanas`;
+- a troca exige a versão do preço que a prévia devolveu (o último registro do
+  histórico do pão). Se outra pessoa trocou o preço depois da prévia, o banco
+  recusa (código `PZ002`), nada é gravado e a tela recalcula a prévia e pede
+  de novo a confirmação de variação, agora contra o preço novo;
 - a troca é recusada quando o mesmo pão tem outra linha com preço na mesma
   unidade (duas opções de venda, ou pão legado e produto): o romaneio não diz
   a opção de venda, então a conta não separa as duas e usa uma pela ordem do
@@ -837,7 +846,8 @@ valor cobrado.
   preço em vigor, as trocas que deixam de valer e, só deste pão, a
   quantidade e o valor antes e depois em cada semana em que ele saiu, com o
   aviso quando a conta dele fica com problema. A conta é a de verdade (a troca
-  é aplicada e desfeita);
+  é aplicada e desfeita). Com preço e data, a prévia pega as mesmas travas da
+  troca antes de ler, então o antes, o depois e a versão saem do mesmo estado;
 - trava no banco: gravação vinda da API que deixe linha da Buck com preço
   positivo diferente do que estava é recusada, assim como renomear, desativar
   ou trocar qual tabela é a Buck. Inclusão pela API na Buck entra sempre sem
@@ -848,6 +858,9 @@ valor cobrado.
   com a data certa;
 - na tela, a Tabela Buck mostra o preço com "desde dd/mm", o botão "Trocar
   preço" e o histórico de cada pão; nome, exclusão e "Ativa" ficam travados.
+  O "desde" vem de `public.buck_precos_em_vigor` (último registro de cada
+  linha) e o histórico de um pão é lido inteiro, em páginas, quando a pessoa
+  abre: a API corta cada leitura em 1.000 linhas sem avisar.
 
 **Fase 3 (a fazer):** para quem tem acesso ao Contas a receber, semana já
 cobrada aparece no Fechamento EX com o que foi cobrado (rótulo "Cobrado", não
