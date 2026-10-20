@@ -318,9 +318,11 @@ grant execute on function public.trocar_preco_buck(uuid, numeric, text, date, te
 -- destino e situacao) e o historico de preco das linhas do pao. Toda gravacao
 -- numa dessas linhas troca o xmin dela (mesmo a que volta ao valor antigo); o
 -- historico so cresce, e a contagem pega registro confirmado fora da ordem do
--- seq. Retratos iguais em dois momentos querem dizer que nada disso mudou
--- entre eles. Limite: um romaneio inteiro criado e apagado entre os dois
--- retratos nao deixa rastro (so afeta o numero mostrado na previa).
+-- seq. Retratos iguais em dois momentos querem dizer que nenhuma mudanca
+-- nessas linhas foi detectada entre eles, ressalvado o limite: um romaneio
+-- inteiro criado e apagado entre os dois retratos nao deixa rastro. Isso so
+-- afeta o numero mostrado na previa (a pessoa pode decidir com base nele);
+-- a troca e a cobranca recalculam no banco, sob as travas.
 create or replace function private.buck_retrato_da_conta(p_item_id uuid, p_de date, p_ate date)
 returns text
 language sql
