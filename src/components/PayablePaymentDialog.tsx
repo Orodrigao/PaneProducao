@@ -8,9 +8,11 @@ import {
   actualPaymentMethodLabel,
   correctPayablePaymentAndClassification,
   formatBRL,
-  recordPayableInstallmentPayment,
+  reclassificationDoneMessage,
+  reclassificationNotice,
+  recordPayablePaymentAndClassification,
   roundMoney,
-  setPayableFinanceClassification,
+  sameCategorySlices,
   validateCategorySlices,
   type PayableActualPaymentMethod,
   type PayableCategorySlice,
@@ -21,7 +23,6 @@ import { formatCompetenceMonth, type FinanceAccountRow, type FinanceCategoryRow 
 
 interface PayablePaymentDialogProps {
   installment: PayableInstallmentRow
-  purchaseId: string
   purchaseDate: string
   purchaseTotal: number
   supplierName: string
@@ -30,6 +31,10 @@ interface PayablePaymentDialogProps {
   financeAccounts: readonly FinanceAccountRow[]
   initialSlices: PayableCategorySlice[]
   initialAccountKey: string
+  /** Por que o banco veio vazio na correção (o livro não confirmou de onde a parcela saiu). */
+  accountNotice?: string | null
+  /** As outras parcelas já pagas da conta: a troca de categoria as relança. */
+  otherPaidInstallmentNumbers: readonly number[]
   onClose: () => void
   onSaved: () => Promise<void> | void
 }
@@ -40,7 +45,6 @@ function defaultMethod(installment: PayableInstallmentRow): PayableActualPayment
 
 export default function PayablePaymentDialog({
   installment,
-  purchaseId,
   purchaseDate,
   purchaseTotal,
   supplierName,
@@ -49,6 +53,8 @@ export default function PayablePaymentDialog({
   financeAccounts,
   initialSlices,
   initialAccountKey,
+  accountNotice = null,
+  otherPaidInstallmentNumbers,
   onClose,
   onSaved,
 }: PayablePaymentDialogProps) {
@@ -66,10 +72,17 @@ export default function PayablePaymentDialog({
 
   const difference = useMemo(() => roundMoney(Math.max(0, Number(paidAmount) - originalAmount)), [paidAmount, originalAmount])
   const title = mode === 'baixar' ? 'Baixar boleto' : 'Corrigir baixa'
+  // Só a troca de categoria relança as outras parcelas; reenviar o rateio salvo não mexe nelas.
+  const relaunchedNumbers = useMemo(
+    () => (sameCategorySlices(slices, initialSlices) ? [] : [...otherPaidInstallmentNumbers]),
+    [slices, initialSlices, otherPaidInstallmentNumbers],
+  )
+  const notice = reclassificationNotice(relaunchedNumbers, formatCompetenceMonth(purchaseDate.slice(0, 7)))
 
   function validate(): string | null {
     const numericAmount = Number(paidAmount)
     if (paidMethod === 'cartao' && !accountKey) return 'Escolha o cartao usado.'
+    if (mode === 'corrigir' && !accountKey) return 'Escolha de qual conta o dinheiro saiu.'
     if (!paidDate) return 'Informe a data real do pagamento.'
     if (paidDate < purchaseDate || paidDate > todayKey()) return 'A data do pagamento precisa estar entre a compra e hoje.'
     if (!Number.isFinite(numericAmount) || numericAmount < originalAmount) return 'O valor pago não pode ser menor que o valor original.'
@@ -90,23 +103,25 @@ export default function PayablePaymentDialog({
       paidMethod,
       currentDueDate: currentDueDate || null,
     }
-    const confirmation = mode === 'baixar'
+    const confirmation = (mode === 'baixar'
       ? `Confirmar baixa de ${formatBRL(details.paidAmount)} para ${supplierName}?`
-      : `Confirmar correção da baixa para ${formatBRL(details.paidAmount)}?`
+      : `Confirmar correção da baixa para ${formatBRL(details.paidAmount)}?`)
+      + (notice ? `\n\n${notice}` : '')
     if (!window.confirm(confirmation)) return
 
     setSaving(true)
     setError(null)
     try {
-      // A classificação vai antes: a baixa lê o rateio para repartir o valor
-      // pago entre as categorias. Se ela falhar, o pagamento não acontece.
+      // Classificação e pagamento vão numa chamada só: a baixa lê o rateio para
+      // repartir o valor pago, e a troca de categoria relança as parcelas já
+      // pagas. Se algo for recusado, nada fica gravado.
       if (mode === 'baixar') {
-        await setPayableFinanceClassification(purchaseId, accountKey || null, slices)
-        await recordPayableInstallmentPayment(installment.id, details)
+        await recordPayablePaymentAndClassification(installment.id, details, accountKey, slices)
       } else {
         await correctPayablePaymentAndClassification(installment.id, details, accountKey, slices)
       }
-      showToast(mode === 'baixar' ? 'Boleto baixado.' : 'Baixa corrigida e registrada no histórico.')
+      showToast((mode === 'baixar' ? 'Boleto baixado.' : 'Baixa corrigida e registrada no histórico.')
+        + reclassificationDoneMessage(relaunchedNumbers))
       await onSaved()
     } catch (saveError) {
       console.error(saveError)
@@ -159,6 +174,7 @@ export default function PayablePaymentDialog({
           </div>
         </div>
 
+        {accountNotice && !accountKey && <small className="ps-help" style={{ display: 'block', marginBottom: 4 }}>{accountNotice}</small>}
         <PayableCategoryPicker
           categories={financeCategories}
           accounts={financeAccounts}
@@ -174,6 +190,11 @@ export default function PayablePaymentDialog({
           A conta entra no DRE pelo mês da compra ({purchaseDate.slice(0, 7).split('-').reverse().join('/')}),
           mesmo sendo paga hoje.
         </small>
+        {notice && (
+          <div className="ps-banner honey" role="note" style={{ marginTop: 10 }}>
+            <small>{notice}</small>
+          </div>
+        )}
 
         <div className="ps-card" style={{ marginTop: 12, padding: 10, background: 'var(--cream-raise)' }}>
           <small>Acréscimo registrado como juros/multa</small>

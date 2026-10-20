@@ -29,6 +29,9 @@ import {
   type PayablePurchaseRow,
   loadPendingPayableItems,
   loadPayableCategories,
+  loadPaidInstallmentLedgerAccount,
+  ledgerAccountPrefill,
+  otherPaidInstallmentNumbers,
   type PendingPayableItemRow,
   type PayableCategorySlice,
 } from '@/lib/payables'
@@ -65,6 +68,7 @@ export default function ContasPagarPage() {
     mode: 'baixar' | 'corrigir'
     slices: PayableCategorySlice[]
     accountKey: string
+    accountNotice: string | null
   } | null>(null)
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryRow[]>([])
   const [financeAccounts, setFinanceAccounts] = useState<FinanceAccountRow[]>([])
@@ -190,11 +194,20 @@ export default function ContasPagarPage() {
       const slices: PayableCategorySlice[] = salvas
         .map(linha => ({ categoryKey: porId.get(linha.category_id) ?? '', amount: Number(linha.amount).toFixed(2) }))
         .filter(slice => slice.categoryKey)
-      const accountKey = financeAccounts.find(account => account.id === purchase.finance_account_id)?.key ?? ''
-      setPaymentTarget({ installment, purchase, mode, slices, accountKey })
+      // Na baixa, a sugestão é a última conta usada nesta compra. Na correção, é
+      // o banco que está no livro para esta parcela: há contas com parcelas
+      // pagas por bancos diferentes.
+      let accountKey = financeAccounts.find(account => account.id === purchase.finance_account_id)?.key ?? ''
+      let accountNotice: string | null = null
+      if (mode === 'corrigir') {
+        const prefill = ledgerAccountPrefill(await loadPaidInstallmentLedgerAccount(installment.id), financeAccounts)
+        accountKey = prefill.accountKey
+        accountNotice = prefill.notice
+      }
+      setPaymentTarget({ installment, purchase, mode, slices, accountKey, accountNotice })
     } catch (loadError) {
       console.error(loadError)
-      showToast('Não foi possível carregar a categoria desta conta.')
+      showToast('Não foi possível carregar a categoria e o banco desta conta.')
     } finally {
       setBusyId(null)
     }
@@ -365,7 +378,6 @@ export default function ContasPagarPage() {
           {paymentTarget && (
             <PayablePaymentDialog
               installment={paymentTarget.installment}
-              purchaseId={paymentTarget.purchase.id}
               purchaseDate={paymentTarget.purchase.purchase_date}
               purchaseTotal={Number(paymentTarget.purchase.total_value)}
               supplierName={Array.isArray(paymentTarget.purchase.suppliers) ? paymentTarget.purchase.suppliers[0]?.name ?? 'Fornecedor não identificado' : paymentTarget.purchase.suppliers?.name ?? 'Fornecedor não identificado'}
@@ -374,6 +386,8 @@ export default function ContasPagarPage() {
               financeAccounts={financeAccounts}
               initialSlices={paymentTarget.slices}
               initialAccountKey={paymentTarget.accountKey}
+              accountNotice={paymentTarget.accountNotice}
+              otherPaidInstallmentNumbers={otherPaidInstallmentNumbers(paymentTarget.purchase.payable_installments, paymentTarget.installment.id)}
               onClose={() => setPaymentTarget(null)}
               onSaved={finishPayment}
             />
