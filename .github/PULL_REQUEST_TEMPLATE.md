@@ -6,6 +6,19 @@
 
 <!-- Resumo técnico curto: arquivos, migrations, decisões. -->
 
+# Quem fez o quê
+
+<!-- Uma linha por trilha ou frente da entrega. "Decisão na reserva" copia o
+campo `distribution` da tarefa na Portaria (`Show`): distribuir, entrega-unica
+ou concentrar com o motivo da lista fechada; tarefa reservada antes da regra
+recebe "legado" nessa coluna. Executor é a IA que escreveu o código (com a
+sessão ou o WorkerId); "Revisou" é quem fez a revisão de outra família.
+Ajudante e revisão automática vão em "Apoio" e não substituem a revisão. -->
+
+| Trilha ou frente | Executor | Decisão na reserva | Revisou | Apoio |
+| ---------------- | -------- | ------------------ | ------- | ----- |
+|                  |          |                    |         |       |
+
 # Nível de risco
 
 <!-- Baixo | Médio | Alto — e por quê. -->
