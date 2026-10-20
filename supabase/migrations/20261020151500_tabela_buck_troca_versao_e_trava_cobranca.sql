@@ -316,9 +316,11 @@ grant execute on function public.trocar_preco_buck(uuid, numeric, text, date, te
 -- (`calcular_cobranca_buck_detalhada`): as identidades do pao, os produtos da
 -- ponte pao/produto, os destinos EX, os romaneios e itens do pao (qualquer
 -- destino e situacao) e o historico de preco das linhas do pao. Toda gravacao
--- numa dessas linhas troca o xmin dela (mesmo a que volta ao valor antigo), e
--- o historico so cresce: retratos iguais em dois momentos querem dizer que
--- nada disso mudou entre eles.
+-- numa dessas linhas troca o xmin dela (mesmo a que volta ao valor antigo); o
+-- historico so cresce, e a contagem pega registro confirmado fora da ordem do
+-- seq. Retratos iguais em dois momentos querem dizer que nada disso mudou
+-- entre eles. Limite: um romaneio inteiro criado e apagado entre os dois
+-- retratos nao deixa rastro (so afeta o numero mostrado na previa).
 create or replace function private.buck_retrato_da_conta(p_item_id uuid, p_de date, p_ate date)
 returns text
 language sql
@@ -354,7 +356,7 @@ as $fn$
                 join identidades ident
                   on ident.fonte = item.product_source and ident.pid = item.product_id
                where romaneio.record_date between p_de and p_ate), ''),
-    coalesce((select max(historico.seq)::text
+    coalesce((select count(*)::text || ':' || coalesce(max(historico.seq)::text, '')
                 from public.buck_price_history historico
                 join identidades ident
                   on ident.fonte = historico.product_source and ident.pid = historico.product_id), '')
