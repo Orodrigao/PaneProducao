@@ -98,6 +98,14 @@ que o trecho real não foi executado.
   a abrir uma por uma para achar a que ele quer. Vale para qualquer agente cuja
   ferramenta permita renomear a sessão.
 - Pull request sempre draft, salvo pedido explícito em contrário.
+- **Ao abrir a PR, a conversa liga o acompanhamento automático dela** quando a
+  ferramenta oferece (no app do Claude, o Auto-fix com os comentários), sem
+  pedir de novo: autorização permanente do Rodrigo em 21/10/2026. Ele acorda a
+  conversa em falha de CI, conflito e comentário novo na PR; a falha se corrige
+  na mesma branch e na mesma PR. CI verde só acorda pelo `Sino do CI`
+  (`.github/workflows/sino-ci.yml`), que comenta na PR quando a consulta não
+  acha verificação do GitHub Actions do commit rodando. É aviso, não
+  certificação nem autorização: confira `gh pr checks` antes de Verify e Check.
 - Nunca fazer push direto na `main`.
 - Preencher todas as seções aplicáveis do template de PR; seção não
   aplicável recebe `N/A` com justificativa curta, nunca é apagada.

@@ -1,0 +1,76 @@
+name: Sino do CI
+
+# Quando um fluxo de PR termina e a consulta não acha verificação do GitHub
+# Actions do commit rodando, comenta na PR o que terminou (verde ou com falha). O app
+# do Claude acorda a conversa da PR (Auto-fix ligado) em comentário novo, falha
+# de CI e conflito, mas não em CI verde: sem este aviso, a conversa que
+# esperava o CI ficava parada (PRs 511, 514 e 517, outubro de 2026). É aviso,
+# não certificação: quem lê confere `gh pr checks` antes de Verify e Check.
+# Regra em docs/regras/FECHAMENTO.md.
+#
+# `workflow_run` roda sempre a versão deste arquivo e do script que está na
+# main, nunca a da PR, e não executa nada da PR: só lê a API e comenta. Por
+# isso a prova ao vivo só existe depois do merge. A decisão vive em
+# scripts/sino-ci.mjs, testada no `npm test`; o mesmo teste reprova se um
+# fluxo da lista abaixo for renomeado ou se surgir fluxo de PR fora dela.
+#
+# Não é check de PR: as execuções ficam no commit da main e não entram na
+# trava da main.
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - CI Banco (ensaio de migrations)
+      - Banco por PR
+      - Usuarios do Banco por PR
+    types: [completed]
+    branches-ignore: [main]
+
+permissions: {}
+
+# Uma fila por commit, sem cancelar quem espera: dois fluxos que terminam
+# juntos não comentam duas vezes, porque o segundo relê os comentários depois
+# do primeiro. O separador `:` não existe em nome de repositório.
+concurrency:
+  group: sino-ci-${{ github.event.workflow_run.head_repository.full_name }}:${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  avisar:
+    name: Avisar a PR quando as verificações param
+    # Só PR deste repositório; fork não recebe comentário do sino.
+    if: github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Ler o script, listar PRs e execuções e comentar na PR. Nada mais.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      # No workflow_run, github.sha é o último commit da main.
+      - name: Buscar o script do sino na main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/sino-ci.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Dado do evento só por variável de ambiente: nome de branch nunca entra
+      # no comando.
+      - name: Decidir e avisar
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SINO_SHA: ${{ github.event.workflow_run.head_sha }}
+          SINO_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SINO_RUN_ID: ${{ github.event.workflow_run.id }}
+          SINO_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SINO_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: node scripts/sino-ci.mjs
