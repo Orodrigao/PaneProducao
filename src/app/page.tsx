@@ -881,7 +881,9 @@ export default function ProducaoPage() {
 
   // ── histórico: carrega ao abrir a aba e a cada troca de data ──────
   const reportTabLabel = tabDefs[activeTab]?.label
-  const reportTabActive = reportTabLabel === 'Relatório' || reportTabLabel === 'Histórico'
+  // Geolar usa só a folha; antes de resolver o perfil também não há histórico aberto.
+  const reportTabActive = currentUser !== null && currentUser !== 'geolar'
+    && (reportTabLabel === 'Relatório' || reportTabLabel === 'Histórico')
   useEffect(() => {
     if (reportTabActive) loadReport(reportDate)
   }, [reportTabActive, reportDate, loadReport])

@@ -124,6 +124,47 @@ async function openGeolarWithPj(page: import('@playwright/test').Page) {
   return { printBreads, breadTotal }
 }
 
+test('Geolar abre a folha e troca a data sem carregar o historico de pedidos', async ({ page }) => {
+  await mockGeolarSheet(page)
+  await page.route('**/rest/v1/rpc/list_pj_production_for_oven_v2', route => route.fulfill({ json: [] }))
+  const newDate = await routeNewDate(page)
+  newDate.hold = 'encomendas'
+
+  await entrarComSessaoGuardada(page, previewAccounts.geolarJc)
+  const orderDates: (string | null)[] = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname === '/rest/v1/orders' && request.method() === 'GET'
+      && url.searchParams.get('order_type') !== 'eq.encomenda') {
+      orderDates.push(url.searchParams.get('order_date'))
+    }
+  })
+  // A folha abre numa data fixa, diferente do histórico (hoje). Contar desde
+  // a navegação também pega a leitura indevida antes de o perfil ser resolvido.
+  await page.goto('/?date=2000-01-10')
+  const printBreads = page.getByRole('button', { name: '🖨 Imprimir pães' })
+  await expect(printBreads).toBeEnabled({ timeout: 30_000 })
+  const breadTotal = page.locator('.print-row', { hasText: visualBreadName }).locator('.ptotal')
+  await expect(breadTotal).toHaveText('6')
+  // Não contamos leituras exatas: repetições legítimas da folha podem ocorrer.
+  expect.soft(orderDates.filter(date => date !== 'eq.2000-01-10' && date !== 'eq.2000-01-03')).toEqual([])
+  expect.soft(orderDates).toContain('eq.2000-01-10')
+
+  await page.locator('input[type="date"]').fill('2000-01-03')
+  await expect.poll(() => newDate.reads.encomendas).toBe(1)
+  const loading = page.locator('.loading-overlay')
+  await expect(loading).toBeVisible()
+  await expect(loading).toContainText('Carregando produção...')
+  expect.soft(orderDates.filter(date => date !== 'eq.2000-01-10' && date !== 'eq.2000-01-03')).toEqual([])
+  expect.soft(orderDates).toContain('eq.2000-01-03')
+
+  newDate.release()
+  await expect(breadTotal).toHaveText('9')
+  await expect(loading).toBeHidden()
+  await expect(printBreads).toBeEnabled()
+  expect(orderDates.filter(date => date !== 'eq.2000-01-10' && date !== 'eq.2000-01-03')).toEqual([])
+})
+
 test('Geolar imprime e copia a folha de paes, sem bloco de Itens JC', async ({ page }) => {
   await mockGeolarSheet(page)
   await page.route('**/rest/v1/rpc/list_pj_production_for_oven_v2', route => route.fulfill({ json: [] }))
