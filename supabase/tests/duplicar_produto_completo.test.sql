@@ -89,11 +89,14 @@ select is((select active from public.products where id = current_setting('teste.
   'a cópia nasce inativa até a revisão operacional');
 select is((select legacy_bread_id from public.products where id = current_setting('teste.duplicate_product_id')::uuid), null,
   'a cópia não herda vínculo legado de pão');
-select is((select row(category, sort_order, unit, cost_price, is_special, kind, is_revenda, is_shelf, weekly_count_enabled, is_fabricacao_propria, is_pj, catalog_type, category_id, production_days, production_area, production_process, allows_planned_production, allows_unplanned_production)::text
+select is((select row(category, sort_order, unit, cost_price, is_special, kind, is_revenda, is_shelf, weekly_count_enabled, is_fabricacao_propria, is_pj, catalog_type, category_id, production_days, production_area, production_process, allows_planned_production, allows_unplanned_production, is_loja)::text
   from public.products where id = current_setting('teste.duplicate_product_id')::uuid),
-  (select row(category, sort_order, unit, cost_price, is_special, kind, is_revenda, is_shelf, false, is_fabricacao_propria, is_pj, catalog_type, category_id, production_days, production_area, production_process, allows_planned_production, allows_unplanned_production)::text
+  (select row(category, sort_order, unit, cost_price, is_special, kind, is_revenda, is_shelf, false, is_fabricacao_propria, is_pj, catalog_type, category_id, production_days, production_area, production_process, allows_planned_production, allows_unplanned_production, is_loja)::text
   from public.products where id = 'd2300000-0000-4000-8000-000000000010'),
   'a cópia preserva os campos próprios do cadastro');
+select ok(not exists (select 1 from public.breads
+  where id = 'catalogo_' || replace(current_setting('teste.duplicate_product_id'), '-', '')),
+  'cópia de produto fora das lojas não ganha pão das lojas');
 select is((select count(*)::integer from public.product_variants where product_id = current_setting('teste.duplicate_product_id')::uuid), 2,
   'a cópia recebe todas as variantes');
 select ok(not exists (select 1 from public.product_variants where product_id = current_setting('teste.duplicate_product_id')::uuid and id in ('d2300000-0000-4000-8000-000000000020', 'd2300000-0000-4000-8000-000000000021')),
@@ -187,6 +190,55 @@ select set_config('request.jwt.claim.sub', 'd2300000-0000-4000-8000-000000000051
 select throws_ok($$select public.duplicate_product_complete('d2300000-0000-4000-8000-000000000010', '[TESTE] Tentativa sem tabela de preço')$$,
   '42501', 'Sem permissão para duplicar produtos.', 'financeiro sem tabela de preço não duplica preços');
 reset role;
+
+-- Cópia de pão das lojas (migration 20261020221814). Em 19/10/2026 o Panetone
+-- de Frutas V1, duplicado do Panetone de Chocolate V1, nasceu sem a marcação
+-- Lojas e não apareceu na busca do Romaneio. A origem imita o panetone: vende
+-- para PJ e para as lojas.
+insert into public.products (
+  id, name, category, active, sort_order, cost_price, unit, kind, is_fabricacao_propria, is_pj,
+  catalog_type, category_id, production_days, production_area, production_process,
+  allows_planned_production, allows_unplanned_production, is_loja
+) values
+  ('d2300000-0000-4000-8000-000000000013', '[TESTE] Pão das lojas origem', 'Produto duplicação teste', true, 0,
+   7.50, 'kg', 'final', true, true, 'produto_fabricado', 'd2300000-0000-4000-8000-000000000001',
+   array[2,4], 'padaria', 'forno', true, true, true);
+select is((select row(name, active)::text from public.breads where id = 'catalogo_d2300000000040008000000000000013'),
+  row('[TESTE] Pão das lojas origem', true)::text, 'a origem está nas lojas, com o pão ligado aceso');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'd2300000-0000-4000-8000-000000000050', true);
+select lives_ok($$select set_config('teste.duplicate_loja_id', public.duplicate_product_complete(
+  'd2300000-0000-4000-8000-000000000013', '[TESTE] Pão das lojas cópia')::text, true)$$,
+  'admin duplica um pão das lojas');
+reset role;
+
+select set_config('teste.duplicate_loja_bread', 'catalogo_' || replace(current_setting('teste.duplicate_loja_id'), '-', ''), true);
+select is((select row(active, is_loja, legacy_bread_id)::text from public.products
+    where id = current_setting('teste.duplicate_loja_id')::uuid),
+  row(false, true, current_setting('teste.duplicate_loja_bread'))::text,
+  'a cópia nasce inativa, marcada Lojas e ligada a um pão próprio');
+select is((select row(name, days, active, is_pj, unit, cost_price)::text from public.breads
+    where id = current_setting('teste.duplicate_loja_bread')),
+  row('[TESTE] Pão das lojas cópia', array[2,4], false, false, 'kg', 7.50::numeric)::text,
+  'o pão da cópia nasce desligado, com o nome, os dias, a unidade e o custo da cópia');
+select ok(not exists (select 1 from public.breads
+    where id = current_setting('teste.duplicate_loja_bread') and active and not is_pj),
+  'enquanto a cópia está inativa, o pão dela fica fora do Planejamento e da busca do Romaneio');
+select is((select row(name, active)::text from public.breads where id = 'catalogo_d2300000000040008000000000000013'),
+  row('[TESTE] Pão das lojas origem', true)::text, 'duplicar não mexe no pão da origem');
+
+-- Ativar e renomear a cópia pela tela acende o pão dela com o nome novo.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'd2300000-0000-4000-8000-000000000050', true);
+select lives_ok($$update public.products set active = true, name = '[TESTE] Pão das lojas cópia ativa'
+  where id = current_setting('teste.duplicate_loja_id')::uuid$$,
+  'admin ativa e renomeia a cópia');
+reset role;
+select ok(exists (select 1 from public.breads
+    where id = current_setting('teste.duplicate_loja_bread') and name = '[TESTE] Pão das lojas cópia ativa'
+      and active and not is_pj and 2 = any(days)),
+  'ativada, a cópia aparece no filtro do Planejamento e da busca do Romaneio com o nome novo');
 
 select * from finish();
 rollback;
