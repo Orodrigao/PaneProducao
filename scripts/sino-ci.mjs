@@ -158,28 +158,37 @@ export function decidirAviso({ avaliacao, comentarios, sha, repositorio }) {
 
 /** Cliente minimo da API: prazo por pedido, todas as paginas e o token so para a API do GitHub. */
 function clienteDoGithub({ token, fetchImpl, prazoPorPedidoMs }) {
+  // O prazo vale tambem para ler o corpo. Relogio com setTimeout comum: o do
+  // AbortSignal.timeout nao segura o processo do Node, que sem socket aberto
+  // terminava antes de o prazo disparar (visto no Node 22 do CI).
   const pedir = async (url, init = {}) => {
     const caminho = new URL(url).pathname
+    const controle = new AbortController()
+    const relogio = setTimeout(() => controle.abort(), prazoPorPedidoMs)
     let resposta
+    let corpo
     try {
       resposta = await fetchImpl(url, {
         ...init,
-        signal: AbortSignal.timeout(prazoPorPedidoMs),
+        signal: controle.signal,
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
       })
+      if (resposta.ok) corpo = await resposta.json()
     } catch {
-      throw new Error(`Falha de rede ou prazo estourado ao falar com a API do GitHub em ${caminho}.`)
+      throw new Error(`Falha de rede, prazo estourado ou resposta ilegivel na API do GitHub em ${caminho}.`)
+    } finally {
+      clearTimeout(relogio)
     }
     if (!resposta.ok) throw new Error(`A API do GitHub respondeu ${resposta.status} em ${caminho}.`)
-    return resposta
+    return { corpo, link: resposta.headers.get('link') }
   }
   const paginas = async (url) => {
     const lidas = []
     for (let atual = url; atual;) {
       if (lidas.length >= MAX_PAGINAS) throw new Error(`A lista passou de ${MAX_PAGINAS} paginas em ${new URL(url).pathname}.`)
-      const resposta = await pedir(atual)
-      lidas.push(await resposta.json())
-      atual = /<([^>]+)>\s*;\s*rel="next"/.exec(resposta.headers.get('link') ?? '')?.[1] ?? null
+      const { corpo, link } = await pedir(atual)
+      lidas.push(corpo)
+      atual = /<([^>]+)>\s*;\s*rel="next"/.exec(link ?? '')?.[1] ?? null
       if (atual && !atual.startsWith(`${API}/`)) throw new Error('A paginacao do GitHub apontou para fora da API.')
     }
     return lidas
