@@ -49,7 +49,7 @@ export default function ConsumptionTrend({ rows, showRevenue }: Props) {
       </div>
       {anyPartial && (
         <div style={{fontSize:11, color:'var(--ink-faint)', marginTop:8}}>
-          * semana com consumo ou venda incompletos, insumo para conferir ou mais de 7 dias entre as contagens: não compare direto com as outras.
+          * semana com consumo ou venda incompletos, insumo para conferir ou intervalo diferente de 7 dias entre as contagens: não compare direto com as outras.
         </div>
       )}
     </div>

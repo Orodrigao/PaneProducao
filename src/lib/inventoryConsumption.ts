@@ -274,7 +274,11 @@ export function buildConsumptionTrend(
 }
 
 // Semana que nao se compara direto com as outras: consumo ou venda incompletos,
-// ou periodo com mais (ou menos) de 7 dias entre as contagens.
+// insumo para conferir (mesmo sem acesso a venda) ou periodo diferente de 7
+// dias entre as contagens.
 export function isTrendRowFlagged(row: ConsumptionTrendRow): boolean {
-  return row.summary.isPartial || row.summary.isIrregularPeriod || Boolean(row.cmv?.isPartial)
+  return row.summary.isPartial
+    || row.summary.itemsToCheck > 0
+    || row.summary.isIrregularPeriod
+    || Boolean(row.cmv?.isPartial)
 }

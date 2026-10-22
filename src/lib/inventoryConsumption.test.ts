@@ -280,4 +280,13 @@ describe('buildConsumptionTrend', () => {
     expect(isTrendRowFlagged(normal)).toBe(false)
     expect(isTrendRowFlagged(longo)).toBe(true)
   })
+
+  it('insumo para conferir leva a marca mesmo sem acesso a venda', () => {
+    const [row] = buildConsumptionTrend([period], [
+      item({ value_consumed: '900.00' }),
+      item({ product_id: 'p2', status: 'conferir', value_consumed: '-100.00' }),
+    ], null)
+    expect(row.cmv).toBeNull()
+    expect(isTrendRowFlagged(row)).toBe(true)
+  })
 })
