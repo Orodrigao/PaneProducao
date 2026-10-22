@@ -267,6 +267,7 @@ export default function ConsumoSemanalPage() {
                   <ConsumptionRevenuePanel
                     period={period}
                     consumptionPartial={summary.isPartial}
+                    itemsToCheck={summary.itemsToCheck}
                     revenue={revenue}
                     cmv={cmv}
                     allowed={revenueAllowed}

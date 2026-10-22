@@ -14,6 +14,7 @@ import {
 type Props = {
   period: InventoryConsumptionPeriod
   consumptionPartial: boolean
+  itemsToCheck: number
   // null com allowed=false: a pessoa nao acessa o Contas a receber.
   revenue: InventoryConsumptionRevenue | null
   cmv: CmvOverRevenue | null
@@ -27,7 +28,7 @@ type Props = {
 // 2026-10-22. O numero so aparece com a venda carregada: erro ou carregamento
 // nunca viram "0%".
 export default function ConsumptionRevenuePanel({
-  period, consumptionPartial, revenue, cmv, allowed, loading, error, onRetry,
+  period, consumptionPartial, itemsToCheck, revenue, cmv, allowed, loading, error, onRetry,
 }: Props) {
   if (!allowed) {
     return (
@@ -69,6 +70,15 @@ export default function ConsumptionRevenuePanel({
         <div className="ps-warning" style={{marginTop:10}}>
           <AlertTriangle size={16}/>
           <span>O consumo desta semana está parcial (insumo sem número ou nota sem insumo definido, acima), então o % real é maior que este.</span>
+        </div>
+      )}
+      {itemsToCheck > 0 && cmv.percent !== null && (
+        <div className="ps-warning" style={{marginTop:10}}>
+          <AlertTriangle size={16}/>
+          <span>
+            {itemsToCheck === 1 ? '1 insumo está' : `${itemsToCheck} insumos estão`} para conferir (consumo negativo, acima):
+            o consumo sai menor do que é e o % não fecha até a contagem ou a nota ser corrigida.
+          </span>
         </div>
       )}
       {cashMissing && (

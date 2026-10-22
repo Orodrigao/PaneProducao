@@ -8,6 +8,7 @@ import {
   formatPercent,
   consumptionStatusInfo,
   formatPeriodDate,
+  isTrendRowFlagged,
   sortConsumptionItems,
   summarizeConsumption,
   type InventoryConsumptionItem,
@@ -222,6 +223,15 @@ describe('cmvOverRevenue', () => {
     expect(cmvOverRevenue(period, parcial, revenue({})).isPartial).toBe(true)
   })
 
+  it('insumo para conferir deixa o % parcial', () => {
+    const conferir = summarizeConsumption(period, [
+      item({ value_consumed: '900.00' }),
+      item({ product_id: 'p2', status: 'conferir', value_consumed: '-100.00' }),
+    ])
+    expect(conferir.isPartial).toBe(false)
+    expect(cmvOverRevenue(period, conferir, revenue({})).isPartial).toBe(true)
+  })
+
   it('sem venda nao inventa %', () => {
     const cmv = cmvOverRevenue(period, completo, revenue({ revenue_total: '0' }))
     expect(cmv.percent).toBeNull()
@@ -261,5 +271,13 @@ describe('buildConsumptionTrend', () => {
     const rows = buildConsumptionTrend([period], [item({ value_consumed: '900.00' })], null)
     expect(rows[0].cmv).toBeNull()
     expect(rows[0].summary.totalValue).toBe(900)
+  })
+
+  it('periodo com mais de 7 dias leva a marca de nao comparavel', () => {
+    const duasSemanas = { ...period, period_days: 14 }
+    const [normal] = buildConsumptionTrend([period], [item({ value_consumed: '900.00' })], [revenue({})])
+    const [longo] = buildConsumptionTrend([duasSemanas], [item({ value_consumed: '900.00' })], null)
+    expect(isTrendRowFlagged(normal)).toBe(false)
+    expect(isTrendRowFlagged(longo)).toBe(true)
   })
 })
