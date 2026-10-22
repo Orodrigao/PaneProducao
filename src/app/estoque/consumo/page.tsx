@@ -5,9 +5,15 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, AlertTriangle, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, PAYABLES_ROUTE, type AppUser } from '@/lib/auth'
+import ConsumptionRevenuePanel from '@/components/ConsumptionRevenuePanel'
+import ConsumptionOutsideItems from '@/components/ConsumptionOutsideItems'
+import ConsumptionTrend from '@/components/ConsumptionTrend'
 import {
   CONSUMPTION_STORE,
+  buildConsumptionTrend,
+  canViewConsumptionRevenue,
   canViewInventoryConsumption,
+  cmvOverRevenue,
   consumptionStatusInfo,
   formatMoney,
   formatPeriodDate,
@@ -16,7 +22,9 @@ import {
   summarizeConsumption,
   type ConsumptionStatusTone,
   type InventoryConsumptionItem,
+  type InventoryConsumptionOutsideItem,
   type InventoryConsumptionPeriod,
+  type InventoryConsumptionRevenue,
 } from '@/lib/inventoryConsumption'
 
 const TONE_COLOR: Record<ConsumptionStatusTone, string> = {
@@ -42,22 +50,41 @@ export default function ConsumoSemanalPage() {
   // Troca rapida de semana dispara leituras concorrentes; so a resposta do
   // ultimo pedido pode ocupar a tela (achado da revisao do Sol).
   const itemsRequest = useRef(0)
+  const [outsideItems, setOutsideItems] = useState<InventoryConsumptionOutsideItem[]>([])
+  const [outsideError, setOutsideError] = useState<string | null>(null)
+  const [revenues, setRevenues] = useState<InventoryConsumptionRevenue[]>([])
+  const [revenueLoading, setRevenueLoading] = useState(false)
+  const [revenueError, setRevenueError] = useState<string | null>(null)
+  // Todos os insumos de todas as semanas, so para o quadro semana a semana.
+  const [trendItems, setTrendItems] = useState<InventoryConsumptionItem[] | null>(null)
 
   const allowed = canViewInventoryConsumption(user)
+  const revenueAllowed = canViewConsumptionRevenue(user)
 
   const loadItems = async (endCountId: string) => {
     const requestId = ++itemsRequest.current
     setItemsLoading(true)
     setItemsError(null)
     setItems([])
+    setOutsideItems([])
+    setOutsideError(null)
     try {
-      const { data, error: rpcError } = await supabase.rpc('inventory_consumption_items', {
-        p_store: CONSUMPTION_STORE,
-        p_end_count_id: endCountId,
-      })
+      const [itemsResult, outsideResult] = await Promise.all([
+        supabase.rpc('inventory_consumption_items', {
+          p_store: CONSUMPTION_STORE,
+          p_end_count_id: endCountId,
+        }),
+        supabase.rpc('inventory_consumption_outside_items', {
+          p_store: CONSUMPTION_STORE,
+          p_end_count_id: endCountId,
+        }),
+      ])
       if (requestId !== itemsRequest.current) return
-      if (rpcError) throw rpcError
-      setItems((data || []) as InventoryConsumptionItem[])
+      if (itemsResult.error) throw itemsResult.error
+      setItems((itemsResult.data || []) as InventoryConsumptionItem[])
+      // A lista e complemento: falhar nela nao derruba o consumo.
+      if (outsideResult.error) setOutsideError('Não foi possível listar os itens fora da contagem.')
+      else setOutsideItems((outsideResult.data || []) as InventoryConsumptionOutsideItem[])
     } catch {
       if (requestId !== itemsRequest.current) return
       setItemsError('Não foi possível carregar o consumo desta semana.')
@@ -66,7 +93,27 @@ export default function ConsumoSemanalPage() {
     }
   }
 
-  const load = async () => {
+  const loadRevenue = async () => {
+    setRevenueLoading(true)
+    setRevenueError(null)
+    try {
+      const { data, error: rpcError } = await supabase.rpc('inventory_consumption_revenue', { p_store: CONSUMPTION_STORE })
+      if (rpcError) throw rpcError
+      setRevenues((data || []) as InventoryConsumptionRevenue[])
+    } catch {
+      setRevenueError('Não foi possível carregar a venda da semana.')
+    } finally {
+      setRevenueLoading(false)
+    }
+  }
+
+  const loadTrend = async () => {
+    const { data, error: rpcError } = await supabase.rpc('inventory_consumption_items', { p_store: CONSUMPTION_STORE })
+    // Sem os insumos de todas as semanas o quadro simplesmente nao aparece.
+    setTrendItems(rpcError ? null : (data || []) as InventoryConsumptionItem[])
+  }
+
+  const load = async (withRevenue: boolean) => {
     setLoading(true)
     setError(null)
     try {
@@ -76,6 +123,8 @@ export default function ConsumoSemanalPage() {
       setPeriods(rows)
       const latest = rows[0]?.period_end_count_id ?? null
       setSelectedId(latest)
+      if (rows.length > 1) loadTrend()
+      if (withRevenue && latest) loadRevenue()
       if (latest) await loadItems(latest)
     } catch {
       setError('Não foi possível carregar o consumo semanal.')
@@ -87,7 +136,7 @@ export default function ConsumoSemanalPage() {
   useEffect(() => {
     const currentUser = getCurrentUser()
     setUser(currentUser)
-    if (canViewInventoryConsumption(currentUser)) load()
+    if (canViewInventoryConsumption(currentUser)) load(canViewConsumptionRevenue(currentUser))
     else setLoading(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -101,6 +150,12 @@ export default function ConsumoSemanalPage() {
     [period, items, itemsReady],
   )
   const sortedItems = useMemo(() => sortConsumptionItems(items), [items])
+  const revenue = period ? revenues.find(row => row.period_end_count_id === period.period_end_count_id) ?? null : null
+  const cmv = period && summary && revenue ? cmvOverRevenue(period, summary, revenue) : null
+  const trendRows = useMemo(
+    () => (trendItems ? buildConsumptionTrend(periods, trendItems, revenueAllowed && !revenueError ? revenues : null) : []),
+    [periods, trendItems, revenues, revenueAllowed, revenueError],
+  )
 
   const selectPeriod = (endCountId: string) => {
     if (endCountId === selectedId) return
@@ -207,7 +262,23 @@ export default function ConsumoSemanalPage() {
                     <span style={{color:'var(--ink-soft)'}}>sem insumo definido</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_unclassified)}</span>
                     <span style={{color:'var(--ink-soft)'}}>que não é estoque (frete, serviço)</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_not_stock)}</span>
                   </div>
+                  <ConsumptionOutsideItems items={outsideItems} loading={itemsLoading} error={outsideError}/>
+
+                  <ConsumptionRevenuePanel
+                    period={period}
+                    consumptionPartial={summary.isPartial}
+                    revenue={revenue}
+                    cmv={cmv}
+                    allowed={revenueAllowed}
+                    loading={revenueLoading}
+                    error={revenueError}
+                    onRetry={loadRevenue}
+                  />
                 </div>
+              )}
+
+              {itemsReady && (
+                <ConsumptionTrend rows={trendRows} showRevenue={revenueAllowed && !revenueError && revenues.length > 0}/>
               )}
 
               {itemsReady && sortedItems.length === 0 && (

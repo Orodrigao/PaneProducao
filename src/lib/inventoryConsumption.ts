@@ -1,8 +1,9 @@
-import { PAYABLES_PERMISSION, type AppUser } from '@/lib/auth'
+import { PAYABLES_PERMISSION, RECEIVABLES_PERMISSION, type AppUser } from '@/lib/auth'
 
-// Consumo semanal de insumos (fase 3A): o calculo vive no banco
-// (inventory_consumption_periods / inventory_consumption_items). Aqui ficam so
-// a leitura dos resultados para a tela: rotulos, resumo e quem pode ver.
+// Consumo semanal de insumos (fase 3A) e CMV sobre a venda (fase 3B): o
+// calculo vive no banco (inventory_consumption_periods / _items / _revenue /
+// _outside_items). Aqui ficam so a leitura dos resultados para a tela:
+// rotulos, resumo e quem pode ver.
 
 export const CONSUMPTION_STORE = 'jc'
 
@@ -39,6 +40,33 @@ export type InventoryConsumptionItem = {
   edge_lines: number
   late_lines: number
   status: string
+}
+
+// Venda que divide o consumo da JC: caixa da JC e da JA (uma contabilidade so)
+// + cobrancas de pedido PJ + cobrancas da EX, que compra da JC como cliente PJ.
+export type InventoryConsumptionRevenue = {
+  period_end_count_id: string
+  cash_jc: number | string
+  cash_jc_days: number
+  cash_ja: number | string
+  cash_ja_days: number
+  cash_ifood: number | string
+  cash_jc_missing_days: number
+  cash_ja_missing_days: number
+  pj_orders: number | string
+  pj_orders_lines: number
+  ex_billed: number | string
+  ex_days_billed: number
+  revenue_total: number | string
+}
+
+export type InventoryConsumptionOutsideItem = {
+  period_end_count_id: string
+  product_id: string
+  product_name: string
+  product_category: string | null
+  purchases_count: number
+  value_purchased: number | string
 }
 
 export type ConsumptionStatusTone = 'ok' | 'warn' | 'blocked'
@@ -96,6 +124,17 @@ export function canViewInventoryConsumption(user: AppUser | null): boolean {
   if (user.role === 'admin') return true
   return Boolean(user.permissions?.some(permission =>
     permission.permission_key === PAYABLES_PERMISSION
+    && (permission.scope === '*' || permission.scope === CONSUMPTION_STORE),
+  ))
+}
+
+// A venda expoe o faturamento dos clientes PJ: alem do Contas a pagar da JC,
+// exige o Contas a receber, como a funcao do banco.
+export function canViewConsumptionRevenue(user: AppUser | null): boolean {
+  if (!canViewInventoryConsumption(user)) return false
+  if (user?.role === 'admin') return true
+  return Boolean(user?.permissions?.some(permission =>
+    permission.permission_key === RECEIVABLES_PERMISSION
     && (permission.scope === '*' || permission.scope === CONSUMPTION_STORE),
   ))
 }
@@ -171,4 +210,64 @@ export function formatPeriodDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-')
   if (!year || !month || !day) return isoDate
   return `${day}/${month}`
+}
+
+export type RevenueGap = 'cobranca_ex' | 'caixa_faltando' | 'sem_venda'
+
+export type CmvOverRevenue = {
+  revenueTotal: number
+  // null quando nao ha venda para dividir: nunca "0%" nem "infinito".
+  percent: number | null
+  gaps: RevenueGap[]
+  // Parcial quando o consumo ou a venda estao incompletos: o % existe, mas a
+  // tela avisa que ele nao fecha.
+  isPartial: boolean
+}
+
+export function cmvOverRevenue(
+  period: InventoryConsumptionPeriod,
+  summary: ConsumptionSummary,
+  revenue: InventoryConsumptionRevenue,
+): CmvOverRevenue {
+  const revenueTotal = toNumber(revenue.revenue_total) ?? 0
+  const gaps: RevenueGap[] = []
+  if (revenue.ex_days_billed < period.period_days) gaps.push('cobranca_ex')
+  if (revenue.cash_jc_missing_days > 0 || revenue.cash_ja_missing_days > 0) gaps.push('caixa_faltando')
+  if (revenueTotal <= 0) gaps.push('sem_venda')
+  // Sem nenhum insumo com valor nao existe consumo: "0%" seria mentira.
+  const percent = revenueTotal > 0 && summary.itemsWithValue > 0
+    ? Math.round((summary.totalValue / revenueTotal) * 1000) / 10
+    : null
+  return {
+    revenueTotal,
+    percent,
+    gaps,
+    isPartial: summary.isPartial || gaps.length > 0,
+  }
+}
+
+export function formatPercent(value: number | null): string {
+  if (value === null) return '—'
+  return `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+}
+
+// Uma linha por semana para o quadro de evolucao, da mais recente para a mais
+// antiga (a mesma ordem do banco). A venda falta quando a pessoa nao pode ve-la.
+export type ConsumptionTrendRow = {
+  period: InventoryConsumptionPeriod
+  summary: ConsumptionSummary
+  cmv: CmvOverRevenue | null
+}
+
+export function buildConsumptionTrend(
+  periods: InventoryConsumptionPeriod[],
+  items: InventoryConsumptionItem[],
+  revenues: InventoryConsumptionRevenue[] | null,
+): ConsumptionTrendRow[] {
+  return periods.map(period => {
+    const periodItems = items.filter(item => item.period_end_count_id === period.period_end_count_id)
+    const summary = summarizeConsumption(period, periodItems)
+    const revenue = revenues?.find(row => row.period_end_count_id === period.period_end_count_id)
+    return { period, summary, cmv: revenue ? cmvOverRevenue(period, summary, revenue) : null }
+  })
 }

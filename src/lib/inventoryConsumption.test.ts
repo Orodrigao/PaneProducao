@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { AppUser } from '@/lib/auth'
 import {
+  buildConsumptionTrend,
+  canViewConsumptionRevenue,
   canViewInventoryConsumption,
+  cmvOverRevenue,
+  formatPercent,
   consumptionStatusInfo,
   formatPeriodDate,
   sortConsumptionItems,
   summarizeConsumption,
   type InventoryConsumptionItem,
   type InventoryConsumptionPeriod,
+  type InventoryConsumptionRevenue,
 } from './inventoryConsumption'
 
 function user(overrides: Partial<AppUser>): AppUser {
@@ -134,5 +139,127 @@ describe('sortConsumptionItems', () => {
 describe('formatPeriodDate', () => {
   it('le a data do banco sem deslocar o dia pelo fuso', () => {
     expect(formatPeriodDate('2026-09-26')).toBe('26/09')
+  })
+})
+
+function revenue(overrides: Partial<InventoryConsumptionRevenue>): InventoryConsumptionRevenue {
+  return {
+    period_end_count_id: 'b',
+    cash_jc: '2500.00',
+    cash_jc_days: 6,
+    cash_ja: '400.00',
+    cash_ja_days: 6,
+    cash_ifood: '0',
+    cash_jc_missing_days: 0,
+    cash_ja_missing_days: 0,
+    pj_orders: '300.00',
+    pj_orders_lines: 2,
+    ex_billed: '1300.00',
+    ex_days_billed: 7,
+    revenue_total: '4500.00',
+    ...overrides,
+  }
+}
+
+describe('canViewConsumptionRevenue', () => {
+  it('exige o Contas a pagar da JC e tambem o Contas a receber', () => {
+    expect(canViewConsumptionRevenue(user({ role: 'admin' }))).toBe(true)
+    expect(canViewConsumptionRevenue(user({
+      permissions: [
+        { permission_key: 'contas_pagar.acessar', scope: 'jc' },
+        { permission_key: 'contas_receber.acessar', scope: '*' },
+      ],
+    }))).toBe(true)
+  })
+
+  it('so um dos dois nao basta', () => {
+    expect(canViewConsumptionRevenue(user({
+      permissions: [{ permission_key: 'contas_pagar.acessar', scope: 'jc' }],
+    }))).toBe(false)
+    expect(canViewConsumptionRevenue(user({
+      permissions: [{ permission_key: 'contas_receber.acessar', scope: '*' }],
+    }))).toBe(false)
+    expect(canViewConsumptionRevenue(user({
+      permissions: [
+        { permission_key: 'contas_pagar.acessar', scope: 'jc' },
+        { permission_key: 'contas_receber.acessar', scope: 'ja' },
+      ],
+    }))).toBe(false)
+    expect(canViewConsumptionRevenue(null)).toBe(false)
+  })
+})
+
+describe('cmvOverRevenue', () => {
+  const completo = summarizeConsumption(period, [item({ value_consumed: '900.00' })])
+
+  it('divide o consumo pela venda total da semana', () => {
+    const cmv = cmvOverRevenue(period, completo, revenue({}))
+    expect(cmv.revenueTotal).toBe(4500)
+    expect(cmv.percent).toBe(20)
+    expect(cmv.gaps).toEqual([])
+    expect(cmv.isPartial).toBe(false)
+  })
+
+  it('cobranca da EX faltando deixa a venda incompleta', () => {
+    const cmv = cmvOverRevenue(period, completo, revenue({ ex_days_billed: 1 }))
+    expect(cmv.gaps).toEqual(['cobranca_ex'])
+    expect(cmv.isPartial).toBe(true)
+  })
+
+  it('dia sem fechamento de caixa deixa a venda incompleta', () => {
+    const cmv = cmvOverRevenue(period, completo, revenue({ cash_ja_missing_days: 1 }))
+    expect(cmv.gaps).toEqual(['caixa_faltando'])
+    expect(cmv.isPartial).toBe(true)
+  })
+
+  it('semana sem nenhum insumo com valor nao mostra 0%', () => {
+    const vazio = summarizeConsumption(period, [])
+    expect(cmvOverRevenue(period, vazio, revenue({})).percent).toBeNull()
+  })
+
+  it('consumo parcial deixa o % parcial', () => {
+    const parcial = summarizeConsumption(period, [item({ status: 'incompleto', value_consumed: null })])
+    expect(cmvOverRevenue(period, parcial, revenue({})).isPartial).toBe(true)
+  })
+
+  it('sem venda nao inventa %', () => {
+    const cmv = cmvOverRevenue(period, completo, revenue({ revenue_total: '0' }))
+    expect(cmv.percent).toBeNull()
+    expect(cmv.gaps).toContain('sem_venda')
+    expect(formatPercent(cmv.percent)).toBe('—')
+  })
+
+  it('formata o % com uma casa, no padrao brasileiro', () => {
+    expect(formatPercent(31.25)).toBe('31,3%')
+    expect(formatPercent(20)).toBe('20,0%')
+  })
+})
+
+describe('buildConsumptionTrend', () => {
+  const anterior: InventoryConsumptionPeriod = {
+    ...period,
+    period_start_count_id: 'z',
+    period_end_count_id: 'a',
+    period_start_date: '2026-09-19',
+    period_end_date: '2026-09-26',
+  }
+
+  it('monta uma linha por semana com o consumo da propria semana', () => {
+    const rows = buildConsumptionTrend(
+      [period, anterior],
+      [
+        item({ period_end_count_id: 'b', value_consumed: '900.00' }),
+        item({ period_end_count_id: 'a', value_consumed: '450.00' }),
+      ],
+      [revenue({}), revenue({ period_end_count_id: 'a', revenue_total: '3000.00' })],
+    )
+    expect(rows.map(row => row.summary.totalValue)).toEqual([900, 450])
+    expect(rows.map(row => row.cmv?.percent)).toEqual([20, 15])
+  })
+
+  it('sem permissao para a venda o quadro mostra so o consumo', () => {
+    const rows = buildConsumptionTrend([period], [item({ value_consumed: '900.00' })], null)
+    expect(rows[0].cmv).toBeNull()
+    expect(rows[0].summary.totalValue).toBe(900)
   })
 })
