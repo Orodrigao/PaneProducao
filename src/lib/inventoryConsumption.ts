@@ -219,8 +219,9 @@ export type CmvOverRevenue = {
   // null quando nao ha venda para dividir: nunca "0%" nem "infinito".
   percent: number | null
   gaps: RevenueGap[]
-  // Parcial quando o consumo ou a venda estao incompletos: o % existe, mas a
-  // tela avisa que ele nao fecha.
+  // Parcial quando o consumo ou a venda estao incompletos, ou quando ha insumo
+  // para conferir (consumo negativo puxa o total para baixo): o % existe, mas
+  // a tela avisa que ele nao fecha.
   isPartial: boolean
 }
 
@@ -242,7 +243,7 @@ export function cmvOverRevenue(
     revenueTotal,
     percent,
     gaps,
-    isPartial: summary.isPartial || gaps.length > 0,
+    isPartial: summary.isPartial || summary.itemsToCheck > 0 || gaps.length > 0,
   }
 }
 
@@ -270,4 +271,14 @@ export function buildConsumptionTrend(
     const revenue = revenues?.find(row => row.period_end_count_id === period.period_end_count_id)
     return { period, summary, cmv: revenue ? cmvOverRevenue(period, summary, revenue) : null }
   })
+}
+
+// Semana que nao se compara direto com as outras: consumo ou venda incompletos,
+// insumo para conferir (mesmo sem acesso a venda) ou periodo diferente de 7
+// dias entre as contagens.
+export function isTrendRowFlagged(row: ConsumptionTrendRow): boolean {
+  return row.summary.isPartial
+    || row.summary.itemsToCheck > 0
+    || row.summary.isIrregularPeriod
+    || Boolean(row.cmv?.isPartial)
 }
