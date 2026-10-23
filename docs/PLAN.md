@@ -108,7 +108,7 @@ registrado na portaria da equipe de IA, não aqui.
 | 06/11 | Segurança: fechar a exposição GraphQL, última pendência da auditoria de julho | Nada | [CURRENT_STATE.md](CURRENT_STATE.md), Bloqueios atuais |
 | 13/11 | Compras fase 3B: aviso quando um insumo sobe de preço na nota | Nada | [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md) |
 | 13/11 | Formação de preço, passos 0c e 0d: indicadores e Forno lendo o peso da ficha; retirada dos donos tratada nos indicadores | Respostas do Rodrigo sobre as fichas | [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md) |
-| 18/11 | Financeiro fase 4: DRE da JC e da JA, com o CMV pela contagem sem contar duas vezes, fechar o mês e exportar | Financeiro fase 3 | [FINANCEIRO.md](FINANCEIRO.md) |
+| 18/11 | Financeiro fase 4: DRE da JC e da JA, com o CMV pela contagem sem contar duas vezes, fechar o mês e exportar | Financeiro fase 3; as fontes de receita PJ e Buck (fases 2 a 4 do Contas a Receber) já estão no ar | [FINANCEIRO.md](FINANCEIRO.md) |
 | 19/11 | Sobras em reais pela ficha e consumo semanal por família | Famílias dos insumos contados aprovadas | [CATALOGO_PRODUTOS.md](CATALOGO_PRODUTOS.md) |
 | 04/12 | Formação de preço fase 3: salvar a formação completa; preço sugerido × praticado por canal, com a comissão do aplicativo e o imposto calculados sobre itens e taxa de entrega, mais o custo do motoboy | Passos 0c e 0d; fichas prioritárias conferidas | [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md) |
 
