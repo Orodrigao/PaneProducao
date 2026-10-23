@@ -13,42 +13,35 @@ select ok(not exists (
 ), 'o resolvedor graphql.resolve deixou de existir');
 
 -- Prova pelo caminho que o GraphQL usava: cada papel pergunta por uma tabela
--- que le pelo REST. Com a extensao ligada, a resposta traz o tipo da tabela
+-- em que tem SELECT. Com a extensao ligada, a resposta traz o tipo da tabela
 -- (pizza_categoriasConnection para o visitante, app_profilesConnection para o
--- usuario logado), com ou sem introspeccao; desligada, a chamada so devolve erro.
+-- usuario logado), com ou sem introspeccao. Desligada, a funcao trocada pelo
+-- gatilho do Supabase responde so o aviso; qualquer outro erro derruba o teste.
 create temp table resposta_graphql (papel text not null, resposta text not null) on commit drop;
 grant insert, select on resposta_graphql to anon, authenticated;
 
 set local role anon;
-do $$
-begin
-  insert into resposta_graphql
-  select 'anon', coalesce(graphql_public.graphql(
-    query => '{ pizza_categoriasCollection(first: 1) { __typename } }')::text, '');
-exception when others then
-  insert into resposta_graphql values ('anon', 'erro: ' || sqlerrm);
-end $$;
+insert into resposta_graphql
+select 'anon', coalesce(graphql_public.graphql(
+  query => '{ pizza_categoriasCollection(first: 1) { __typename } }')::text, '');
 reset role;
 
 set local role authenticated;
-do $$
-begin
-  insert into resposta_graphql
-  select 'authenticated', coalesce(graphql_public.graphql(
-    query => '{ app_profilesCollection(first: 1) { __typename } }')::text, '');
-exception when others then
-  insert into resposta_graphql values ('authenticated', 'erro: ' || sqlerrm);
-end $$;
+insert into resposta_graphql
+select 'authenticated', coalesce(graphql_public.graphql(
+  query => '{ app_profilesCollection(first: 1) { __typename } }')::text, '');
 reset role;
 
 select ok(has_table_privilege('anon', 'public.pizza_categorias', 'select'),
-  'o legado do ControlePizza segue legivel por anon pelo REST (a prova abaixo tem dente)');
-select ok((select resposta from resposta_graphql where papel = 'anon') not ilike '%pizza_categoriasConnection%',
-  'visitante anonimo nao alcanca tabela pelo GraphQL');
+  'anon segue com SELECT em pizza_categorias, o grant do legado (a prova abaixo tem dente)');
+select ok((select resposta from resposta_graphql where papel = 'anon') not ilike '%pizza_categoriasConnection%'
+  and (select resposta from resposta_graphql where papel = 'anon') ilike '%pg_graphql extension is not enabled%',
+  'visitante anonimo nao alcanca tabela pelo GraphQL, so recebe o aviso de desligado');
 select ok(has_table_privilege('authenticated', 'public.app_profiles', 'select'),
-  'usuario logado segue lendo app_profiles pelo REST (a prova abaixo tem dente)');
-select ok((select resposta from resposta_graphql where papel = 'authenticated') not ilike '%app_profilesConnection%',
-  'usuario logado nao alcanca tabela pelo GraphQL');
+  'authenticated segue com SELECT em app_profiles (a prova abaixo tem dente)');
+select ok((select resposta from resposta_graphql where papel = 'authenticated') not ilike '%app_profilesConnection%'
+  and (select resposta from resposta_graphql where papel = 'authenticated') ilike '%pg_graphql extension is not enabled%',
+  'usuario logado nao alcanca tabela pelo GraphQL, so recebe o aviso de desligado');
 
 -- Mesmo criterio dos avisos 0026 e 0027 do Security Advisor: tabela, view,
 -- view materializada ou tabela externa com alguma coluna legivel pelo papel,

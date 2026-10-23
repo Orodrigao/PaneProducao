@@ -177,9 +177,9 @@ somente por função protegida, grants explícitos, idempotência e matriz de
 teste permitido×bloqueado. Substitui a regra anterior, que exigia a
 conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
 financeiro novo. Os achados da auditoria live de 2026-07-28 no escopo do ERP
-estão resolvidos (a revisão das funções privilegiadas fechou em 2026-09-23 e a
-exposição GraphQL em 2026-10-23); o hardening das próximas tabelas segue em
-lotes, em paralelo.
+fecharam: a revisão das funções privilegiadas em 2026-09-23 e a exposição
+GraphQL com a migration de 2026-10-23, que a Action aplica no merge (ver Riscos
+ainda abertos). O hardening das próximas tabelas segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -277,7 +277,8 @@ Riscos ainda abertos:
   `current_user_can_sales` é a única das seis funções de permissão que não
   libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
   o último achado, a exposição GraphQL, está no item seguinte;
-- **exposição GraphQL do schema público, fechada em duas trancas.** O advisor
+- **exposição GraphQL do schema público, fechada em duas trancas** (a
+  segunda entra em produção pela Action no merge desta entrega). O advisor
   de segurança do Supabase apontava em 2026-09-23 que `anon` e `authenticated`
   podiam chamar `graphql_public.graphql()` e enxergar pela introspecção as
   tabelas que cada papel lê: 75 do ERP para usuário logado e 5 legadas
@@ -290,10 +291,12 @@ Riscos ainda abertos:
   `20261023171500_desliga_pg_graphql` desliga a extensão `pg_graphql`, e
   `supabase/tests/graphql_desligado.test.sql` prende esse estado; os avisos
   0026 e 0027 do advisor só contam tabela com a extensão instalada. A
-  conferência do advisor em produção depois da Action fica registrada na PR.
-  Volta atrás, se o GraphQL algum dia for usado: migration nova com
-  `create extension pg_graphql with schema graphql` e `graphql_public` de volta
-  à lista de schemas;
+  conferência em produção depois da Action (extensão ausente, advisor sem os
+  dois avisos) fica registrada na PR. Volta atrás: migration nova com
+  `create extension pg_graphql with schema graphql`; para o GraphQL voltar a
+  responder pela API, `graphql_public` também precisa voltar à lista de
+  schemas. Restauração de backup anterior a 23/10 ou atualização de versão do
+  Postgres pedem nova leitura do advisor;
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
   plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10

@@ -9,13 +9,15 @@
 --
 -- Segunda tranca, esta migration: desligar a extensao, que e a forma oficial
 -- de desabilitar o GraphQL no Supabase. Os avisos 0026 e 0027 so contam tabela
--- quando a extensao existe. Nenhum objeto do projeto depende dela (conferido em
--- producao em 23/10/2026); sem cascade, a migration falha se isso mudar.
--- O gatilho de evento do Supabase troca graphql_public.graphql por uma versao
--- que so responde erro.
+-- quando a extensao existe. Nenhum objeto do projeto depende dela (pg_depend
+-- conferido em producao em 23/10/2026); sem cascade, uma dependencia registrada
+-- que apareca faz a migration falhar em vez de apagar o objeto. O gatilho de
+-- evento do Supabase troca graphql_public.graphql por uma versao que so responde
+-- erro; se ele falhar, a remocao inteira volta atras junto.
 --
--- Volta atras: migration nova com
+-- Volta atras desta migration: migration nova com
 --   create extension if not exists pg_graphql with schema graphql;
--- e `graphql_public` de volta em [api].schemas, se algum dia o GraphQL for usado.
+-- (sem VERSION, instala a versao corrente da plataforma). Para o GraphQL voltar
+-- a responder pela API, `graphql_public` tambem precisa voltar a [api].schemas.
 
 drop extension if exists pg_graphql;
