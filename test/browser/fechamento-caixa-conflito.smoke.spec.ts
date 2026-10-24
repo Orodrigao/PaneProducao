@@ -1,6 +1,20 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { entrarComSessaoGuardada } from './apoio/sessao'
 
+async function probeProtectedClosing(page: Page, request: import('@playwright/test').Request) {
+  const url = new URL('/rest/v1/cash_closings?select=stone_amount&limit=1', request.url())
+  const headers = await request.allHeaders()
+  const probe = await page.request.get(url.toString(), {
+    headers: { apikey: headers.apikey, Authorization: headers.authorization },
+    maxRedirects: 0,
+  })
+  const sharedTarget = !process.env.SMOKE_SUPABASE_URL
+  test.skip(sharedTarget && probe.status() === 400,
+    'A função e as colunas do fechamento protegido ainda não existem neste banco (PR sem merge); a prova desta PR roda no preview isolado dela.')
+  expect(probe.ok(), 'Sonda do fechamento: HTTP ' + probe.status()).toBe(true)
+}
+
+
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
@@ -42,7 +56,9 @@ async function showClosingJa(page: Page, who: Who, date: string) {
   const store = page.getByLabel('Loja')
   if (who === 'admin') {
     const initial = closingLoaded(page, 'jc')
+    const request = page.waitForRequest(r => r.url().includes('/rest/v1/cash_closings'))
     await page.goto('/fechamento-caixa')
+    await probeProtectedClosing(page, await request)
     await initial
     await expect(store).toBeEnabled({ timeout: slowPreviewDataTimeoutMs })
     const ja = closingLoaded(page, 'ja')
@@ -51,7 +67,9 @@ async function showClosingJa(page: Page, who: Who, date: string) {
   } else {
     // Vendas JA cai na propria loja sozinha, sem poder trocar.
     const initial = closingLoaded(page, 'ja')
+    const request = page.waitForRequest(r => r.url().includes('/rest/v1/cash_closings'))
     await page.goto('/fechamento-caixa')
+    await probeProtectedClosing(page, await request)
     await initial
     await expect(store).toHaveValue('ja')
     await expect(store).toBeDisabled()
@@ -85,10 +103,9 @@ function conflictNotice(page: Page) {
 // Conta as gravacoes que de fato sairam para o banco: prova que "Cancelar" na
 // confirmacao nao grava nada.
 function countClosingWrites(page: Page) {
-  const writes = { patch: 0, post: 0 }
+  const writes = { post: 0 }
   page.on('request', request => {
-    if (!request.url().includes('/rest/v1/cash_closings')) return
-    if (request.method() === 'PATCH') writes.patch += 1
+    if (!request.url().includes('/rest/v1/rpc/save_cash_closing')) return
     if (request.method() === 'POST') writes.post += 1
   })
   return writes
@@ -139,7 +156,7 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await expect(secondNotice).not.toContainText('5. SiTef')
     await expect(second.page.getByText('duplicate key')).toHaveCount(0)
     await expect(moneyField(second.page, '1. Total em dinheiro')).toHaveValue('200')
-    expect(secondWrites).toEqual({ patch: 0, post: 1 })
+    expect(secondWrites).toEqual({ post: 1 })
 
     // Desistir na confirmacao nao grava nada.
     const replaceButton = secondNotice.getByRole('button', { name: 'Substituir pelos meus números' })
@@ -155,7 +172,7 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await expect(second.page.getByRole('button', { name: 'Atualizar fechamento' })).toBeEnabled({
       timeout: slowPreviewDataTimeoutMs,
     })
-    expect(secondWrites).toEqual({ patch: 1, post: 1 })
+    expect(secondWrites).toEqual({ post: 2 })
 
     // Relido do banco: os numeros da segunda pessoa, com o que foi substituido
     // anotado nas observacoes.
