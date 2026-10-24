@@ -1,30 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ChevronLeft, CircleDollarSign, PackageCheck, Printer, RotateCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, roleColor, type AppUser } from '@/lib/auth'
-import { formatDateBR } from '@/lib/utils'
 import { canPerformRomaneioAction, loadCurrentRomaneioPermissions } from '@/lib/romaneioPermissions'
+import { isBuckPriceTierName, type RomaneioBillingRow } from '@/lib/romaneioBilling'
 import {
-  calculateRomaneioBilling,
-  isBuckPriceTierName,
-  type RomaneioBillingItem,
-  type RomaneioBillingPrice,
-  type RomaneioBillingRow,
-} from '@/lib/romaneioBilling'
-import type { ProductLegacyLink } from '@/lib/productIdentity'
-import {
-  billingResultFromBuckLines,
   billingRowPeriodLabel,
   isMissingBuckBillingFunction,
-  type BuckBillingLine,
   type RomaneioExBillingResult,
   type RomaneioExBillingRow,
 } from '@/lib/romaneioExBilling'
+import {
+  fechamentoExFromPayload,
+  formatBRL,
+  formatQuantity,
+  outsideNotice,
+  type FechamentoEx,
+} from '@/lib/romaneioExFechamento'
 import PeriodFilter from '@/components/reports/PeriodFilter'
 import KPICard from '@/components/reports/KPICard'
+import FechamentoExCobrancas from '@/components/romaneio/FechamentoExCobrancas'
+import FechamentoExPrint, { rowNameWithPeriod } from '@/components/romaneio/FechamentoExPrint'
 
 interface Destination {
   id: string
@@ -46,28 +45,6 @@ interface PriceTierItem {
   active: boolean
 }
 
-interface Romaneio {
-  id: string
-  record_date: string
-  trip_number: number
-  status: string
-}
-
-interface RomaneioItem {
-  id: string
-  romaneio_id: string
-  product_id: string
-  product_source: string
-  product_name: string
-  qty_sent: number | string | null
-  qty_accepted: number | string | null
-}
-
-interface ProductLegacyRow {
-  id: string
-  legacy_bread_id: string | null
-}
-
 interface CorrectionOption {
   productId: string
   productSource: 'bread' | 'product'
@@ -76,28 +53,14 @@ interface CorrectionOption {
   pricingUnit: 'un' | 'kg'
 }
 
-const PANE_SENDER = {
-  store: 'Pane Júlio',
-  company: 'RGF PANE PIZZA LTDA',
-  cnpj: '55.800.425/0001-77',
-}
-
-const BUCK_RECIPIENT = {
-  store: 'EX — Exposição',
-  company: 'Buck Comércio de Alimentos LTDA - ME',
-  cnpj: '28.994.014/0001-97',
-}
+const EMPTY_BILLING: RomaneioExBillingResult = { rows: [], total: 0, tripCount: 0, itemCount: 0, hasBlockingIssues: false }
 
 function toISODate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function formatBRL(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-function formatQuantity(value: number, unit: 'un' | 'kg') {
-  return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${unit}`
+function periodKey(range: { from: Date; to: Date }) {
+  return `${toISODate(range.from)}|${toISODate(range.to)}`
 }
 
 function errorMessage(error: unknown) {
@@ -146,106 +109,21 @@ function correctionOptionsForRow(row: RomaneioBillingRow, prices: PriceTierItem[
   return Array.from(options.values()).sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR'))
 }
 
-function rowNameWithPeriod(row: RomaneioExBillingRow) {
-  const period = row.priceChanged ? billingRowPeriodLabel(row) : null
-  return period ? `${row.productName} (${period})` : row.productName
-}
-
-function BillingPrint({
-  rows,
-  total,
-  period,
-  tripCount,
-}: {
-  rows: RomaneioExBillingRow[]
-  total: number
-  period: { from: Date; to: Date }
-  tripCount: number
-}) {
-  return (
-    <section id="romaneios-ex-print" aria-hidden="true">
-      <header className="rom-ex-print-header">
-        <div>
-          <h1>Fechamento de Romaneios — EX</h1>
-          <p>Base para cobrança dos pães enviados à Exposição.</p>
-        </div>
-        <div className="rom-ex-print-meta">
-          <span>Período</span>
-          <b>{formatDateBR(toISODate(period.from))} a {formatDateBR(toISODate(period.to))}</b>
-          <span>Viagens incluídas</span>
-          <b>{tripCount}</b>
-        </div>
-      </header>
-
-      <div className="rom-ex-print-parties">
-        <section>
-          <h2>Remetente</h2>
-          <b>{PANE_SENDER.store}</b>
-          <p>{PANE_SENDER.company}</p>
-          <p>CNPJ: {PANE_SENDER.cnpj}</p>
-        </section>
-        <section>
-          <h2>Destinatário / cobrança</h2>
-          <b>{BUCK_RECIPIENT.store}</b>
-          <p>{BUCK_RECIPIENT.company}</p>
-          <p>CNPJ: {BUCK_RECIPIENT.cnpj}</p>
-        </section>
-      </div>
-
-      <p className="rom-ex-print-note">Preço da Tabela BUCK no dia de cada romaneio. Quantidade cobrada: aceita na conferência ou, sem conferência, enviada.</p>
-
-      <table className="rom-ex-print-table">
-        <thead>
-          <tr>
-            <th>Produto</th>
-            <th>Enviado</th>
-            <th>Cobrado</th>
-            <th>Preço</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => (
-            <tr key={row.key}>
-              <td>{rowNameWithPeriod(row)}</td>
-              <td>{formatQuantity(row.sentQuantity, row.billingUnit)}</td>
-              <td>{formatQuantity(row.billedQuantity, row.billingUnit)}</td>
-              <td>{row.unitPrice === null ? '—' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</td>
-              <td>{row.total === null ? '—' : formatBRL(row.total)}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={4}>TOTAL PARA COBRANÇA</td>
-            <td>{formatBRL(total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <footer className="rom-ex-print-signatures">
-        <div>Conferido pela Pane</div>
-        <div>Conferido pela EX</div>
-      </footer>
-    </section>
-  )
-}
-
 export default function RelatorioRomaneiosEX() {
   const router = useRouter()
   const [user, setUser] = useState<AppUser | null>(null)
   const [range, setRange] = useState<{ from: Date; to: Date } | null>(null)
   const [destination, setDestination] = useState<Destination | null>(null)
   const [buckTier, setBuckTier] = useState<PriceTier | null>(null)
-  const [items, setItems] = useState<RomaneioItem[]>([])
+  // Preços de hoje: só para as opções de vínculo do avulso.
   const [prices, setPrices] = useState<PriceTierItem[]>([])
-  const [legacyLinks, setLegacyLinks] = useState<ProductLegacyLink[]>([])
-  // Conta do banco (preço do dia de cada romaneio). Fica nula só enquanto a
-  // função ainda não chegou ao banco, na janela do deploy.
-  const [serverBilling, setServerBilling] = useState<RomaneioExBillingResult | null>(null)
-  // Reserva da janela do deploy: conta antiga, com o preço de hoje. Serve para
-  // olhar, nunca para imprimir cobrança.
-  const [usingFallback, setUsingFallback] = useState(false)
+  // O fechamento do banco (semanas cobradas e o que falta cobrar), com o
+  // período a que ele pertence: a tela nunca mostra nem imprime números de um
+  // período com as datas de outro.
+  const [loaded, setLoaded] = useState<{ key: string; fechamento: FechamentoEx } | null>(null)
+  // Janela do deploy: o site novo chegou antes da função nova no banco. Sem
+  // número na tela até o banco atualizar.
+  const [updating, setUpdating] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [canCorrectExtra, setCanCorrectExtra] = useState(false)
@@ -254,6 +132,9 @@ export default function RelatorioRomaneiosEX() {
   const [savingLink, setSavingLink] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // Só vale a resposta da última leitura pedida: trocar o período depressa
+  // não deixa a resposta de um período antigo por cima da nova.
+  const latestLoad = useRef(0)
 
   useEffect(() => {
     setUser(getCurrentUser())
@@ -264,14 +145,20 @@ export default function RelatorioRomaneiosEX() {
 
   const loadReport = useCallback(async () => {
     if (!range) return
+    const load = latestLoad.current + 1
+    latestLoad.current = load
+    const isCurrent = () => latestLoad.current === load
+    const key = periodKey(range)
     setLoading(true)
     setLoadError(null)
+    setUpdating(false)
     try {
       const [destinationRes, tiersRes] = await Promise.all([
         // Sem depender da caixa: producao grava 'EX' e o Banco Preview grava 'ex'.
         supabase.from('destinations').select('id,name,code').ilike('code', 'EX').eq('active', true).maybeSingle(),
         supabase.from('price_tiers').select('id,name').eq('active', true).order('name'),
       ])
+      if (!isCurrent()) return
       if (destinationRes.error) throw destinationRes.error
       if (tiersRes.error) throw tiersRes.error
 
@@ -280,20 +167,14 @@ export default function RelatorioRomaneiosEX() {
       setDestination(exDestination)
       setBuckTier(tier)
 
-      setUsingFallback(false)
       if (!exDestination) {
-        setItems([])
         setPrices([])
-        setLegacyLinks([])
-        setServerBilling(null)
+        setLoaded(null)
         return
       }
 
-      const from = toISODate(range.from)
-      const to = toISODate(range.to)
-      const [billingRes, tierPricesRes] = await Promise.all([
-        supabase.rpc('list_romaneio_ex_billing', { p_de: from, p_ate: to }),
-        // Preços de hoje: só para as opções de vínculo do avulso.
+      const [fechamentoRes, tierPricesRes] = await Promise.all([
+        supabase.rpc('list_romaneio_ex_fechamento', { p_de: toISODate(range.from), p_ate: toISODate(range.to) }),
         tier
           ? supabase
             .from('price_tier_items')
@@ -302,73 +183,23 @@ export default function RelatorioRomaneiosEX() {
             .eq('active', true)
           : Promise.resolve({ data: [], error: null }),
       ])
+      if (!isCurrent()) return
       if (tierPricesRes.error) throw tierPricesRes.error
-      if (!billingRes.error) {
-        setPrices((tierPricesRes.data || []) as PriceTierItem[])
-        setServerBilling(billingResultFromBuckLines((billingRes.data || []) as BuckBillingLine[]))
-        setItems([])
-        setLegacyLinks([])
+      setPrices((tierPricesRes.data || []) as PriceTierItem[])
+      if (fechamentoRes.error) {
+        if (!isMissingBuckBillingFunction(fechamentoRes.error)) throw fechamentoRes.error
+        setLoaded(null)
+        setUpdating(true)
         return
       }
-      if (!isMissingBuckBillingFunction(billingRes.error)) throw billingRes.error
-      setServerBilling(null)
-      setUsingFallback(true)
-
-      const [romaneiosRes, pricesRes, linksRes] = await Promise.all([
-        supabase
-          .from('romaneios')
-          .select('id,record_date,trip_number,status')
-          .eq('destination_id', exDestination.id)
-          .gte('record_date', from)
-          .lte('record_date', to)
-          .neq('status', 'separado')
-          .order('record_date', { ascending: true })
-          .order('trip_number', { ascending: true }),
-        tier
-          ? supabase
-            .from('price_tier_items')
-            .select('product_id,product_source,product_name,unit_price,pricing_unit,active')
-            .eq('tier_id', tier.id)
-            .eq('active', true)
-          : Promise.resolve({ data: [], error: null }),
-        // Vínculo pão legado ↔ produto unificado: o romaneio grava o pão,
-        // mas a Tabela Buck pode guardar o preço no produto unificado.
-        supabase
-          .from('products')
-          .select('id,legacy_bread_id')
-          .not('legacy_bread_id', 'is', null),
-      ])
-      if (romaneiosRes.error) throw romaneiosRes.error
-      if (pricesRes.error) throw pricesRes.error
-      if (linksRes.error) throw linksRes.error
-
-      const romaneioRows = (romaneiosRes.data || []) as Romaneio[]
-      setPrices((pricesRes.data || []) as PriceTierItem[])
-      setLegacyLinks(((linksRes.data || []) as ProductLegacyRow[]).map(row => ({
-        productId: row.id,
-        legacyBreadId: row.legacy_bread_id,
-      })))
-
-      if (romaneioRows.length === 0) {
-        setItems([])
-        return
-      }
-
-      const itemsRes = await supabase
-        .from('romaneio_items')
-        .select('id,romaneio_id,product_id,product_source,product_name,qty_sent,qty_accepted')
-        .in('romaneio_id', romaneioRows.map(row => row.id))
-        .order('product_name')
-      if (itemsRes.error) throw itemsRes.error
-      setItems((itemsRes.data || []) as RomaneioItem[])
+      setLoaded({ key, fechamento: fechamentoExFromPayload(fechamentoRes.data) })
     } catch (error) {
+      if (!isCurrent()) return
       setLoadError(errorMessage(error))
-      setItems([])
       setPrices([])
-      setLegacyLinks([])
-      setServerBilling(null)
+      setLoaded(null)
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }, [range])
 
@@ -376,35 +207,23 @@ export default function RelatorioRomaneiosEX() {
     loadReport()
   }, [loadReport, reloadKey])
 
-  const clientBilling = useMemo(() => calculateRomaneioBilling(
-    items.map(item => ({
-      id: item.id,
-      romaneioId: item.romaneio_id,
-      productId: item.product_id,
-      productSource: item.product_source,
-      productName: item.product_name,
-      qtySent: item.qty_sent,
-      qtyAccepted: item.qty_accepted,
-    } satisfies RomaneioBillingItem)),
-    prices.map(price => ({
-      productId: price.product_id,
-      productSource: price.product_source,
-      unitPrice: price.unit_price,
-      pricingUnit: price.pricing_unit,
-      active: price.active,
-    } satisfies RomaneioBillingPrice)),
-    legacyLinks,
-  ), [items, prices, legacyLinks])
-
-  const billing: RomaneioExBillingResult = useMemo(() => serverBilling ?? {
-    ...clientBilling,
-    rows: clientBilling.rows.map(row => ({ ...row, firstDate: null, lastDate: null, priceChanged: false })),
-  }, [serverBilling, clientBilling])
-
+  // Enquanto carrega, ou se a resposta é de outro período, não há número.
+  const fechamento = !loading && range && loaded?.key === periodKey(range) ? loaded.fechamento : null
+  const billing = fechamento?.toBill ?? EMPTY_BILLING
+  const billed = fechamento?.billed ?? []
+  const showsBilled = fechamento?.showsBilled ?? false
+  const rangeFrom = range ? toISODate(range.from) : ''
+  const rangeTo = range ? toISODate(range.to) : ''
+  const outside = fechamento && range ? outsideNotice(fechamento.outside, rangeFrom, rangeTo) : null
   const missingPriceRows = billing.rows.filter(row => row.issues.includes('missing_price'))
   const incompatibleUnitRows = billing.rows.filter(row => row.issues.includes('unit_mismatch'))
   const suspiciousRows = billing.rows.filter(row => row.issues.includes('suspicious_quantity'))
-  const canPrint = !!range && billing.rows.length > 0 && !billing.hasBlockingIssues && !usingFallback
+  const hasSomethingToPrint = billing.rows.length > 0 || billed.length > 0
+  const canPrint = !!range && !!fechamento && hasSomethingToPrint && !billing.hasBlockingIssues
+  const tableTitle = showsBilled ? 'A cobrar' : 'Itens para fechamento'
+  const emptyText = showsBilled
+    ? 'Nada a cobrar no período fora das semanas já cobradas.'
+    : 'Nenhum romaneio enviado para a EX no período.'
 
   const startLinking = (row: RomaneioBillingRow) => {
     const options = correctionOptionsForRow(row, prices)
@@ -490,14 +309,25 @@ export default function RelatorioRomaneiosEX() {
     )
   }
 
+  const printBlockedReason = !range || !fechamento
+    ? null
+    : !hasSomethingToPrint
+      ? 'nada a imprimir no período'
+      : billing.hasBlockingIssues
+        ? 'complete os preços para imprimir'
+        : null
+
   return (
     <>
-      {range && (
-        <BillingPrint
+      {range && fechamento && (
+        <FechamentoExPrint
           rows={billing.rows}
           total={billing.total}
-          period={range}
+          period={{ from: rangeFrom, to: rangeTo }}
           tripCount={billing.tripCount}
+          showsBilled={showsBilled}
+          billed={billed}
+          billedTotal={fechamento.billedTotal}
         />
       )}
 
@@ -525,7 +355,11 @@ export default function RelatorioRomaneiosEX() {
           <div className="ps-scroll ps-pad">
             <h1 className="ps-page-title">🚚 Fechamento EX</h1>
             <p className="ps-page-lead">Cobrança dos pães enviados à EX pela Tabela BUCK, com o preço do dia de cada romaneio.</p>
-            <p className="ps-hint" style={{ marginTop: -6 }}>Semana já cobrada: o valor cobrado fica no Contas a receber e pode diferir desta conta.</p>
+            <p className="ps-hint" style={{ marginTop: -6 }}>
+              {showsBilled
+                ? 'Semana já cobrada aparece com o que foi cobrado, inteira no período que contém o domingo dela; o resto sai pelo preço do dia.'
+                : 'Semana já cobrada: o valor cobrado fica no Contas a receber e pode diferir desta conta.'}
+            </p>
 
             <div className="ps-filters" style={{ alignItems: 'center' }}>
               <PeriodFilter defaultPreset="30d" onChange={setRange} />
@@ -543,10 +377,10 @@ export default function RelatorioRomaneiosEX() {
             {loadError && (
               <div className="ps-warning danger" role="alert">{loadError}</div>
             )}
-            {usingFallback && !loadError && (
+            {updating && !loadError && (
               <div className="ps-warning danger" role="alert">
                 <AlertTriangle size={16}/>
-                O sistema está sendo atualizado: esta conta usa o preço de hoje, não o do dia de cada romaneio. A impressão fica bloqueada; atualize em alguns minutos.
+                O sistema está sendo atualizado: o Fechamento EX volta em alguns minutos. Toque em Atualizar.
               </div>
             )}
             {actionMessage && (
@@ -582,92 +416,104 @@ export default function RelatorioRomaneiosEX() {
               </div>
             )}
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, margin: '14px 0' }}>
-              <KPICard label="Viagens" value={billing.tripCount} accent="sage" />
-              <KPICard label="Produtos" value={billing.rows.length} />
-              <KPICard label="Itens lançados" value={billing.itemCount} />
-              <KPICard label="Total para cobrança" value={billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)} accent={billing.hasBlockingIssues ? 'berry' : 'sage'} />
-            </div>
+            {!fechamento && loading && (
+              <p role="status" style={{ color: 'var(--ink-soft)', fontSize: 13, margin: '14px 0' }}>Carregando o fechamento…</p>
+            )}
 
-            <div className="ps-section-row">
-              <h2>Itens para fechamento</h2>
-              {loading && <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>Carregando…</span>}
-            </div>
+            {fechamento && (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, margin: '14px 0' }}>
+                  <KPICard label={showsBilled ? 'Viagens a cobrar' : 'Viagens'} value={billing.tripCount} accent="sage" />
+                  <KPICard label={showsBilled ? 'Produtos a cobrar' : 'Produtos'} value={billing.rows.length} />
+                  {showsBilled
+                    ? <KPICard label="Já cobrado no período" value={formatBRL(fechamento.billedTotal)} />
+                    : <KPICard label="Itens lançados" value={billing.itemCount} />}
+                  <KPICard label={showsBilled ? 'A cobrar' : 'Total para cobrança'} value={billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)} accent={billing.hasBlockingIssues ? 'berry' : 'sage'} />
+                </div>
 
-            <div className="ps-table-wrap has-mobile-cards">
-              <table className="ps-table">
-                <thead>
-                  <tr>
-                    <th>Produto</th>
-                    <th className="right">Enviado</th>
-                    <th className="right">Cobrado</th>
-                    <th className="right">Preço Buck</th>
-                    <th className="right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!loading && billing.rows.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-soft)' }}>Nenhum romaneio enviado para a EX no período.</td></tr>
+                {showsBilled && <FechamentoExCobrancas cobrancas={billed} rangeFrom={rangeFrom}/>}
+
+                <div className="ps-section-row">
+                  <h2>{tableTitle}</h2>
+                </div>
+                {outside && <p className="ps-help" style={{ marginTop: 0 }}>{outside}</p>}
+
+                <div className="ps-table-wrap has-mobile-cards">
+                  <table className="ps-table" aria-label={tableTitle}>
+                    <thead>
+                      <tr>
+                        <th>Produto</th>
+                        <th className="right">Enviado</th>
+                        <th className="right">Cobrado</th>
+                        <th className="right">Preço Buck</th>
+                        <th className="right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {billing.rows.length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-soft)' }}>{emptyText}</td></tr>
+                      )}
+                      {billing.rows.map(row => (
+                        <tr key={row.key}>
+                          <td>
+                            <b>{row.productName}</b>
+                            <div style={{ color: row.issues.length ? 'var(--berry)' : 'var(--ink-soft)', fontSize: 11, marginTop: 3 }}>
+                              {row.issues.length ? issueLabel(row) : rowSubtitle(row)}
+                            </div>
+                            {renderExtraCorrection(row)}
+                          </td>
+                          <td className="right">{formatQuantity(row.sentQuantity, row.billingUnit)}</td>
+                          <td className="right">{formatQuantity(row.billedQuantity, row.billingUnit)}</td>
+                          <td className="right">{row.unitPrice === null ? '—' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</td>
+                          <td className="right"><b>{row.total === null ? '—' : formatBRL(row.total)}</b></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {billing.rows.length > 0 && (
+                      <tfoot>
+                        <tr className="total">
+                          <td colSpan={4}>{showsBilled ? 'TOTAL A COBRAR' : 'TOTAL PARA COBRANÇA'}</td>
+                          <td className="right">{billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+
+                <div className="ps-report-card-list">
+                  {billing.rows.length === 0 && (
+                    <div className="ps-empty">{emptyText}</div>
                   )}
                   {billing.rows.map(row => (
-                    <tr key={row.key}>
-                      <td>
-                        <b>{row.productName}</b>
-                        <div style={{ color: row.issues.length ? 'var(--berry)' : 'var(--ink-soft)', fontSize: 11, marginTop: 3 }}>
-                          {row.issues.length ? issueLabel(row) : rowSubtitle(row)}
-                        </div>
-                        {renderExtraCorrection(row)}
-                      </td>
-                      <td className="right">{formatQuantity(row.sentQuantity, row.billingUnit)}</td>
-                      <td className="right">{formatQuantity(row.billedQuantity, row.billingUnit)}</td>
-                      <td className="right">{row.unitPrice === null ? '—' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</td>
-                      <td className="right"><b>{row.total === null ? '—' : formatBRL(row.total)}</b></td>
-                    </tr>
+                    <div key={row.key} className="ps-report-row-card">
+                      <div className="ps-report-row-head">
+                        <div className="ps-report-row-title">{rowNameWithPeriod(row)}</div>
+                        <span className={row.issues.length ? 'ps-status com_divergencia' : 'ps-status conferido'}>{row.billingUnit}</span>
+                      </div>
+                      <div className="ps-report-row-grid">
+                        <div className="ps-report-row-metric"><span>Enviado</span><b>{formatQuantity(row.sentQuantity, row.billingUnit)}</b></div>
+                        <div className="ps-report-row-metric"><span>Cobrado</span><b>{formatQuantity(row.billedQuantity, row.billingUnit)}</b></div>
+                        <div className="ps-report-row-metric"><span>Preço Buck</span><b>{row.unitPrice === null ? 'Pendente' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</b></div>
+                        <div className="ps-report-row-metric"><span>Total</span><b>{row.total === null ? '—' : formatBRL(row.total)}</b></div>
+                      </div>
+                      {row.issues.length > 0 && <div className="ps-report-row-note">{issueLabel(row)}</div>}
+                      {renderExtraCorrection(row)}
+                    </div>
                   ))}
-                </tbody>
-                {billing.rows.length > 0 && (
-                  <tfoot>
-                    <tr className="total">
-                      <td colSpan={4}>TOTAL PARA COBRANÇA</td>
-                      <td className="right">{billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)}</td>
-                    </tr>
-                  </tfoot>
+                </div>
+
+                {hasSomethingToPrint && (
+                  <div className="ps-totalbar" style={{ marginTop: 16 }}>
+                    <div className="ps-total-num">
+                      <b>{billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)}</b>
+                      <span>{printBlockedReason ?? (showsBilled ? 'a cobrar da EX no período' : 'total da cobrança EX')}</span>
+                    </div>
+                    <button className="ps-save" onClick={() => window.print()} disabled={!canPrint}>
+                      <PackageCheck size={16}/> Imprimir cobrança
+                    </button>
+                  </div>
                 )}
-              </table>
-            </div>
-
-            <div className="ps-report-card-list">
-              {!loading && billing.rows.length === 0 && (
-                <div className="ps-empty">Nenhum romaneio enviado para a EX no período.</div>
-              )}
-              {billing.rows.map(row => (
-                <div key={row.key} className="ps-report-row-card">
-                  <div className="ps-report-row-head">
-                    <div className="ps-report-row-title">{rowNameWithPeriod(row)}</div>
-                    <span className={row.issues.length ? 'ps-status com_divergencia' : 'ps-status conferido'}>{row.billingUnit}</span>
-                  </div>
-                  <div className="ps-report-row-grid">
-                    <div className="ps-report-row-metric"><span>Enviado</span><b>{formatQuantity(row.sentQuantity, row.billingUnit)}</b></div>
-                    <div className="ps-report-row-metric"><span>Cobrado</span><b>{formatQuantity(row.billedQuantity, row.billingUnit)}</b></div>
-                    <div className="ps-report-row-metric"><span>Preço Buck</span><b>{row.unitPrice === null ? 'Pendente' : `${formatBRL(row.unitPrice)}/${row.billingUnit}`}</b></div>
-                    <div className="ps-report-row-metric"><span>Total</span><b>{row.total === null ? '—' : formatBRL(row.total)}</b></div>
-                  </div>
-                  {row.issues.length > 0 && <div className="ps-report-row-note">{issueLabel(row)}</div>}
-                  {renderExtraCorrection(row)}
-                </div>
-              ))}
-            </div>
-
-            {billing.rows.length > 0 && (
-              <div className="ps-totalbar" style={{ marginTop: 16 }}>
-                <div className="ps-total-num">
-                  <b>{billing.hasBlockingIssues ? 'Pendente' : formatBRL(billing.total)}</b>
-                  <span>{billing.hasBlockingIssues ? 'complete os preços para imprimir' : 'total da cobrança EX'}</span>
-                </div>
-                <button className="ps-save" onClick={() => window.print()} disabled={!canPrint}>
-                  <PackageCheck size={16}/> Imprimir cobrança
-                </button>
-              </div>
+              </>
             )}
           </div>
         </div>

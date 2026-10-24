@@ -13,27 +13,37 @@ create extension if not exists pgtap with schema extensions;
 select plan(19);
 
 -- O banco Preview recebe o seed geral antes do pgTAP. Remove exclusivamente
--- as duas cobrancas da Buck ja recebidas que o seed grava para os indicadores
--- da formacao de preco (ids 96400000...), com os recebimentos e os lancamentos
+-- as cobrancas da Buck ja recebidas que o seed grava: as duas dos indicadores
+-- da formacao de preco (ids 96400000...) e a semana cobrada do Fechamento EX
+-- (ids 96800000...), com a foto, os ajustes, os recebimentos e os lancamentos
 -- que eles geraram no livro: este teste conta cobrancas e recebimentos e cobra
 -- a semana de 31/08. O rollback no fim devolve as fixtures ao Preview.
 delete from public.finance_entries
 where source = 'contas_receber'
   and source_ref in (
     '96400000-0000-4000-8000-000000000501'::uuid,
-    '96400000-0000-4000-8000-000000000502'::uuid
+    '96400000-0000-4000-8000-000000000502'::uuid,
+    '96800000-0000-4000-8000-000000000051'::uuid
   );
 
 delete from public.receivable_receipts
 where id in (
   '96400000-0000-4000-8000-000000000501'::uuid,
-  '96400000-0000-4000-8000-000000000502'::uuid
+  '96400000-0000-4000-8000-000000000502'::uuid,
+  '96800000-0000-4000-8000-000000000051'::uuid
 );
+
+delete from public.receivable_romaneio_lines
+where receivable_id = '96800000-0000-4000-8000-000000000021'::uuid;
+
+delete from public.receivable_adjustments
+where receivable_id = '96800000-0000-4000-8000-000000000021'::uuid;
 
 delete from public.receivables
 where id in (
   '96400000-0000-4000-8000-000000000301'::uuid,
-  '96400000-0000-4000-8000-000000000302'::uuid
+  '96400000-0000-4000-8000-000000000302'::uuid,
+  '96800000-0000-4000-8000-000000000021'::uuid
 );
 
 -- Cenário ------------------------------------------------------------------

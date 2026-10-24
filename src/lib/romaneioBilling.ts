@@ -1,26 +1,10 @@
-import { createProductIdentityResolver, productIdentityKey, type ProductLegacyLink } from './productIdentity'
-import { isWeightControlledRomaneioProduct, ROMANEIO_WEIGHT_LIMIT_KG } from './romaneioDraft'
+// Tipos e regras de nome da conta da Buck. A conta mesma mora no banco
+// (`private.calcular_cobranca_buck_detalhada`); ver romaneioExBilling.ts.
+
+import { isWeightControlledRomaneioProduct } from './romaneioDraft'
 
 export type RomaneioBillingUnit = 'un' | 'kg'
 export type RomaneioBillingIssue = 'missing_price' | 'unit_mismatch' | 'suspicious_quantity'
-
-export interface RomaneioBillingItem {
-  id: string
-  romaneioId: string
-  productId: string
-  productSource: string
-  productName: string
-  qtySent: number | string | null | undefined
-  qtyAccepted?: number | string | null | undefined
-}
-
-export interface RomaneioBillingPrice {
-  productId: string
-  productSource: string
-  unitPrice: number | string | null | undefined
-  pricingUnit: string | null | undefined
-  active?: boolean | null
-}
 
 export interface RomaneioBillingRow {
   key: string
@@ -48,21 +32,12 @@ export interface RomaneioBillingResult {
 function normalizedText(value: string) {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
 }
 
 export function isBuckPriceTierName(name: string) {
   return normalizedText(name).trim() === 'buck'
-}
-
-function asNonNegativeNumber(value: number | string | null | undefined) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0
-}
-
-function isBillingUnit(value: string | null | undefined): value is RomaneioBillingUnit {
-  return value === 'un' || value === 'kg'
 }
 
 export function billingUnitForRomaneioProduct(productName: string): RomaneioBillingUnit {
@@ -74,118 +49,4 @@ export function explicitUnitInRomaneioProduct(productName: string): RomaneioBill
   if (/\(\s*kg\s*\)/.test(name)) return 'kg'
   if (/\(\s*un\s*\)/.test(name)) return 'un'
   return null
-}
-
-function itemKey(item: RomaneioBillingItem, unit: RomaneioBillingUnit) {
-  return `${productIdentityKey(item.productSource, item.productId)}:${item.productName}:${unit}`
-}
-
-function addIssue(current: RomaneioBillingIssue[], issue: RomaneioBillingIssue) {
-  return current.includes(issue) ? current : [...current, issue]
-}
-
-export function calculateRomaneioBilling(
-  items: RomaneioBillingItem[],
-  prices: RomaneioBillingPrice[],
-  legacyLinks: ReadonlyArray<ProductLegacyLink> = [],
-): RomaneioBillingResult {
-  const identityResolver = createProductIdentityResolver(legacyLinks)
-  const pricesByProduct = new Map<string, RomaneioBillingPrice[]>()
-  prices.filter(price => price.active !== false).forEach(price => {
-    const key = productIdentityKey(price.productSource, price.productId)
-    pricesByProduct.set(key, [...(pricesByProduct.get(key) || []), price])
-  })
-
-  const rowsByKey = new Map<string, RomaneioBillingRow>()
-  const trips = new Set<string>()
-
-  items.forEach(item => {
-    const billingUnit = billingUnitForRomaneioProduct(item.productName)
-    const explicitUnit = explicitUnitInRomaneioProduct(item.productName)
-    const rowKey = itemKey(item, billingUnit)
-    const sentQuantity = asNonNegativeNumber(item.qtySent)
-    const billedQuantity = item.qtyAccepted === null || item.qtyAccepted === undefined
-      ? sentQuantity
-      : asNonNegativeNumber(item.qtyAccepted)
-    // Busca o preço pela identidade direta e, na falta dela, pelas identidades
-    // equivalentes (pão legado ↔ produto unificado). keysFor devolve a direta
-    // primeiro, então preço direto sempre vence o preço da ponte.
-    const priceLines = identityResolver
-      .keysFor(item.productSource, item.productId)
-      .flatMap(key => pricesByProduct.get(key) || [])
-    const unitPriceLines = priceLines.filter(price => price.pricingUnit === billingUnit)
-    const matchingPrice = unitPriceLines.find(price => asNonNegativeNumber(price.unitPrice) > 0) || unitPriceLines[0]
-    const numericPrice = asNonNegativeNumber(matchingPrice?.unitPrice)
-    const hasPriceForAnotherUnit = priceLines.some(price =>
-      isBillingUnit(price.pricingUnit)
-      && price.pricingUnit !== billingUnit
-      && asNonNegativeNumber(price.unitPrice) > 0,
-    )
-
-    let issues: RomaneioBillingIssue[] = []
-    if (explicitUnit && explicitUnit !== billingUnit) issues = addIssue(issues, 'unit_mismatch')
-    if (!matchingPrice || !isBillingUnit(matchingPrice.pricingUnit) || numericPrice <= 0) {
-      issues = addIssue(issues, hasPriceForAnotherUnit ? 'unit_mismatch' : 'missing_price')
-    }
-    // Rede de segurança: produto cobrado por peso com mais de 10 kg num único
-    // romaneio é quase sempre gramas digitadas no campo de kg (ex.: 1450 em vez
-    // de 1,45). Bloqueia a cobrança até alguém conferir o lançamento.
-    if (billingUnit === 'kg' && (sentQuantity > ROMANEIO_WEIGHT_LIMIT_KG || billedQuantity > ROMANEIO_WEIGHT_LIMIT_KG)) {
-      issues = addIssue(issues, 'suspicious_quantity')
-    }
-
-    const previous = rowsByKey.get(rowKey)
-    if (previous) {
-      previous.sentQuantity += sentQuantity
-      previous.billedQuantity += billedQuantity
-      previous.issues = issues.reduce(addIssue, previous.issues)
-      if (!previous.issues.length && previous.unitPrice !== null) {
-        previous.total = previous.billedQuantity * previous.unitPrice
-      } else {
-        previous.total = null
-      }
-    } else {
-      const unitPrice = issues.length ? null : numericPrice
-      rowsByKey.set(rowKey, {
-        key: rowKey,
-        itemIds: [item.id],
-        productId: item.productId,
-        productSource: item.productSource,
-        productName: item.productName,
-        billingUnit,
-        sentQuantity,
-        billedQuantity,
-        tripCount: 0,
-        unitPrice,
-        total: unitPrice === null ? null : billedQuantity * unitPrice,
-        issues,
-      })
-    }
-    if (rowsByKey.get(rowKey) && !rowsByKey.get(rowKey)!.itemIds.includes(item.id)) {
-      rowsByKey.get(rowKey)!.itemIds.push(item.id)
-    }
-    trips.add(item.romaneioId)
-  })
-
-  const tripRows = new Map<string, Set<string>>()
-  items.forEach(item => {
-    const unit = billingUnitForRomaneioProduct(item.productName)
-    const rowKey = itemKey(item, unit)
-    const rowTrips = tripRows.get(rowKey) || new Set<string>()
-    rowTrips.add(item.romaneioId)
-    tripRows.set(rowKey, rowTrips)
-  })
-
-  const rows = Array.from(rowsByKey.values())
-    .map(row => ({ ...row, tripCount: tripRows.get(row.key)?.size || 0 }))
-    .sort((a, b) => a.productName.localeCompare(b.productName, 'pt-BR'))
-  const total = rows.reduce((sum, row) => sum + (row.total ?? 0), 0)
-
-  return {
-    rows,
-    total,
-    tripCount: trips.size,
-    itemCount: items.length,
-    hasBlockingIssues: rows.some(row => row.issues.length > 0),
-  }
 }

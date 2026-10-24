@@ -2224,6 +2224,125 @@ set reversed_at = now(),
     reversal_reason = '[TESTE] Lançamento estornado'
 where id = '96400000-0000-4000-8000-00000000010c';
 
+-- Semana da Buck já cobrada, para o Fechamento EX mostrar o que foi cobrado
+-- (Tabela Buck, fase 3). Semana fixa de 17/08 a 23/08/2026, longe das datas
+-- relativas a "hoje" e das semanas que os testes de banco cobram.
+--
+-- A cobrança guarda a foto de dois romaneios e dois ajustes:
+--   18/08: 80 [TESTE] Brioche PJ a 1,20 e 2 kg de [TESTE] Ciabatta Buck a 38,00
+--   20/08: 40 [TESTE] Brioche PJ, cobrados pelo enviado (sem conferência)
+--   ajustes: 4 [TESTE] Baguete sem romaneio (+10,00) e desconto (-5,00)
+--   cobrado: 144,00 + 76,00 + 10,00 - 5,00 = 225,00, já recebido.
+-- Depois da cobrança a EX conferiu 36 dos 40 brioches de 20/08 e saiu um
+-- romaneio de 22/08 com 10 [TESTE] Baguete: o Fechamento EX mostra -4 brioches
+-- (cobrado a mais, -4,80) e +10 baguetes (entregue depois, não cobrado, 25,00).
+insert into public.romaneios (id, destination_id, record_date, trip_number, status, created_by)
+select fixture.id, d.id, fixture.record_date, 1, fixture.status, 'Expedicao JC Teste'
+from (values
+  ('96800000-0000-4000-8000-000000000001'::uuid, date '2026-08-18', 'conferido'),
+  ('96800000-0000-4000-8000-000000000002'::uuid, date '2026-08-20', 'conferido'),
+  ('96800000-0000-4000-8000-000000000003'::uuid, date '2026-08-22', 'enviado')
+) fixture(id, record_date, status)
+cross join lateral (
+  select destination.id from public.destinations destination
+  where upper(destination.code) = 'EX' and destination.active
+  order by destination.id limit 1
+) d
+on conflict (id) do update set
+  destination_id = excluded.destination_id,
+  record_date = excluded.record_date,
+  trip_number = excluded.trip_number,
+  status = excluded.status;
+
+insert into public.romaneio_items (
+  id, romaneio_id, product_id, product_source, product_name, qty_sent, qty_accepted
+) values
+  ('96800000-0000-4000-8000-000000000011', '96800000-0000-4000-8000-000000000001',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 80, 80),
+  ('96800000-0000-4000-8000-000000000012', '96800000-0000-4000-8000-000000000001',
+   'teste-ciabatta-buck', 'bread', '[TESTE] Ciabatta Buck', 2, 2),
+  ('96800000-0000-4000-8000-000000000013', '96800000-0000-4000-8000-000000000002',
+   'teste-brioche-pj', 'bread', '[TESTE] Brioche PJ', 40, 36),
+  ('96800000-0000-4000-8000-000000000014', '96800000-0000-4000-8000-000000000003',
+   'teste-baguete', 'bread', '[TESTE] Baguete', 10, null)
+on conflict (id) do update set
+  romaneio_id = excluded.romaneio_id,
+  product_id = excluded.product_id,
+  product_source = excluded.product_source,
+  product_name = excluded.product_name,
+  qty_sent = excluded.qty_sent,
+  qty_accepted = excluded.qty_accepted;
+
+insert into public.receivables (
+  id, request_id, customer_id, origin, finance_category_id, description,
+  invoice_date, original_due_date, due_date, amount, created_by, period_start, period_end
+)
+select '96800000-0000-4000-8000-000000000021', '96800000-0000-4000-8000-000000000022',
+  customer.id, 'romaneio_ex', category.id, 'Buck · semana de 17/08 a 23/08/2026',
+  date '2026-08-23', date '2026-09-07', date '2026-09-07', 225.00, actor.user_id,
+  date '2026-08-17', date '2026-08-23'
+from public.customers customer
+join public.finance_categories category on category.key = 'buck_ex'
+cross join lateral (
+  select profile.user_id
+  from public.app_profiles profile
+  where profile.role = 'financeiro' and profile.active
+  order by profile.user_id
+  limit 1
+) actor
+where customer.id = '60000000-0000-4000-8000-000000000009'
+on conflict (id) do nothing;
+
+insert into public.receivable_romaneio_lines (
+  id, receivable_id, product_source, product_id, product_name, unidade,
+  quantidade, preco_unitario, total, itens
+)
+select fixture.id, receivable.id, fixture.product_source, fixture.product_id, fixture.product_name,
+  fixture.unidade, fixture.quantidade, fixture.preco_unitario, fixture.total, fixture.itens
+from (values
+  ('96800000-0000-4000-8000-000000000031'::uuid, 'bread', 'teste-brioche-pj', '[TESTE] Brioche PJ', 'un',
+   120::numeric, 1.20::numeric, 144.00::numeric,
+   '[{"romaneio_id": "96800000-0000-4000-8000-000000000001", "romaneio_item_id": "96800000-0000-4000-8000-000000000011", "record_date": "2026-08-18", "romaneio_status": "conferido", "qty_sent": 80, "qty_accepted": 80, "quantidade_usada": 80, "origem_quantidade": "aceito"},
+     {"romaneio_id": "96800000-0000-4000-8000-000000000002", "romaneio_item_id": "96800000-0000-4000-8000-000000000013", "record_date": "2026-08-20", "romaneio_status": "enviado", "qty_sent": 40, "qty_accepted": null, "quantidade_usada": 40, "origem_quantidade": "enviado"}]'::jsonb),
+  ('96800000-0000-4000-8000-000000000032'::uuid, 'bread', 'teste-ciabatta-buck', '[TESTE] Ciabatta Buck', 'kg',
+   2::numeric, 38.00::numeric, 76.00::numeric,
+   '[{"romaneio_id": "96800000-0000-4000-8000-000000000001", "romaneio_item_id": "96800000-0000-4000-8000-000000000012", "record_date": "2026-08-18", "romaneio_status": "conferido", "qty_sent": 2, "qty_accepted": 2, "quantidade_usada": 2, "origem_quantidade": "aceito"}]'::jsonb)
+) fixture(id, product_source, product_id, product_name, unidade, quantidade, preco_unitario, total, itens)
+join public.receivables receivable on receivable.id = '96800000-0000-4000-8000-000000000021'
+on conflict (id) do nothing;
+
+insert into public.receivable_adjustments (
+  id, receivable_id, position, kind, description, product_name, quantity, unit, unit_price, amount, created_by
+)
+select fixture.id, receivable.id, fixture.position, fixture.kind, fixture.description,
+  fixture.product_name, fixture.quantity, fixture.unit, fixture.unit_price, fixture.amount, receivable.created_by
+from (values
+  ('96800000-0000-4000-8000-000000000041'::uuid, 1::smallint, 'produto_sem_romaneio', 'Saiu no carro sem romaneio',
+   '[TESTE] Baguete', 4::numeric, 'un', 2.50::numeric, 10.00::numeric),
+  ('96800000-0000-4000-8000-000000000042'::uuid, 2::smallint, 'acerto', 'Desconto combinado com a Buck',
+   null, null::numeric, null, null::numeric, -5.00::numeric)
+) fixture(id, position, kind, description, product_name, quantity, unit, unit_price, amount)
+join public.receivables receivable on receivable.id = '96800000-0000-4000-8000-000000000021'
+on conflict (id) do nothing;
+
+insert into public.receivable_receipts (
+  id, request_id, receivable_id, received_date, amount, method, account_id, created_by
+)
+select '96800000-0000-4000-8000-000000000051', '96800000-0000-4000-8000-000000000052',
+  receivable.id, date '2026-08-28', 225.00, 'outro', account.id, receivable.created_by
+from public.receivables receivable
+join public.finance_accounts account on account.id = '96400000-0000-4000-8000-0000000000a1'
+where receivable.id = '96800000-0000-4000-8000-000000000021'
+on conflict (id) do nothing;
+
+select private.lancar_recibo_no_livro(receipt.id, receipt.created_by)
+from public.receivable_receipts receipt
+where receipt.id = '96800000-0000-4000-8000-000000000051';
+
+select private.atualizar_situacao_receivable(receivable.id)
+from public.receivables receivable
+where receivable.id = '96800000-0000-4000-8000-000000000021';
+
 insert into public.cash_closings (
   closing_date, weekday_label, store, sales_amount, ifood_sales_amount,
   total_amount, created_by, created_by_name
