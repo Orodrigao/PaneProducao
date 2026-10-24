@@ -634,7 +634,8 @@ em `private.calcular_cobranca_buck`. São a mesma regra em duas linguagens e
 precisam mudar juntas; a comparação de totais na geração é o alarme que dispara
 se um lado mudar sozinho. **Atualização (Fase 6A, 16/10/2026):** o Fechamento
 EX passou a ler a conta do banco; a versão do navegador sobrou só como reserva
-enquanto a função nova não chega ao banco no deploy.
+enquanto a função nova não chega ao banco no deploy. **Desde a fase 3 da Tabela
+Buck (23/10/2026)** a reserva saiu: a conta da Buck existe só no banco.
 
 
 **Objetivo:** a cobrança semanal da Buck deixar de sumir na impressora.
@@ -801,7 +802,8 @@ a carga inicial usa o dia da troca no sistema; cobrança confirmada não muda.
   ordena também pelo preço;
 - o Fechamento EX lê a mesma conta pelo `public.list_romaneio_ex_billing`
   (exige ler a Tabela Buck e os romaneios da EX). A conta em
-  `src/lib/romaneioBilling.ts` ficou só como reserva para a janela do deploy.
+  `src/lib/romaneioBilling.ts` ficou só como reserva para a janela do deploy
+  (saiu na fase 3).
 
 Plano das fases 2 e 3 revisto em 19/10/2026, depois de revisão independente:
 a trava que estava na fase 3 subiu para a fase 2, para não existirem dois
@@ -870,11 +872,30 @@ valor cobrado.
   linha) e o histórico de um pão é lido inteiro, em páginas, quando a pessoa
   abre: a API corta cada leitura em 1.000 linhas sem avisar.
 
-**Fase 3 (a fazer):** para quem tem acesso ao Contas a receber, semana já
-cobrada aparece no Fechamento EX com o que foi cobrado (rótulo "Cobrado", não
-"pago"), inteira no período que contém o domingo dela, com os ajustes; romaneio
-lançado ou editado depois da cobrança aparece como "entregue depois, não
-cobrado"; sai a reserva que recalculava no navegador com o preço de hoje.
+**Fase 3 (migration `20261023173000_fechamento_ex_mostra_cobrado`):**
+
+- o Fechamento EX lê `public.list_romaneio_ex_fechamento`, só de leitura, com
+  a mesma permissão do `list_romaneio_ex_billing` (que continua como estava);
+- para quem tem acesso ao Contas a receber, cobrança da Buck não cancelada
+  aparece em "Já cobrado" com o que foi cobrado (rótulo "Cobrado", não
+  "pago"): a foto das linhas e os ajustes da confirmação. Aparece inteira no
+  período que contém o último dia dela (o domingo, na semana de segunda a
+  domingo); em período que não o contém, a tela diz onde ela aparece. Cobrança
+  feita pela função antiga, sem foto, aparece só pelo valor;
+- os dias de uma cobrança nunca aparecem em "A cobrar", em período nenhum. "A
+  cobrar" é a conta de sempre nos dias sem cobrança, pelo preço do dia; o
+  total impresso "a cobrar" não inclui semana cobrada;
+- o que mudou nos romaneios depois da cobrança aparece a parte, na semana dela,
+  fora do valor cobrado: comparação item a item da foto com a conta de hoje.
+  Romaneio lançado depois, ou quantidade que subiu, é "entregue depois, não
+  cobrado"; item que saiu ou conferência que reduziu é "saiu do romaneio depois
+  de cobrado". Troca de preço sozinha não entra (o cobrado é o da foto). A
+  diferença, se for o caso, vai como acerto na próxima cobrança;
+- quem não tem acesso ao Contas a receber (como a vendas da EX) vê o período
+  inteiro pelo preço do dia, como antes, sem cobrança nenhuma;
+- saiu a conta de reserva do navegador (`calculateRomaneioBilling`). Na janela
+  do deploy, site novo com banco antigo mostra "O sistema está sendo
+  atualizado", sem número e sem impressão.
 
 ---
 

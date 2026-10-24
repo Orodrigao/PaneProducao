@@ -581,18 +581,20 @@ disputavam um único banco de teste compartilhado.
   mesma composição de romaneios que a tela mostrou. O botão do Fechamento EX saiu da tela, mas a função
   antiga `create_receivable_from_romaneio` ainda existe no banco até uma PR
   própria desligá-la. A soma vive em `private.calcular_cobranca_buck_detalhada`
-  (a versão curta lê dela); o Fechamento EX lê a mesma conta, e
-  `src/lib/romaneioBilling.ts` ficou só como reserva sem impressão na janela
-  do deploy (sai na fase 3 da Tabela Buck com data de validade);
-- Tabela Buck com data de validade (fases 1 e 2 da Fase 6A de
+  (a versão curta lê dela); o Fechamento EX lê a mesma conta, e desde a fase 3
+  da Tabela Buck com data de validade não existe mais conta no navegador;
+- Tabela Buck com data de validade (fases 1 a 3 da Fase 6A de
   [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)): cada romaneio é cobrado pelo
   preço do seu dia, guardado em `buck_price_history`, e o preço da Buck só
   muda por `public.trocar_preco_buck`, com data e motivo, sem alcançar
   romaneio de pão já cobrado e com a versão da prévia que a pessoa conferiu.
   A troca, a prévia e as duas funções de cobrança da Buck pegam as mesmas
   travas de semana. O banco recusa qualquer outra gravação de preço da Buck
-  vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
-  nas semanas cobradas) e o acerto de R$ 337,94 cobrados a mais nas semanas de
+  vinda da API. O Fechamento EX (`public.list_romaneio_ex_fechamento`) mostra,
+  para quem lê o Contas a receber, cada semana cobrada pela foto da
+  confirmação, com os ajustes e o que mudou nos romaneios depois, e deixa em "a
+  cobrar" só os dias sem cobrança; para os outros, o período inteiro pelo preço
+  do dia. Pendente: o acerto de R$ 337,94 cobrados a mais nas semanas de
   21/09 e 28/09, decisão do Rodrigo por ajuste manual. Risco conhecido: o
   Brioche tem duas linhas "un" na Tabela Buck (Hambúrguer e Forma), e a conta
   não separa opção de venda; a troca de preço do Brioche fica recusada até uma

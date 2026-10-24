@@ -1,10 +1,10 @@
-// src/lib/romaneioExBilling.ts — o Fechamento EX lido da conta do banco.
+// src/lib/romaneioExBilling.ts — as linhas da conta da Buck lidas do banco.
 //
 // A conta (preço do dia de cada romaneio, uma linha por preço) mora em
-// `private.calcular_cobranca_buck_detalhada`, a mesma da cobrança semanal. A
-// tela só traduz as linhas para o formato que ela já desenhava. Problema
-// desconhecido vindo do banco bloqueia a impressão: nunca vira cobrança
-// liberada por engano.
+// `private.calcular_cobranca_buck_detalhada`, a mesma da cobrança semanal; a
+// foto de uma cobrança confirmada tem o mesmo formato. A tela só traduz as
+// linhas para o formato que ela desenha. Problema desconhecido vindo do banco
+// bloqueia a impressão: nunca vira cobrança liberada por engano.
 
 import type { RomaneioBillingIssue, RomaneioBillingResult, RomaneioBillingRow, RomaneioBillingUnit } from './romaneioBilling'
 
@@ -46,7 +46,8 @@ function toNumber(value: number | string | null | undefined): number | null {
   return Number.isFinite(numeric) ? numeric : null
 }
 
-function toIssues(problemas: string[] | null): RomaneioBillingIssue[] {
+/** Problema que a tela não conhece vira falta de preço: bloqueia, nunca libera. */
+export function buckIssues(problemas: readonly string[] | null): RomaneioBillingIssue[] {
   const issues: RomaneioBillingIssue[] = []
   for (const problema of problemas ?? []) {
     const issue: RomaneioBillingIssue = KNOWN_ISSUES.has(problema) ? problema as RomaneioBillingIssue : 'missing_price'
@@ -72,7 +73,7 @@ export function billingResultFromBuckLines(lines: readonly BuckBillingLine[]): R
 
   const rows = lines.map((line, index): RomaneioExBillingRow => {
     const itens = line.itens ?? []
-    const issues = toIssues(line.problemas)
+    const issues = buckIssues(line.problemas)
     const unitPrice = toNumber(line.preco_unitario)
     const total = toNumber(line.total)
     const rowTrips = new Set<string>()
@@ -139,9 +140,9 @@ export function billingRowPeriodLabel(row: Pick<RomaneioExBillingRow, 'firstDate
 }
 
 /**
- * A função ainda não existe no banco (janela do deploy): a tela usa a conta
- * antiga. Só pelo código do erro: falta de permissão (42501) também cita o
- * nome da função e nunca pode cair em silêncio na conta antiga.
+ * A função ainda não existe no banco (janela do deploy): a tela avisa que está
+ * atualizando e não mostra número. Só pelo código do erro: falta de permissão
+ * (42501) também cita o nome da função e precisa aparecer como recusa.
  */
 export function isMissingBuckBillingFunction(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
