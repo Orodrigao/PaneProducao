@@ -6,8 +6,9 @@
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
 regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
-11/10/2026, a trava dos agentes, revista em 19/10/2026. As demais seções
-conservam suas datas de revisão anteriores.
+11/10/2026, a trava dos agentes, revista em 19/10/2026; a de 23/10/2026, o
+fechamento da exposição GraphQL. As demais seções conservam suas datas de
+revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -175,8 +176,10 @@ e [FINANCEIRO.md](FINANCEIRO.md)): RLS forçado desde a criação, escrita
 somente por função protegida, grants explícitos, idempotência e matriz de
 teste permitido×bloqueado. Substitui a regra anterior, que exigia a
 conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
-financeiro novo. O hardening restante (fechar a exposição GraphQL; a revisão
-das funções privilegiadas fechou em 2026-09-23) segue em lotes, em paralelo.
+financeiro novo. Os achados da auditoria live de 2026-07-28 no escopo do ERP
+fecharam: a revisão das funções privilegiadas em 2026-09-23 e a exposição
+GraphQL com a migration de 2026-10-23, que a Action aplica no merge (ver Riscos
+ainda abertos). O hardening das próximas tabelas segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -273,16 +276,20 @@ Riscos ainda abertos:
   acesso, nunca abrem. Nenhum defeito encontrado. Achado menor, sem risco:
   `current_user_can_sales` é a única das seis funções de permissão que não
   libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
-  **resta só a exposição GraphQL do schema público**, tratada a seguir;
-- **exposição GraphQL do schema público, ainda aberta.** Levantamento de
-  2026-09-23 (advisor de segurança do próprio Supabase, em produção): `anon` e
-  `authenticated` têm permissão para chamar `graphql_public.graphql()`, o que
-  expõe 75 tabelas do ERP a qualquer usuário logado e 5 tabelas legadas
-  (`pizza_*` e `site_bread_catalog`) a qualquer visitante anônimo pela
-  introspecção do GraphQL. A RLS por trás continua valendo (GraphQL usa o
-  mesmo papel de banco do REST, não contorna policy), então não é vazamento de
-  dado — é superfície destrancada sem uso: o código do site não referencia
-  GraphQL em nenhum lugar. Fechamento planejado (fase 1 do item de segurança);
+  o último achado, a exposição GraphQL, está no item seguinte;
+- **exposição GraphQL do schema público, fechada em duas trancas** (a
+  segunda entra em produção pela Action no merge da PR #523). O advisor de
+  segurança do Supabase apontava em 2026-09-23 que `anon` e `authenticated`
+  enxergavam pelo GraphQL as tabelas que cada papel lê: 75 do ERP para
+  usuário logado e 5 legadas (`pizza_*` e `site_bread_catalog`) para visitante
+  anônimo. A RLS valia nos dois caminhos; era superfície sem uso, porque nem o
+  ERP nem o ControlePizza usam GraphQL. Primeira tranca, PR #445 (24/09/2026):
+  a Data API deixou de publicar o GraphQL, e `/graphql/v1` responde 406,
+  conferido em produção em 2026-10-23. Segunda tranca, PR #523: a extensão
+  `pg_graphql` desligada, com teste de banco que prende esse estado; sem ela,
+  os avisos 0026 e 0027 do advisor somem. A conferência em produção depois da
+  Action fica registrada na PR. Restauração de backup anterior a 23/10/2026 ou
+  atualização de versão do Postgres pedem nova leitura do advisor;
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
   plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
@@ -574,18 +581,20 @@ disputavam um único banco de teste compartilhado.
   mesma composição de romaneios que a tela mostrou. O botão do Fechamento EX saiu da tela, mas a função
   antiga `create_receivable_from_romaneio` ainda existe no banco até uma PR
   própria desligá-la. A soma vive em `private.calcular_cobranca_buck_detalhada`
-  (a versão curta lê dela); o Fechamento EX lê a mesma conta, e
-  `src/lib/romaneioBilling.ts` ficou só como reserva sem impressão na janela
-  do deploy (sai na fase 3 da Tabela Buck com data de validade);
-- Tabela Buck com data de validade (fases 1 e 2 da Fase 6A de
+  (a versão curta lê dela); o Fechamento EX lê a mesma conta, e desde a fase 3
+  da Tabela Buck com data de validade não existe mais conta no navegador;
+- Tabela Buck com data de validade (fases 1 a 3 da Fase 6A de
   [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)): cada romaneio é cobrado pelo
   preço do seu dia, guardado em `buck_price_history`, e o preço da Buck só
   muda por `public.trocar_preco_buck`, com data e motivo, sem alcançar
   romaneio de pão já cobrado e com a versão da prévia que a pessoa conferiu.
   A troca, a prévia e as duas funções de cobrança da Buck pegam as mesmas
   travas de semana. O banco recusa qualquer outra gravação de preço da Buck
-  vinda da API. Pendente: a fase 3 (Fechamento EX mostra o cobrado
-  nas semanas cobradas) e o acerto de R$ 337,94 cobrados a mais nas semanas de
+  vinda da API. O Fechamento EX (`public.list_romaneio_ex_fechamento`) mostra,
+  para quem lê o Contas a receber, cada semana cobrada pela foto da
+  confirmação, com os ajustes e o que mudou nos romaneios depois, e deixa em "a
+  cobrar" só os dias sem cobrança; para os outros, o período inteiro pelo preço
+  do dia. Pendente: o acerto de R$ 337,94 cobrados a mais nas semanas de
   21/09 e 28/09, decisão do Rodrigo por ajuste manual. Risco conhecido: o
   Brioche tem duas linhas "un" na Tabela Buck (Hambúrguer e Forma), e a conta
   não separa opção de venda; a troca de preço do Brioche fica recusada até uma
@@ -706,18 +715,10 @@ rupturas e indicadores comparáveis ainda precisam ser consolidados.
 1. A baseline de navegador cobre o núcleo de Auth e acesso, mas a matriz dos
    módulos operacionais ainda precisa crescer progressivamente conforme cada
    fluxo for estabilizado.
-2. Exposição GraphQL de objetos do schema público que seguem vivos no ERP.
-   ControlePizza/`pizza_*` é exceção legada aceita até desativação.
-3. RLS não pode ser declarado concluído sem resolver os achados da auditoria
-   live de 2026-07-28 no escopo do ERP: resta só a exposição GraphQL (a
-   revisão das funções privilegiadas fechou em 2026-09-23 sem defeito, e a
-   configuração de senha vazada foi resolvida — ver Riscos ainda abertos).
-   Este bloqueio deixou de travar funcionalidade nova — ver a decisão em
-   Fase estratégica.
-4. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
+2. Os planos de permissão (`allowed_routes` × `app_user_permissions`) ainda não
    são sincronizados nos módulos antigos; Pedidos PJ já usa a permissão
    granular para menu e rota.
-5. O smoke de navegador ainda falha de forma intermitente por causa de
+3. O smoke de navegador ainda falha de forma intermitente por causa de
    ambiente: login logo após a recriação das contas fictícias, e o cenário da
    Geolar, que oscila desde o PR #199. Enquanto restarem, o semáforo segura
    entregas sem relação com a falha.
