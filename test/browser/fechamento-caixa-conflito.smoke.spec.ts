@@ -14,7 +14,6 @@ async function probeProtectedClosing(page: Page, request: import('@playwright/te
   expect(probe.ok(), 'Sonda do fechamento: HTTP ' + probe.status()).toBe(true)
 }
 
-
 test.use({
   browserName: 'chromium',
   channel: 'chrome',
@@ -58,8 +57,10 @@ async function showClosingJa(page: Page, who: Who, date: string) {
     const initial = closingLoaded(page, 'jc')
     const request = page.waitForRequest(r => r.url().includes('/rest/v1/cash_closings'))
     await page.goto('/fechamento-caixa')
-    await probeProtectedClosing(page, await request)
+    // A sonda vem depois da leitura inicial: pular com uma espera de resposta
+    // ainda pendente faz o Playwright contar "Test ended" como falha.
     await initial
+    await probeProtectedClosing(page, await request)
     await expect(store).toBeEnabled({ timeout: slowPreviewDataTimeoutMs })
     const ja = closingLoaded(page, 'ja')
     await store.selectOption('ja')
@@ -69,8 +70,8 @@ async function showClosingJa(page: Page, who: Who, date: string) {
     const initial = closingLoaded(page, 'ja')
     const request = page.waitForRequest(r => r.url().includes('/rest/v1/cash_closings'))
     await page.goto('/fechamento-caixa')
-    await probeProtectedClosing(page, await request)
     await initial
+    await probeProtectedClosing(page, await request)
     await expect(store).toHaveValue('ja')
     await expect(store).toBeDisabled()
   }

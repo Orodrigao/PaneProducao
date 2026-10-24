@@ -14,7 +14,6 @@ async function probeProtectedClosing(page: Page, request: import('@playwright/te
   expect(probe.ok(), 'Sonda do fechamento: HTTP ' + probe.status()).toBe(true)
 }
 
-
 test.use({ browserName: 'chromium', channel: 'chrome' })
 
 function loaded(page: Page, date?: string) {
@@ -36,8 +35,10 @@ test('vendas JA salva Stone e 99Food pela função e relê sem somar aplicativo 
   const initial = loaded(page)
   const request = page.waitForRequest(r => r.url().includes('/rest/v1/cash_closings'))
   await page.goto('/fechamento-caixa')
-  await probeProtectedClosing(page, await request)
+  // A sonda vem depois da leitura inicial: pular com uma espera de resposta
+  // ainda pendente faz o Playwright contar "Test ended" como falha.
   await initial
+  await probeProtectedClosing(page, await request)
   await expect(page.getByLabel('Loja')).toHaveValue('ja')
   await expect(page.getByLabel('Loja')).toBeDisabled()
   // Datas fictícias fora das fixtures e do período que vai alimentar o livro.
