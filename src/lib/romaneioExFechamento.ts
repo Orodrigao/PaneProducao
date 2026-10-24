@@ -122,6 +122,13 @@ function asBuckLines(value: unknown, what: string): BuckBillingLine[] {
     asText(line.produto, what)
     asText(line.unidade, what)
     asArray(line.itens, what)
+    asNumber(line.quantidade, what)
+    // Linha sem problema sempre tem preço e total: sem eles ela sumiria do
+    // total sem bloquear a impressão.
+    if (asArray(line.problemas, what).length === 0) {
+      asNumber(line.preco_unitario, what)
+      asNumber(line.total, what)
+    }
     return line as unknown as BuckBillingLine
   })
 }

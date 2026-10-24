@@ -39,6 +39,22 @@ where receivable_id = '96800000-0000-4000-8000-000000000021'::uuid;
 delete from public.receivable_adjustments
 where receivable_id = '96800000-0000-4000-8000-000000000021'::uuid;
 
+-- Os romaneios dessa semana cobrada tem data fixa (agosto de 2026), e as
+-- janelas deste teste andam com "hoje": em algum dia passam por eles.
+delete from public.romaneio_items
+where romaneio_id in (
+  '96800000-0000-4000-8000-000000000001'::uuid,
+  '96800000-0000-4000-8000-000000000002'::uuid,
+  '96800000-0000-4000-8000-000000000003'::uuid
+);
+
+delete from public.romaneios
+where id in (
+  '96800000-0000-4000-8000-000000000001'::uuid,
+  '96800000-0000-4000-8000-000000000002'::uuid,
+  '96800000-0000-4000-8000-000000000003'::uuid
+);
+
 delete from public.receivables
 where id in (
   '96400000-0000-4000-8000-000000000301'::uuid,

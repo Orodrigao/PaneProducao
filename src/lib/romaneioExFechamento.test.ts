@@ -155,6 +155,10 @@ describe('fechamentoExFromPayload', () => {
     ['valor cobrado ilegível', payload({ cobrancas: [semanaCobrada({ amount: 'muito' })] })],
     ['data fora do formato', payload({ cobrancas: [semanaCobrada({ period_end: '23/08/2026' })] })],
     ['linha sem produto', payload({ a_cobrar: [{ product_source: 'bread', product_id: 'x', unidade: 'un', itens: [] }] })],
+    ['linha sem problema e sem total', payload({ a_cobrar: [{ ...payload().a_cobrar[0], total: null }] })],
+    ['linha sem problema e sem preço', payload({ a_cobrar: [{ ...payload().a_cobrar[0], preco_unitario: null }] })],
+    ['linha sem a lista de problemas', payload({ a_cobrar: [{ ...payload().a_cobrar[0], problemas: null }] })],
+    ['linha da foto sem total', payload({ cobrancas: [semanaCobrada({ linhas: [{ ...semanaCobrada().linhas[0], total: null }] })] })],
     ['mudança zerada', payload({ cobrancas: [semanaCobrada({ depois: [{ ...semanaCobrada().depois[0], quantidade: 0 }] })] })],
   ])('recusa %s em vez de mostrar número faltando', (_caso, entrada) => {
     expect(() => fechamentoExFromPayload(entrada)).toThrow(/formato que a tela não conhece/)
