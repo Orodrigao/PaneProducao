@@ -278,25 +278,18 @@ Riscos ainda abertos:
   libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
   o último achado, a exposição GraphQL, está no item seguinte;
 - **exposição GraphQL do schema público, fechada em duas trancas** (a
-  segunda entra em produção pela Action no merge desta entrega). O advisor
-  de segurança do Supabase apontava em 2026-09-23 que `anon` e `authenticated`
-  podiam chamar `graphql_public.graphql()` e enxergar pela introspecção as
-  tabelas que cada papel lê: 75 do ERP para usuário logado e 5 legadas
-  (`pizza_*` e `site_bread_catalog`) para visitante anônimo. A RLS valia nos
-  dois caminhos; era superfície sem uso, porque nem o ERP nem o ControlePizza
-  referenciam GraphQL. Primeira tranca, PR #445 (24/09/2026): a Data API
-  publica só `public` (`[api].schemas` do `supabase/config.toml`, aplicado
-  pela Action) e `/graphql/v1` responde 406 (PGRST106), conferido em produção
-  em 2026-10-23. Segunda tranca, entregue em 23/10/2026: a migration
-  `20261023171500_desliga_pg_graphql` desliga a extensão `pg_graphql`, e
-  `supabase/tests/graphql_desligado.test.sql` prende esse estado; os avisos
-  0026 e 0027 do advisor só contam tabela com a extensão instalada. A
-  conferência em produção depois da Action (extensão ausente, advisor sem os
-  dois avisos) fica registrada na PR. Volta atrás: migration nova com
-  `create extension pg_graphql with schema graphql`; para o GraphQL voltar a
-  responder pela API, `graphql_public` também precisa voltar à lista de
-  schemas. Restauração de backup anterior a 23/10 ou atualização de versão do
-  Postgres pedem nova leitura do advisor;
+  segunda entra em produção pela Action no merge da PR #523). O advisor de
+  segurança do Supabase apontava em 2026-09-23 que `anon` e `authenticated`
+  enxergavam pelo GraphQL as tabelas que cada papel lê: 75 do ERP para
+  usuário logado e 5 legadas (`pizza_*` e `site_bread_catalog`) para visitante
+  anônimo. A RLS valia nos dois caminhos; era superfície sem uso, porque nem o
+  ERP nem o ControlePizza usam GraphQL. Primeira tranca, PR #445 (24/09/2026):
+  a Data API deixou de publicar o GraphQL, e `/graphql/v1` responde 406,
+  conferido em produção em 2026-10-23. Segunda tranca, PR #523: a extensão
+  `pg_graphql` desligada, com teste de banco que prende esse estado; sem ela,
+  os avisos 0026 e 0027 do advisor somem. A conferência em produção depois da
+  Action fica registrada na PR. Restauração de backup anterior a 23/10/2026 ou
+  atualização de versão do Postgres pedem nova leitura do advisor;
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
   plano Pro ativo na organização, HaveIBeenPwned habilitado e mínimo de 10
