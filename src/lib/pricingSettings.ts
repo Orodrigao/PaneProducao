@@ -9,12 +9,13 @@
 import type { CatalogType, ProductCategory } from '@/lib/productCategories'
 
 /** Mesmo conjunto do check `channel` da migration; mudar um exige mudar o outro. */
-export const PRICING_CHANNELS = ['balcao', 'ifood', 'buck'] as const
+export const PRICING_CHANNELS = ['balcao', 'ifood', 'food99', 'buck'] as const
 export type PricingChannel = typeof PRICING_CHANNELS[number]
 
 const CHANNEL_LABELS: Record<PricingChannel, string> = {
   balcao: 'Balcão',
   ifood: 'iFood',
+  food99: '99Food',
   buck: 'Buck',
 }
 

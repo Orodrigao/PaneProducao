@@ -83,12 +83,13 @@ Não reabrir sem evidência nova.
    dinheiro (fornecedor, diária) sai dele e é lançado igual. Sangria,
    depósito, reforço e movimentação entre contas são **transferências** —
    não tocam o DRE. Sem isso, dinheiro físico é contado duas vezes ou some.
-8. **Venda entra cheia; taxa vira despesa própria.** Cartão (débito,
-   crédito, SiTef) e iFood geram despesa de taxa visível — hoje a taxa de
-   22,7% do iFood (~R$ 48 mil/ano) não aparece em lugar nenhum. O percentual
-   usado fica gravado no próprio lançamento: mudar a tabela de taxas não
-   reescreve meses antigos, e diferença entre taxa prevista e real vira
-   ajuste, nunca correção do bruto.
+8. **Venda entra cheia; taxa vira despesa própria.** Cartão, SiTef, iFood
+   e 99Food geram despesa de taxa visível. Taxas informadas em 23/10/2026:
+   iFood 12% + 3,2% = 15,2% sobre itens e tele; 99Food 10,9% + 3,2% = 14,1%;
+   maquininha crédito 3,51% e débito 1,09%. Como o fechamento junta ambos,
+   a configuração usa taxa média por maquininha, a conferir pelo extrato.
+   O percentual usado fica gravado no lançamento; mudar a taxa não reescreve
+   meses antigos e diferença entre prevista e real vira ajuste do mês.
 9. **DRE em dois andares.** Empréstimos, compra de equipamento e retiradas
    do dono **não são despesa operacional**: aparecem abaixo do resultado
    operacional, como no DRE de julho. Senão o custo mensal infla e um mês
@@ -137,16 +138,16 @@ esquecimento:
 
 ## Achados da auditoria que o plano precisa tratar
 
-1. **`cash_closings` aceita inserção e edição direta pelo navegador, e
-   editar sobrescreve o fechamento sem rastro.** Insustentável como fonte de
-   receita automática; a fase 3 protege a escrita e deriva os lançamentos
-   com recálculo auditável.
-2. **Bug do Stone:** o campo rotulado "4. Stone crédito/débito" na tela de
-   fechamento é gravado na coluna `site_sales_amount`
-   (`src/app/fechamento-caixa/page.tsx`, ~linha 70). ~R$ 30,9 mil/mês
-   classificados como venda de site. O conserto exige política de histórico
-   (reclassificação auditável ou corte prospectivo), decidida na fase 3 com
-   o dado em mãos.
+1. **Fechamento protegido, fase 3 PR 1:** a tela passa a salvar por
+   `save_cash_closing`, com cálculo no banco, controle de versão e histórico
+   de cada criação e edição. Gravação direta pelo navegador é recusada com
+   mensagem para anotar os números e recarregar. A PR 2 ainda precisa revogar
+   grants e policies de escrita e criar a ponte para o livro-caixa.
+2. **Stone, opção A decidida por Rodrigo em 23/10/2026:** a PR 1 corrige
+   os dias desde 01/09/2026, substituindo Stone pelo valor antes guardado em
+   `site_sales_amount`, zerando o legado e registrando a correção no histórico,
+   sem mudar o total. Agosto fica intocado até uma edição pela função.
+   A tela usa `stone_amount` e mostra também o legado dos dias antigos.
 3. **iFood é campo informativo do fechamento** (fora do total declarado,
    lição `fechamento-caixa-informativos`). A ponte da fase 3 trata isso
    conscientemente: nem soma dupla, nem concluir que o total do fechamento é
@@ -360,7 +361,7 @@ previsões futuras sem tocar as passadas.
 ## Fase 3 — Receita do varejo e taxas, juntas
 
 **Objetivo:** o fechamento de caixa que a loja já faz vira receita no DRE,
-com a taxa de cartão e iFood nascendo como despesa na mesma operação.
+com as taxas de cartão, iFood e 99Food nascendo como despesa na mesma operação.
 
 **Escopo — entra:**
 
@@ -373,9 +374,8 @@ com a taxa de cartão e iFood nascendo como despesa na mesma operação.
   total do caixa, sem soma dupla;
 - config de taxas por meio de pagamento; a despesa de taxa nasce na mesma
   transação da receita, com o percentual gravado no lançamento;
-- **conserto do bug Stone**: rótulo e coluna reconciliados
-  (`site_sales_amount`), com política de histórico decidida na fase
-  (reclassificação auditável do legado ou corte prospectivo documentado);
+- **Stone corrigida pela PR 1:** coluna própria e reclassificação auditável
+  desde setembro; dias anteriores são normalizados ao editar;
 - bloqueio de `ex` na ponte (EX é cliente — decisão 3);
 - tela simples de conferência do mês: total lançado × total esperado por
   fonte — o teste de fogo antes do DRE completo.

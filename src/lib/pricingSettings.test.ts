@@ -23,7 +23,7 @@ import {
 import type { ProductCategory } from './productCategories'
 
 const MIGRATION = readFileSync(
-  new URL('../../supabase/migrations/20260930012316_configuracao_sistema_preco.sql', import.meta.url),
+  new URL('../../supabase/migrations/20261023180000_fechamento_caixa_protegido.sql', import.meta.url),
   'utf8',
 )
 
@@ -68,6 +68,7 @@ describe('formatação', () => {
   it('rótulo de canal desconhecido cai na chave crua', () => {
     expect(pricingChannelLabel('balcao')).toBe('Balcão')
     expect(pricingChannelLabel('ifood')).toBe('iFood')
+    expect(pricingChannelLabel('food99')).toBe('99Food')
     expect(pricingChannelLabel('outro')).toBe('outro')
     expect(pricingChannelLabel(null)).toBe('Todos os canais')
   })
@@ -83,6 +84,13 @@ describe('paridade com a migration', () => {
 
 describe('buildPricingChanges', () => {
   const slots = baseSlots()
+
+  it('envia a taxa do 99Food no canal próprio', () => {
+    const slot = slotId({ key: 'taxa_canal', channel: 'food99', categoryId: null })
+    expect(buildPricingChanges(slots, { [slot]: '14,1' }, new Map()).changes).toEqual([
+      { setting_key: 'taxa_canal', channel: 'food99', category_id: null, value: 14.1, previous_value: null },
+    ])
+  })
 
   it('nada digitado não gera mudança', () => {
     expect(buildPricingChanges(slots, {}, new Map())).toEqual({ changes: [], errors: {} })

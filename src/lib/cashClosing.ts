@@ -2,7 +2,8 @@ export interface CashClosingInput {
   banriAmount: number
   sitefAmount: number
   pixAmount: number
-  siteSalesAmount: number
+  stoneAmount: number
+  food99SalesAmount: number
   ifoodSalesAmount: number
   cashWithdrawalAmount: number
   openingCashAmount: number
@@ -53,13 +54,9 @@ export function formatCurrencyBRL(value: number): string {
   return MONEY_FORMATTER.format(Number.isFinite(value) ? value : 0)
 }
 
-// Duas pessoas no mesmo caixa ao mesmo tempo (08/10/2026, JC: uma salvou, a
-// outra tentou salvar por cima de uma tela aberta antes). O banco recusa o
-// fechamento novo repetido (uma loja, um fechamento por dia: 23505) e a tela
-// recusa a atualizacao feita sobre uma versao que ja mudou (nenhuma linha com o
-// updated_at lido: PGRST116). Os dois casos pedem a mesma saida na tela.
+// A função do banco devolve PT409 quando a versão lida já mudou.
 export function isCashClosingSaveConflict(error: { code?: string } | null | undefined): boolean {
-  return error?.code === '23505' || error?.code === 'PGRST116'
+  return error?.code === 'PT409'
 }
 
 // Sem resposta do banco (rede caiu, requisicao cancelada) ou com erro do
@@ -89,11 +86,12 @@ const CASH_CLOSING_INPUT_KEYS: (keyof CashClosingInput)[] = [
   'closingCashAmount',
   'cashWithdrawalAmount',
   'banriAmount',
-  'siteSalesAmount',
+  'stoneAmount',
   'sitefAmount',
   'pixAmount',
   'openingCashAmount',
   'ifoodSalesAmount',
+  'food99SalesAmount',
   'envelopeAmount',
   'nextDayCashAmount',
 ]
@@ -147,7 +145,7 @@ export function calculateCashClosingTotals(input: CashClosingInput): CashClosing
 
   const nonCashPaymentTotalCents =
     toCents(input.banriAmount)
-    + toCents(input.siteSalesAmount)
+    + toCents(input.stoneAmount)
     + toCents(input.sitefAmount)
     + toCents(input.pixAmount)
 
@@ -163,4 +161,10 @@ export function calculateCashClosingTotals(input: CashClosingInput): CashClosing
     declaredTotal: fromCents(declaredTotalCents),
     cashSplitTotal: fromCents(cashSplitTotalCents),
   }
+}
+
+export function cashClosingSaveErrorMessage(error: { code?: string; message?: string }, status?: number): string {
+  if (error.code === 'PGRST202' || status === 404) return 'O sistema está sendo atualizado; seus números continuam na tela. Aguarde um minuto e toque em Salvar de novo.'
+  if (error.code === '42501') return 'Sem permissão para fechar o caixa desta loja.'
+  return error.message ? 'Erro ao salvar: ' + error.message : 'Não foi possível salvar. Seus números continuam na tela.'
 }

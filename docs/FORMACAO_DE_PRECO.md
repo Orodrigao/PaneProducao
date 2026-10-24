@@ -211,7 +211,7 @@ Decisões de Rodrigo na conversa "Formação de preço: descoberta e plano".
 - **O mesmo percentual de despesas fixas vale para todos os canais**, a Buck
   inclusive, mesmo que ela não use balcão nem loja. Rodrigo preferiu a regra
   simples ao preço mais justo da Buck.
-- **Canais com preço sugerido próprio: Balcão, iFood e Buck.** Os demais
+- **Canais com preço sugerido próprio: Balcão, iFood, 99Food e Buck.** Os demais
   clientes PJ ficam fora, sem aviso.
 - **Só admin vê a formação de preço e muda a Configuração**, garantido no banco,
   não só na tela. Compras continua mexendo em receita e rendimento.
@@ -374,7 +374,7 @@ categorias de revenda. Gravar é ação do Rodrigo como admin.
 
 Parâmetros usados na conta: Simples Nacional 8,49%; taxa de cartão no balcão
 5,5%, valor conservador escolhido por Rodrigo, que inclui venda em dinheiro e
-Pix sem taxa; Buck sem taxa de canal; **comissão do iFood ainda não informada**.
+Pix sem taxa; Buck sem taxa de canal; iFood 12% + 3,2% = 15,2% sobre itens e tele; 99Food 10,9% + 3,2% = 14,1% (23/10/2026). Maquininha: crédito 3,51% e débito 1,09%; como o fechamento junta ambos, usa taxa média por maquininha, a conferir pelo extrato.
 
 ### Por que esses números
 
@@ -470,7 +470,7 @@ propor uma tabela rebalanceada. No bolo, o caminho indicado é rever a receita
 
 ## O que ainda não está decidido
 
-- A comissão do iFood.
+- A taxa média efetiva de cada maquininha, a conferir pelo extrato.
 - O que a página de Configuração do Sistema vai conter além dos parâmetros de
   preço.
 
