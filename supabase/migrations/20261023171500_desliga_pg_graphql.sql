@@ -1,0 +1,23 @@
+-- Desliga a extensao pg_graphql, que nem o ERP nem o ControlePizza usam.
+--
+-- Primeira tranca, desde a PR #445 (24/09/2026): a Data API publica somente o
+-- schema `public` ([api].schemas em supabase/config.toml, aplicado pela Action
+-- Banco (migrations)), e o endpoint /graphql/v1 responde 406 (PGRST106).
+-- A extensao, porem, seguia instalada: bastava `graphql_public` voltar a lista
+-- para a introspeccao mostrar de novo as tabelas que `anon` e `authenticated`
+-- leem, e o Security Advisor seguia acusando os avisos 0026 e 0027.
+--
+-- Segunda tranca, esta migration: desligar a extensao, que e a forma oficial
+-- de desabilitar o GraphQL no Supabase. Os avisos 0026 e 0027 so contam tabela
+-- quando a extensao existe. Nenhum objeto do projeto depende dela (pg_depend
+-- conferido em producao em 23/10/2026); sem cascade, uma dependencia registrada
+-- que apareca faz a migration falhar em vez de apagar o objeto. O gatilho de
+-- evento do Supabase troca graphql_public.graphql por uma versao que so responde
+-- erro; se ele falhar, a remocao inteira volta atras junto.
+--
+-- Volta atras desta migration: migration nova com
+--   create extension if not exists pg_graphql with schema graphql;
+-- (sem VERSION, instala a versao corrente da plataforma). Para o GraphQL voltar
+-- a responder pela API, `graphql_public` tambem precisa voltar a [api].schemas.
+
+drop extension if exists pg_graphql;
