@@ -18,28 +18,19 @@ test.describe('Fechamento no livro no banco desta PR', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 })
   let closing: { id: string }
   let stone: number
-  let initialRates: Awaited<ReturnType<typeof rates>>
-  let previousFee: Entry | undefined
-  let stoneBefore: { rate: number | null } | undefined
   const input = (value: number) => value.toFixed(2).replace('.', ',')
 
   test('Vendas JA salva pela tela e relê',
     matriz('Vendas JA', 'JA', 'permitido: salva e relê', 'Fechamento e Data API'), async ({ page }) => {
       // Estado anterior define a expectativa: o banco desta PR pode receber várias rodadas.
-      let access = await entrarComo(page, 'financeiroJc')
+      const access = await entrarComo(page, 'vendasJa')
       const closings = await read(page, access, 'cash_closings?store=eq.ja&closing_date=eq.' + DIA + '&select=*')
       const previous = closings[0]
-      const oldEntries: Entry[] = previous ? await read(page, access, 'finance_entries?source=eq.fechamento_caixa&source_ref=eq.' + previous.id + '&select=*&order=created_at.desc') : []
-      previousFee = oldEntries.find(e => e.source_detail === 'stone' && e.fee_of && e.entry_type === 'lancamento')
-      initialRates = await rates(page, access)
-      stoneBefore = initialRates.history.filter((r: { method: string; valid_from: string }) => r.method === 'stone' && r.valid_from <= DIA)
-        .sort((a: { valid_from: string; created_at: string }, b: { valid_from: string; created_at: string }) => b.valid_from.localeCompare(a.valid_from) || b.created_at.localeCompare(a.created_at))[0]
       const next = (key: string, base: number) => Math.round(((Number(previous?.[key]) || base) + 0.01) * 100) / 100
       const cash = next('cash_amount', 101)
       const banrisul = next('banri_amount', 202)
       stone = next('stone_amount', 303)
       const pix = next('pix_amount', 404)
-      access = await entrarComo(page, 'vendasJa')
       await page.goto('/fechamento-caixa?loja=ja&data=' + DIA)
       await expect(page.getByLabel('Data', { exact: true })).toHaveValue(DIA, { timeout: 20_000 })
       await expect(page.getByLabel('Loja')).toHaveValue('ja')
@@ -72,6 +63,9 @@ test.describe('Fechamento no livro no banco desta PR', () => {
   test('Financeiro JC lê receitas, grava Stone e corrige na origem',
     matriz('Financeiro JC', 'JA', 'permitido: receita, taxa e correção', 'Livro (tela e Data API)'), async ({ page }) => {
       const access = await entrarComo(page, 'financeiroJc')
+      const initialRates = await rates(page, access)
+      const stoneBefore = initialRates.history.filter(r => r.method === 'stone' && r.valid_from <= DIA)
+        .sort((a, b) => b.valid_from.localeCompare(a.valid_from) || b.created_at.localeCompare(a.created_at))[0]
       await page.goto('/financeiro')
       await page.getByLabel('Mês').fill('2026-09')
       const panel = page.getByRole('region', { name: 'Taxas dos meios de pagamento' })
@@ -90,13 +84,18 @@ test.describe('Fechamento no livro no banco desta PR', () => {
         await expect(article.getByRole('button', { name: /^Estornar/ })).toHaveCount(0)
         await expect(article.getByRole('button', { name: 'Corrigir no Fechamento de caixa' })).toBeVisible()
       }
-      const before: Entry[] = await read(page, access, 'finance_entries?source_ref=eq.' + closing.id + '&select=*')
+      const before: Entry[] = await read(page, access, 'finance_entries?source_ref=eq.' + closing.id + '&select=*&order=created_at.desc')
       const revenue = before.find(e => e.source_detail === 'stone' && !e.fee_of && e.entry_type === 'lancamento' && !e.reversed_at)!
       expect(revenue.amount).toBe(stone)
       const feeBeforeSave = before.find(e => e.fee_of === revenue.id && e.entry_type === 'lancamento' && !e.reversed_at)
-      const frozen = previousFee?.fee_rate ?? stoneBefore?.rate ?? null
-      if (frozen !== null && Math.round(stone * frozen) > 0) expect(feeBeforeSave?.fee_rate).toBe(frozen)
-      if (!feeBeforeSave && stoneBefore?.rate == null) {
+      const previousFee = before.find(e => e.source_detail === 'stone' && e.fee_of && e.entry_type === 'lancamento' && e.reversed_at)
+      const frozen = previousFee ? previousFee.fee_rate : stoneBefore?.rate ?? null
+      if (frozen !== null && Math.round(stone * frozen) > 0) expect(feeBeforeSave).toBeDefined()
+      if (feeBeforeSave) {
+        expect(feeBeforeSave.fee_rate).toBe(frozen)
+        expect(feeBeforeSave.fee_rate_version_id).toBe(previousFee ? previousFee.fee_rate_version_id : stoneBefore?.id)
+      }
+      if (!feeBeforeSave && frozen === null) {
         const pending = await rates(page, access)
         expect(pending.pending).toContainEqual(expect.objectContaining({ method: 'stone', store: 'ja', competence_month: '2026-09-01', amount: expect.any(Number) }))
         await expect(panel.getByRole('heading', { name: 'Venda ainda sem taxa' })).toBeVisible()

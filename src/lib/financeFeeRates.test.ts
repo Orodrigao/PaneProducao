@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc: vi.fn() } }))
 import { supabase } from './supabase'
-import { buildFeeRateRequest, feeRateErrorMessage, formatFeeRate, parseFeeRate, loadFinanceFeeRates, saveFinanceFeeRate, feeRateImpact } from './financeFeeRates'
+import { buildFeeRateRequest, feeRateErrorMessage, formatFeeRate, parseFeeRate, loadFinanceFeeRates, saveFinanceFeeRate, feeRateImpact, feeRateAppliedImpact, type FinanceFeeRates } from './financeFeeRates'
 const draft = { method: 'stone' as const, rate: '3,5125', validFrom: '2026-09-01', expectedLatestId: 'old' }
 describe('taxas do fechamento', () => {
   it('preserva quatro casas e distingue vazio de zero', () => {
@@ -48,12 +48,51 @@ describe('taxas do fechamento', () => {
       ],
     }
     expect(feeRateImpact(panel, 'stone', '2026-09-15')).toEqual({
-      amount: 300, stores: 'JA e JC', months: 'setembro de 2026 e outubro de 2026',
+      upperBound: true, amount: 300, stores: 'JA e JC', months: 'setembro de 2026 e outubro de 2026',
     })
     expect(feeRateImpact(panel, 'stone', '2026-10-01')).toEqual({
-      amount: 200, stores: 'JA', months: 'outubro de 2026',
+      upperBound: false, amount: 200, stores: 'JA', months: 'outubro de 2026',
     })
-    expect(feeRateImpact(panel, 'stone', '2026-11-01')).toEqual({ amount: 0, stores: '', months: '' })
+    expect(feeRateImpact(panel, 'stone', '2026-11-01')).toEqual({ upperBound: false, amount: 0, stores: '', months: '' })
+  })
+  const pendingPanel: FinanceFeeRates = {
+    can_edit: true, bridge: { enabled: true, start_date: '2026-09-01' }, methods: [], history: [],
+    pending: [
+      { method: 'stone', store: 'jc', competence_month: '2026-08-01', amount: 50, quantity: 1 },
+      { method: 'stone', store: 'jc', competence_month: '2026-09-01', amount: 100, quantity: 2 },
+      { method: 'stone', store: 'ja', competence_month: '2026-09-01', amount: 200, quantity: 2 },
+      { method: 'stone', store: 'ja', competence_month: '2026-10-01', amount: 400, quantity: 1 },
+      { method: 'pix', store: 'jc', competence_month: '2026-09-01', amount: 900, quantity: 1 },
+    ],
+  }
+  it('dia 1 sem próxima versão é exato e exclui mês anterior e outro meio', () => {
+    expect(feeRateImpact(pendingPanel, 'stone', '2026-09-01')).toEqual({
+      amount: 700, stores: 'JA e JC', months: 'setembro de 2026 e outubro de 2026', upperBound: false,
+    })
+  })
+  it('usa a próxima vigência do mesmo meio, mesmo com histórico fora de ordem', () => {
+    const version = { id: 'v', method: 'stone' as const, rate: 3, valid_from: '2026-11-01', author_name: 'Teste', created_at: '' }
+    const panel = { ...pendingPanel, history: [version,
+      { ...version, method: 'pix' as const, valid_from: '2026-09-02' },
+      { ...version, valid_from: '2026-10-01' },
+      { ...version, valid_from: '2026-09-01' },
+    ] }
+    expect(feeRateImpact(panel, 'stone', '2026-09-01')).toEqual({
+      amount: 300, stores: 'JA e JC', months: 'setembro de 2026', upperBound: false,
+    })
+    panel.history = [{ ...version, valid_from: '2026-10-15' }]
+    expect(feeRateImpact(panel, 'stone', '2026-09-01')).toMatchObject({ amount: 700, upperBound: true })
+  })
+  it('compara pendências relidas, incluindo redução parcial, sem repetir meses inalterados', () => {
+    const after = { ...pendingPanel, pending: pendingPanel.pending
+      .filter(row => !(row.method === 'stone' && row.store === 'ja' && row.competence_month === '2026-09-01'))
+      .map(row => row.method === 'stone' && row.competence_month === '2026-09-01'
+        ? { ...row, amount: 40, quantity: 1 } : row) }
+    expect(feeRateAppliedImpact(pendingPanel, after, 'stone')).toEqual({
+      amount: 260, stores: 'JA e JC', months: 'setembro de 2026',
+    })
+    expect(feeRateAppliedImpact(pendingPanel, pendingPanel, 'stone')).toEqual({ amount: 0, stores: '', months: '' })
+    expect(feeRateAppliedImpact(after, pendingPanel, 'stone')).toEqual({ amount: 0, stores: '', months: '' })
   })
   it('propaga status HTTP da função ausente', async () => {
     vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: { message: 'missing' }, status: 404 } as never)

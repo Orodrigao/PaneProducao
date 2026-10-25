@@ -393,7 +393,9 @@ pela nova versão ganham despesa. Taxas já lançadas nunca são reescritas.
 
 As vendas sem taxa aparecem separadas por meio, loja e mês, somente nas lojas
 que a pessoa pode consultar no livro. Antes de gravar, a confirmação informa
-o valor de vendas, as lojas e os meses afetados; cada taxa entra no mês da venda.
+o valor de vendas, as lojas e os meses afetados, respeitando a próxima versão do
+mesmo meio. Quando a vigência corta um mês no meio, mostra "até" o valor indicado,
+pois as pendências são agrupadas por mês; cada taxa entra no mês da venda.
 Depois de gravar, o painel informa os meses em que houve lançamento.
 Grave primeiro o período mais recente: taxas já lançadas não mudam quando
 uma taxa de período anterior é informada depois.

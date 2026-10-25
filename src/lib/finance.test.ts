@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// O módulo cria o cliente Supabase ao ser importado; estes testes só exercitam
-// as funções puras, então o cliente é dispensado.
+// Cliente simulado para validar as consultas sem acessar o banco.
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
+
 import {
+  loadFinanceEntries,
   buildFinanceRecurringForecasts,
   competenceMonthOf,
   entryDifference,
@@ -318,5 +320,51 @@ describe('receita do fechamento', () => {
   })
   it('mantém ajuste avulso das taxas', () => {
     expect(categoryAcceptsManualEntry({ key: 'taxas_cartao_apps', nature: 'despesa' })).toBe(true)
+  })
+})
+
+
+describe('leitura do livro durante a atualização do banco', () => {
+  function mockQueries(results: { data: unknown; error: { code: string; message: string } | null }[]) {
+    const select = vi.fn()
+    const gte = vi.fn()
+    const lt = vi.fn()
+    const order = vi.fn()
+    const chain = { select, gte, lt, order }
+    select.mockReturnValue(chain)
+    gte.mockReturnValue(chain)
+    lt.mockReturnValue(chain)
+    for (const result of results) {
+      order.mockReturnValueOnce(chain).mockResolvedValueOnce(result)
+    }
+    vi.mocked(supabase.from).mockReset().mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
+    return { select, gte, lt, order }
+  }
+
+  it.each([
+    { code: '42703', message: 'column finance_entries.source_detail does not exist' },
+    { code: 'PGRST204', message: "Could not find the 'fee_rate_version_id' column in the schema cache" },
+  ])('relê as colunas antigas quando faltam colunas novas: $code', async error => {
+    const { source_detail, fee_of, fee_rate, fee_rate_version_id, ...oldRow } = entry()
+    const query = mockQueries([{ data: null, error }, { data: [oldRow], error: null }])
+    expect(await loadFinanceEntries('2026-08')).toEqual([{
+      ...oldRow, source_detail, fee_of, fee_rate, fee_rate_version_id,
+    }])
+    expect(supabase.from).toHaveBeenCalledTimes(2)
+    expect(query.select.mock.calls[0][0]).toContain('fee_rate_version_id')
+    expect(query.select.mock.calls[1][0]).not.toMatch(/source_detail|fee_of|fee_rate/)
+    expect(query.gte.mock.calls).toEqual([['competence_month', '2026-08-01'], ['competence_month', '2026-08-01']])
+    expect(query.lt.mock.calls).toEqual([['competence_month', '2026-09-01'], ['competence_month', '2026-09-01']])
+    expect(query.order.mock.calls).toEqual([
+      ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+      ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+    ])
+  })
+
+  it('propaga outro erro sem repetir a consulta', async () => {
+    const error = { code: '42501', message: 'permission denied for table finance_entries' }
+    mockQueries([{ data: null, error }])
+    await expect(loadFinanceEntries('2026-08')).rejects.toEqual(error)
+    expect(supabase.from).toHaveBeenCalledTimes(1)
   })
 })

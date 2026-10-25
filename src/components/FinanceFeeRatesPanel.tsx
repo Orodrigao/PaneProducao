@@ -8,6 +8,7 @@ import {
   feeMethodLabel,
   feeRateErrorMessage,
   feeRateImpact,
+  feeRateAppliedImpact,
   formatFeeRate,
   loadFinanceFeeRates,
   saveFinanceFeeRate,
@@ -30,7 +31,9 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
     setLoading(true)
     setError('')
     try {
-      setData(await loadFinanceFeeRates())
+      const loaded = await loadFinanceFeeRates()
+      setData(loaded)
+      return loaded
     } catch (loadError) {
       setError(feeRateErrorMessage(loadError))
     } finally {
@@ -57,7 +60,7 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
         : payload.p_rate === 0
           ? 'Taxa zero: não gera despesa para as vendas cobertas.'
           : impact.amount > 0
-          ? 'A taxa vai ser lançada sobre ' + formatFinanceMoney(impact.amount)
+          ? 'A taxa vai ser lançada sobre ' + (impact.upperBound ? 'até ' : '') + formatFinanceMoney(impact.amount)
             + ' de vendas sem taxa (' + impact.stores + ', ' + impact.months
             + '), no mês de cada venda.'
           : 'A taxa vale para as próximas vendas.'
@@ -72,11 +75,18 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
       if (request.current?.content !== content) request.current = { content, id: crypto.randomUUID() }
       const result = await saveFinanceFeeRate(draft, request.current.id, data.bridge.start_date)
       request.current = null
-      setMessage('Taxa gravada. ' + result.fees_created + ' taxa(s) criada(s). '
-        + (result.fees_created > 0 && impact.months
-          ? 'Lançamentos nos meses das vendas: ' + impact.months + ' (' + impact.stores + ').'
-          : 'Nenhuma taxa anterior foi alterada.'))
-      await load()
+      const refreshed = await load()
+      if (payload.p_rate === null || payload.p_rate === 0) {
+        setMessage('Taxa gravada. ' + result.fees_created + ' taxa(s) criada(s). Nenhuma taxa anterior foi alterada.')
+      } else if (refreshed) {
+        const applied = feeRateAppliedImpact(data, refreshed, method)
+        setMessage(applied.amount > 0
+          ? 'Taxas lançadas em ' + applied.months + ' (' + applied.stores + ') sobre '
+            + formatFinanceMoney(applied.amount) + ' de vendas.'
+          : 'Nenhuma venda pendente recebeu esta taxa; ela vale para as próximas vendas.')
+      } else {
+        setMessage('Taxa gravada. Não foi possível conferir as pendências; recarregue o painel.')
+      }
       await onSaved()
     } catch (saveError) {
       setError(feeRateErrorMessage(saveError))

@@ -428,15 +428,32 @@ export async function loadPayableDueReportStatus(): Promise<PayableDueReportStat
 
 export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntryRow[]> {
   const { start, end } = monthRange(monthKey)
-  const { data, error } = await supabase
+  const legacyColumns = 'id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at'
+  const newColumns = ['source_detail', 'fee_of', 'fee_rate', 'fee_rate_version_id']
+  const query = (columns: string) => supabase
     .from('finance_entries')
-    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,source_detail,fee_of,fee_rate,fee_rate_version_id,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at')
+    .select(columns)
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
     .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []) as FinanceEntryRow[]
+  const { data, error } = await query(legacyColumns + ',' + newColumns.join(','))
+  if (!error) return (data ?? []) as unknown as FinanceEntryRow[]
+  const missingNewColumn = newColumns.some(column =>
+    new RegExp('\\b' + column + '\\b', 'i').test(error.message)
+      && /does not exist|could not find|inexistente|não existe/i.test(error.message))
+  if (error.code !== '42703' && !missingNewColumn) throw error
+
+  // O site pode publicar antes do banco; remover após a migration estar em produção.
+  const legacy = await query(legacyColumns)
+  if (legacy.error) throw legacy.error
+  return ((legacy.data ?? []) as unknown as Omit<FinanceEntryRow, 'source_detail' | 'fee_of' | 'fee_rate' | 'fee_rate_version_id'>[]).map(row => ({
+    ...row,
+    source_detail: null,
+    fee_of: null,
+    fee_rate: null,
+    fee_rate_version_id: null,
+  })) as unknown as FinanceEntryRow[]
 }
 
 export async function loadFinanceRecurringRules(): Promise<FinanceRecurringRuleRow[]> {

@@ -114,10 +114,7 @@ export function feeMethodLabel(method: CashClosingMethod): string {
   return CASH_CLOSING_METHOD_LABELS[method]
 }
 
-export function feeRateImpact(data: FinanceFeeRates, method: FeeMethod, validFrom: string) {
-  // A vigência pode alcançar vendas de outros meses além da janela do livro.
-  const rows = data.pending.filter(row => row.method === method
-    && row.competence_month.slice(0, 7) >= validFrom.slice(0, 7))
+function summarizePending(rows: FinanceFeeRates['pending']) {
   const months = [...new Set(rows.map(row => row.competence_month))].sort()
   const stores = [...new Set(rows.map(row => row.store.toUpperCase()))].sort()
   return {
@@ -126,4 +123,27 @@ export function feeRateImpact(data: FinanceFeeRates, method: FeeMethod, validFro
     months: months.map(month => new Date(month.slice(0, 7) + '-01T12:00:00Z')
       .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' })).join(' e '),
   }
+}
+
+export function feeRateImpact(data: FinanceFeeRates, method: FeeMethod, validFrom: string) {
+  const next = data.history.filter(row => row.method === method && row.valid_from > validFrom)
+    .map(row => row.valid_from).sort()[0]
+  const rows = data.pending.filter(row => {
+    const month = row.competence_month.slice(0, 7)
+    return row.method === method && month >= validFrom.slice(0, 7)
+      && (!next || month < next.slice(0, 7) || (month === next.slice(0, 7) && next.slice(8, 10) !== '01'))
+  })
+  return {
+    ...summarizePending(rows),
+    upperBound: validFrom.slice(8, 10) !== '01' || Boolean(next && next.slice(8, 10) !== '01'),
+  }
+}
+
+export function feeRateAppliedImpact(before: FinanceFeeRates, after: FinanceFeeRates, method: FeeMethod) {
+  const rows = before.pending.filter(row => row.method === method).map(row => {
+    const remaining = after.pending.find(pending => pending.method === method
+      && pending.store === row.store && pending.competence_month === row.competence_month)
+    return { ...row, amount: Math.max(0, Number(row.amount) - Number(remaining?.amount ?? 0)) }
+  }).filter(row => row.amount > 0)
+  return summarizePending(rows)
 }
