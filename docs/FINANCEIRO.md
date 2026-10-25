@@ -405,7 +405,9 @@ a mesma versão da taxa mais recente daquele fechamento e meio, inclusive se já
 estornada. Se nunca houve taxa, usa a aplicável na data da venda. Zerar estorna
 sem relançar; salvar sem mudança ou repetir a mesma requisição não altera o livro.
 Os estornos preservam loja, meio, conta, datas, competência e versão. O livro
-oferece Corrigir no Fechamento de caixa com link para loja e dia. Estorno avulso
+oferece Corrigir no Fechamento de caixa com link para loja e dia somente a quem
+pode abrir essa tela. Para os demais, orienta que quem fecha o caixa da loja ou
+o administrador ajuste o dia da venda no Fechamento de caixa. Estorno avulso
 da ponte é recusado. Venda balcão, iFood e 99Food também não aceitam avulso para
 não duplicar receita. Ajuste avulso em Taxas de cartão e apps continua permitido.
 

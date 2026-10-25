@@ -32,10 +32,22 @@ import {
   type FinanceRecurringRuleRow,
   type PayableDueReportStatus,
 } from '@/lib/finance'
-import { showToast } from '@/lib/utils'
+import { canAccess, getCurrentUserAsync } from '@/lib/auth'
+import { formatDateBR, showToast } from '@/lib/utils'
 
 export default function FinanceiroPage() {
   const router = useRouter()
+  const [canOpenCashClosing, setCanOpenCashClosing] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getCurrentUserAsync().then(user => {
+      if (active) setCanOpenCashClosing(user ? canAccess(user, '/fechamento-caixa') : false)
+    }).catch(() => {
+      if (active) setCanOpenCashClosing(false)
+    })
+    return () => { active = false }
+  }, [])
   const [monthKey, setMonthKey] = useState(currentMonthKey())
   const [categories, setCategories] = useState<FinanceCategoryRow[]>([])
   const [accounts, setAccounts] = useState<FinanceAccountRow[]>([])
@@ -360,11 +372,15 @@ export default function FinanceiroPage() {
                     </button>
                   </div>
                 )}
-                {!isReversal && !isReversed && cashClosingCorrectionHref(entry) && (
+                {!isReversal && !isReversed && cashClosingCorrectionHref(entry) && canOpenCashClosing !== null && (
                   <div className="ps-fieldrow" style={{ marginTop: 10 }}>
-                    <button className="ps-btn ghost block" onClick={() => router.push(cashClosingCorrectionHref(entry)!)}>
-                      Corrigir no Fechamento de caixa
-                    </button>
+                    {canOpenCashClosing ? (
+                      <button className="ps-btn ghost block" onClick={() => router.push(cashClosingCorrectionHref(entry)!)}>
+                        Corrigir no Fechamento de caixa
+                      </button>
+                    ) : (
+                      <small>Para corrigir, quem fecha o caixa da loja ou o administrador ajusta o dia {formatDateBR(entry.paid_date)} no Fechamento de caixa.</small>
+                    )}
                   </div>
                 )}
               </article>

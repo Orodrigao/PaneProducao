@@ -60,8 +60,8 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       expect(await denied.json()).toMatchObject({ code: '42501' })
     })
 
-  test('Financeiro JC lê receitas, grava Stone e corrige na origem',
-    matriz('Financeiro JC', 'JA', 'permitido: receita, taxa e correção', 'Livro (tela e Data API)'), async ({ page }) => {
+  test('Financeiro JC lê receitas, grava Stone e vê orientação de correção',
+    matriz('Financeiro JC', 'JA', 'permitido: receita, taxa e orientação', 'Livro (tela e Data API)'), async ({ page }) => {
       const access = await entrarComo(page, 'financeiroJc')
       const initialRates = await rates(page, access)
       const stoneBefore = initialRates.history.filter(r => r.method === 'stone' && r.valid_from <= DIA)
@@ -82,7 +82,8 @@ test.describe('Fechamento no livro no banco desta PR', () => {
         const article = page.locator('article').filter({ has: page.getByText('Fechamento JA 15/09/2026 · ' + method, { exact: true }) }).filter({ hasNotText: /Estornado ·|Estorno ·/ }).first()
         await expect(article).toBeVisible({ timeout: 20_000 })
         await expect(article.getByRole('button', { name: /^Estornar/ })).toHaveCount(0)
-        await expect(article.getByRole('button', { name: 'Corrigir no Fechamento de caixa' })).toBeVisible()
+        await expect(article.getByRole('button', { name: /^Corrigir/ })).toHaveCount(0)
+        await expect(article.getByText('Para corrigir, quem fecha o caixa da loja ou o administrador ajusta o dia 15/09/2026 no Fechamento de caixa.', { exact: true })).toBeVisible()
       }
       const before: Entry[] = await read(page, access, 'finance_entries?source_ref=eq.' + closing.id + '&select=*&order=created_at.desc')
       const revenue = before.find(e => e.source_detail === 'stone' && !e.fee_of && e.entry_type === 'lancamento' && !e.reversed_at)!
@@ -130,7 +131,16 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       const feeArticle = page.locator('article').filter({ hasText: 'Taxa da receita: Fechamento JA 15/09/2026 · Stone' }).filter({ hasNotText: /Estornado ·|Estorno ·/ }).first()
       await expect(feeArticle).toBeVisible({ timeout: 20_000 })
       await expect(feeArticle.getByRole('button', { name: /^Estornar/ })).toHaveCount(0)
+    })
+
+  test('Administrador corrige pelo livro',
+    matriz('Administrador', 'JA', 'permitido: corrige pelo livro', 'Livro e Fechamento de caixa'), async ({ page }) => {
+      await entrarComo(page, 'admin')
+      await page.goto('/financeiro')
+      await page.getByLabel('Mês').fill('2026-09')
       const correction = page.locator('article').filter({ has: page.getByText('Fechamento JA 15/09/2026 · Stone', { exact: true }) }).filter({ hasNotText: /Estornado ·|Estorno ·/ }).first()
+      await expect(correction).toBeVisible({ timeout: 20_000 })
+      await expect(correction.getByRole('button', { name: 'Corrigir no Fechamento de caixa' })).toBeVisible()
       await correction.getByRole('button', { name: 'Corrigir no Fechamento de caixa' }).click()
       await expect(page).toHaveURL(/fechamento-caixa\?loja=ja&data=2026-09-15/)
       await expect(page.getByLabel('Loja')).toHaveValue('ja', { timeout: 20_000 })
