@@ -63,7 +63,7 @@ export function PricingChannelCard({ channel, ...field }: ChannelProps) {
       <h3 className={styles.cardTitle}>{pricingChannelLabel(channel)}</h3>
       <div className={styles.grid}>
         <PricingPercentField {...field} slot={{ key: 'taxa_canal', channel, categoryId: null }}
-          label={channel === 'ifood' ? 'Taxa (comissão + cartão)' : channel === 'balcao' ? 'Taxa de cartão' : 'Taxa do canal'} />
+          label={(channel === 'ifood' || channel === 'food99') ? 'Taxa (comissão + cartão)' : channel === 'balcao' ? 'Taxa de cartão' : 'Taxa do canal'} />
         <PricingPercentField {...field} slot={{ key: 'margem_desejada', channel, categoryId: null }} label="Margem desejada" />
         <PricingPercentField {...field} slot={{ key: 'margem_minima', channel, categoryId: null }} label="Margem mínima" />
       </div>

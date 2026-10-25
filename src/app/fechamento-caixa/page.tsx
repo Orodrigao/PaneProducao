@@ -12,6 +12,7 @@ import {
   cashClosingDifferences,
   formatCurrencyBRL,
   isCashClosingSaveConflict,
+  cashClosingSaveErrorMessage,
   isUncertainWriteResult,
   notesWithReplacement,
   parseMoneyInput,
@@ -34,6 +35,8 @@ interface CashClosingRow {
   sitef_amount: number
   pix_amount: number
   cash_amount: number
+  stone_amount: number
+  food99_sales_amount: number
   site_sales_amount: number
   ifood_sales_amount: number
   total_amount: number
@@ -62,7 +65,8 @@ const EMPTY_FORM: Record<MoneyField, string> = {
   banriAmount: '',
   sitefAmount: '',
   pixAmount: '',
-  siteSalesAmount: '',
+  stoneAmount: '',
+  food99SalesAmount: '',
   ifoodSalesAmount: '',
   cashWithdrawalAmount: '',
   openingCashAmount: '',
@@ -75,13 +79,14 @@ const CLOSING_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
   { key: 'closingCashAmount', label: '1. Total em dinheiro', helper: 'todo dinheiro fisico contado no caixa' },
   { key: 'cashWithdrawalAmount', label: '2. Sangrias', helper: 'retiradas feitas durante o dia' },
   { key: 'banriAmount', label: '3. Banrisul credito/debito' },
-  { key: 'siteSalesAmount', label: '4. Stone credito/debito' },
+  { key: 'stoneAmount', label: '4. Stone credito/debito' },
   { key: 'sitefAmount', label: '5. SiTef' },
   { key: 'pixAmount', label: '6. PIX WhatsApp/app' },
   { key: 'openingCashAmount', label: '7. Abertura do caixa', helper: 'desconta do dinheiro contado' },
   { key: 'ifoodSalesAmount', label: '8. iFood', helper: 'informativo, nao soma ao caixa' },
-  { key: 'envelopeAmount', label: '9. Envelope', helper: 'informativo, malote/deposito' },
-  { key: 'nextDayCashAmount', label: '10. Proximo dia', helper: 'informativo, abertura seguinte' },
+  { key: 'food99SalesAmount', label: '9. 99Food', helper: 'informativo, nao soma ao caixa' },
+  { key: 'envelopeAmount', label: '10. Envelope', helper: 'informativo, malote/deposito' },
+  { key: 'nextDayCashAmount', label: '11. Proximo dia', helper: 'informativo, abertura seguinte' },
 ]
 
 function isStoreKey(value: string | null): value is StoreKey {
@@ -100,7 +105,8 @@ function formToInput(form: Record<MoneyField, string>): CashClosingInput {
     banriAmount: parseMoneyInput(form.banriAmount),
     sitefAmount: parseMoneyInput(form.sitefAmount),
     pixAmount: parseMoneyInput(form.pixAmount),
-    siteSalesAmount: parseMoneyInput(form.siteSalesAmount),
+    stoneAmount: parseMoneyInput(form.stoneAmount),
+    food99SalesAmount: parseMoneyInput(form.food99SalesAmount),
     ifoodSalesAmount: parseMoneyInput(form.ifoodSalesAmount),
     cashWithdrawalAmount: parseMoneyInput(form.cashWithdrawalAmount),
     openingCashAmount: parseMoneyInput(form.openingCashAmount),
@@ -142,7 +148,8 @@ function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
     banriAmount: moneyToInput(row.banri_amount),
     sitefAmount: moneyToInput(row.sitef_amount),
     pixAmount: moneyToInput(row.pix_amount),
-    siteSalesAmount: moneyToInput(row.site_sales_amount),
+    stoneAmount: moneyToInput((row.stone_amount ?? 0) + row.site_sales_amount),
+    food99SalesAmount: moneyToInput(row.food99_sales_amount ?? 0),
     ifoodSalesAmount: moneyToInput(row.ifood_sales_amount),
     cashWithdrawalAmount: moneyToInput(row.cash_withdrawal_amount),
     openingCashAmount: moneyToInput(row.opening_cash_amount),
@@ -233,6 +240,7 @@ export default function FechamentoCaixaPage() {
   // Cada troca de loja ou data dispara uma leitura; so a mais recente pode
   // mexer na tela. Resposta velha chegando por ultimo mostrava o dia errado.
   const loadSeq = useRef(0)
+  const pendingRequest = useRef<{ content: string; id: string } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -394,52 +402,33 @@ export default function FechamentoCaixaPage() {
       return
     }
 
-    // Loja, data e dia da semana so entram na criacao: atualizar nunca move
-    // um fechamento para outro dia.
-    const valuesPayload = {
-      sales_amount: totals.declaredTotal,
-      banri_amount: input.banriAmount,
-      sitef_amount: input.sitefAmount,
-      pix_amount: input.pixAmount,
-      cash_amount: totals.cashSalesAmount,
-      site_sales_amount: input.siteSalesAmount,
-      ifood_sales_amount: input.ifoodSalesAmount,
-      total_amount: totals.declaredTotal,
-      cash_withdrawal_amount: input.cashWithdrawalAmount,
-      opening_cash_amount: input.openingCashAmount,
-      closing_cash_amount: input.closingCashAmount,
-      envelope_amount: input.envelopeAmount,
-      next_day_cash_amount: input.nextDayCashAmount,
-      notes: notesText.trim() || null,
-      updated_by: authUser.id,
-      updated_by_name: user.displayName,
+    const valuesPayload = { notes: notesText.trim() || null }
+    const rpcValues = {
+      p_store: store,
+      p_closing_date: date,
+      p_updated_at: existing?.updated_at ?? null,
+      p_closing_cash_amount: input.closingCashAmount,
+      p_cash_withdrawal_amount: input.cashWithdrawalAmount,
+      p_opening_cash_amount: input.openingCashAmount,
+      p_banri_amount: input.banriAmount,
+      p_stone_amount: input.stoneAmount,
+      p_sitef_amount: input.sitefAmount,
+      p_pix_amount: input.pixAmount,
+      p_ifood_sales_amount: input.ifoodSalesAmount,
+      p_food99_sales_amount: input.food99SalesAmount,
+      p_envelope_amount: input.envelopeAmount,
+      p_next_day_cash_amount: input.nextDayCashAmount,
+      p_notes: valuesPayload.notes,
     }
-
-    const result = existing
-      ? await writeWithDeadline(signal => supabase
-        .from('cash_closings')
-        .update(valuesPayload)
-        .eq('id', existing.id)
-        // So grava sobre a versao que esta tela leu. Se alguem salvou depois,
-        // nenhuma linha casa e o conflito aparece, em vez de apagar o outro.
-        .eq('updated_at', existing.updated_at)
-        .select('*')
-        .abortSignal(signal)
-        .single())
-      : await writeWithDeadline(signal => supabase
-        .from('cash_closings')
-        .insert({
-          closing_date: date,
-          weekday_label: weekday,
-          store,
-          ...valuesPayload,
-          created_by: authUser.id,
-          created_by_name: user.displayName,
-          created_by_email: authUser.email ?? user.email ?? null,
-        })
-        .select('*')
-        .abortSignal(signal)
-        .single())
+    const content = JSON.stringify(rpcValues)
+    if (pendingRequest.current?.content !== content) {
+      pendingRequest.current = { content, id: crypto.randomUUID() }
+    }
+    const requestId = pendingRequest.current.id
+    const result = await writeWithDeadline(signal => supabase.rpc('save_cash_closing', {
+      p_request_id: requestId,
+      ...rpcValues,
+    }).abortSignal(signal).single())
 
     const savedMessage = existing ? 'Fechamento atualizado.' : 'Fechamento salvo.'
     if (result && !result.error) {
@@ -449,7 +438,7 @@ export default function FechamentoCaixaPage() {
 
     const uncertain = !result || isUncertainWriteResult(result)
     if (result?.error && !uncertain && !isCashClosingSaveConflict(result.error)) {
-      setSaveError('Erro ao salvar: ' + result.error.message)
+      setSaveError(cashClosingSaveErrorMessage(result.error, result.status))
       return
     }
 
@@ -624,6 +613,7 @@ export default function FechamentoCaixaPage() {
               <SummaryRow label="Venda em dinheiro" helper="total em dinheiro + sangrias - abertura" value={totals.cashSalesAmount} />
               <SummaryRow label="Banrisul + Stone + SiTef + PIX" value={totals.nonCashPaymentTotal} />
               <SummaryRow label="Total do dia" helper="valor que entra no fechamento do dia" value={totals.declaredTotal} />
+              <SummaryRow label="99Food" helper="informativo, fora da soma do caixa" value={input.food99SalesAmount} />
               <SummaryRow label="iFood" helper="informativo, fora da soma do caixa" value={input.ifoodSalesAmount} />
               <SummaryRow label="Envelope + proximo dia" helper="informativo, nao gera divergencia" value={totals.cashSplitTotal} />
             </section>

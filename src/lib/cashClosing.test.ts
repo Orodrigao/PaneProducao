@@ -4,6 +4,7 @@ import {
   cashClosingDifferences,
   describeCashClosingConflict,
   isCashClosingSaveConflict,
+  cashClosingSaveErrorMessage,
   isUncertainWriteResult,
   notesWithReplacement,
   parseMoneyInput,
@@ -14,7 +15,8 @@ const baseInput = {
   banriAmount: 0,
   sitefAmount: 0,
   pixAmount: 0,
-  siteSalesAmount: 0,
+  stoneAmount: 0,
+  food99SalesAmount: 0,
   ifoodSalesAmount: 0,
   cashWithdrawalAmount: 0,
   openingCashAmount: 0,
@@ -24,11 +26,20 @@ const baseInput = {
 }
 
 describe('cashClosing', () => {
+  it('explica atualização e permissão sem pedir descarte do rascunho', () => {
+    expect(cashClosingSaveErrorMessage({ code: 'PGRST202' })).toContain('seus números continuam na tela')
+    expect(cashClosingSaveErrorMessage({}, 404)).toContain('sendo atualizado')
+    expect(cashClosingSaveErrorMessage({ code: '42501' })).toBe('Sem permissão para fechar o caixa desta loja.')
+    expect(cashClosingSaveErrorMessage({ code: '22023', message: 'Valor inválido' })).toContain('Valor inválido')
+    expect(isCashClosingSaveConflict({ code: 'PT409' })).toBe(true)
+    expect(cashClosingDifferences(baseInput, { ...baseInput, food99SalesAmount: 10 })).toEqual(['food99SalesAmount'])
+  })
+
   it('calcula venda em dinheiro pelo dinheiro contado, sangrias e abertura', () => {
     const totals = calculateCashClosingTotals({
       ...baseInput,
       banriAmount: 300,
-      siteSalesAmount: 400,
+      stoneAmount: 400,
       sitefAmount: 200,
       pixAmount: 250,
       openingCashAmount: 170,
@@ -49,6 +60,7 @@ describe('cashClosing', () => {
     const totals = calculateCashClosingTotals({
       ...baseInput,
       closingCashAmount: 100,
+      food99SalesAmount: 999,
       ifoodSalesAmount: 50,
       envelopeAmount: 70,
       nextDayCashAmount: 30,
@@ -77,9 +89,9 @@ describe('cashClosing', () => {
     expect(parseMoneyInput('abc')).toBe(0)
   })
 
-  it('reconhece como conflito so a recusa de fechamento repetido e a atualizacao que nao achou a versao lida', () => {
-    expect(isCashClosingSaveConflict({ code: '23505' })).toBe(true)
-    expect(isCashClosingSaveConflict({ code: 'PGRST116' })).toBe(true)
+  it('reconhece como conflito somente PT409 da função', () => {
+    expect(isCashClosingSaveConflict({ code: '23505' })).toBe(false)
+    expect(isCashClosingSaveConflict({ code: 'PGRST116' })).toBe(false)
     expect(isCashClosingSaveConflict({ code: '42501' })).toBe(false)
     expect(isCashClosingSaveConflict({ code: '23514' })).toBe(false)
     expect(isCashClosingSaveConflict({})).toBe(false)
@@ -111,14 +123,14 @@ describe('cashClosing', () => {
   })
 
   it('aponta os campos diferentes ao centavo, inclusive com o mesmo total', () => {
-    const saved = { ...baseInput, closingCashAmount: 272, banriAmount: 300, siteSalesAmount: 100 }
+    const saved = { ...baseInput, closingCashAmount: 272, banriAmount: 300, stoneAmount: 100 }
 
     expect(cashClosingDifferences(saved, { ...saved })).toEqual([])
     expect(cashClosingDifferences(saved, { ...saved, closingCashAmount: 272.001 })).toEqual([])
     // Mesmo total do dia, maquininha trocada.
-    expect(cashClosingDifferences(saved, { ...saved, banriAmount: 100, siteSalesAmount: 300 })).toEqual([
+    expect(cashClosingDifferences(saved, { ...saved, banriAmount: 100, stoneAmount: 300 })).toEqual([
       'banriAmount',
-      'siteSalesAmount',
+      'stoneAmount',
     ])
     expect(cashClosingDifferences(saved, { ...saved, closingCashAmount: 510, envelopeAmount: 272 })).toEqual([
       'closingCashAmount',

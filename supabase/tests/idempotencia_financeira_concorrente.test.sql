@@ -82,6 +82,7 @@ select is(
     'reverse_finance_transfer',
     'reverse_receivable_receipt',
     'rollback_pj_flow_enrollment',
+    'save_cash_closing',
     'save_pj_order_dispatch_quantities',
     'schedule_pj_production',
     'split_receivable',
@@ -107,6 +108,7 @@ with expected(name) as (
     'record_receivable_receipt',
     'reverse_finance_entry',
     'reverse_finance_transfer',
+    'save_cash_closing',
     'split_receivable'
   ]::text[])
 ), protected as (
@@ -131,8 +133,8 @@ select is(
           < strpos(definition, 'pg_advisory_xact_lock')
       )
   ),
-  16,
-  'as 16 RPCs mapeadas travam o request antes das regras especificas'
+  17,
+  'as 17 RPCs mapeadas travam o request antes das regras especificas'
 );
 
 select * from finish();

@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(70);
+select plan(73);
 
 -- Contrato de acesso ----------------------------------------------------------
 select ok(not has_table_privilege('authenticated', 'private.pricing_settings_history', 'select'),
@@ -216,7 +216,7 @@ select throws_ok($$select public.save_pricing_settings('[{"setting_key":"imposto
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","value":3,"previous_value":null}]')$$,
   '22023', null, 'taxa sem canal é recusada');
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":"pj","value":3,"previous_value":null}]')$$,
-  '22023', null, 'canal fora de Balcão, iFood e Buck é recusado');
+  '22023', null, 'canal fora de Balcão, iFood, 99Food e Buck é recusado');
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"margem_desejada","value":30,"previous_value":null}]')$$,
   '22023', null, 'margem sem canal é recusada');
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"custo_fixo","value":3,"previous_value":null}]')$$,
@@ -264,6 +264,11 @@ select throws_ok(pg_catalog.format($q$select public.save_pricing_settings('[
     :'v_croissant'),
   '22023', null, 'desejada de exceção abaixo da mínima herdada do canal é recusada');
 select is((public.save_pricing_settings('[]') ->> 'saved')::integer, 0, 'lista vazia não grava nada');
+
+-- Novo canal: salva e relê pela mesma porta, sem afrouxar a validação.
+select is((public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":"food99","value":14.1,"previous_value":null}]')->>'saved')::integer,1,'99Food é aceito');
+select is((select (item->>'value')::numeric from jsonb_array_elements(public.get_pricing_settings()->'current') item where item->>'channel'='food99' and item->>'setting_key'='taxa_canal'),14.1::numeric,'99Food relê sua taxa');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":"inventado","value":1,"previous_value":null}]')$$,'22023',null,'canal inventado segue recusado');
 
 -- O passado não se reescreve ---------------------------------------------------
 reset role;
