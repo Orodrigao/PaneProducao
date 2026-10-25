@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCashClosingTotals,
+  cashClosingInitialSelection,
   cashClosingDifferences,
   describeCashClosingConflict,
   isCashClosingSaveConflict,
@@ -188,5 +189,19 @@ describe('cashClosing', () => {
     expect(describeCashClosingConflict('Rodrigo', '08/10 20:09', true)).toBe(
       'Você já tinha salvo este fechamento em 08/10 20:09, em outra tentativa ou em outro aparelho, com números ou observações diferentes. O que está nesta tela ainda não foi gravado.',
     )
+  })
+})
+
+
+describe('link de correção do livro', () => {
+  it('preserva a data para vendas, mas não permite trocar a loja pelo link', () => {
+    expect(cashClosingInitialSelection('?loja=ja&data=2026-09-15', false, '2026-10-25')).toEqual({ date: '2026-09-15' })
+    expect(cashClosingInitialSelection('?loja=ja&data=2026-09-15', true, '2026-10-25')).toEqual({ date: '2026-09-15', store: 'ja' })
+    for (const date of ['2026-02-30', '2026-13-01', '2026-10-26', 'texto']) {
+      expect(cashClosingInitialSelection('?data=' + date, true, '2026-10-25')).toEqual({})
+    }
+  })
+  it('preserva o motivo da recusa da ponte', () => {
+    expect(cashClosingSaveErrorMessage({ code: '22023', message: 'Conta inativa' })).toBe('Erro ao salvar: Conta inativa')
   })
 })

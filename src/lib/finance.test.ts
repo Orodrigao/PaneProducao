@@ -13,6 +13,8 @@ import {
   emptyFinanceTransferDraft,
   entrySignedAmount,
   financeSourceLabel,
+  cashClosingCorrectionHref,
+  categoryAcceptsManualEntry,
   formatCompetenceMonth,
   monthRange,
   summarizeEntries,
@@ -59,7 +61,7 @@ function entry(overrides: Partial<FinanceEntryRow> = {}): FinanceEntryRow {
     store: 'jc', competence_month: '2026-08-01', paid_date: TODAY,
     planned_amount: 150, amount: 150,
     payment_method: 'dinheiro', description: 'Diária do Marcelo',
-    source: 'avulso', source_ref: null, recurrence_month: null,
+    source: 'avulso', source_ref: null, source_detail: null, fee_of: null, fee_rate: null, fee_rate_version_id: null, recurrence_month: null,
     transfer_id: null, transfer_leg: null, reversal_of: null,
     reversal_reason: null, reversed_at: null, created_at: '2026-08-12T12:00:00Z',
     ...overrides,
@@ -302,5 +304,19 @@ describe('financeSourceLabel', () => {
     // codigo. Quando os dois discordarem, o usuario le a chave, nunca
     // "undefined" — que foi o defeito da estreia do contas a receber.
     expect(financeSourceLabel('origem_que_ainda_nao_existe')).toBe('origem_que_ainda_nao_existe')
+  })
+})
+
+describe('receita do fechamento', () => {
+  it('tem rótulo e destino na loja e dia da venda', () => {
+    expect(financeSourceLabel('fechamento_caixa')).toBe('Fechamento de caixa')
+    expect(cashClosingCorrectionHref(entry({ source: 'fechamento_caixa', store: 'ja', paid_date: '2026-09-15' }))).toBe('/fechamento-caixa?loja=ja&data=2026-09-15')
+    expect(cashClosingCorrectionHref(entry())).toBeNull()
+  })
+  it.each(['venda_balcao', 'ifood', 'food99'])('não oferece avulso em %s', key => {
+    expect(categoryAcceptsManualEntry({ key, nature: 'receita' })).toBe(false)
+  })
+  it('mantém ajuste avulso das taxas', () => {
+    expect(categoryAcceptsManualEntry({ key: 'taxas_cartao_apps', nature: 'despesa' })).toBe(true)
   })
 })

@@ -7,11 +7,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(138);
+select plan(140);
 
 -- Catálogo de permissões do sistema
-select is((select count(*)::int from public.app_permissions), 53,
-  'catálogo completo com 53 permissões, incluindo a gestão explícita de fotos');
+select is((select count(*)::int from public.app_permissions), 54,
+  'catálogo completo com 54 permissões, incluindo financeiro.taxas');
 select ok(exists(select 1 from public.app_permissions where key = 'estoque.contar_semanal'),
   'permissão de contar o estoque semanal presente');
 select ok(exists(select 1 from public.app_permissions where key = 'romaneio.confirmar_saida'),
@@ -619,5 +619,30 @@ select ok(
   and not has_table_privilege('authenticated', 'public.buck_price_history', 'delete'),
   'historico de preco da Buck com RLS forcada e so de leitura para quem esta logado');
 
+-- Não exige que o seed passe pela ponte: valida somente lançamentos existentes.
+select ok(not exists(
+  select 1 from public.finance_entries e
+  left join public.cash_closings c on c.id=e.source_ref
+  where e.source='fechamento_caixa' and e.entry_type='lancamento'
+    and e.reversed_at is null and e.fee_of is null
+    and (c.id is null or c.store not in ('jc','ja') or e.amount is distinct from
+      case e.source_detail
+        when 'dinheiro' then c.cash_amount when 'banrisul' then c.banri_amount
+        when 'stone' then c.stone_amount when 'sitef' then c.sitef_amount
+        when 'pix' then c.pix_amount when 'ifood' then c.ifood_sales_amount
+        when 'food99' then c.food99_sales_amount end)
+), 'receita ativa da ponte corresponde ao meio do fechamento JC ou JA');
+select ok(not exists(
+  select 1 from public.finance_entries f
+  left join public.finance_entries r on r.id=f.fee_of
+  left join public.finance_categories c on c.id=f.category_id
+  where f.source='fechamento_caixa' and f.entry_type='lancamento'
+    and f.reversed_at is null and f.fee_of is not null
+    and (r.id is null or r.source is distinct from 'fechamento_caixa'
+      or r.entry_type is distinct from 'lancamento' or r.reversed_at is not null
+      or r.fee_of is not null or r.source_ref is distinct from f.source_ref
+      or r.store is distinct from f.store or r.source_detail is distinct from f.source_detail
+      or c.key is distinct from 'taxas_cartao_apps')
+), 'taxa ativa aponta receita ativa do mesmo fechamento loja e meio na categoria correta');
 select * from finish();
 rollback;

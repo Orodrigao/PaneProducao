@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRightLeft, BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
+import FinanceFeeRatesPanel from '@/components/FinanceFeeRatesPanel'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
 import FinanceRecurringPanel from '@/components/FinanceRecurringPanel'
 import FinanceTransferForm from '@/components/FinanceTransferForm'
 import {
   currentMonthKey,
+  cashClosingCorrectionHref,
   entryDifference,
   entrySignedAmount,
   financeSourceLabel,
@@ -142,7 +144,7 @@ export default function FinanceiroPage() {
         <div className="ps-scroll ps-pad">
           <div className="ps-banner honey">
             <b>{formatCompetenceMonth(monthKey)}</b>
-            <small>Todo dinheiro que entra ou sai é registrado aqui, com categoria. Errou? Estorne — o lançamento original nunca é apagado.</small>
+            <small>Todo dinheiro que entra ou sai é registrado aqui, com categoria. Errou? Corrija na tela de origem. Avulsos podem ser estornados, preservando o histórico.</small>
           </div>
 
           <div className="ps-card" style={{ marginTop: 12, background: 'var(--cream-raise)' }}>
@@ -191,7 +193,7 @@ export default function FinanceiroPage() {
                 <div className="ps-fieldgroup"><span className="ps-fieldlabel">Diferença</span><b>{formatFinanceMoney(totals.saldo)}</b></div>
               </div>
               <small style={{ display: 'block', marginTop: 6, opacity: 0.75 }}>
-                Ainda não é o DRE — hoje só aparece aqui o que foi lançado à mão.
+                Ainda não é o DRE. O livro reúne lançamentos avulsos e os gerados pelas outras telas.
               </small>
             </div>
           )}
@@ -234,6 +236,8 @@ export default function FinanceiroPage() {
               onChanged={load}
             />
           )}
+
+          <FinanceFeeRatesPanel onSaved={load} />
 
           {error && (
             <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
@@ -291,6 +295,12 @@ export default function FinanceiroPage() {
                     && ` · pesa em ${formatCompetenceMonth(entry.competence_month.slice(0, 7))}`}
                 </small>
 
+                {entry.fee_of && (
+                  <small style={{ display: 'block', marginTop: 4 }}>
+                    Taxa da receita: {entries.find(revenue => revenue.id === entry.fee_of)?.description ?? 'receita do mesmo fechamento'}
+                  </small>
+                )}
+
                 {/* Juros recebidos de cliente nascem com previsto zero, como os
                     juros pagos a fornecedor: o verbo e a cor seguem o lado do
                     dinheiro, não a existência da diferença. */}
@@ -347,6 +357,13 @@ export default function FinanceiroPage() {
                   <div className="ps-fieldrow" style={{ marginTop: 10 }}>
                     <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar')}>
                       Corrigir em Contas a pagar
+                    </button>
+                  </div>
+                )}
+                {!isReversal && !isReversed && cashClosingCorrectionHref(entry) && (
+                  <div className="ps-fieldrow" style={{ marginTop: 10 }}>
+                    <button className="ps-btn ghost block" onClick={() => router.push(cashClosingCorrectionHref(entry)!)}>
+                      Corrigir no Fechamento de caixa
                     </button>
                   </div>
                 )}

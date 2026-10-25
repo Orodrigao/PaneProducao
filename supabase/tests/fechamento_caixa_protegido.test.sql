@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(69);
+select plan(70);
 
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.cash_closing_revisions'::regclass),'RLS do histórico ligada e forçada');
 select ok(not has_table_privilege('authenticated','public.cash_closing_revisions','insert'),'autenticado não insere revisão diretamente');
@@ -109,9 +109,9 @@ select throws_ok($$select pg_temp.save(p_date=>null)$$,'22023',null,'data vazia 
 
 select is((pg_temp.save(p_date=>'2001-02-05',p_override=>'{"stone_amount":40.126}')).stone_amount,40.13::numeric,'arredonda a centavos no banco');
 
-select throws_ok($$insert into public.cash_closings(store,closing_date,weekday_label,created_by,created_by_name) values('jc','2001-03-01','quinta',auth.uid()::text,'Vendas JC')$$,'22023','Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.','insert direto recusado');
+select throws_ok($$insert into public.cash_closings(store,closing_date,weekday_label,created_by,created_by_name) values('jc','2001-03-01','quinta',auth.uid()::text,'Vendas JC')$$,'42501',null,'insert direto recusado');
 
-select throws_ok($$update public.cash_closings set notes='apagou Stone' where store='jc' and closing_date='2001-02-03'$$,'22023','Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.','update direto recusado');
+select throws_ok($$update public.cash_closings set notes='apagou Stone' where store='jc' and closing_date='2001-02-03'$$,'42501',null,'update direto recusado');
 
 select is((select notes from public.cash_closings where store='jc' and closing_date='2001-02-03'),'edição','recusa direta preserva linha');
 
@@ -137,9 +137,9 @@ select lives_ok($$select pg_temp.save('ja','2001-04-04')$$,'admin salva ja');
 
 select lives_ok($$select pg_temp.save('ex','2001-04-04')$$,'admin salva ex');
 
-select throws_ok($$insert into public.cash_closings(store,closing_date,weekday_label,created_by,created_by_name) values('jc','2001-03-01','quinta',auth.uid()::text,'Vendas JC')$$,'22023','Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.','nem admin faz insert direto');
+select throws_ok($$insert into public.cash_closings(store,closing_date,weekday_label,created_by,created_by_name) values('jc','2001-03-01','quinta',auth.uid()::text,'Vendas JC')$$,'42501',null,'nem admin faz insert direto');
 
-select throws_ok($$update public.cash_closings set notes='admin' where store='jc' and closing_date='2001-02-03'$$,'22023','Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.','nem admin faz update direto');
+select throws_ok($$update public.cash_closings set notes='admin' where store='jc' and closing_date='2001-02-03'$$,'42501',null,'nem admin faz update direto');
 
 select lives_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":"food99","value":14.1,"previous_value":null}]')$$,'food99 aceito na configuração');
 
@@ -208,5 +208,6 @@ reset role; set local role anon;
 select throws_ok($$select * from public.cash_closing_revisions$$,'42501',null,'anon não lê histórico');
 
 reset role;
+select ok(exists(select 1 from pg_trigger where tgrelid='public.cash_closings'::regclass and tgname='cash_closings_guard_direct_write' and not tgisinternal),'gatilho de escrita direta continua instalado');
 select * from finish();
 rollback;
