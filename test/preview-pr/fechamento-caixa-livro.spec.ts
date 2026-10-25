@@ -117,7 +117,9 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       const recorded = await rateResponse
       expect(recorded.status(), await recorded.text()).toBe(200)
       const result = await recorded.json()
-      await expect(panel.getByText(/Taxa gravada\./)).toBeVisible({ timeout: 20_000 })
+      await expect(panel.getByText(feeBeforeSave
+        ? 'Nenhuma venda pendente recebeu esta taxa; ela vale para as próximas vendas.'
+        : 'Taxas lançadas em setembro de 2026 (JA)', { exact: false })).toBeVisible({ timeout: 20_000 })
       const after: Entry[] = await read(page, access, 'finance_entries?source_ref=eq.' + closing.id + '&select=*')
       const fee = after.find(e => e.fee_of === revenue.id && e.entry_type === 'lancamento' && !e.reversed_at)
       expect(fee).toBeDefined()
