@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { cabecalhosDaSessao, entrarComo, hojeNaPadaria, matriz, type AcessoAoBanco } from './apoio/entrar'
 
 // Fase 2 da Expedicao lancando Pedido PJ: quem lancou corrige e cancela o
@@ -22,6 +22,15 @@ function somarDias(data: string, dias: number): string {
   return resultado.toISOString().slice(0, 10)
 }
 
+// Fecha o navegador sem erro solto: um pedido da pagina ainda em voo na cerca
+// de rede de entrar.ts falharia depois do fim do teste ("Request context
+// disposed") e derrubaria o roteiro seguinte. A cerca ja cumpriu o papel dela
+// no login; aqui so deixa de esperar o que estiver em voo.
+async function fechar(contexto: BrowserContext): Promise<void> {
+  for (const pagina of contexto.pages()) await pagina.unrouteAll({ behavior: 'ignoreErrors' })
+  await contexto.close()
+}
+
 async function marcarPermissao(browser: Browser, marcada: boolean): Promise<void> {
   const contexto = await browser.newContext({ serviceWorkers: 'block' })
   try {
@@ -35,7 +44,7 @@ async function marcarPermissao(browser: Browser, marcada: boolean): Promise<void
     await admin.getByRole('button', { name: 'Salvar permissões' }).click()
     await expect(admin.getByText(`Permissões de ${EXPEDICAO} salvas com sucesso.`)).toBeVisible()
   } finally {
-    await contexto.close()
+    await fechar(contexto)
   }
 }
 
@@ -138,7 +147,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         expect(ids, 'o corrigido segue na jornada').toContain(sobra)
         expect(ids, 'o cancelado sai da jornada').not.toContain(cancelado)
       } finally {
-        await comPermissao.close()
+        await fechar(comPermissao)
       }
 
       const contextoFinanceiro = await browser.newContext({ serviceWorkers: 'block' })
@@ -171,7 +180,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         })
         expect(corrigir.status(), 'o Financeiro nao usa a correcao da Expedicao').toBe(403)
       } finally {
-        await contextoFinanceiro.close()
+        await fechar(contextoFinanceiro)
       }
 
       const contextoVendas = await browser.newContext({ serviceWorkers: 'block' })
@@ -181,7 +190,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         const ler = await rpc(vendas, acesso, 'read_pj_expedition_order', { p_order_group_id: sobra })
         expect(ler.status(), 'Vendas JA nao le o pedido da Expedicao').toBe(403)
       } finally {
-        await contextoVendas.close()
+        await fechar(contextoVendas)
       }
 
       // Permissao retirada: a autora perde os botoes e o banco recusa.
@@ -199,7 +208,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         })
         expect(cancelar.status(), 'sem a permissao o banco recusa o cancelamento').toBe(403)
       } finally {
-        await semPermissao.close()
+        await fechar(semPermissao)
       }
     } finally {
       // A limpeza dos pedidos roda mesmo se desmarcar a permissao falhar.
@@ -232,7 +241,7 @@ async function cancelarPendentes(browser: Browser, pedidos: readonly string[]): 
       }
     }
   } finally {
-    await limpeza.close()
+    await fechar(limpeza)
   }
   expect(falhas, 'todos os pedidos de teste foram cancelados').toEqual([])
 }
