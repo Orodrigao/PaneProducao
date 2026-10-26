@@ -1030,6 +1030,12 @@ function LegacyPedidosPJPage({ excludedFlowIds, managedFlowId }: {
           )}
         </header>
 
+        {access.canLaunch && (
+          <div className="ps-pad no-print" style={{marginTop:14}}>
+            <a className="ps-btn primary" href="/pedidos-pj?lancar=1">Novo pedido</a>
+          </div>
+        )}
+
         {access.canManage && (
           <div className="ps-pad" style={{marginTop:14}}>
             <div className="ps-tabs" role="tablist">

@@ -147,7 +147,8 @@ Elis recebeu `pedidos_pj.liberar` com escopo JC, porque já era Financeiro ativo
 tinha acesso a Pedidos PJ e podia consultar e lançar Contas a receber. Novos
 perfis continuam dependendo de concessão administrativa explícita.
 Administradores sem concessão, Vendas e Expedição continuam sem poder iniciar
-ou liberar a jornada.
+ou liberar a jornada controlada (para a criação pela Expedição na jornada
+padrão, ver o fim desta seção).
 
 Em 09/09/2026 às 13:12, a Elis inscreveu o pedido da Quinta Parrilla Bar como o
 primeiro e único pedido real acompanhado. A consulta somente leitura após a
@@ -164,6 +165,19 @@ usada pela criação: somente pedidos criados após o instante gravado em
 `private.pj_flow_rollout_settings.cutover_at` entram automaticamente na jornada
 `standard`. Pedidos anteriores permanecem legados, e o pedido controlado da
 Quinta Parrilla conserva sua identidade `controlled_real` até concluir o ciclo.
+
+Desde a fase 1 de "Expedição lança Pedido PJ" (26/10/2026), a Expedição JC com
+a permissão `pedidos_pj.lancar` também cria pedido na jornada padrão, pela RPC
+`create_pj_order_by_expedition`: escolhe cliente, entrega, produto e
+quantidade, sem receber nem enviar preço. O banco precifica pela mesma regra que
+confere o formulário do Financeiro (`private.pj_launch_items` e
+`private.assert_pj_order_payload`), e a revisão da cobrança antes da saída
+continua com o Financeiro. A permissão nasce sem concessão; a policy de
+`public.orders` não mudou (a Expedição segue sem ler nem gravar pedido PJ
+direto) e os contratos antigos de criar, editar e cancelar continuam só para
+Administrador e Financeiro. A origem fica na trilha
+`private.pj_order_write_requests` (ação `create_expedition`) e aparece na ficha.
+Corrigir e cancelar o próprio pedido até a conferência é a fase 2.
 
 ## Fase estratégica
 
