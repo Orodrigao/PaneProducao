@@ -264,7 +264,7 @@ export function PjExpeditionLaunch() {
         <section className={styles.card} aria-labelledby="lancar-cliente">
           <h2 id="lancar-cliente">Cliente e entrega</h2>
           <label className={styles.field}>Cliente
-            <select value={customerId} disabled={locked} onChange={event => chooseCustomer(event.target.value)}>
+            <select aria-label="Cliente" value={customerId} disabled={locked} onChange={event => chooseCustomer(event.target.value)}>
               <option value="">Escolha o cliente</option>
               {catalog.customers.map(row => <option key={row.id} value={row.id}>
                 {row.blockedReason ? `${row.name} (indisponível)` : row.name}
@@ -273,7 +273,7 @@ export function PjExpeditionLaunch() {
           </label>
           {customer?.blockedReason && <p className={styles.warning}>{customer.blockedReason}</p>}
           <label className={styles.field}>Entrega ou coleta
-            <input type="date" min={catalog.today} value={deliveryDate} disabled={locked}
+            <input type="date" aria-label="Entrega ou coleta" min={catalog.today} value={deliveryDate} disabled={locked}
               onChange={event => setDeliveryDate(event.target.value)} />
           </label>
           {similar && customer && <p className={styles.warning}>Já existe pedido de {customer.name} com entrega em {fullDate(deliveryDate)}.
@@ -299,7 +299,7 @@ export function PjExpeditionLaunch() {
           </div>)}</div>}
 
           <label className={styles.field}>Procurar produto da tabela do cliente
-            <input type="search" value={search} disabled={locked} placeholder="Digite parte do nome"
+            <input type="search" aria-label="Procurar produto da tabela do cliente" value={search} disabled={locked} placeholder="Digite parte do nome"
               onChange={event => setSearch(event.target.value)} />
           </label>
           {visibleItems.length === 0

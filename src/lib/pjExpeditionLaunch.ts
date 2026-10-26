@@ -383,12 +383,25 @@ export function hasSimilarPjOrder(
     && flow.customer.trim().toLocaleLowerCase('pt-BR') === name)
 }
 
+const ORIGINS_TIMEOUT_MS = 8000
+
+// Marca informativa: falha ou demora devolve a lista sem origem, nunca erro.
 export async function loadPjOrderLaunchOrigins(orderGroupIds: readonly string[]): Promise<Map<string, PjOrderLaunchOrigin>> {
   const origins = new Map<string, PjOrderLaunchOrigin>()
   if (orderGroupIds.length === 0) return origins
-  const { data, error } = await supabase.rpc('list_pj_order_launch_origins', {
-    p_order_group_ids: orderGroupIds.slice(0, 500),
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ORIGINS_TIMEOUT_MS)
+  let response: { data: unknown; error: unknown }
+  try {
+    response = await supabase.rpc('list_pj_order_launch_origins', {
+      p_order_group_ids: orderGroupIds.slice(0, 500),
+    }).abortSignal(controller.signal)
+  } catch {
+    return origins
+  } finally {
+    clearTimeout(timer)
+  }
+  const { data, error } = response
   if (error || !Array.isArray(data)) return origins
   for (const row of data as Array<Record<string, unknown>>) {
     if (typeof row.order_group_id !== 'string') continue

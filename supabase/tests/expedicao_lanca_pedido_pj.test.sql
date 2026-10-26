@@ -134,10 +134,13 @@ $$;
 select is(private.pj_flow_rollout_state(), 'standard', 'a jornada padrao continua ativa');
 select is((select module from public.app_permissions where key = 'pedidos_pj.lancar'), 'Comercial',
   'permissao nova entra no catalogo, no modulo dos Pedidos PJ');
+-- O seed do Banco Preview da todas as permissoes ao admin ficticio; o que
+-- importa e nenhum perfil operacional receber a permissao sem a tela.
 select is((select count(*)::int from public.app_user_permissions a
   join public.app_profiles p on p.user_id = a.user_id
-  where a.permission_key = 'pedidos_pj.lancar' and p.display_name not like '[TESTE]%'), 0,
-  'a migration nao concede a permissao nova a ninguem');
+  where a.permission_key = 'pedidos_pj.lancar' and p.role <> 'admin'
+    and p.display_name not like '[TESTE]%'), 0,
+  'a migration nao concede a permissao nova a nenhum perfil operacional');
 select ok(not has_function_privilege('anon','public.list_pj_launch_catalog()','execute'),
   'anonimo nao le o catalogo da Expedicao');
 select ok(not has_function_privilege('anon','public.create_pj_order_by_expedition(uuid,uuid,uuid,date,text,jsonb)','execute'),
