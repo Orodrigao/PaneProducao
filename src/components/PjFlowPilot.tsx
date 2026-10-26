@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser } from '@/lib/auth'
 import { readPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
+import { describePjLaunchOrigin, loadPjOrderLaunchOrigins, type PjOrderLaunchOrigin } from '@/lib/pjExpeditionLaunch'
 import { PjFlowOrderCard } from './PjFlowOrderCard'
 import styles from './PjFlowPilot.module.css'
 
@@ -21,9 +22,10 @@ const stageFilters: { key: ActiveStage; label: string }[] = [
 const matchesStage = (flow: PjFlow, filter: ActiveStage) => filter === 'all' || activeStage(flow) === filter
 
 export function PjFlowPilot() {
-  const canManage = resolvePjOrderAccess(getCurrentUser()).canManage
+  const { canManage, canLaunch } = resolvePjOrderAccess(getCurrentUser())
   const [authorized, setAuthorized] = useState(false)
   const [flows, setFlows] = useState<PjFlow[]>([])
+  const [origins, setOrigins] = useState<Map<string, PjOrderLaunchOrigin>>(() => new Map())
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -32,10 +34,18 @@ export function PjFlowPilot() {
   const [notice, setNotice] = useState('')
   const [tab, setTab] = useState<OrderTab>('active')
   const [filter, setFilter] = useState<ActiveStage>('all')
+  const originsRequest = useRef(0)
   const load = useCallback(async (message = '') => {
     setLoading(true); setError(''); setFlows([]); setNotice(''); setAuthorized(false)
+    const originsRound = ++originsRequest.current
+    setOrigins(new Map())
     try {
       const result = await readPjFlowPilot()
+      // Marca informativa: carrega depois da lista e nunca a segura; resposta
+      // de uma recarga anterior é descartada.
+      void loadPjOrderLaunchOrigins(result.map(flow => flow.id)).then(launchOrigins => {
+        if (originsRequest.current === originsRound) setOrigins(launchOrigins)
+      })
       const params = new URLSearchParams(window.location.search)
       const target = params.get('pedido') || params.get('corrigir')
       const targetFlow = result.find(flow => flow.id === target)
@@ -98,6 +108,8 @@ export function PjFlowPilot() {
       <div className={styles.headerActions}>
         {authorized && canManage && <a className={styles.primary} href="/pedidos-pj?legado=1&novo=1"
           onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>Novo pedido</a>}
+        {authorized && canLaunch && <a className={styles.primary} href="/pedidos-pj?lancar=1"
+          onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>Novo pedido</a>}
         <button className={styles.secondary} type="button" onClick={() => void load()} disabled={loading || locked}>Recarregar pedidos</button>
       </div>
     </header>
@@ -133,10 +145,12 @@ export function PjFlowPilot() {
           onClick={() => select(item.id)}>
           <span className={styles.orderMeta}>{shortDate(item.delivery_date)} · entrega/coleta</span>
           <strong>{item.customer}</strong><span className={styles.orderStage}>{stage(item)}</span>
+          {origins.get(item.id) && <span className={styles.orderOrigin}>{describePjLaunchOrigin(origins.get(item.id)!)}</span>}
         </button>)}</div>
         {locked && <p className={styles.hint}>Finalize ou descarte as alterações antes de trocar de pedido.</p>}
       </nav>
-      {flow ? <PjFlowOrderCard key={`${flow.id}:${round}`} flow={flow} reload={load} onLock={setLocked} />
+      {flow ? <PjFlowOrderCard key={`${flow.id}:${round}`} flow={flow} reload={load} onLock={setLocked}
+          launchOrigin={origins.get(flow.id)} />
         : <p className={styles.empty}>Escolha uma aba ou um status com pedidos para abrir a ficha.</p>}
     </div>}
     <footer className={styles.footer}><a href="/pedidos-pj?legado=1" onClick={event => { if (locked) event.preventDefault() }} aria-disabled={locked}>

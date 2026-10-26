@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getCurrentUser } from '@/lib/auth'
 import { pjLineValue } from '@/lib/pjOrderValue'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
+import { describePjLaunchOrigin, type PjOrderLaunchOrigin } from '@/lib/pjExpeditionLaunch'
 import { parsePjFlowQuantity, pjFlowStatus, readPjFlowActivationStatus,
   rollbackPjFlowEnrollment, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
@@ -16,7 +17,10 @@ const actionNames = { save: 'Conferência salva / corrigida', check: 'Conferênc
 const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const date = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')
 
-export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload: (message?: string) => Promise<void>; onLock: (locked: boolean) => void }) {
+export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
+  flow: PjFlow; reload: (message?: string) => Promise<void>; onLock: (locked: boolean) => void
+  launchOrigin?: PjOrderLaunchOrigin
+}) {
   const canManageOrder = resolvePjOrderAccess(getCurrentUser()).canManage
   const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(
     flow.items.map(item => [item.id, item.quantity === null ? '' : String(item.quantity).replace('.', ',')]),
@@ -119,6 +123,7 @@ export function PjFlowOrderCard({ flow, reload, onLock }: { flow: PjFlow; reload
   return <section className={styles.detail} aria-label={`Ficha de ${flow.customer}`}>
     <header className={styles.detailHeader}><span className={styles.eyebrow}>Ficha do pedido</span>
       <h2>{flow.customer}</h2><p>Entrega/coleta combinada: <strong>{date(flow.delivery_date)}</strong></p>
+      {launchOrigin && <span className={styles.origin}>{describePjLaunchOrigin(launchOrigin)}</span>}
       {activationMode === 'controlled_real' && <p>Primeira operação real em acompanhamento.</p>}
     </header>
     <ol className={styles.steps} aria-label="Etapas do pedido">{['Conferência', 'Revisão e NF', 'Saída'].map((label, i) =>

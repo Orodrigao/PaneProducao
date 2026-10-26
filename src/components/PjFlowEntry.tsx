@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import { discoverPjFlowPilot, readPjFlowActivationStatus, type PjFlow } from '@/lib/pjFlowPilot'
 import { PjFlowPilot } from './PjFlowPilot'
+import { PjExpeditionLaunch } from './PjExpeditionLaunch'
 
 export function PjFlowEntry({ legacy }: {
   legacy: (excluded: string[], managedFlowId: string | null) => ReactNode
@@ -13,11 +14,16 @@ export function PjFlowEntry({ legacy }: {
     flows: PjFlow[]
     pilot: boolean
     managedFlowId: string | null
+    launch?: boolean
   } | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let alive = true
     const params = new URLSearchParams(window.location.search)
+    if (params.get('lancar') === '1') {
+      setState({ flows: [], pilot: false, managedFlowId: null, launch: true })
+      return
+    }
     if (params.get('piloto') === '1') {
       setState({ flows: [], pilot: true, managedFlowId: null })
       return
@@ -58,6 +64,7 @@ export function PjFlowEntry({ legacy }: {
     <button className="ps-btn" onClick={() => window.location.reload()}>Recarregar pedidos</button>
   </div></main>
   if (!state) return <main className="ps-canvas"><p role="status" className="ps-pad">Carregando pedidos…</p></main>
+  if (state.launch) return <PjExpeditionLaunch />
   if (state.pilot) return <PjFlowPilot />
   const excluded = state.flows.filter(flow => flow.id !== state.managedFlowId).map(flow => flow.id)
   return <>{state.flows.length > 0 && <div className="ps-pad">

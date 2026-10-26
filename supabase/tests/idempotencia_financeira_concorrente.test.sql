@@ -69,6 +69,7 @@ select is(
     'create_manual_payable',
     'create_manual_receivable',
     'create_pj_order_atomic',
+    'create_pj_order_by_expedition',
     'create_receivable_from_pj_order',
     'create_receivable_from_romaneio',
     'create_xml_payable',
