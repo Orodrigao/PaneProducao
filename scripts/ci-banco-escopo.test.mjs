@@ -280,6 +280,7 @@ describe('ci-banco.yml usa a decisao', () => {
       'run: supabase test db supabase/tests-local/importacao_pendente_nfe_concurrency.test.sql',
       'run: supabase test db supabase/tests-local/idempotencia_financeira_concorrente.test.sql',
       'run: supabase test db supabase/tests-local/troca_preco_buck_concorrente.test.sql',
+      'run: supabase test db supabase/tests-local/expedicao_corrige_pj_concorrente.test.sql',
     ])
   })
 })

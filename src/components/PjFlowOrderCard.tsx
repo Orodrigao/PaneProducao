@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { pjLineValue } from '@/lib/pjOrderValue'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
 import { describePjLaunchOrigin, type PjOrderLaunchOrigin } from '@/lib/pjExpeditionLaunch'
+import { PjExpeditionOrderActions } from './PjExpeditionOrderActions'
 import { parsePjFlowQuantity, pjFlowStatus, readPjFlowActivationStatus,
   rollbackPjFlowEnrollment, transitionPjFlowPilot,
   type PjFlow, type PjFlowAction, type PjFlowInput } from '@/lib/pjFlowPilot'
@@ -21,7 +22,7 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
   flow: PjFlow; reload: (message?: string) => Promise<void>; onLock: (locked: boolean) => void
   launchOrigin?: PjOrderLaunchOrigin
 }) {
-  const canManageOrder = resolvePjOrderAccess(getCurrentUser()).canManage
+  const { canManage: canManageOrder, canLaunch } = resolvePjOrderAccess(getCurrentUser())
   const [quantities, setQuantities] = useState<Record<string, string>>(() => Object.fromEntries(
     flow.items.map(item => [item.id, item.quantity === null ? '' : String(item.quantity).replace('.', ',')]),
   ))
@@ -30,6 +31,7 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
   const [busy, setBusy] = useState(false)
   const [termsLocked, setTermsLocked] = useState(false)
   const [reconciliationLocked, setReconciliationLocked] = useState(false)
+  const [expeditionLocked, setExpeditionLocked] = useState(false)
   const [creditSource, setCreditSource] = useState('')
   const [creditAmount, setCreditAmount] = useState('')
   const [creditReason, setCreditReason] = useState('')
@@ -63,7 +65,7 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
       : total !== null && credit > total ? 'O crédito não pode ser maior que o valor dos produtos.'
         : creditReason.trim().length < 3 ? 'Informe a justificativa do crédito.' : '')
   const operationalLocked = dirty || busy || Boolean(confirm) || Boolean(pending.current)
-  const locked = operationalLocked || termsLocked || reconciliationLocked || creditDirty
+  const locked = operationalLocked || termsLocked || reconciliationLocked || creditDirty || expeditionLocked
   useEffect(() => { onLock(locked) }, [locked, onLock])
   const step = flow.departed_at ? 3 : flow.released_at ? 2 : flow.checked_at ? 1 : 0
   const releaseBlocked = !flow.checked_at ? 'A Expedição JC precisa concluir a conferência antes da revisão.'
@@ -116,7 +118,8 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
     } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível devolver o pedido.') }
     finally { setBusy(false) }
   }
-  const frozen = termsLocked || reconciliationLocked || busy || Boolean(pending.current) || Boolean(flow.departed_at) || Boolean(confirm)
+  const frozen = termsLocked || reconciliationLocked || expeditionLocked || busy || Boolean(pending.current)
+    || Boolean(flow.departed_at) || Boolean(confirm)
   const canManageBeforeConference = canManageOrder && activationMode === 'standard'
     && flow.version === 0 && !flow.checked_at && !flow.released_at && !flow.departed_at
   const manageUrl = `/pedidos-pj?legado=1&gerenciar=1&pedido=${encodeURIComponent(flow.id)}`
@@ -142,6 +145,8 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
         Cancelar pedido
       </a>
     </div>}
+    {launchOrigin && <PjExpeditionOrderActions orderGroupId={flow.id} canLaunch={canLaunch && launchOrigin.launchedByMe}
+      disabled={operationalLocked || termsLocked || reconciliationLocked} onLock={setExpeditionLocked} reload={reload} />}
     <div className={styles.body}><h3>Quantidades</h3>
     {flow.items.map(item => <fieldset className={styles.item} key={item.id} disabled={frozen || !flow.can_check}>
       <legend>{item.name} <span>Pedido: {item.ordered.toLocaleString('pt-BR')} {item.unit}</span></legend>
