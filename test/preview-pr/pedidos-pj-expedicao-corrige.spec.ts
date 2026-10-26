@@ -110,7 +110,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         // Corrigir pela tela, partindo da ficha da jornada.
         await expedicao.goto(`/pedidos-pj?piloto=1&pedido=${sobra}`)
         const ficha = expedicao.getByRole('region', { name: `Ficha de ${CLIENTE}` })
-        await expect(ficha.getByText(/^Lançado pela Expedição · você · /)).toBeVisible()
+        await expect(ficha.getByText(/^Você lançou pela Expedição · /)).toBeVisible()
         await ficha.getByRole('link', { name: 'Corrigir pedido' }).click()
         await expect(expedicao.getByRole('heading', { name: 'Corrigir pedido PJ' })).toBeVisible()
         await expect(expedicao.getByLabel('Cliente', { exact: true })).toBeDisabled()
@@ -127,7 +127,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
 
         // Reler: a ficha mostra a correcao gravada.
         await expedicao.getByRole('link', { name: 'Ver o pedido' }).click()
-        await expect(ficha.getByText(/^Corrigido pela Expedição · você · /)).toBeVisible()
+        await expect(ficha.getByText(/^Você corrigiu pela Expedição · /)).toBeVisible()
         await expect(ficha.getByText('Pedido: 5 un')).toBeVisible()
         await semValorNaTela(expedicao, 'ficha corrigida')
 
@@ -169,7 +169,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
 
         await financeiro.goto(`/pedidos-pj?piloto=1&pedido=${sobra}`)
         const ficha = financeiro.getByRole('region', { name: `Ficha de ${CLIENTE}` })
-        await expect(ficha.getByText(`Corrigido pela Expedição · ${EXPEDICAO}`, { exact: false })).toBeVisible()
+        await expect(ficha.getByText(`${EXPEDICAO} corrigiu pela Expedição`, { exact: false })).toBeVisible()
         await expect(ficha.getByRole('link', { name: 'Corrigir pedido' }), 'o Financeiro nao ganha o botao da Expedicao')
           .toHaveCount(0)
 
@@ -201,7 +201,7 @@ test('Expedicao JC corrige e cancela o Pedido PJ que lancou, antes da conferenci
         const acesso = await entrarComo(expedicao, 'expedicaoJc')
         await expedicao.goto(`/pedidos-pj?piloto=1&pedido=${sobra}`)
         const ficha = expedicao.getByRole('region', { name: `Ficha de ${CLIENTE}` })
-        await expect(ficha.getByText(/^Corrigido pela Expedição · você · /)).toBeVisible()
+        await expect(ficha.getByText(/^Você corrigiu pela Expedição · /)).toBeVisible()
         await expect(ficha.getByRole('link', { name: 'Corrigir pedido' })).toHaveCount(0)
         const cancelar = await rpc(expedicao, acesso, 'cancel_pj_order_by_expedition', {
           p_request_id: crypto.randomUUID(), p_order_group_id: sobra, p_reason: 'Sem permissao nao cancela',

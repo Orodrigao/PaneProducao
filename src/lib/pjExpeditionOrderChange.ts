@@ -118,19 +118,21 @@ export async function readPjExpeditionOrder(orderGroupId: string): Promise<PjExp
   return parsePjExpeditionOrderState(data)
 }
 
-// Ação nova no banco sem rótulo aqui aparece pela chave, nunca some.
-const HISTORY_LABELS: Record<string, string> = {
-  create: 'Pedido criado',
-  create_expedition: 'Lançado pela Expedição',
-  replace: 'Pedido alterado',
-  replace_v2: 'Pedido alterado',
-  replace_expedition: 'Corrigido pela Expedição',
-  cancel: 'Pedido cancelado',
+// Quem fez o quê, sem repetir o selo de origem da ficha ("Lançado pela
+// Expedição · nome"). Ação nova no banco sem verbo aqui aparece pela chave,
+// nunca some.
+const HISTORY_VERBS: Record<string, string> = {
+  create: 'criou o pedido',
+  create_expedition: 'lançou pela Expedição',
+  replace: 'alterou o pedido',
+  replace_v2: 'alterou o pedido',
+  replace_expedition: 'corrigiu pela Expedição',
+  cancel: 'cancelou o pedido',
 }
 
 export function describePjOrderHistoryEntry(entry: PjOrderHistoryEntry): string {
-  const label = HISTORY_LABELS[entry.action] ?? entry.action
-  return `${label} · ${entry.byMe ? 'você' : entry.byName} · ${new Date(entry.at).toLocaleString('pt-BR')}`
+  const verb = HISTORY_VERBS[entry.action] ?? entry.action
+  return `${entry.byMe ? 'Você' : entry.byName} ${verb} · ${new Date(entry.at).toLocaleString('pt-BR')}`
 }
 
 function round3(value: number): number {

@@ -143,14 +143,14 @@ describe('reabrir as linhas no formulário', () => {
 })
 
 describe('histórico e motivo', () => {
-  it('rotula as ações da trilha e mostra a chave crua de uma ação nova', () => {
+  it('diz quem fez o quê, sem repetir o selo de origem, e mostra a chave crua de uma ação nova', () => {
     const at = '2026-10-26T15:00:00Z'
     expect(describePjOrderHistoryEntry({ action: 'replace_expedition', byName: 'Rafaela', byMe: false, at }))
-      .toMatch(/^Corrigido pela Expedição · Rafaela · /)
+      .toMatch(/^Rafaela corrigiu pela Expedição · /)
     expect(describePjOrderHistoryEntry({ action: 'create_expedition', byName: 'Rafaela', byMe: true, at }))
-      .toMatch(/^Lançado pela Expedição · você · /)
+      .toMatch(/^Você lançou pela Expedição · /)
     expect(describePjOrderHistoryEntry({ action: 'acao_nova', byName: 'Elis', byMe: false, at }))
-      .toMatch(/^acao_nova · Elis · /)
+      .toMatch(/^Elis acao_nova · /)
   })
 
   it('motivo do cancelamento tem de 3 a 500 caracteres', () => {
