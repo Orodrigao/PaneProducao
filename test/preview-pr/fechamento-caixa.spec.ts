@@ -4,7 +4,6 @@ import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './ap
 
 const ESPERA_DO_BANCO = 20_000
 const VALORES = { store: 'ja', closing_cash_amount: 100, stone_amount: 40.25, food99_sales_amount: 80.5, total_amount: 140.25, site_sales_amount: 0 }
-const RECUSA = 'Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.'
 
 function diaDescartavel() {
   return new Date(Date.UTC(1990, 0, 1) + Math.floor(Math.random() * 365 * 30) * 86_400_000).toISOString().slice(0, 10)
@@ -99,22 +98,22 @@ test.describe('Fechamento protegido no banco desta PR', () => {
     })
 
   test('Vendas JA não grava diretamente nem apaga os valores salvos',
-    matriz('Vendas JA', 'JA', 'bloqueado: 22023', 'cash_closings (PATCH e POST)'), async ({ page }) => {
+    matriz('Vendas JA', 'JA', 'bloqueado: 42501', 'cash_closings (PATCH e POST)'), async ({ page }) => {
       const acesso = await entrarComo(page, 'vendasJa')
       const headers = await cabecalhosDaSessao(page, acesso)
       const antes = await ler(page, acesso, `cash_closings?id=eq.${id}&select=*`)
       const patch = await page.request.patch(`${acesso.url}/rest/v1/cash_closings?id=eq.${id}`, {
         headers, maxRedirects: 0, data: { stone_amount: 0, closing_cash_amount: 200 },
       })
-      expect(patch.status(), await patch.text()).toBe(400)
-      expect(await patch.json()).toMatchObject({ code: '22023', message: RECUSA })
+      expect(patch.status(), await patch.text()).toBe(403)
+      expect(await patch.json()).toMatchObject({ code: '42501' })
       let novoDia = diaDescartavel()
       while (novoDia === dia) novoDia = diaDescartavel()
       const post = await page.request.post(`${acesso.url}/rest/v1/cash_closings`, {
         headers, maxRedirects: 0, data: { ...VALORES, closing_date: novoDia },
       })
-      expect(post.status(), await post.text()).toBe(400)
-      expect(await post.json()).toMatchObject({ code: '22023', message: RECUSA })
+      expect(post.status(), await post.text()).toBe(403)
+      expect(await post.json()).toMatchObject({ code: '42501' })
       expect(await ler(page, acesso, `cash_closings?id=eq.${id}&select=*`)).toEqual(antes)
       expect(await ler(page, acesso, `cash_closings?store=eq.ja&closing_date=eq.${novoDia}&select=id`)).toEqual([])
     })

@@ -9,6 +9,7 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { formatDateBR, showToastPS, todayKey } from '@/lib/utils'
 import {
   calculateCashClosingTotals,
+  cashClosingInitialSelection,
   cashClosingDifferences,
   formatCurrencyBRL,
   isCashClosingSaveConflict,
@@ -248,7 +249,10 @@ export default function FechamentoCaixaPage() {
       if (!alive) return
       setUser(current)
       const currentStore = current?.store ?? null
-      if (isStoreKey(currentStore)) setStore(currentStore)
+      const selection = cashClosingInitialSelection(window.location.search, current?.role === 'admin' || current?.role === 'financeiro', todayKey())
+      if (selection.date) setDate(selection.date)
+      if (selection.store) setStore(selection.store)
+      else if (isStoreKey(currentStore)) setStore(currentStore)
     })
     return () => { alive = false }
   }, [])

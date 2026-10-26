@@ -652,6 +652,8 @@ with requested_permissions(email, permission_key, scope) as (
     -- Livro-caixa: escopo global porque o livro cobre a empresa inteira,
     -- inclusive os lancamentos 'geral' (que nao pertencem a uma loja so).
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.acessar', '*'),
+    -- A conta fictícia nasce depois da concessão feita pela migration.
+    ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.taxas', '*'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.lancar', '*'),
     ('rodrigao+teste-financeiro-jc@gmail.com', 'financeiro.estornar', '*'),
     -- Contas a receber: mesmo escopo do contas a pagar, porque a operacao PJ

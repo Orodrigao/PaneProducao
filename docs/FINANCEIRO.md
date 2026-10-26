@@ -141,8 +141,8 @@ esquecimento:
 1. **Fechamento protegido, fase 3 PR 1:** a tela passa a salvar por
    `save_cash_closing`, com cálculo no banco, controle de versão e histórico
    de cada criação e edição. Gravação direta pelo navegador é recusada com
-   mensagem para anotar os números e recarregar. A PR 2 ainda precisa revogar
-   grants e policies de escrita e criar a ponte para o livro-caixa.
+   mensagem para anotar os números e recarregar. A PR 2 revoga grants e policies de escrita e cria a ponte
+   para o livro-caixa, descrita na fase 3.
 2. **Stone, opção A decidida por Rodrigo em 23/10/2026:** a PR 1 corrige
    os dias desde 01/09/2026, substituindo Stone pelo valor antes guardado em
    `site_sales_amount`, zerando o legado e registrando a correção no histórico,
@@ -359,6 +359,68 @@ previsões futuras sem tocar as passadas.
 **Recuperação:** migration nova; regra desativável sem perder histórico.
 
 ## Fase 3 — Receita do varejo e taxas, juntas
+
+### Ponte do fechamento ao livro (PR 2)
+
+O fechamento de JC e JA passa a gerar uma receita por meio: Dinheiro, Banrisul,
+Stone, SiTef, PIX, iFood e 99Food. Receita e taxa nascem na mesma transação do
+fechamento. Se faltar uma conta necessária, nada é salvo, e o digitado permanece
+na tela. EX continua fora desta ponte. A carga começa em 01/09/2026 e a
+ressincronização pode ser repetida sem duplicar lançamentos.
+
+Dinheiro usa o caixa físico da loja e forma dinheiro; iFood usa a conta digital
+iFood e forma outro. PIX usa forma pix, sem conta informada. Banrisul, Stone,
+SiTef e 99Food usam forma outro, sem conta informada. Taxa usa a mesma conta da
+receita e forma outro. Maquininha não é conta de cartão de crédito. Competência
+é o mês do fechamento; vencimento e pagamento são a data da venda, mesmo na carga
+retroativa. A data de pagamento prova a venda, sem afirmar depósito no banco.
+Previsto e realizado nascem iguais. A conciliação com extrato fica fora desta PR.
+
+A taxa aplicável é a última vigência iniciada até a data da venda, com desempate
+pela gravação mais recente. O histórico só aceita inserção e registra autor e
+horário. iFood começa em 15,2% desde 01/09/2026, 99Food em 14,1% desde 22/10/2026
+e PIX em 0% desde 01/09/2026. Banrisul, Stone e SiTef aguardam a taxa efetiva da
+Elis. Dinheiro não tem taxa configurável. Taxa vazia significa desconhecida;
+zero significa sem despesa. O cálculo arredonda por fechamento e meio a centavos;
+resultado menor que um centavo não cria despesa nem pendência.
+
+O painel Taxas dos meios de pagamento carrega separado do livro. Mostra a taxa
+vigente hoje, histórico e Venda ainda sem taxa por meio, loja e mês, com valor e
+quantidade. Quem tem financeiro.acessar consulta; financeiro.taxas permite gravar,
+e admin pode sempre. Perfis financeiros ativos recebem a permissão na migration.
+Ao gravar taxa com vigência retroativa, somente receitas ativas sem taxa cobertas
+pela nova versão ganham despesa. Taxas já lançadas nunca são reescritas.
+
+As vendas sem taxa aparecem separadas por meio, loja e mês, somente nas lojas
+que a pessoa pode consultar no livro. Antes de gravar, a confirmação informa
+o valor de vendas, as lojas e os meses afetados, respeitando a próxima versão do
+mesmo meio. Quando a vigência corta um mês no meio, mostra "até" o valor indicado,
+pois as pendências são agrupadas por mês; cada taxa entra no mês da venda.
+Depois de gravar, o painel informa os meses em que houve lançamento.
+Grave primeiro o período mais recente: taxas já lançadas não mudam quando
+uma taxa de período anterior é informada depois.
+
+Corrigir um meio do fechamento estorna e relança apenas sua receita e taxa, usando
+a mesma versão da taxa mais recente daquele fechamento e meio, inclusive se já
+estornada. Se nunca houve taxa, usa a aplicável na data da venda. Zerar estorna
+sem relançar; salvar sem mudança ou repetir a mesma requisição não altera o livro.
+Os estornos preservam loja, meio, conta, datas, competência e versão. O livro
+oferece Corrigir no Fechamento de caixa com link para loja e dia somente a quem
+pode abrir essa tela. Para os demais, orienta que quem fecha o caixa da loja ou
+o administrador ajuste o dia da venda no Fechamento de caixa. Estorno avulso
+da ponte é recusado. Venda balcão, iFood e 99Food também não aceitam avulso para
+não duplicar receita. Ajuste avulso em Taxas de cartão e apps continua permitido.
+
+A chave privada cash_closing_bridge_settings nasce ligada, com início em
+01/09/2026. Somente migration muda essa chave. Desligada, o fechamento salva sem
+alterar o livro; religar exige ressincronização para recuperar as lacunas.
+Salvamento, taxas e carga compartilham trava transacional, antes das linhas.
+Escrita direta em cash_closings é revogada para anon, authenticated e service_role;
+a leitura autorizada e o gatilho de proteção da PR 1 permanecem.
+
+A PR 3 entregará a conferência do mês: comparação por loja e meio, dias sem
+fechamento e recorrências pendentes. Esta PR não declara essa conferência pronta.
+
 
 **Objetivo:** o fechamento de caixa que a loja já faz vira receita no DRE,
 com as taxas de cartão, iFood e 99Food nascendo como despesa na mesma operação.

@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// O módulo cria o cliente Supabase ao ser importado; estes testes só exercitam
-// as funções puras, então o cliente é dispensado.
+// Cliente simulado para validar as consultas sem acessar o banco.
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
 
+import { supabase } from '@/lib/supabase'
+
 import {
+  loadFinanceEntries,
   buildFinanceRecurringForecasts,
   competenceMonthOf,
   entryDifference,
@@ -13,6 +15,8 @@ import {
   emptyFinanceTransferDraft,
   entrySignedAmount,
   financeSourceLabel,
+  cashClosingCorrectionHref,
+  categoryAcceptsManualEntry,
   formatCompetenceMonth,
   monthRange,
   summarizeEntries,
@@ -59,7 +63,7 @@ function entry(overrides: Partial<FinanceEntryRow> = {}): FinanceEntryRow {
     store: 'jc', competence_month: '2026-08-01', paid_date: TODAY,
     planned_amount: 150, amount: 150,
     payment_method: 'dinheiro', description: 'Diária do Marcelo',
-    source: 'avulso', source_ref: null, recurrence_month: null,
+    source: 'avulso', source_ref: null, source_detail: null, fee_of: null, fee_rate: null, fee_rate_version_id: null, recurrence_month: null,
     transfer_id: null, transfer_leg: null, reversal_of: null,
     reversal_reason: null, reversed_at: null, created_at: '2026-08-12T12:00:00Z',
     ...overrides,
@@ -302,5 +306,65 @@ describe('financeSourceLabel', () => {
     // codigo. Quando os dois discordarem, o usuario le a chave, nunca
     // "undefined" — que foi o defeito da estreia do contas a receber.
     expect(financeSourceLabel('origem_que_ainda_nao_existe')).toBe('origem_que_ainda_nao_existe')
+  })
+})
+
+describe('receita do fechamento', () => {
+  it('tem rótulo e destino na loja e dia da venda', () => {
+    expect(financeSourceLabel('fechamento_caixa')).toBe('Fechamento de caixa')
+    expect(cashClosingCorrectionHref(entry({ source: 'fechamento_caixa', store: 'ja', paid_date: '2026-09-15' }))).toBe('/fechamento-caixa?loja=ja&data=2026-09-15')
+    expect(cashClosingCorrectionHref(entry())).toBeNull()
+  })
+  it.each(['venda_balcao', 'ifood', 'food99'])('não oferece avulso em %s', key => {
+    expect(categoryAcceptsManualEntry({ key, nature: 'receita' })).toBe(false)
+  })
+  it('mantém ajuste avulso das taxas', () => {
+    expect(categoryAcceptsManualEntry({ key: 'taxas_cartao_apps', nature: 'despesa' })).toBe(true)
+  })
+})
+
+
+describe('leitura do livro durante a atualização do banco', () => {
+  function mockQueries(results: { data: unknown; error: { code: string; message: string } | null }[]) {
+    const select = vi.fn()
+    const gte = vi.fn()
+    const lt = vi.fn()
+    const order = vi.fn()
+    const chain = { select, gte, lt, order }
+    select.mockReturnValue(chain)
+    gte.mockReturnValue(chain)
+    lt.mockReturnValue(chain)
+    for (const result of results) {
+      order.mockReturnValueOnce(chain).mockResolvedValueOnce(result)
+    }
+    vi.mocked(supabase.from).mockReset().mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
+    return { select, gte, lt, order }
+  }
+
+  it.each([
+    { code: '42703', message: 'column finance_entries.source_detail does not exist' },
+    { code: 'PGRST204', message: "Could not find the 'fee_rate_version_id' column in the schema cache" },
+  ])('relê as colunas antigas quando faltam colunas novas: $code', async error => {
+    const { source_detail, fee_of, fee_rate, fee_rate_version_id, ...oldRow } = entry()
+    const query = mockQueries([{ data: null, error }, { data: [oldRow], error: null }])
+    expect(await loadFinanceEntries('2026-08')).toEqual([{
+      ...oldRow, source_detail, fee_of, fee_rate, fee_rate_version_id,
+    }])
+    expect(supabase.from).toHaveBeenCalledTimes(2)
+    expect(query.select.mock.calls[0][0]).toContain('fee_rate_version_id')
+    expect(query.select.mock.calls[1][0]).not.toMatch(/source_detail|fee_of|fee_rate/)
+    expect(query.gte.mock.calls).toEqual([['competence_month', '2026-08-01'], ['competence_month', '2026-08-01']])
+    expect(query.lt.mock.calls).toEqual([['competence_month', '2026-09-01'], ['competence_month', '2026-09-01']])
+    expect(query.order.mock.calls).toEqual([
+      ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+      ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+    ])
+  })
+
+  it('propaga outro erro sem repetir a consulta', async () => {
+    const error = { code: '42501', message: 'permission denied for table finance_entries' }
+    mockQueries([{ data: null, error }])
+    await expect(loadFinanceEntries('2026-08')).rejects.toEqual(error)
+    expect(supabase.from).toHaveBeenCalledTimes(1)
   })
 })

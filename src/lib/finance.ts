@@ -57,10 +57,11 @@ export interface FinanceAccountRow {
 }
 
 /** Origem do lançamento. 'avulso' é digitado; o resto nasce de outra tela. */
-export type FinanceSource = 'avulso' | 'contas_pagar' | 'contas_receber' | 'recorrencia' | 'transferencia'
+export type FinanceSource = 'avulso' | 'contas_pagar' | 'contas_receber' | 'recorrencia' | 'transferencia' | 'fechamento_caixa'
 
 export const FINANCE_SOURCE_LABELS: Record<FinanceSource, string> = {
   avulso: 'Lançamento avulso',
+  fechamento_caixa: 'Fechamento de caixa',
   contas_pagar: 'Contas a pagar',
   contas_receber: 'Contas a receber',
   recorrencia: 'Recorrência',
@@ -96,6 +97,10 @@ export interface FinanceEntryRow {
   description: string
   source: FinanceSource
   source_ref: string | null
+  source_detail: CashClosingMethod | null
+  fee_of: string | null
+  fee_rate: number | null
+  fee_rate_version_id: string | null
   recurrence_month: string | null
   // Preenchidos só nas duas pernas de uma transferência; sempre juntos.
   transfer_id: string | null
@@ -423,15 +428,32 @@ export async function loadPayableDueReportStatus(): Promise<PayableDueReportStat
 
 export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntryRow[]> {
   const { start, end } = monthRange(monthKey)
-  const { data, error } = await supabase
+  const legacyColumns = 'id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at'
+  const newColumns = ['source_detail', 'fee_of', 'fee_rate', 'fee_rate_version_id']
+  const query = (columns: string) => supabase
     .from('finance_entries')
-    .select('id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at')
+    .select(columns)
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
     .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []) as FinanceEntryRow[]
+  const { data, error } = await query(legacyColumns + ',' + newColumns.join(','))
+  if (!error) return (data ?? []) as unknown as FinanceEntryRow[]
+  const missingNewColumn = newColumns.some(column =>
+    new RegExp('\\b' + column + '\\b', 'i').test(error.message)
+      && /does not exist|could not find|inexistente|não existe/i.test(error.message))
+  if (error.code !== '42703' && !missingNewColumn) throw error
+
+  // O site pode publicar antes do banco; remover após a migration estar em produção.
+  const legacy = await query(legacyColumns)
+  if (legacy.error) throw legacy.error
+  return ((legacy.data ?? []) as unknown as Omit<FinanceEntryRow, 'source_detail' | 'fee_of' | 'fee_rate' | 'fee_rate_version_id'>[]).map(row => ({
+    ...row,
+    source_detail: null,
+    fee_of: null,
+    fee_rate: null,
+    fee_rate_version_id: null,
+  })) as unknown as FinanceEntryRow[]
 }
 
 export async function loadFinanceRecurringRules(): Promise<FinanceRecurringRuleRow[]> {
@@ -539,12 +561,22 @@ export async function reverseFinanceEntry(entryId: string, reason: string, reque
 }
 
 /**
- * Categorias que não aceitam lançamento direto no livro. A receita da Buck só
- * entra pelo recebimento da cobrança no Contas a receber: o banco recusa o
- * resto (gatilho `finance_entries_guard_receita_buck`) e a tela nem oferece.
+ * Categorias geradas por outra tela: Buck pelo Contas a receber, balcão e
+ * aplicativos pelo Fechamento de caixa. O banco recusa o avulso para evitar
+ * contar a receita duas vezes; os formulários também não oferecem a categoria.
  */
-export const RECEIVABLE_ONLY_CATEGORY_KEYS: readonly string[] = ['buck_ex']
+export const RECEIVABLE_ONLY_CATEGORY_KEYS: readonly string[] = ['buck_ex', 'venda_balcao', 'ifood', 'food99']
 
 export function categoryAcceptsManualEntry(category: Pick<FinanceCategoryRow, 'key' | 'nature'>): boolean {
   return category.nature !== 'transferencia' && !RECEIVABLE_ONLY_CATEGORY_KEYS.includes(category.key)
+}
+
+export const CASH_CLOSING_METHOD_LABELS = {
+  dinheiro: 'Dinheiro', banrisul: 'Banrisul', stone: 'Stone', sitef: 'SiTef', pix: 'PIX', ifood: 'iFood', food99: '99Food',
+} as const
+export type CashClosingMethod = keyof typeof CASH_CLOSING_METHOD_LABELS
+
+export function cashClosingCorrectionHref(entry: Pick<FinanceEntryRow, 'source' | 'store' | 'paid_date'>): string | null {
+  return entry.source === 'fechamento_caixa' && (entry.store === 'jc' || entry.store === 'ja')
+    ? '/fechamento-caixa?loja=' + entry.store + '&data=' + entry.paid_date : null
 }

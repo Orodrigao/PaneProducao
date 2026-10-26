@@ -168,3 +168,17 @@ export function cashClosingSaveErrorMessage(error: { code?: string; message?: st
   if (error.code === '42501') return 'Sem permissão para fechar o caixa desta loja.'
   return error.message ? 'Erro ao salvar: ' + error.message : 'Não foi possível salvar. Seus números continuam na tela.'
 }
+
+/** Parâmetros do link do livro: data estrita, loja só para quem pode trocar. */
+export function cashClosingInitialSelection(search: string, canChangeStore: boolean, today: string): { date?: string; store?: 'jc' | 'ja' | 'ex' } {
+  const params = new URLSearchParams(search)
+  const date = params.get('data') ?? ''
+  const store = params.get('loja')
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= '0001-01-01' && date <= today
+    && Number.isFinite(new Date(date + 'T12:00:00Z').getTime())
+    && new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) === date
+  return {
+    ...(validDate ? { date } : {}),
+    ...(canChangeStore && (store === 'jc' || store === 'ja' || store === 'ex') ? { store } : {}),
+  }
+}
