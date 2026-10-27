@@ -1,3 +1,5 @@
+import { storeOrderNote } from '@/lib/storeOrderNote'
+
 interface HistoryBread {
   id: string
   name: string
@@ -17,7 +19,7 @@ interface Props {
 export function ProductionOrderHistory({ storeLabel, breads, orders }: Props) {
   const rows = breads.filter(b => (orders[b.id]?.quantity || 0) > 0)
   const total = rows.reduce((sum, b) => sum + (orders[b.id]?.quantity || 0), 0)
-  const obs = Object.values(orders)[0]?.obs
+  const obs = storeOrderNote(Object.values(orders))
 
   return <>
     <div className="stat-row">

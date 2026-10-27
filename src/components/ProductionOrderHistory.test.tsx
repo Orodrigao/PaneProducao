@@ -32,4 +32,13 @@ describe('histórico de pedidos da loja', () => {
     expect(html).not.toContain('<table')
   })
 
+  it('mostra o recado da loja quando a sobra confirmada regravou a marca do Planejamento no primeiro pão', () => {
+    const html = renderToStaticMarkup(createElement(ProductionOrderHistory, {
+      storeLabel: 'Loja fictícia', breads,
+      orders: { daily: { quantity: 3, obs: 'Gerado pelo Planejamento' }, saturday: { quantity: 7, obs: 'Fazer o rústico' } },
+    }))
+    expect(html).toContain('Obs: Fazer o rústico')
+    expect(html).not.toContain('Gerado pelo Planejamento')
+  })
+
 })

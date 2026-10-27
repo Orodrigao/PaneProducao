@@ -315,3 +315,29 @@ test('Financeiro no histórico PJ não tem cópia e é levado à tela Pedidos PJ
   await expect(page.getByRole('button', { name: /Duplicar|como base/ })).toHaveCount(0)
   expect(writes).toEqual([])
 })
+
+// 29/08/2026 na JC: a confirmação da sobra regravou a marca do Planejamento em
+// parte dos pães, e o formulário, que lia o primeiro pão, escondia o recado.
+test('Pedido reabre e salva o recado da loja quando parte dos paes ficou com a marca do Planejamento', async ({ page }) => {
+  await entrarComSessaoGuardada(page, accounts.admin)
+  await page.clock.setFixedTime(mondayMorning)
+  const note = '[TESTE] La rustico 14'
+  const writes = await mockScenario(page, {
+    ordersByDate: {
+      [target]: [orderRow('jc', everyDayBread.id, 33, target, fromPlanning), orderRow('jc', offDayBread.id, 6, target, note)],
+    },
+    plannedStoresByDate: {},
+  })
+  await page.goto('/')
+
+  await expect(page.getByRole('tablist').getByRole('tab')).toHaveText(['JC', 'JA', 'Relatório', 'Admin'], { timeout: 30_000 })
+  await expect(page.locator('.ps-total-num b')).toHaveText('33')
+  await expect(page.getByPlaceholder('Ex: reforçar baguete, pegar croissant do congelado...')).toHaveValue(note)
+
+  await page.getByRole('button', { name: 'Salvar pedido', exact: true }).click()
+  await expect(page.locator('.toast', { hasText: 'Pedido salvo!' }).first()).toBeVisible()
+  const insertion = writes.find(write => write.method === 'POST')
+  expect(insertion?.body).toEqual([
+    expect.objectContaining({ store: 'jc', bread_id: everyDayBread.id, quantity: 33, order_date: target, obs: note }),
+  ])
+})

@@ -1,3 +1,5 @@
+import { PLANNING_ORDER_OBS } from './storeOrderNote'
+
 export const PRODUCTION_PLANNING_ROUTE = '/planejamento-producao'
 
 export type ProductionPlanStore = 'jc' | 'ja'
@@ -164,7 +166,7 @@ export function buildProductionOrderDraftsFromPlan(
       quantity: productionPlanItemOrderQuantity(item),
       order_date: orderDate,
       order_type: 'producao' as const,
-      obs: 'Gerado pelo Planejamento',
+      obs: PLANNING_ORDER_OBS,
     }))
     .filter(row => row.quantity > 0)
 }
