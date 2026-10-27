@@ -30,6 +30,8 @@ import { buildOrderCopy, orderCopyConfirmation, type OrderCopyResult, type Order
 import { LogOut, Clock, AlarmClock, Save, Minus, Plus, Check, CalendarCheck } from 'lucide-react'
 import { PjProductionPlanningPanel } from '@/components/PjProductionPlanningPanel'
 import { ProductionOrderHistory } from '@/components/ProductionOrderHistory'
+import { StoreOrderNotes } from '@/components/StoreOrderNotes'
+import { storeOrderFormObs, storeOrderNote } from '@/lib/storeOrderNote'
 
 const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 const DAY_FULL_PT: Record<number,string> = {1:'Segunda',2:'Terça',3:'Quarta',4:'Quinta',5:'Sexta',6:'Sábado'}
@@ -376,8 +378,7 @@ export default function ProducaoPage() {
       bds.forEach(b => {
         newQtys[`${store}-${b.id}`] = sv[b.id]?.quantity || 0
       })
-      const firstObs = Object.values(sv)[0]?.obs || ''
-      newObs[store] = firstObs
+      newObs[store] = storeOrderFormObs(Object.values(sv))
     })
     setQtys(newQtys)
     setObsMap(newObs)
@@ -847,9 +848,9 @@ export default function ProducaoPage() {
       const vals = stores.map(s => ordMap[s]?.[b.id]?.quantity || 0)
       if (vals.reduce((a,c)=>a+c,0) > 0) lines.push(`${b.name}  ${vals[0]}+${vals[1]}+${vals[2]}`)
     })
-    const oEX = Object.values(ordMap['ex']||{})[0]?.obs
-    const oJC = Object.values(ordMap['jc']||{})[0]?.obs
-    const oJA = Object.values(ordMap['ja']||{})[0]?.obs
+    const oEX = storeOrderNote(Object.values(ordMap['ex']||{}))
+    const oJC = storeOrderNote(Object.values(ordMap['jc']||{}))
+    const oJA = storeOrderNote(Object.values(ordMap['ja']||{}))
     if (oEX||oJC||oJA) { lines.push(''); if(oEX)lines.push(`_Obs EX: ${oEX}_`); if(oJC)lines.push(`_Obs JC: ${oJC}_`); if(oJA)lines.push(`_Obs JA: ${oJA}_`) }
     const pjSv = ordMap['pj'] || {}
     const pjItems = breads.filter(b=>b.is_pj&&b.active&&(pjSv[b.id]?.quantity||0)>0)
@@ -1379,6 +1380,7 @@ function ReportView({ currentUser, storeFilter, breads, reportDate, reportOrders
             <div className="stat-row">
               {stores.map(s=><div key={s} className="stat-card"><div className="lbl">{s.toUpperCase()}</div><div className="val">{tots[s]}</div></div>)}
             </div>
+            <div style={{marginTop:'.75rem'}}><StoreOrderNotes orders={reportOrders} stores={stores}/></div>
             {/* O Forno e o Relatorio respondem perguntas diferentes e nada na tela dizia
                 isso. Quem planeja olhando so este numero subestima, porque a producao PJ
                 pode ser maior que a das lojas somadas. */}
@@ -1728,6 +1730,7 @@ function GeolarScreen({ breads, orders, enc, sheetStatus, geolarDate, delivIdx, 
             Carregando a lista de produção de {dLabel}…
           </div>
         ) : (<>
+          <StoreOrderNotes orders={orders} stores={stores}/>
           <div className="print-card">
             <h3>Pane &amp; Salute — Produção</h3>
             <div className="pmeta">Para {dLabel} · Gerado {new Date().toLocaleString('pt-BR')}</div>

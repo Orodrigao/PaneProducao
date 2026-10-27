@@ -34,7 +34,9 @@ test('Administrador ve JC, JA, Relatorio e Admin na tela inicial, sem Itens JC',
   await expect(page.getByRole('button', { name: 'Copiar para WhatsApp' })).toBeVisible()
 })
 
-async function mockGeolarSheet(page: import('@playwright/test').Page) {
+type StoreObs = Partial<Record<'ex' | 'jc' | 'ja', string>>
+
+async function mockGeolarSheet(page: import('@playwright/test').Page, obsByStore: StoreObs = {}) {
   // O Banco Preview guarda de propósito uma sobra pendente que trava esta tela
   // (ver auth.smoke). Aqui a trava responde "nada pendente" e a folha recebe um
   // pão fictício com pedido nas três lojas; o resto vem do banco de teste.
@@ -47,22 +49,26 @@ async function mockGeolarSheet(page: import('@playwright/test').Page) {
     if (url.includes('order_type=eq.encomenda')) return route.fulfill({ json: [] })
     return route.fulfill({
       json: (['ex', 'jc', 'ja'] as const).map((store, index) => ({
-        store, bread_id: visualBreadId, quantity: index + 1, obs: '', order_date: '2026-10-12',
+        store, bread_id: visualBreadId, quantity: index + 1, obs: obsByStore[store] ?? '', order_date: '2026-10-12',
       })),
     })
   })
   // Imprimir e copiar ficam registrados na página, sem abrir janela nem mexer
   // na área de transferência da máquina do CI. Cada impressão guarda o total do
-  // pão fictício, o cabeçalho da folha e as encomendas como estavam naquele instante.
+  // pão fictício, o cabeçalho da folha, as encomendas e as observações das
+  // lojas como estavam naquele instante.
   await page.addInitScript(breadName => {
     const record = window as Window & {
-      __prints?: number; __printedTotals?: string[]; __printedHeaders?: string[]; __printedEncomendas?: string[]; __copied?: string
+      __prints?: number; __printedTotals?: string[]; __printedHeaders?: string[]; __printedEncomendas?: string[]
+      __printedNotes?: string[]; __copied?: string
     }
     record.__prints = 0
     record.__printedTotals = []
     record.__printedHeaders = []
     record.__printedEncomendas = []
+    record.__printedNotes = []
     window.print = () => {
+      record.__printedNotes?.push(document.querySelector('[aria-label="Observações das lojas"]')?.textContent ?? '')
       record.__prints = (record.__prints ?? 0) + 1
       const row = Array.from(document.querySelectorAll('.print-row'))
         .find(candidate => candidate.textContent?.includes(breadName))
@@ -194,6 +200,58 @@ test('Geolar imprime e copia a folha de paes, sem bloco de Itens JC', async ({ p
   await expect.poll(copied).toContain(`${visualBreadName}  1+2+3`)
   expect(await copied()).toMatch(/^\*Pane & Salute — Produção /)
   expect(await copied()).not.toContain('Itens JC')
+})
+
+// 26/10/2026: a EX pediu 8 pães de forma, 4 inteiros e 4 fatiados, e escreveu
+// isso na observação; a folha da Geolar não mostrava observação nenhuma.
+const storeNotes: StoreObs = {
+  ex: '[TESTE] Pão de forma: 4 inteiros e 4 fatiados',
+  jc: 'Gerado pelo Planejamento',
+}
+
+test('Geolar ve e imprime a observacao de cada loja, sem a marca do Planejamento', async ({ page }) => {
+  await mockGeolarSheet(page, storeNotes)
+  await page.route('**/rest/v1/rpc/list_pj_production_for_oven_v2', route => route.fulfill({ json: [] }))
+
+  await entrarComSessaoGuardada(page, previewAccounts.geolarJc)
+  await page.goto('/')
+
+  const printBreads = page.getByRole('button', { name: '🖨 Imprimir pães' })
+  await expect(printBreads).toBeEnabled({ timeout: 30_000 })
+  const notes = page.getByRole('region', { name: 'Observações das lojas' })
+  await expect(notes).toContainText(`EX: ${storeNotes.ex}`)
+  await expect(notes).not.toContainText('Gerado pelo Planejamento')
+  await expect(notes).not.toContainText('JC:')
+
+  // O recado sai no papel junto com a folha de pães, pelo botão de verdade.
+  await printBreads.click()
+  await expect.poll(() => printCount(page)).toBe(1)
+  const printedNotes = await page.evaluate(() => (window as Window & { __printedNotes?: string[] }).__printedNotes)
+  expect(printedNotes).toHaveLength(1)
+  expect(printedNotes?.[0]).toContain(`EX: ${storeNotes.ex}`)
+  expect(await printedTotals(page)).toEqual(['6'])
+  await page.emulateMedia({ media: 'print' })
+  await expect(notes).toBeVisible()
+  await page.emulateMedia({ media: 'screen' })
+
+  const copied = () => page.evaluate(() => (window as Window & { __copied?: string }).__copied ?? '')
+  await page.getByRole('button', { name: '📋 Copiar texto' }).click()
+  await expect.poll(copied).toContain(`_Obs EX: ${storeNotes.ex}_`)
+  expect(await copied()).not.toContain('Gerado pelo Planejamento')
+})
+
+test('Administrador ve a observacao das lojas no Relatorio', async ({ page }) => {
+  await mockGeolarSheet(page, storeNotes)
+
+  await entrarComSessaoGuardada(page, previewAccounts.admin)
+  await page.goto('/')
+
+  const report = page.getByRole('tab', { name: 'Relatório', exact: true })
+  await expect(report).toBeVisible({ timeout: 30_000 })
+  await report.click()
+  const notes = page.getByRole('region', { name: 'Observações das lojas' })
+  await expect(notes).toContainText(`EX: ${storeNotes.ex}`, { timeout: 15_000 })
+  await expect(notes).not.toContainText('Gerado pelo Planejamento')
 })
 
 test('Geolar imprime com o que esta na tela quando a leitura do PJ para sem erro', async ({ page }) => {
