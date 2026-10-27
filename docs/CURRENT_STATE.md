@@ -177,7 +177,20 @@ continua com o Financeiro. A permissão nasce sem concessão; a policy de
 direto) e os contratos antigos de criar, editar e cancelar continuam só para
 Administrador e Financeiro. A origem fica na trilha
 `private.pj_order_write_requests` (ação `create_expedition`) e aparece na ficha.
-Corrigir e cancelar o próprio pedido até a conferência é a fase 2.
+
+Desde a fase 2 (26/10/2026), a mesma permissão deixa quem lançou corrigir
+(entrega, observação e quantidades; o cliente não muda) ou cancelar com motivo
+o próprio pedido, pelas RPCs `replace_pj_order_by_expedition` e
+`cancel_pj_order_by_expedition`, enquanto a conferência não começou: a mesma
+condição do `replace_pj_order_atomic_v2`. Colega da Expedição, outro papel ou
+loja, pedido que o Financeiro alterou e pedido já em conferência são recusados
+por `private.pj_expedition_change_blocked_reason`, conferida sob as mesmas
+travas da conferência e da liberação. A correção reprecifica pela mesma conta
+do lançamento (`private.pj_expedition_order_rows`) e grava a ação
+`replace_expedition`; o cancelamento grava `cancel` com a origem `expedition`,
+para `private.is_pj_flow` continuar protegendo o pedido cancelado. A ficha
+mostra quem lançou e corrigiu, pela `read_pj_expedition_order`. A concessão em
+produção, só no crachá da Expedição, é a fase 3.
 
 ## Fase estratégica
 

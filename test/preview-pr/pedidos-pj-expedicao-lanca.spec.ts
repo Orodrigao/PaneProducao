@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { cabecalhosDaSessao, entrarComo, hojeNaPadaria, matriz, type AcessoAoBanco } from './apoio/entrar'
 
 // Fase 1 da Expedicao lancando Pedido PJ sem ver preco. Sem a permissao nova a
@@ -21,6 +21,14 @@ function somarDias(data: string, dias: number): string {
   return resultado.toISOString().slice(0, 10)
 }
 
+// Fecha o navegador sem erro solto: um pedido da pagina ainda em voo na cerca
+// de rede de entrar.ts (a ficha le o historico do pedido ao abrir) falharia
+// depois do fim do teste ("Request context disposed") e derrubaria o roteiro.
+async function fechar(contexto: BrowserContext): Promise<void> {
+  for (const pagina of contexto.pages()) await pagina.unrouteAll({ behavior: 'ignoreErrors' })
+  await contexto.close()
+}
+
 async function marcarPermissao(browser: Browser, marcada: boolean): Promise<void> {
   const contexto = await browser.newContext({ serviceWorkers: 'block' })
   try {
@@ -34,7 +42,7 @@ async function marcarPermissao(browser: Browser, marcada: boolean): Promise<void
     await admin.getByRole('button', { name: 'Salvar permissões' }).click()
     await expect(admin.getByText(`Permissões de ${EXPEDICAO} salvas com sucesso.`)).toBeVisible()
   } finally {
-    await contexto.close()
+    await fechar(contexto)
   }
 }
 
@@ -67,7 +75,7 @@ test('Expedicao JC lanca Pedido PJ sem ver preco depois da permissao marcada pel
       await expect(expedicao.getByText('Seu acesso não permite lançar Pedido PJ. Peça ao administrador.')).toBeVisible()
       await lancamentoRecusadoNoBanco(expedicao, acesso)
     } finally {
-      await semPermissao.close()
+      await fechar(semPermissao)
     }
 
     let pedido = ''
@@ -107,7 +115,7 @@ test('Expedicao JC lanca Pedido PJ sem ver preco depois da permissao marcada pel
         await expect(expedicao.getByRole('region', { name: `Ficha de ${CLIENTE}` }).getByText('Lançado por você')).toBeVisible()
         await semValorNaTela(expedicao, 'ficha do pedido')
       } finally {
-        await comPermissao.close()
+        await fechar(comPermissao)
       }
 
       const contextoFinanceiro = await browser.newContext({ serviceWorkers: 'block' })
@@ -135,7 +143,7 @@ test('Expedicao JC lanca Pedido PJ sem ver preco depois da permissao marcada pel
         expect(cancelar.status(), await cancelar.text()).toBe(200)
         pedido = ''
       } finally {
-        await contextoFinanceiro.close()
+        await fechar(contextoFinanceiro)
       }
     } finally {
       await marcarPermissao(browser, false)

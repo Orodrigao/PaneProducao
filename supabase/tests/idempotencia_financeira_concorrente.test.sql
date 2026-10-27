@@ -54,6 +54,7 @@ select is(
   array[
     'cancel_pj_order_atomic',
     'cancel_pj_order_atomic_impl',
+    'cancel_pj_order_by_expedition',
     'cancel_receivable',
     'change_pj_flow_terms',
     'confirm_finance_recurring_rule',
@@ -78,6 +79,7 @@ select is(
     'replace_pj_order_atomic',
     'replace_pj_order_atomic_v2',
     'replace_pj_order_atomic_v2_impl',
+    'replace_pj_order_by_expedition',
     'resolve_pj_flow_excess',
     'reverse_finance_entry',
     'reverse_finance_transfer',

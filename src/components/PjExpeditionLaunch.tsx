@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentUser } from '@/lib/auth'
 import { readPjFlowPilot, type PjFlow } from '@/lib/pjFlowPilot'
 import { resolvePjOrderAccess } from '@/lib/pjOrderDispatch'
@@ -27,20 +27,37 @@ import {
   type PjLaunchPending,
   type PjLaunchRequest,
 } from '@/lib/pjExpeditionLaunch'
+import {
+  newPjChangeAttempt,
+  readPjExpeditionOrder,
+  replacePjOrderByExpedition,
+  restorePjExpeditionLines,
+  type PjChangeAttempt,
+  type PjExpeditionOrder,
+} from '@/lib/pjExpeditionOrderChange'
 import styles from './PjExpeditionLaunch.module.css'
 
 interface DraftLine { key: string; item: PjLaunchItem; raw: string }
-interface Launched { orderGroupId: string; customerName: string; deliveryDate: string }
+interface Launched { orderGroupId: string; customerName: string; deliveryDate: string; corrected?: boolean }
+interface Editing { orderGroupId: string; order: PjExpeditionOrder }
 
 const fullDate = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')
 const normalize = (value: string) => value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR')
 const requestLineKey = (line: PjLaunchRequest['lines'][number]) =>
   `${line.product_source}|${line.product_id}|${line.sale_option_id ?? ''}`
 
+const fichaUrl = (orderGroupId: string) => `/pedidos-pj?piloto=1&pedido=${encodeURIComponent(orderGroupId)}`
+
 // Toda tentativa sem resposta do banco vira um cartão próprio, guardado no
 // aparelho, separado do formulário: repetir a mesma tentativa nunca grava dois
 // pedidos, e uma aba nunca esconde a tentativa da outra.
-export function PjExpeditionLaunch() {
+//
+// Com `editOrderGroupId`, o mesmo formulário corrige o pedido que a Expedição
+// lançou, até a conferência começar. O cliente fica fixo. A correção sem
+// resposta repete a mesma tentativa enquanto o conteúdo não muda; conteúdo
+// novo vai com a versão lida, que o banco recusa se a correção anterior já
+// tiver sido gravada.
+export function PjExpeditionLaunch({ editOrderGroupId = null }: { editOrderGroupId?: string | null }) {
   const [user] = useState(() => getCurrentUser())
   const canLaunch = resolvePjOrderAccess(user).canLaunch
   const [catalog, setCatalog] = useState<PjLaunchCatalog | null>(null)
@@ -58,6 +75,11 @@ export function PjExpeditionLaunch() {
   const [launched, setLaunched] = useState<Launched | null>(null)
   // Sucesso de um cartão não tira da tela o pedido que está sendo preenchido.
   const [notice, setNotice] = useState<Launched | null>(null)
+  const [editing, setEditing] = useState<Editing | null>(null)
+  const [editBlocked, setEditBlocked] = useState('')
+  const [editWarnings, setEditWarnings] = useState<string[]>([])
+  const correctionAttempt = useRef<{ attempt: PjChangeAttempt; request: string } | null>(null)
+  const editMode = editOrderGroupId !== null
 
   const refreshFlows = useCallback(() => {
     readPjFlowPilot().then(setFlows).catch(() => { /* sem aviso de pedido parecido */ })
@@ -70,6 +92,26 @@ export function PjExpeditionLaunch() {
   useEffect(() => {
     if (!user || !canLaunch) return
     let alive = true
+    if (editOrderGroupId !== null) {
+      Promise.all([loadPjLaunchCatalog(), readPjExpeditionOrder(editOrderGroupId)])
+        .then(([result, state]) => {
+          if (!alive) return
+          setCatalog(result)
+          if (!state.canChange || !state.order) {
+            setEditBlocked(state.changeBlockedReason ?? 'Este pedido não pode ser corrigido por aqui.')
+            return
+          }
+          const restored = restorePjExpeditionLines(state.order, result)
+          setEditing({ orderGroupId: editOrderGroupId, order: state.order })
+          setCustomerId(state.order.customerId)
+          setDeliveryDate(state.order.deliveryDate.slice(0, 10))
+          setObs(state.order.obs)
+          setLines(restored.lines.map(line => ({ key: pjLaunchItemKey(line.item), item: line.item, raw: line.raw })))
+          setEditWarnings(restored.warnings)
+        })
+        .catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : 'Não foi possível carregar o pedido.') })
+      return () => { alive = false }
+    }
     syncPendings()
     loadPjLaunchCatalog()
       .then(result => { if (alive) setCatalog(result) })
@@ -80,7 +122,7 @@ export function PjExpeditionLaunch() {
     }
     window.addEventListener('storage', onStorage)
     return () => { alive = false; window.removeEventListener('storage', onStorage) }
-  }, [user, canLaunch, refreshFlows, syncPendings])
+  }, [user, canLaunch, refreshFlows, syncPendings, editOrderGroupId])
 
   const customer = catalog?.customers.find(row => row.id === customerId) ?? null
   const customerItems = useMemo(
@@ -95,13 +137,17 @@ export function PjExpeditionLaunch() {
     const packs = parsePjLaunchQuantity(line.raw, line.item)
     return { ...line, packs, problem: pjLaunchLineProblem(line.item, packs) }
   })
-  const similar = customer && deliveryDate ? hasSimilarPjOrder(flows, customer.name, deliveryDate) : false
+  const similar = !editMode && customer && deliveryDate ? hasSimilarPjOrder(flows, customer.name, deliveryDate) : false
   const locked = saving || pendings.length > 0
+  // Na correção, a entrega que já estava no passado pode ficar; a nova não.
+  const originalDate = editing?.order.deliveryDate.slice(0, 10) ?? null
+  const keptPastDate = originalDate !== null && deliveryDate === originalDate
+  const minDate = catalog && originalDate && originalDate < catalog.today ? originalDate : catalog?.today
 
   const blockReason = pendings.length > 0 ? 'Resolva primeiro o lançamento sem confirmação.'
     : !customer ? 'Escolha o cliente.'
       : customer.blockedReason ? customer.blockedReason
-        : !deliveryDate || (catalog && deliveryDate < catalog.today) ? 'Escolha a data de entrega, de hoje em diante.'
+        : !deliveryDate || (catalog && deliveryDate < catalog.today && !keptPastDate) ? 'Escolha a data de entrega, de hoje em diante.'
           : parsedLines.length === 0 ? 'Inclua ao menos um produto.'
             : parsedLines.some(line => line.problem) ? 'Corrija as quantidades marcadas.'
               : null
@@ -197,10 +243,36 @@ export function PjExpeditionLaunch() {
     }
   }
 
+  async function sendCorrection(target: Editing, request: PjLaunchRequest, customerName: string) {
+    const serialized = JSON.stringify(request)
+    // Mesmo conteúdo depois de uma resposta perdida: mesma tentativa.
+    if (correctionAttempt.current?.request !== serialized) {
+      correctionAttempt.current = { attempt: newPjChangeAttempt(), request: serialized }
+    }
+    const { attempt } = correctionAttempt.current
+    setSaving(true)
+    setError('')
+    try {
+      await replacePjOrderByExpedition(attempt, target.orderGroupId, request, target.order.expectedRows)
+      correctionAttempt.current = null
+      setReviewing(false)
+      setLaunched({ orderGroupId: target.orderGroupId, customerName, deliveryDate: request.deliveryDate, corrected: true })
+    } catch (e) {
+      if (e instanceof PjLaunchRefusedError && e.notSaved) correctionAttempt.current = null
+      setError(e instanceof Error ? e.message : 'Não foi possível corrigir o pedido.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function confirm() {
     if (!customer || blockReason) return
     const request = buildPjLaunchRequest(customer.id, deliveryDate,
       obs, parsedLines.map(line => ({ item: line.item, packs: line.packs ?? 0 })))
+    if (editing) {
+      void sendCorrection(editing, request, customer.name)
+      return
+    }
     void send({ attempt: newPjLaunchAttempt(), request, customerName: customer.name }, true)
   }
 
@@ -221,23 +293,39 @@ export function PjExpeditionLaunch() {
   }
 
   return <main className={`ps-canvas ${styles.canvas}`}><div className={styles.shell}>
-    <a className={styles.back} href="/pedidos-pj?piloto=1">Voltar aos Pedidos PJ</a>
+    <a className={styles.back} href={editOrderGroupId ? fichaUrl(editOrderGroupId) : '/pedidos-pj?piloto=1'}>
+      {editMode ? 'Voltar ao pedido' : 'Voltar aos Pedidos PJ'}</a>
     <header className={styles.header}>
       <span className={styles.eyebrow}>Expedição JC</span>
-      <h1>Novo pedido PJ</h1>
-      <p>Escolha o cliente, a entrega e as quantidades. O preço vem da tabela do cliente e o Financeiro revisa a cobrança antes da saída.</p>
+      <h1>{editMode ? 'Corrigir pedido PJ' : 'Novo pedido PJ'}</h1>
+      <p>{editMode
+        ? 'Corrija a entrega, a observação e as quantidades enquanto a conferência não começou. O cliente não muda: para outro cliente, cancele e lance de novo.'
+        : 'Escolha o cliente, a entrega e as quantidades. O preço vem da tabela do cliente e o Financeiro revisa a cobrança antes da saída.'}</p>
     </header>
 
     {error && !reviewing && <p className={styles.error} role="alert">{error}</p>}
 
-    {launched ? <div className={styles.success} role="status">
+    {editBlocked && <div className={styles.card}>
+      <p className={styles.warning} role="alert">{editBlocked}</p>
+      {editOrderGroupId && <div className={styles.actions}>
+        <a className={styles.link} href={fichaUrl(editOrderGroupId)}>Voltar ao pedido</a>
+      </div>}
+    </div>}
+
+    {launched?.corrected ? <div className={styles.success} role="status">
+      <p><strong>Pedido de {launched.customerName} corrigido</strong>, entrega em {fullDate(launched.deliveryDate)}.</p>
+      <p>A conferência e a revisão da cobrança seguem com a versão corrigida.</p>
+      <div className={styles.actions}>
+        <a className={styles.link} href={fichaUrl(launched.orderGroupId)}>Ver o pedido</a>
+      </div>
+    </div> : launched ? <div className={styles.success} role="status">
       <p><strong>Pedido lançado para {launched.customerName}</strong>, entrega em {fullDate(launched.deliveryDate)}.</p>
       <p>Ele já aparece na jornada, em Conferência, marcado como lançado por você.</p>
       <div className={styles.actions}>
-        <a className={styles.link} href={`/pedidos-pj?piloto=1&pedido=${encodeURIComponent(launched.orderGroupId)}`}>Ver o pedido</a>
+        <a className={styles.link} href={fichaUrl(launched.orderGroupId)}>Ver o pedido</a>
         <button type="button" className={styles.secondary} onClick={resetForm}>Lançar outro pedido</button>
       </div>
-    </div> : <>
+    </div> : !editBlocked && <>
       {notice && <div className={styles.success} role="status">
         <p><strong>Pedido de {notice.customerName} lançado</strong>, entrega em {fullDate(notice.deliveryDate)}.</p>
         <div className={styles.actions}>
@@ -260,11 +348,15 @@ export function PjExpeditionLaunch() {
       {loadError && <p className={styles.error} role="alert">{loadError}</p>}
       {!catalog && !loadError && <p className={styles.empty} role="status">Carregando clientes e produtos…</p>}
 
-      {catalog && !reviewing && <>
+      {editWarnings.length > 0 && !reviewing && <div className={styles.card}>
+        {editWarnings.map(warning => <p key={warning} className={styles.warning}>{warning}</p>)}
+      </div>}
+
+      {catalog && !reviewing && (!editMode || editing) && <>
         <section className={styles.card} aria-labelledby="lancar-cliente">
           <h2 id="lancar-cliente">Cliente e entrega</h2>
           <label className={styles.field}>Cliente
-            <select aria-label="Cliente" value={customerId} disabled={locked} onChange={event => chooseCustomer(event.target.value)}>
+            <select aria-label="Cliente" value={customerId} disabled={locked || editMode} onChange={event => chooseCustomer(event.target.value)}>
               <option value="">Escolha o cliente</option>
               {catalog.customers.map(row => <option key={row.id} value={row.id}>
                 {row.blockedReason ? `${row.name} (indisponível)` : row.name}
@@ -273,7 +365,7 @@ export function PjExpeditionLaunch() {
           </label>
           {customer?.blockedReason && <p className={styles.warning}>{customer.blockedReason}</p>}
           <label className={styles.field}>Entrega ou coleta
-            <input type="date" aria-label="Entrega ou coleta" min={catalog.today} value={deliveryDate} disabled={locked}
+            <input type="date" aria-label="Entrega ou coleta" min={minDate} value={deliveryDate} disabled={locked}
               onChange={event => setDeliveryDate(event.target.value)} />
           </label>
           {similar && customer && <p className={styles.warning}>Já existe pedido de {customer.name} com entrega em {fullDate(deliveryDate)}.
@@ -325,7 +417,7 @@ export function PjExpeditionLaunch() {
       </>}
 
       {catalog && reviewing && customer && <section className={styles.card} aria-labelledby="lancar-revisao">
-        <h2 id="lancar-revisao">Confira antes de lançar</h2>
+        <h2 id="lancar-revisao">{editMode ? 'Confira antes de corrigir' : 'Confira antes de lançar'}</h2>
         <p><strong>{customer.name}</strong> · entrega em {fullDate(deliveryDate)}</p>
         <ul className={styles.review}>{parsedLines.map(line => <li key={line.key}>
           {pjLaunchItemLabel(line.item)}: {line.packs !== null ? describePjLaunchQuantity(line.item, line.packs) : ''}
@@ -334,7 +426,7 @@ export function PjExpeditionLaunch() {
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.actions}>
           <button type="button" className={styles.primary} disabled={saving} onClick={confirm}>
-            {saving ? 'Lançando…' : 'Confirmar lançamento'}</button>
+            {editMode ? (saving ? 'Corrigindo…' : 'Confirmar correção') : (saving ? 'Lançando…' : 'Confirmar lançamento')}</button>
           <button type="button" className={styles.secondary} disabled={saving} onClick={() => setReviewing(false)}>Voltar e corrigir</button>
         </div>
       </section>}
