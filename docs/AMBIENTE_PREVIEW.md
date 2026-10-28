@@ -315,19 +315,37 @@ mexe em `supabase/` continua no job `Navegador (login, perfis e lojas)`.
 
 ## Testes locais e armadilhas conhecidas
 
-Regras curtas tiradas de falhas reais entre julho e setembro de 2026. O
+Regras curtas tiradas de falhas reais entre julho e outubro de 2026. O
 post-mortem de cada uma está na PR correspondente.
 
-- **pgTAP na máquina, com Docker só sob demanda e só o banco.** Abra o Docker
-  Desktop apenas para testar PR que mexe em `supabase/`. Suba só o Postgres,
-  como o `CI Banco`: `supabase db start`, `supabase db reset --local` (cerca de
-  4 minutos) e `docker exec -i supabase_db_pane-processo psql -U postgres -d
-  postgres -f - < supabase/tests/<arquivo>.test.sql`; confira `grep -c "^ ok"`
-  contra o `plan(N)` e `grep "^ not ok"` para as falhas. O atalho `supabase test
-  db` falha com "No plan found in TAP output" por defeito do container auxiliar;
-  o schema aplica normalmente. Não use `supabase start`: ele sobe 11 serviços
-  que religam sozinhos a cada abertura do Docker. Ao terminar, `supabase stop` e
-  `docker desktop stop`.
+- **Teste de banco: o padrão é o `CI Banco`, não o Docker da máquina.** Em PR
+  que mexe em `supabase/`, cada push roda no GitHub a história inteira de
+  migrations e todos os pgTAP, em 3 a 4 minutos (medido em outubro de 2026).
+  Esse resultado é o que vale, e a falha se corrige na mesma branch e na mesma
+  PR. Para provar vermelho/verde de um teste novo, empurre primeiro o teste e
+  depois a correção, uma rodada do CI para cada. Para prova pontual de um
+  mecanismo SQL (constraint, default, fuso), use um Postgres descartável sem
+  Docker, como em 13/09 e 20/09/2026: `embedded-postgres` numa pasta
+  temporária fora do projeto, só com a tabela e a função envolvidas, e no
+  Windows `taskkill /F /IM postgres.exe` ao final. Declare na PR que provou o
+  mecanismo, não o teste inteiro.
+- **Docker na máquina só por exceção, e desligado ao terminar.** Ele pesa no
+  notebook e cai com frequência (ver o item do Docker Desktop abaixo). Abra só
+  quando o CI não bastar, por exemplo para depurar uma falha que o log não
+  explica, e escreva o motivo na PR. Suba só o Postgres, como o `CI Banco`:
+  `supabase db start`, `supabase db reset --local` (cerca de 4 minutos) e
+  `docker exec -i supabase_db_<project_id> psql -U postgres -d postgres -f - <
+  supabase/tests/<arquivo>.test.sql`, com o `project_id` de
+  `supabase/config.toml`; confira `grep -c "^ ok"` contra o `plan(N)` e
+  `grep "^ not ok"` para as falhas. O atalho `supabase test db` falha com "No
+  plan found in TAP output" por defeito do container auxiliar. Não use
+  `supabase start`: ele sobe 11 serviços. O banco local volta a ligar sozinho
+  em toda abertura do Docker até ser desligado pelo nome: em 28/10/2026, dois
+  bancos de tarefas já integradas voltaram assim. Ao terminar, rode
+  `supabase stop --project-id <project_id>` (os dados ficam guardados) e
+  confira com `docker ps` que nenhum banco da tarefa ficou ligado. Feche o
+  Docker (`docker desktop stop`) só se `docker ps` não mostrar banco de outra
+  conversa ou de outro projeto. Nunca use `supabase stop --all`.
 - **Migration com regex `\nbegin\n` trava `db reset --local` por CRLF, não é
   bug da migration.** Sem `.gitattributes` para `.sql`, `core.autocrlf=true`
   no Windows converte as migrations para CRLF no checkout (`git ls-files
@@ -346,11 +364,17 @@ post-mortem de cada uma está na PR correspondente.
   fixando LF em `supabase/**/*.sql` resolveria de vez, mas é decisão pendente
   do Rodrigo por afetar o checkout de todo mundo.
 - **Docker Desktop cai ao abrir com "rename ... .sock ... The file cannot be
-  accessed by the system".** Nesta máquina os sockets de
-  `%LOCALAPPDATA%\Docker\run` e `%LOCALAPPDATA%\docker-secrets-engine` ficam
-  ilegíveis toda vez que o Docker fecha (medido em 14/09/2026). Com o Docker
-  fechado, renomeie as duas pastas com sufixo de data antes de abrir; ele recria
-  pastas limpas. Nunca use "Reset to factory defaults".
+  accessed by the system".** É defeito conhecido do Docker Desktop no Windows,
+  não desta máquina: o chamado `docker/desktop-feedback#625` reúne casos da
+  4.57 à 4.91, e a equipe do Docker diz ter mandado correções na 4.92, sem
+  confirmação no chamado. Aqui roda a 4.90, e as pastas foram renomeadas mais
+  de 30 vezes desde 21/08/2026. Os sockets de `%LOCALAPPDATA%\Docker\run` e
+  `%LOCALAPPDATA%\docker-secrets-engine` ficam ilegíveis quando o Docker fecha.
+  Com o Docker fechado (sem processos `Docker Desktop`, `com.docker.backend`
+  nem `docker`), renomeie as duas pastas juntas, com sufixo de data, antes de
+  abrir; ele recria pastas limpas. Nunca apague as pastas nem use "Reset to
+  factory defaults". Atualizar o Docker pede OK do Rodrigo: baixa um
+  instalador e reinicia o motor de todas as conversas.
 - **Máquina esgotada deixa a portaria lenta.** O `Check` abre milhares de
   processos `git`; com a memória comprometida acima de 90%, cada processo passou
   de 50 ms para mais de 1 s e o preparo do snapshot foi de 10 minutos para mais
