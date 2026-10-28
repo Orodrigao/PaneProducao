@@ -15,6 +15,20 @@ describe('consulta financeira protegida', () => {
     expect(await loadPjBilling('user')).toEqual({ kind: 'restricted' })
     expect(mocks.from.mock.calls.map(call => call[0])).toEqual(['app_profiles', 'app_user_permissions'])
   })
+  it('administrador ativo carrega as cobranças sem concessão marcada', async () => {
+    mocks.from.mockImplementation((table: string) => response(table === 'app_profiles' ? { data: { active: true, role: 'admin' }, error: null } : table === 'app_user_permissions' ? { data: [], error: null } : table === 'receivables' ? { data: [{ id: 'b1', origin_ref: 'g1', amount: 100, due_date: '2026-10-30', status: 'aberta' }], count: 1, error: null } : { data: [], count: 0, error: null }))
+    expect(await loadPjBilling('user')).toEqual({ kind: 'loaded', bills: [{ id: 'b1', origin_ref: 'g1', amount: 100, due_date: '2026-10-30', status: 'aberta' }], receipts: [] })
+  })
+  it('administrador inativo não consulta cobranças', async () => {
+    mocks.from.mockImplementation((table: string) => response({ data: table === 'app_profiles' ? { active: false, role: 'admin' } : [], error: null }))
+    expect(await loadPjBilling('user')).toEqual({ kind: 'restricted' })
+    expect(mocks.from.mock.calls.map(call => call[0])).toEqual(['app_profiles', 'app_user_permissions'])
+  })
+  it('administrador desativado durante a consulta não conclui a leitura', async () => {
+    let profilesRead = 0
+    mocks.from.mockImplementation((table: string) => response(table === 'app_profiles' ? { data: { active: ++profilesRead === 1, role: 'admin' }, error: null } : table === 'app_user_permissions' ? { data: [], error: null } : { data: [], count: 0, error: null }))
+    expect(await loadPjBilling('user')).toEqual({ kind: 'unavailable' })
+  })
   it('falha nos recebimentos não publica saldo zero', async () => {
     mocks.from.mockImplementation((table: string) => response(table === 'app_profiles' ? { data: { active: true }, error: null } : table === 'app_user_permissions' ? { data: [{ scope: 'jc' }], error: null } : table === 'receivables' ? { data: [{ id: 'b1', origin_ref: 'g1', amount: 100, due_date: '2026-09-08', status: 'parcial' }], count: 1, error: null } : { data: null, count: null, error: { message: 'falha' } }))
     expect(await loadPjBilling('user')).toEqual({ kind: 'unavailable' })

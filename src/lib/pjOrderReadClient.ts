@@ -42,16 +42,26 @@ export async function loadAllCommercialPjOrders<T extends { id: string }>(): Pro
     .order('id').range(from, to))
 }
 
+// Same rule as the database (private.current_user_can_receivables and
+// private.pj_flow_permission): an active administrator passes without the
+// explicit grant; everyone else needs contas_receber.acessar in '*' or 'jc'.
+function canReadPjBilling(
+  profile: { active?: boolean; role?: string } | null,
+  grants: unknown[] | null,
+): boolean {
+  if (!profile?.active) return false
+  return profile.role === 'admin' || Boolean(grants?.length)
+}
+
 export async function loadPjBilling(userId: string): Promise<PjBillingState> {
   try {
     const [profile, permission] = await Promise.all([
-      supabase.from('app_profiles').select('active').eq('user_id', userId).single(),
+      supabase.from('app_profiles').select('active,role').eq('user_id', userId).single(),
       supabase.from('app_user_permissions').select('permission_key,scope')
         .eq('user_id', userId).eq('permission_key', 'contas_receber.acessar').in('scope', ['*', 'jc']),
     ])
     if (profile.error || permission.error) return { kind: 'unavailable' }
-    // Keep the existing explicit financial grant, including for administrators.
-    if (!profile.data?.active || !permission.data?.length) return { kind: 'restricted' }
+    if (!canReadPjBilling(profile.data, permission.data)) return { kind: 'restricted' }
     const bills = await readAllPjPages<PjBillingEntry>((from, to) => supabase.from('receivables')
       .select('id,origin_ref,amount,due_date,status', { count: 'exact' })
       .eq('origin', 'pedido_pj').order('id').range(from, to))
@@ -62,11 +72,11 @@ export async function loadPjBilling(userId: string): Promise<PjBillingState> {
         .in('receivable_id', bills.slice(offset, offset + 100).map(bill => bill.id)).order('id').range(from, to)))
     }
     const [profileAfter, permissionAfter] = await Promise.all([
-      supabase.from('app_profiles').select('active').eq('user_id', userId).single(),
+      supabase.from('app_profiles').select('active,role').eq('user_id', userId).single(),
       supabase.from('app_user_permissions').select('permission_key,scope')
         .eq('user_id', userId).eq('permission_key', 'contas_receber.acessar').in('scope', ['*', 'jc']),
     ])
-    if (profileAfter.error || permissionAfter.error || !profileAfter.data?.active || !permissionAfter.data?.length) return { kind: 'unavailable' }
+    if (profileAfter.error || permissionAfter.error || !canReadPjBilling(profileAfter.data, permissionAfter.data)) return { kind: 'unavailable' }
     return { kind: 'loaded', bills, receipts }
   } catch {
     return { kind: 'unavailable' }

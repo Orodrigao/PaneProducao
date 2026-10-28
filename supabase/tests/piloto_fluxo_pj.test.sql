@@ -15,7 +15,7 @@ select ('97000000-0000-4000-8000-00000000000'||n)::uuid,
   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
   'piloto-fase2-'||n||'@example.com','',now(),now(),now(),
   '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,false
-from generate_series(1,8) n;
+from generate_series(1,9) n;
 insert into public.app_profiles(user_id,display_name,role,store,active,allowed_routes)
 values
  ('97000000-0000-4000-8000-000000000001','Piloto Financeiro','financeiro','jc',true,'["/pedidos-pj"]'),
@@ -25,7 +25,8 @@ values
  ('97000000-0000-4000-8000-000000000005','Piloto Expedição EX','expedicao','ex',true,'["/pedidos-pj"]'),
  ('97000000-0000-4000-8000-000000000006','Piloto Financeiro sem liberação','financeiro','jc',true,'["/pedidos-pj"]'),
  ('97000000-0000-4000-8000-000000000007','Piloto Financeiro inativo','financeiro','jc',false,'["/pedidos-pj"]'),
- ('97000000-0000-4000-8000-000000000008','Piloto Financeiro incompleto','financeiro','jc',true,'["/pedidos-pj"]');
+ ('97000000-0000-4000-8000-000000000008','Piloto Financeiro incompleto','financeiro','jc',true,'["/pedidos-pj"]'),
+ ('97000000-0000-4000-8000-000000000009','Piloto Admin inativo','admin','jc',false,'["/pedidos-pj"]');
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '97000000-0000-4000-8000-000000000001',key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.liberar','contas_receber.acessar','contas_receber.lancar',
@@ -87,8 +88,13 @@ select throws_ok('select public.read_pj_flow_pilot()','42501',null,'Vendas não 
 select is((select count(*)::int from public.orders where order_group_id='97000000-0000-4000-8000-000000000201'),0,'Vendas não contorna pela tabela de pedidos');
 select throws_ok($q$select pg_temp.act('check',0)$q$,'42501',null,'Vendas não conclui conferência');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);
-select throws_ok('select public.read_pj_flow_pilot()','42501',null,'admin sem concessão não recebe passe livre novo');
-select is((select count(*)::int from public.orders where order_group_id='97000000-0000-4000-8000-000000000201'),0,'admin sem concessão não lê preço piloto direto');
+-- Decisão de 28/10/2026: o administrador ativo passa sem concessão marcada,
+-- como no Contas a receber. O inativo continua de fora.
+select ok(public.read_pj_flow_pilot()::text like '%"price"%','admin ativo lê a jornada com preços sem concessão marcada');
+select is((select count(*)::int from public.orders where order_group_id='97000000-0000-4000-8000-000000000201'),1,'admin ativo lê o pedido da jornada direto');
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000009',true);
+select throws_ok('select public.read_pj_flow_pilot()','42501',null,'admin inativo não lê a jornada');
+select is((select count(*)::int from public.orders where order_group_id='97000000-0000-4000-8000-000000000201'),0,'admin inativo não lê preço da jornada direto');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000006',true);
 select ok(public.read_pj_flow_pilot()::text like '%"price"%','Financeiro sem liberação ainda consulta a revisão');
 select throws_ok($q$select pg_temp.act('release',0,'[]',gen_random_uuid(),true,7)$q$,
@@ -399,9 +405,9 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000003',true);
 select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
   '42501',null,'Vendas não inicia jornada real');
-select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000004',true);
+select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000009',true);
 select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
-  '42501',null,'admin sem concessão não inicia jornada real');
+  '42501',null,'admin inativo não inicia jornada real');
 select set_config('request.jwt.claim.sub','97000000-0000-4000-8000-000000000006',true);
 select throws_ok($q$select public.enroll_pj_flow(gen_random_uuid(),'97000000-0000-4000-8000-000000000203')$q$,
   '42501',null,'Financeiro sem concessão específica não inicia jornada real');

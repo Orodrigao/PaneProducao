@@ -175,7 +175,7 @@ export function PjFlowOrderCard({ flow, reload, onLock, launchOrigin }: {
       {!flow.released_at && <button className={styles.primary} disabled={frozen || dirty || Boolean(flow.checked_at)} onClick={() => setConfirm('check')}>Concluir conferência</button>}
       {flow.released_at && <button className={styles.primary} disabled={frozen || dirty} onClick={() => setConfirm('depart')}>Registrar saída física</button>}
       {dirty && <p>Salve as quantidades alteradas antes de concluir a conferência ou registrar a saída.</p>}
-      {flow.released_at && <p>Salvar uma correção bloqueará novamente a saída e exigirá nova liberação de Elis ou Rodrigo.</p>}
+      {flow.released_at && <p>Salvar uma correção bloqueará novamente a saída e exigirá nova liberação do Financeiro ou de um administrador.</p>}
     </div>}
     {flow.can_release && !flow.departed_at && !flow.released_at && <div className={styles.release}>
       {releaseBlocked && <p className={styles.warning}>{releaseBlocked}</p>}

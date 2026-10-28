@@ -146,9 +146,17 @@ os perfis existentes de produção. A PR #346 corrigiu esse cadastro: somente a
 Elis recebeu `pedidos_pj.liberar` com escopo JC, porque já era Financeiro ativo,
 tinha acesso a Pedidos PJ e podia consultar e lançar Contas a receber. Novos
 perfis continuam dependendo de concessão administrativa explícita.
-Administradores sem concessão, Vendas e Expedição continuam sem poder iniciar
-ou liberar a jornada controlada (para a criação pela Expedição na jornada
-padrão, ver o fim desta seção).
+Vendas e Expedição continuam sem poder iniciar ou liberar a jornada controlada
+(para a criação pela Expedição na jornada padrão, ver o fim desta seção).
+
+Desde 28/10/2026 (decisão do Rodrigo, com a Elis afastada), o administrador
+ativo passa na jornada sem concessão marcada, como já passava no Contas a
+receber: `private.pj_flow_permission` aceita o papel `admin` ativo além da
+concessão em `*` ou `jc`, e a aba Pendências da lista antiga carrega as
+cobranças para ele. Vale para os dois administradores ativos. Conferir
+quantidades e registrar a saída continuam só com a Expedição JC
+(`private.pj_flow_expedition` exige o papel `expedicao` na loja `jc`); admin
+inativo e Financeiro sem `contas_receber.acessar` seguem de fora.
 
 Em 09/09/2026 às 13:12, a Elis inscreveu o pedido da Quinta Parrilla Bar como o
 primeiro e único pedido real acompanhado. A consulta somente leitura após a

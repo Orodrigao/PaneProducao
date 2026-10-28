@@ -26,7 +26,7 @@ describe('preparação da jornada PJ', () => {
   })
   it('correção que retirou a liberação volta a bloquear saída', () => {
     expect(pjFlowStatus({ checked_at: null, released_at: null, departed_at: null })).toContain('saída bloqueada')
-    expect(pjFlowStatus({ checked_at: 'x', released_at: null, departed_at: null })).toContain('Elis')
+    expect(pjFlowStatus({ checked_at: 'x', released_at: null, departed_at: null })).toContain('Financeiro ou administrador')
     expect(pjFlowStatus({ checked_at: 'x', released_at: 'x', departed_at: null })).toContain('Liberado')
     expect(pjFlowStatus({ checked_at: 'x', released_at: 'x', departed_at: 'x' })).toBe('Saída física registrada')
   })
