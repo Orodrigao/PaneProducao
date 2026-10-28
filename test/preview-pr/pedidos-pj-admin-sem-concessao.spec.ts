@@ -7,7 +7,7 @@ import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './ap
 // roteiro desmarca pela tela de usuarios as quatro que a jornada pedia (Pedidos
 // PJ, Contas a receber, Lancar cobranca e Revisar e liberar) e confere: a ficha
 // da jornada abre com a revisao financeira, o pedido da jornada e lido direto,
-// a aba Pendencias da lista antiga conta em vez de mostrar "—", e conferir
+// a aba Pendencias da lista antiga conta em vez de mostrar o traco, e conferir
 // continua recusado (e da Expedicao JC). Financeiro sem Contas a receber e
 // Vendas seguem bloqueados. No fim as quatro voltam marcadas.
 
