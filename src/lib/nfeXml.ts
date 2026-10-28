@@ -428,7 +428,27 @@ export function declaresNoPayment(codes: readonly string[]): boolean {
   return codes.length > 0 && codes.every(code => code.trim() === NO_PAYMENT_CODE)
 }
 
-const CASH_PAYMENT_METHODS: readonly NfePaymentMethod[] = ['dinheiro', 'pix']
+/** Um `detPag` da NF-e: o meio (tPag) e o indicador indPag, 0 à vista e 1 a prazo, que muitos emissores omitem. */
+export interface NfePayment {
+  code: string
+  term: '0' | '1' | null
+}
+
+/** Dinheiro e PIX dinâmico (QR gerado na hora da venda) só existem já pagos. */
+const PAID_ON_ISSUE_CODES: readonly string[] = ['01', '17']
+/** PIX estático (chave ou QR fixo) e PIX Automático (débito agendado) podem ser pagos depois. */
+const PAID_ON_ISSUE_WHEN_DECLARED_CODES: readonly string[] = ['20', '23']
+
+/**
+ * Quando dá para lançar o pagamento na emissão sem perguntar. Nota que se declara
+ * a prazo nunca entra à vista; PIX estático e Automático só entram quando a nota
+ * declara à vista, porque o meio sozinho não diz quando o dinheiro sai.
+ */
+export function paidOnIssue(payment: NfePayment): boolean {
+  if (payment.term === '1') return false
+  if (PAID_ON_ISSUE_CODES.includes(payment.code)) return true
+  return payment.term === '0' && PAID_ON_ISSUE_WHEN_DECLARED_CODES.includes(payment.code)
+}
 
 /**
  * O bloco `dup` da NF-e é opcional: há emissor que imprime o vencimento na DANFE
@@ -441,7 +461,7 @@ const CASH_PAYMENT_METHODS: readonly NfePaymentMethod[] = ['dinheiro', 'pix']
  */
 export function resolveInstallments(
   duplicates: readonly NfeInstallmentDraft[],
-  paymentMethods: readonly NfePaymentMethod[],
+  payments: readonly NfePayment[],
   issueDate: string,
   totalValue: number,
 ): { installments: NfeInstallmentDraft[]; dueDateSource: NfeDueDateSource } {
@@ -451,7 +471,7 @@ export function resolveInstallments(
       dueDateSource: duplicates.every(item => Boolean(item.dueDate)) ? 'xml' : 'ausente',
     }
   }
-  const cash = paymentMethods.length > 0 && paymentMethods.every(method => CASH_PAYMENT_METHODS.includes(method))
+  const cash = payments.length > 0 && payments.every(paidOnIssue)
   return {
     installments: [{ number: 1, dueDate: cash ? issueDate : '', amount: totalValue }],
     dueDateSource: cash ? 'a-vista' : 'ausente',
@@ -591,15 +611,17 @@ export function parseNfeXml(xmlText: string): NfeDraft {
     amount: numberValue(childText(duplicate, 'vDup')),
   }))
   const totalValue = numberValue(childText(total, 'vNF'))
-  const payments = allElements(document, 'detPag')
-  const paymentCodes = payments.map(payment => childText(payment, 'tPag'))
+  const payments = allElements(document, 'detPag').map(payment => ({
+    code: childText(payment, 'tPag'),
+    term: indicator(payment, 'indPag'),
+  }))
+  const paymentCodes = payments.map(payment => payment.code)
   if (declaresNoPayment(paymentCodes)) {
     throw new Error('Esta NF-e declara "sem pagamento" (bonificação, brinde ou remessa). Ela não gera conta a pagar.')
   }
-  const methods = paymentCodes.map(code => paymentMethodFromCode(code))
-  const method = methods[0] ?? 'outro'
+  const method = paymentMethodFromCode(paymentCodes[0] ?? '')
   const issueDay = issueDate.slice(0, 10)
-  const { installments, dueDateSource } = resolveInstallments(duplicates, methods, issueDay, totalValue)
+  const { installments, dueDateSource } = resolveInstallments(duplicates, payments, issueDay, totalValue)
 
   return {
     accessKey,

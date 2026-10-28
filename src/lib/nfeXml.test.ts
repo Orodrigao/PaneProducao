@@ -210,11 +210,14 @@ describe('memória do fornecedor com produto sem código de barras', () => {
   })
 })
 
+// tPag e indPag de um detPag; indPag ausente e o que muitos emissores mandam.
+const pay = (code: string, term: '0' | '1' | null = null) => ({ code, term })
+
 describe('vencimento das parcelas importadas da NF-e', () => {
   it('usa as duplicatas quando a NF-e informa as datas', () => {
     expect(resolveInstallments(
       [{ number: 1, dueDate: '2026-09-09', amount: 510.97 }],
-      ['boleto'],
+      [pay('15')],
       '2026-08-21',
       510.97,
     )).toEqual({
@@ -224,43 +227,72 @@ describe('vencimento das parcelas importadas da NF-e', () => {
   })
 
   it('deixa a data vazia quando a NF-e a prazo nao traz duplicata', () => {
-    expect(resolveInstallments([], ['boleto'], '2026-08-21', 510.97)).toEqual({
+    expect(resolveInstallments([], [pay('15')], '2026-08-21', 510.97)).toEqual({
       installments: [{ number: 1, dueDate: '', amount: 510.97 }],
       dueDateSource: 'ausente',
     })
   })
 
   it('assume a emissao somente quando o pagamento e a vista', () => {
-    expect(resolveInstallments([], ['dinheiro'], '2026-08-21', 150.80)).toEqual({
+    expect(resolveInstallments([], [pay('01')], '2026-08-21', 150.80)).toEqual({
       installments: [{ number: 1, dueDate: '2026-08-21', amount: 150.80 }],
       dueDateSource: 'a-vista',
     })
-    expect(resolveInstallments([], ['pix'], '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
-    expect(resolveInstallments([], ['cartao'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
-    expect(resolveInstallments([], ['outro'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('17')], '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], [pay('03')], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('99')], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
   })
 
   // Desde o Informe Tecnico 2024.002 o PIX tem tres codigos: 17 (QR dinamico),
   // 20 (chave ou QR estatico) e 23 (PIX Automatico). Uma NF-e real de outubro de
-  // 2026 veio a vista com tPag 20 e caiu em "outro", pedindo vencimento a mao.
-  it('le os tres codigos de PIX da NF-e como pix e assume a vista', () => {
+  // 2026 veio com indPag 0 e tPag 20 e caiu em "outro", pedindo vencimento a mao.
+  it('le os tres codigos de PIX da NF-e como pix', () => {
     expect(['17', '20', '23'].map(paymentMethodFromCode)).toEqual(['pix', 'pix', 'pix'])
-    expect(resolveInstallments([], ['20'].map(paymentMethodFromCode), '2026-10-23', 769.50)).toEqual({
+    expect(['15', '99', ''].map(paymentMethodFromCode)).toEqual(['boleto', 'outro', 'outro'])
+  })
+
+  it('PIX estatico e PIX Automatico entram a vista quando a nota declara indPag 0', () => {
+    expect(resolveInstallments([], [pay('20', '0')], '2026-10-23', 769.50)).toEqual({
       installments: [{ number: 1, dueDate: '2026-10-23', amount: 769.50 }],
       dueDateSource: 'a-vista',
     })
-    expect(resolveInstallments([], ['23'].map(paymentMethodFromCode), '2026-10-23', 769.50).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], [pay('23', '0')], '2026-10-23', 769.50).dueDateSource).toBe('a-vista')
   })
 
-  it('continua pedindo a data para codigo de pagamento que nao conhece', () => {
-    expect(['15', '99', ''].map(paymentMethodFromCode)).toEqual(['boleto', 'outro', 'outro'])
-    expect(resolveInstallments([], ['20', '15'].map(paymentMethodFromCode), '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+  // PIX por chave pode ser pago dias depois e o Automatico e debito agendado:
+  // sem a nota dizer que e a vista, a data e perguntada.
+  it('pede a data para PIX estatico ou Automatico sem indPag ou a prazo', () => {
+    expect(resolveInstallments([], [pay('20')], '2026-10-23', 769.50)).toEqual({
+      installments: [{ number: 1, dueDate: '', amount: 769.50 }],
+      dueDateSource: 'ausente',
+    })
+    expect(resolveInstallments([], [pay('23')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('20', '1')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('23', '1')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+  })
+
+  it('nota que se declara a prazo nunca entra a vista, nem em dinheiro ou PIX dinamico', () => {
+    expect(resolveInstallments([], [pay('01', '1')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('17', '1')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+    expect(resolveInstallments([], [pay('01', '0'), pay('17', '1')], '2026-10-23', 769.50).dueDateSource).toBe('ausente')
+  })
+
+  it('PIX com duplicata usa a data da duplicata, mesmo declarado a vista', () => {
+    expect(resolveInstallments(
+      [{ number: 1, dueDate: '2026-11-07', amount: 769.50 }],
+      [pay('20', '0')],
+      '2026-10-23',
+      769.50,
+    )).toEqual({
+      installments: [{ number: 1, dueDate: '2026-11-07', amount: 769.50 }],
+      dueDateSource: 'xml',
+    })
   })
 
   it('cobra a data tambem quando so uma das duplicatas veio sem vencimento', () => {
     expect(resolveInstallments(
       [{ number: 1, dueDate: '2026-09-09', amount: 250 }, { number: 2, dueDate: '', amount: 260.97 }],
-      ['boleto'],
+      [pay('15')],
       '2026-08-21',
       510.97,
     ).dueDateSource).toBe('ausente')
@@ -269,10 +301,11 @@ describe('vencimento das parcelas importadas da NF-e', () => {
 
 describe('casos de borda apontados na revisao adversarial', () => {
   it('nao trata como a vista a nota com dinheiro e boleto no mesmo pagamento', () => {
-    expect(resolveInstallments([], ['dinheiro', 'boleto'], '2026-08-21', 510.97)).toEqual({
+    expect(resolveInstallments([], [pay('01'), pay('15')], '2026-08-21', 510.97)).toEqual({
       installments: [{ number: 1, dueDate: '', amount: 510.97 }],
       dueDateSource: 'ausente',
     })
+    expect(resolveInstallments([], [pay('20', '0'), pay('15', '0')], '2026-08-21', 510.97).dueDateSource).toBe('ausente')
   })
 
   it('exige a data quando a NF-e nao declara forma de pagamento', () => {
@@ -280,13 +313,14 @@ describe('casos de borda apontados na revisao adversarial', () => {
   })
 
   it('mantem a vista somente quando todos os pagamentos sao a vista', () => {
-    expect(resolveInstallments([], ['dinheiro', 'pix'], '2026-08-21', 510.97).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], [pay('01'), pay('17')], '2026-08-21', 510.97).dueDateSource).toBe('a-vista')
+    expect(resolveInstallments([], [pay('01'), pay('20', '0')], '2026-08-21', 510.97).dueDateSource).toBe('a-vista')
   })
 
   it('numera as parcelas pela posicao, mesmo com nDup repetido no XML', () => {
     expect(resolveInstallments(
       [{ number: 1, dueDate: '2026-09-09', amount: 250 }, { number: 1, dueDate: '2026-10-09', amount: 260.97 }],
-      ['boleto'],
+      [pay('15')],
       '2026-08-21',
       510.97,
     ).installments.map(item => item.number)).toEqual([1, 2])
