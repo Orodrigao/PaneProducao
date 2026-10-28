@@ -405,7 +405,8 @@ function numberValue(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function paymentMethod(code: string): NfePaymentMethod {
+/** tPag da NF-e. O PIX tem três códigos desde o Informe Técnico 2024.002: 17, 20 e 23. */
+export function paymentMethodFromCode(code: string): NfePaymentMethod {
   return ({
     '01': 'dinheiro',
     '03': 'cartao',
@@ -415,6 +416,8 @@ function paymentMethod(code: string): NfePaymentMethod {
     '15': 'boleto',
     '16': 'outro',
     '17': 'pix',
+    '20': 'pix',
+    '23': 'pix',
   } as Record<string, NfePaymentMethod>)[code] ?? 'outro'
 }
 
@@ -593,7 +596,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
   if (declaresNoPayment(paymentCodes)) {
     throw new Error('Esta NF-e declara "sem pagamento" (bonificação, brinde ou remessa). Ela não gera conta a pagar.')
   }
-  const methods = paymentCodes.map(code => paymentMethod(code))
+  const methods = paymentCodes.map(code => paymentMethodFromCode(code))
   const method = methods[0] ?? 'outro'
   const issueDay = issueDate.slice(0, 10)
   const { installments, dueDateSource } = resolveInstallments(duplicates, methods, issueDay, totalValue)

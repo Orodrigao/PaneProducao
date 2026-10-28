@@ -12,6 +12,7 @@ import {
   isClassificationComplete,
   declaresNoPayment,
   normalizeGtin,
+  paymentMethodFromCode,
   rankCatalogCandidates,
   resolveInstallments,
   suggestConversionFactor,
@@ -237,6 +238,23 @@ describe('vencimento das parcelas importadas da NF-e', () => {
     expect(resolveInstallments([], ['pix'], '2026-08-21', 11.90).dueDateSource).toBe('a-vista')
     expect(resolveInstallments([], ['cartao'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
     expect(resolveInstallments([], ['outro'], '2026-08-21', 11.90).dueDateSource).toBe('ausente')
+  })
+
+  // Desde o Informe Tecnico 2024.002 o PIX tem tres codigos: 17 (QR dinamico),
+  // 20 (chave ou QR estatico) e 23 (PIX Automatico). Uma NF-e real de outubro de
+  // 2026 veio a vista com tPag 20 e caiu em "outro", pedindo vencimento a mao.
+  it('le os tres codigos de PIX da NF-e como pix e assume a vista', () => {
+    expect(['17', '20', '23'].map(paymentMethodFromCode)).toEqual(['pix', 'pix', 'pix'])
+    expect(resolveInstallments([], ['20'].map(paymentMethodFromCode), '2026-10-23', 769.50)).toEqual({
+      installments: [{ number: 1, dueDate: '2026-10-23', amount: 769.50 }],
+      dueDateSource: 'a-vista',
+    })
+    expect(resolveInstallments([], ['23'].map(paymentMethodFromCode), '2026-10-23', 769.50).dueDateSource).toBe('a-vista')
+  })
+
+  it('continua pedindo a data para codigo de pagamento que nao conhece', () => {
+    expect(['15', '99', ''].map(paymentMethodFromCode)).toEqual(['boleto', 'outro', 'outro'])
+    expect(resolveInstallments([], ['20', '15'].map(paymentMethodFromCode), '2026-10-23', 769.50).dueDateSource).toBe('ausente')
   })
 
   it('cobra a data tambem quando so uma das duplicatas veio sem vencimento', () => {

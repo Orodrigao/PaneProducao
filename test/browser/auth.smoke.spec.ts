@@ -473,6 +473,38 @@ test('Financeiro JC cadastra fornecedor direto da importacao XML', async ({ page
   await expect(page.locator('.ps-card', { hasText: '[TESTE] Fornecedor direto XML' }).first()).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
 })
 
+// tPag 20 e o PIX por chave ou QR estatico (Informe Tecnico 2024.002). A NF-e
+// paga assim e sem duplicata entra a vista, na data de emissao, sem pedir a data.
+// O cenario so le o XML no navegador: nao confirma a nota nem grava no banco.
+test('Financeiro JC importa NF-e paga por PIX estatico e o vencimento ja vem na emissao', async ({ page }) => {
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  const uniqueCnpj = `98${Date.now().toString().slice(-12)}`
+  const uniqueKey = `43${Date.now()}`.padEnd(44, '0')
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe${uniqueKey}" versao="4.00">
+    <ide><nNF>999992</nNF><serie>1</serie><dhEmi>2026-10-23T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>[TESTE] Fornecedor PIX estatico</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-PIX</cProd><xProd>[TESTE] Farinha PIX</xProd><NCM>11010010</NCM><qCom>1.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
+    <total><ICMSTot>${totaisSimples('10.00')}</ICMSTot></total>
+    <pag><detPag><indPag>0</indPag><tPag>20</tPag><vPag>10.00</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'pix-estatico.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+  await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
+  await expect(page.locator('#xml-due-date-0')).toHaveValue('2026-10-23')
+  await expect(page.getByText('o pagamento é em pix. Lançamos como à vista', { exact: false })).toBeVisible()
+  await expect(page.getByText('Esta NF-e não informou o vencimento')).toHaveCount(0)
+})
+
 // Mesmo padrao da fixture st-ipi-outras-despesas: ST e IPI no bloco de impostos
 // do item, outras despesas em prod, tudo somado no total. Chave e CNPJ unicos
 // por rodada, porque desde a fase 3A a nota e confirmada e o banco guarda.
