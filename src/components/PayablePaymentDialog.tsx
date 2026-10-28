@@ -8,6 +8,7 @@ import {
   actualPaymentMethodLabel,
   correctPayablePaymentAndClassification,
   formatBRL,
+  getPayableErrorMessage,
   reclassificationDoneMessage,
   reclassificationNotice,
   recordPayablePaymentAndClassification,
@@ -125,7 +126,7 @@ export default function PayablePaymentDialog({
       await onSaved()
     } catch (saveError) {
       console.error(saveError)
-      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar a baixa.')
+      setError(getPayableErrorMessage(saveError, 'Não foi possível salvar a baixa.'))
     } finally {
       setSaving(false)
     }

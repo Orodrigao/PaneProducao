@@ -8,6 +8,7 @@ import {
   buildInstallments,
   createManualPayable,
   formatBRL,
+  getPayableErrorMessage,
   actualPaymentMethodLabel,
   totalItems,
   validateDraft,
@@ -148,7 +149,7 @@ export default function PayableForm({ suppliers, products, financeCategories, fi
       await onSaved()
     } catch (error) {
       console.error(error)
-      showToast(error instanceof Error ? error.message : 'Não foi possível registrar a conta.')
+      showToast(getPayableErrorMessage(error, 'Não foi possível registrar a conta.'))
     } finally {
       setSaving(false)
     }

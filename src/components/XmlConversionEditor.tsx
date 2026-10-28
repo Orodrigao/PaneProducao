@@ -20,6 +20,13 @@ import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage
 
 const MAX_RESULTS = 8
 
+function duplicateNameHelp({ name, matches }: { name: string; matches: number }): string {
+  if (matches === 1) return `A busca abaixo já está com o nome "${name}". Escolha esse cadastro em vez de criar outro.`
+  if (matches > 1) return `A busca abaixo mostra os ${matches} cadastros com o nome "${name}". Escolha o certo em vez de criar outro.`
+  // Sugerir outro nome levaria a duplicar o produto para contornar a recusa.
+  return `O cadastro "${name}" não aparece nesta lista, que mostra só insumos e mercadorias de revenda. Confira esse cadastro em Produtos antes de continuar.`
+}
+
 function RecipeUsageDetails({ productId, index, error, compact = false }: {
   productId: string
   index: RecipeUsageIndex | null
@@ -57,6 +64,7 @@ export function ProductSelector({
   memoryConfirmed = false,
   onConfirmMemory,
   requiresReview = false,
+  duplicateName = null,
 }: {
   item: NfeItemDraft
   products: PayableProduct[]
@@ -68,8 +76,10 @@ export function ProductSelector({
   memoryConfirmed?: boolean
   onConfirmMemory?: () => void
   requiresReview?: boolean
+  /** Cadastro rápido recusado por nome repetido: a busca abre nesse nome. */
+  duplicateName?: { name: string; message: string; matches: number } | null
 }) {
-  const [query, setQuery] = useState(() => initialSearchFromDescription(item.description))
+  const [query, setQuery] = useState(() => duplicateName?.name ?? initialSearchFromDescription(item.description))
   const [visibleCount, setVisibleCount] = useState(MAX_RESULTS)
   const selected = products.find(product => product.id === item.baseProductId)
 
@@ -135,15 +145,23 @@ export function ProductSelector({
       >
         <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
         <small style={{ display: 'block', marginTop: 3 }}>
-          Escolha um dos três caminhos abaixo: vincular ao cadastro, cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.
+          Escolha um dos três caminhos abaixo: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.
         </small>
       </div>
       {/* Em 03/09/2026, duas cartelas de queijo para revenda foram marcadas
           como despesa porque o cadastro de item novo estava escondido depois
           da busca. As três saídas precisam permanecer visíveis e equivalentes. */}
       <div className="ps-fieldgroup">
-        <div className="ps-fieldlabel">1. Insumo de receita já cadastrado</div>
+        <div className="ps-fieldlabel">1. Produto já cadastrado (insumo ou revenda)</div>
         <small className="ps-help">Procure e vincule ao item que a padaria já usa.</small>
+        {duplicateName && (
+          <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)', marginTop: 4 }}>
+            <b style={{ color: 'var(--red)' }}>{duplicateName.message}</b>
+            <small style={{ display: 'block', marginTop: 3 }}>
+              {duplicateNameHelp(duplicateName)}
+            </small>
+          </div>
+        )}
         <div style={{ position: 'relative' }}>
           <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} aria-hidden />
           <input
@@ -151,7 +169,7 @@ export function ProductSelector({
             style={{ paddingLeft: 30 }}
             value={query}
             onChange={event => { setQuery(event.target.value); setVisibleCount(MAX_RESULTS) }}
-            placeholder="Procure pelo nome do insumo"
+            placeholder="Procure pelo nome do produto"
             aria-label={`Procurar item-base para ${item.description}`}
           />
           {query && (
@@ -226,12 +244,12 @@ export function ProductSelector({
       )}
 
       {products.length === 0 && (
-        <small className="ps-help">Carregando o cadastro de insumos...</small>
+        <small className="ps-help">Carregando o cadastro de produtos...</small>
       )}
 
       {query.trim() && products.length > 0 && results.length === 0 && (
         <div className="ps-banner" style={{ marginTop: 8 }}>
-          <b>Nenhum insumo com esse nome</b>
+          <b>Nenhum produto com esse nome</b>
           <small style={{ display: 'block', marginTop: 3 }}>
             Tente outra palavra antes de criar. Só cadastre item novo se tiver certeza de que a padaria não usa nada parecido.
           </small>

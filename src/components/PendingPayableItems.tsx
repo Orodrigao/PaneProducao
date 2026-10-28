@@ -9,10 +9,13 @@ import {
   type NfeConversionBasis,
 } from '@/lib/nfeXml'
 import {
+  catalogProductToPreselect,
   classifyPayableItem,
   classifyPayableItemWithoutProduct,
   createPayableCatalogProduct,
+  describeCatalogCreateFailure,
   formatBRL,
+  getPayableErrorMessage,
   type PayableProduct,
   type PendingPayableItemRow,
 } from '@/lib/payables'
@@ -34,6 +37,7 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
   const [createdProducts, setCreatedProducts] = useState<PayableProduct[]>([])
   const [creatingItemId, setCreatingItemId] = useState<string | null>(null)
   const [newProduct, setNewProduct] = useState({ name: '', category: '', unit: 'un' })
+  const [duplicateNotice, setDuplicateNotice] = useState<{ itemId: string; name: string; message: string; matches: number } | null>(null)
   const [catalogCategories, setCatalogCategories] = useState<ProductCategory[]>([])
   const [categoryLoadError, setCategoryLoadError] = useState(false)
   const catalog = [...products, ...createdProducts.filter(extra => !products.some(known => known.id === extra.id))]
@@ -68,11 +72,12 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
       // Nota mais antiga que a última do mesmo insumo não troca o custo (fase 3A).
       showToast('Item classificado. O custo do insumo segue a NF-e mais recente.')
       await onChanged()
-    } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível classificar o item.') }
+    } catch (error) { showToast(getPayableErrorMessage(error, 'Não foi possível classificar o item.')) }
     finally { setBusy(null) }
   }
 
   function openProductForm(item: PendingPayableItemRow) {
+    setDuplicateNotice(previous => previous?.itemId === item.id ? null : previous)
     setNewProduct({ name: item.source_description ?? item.item_name, category: catalogCategories.find(category => category.name === 'Insumos')?.name ?? '', unit: 'un' })
     setCreatingItemId(item.id)
   }
@@ -88,7 +93,21 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
       update(item.id, { productId: id, factorConfirmed: false })
       setCreatingItemId(null)
       showToast('Item criado e selecionado. Confira a conversão e confirme a classificação.')
-    } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível criar o item.') }
+    } catch (error) {
+      const failure = describeCatalogCreateFailure(error, newProduct.name, catalog)
+      const duplicateName = failure.duplicateName
+      if (duplicateName) {
+        // Esta tela escolhe pela lista, sem busca: com um único cadastro de
+        // mesmo nome, a escolha 1 já abre nele e a pessoa confere a conversão
+        // antes de vincular.
+        const preselected = catalogProductToPreselect(failure)
+        if (preselected) update(item.id, { productId: preselected.id, factorConfirmed: false })
+        setDuplicateNotice({ itemId: item.id, name: duplicateName, message: failure.message, matches: failure.existingProducts.length })
+        setCreatingItemId(null)
+      } else {
+        showToast(failure.message)
+      }
+    }
     finally { setBusy(null) }
   }
 
@@ -100,7 +119,7 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
       await classifyPayableItemWithoutProduct(item.id, value.remember)
       showToast('Item registrado como uso ou despesa, sem alterar custo de receita.')
       await onChanged()
-    } catch (error) { showToast(error instanceof Error ? error.message : 'Não foi possível classificar o item.') }
+    } catch (error) { showToast(getPayableErrorMessage(error, 'Não foi possível classificar o item.')) }
     finally { setBusy(null) }
   }
 
@@ -121,15 +140,27 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
             <small style={{ display: 'block', marginTop: 3 }}>{quantity} {item.source_unit ?? item.unit} · {item.source_product_code ?? 'sem código'} · {formatBRL(item.acquisition_value ?? item.line_total)}{item.acquisition_value != null && Number(item.acquisition_value) !== Number(item.line_total) ? ' com impostos e despesas' : ''}</small>
             <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)' }}>
               <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
-              <small>Escolha um dos três caminhos: vincular ao cadastro, cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.</small>
+              <small>Escolha um dos três caminhos: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.</small>
             </div>
             <div className="ps-fieldgroup" style={{ marginTop: 8 }}>
-              <div className="ps-fieldlabel">1. Insumo de receita já cadastrado</div>
+              <div className="ps-fieldlabel">1. Produto já cadastrado (insumo ou revenda)</div>
               <small className="ps-help">Selecione o item que a padaria já usa.</small>
-              <select className="ps-select" value={value.productId} onChange={event => update(item.id, { productId: event.target.value, factorConfirmed: false })}>
+              <select className="ps-select" value={value.productId} onChange={event => { update(item.id, { productId: event.target.value, factorConfirmed: false }); if (duplicateNotice?.itemId === item.id) setDuplicateNotice(null) }}>
                 <option value="">Selecione</option>
                 {catalog.map(product => <option key={product.id} value={product.id}>{product.name} · {product.unit ?? 'un'}</option>)}
               </select>
+              {duplicateNotice?.itemId === item.id && (
+                <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)', marginTop: 4 }}>
+                  <b style={{ color: 'var(--red)' }}>{duplicateNotice.message}</b>
+                  <small style={{ display: 'block', marginTop: 3 }}>
+                    {duplicateNotice.matches === 1
+                      ? `O cadastro "${duplicateNotice.name}" já ficou escolhido acima. Confira a conversão e vincule.`
+                      : duplicateNotice.matches > 1
+                        ? `Há ${duplicateNotice.matches} cadastros com o nome "${duplicateNotice.name}" na lista acima. Escolha o certo, confira a conversão e vincule.`
+                        : `O cadastro "${duplicateNotice.name}" não aparece nesta lista, que mostra só insumos e mercadorias de revenda. Confira esse cadastro em Produtos antes de continuar.`}
+                  </small>
+                </div>
+              )}
             </div>
 
             <label className="ps-checkrow" style={{ marginTop: 6 }}><input type="checkbox" checked={value.remember} onChange={event => update(item.id, { remember: event.target.checked })} /><span>Lembrar o vínculo ou o uso/despesa para este fornecedor</span></label>

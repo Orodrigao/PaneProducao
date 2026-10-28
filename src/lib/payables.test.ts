@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const supabaseMocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
@@ -6,11 +7,15 @@ import type { NfeDraft, NfeItemDraft } from './nfeXml'
 import {
   buildInstallments,
   classifyPayableItem,
+  catalogProductToPreselect,
   classifyPayableItemWithoutProduct,
+  createPayableCatalogProduct,
   createXmlPayable,
+  describeCatalogCreateFailure,
   xmlPayablePayload,
   effectiveDueDate,
   getPayableErrorMessage,
+  isPayableDuplicateNameError,
   isDueSoon,
   isOverdue,
   ledgerAccountPrefill,
@@ -169,6 +174,77 @@ describe('contas a pagar manual', () => {
       { message: 'Esta NF-e já foi importada. A chave de acesso não pode ser repetida.' },
       'Não foi possível importar a NF-e.',
     )).toContain('Esta NF-e já foi importada')
+  })
+
+  describe('cadastro rápido recusado pelo banco', () => {
+    // A recusa chega do PostgREST como objeto simples, não como Error: foi
+    // assim que, em 27/10/2026, a tela trocou o texto do banco pelo genérico.
+    const recusaDoBanco = 'Já existe um item ativo com esse nome. Selecione o cadastro existente na NF-e.'
+    const catalogo = [
+      { id: 'whey-existente', name: '100% WHEY POTE 900G LEITE - MAX TITANIUM', unit: 'un', category: 'Revenda' },
+      { id: 'barra', name: 'BARRA DE PROTEINA CHARGE', unit: 'un', category: 'Revenda' },
+    ]
+
+    async function recusaDoCadastro(error: { code: string; message: string }): Promise<unknown> {
+      supabaseMocks.rpc.mockResolvedValue({ data: null, error: { ...error, details: null, hint: null } })
+      return createPayableCatalogProduct('  100% whey pote 900g leite - max titanium ', 'Revenda', 'un').catch((caught: unknown) => caught)
+    }
+
+    it('mostra a mensagem do banco e acha o cadastro de mesmo nome quando o nome já existe', async () => {
+      const caught = await recusaDoCadastro({ code: '23505', message: recusaDoBanco })
+      expect(caught).not.toBeInstanceOf(Error)
+      expect(isPayableDuplicateNameError(caught)).toBe(true)
+
+      const failure = describeCatalogCreateFailure(caught, '  100% whey pote 900g leite - max titanium ', catalogo)
+      expect(failure.message).toBe(recusaDoBanco)
+      expect(failure.duplicateName).toBe('100% whey pote 900g leite - max titanium')
+      expect(failure.existingProducts.map(product => product.id)).toEqual(['whey-existente'])
+      expect(catalogProductToPreselect(failure)?.id).toBe('whey-existente')
+    })
+
+    it('avisa o nome repetido mesmo quando o cadastro igual não está na lista desta tela', async () => {
+      const caught = await recusaDoCadastro({ code: '23505', message: recusaDoBanco })
+      const failure = describeCatalogCreateFailure(caught, 'WHEY PROTEIN SHAKE 250ML', catalogo)
+      expect(failure.message).toBe(recusaDoBanco)
+      expect(failure.duplicateName).toBe('WHEY PROTEIN SHAKE 250ML')
+      expect(failure.existingProducts).toEqual([])
+      expect(catalogProductToPreselect(failure)).toBeNull()
+    })
+
+    it('com dois cadastros de mesmo nome, nenhum fica escolhido sozinho', async () => {
+      // A tela Produtos grava direto na tabela, sem a trava de nome do cadastro rápido.
+      const caught = await recusaDoCadastro({ code: '23505', message: recusaDoBanco })
+      const comRepetido = [...catalogo, { id: 'whey-copia', name: '100% WHEY POTE 900G LEITE - MAX TITANIUM', unit: 'un', category: 'Revenda' }]
+      const failure = describeCatalogCreateFailure(caught, '100% WHEY POTE 900G LEITE - MAX TITANIUM', comRepetido)
+      expect(failure.existingProducts.map(product => product.id)).toEqual(['whey-existente', 'whey-copia'])
+      expect(catalogProductToPreselect(failure)).toBeNull()
+    })
+
+    it('outras recusas do banco mostram a própria mensagem, sem levar à busca', async () => {
+      const caught = await recusaDoCadastro({ code: '22023', message: 'Escolha uma categoria válida e ativa para o item da NF-e.' })
+      const failure = describeCatalogCreateFailure(caught, '100% WHEY POTE 900G LEITE - MAX TITANIUM', catalogo)
+      expect(failure).toEqual({ message: 'Escolha uma categoria válida e ativa para o item da NF-e.', duplicateName: null, existingProducts: [] })
+    })
+
+    it('sem mensagem legível, fica o texto da tela', () => {
+      expect(describeCatalogCreateFailure(null, 'x', catalogo).message).toBe('Não foi possível criar o item.')
+      expect(describeCatalogCreateFailure({ code: '23505' }, 'x', catalogo).message).toBe('Não foi possível criar o item.')
+    })
+  })
+
+  it('as telas de Contas a pagar leem a recusa pelo getPayableErrorMessage', () => {
+    // Ler só a mensagem de Error some com a recusa do PostgREST; a função da
+    // casa lê os dois formatos.
+    for (const file of [
+      '../components/PendingPayableItems.tsx',
+      '../components/XmlPayableImport.tsx',
+      '../components/PayablePaymentDialog.tsx',
+      '../components/PayableForm.tsx',
+      '../app/contas-pagar/page.tsx',
+    ]) {
+      const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+      expect(source, file).not.toMatch(/instanceof Error \? \w+\.message :/)
+    }
   })
 
   it('calcula o total do CEASA por item e por parcela', () => {
