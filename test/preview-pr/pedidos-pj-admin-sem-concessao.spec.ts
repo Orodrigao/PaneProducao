@@ -53,6 +53,15 @@ async function rpc(page: Page, acesso: AcessoAoBanco, nome: string, corpo: Recor
   return page.request.post(`${acesso.url}/rest/v1/rpc/${nome}`, { headers: cabecalhos, data: corpo, maxRedirects: 0 })
 }
 
+// Perfil sem a tela de Pedidos PJ e desviado pelo guarda de rotas e nunca ve a
+// ficha; a recusa do banco e conferida a parte, pela Data API.
+async function semJornadaNaTela(page: Page, perfil: string): Promise<void> {
+  await page.goto(`/pedidos-pj?piloto=1&pedido=${PEDIDO_DA_JORNADA}`)
+  await expect(page, `${perfil} e desviado da tela de Pedidos PJ`).not.toHaveURL(/\/pedidos-pj/, { timeout: 20_000 })
+  await expect(page.getByRole('region', { name: `Ficha de ${CLIENTE_DA_JORNADA}` }),
+    `${perfil} nao ve a ficha da jornada`).toHaveCount(0)
+}
+
 async function linhasDoPedido(page: Page, acesso: AcessoAoBanco): Promise<unknown[]> {
   const cabecalhos = await cabecalhosDaSessao(page, acesso)
   const resposta = await page.request.get(
@@ -109,6 +118,7 @@ test('Administrador ativo sem concessao marcada revisa a jornada PJ; outros perf
       try {
         const financeiro = await contextoFinanceiro.newPage()
         const acesso = await entrarComo(financeiro, 'financeiroCatalogoJc')
+        await semJornadaNaTela(financeiro, 'Financeiro sem Contas a receber')
         const jornada = await rpc(financeiro, acesso, 'read_pj_flow_pilot', {})
         expect(jornada.status(), 'Financeiro sem Contas a receber nao le a jornada').toBe(403)
         expect(await linhasDoPedido(financeiro, acesso), 'nem o pedido direto na tabela').toEqual([])
@@ -120,6 +130,7 @@ test('Administrador ativo sem concessao marcada revisa a jornada PJ; outros perf
       try {
         const vendas = await contextoVendas.newPage()
         const acesso = await entrarComo(vendas, 'vendasJa')
+        await semJornadaNaTela(vendas, 'Vendas JA')
         const jornada = await rpc(vendas, acesso, 'read_pj_flow_pilot', {})
         expect(jornada.status(), 'Vendas JA nao le a jornada').toBe(403)
       } finally {
