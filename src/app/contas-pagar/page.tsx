@@ -19,6 +19,7 @@ import {
 } from '@/lib/xmlImportDrafts'
 import {
   cancelPayable,
+  getPayableErrorMessage,
   isDueSoon,
   isOverdue,
   loadPayablePurchases,
@@ -229,7 +230,7 @@ export default function ContasPagarPage() {
       setShowXmlImport(true)
     } catch (loadError) {
       console.error(loadError)
-      showToast(loadError instanceof Error ? loadError.message : 'Não foi possível reabrir a importação pendente.')
+      showToast(getPayableErrorMessage(loadError, 'Não foi possível reabrir a importação pendente.'))
       await loadImportDrafts()
     } finally {
       setBusyId(null)
@@ -248,7 +249,7 @@ export default function ContasPagarPage() {
       await loadImportDrafts()
     } catch (discardError) {
       console.error(discardError)
-      showToast(discardError instanceof Error ? discardError.message : 'Não foi possível descartar a importação pendente.')
+      showToast(getPayableErrorMessage(discardError, 'Não foi possível descartar a importação pendente.'))
     } finally {
       setBusyId(null)
     }
@@ -269,7 +270,7 @@ export default function ContasPagarPage() {
       await load()
     } catch (cancelError) {
       console.error(cancelError)
-      showToast(cancelError instanceof Error ? cancelError.message : 'Não foi possível cancelar a conta.')
+      showToast(getPayableErrorMessage(cancelError, 'Não foi possível cancelar a conta.'))
     } finally {
       setBusyId(null)
     }

@@ -5,7 +5,7 @@ const source = readFileSync(new URL('./PendingPayableItems.tsx', import.meta.url
 
 describe('classificação posterior de itens da NF-e', () => {
   it('mantém as três escolhas discretas e destaca a ação final de vínculo', () => {
-    const existingChoice = source.indexOf('1. Insumo de receita já cadastrado')
+    const existingChoice = source.indexOf('1. Produto já cadastrado (insumo ou revenda)')
     const newChoice = source.indexOf('2. Produto novo da padaria')
     const expenseChoice = source.indexOf('3. Uso ou despesa')
 

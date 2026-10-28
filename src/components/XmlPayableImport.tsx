@@ -14,6 +14,7 @@ import {
   createPayableCatalogProduct,
   createPayableSupplier,
   createXmlPayable,
+  describeCatalogCreateFailure,
   formatBRL,
   getPayableErrorMessage,
   type PayableProduct,
@@ -243,6 +244,10 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   const [creatingSupplier, setCreatingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', cnpj: '' })
   const [newProduct, setNewProduct] = useState({ name: '', category: '', unit: 'un', useNfeName: true })
+  // A recusa por nome repetido volta para a escolha 1 da linha, com a busca
+  // nesse nome; a contagem remonta a busca a cada nova recusa. Um aviso por
+  // linha: resolver outra linha não pode apagar a busca desta.
+  const [duplicateNotices, setDuplicateNotices] = useState<Record<number, { name: string; message: string; matches: number; attempt: number }>>({})
   const [catalogCategories, setCatalogCategories] = useState<ProductCategory[]>([])
   const [categoryLoadError, setCategoryLoadError] = useState(false)
   const [autoMappedCount, setAutoMappedCount] = useState(0)
@@ -330,6 +335,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       setMemoryLoadFailed(false)
       setAutoMappedCount(0)
       setCreatingSupplier(false)
+      setDuplicateNotices({})
       const matched = availableSuppliers.find(supplier => digits(supplier.cnpj) === digits(nextDraft.supplierCnpj) && digits(nextDraft.supplierCnpj) !== '')
       setSupplierId(matched?.id ?? '')
       if (!matched) setError(`Fornecedor do XML: ${nextDraft.supplierName}. Cadastre-o aqui ou selecione um cadastro correspondente.`)
@@ -388,6 +394,15 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     setDraft(previous => previous ? { ...previous, items: previous.items.map((item, itemIndex) => itemIndex === index ? next : item) } : previous)
   }
 
+  function clearDuplicateNotice(lineNumber: number) {
+    setDuplicateNotices(previous => {
+      if (!(lineNumber in previous)) return previous
+      const next = { ...previous }
+      delete next[lineNumber]
+      return next
+    })
+  }
+
   function clearRememberedClassification() {
     mappingSnapshotRef.current = null
     latestMappingRequestRef.current = null
@@ -422,11 +437,13 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     if (draft) {
       updateItem(index, withProduct(draft.items[index], product))
       setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
+      clearDuplicateNotice(draft.items[index].lineNumber)
     }
   }
 
   function markWithoutProduct(index: number) {
     if (draft) {
+      clearDuplicateNotice(draft.items[index].lineNumber)
       updateItem(index, withoutProduct(draft.items[index]))
       setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
     }
@@ -443,12 +460,22 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       if (draft) {
         updateItem(index, withProduct(draft.items[index], product))
         setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
+        clearDuplicateNotice(draft.items[index].lineNumber)
       }
       setCreatingLine(null)
       setNewProduct({ name: '', category: '', unit: 'un', useNfeName: true })
       showToast('Item criado e vinculado à NF-e.')
     } catch (saveError) {
-      showToast(saveError instanceof Error ? saveError.message : 'Não foi possível criar o item.')
+      const failure = describeCatalogCreateFailure(saveError, newProduct.name, catalog)
+      const duplicateName = failure.duplicateName
+      if (duplicateName && draft) {
+        const lineNumber = draft.items[index].lineNumber
+        const matches = failure.existingProducts.length
+        setDuplicateNotices(previous => ({ ...previous, [lineNumber]: { name: duplicateName, message: failure.message, matches, attempt: (previous[lineNumber]?.attempt ?? 0) + 1 } }))
+        setCreatingLine(null)
+      } else {
+        showToast(failure.message)
+      }
     } finally { setSaving(false) }
   }
 
@@ -470,7 +497,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
       await loadMappings(supplier.id)
       showToast('Fornecedor cadastrado e vinculado à NF-e.')
     } catch (saveError) {
-      showToast(saveError instanceof Error ? saveError.message : 'Não foi possível cadastrar o fornecedor.')
+      showToast(getPayableErrorMessage(saveError, 'Não foi possível cadastrar o fornecedor.'))
     } finally { setSaving(false) }
   }
 
@@ -686,7 +713,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                   + impostos e despesas {formatBRL(itemCosts?.get(item.lineNumber)?.surchargeTotal ?? 0)} · pago {formatBRL(itemCosts?.get(item.lineNumber)?.acquisitionValue ?? 0)}
                 </small>
               )}
-              <ProductSelector item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} recipeUsageIndex={recipeUsageIndex} recipeUsageError={recipeUsageError} requiresReview={item.recognized || Boolean(resumedDraft && item.mappingStatus !== 'pendente')} memoryConfirmed={confirmedMemoryLines.has(item.lineNumber)} onConfirmMemory={() => setConfirmedMemoryLines(previous => new Set(previous).add(item.lineNumber))} />
+              <ProductSelector key={duplicateNotices[item.lineNumber] ? `nome-repetido-${duplicateNotices[item.lineNumber].attempt}` : 'escolha'} duplicateName={duplicateNotices[item.lineNumber] ?? null} item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} recipeUsageIndex={recipeUsageIndex} recipeUsageError={recipeUsageError} requiresReview={item.recognized || Boolean(resumedDraft && item.mappingStatus !== 'pendente')} memoryConfirmed={confirmedMemoryLines.has(item.lineNumber)} onConfirmMemory={() => setConfirmedMemoryLines(previous => new Set(previous).add(item.lineNumber))} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
                   <div className="ps-fieldgroup">

@@ -945,6 +945,99 @@ Financeiro JC, Vendas JA e Expedição JC barrados na Data API.
 
 Itens pendentes continuam sendo classificados no Contas a pagar.
 
+## Revenda sem cadastro (plano de 28/10/2026)
+
+**O problema.** Notas de mercadoria de revenda, como a NF 5158 da Giants
+(suplementos, R$ 947,80, 11 itens), precisam entrar no Contas a pagar sem
+obrigar cadastro de produto e sem virar uso ou despesa. Hoje cada item da NF-e
+só tem três saídas: ligar a um produto, cadastrar produto novo ou marcar uso ou
+despesa; o resto fica pendente. Em 27/10/2026 o cadastro rápido dos itens
+seguintes da Giants falhou porque cinco produtos já existiam com o mesmo nome:
+o banco recusou com "Já existe um item ativo com esse nome. Selecione o
+cadastro existente na NF-e." (código 23505, confirmado nos logs), e a tela
+mostrou só "Não foi possível criar o item.". O PostgREST devolve a recusa como
+objeto simples, não como `Error`, e a tela só lia a mensagem de `Error`.
+
+Decisões do Rodrigo: em 27/10, a Giants 5158 é toda revenda, sem cadastro novo,
+e entra no Contas a pagar sem uso ou despesa; em 28/10, juntar a correção da
+mensagem com este plano, o item 2 da nota é revenda e o item 4 fica ligado ao
+cadastro existente. Em 28/10, às 13h35, autorizou as fases 1 a 4, com
+publicação de cada fase depois das provas e da revisão.
+
+**Decisão técnica B.** O item fora do cadastro continua com
+`mapping_status = 'nao_aplicavel'` e ganha um tipo (`uso_despesa` ou `revenda`)
+no item da conta e na memória do fornecedor. Um valor novo de `mapping_status`
+quebraria `create_xml_payable`, `classify_payable_item_without_product`,
+`correct_payable_purchase_items` e o consumo semanal. A segunda opinião de
+outra família (28/10) confirmou B com estes ajustes:
+
+- o tipo é nulo fora de `nao_aplicavel`, garantido por gatilho no banco, que
+  também cobre os gravadores antigos durante a troca do site;
+- o rascunho da importação guarda o tipo, porque a retomada hoje o perde
+  (`src/lib/xmlImportDrafts.ts`);
+- o consumo semanal mostra a revenda sem cadastro em linha própria, fora do
+  CMV %, que só conta o que foi contado (`src/lib/inventoryConsumption.ts`);
+- teste de convivência entre o site antigo e o banco novo.
+
+**Fases.**
+
+1. Telas de Contas a pagar mostram a mensagem real do banco quando uma
+   gravação é recusada; a escolha 1 passa a se chamar "Produto já cadastrado (insumo ou
+   revenda)"; quando o cadastro rápido é recusado por nome repetido, a
+   importação abre a busca nesse nome e os pendentes já escolhem o cadastro de
+   mesmo nome. Sem banco nem migration.
+2. Tipo do item fora do cadastro (uso ou despesa, ou revenda) no item da conta
+   e na memória do fornecedor, pela decisão B; importação, rascunho,
+   pendentes, memória e foto da memória; consumo semanal com a revenda sem
+   cadastro em linha própria; "Ver itens da NF-e" mostra o destino de cada
+   item. Risco alto (migration).
+3. Vínculos NF-e lista os itens fora do cadastro por tipo e troca entre uso ou
+   despesa, revenda e produto, com prévia, memória (conflito, e desfazer sem
+   restaurar memória velha), foto, hash e desfazer com o tipo; o aviso de
+   categoria distingue revenda de despesa. Risco alto.
+4. Arrumar a NF Giants pela tela, com leitura antes e depois. Os itens 1, 5, 6,
+   7 e 9 têm cadastro: falta decidir se ligam ao cadastro, como o item 4, ou
+   viram revenda sem cadastro (o item 9 é display de 12).
+
+Fases 1 e 2 até 02/11/2026, antes das frentes de 03/11 (Compras 3B mexe na
+mesma tela); fases 3 e 4 quando abrir vaga no teto de três frentes.
+
+**Custo escondido.** A revenda sem cadastro não tem custo por produto nem
+estoque: ela aparece no consumo semanal em linha própria, mas não entra no CMV
+% nem na margem de um produto. Quem quiser margem por item de revenda continua
+precisando do cadastro. A categoria de DRE segue sendo da conta, escolhida na
+baixa; nenhum estado do item a define.
+
+**Fora do escopo.** CNPJ do destinatário da nota (backlog); a conta da Giants
+vencida em 20/10 e o nome do fornecedor ficam com a Elis até 30/10
+(`PENDENCIAS.md` da equipe).
+
+### Registro da fase 1 (28/10/2026)
+
+As telas de Contas a pagar (importação, pendentes, baixa, conta manual,
+retomar, descartar e cancelar) leem a recusa por `getPayableErrorMessage`,
+que entende o objeto simples do PostgREST. A escolha 1 passou a se chamar
+"Produto já cadastrado (insumo ou revenda)". Quando o cadastro rápido é
+recusado por nome repetido (código 23505), a escolha 1 mostra a mensagem do
+banco num aviso fixo e leva ao cadastro que já existe: na importação, a busca
+abre nesse nome; nos pendentes, que escolhem por lista, o cadastro de mesmo
+nome já fica escolhido, e a pessoa confere a conversão antes de vincular. A
+tela Produtos não trava nome repetido; com dois ou mais cadastros de mesmo
+nome, a busca mostra todos e os pendentes não escolhem nenhum sozinho. Se o
+cadastro igual não estiver na lista da tela (só insumos e mercadorias de
+revenda), o aviso diz isso e manda conferir em Produtos, sem sugerir outro
+nome, que duplicaria o produto. Os avisos de carregamento da tela (abrir as
+contas, os pendentes e os itens) continuam com texto próprio.
+
+Provas: `src/lib/payables.test.ts` (recusa como objeto simples, cadastro de
+mesmo nome achado sem diferença de caixa e espaço, dois cadastros de mesmo
+nome, nome fora da lista, outras recusas, e nenhuma tela de Contas a pagar
+lendo só `Error`),
+`src/components/XmlConversionEditor.test.tsx` (aviso e busca preenchida) e o
+roteiro de navegador `test/browser/contas-pagar-nome-repetido.smoke.spec.ts`,
+com Financeiro JC nas duas telas contra o banco de teste e Vendas JA barrada
+no Contas a pagar.
+
 ## Decisões pendentes
 
 - **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços
@@ -965,5 +1058,8 @@ Itens pendentes continuam sendo classificados no Contas a pagar.
   A decisão sobre o custo está registrada; fases 0, 1, 2 e 3A feitas (ver o
   registro de cada uma); a fase 3B (aviso de alta de custo na entrada da nota)
   tem sessão e aprovação próprias.
+- Revenda sem cadastro: fase 1 feita em 28/10/2026; a próxima é a fase 2
+  (tipo do item fora do cadastro, com migration), na seção "Revenda sem
+  cadastro (plano de 28/10/2026)" acima.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

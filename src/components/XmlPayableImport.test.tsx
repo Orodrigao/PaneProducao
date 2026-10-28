@@ -14,7 +14,7 @@ describe('classificação durante a importação da NF-e', () => {
     const noResults = selectorSource.indexOf('{query.trim() && products.length > 0 && results.length === 0 && (')
     const noResultsSource = selectorSource.slice(noResults)
 
-    expect(selectorSource).toContain('1. Insumo de receita já cadastrado')
+    expect(selectorSource).toContain('1. Produto já cadastrado (insumo ou revenda)')
     expect(selectorSource).toContain('2. Produto novo da padaria')
     expect(selectorSource).toContain('3. Uso ou despesa')
     expect(alwaysAvailableCreate).toBeGreaterThanOrEqual(0)

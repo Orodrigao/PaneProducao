@@ -53,6 +53,53 @@ export function getPayableErrorMessage(error: unknown, fallback: string): string
   return fallback
 }
 
+/**
+ * O cadastro rápido recusa nome repetido com o código 23505. A recusa do
+ * PostgREST chega como objeto simples ({ code, message }), não como Error: em
+ * 27/10/2026 a tela leu só Error e trocou a mensagem do banco por "Não foi
+ * possível criar o item.", sem dizer que o cadastro já existia.
+ */
+export function isPayableDuplicateNameError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505'
+}
+
+export interface PayableCatalogCreateFailure {
+  message: string
+  /** Nome recusado por já existir cadastro ativo igual; nulo nas outras recusas. */
+  duplicateName: string | null
+  /**
+   * Cadastros de mesmo nome na lista desta tela (insumos e revenda). O banco só
+   * recusa nome repetido no cadastro rápido; pela tela Produtos dois cadastros
+   * podem ter o mesmo nome, e então a pessoa escolhe qual.
+   */
+  existingProducts: PayableProduct[]
+}
+
+// O banco compara lower(trim(nome)); a tela procura o cadastro do mesmo jeito.
+function sameProductName(left: string, right: string): boolean {
+  return left.trim().toLocaleLowerCase('pt-BR') === right.trim().toLocaleLowerCase('pt-BR')
+}
+
+export function describeCatalogCreateFailure(
+  error: unknown,
+  typedName: string,
+  catalog: readonly PayableProduct[],
+): PayableCatalogCreateFailure {
+  const message = getPayableErrorMessage(error, 'Não foi possível criar o item.')
+  if (!isPayableDuplicateNameError(error)) return { message, duplicateName: null, existingProducts: [] }
+  const duplicateName = typedName.trim()
+  return {
+    message,
+    duplicateName,
+    existingProducts: catalog.filter(product => sameProductName(product.name, duplicateName)),
+  }
+}
+
+/** Só um cadastro de mesmo nome pode ficar escolhido sozinho; com dois ou mais, quem escolhe é a pessoa. */
+export function catalogProductToPreselect(failure: PayableCatalogCreateFailure): PayableProduct | null {
+  return failure.existingProducts.length === 1 ? failure.existingProducts[0] : null
+}
+
 export interface PayableSupplier {
   name: string
 }
