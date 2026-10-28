@@ -434,7 +434,7 @@ export interface NfePayment {
   term: '0' | '1' | null
 }
 
-/** Dinheiro e PIX dinâmico (QR gerado na hora da venda) só existem já pagos. */
+/** Dinheiro e PIX dinâmico (QR gerado na hora da venda) seguem à vista com indPag 0 ou ausente, como antes. */
 const PAID_ON_ISSUE_CODES: readonly string[] = ['01', '17']
 /** PIX estático (chave ou QR fixo) e PIX Automático (débito agendado) podem ser pagos depois. */
 const PAID_ON_ISSUE_WHEN_DECLARED_CODES: readonly string[] = ['20', '23']

@@ -505,6 +505,38 @@ test('Financeiro JC importa NF-e paga por PIX estatico e o vencimento ja vem na 
   await expect(page.getByText('Esta NF-e não informou o vencimento')).toHaveCount(0)
 })
 
+// PIX por chave pode ser pago depois e o PIX Automatico e debito agendado: so
+// entram a vista com indPag 0 no proprio pagamento. Aqui o primeiro detPag diz
+// "a vista" e o segundo nao diz nada; o indicador de um nao vale para o outro.
+test('Financeiro JC importa NF-e com PIX Automatico sem indicador e o vencimento continua sendo pedido', async ({ page }) => {
+  await entrarComSessaoGuardada(page, previewAccounts.financeiroJc)
+  await page.goto('/contas-pagar')
+  await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
+
+  const uniqueCnpj = `97${Date.now().toString().slice(-12)}`
+  const uniqueKey = `43${Date.now() + 1}`.padEnd(44, '0')
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe${uniqueKey}" versao="4.00">
+    <ide><nNF>999993</nNF><serie>1</serie><dhEmi>2026-10-23T10:00:00-03:00</dhEmi></ide>
+    <emit><CNPJ>${uniqueCnpj}</CNPJ><xNome>[TESTE] Fornecedor PIX automatico</xNome></emit>
+    <det nItem="1"><prod><cProd>TESTE-PIX2</cProd><xProd>[TESTE] Farinha PIX agendado</xProd><NCM>11010010</NCM><qCom>1.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
+    <total><ICMSTot>${totaisSimples('10.00')}</ICMSTot></total>
+    <pag><detPag><indPag>0</indPag><tPag>20</tPag><vPag>4.00</vPag></detPag><detPag><tPag>23</tPag><vPag>6.00</vPag></detPag></pag>
+  </infNFe>
+</NFe>`
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'pix-automatico.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from(xml),
+  })
+  await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible()
+  await expect(page.getByText('Esta NF-e não informou o vencimento')).toBeVisible()
+  await expect(page.locator('#xml-due-date-0')).toHaveValue('')
+  await expect(page.getByText('Lançamos como à vista', { exact: false })).toHaveCount(0)
+})
+
 // Mesmo padrao da fixture st-ipi-outras-despesas: ST e IPI no bloco de impostos
 // do item, outras despesas em prod, tudo somado no total. Chave e CNPJ unicos
 // por rodada, porque desde a fase 3A a nota e confirmada e o banco guarda.
