@@ -338,7 +338,7 @@ post-mortem de cada uma está na PR correspondente.
   vermelho temporário não fere a regra de merge.
 - **Docker na máquina só por exceção, e desligado ao terminar.** Ele pesa no
   notebook e cai com frequência (ver o item do Docker Desktop abaixo). Abra só
-  quando o CI não bastar, por exemplo para depurar uma falha que o log não
+  quando o CI não bastar, por exemplo, para depurar uma falha que o log não
   explica, e escreva o motivo na PR. Suba só o Postgres, como o `CI Banco`:
   `supabase db start` e `supabase db reset --local` (cerca de 4 minutos); no
   Git Bash, `docker exec -i supabase_db_<project_id> psql -v ON_ERROR_STOP=1
@@ -378,13 +378,16 @@ post-mortem de cada uma está na PR correspondente.
   (lido em 28/10/2026: casos da 4.57 à 4.91; em 30/09/2026 a equipe do Docker
   disse ter mandado correções na 4.92, sem confirmação no chamado). Aqui roda a
   4.90. Depois que o Docker fecha, os sockets de `%LOCALAPPDATA%\Docker\run` e
-  `%LOCALAPPDATA%\docker-secrets-engine` costumam ficar ilegíveis, e reiniciar
-  o WSL (o `Check` da portaria usa o mesmo WSL) também derruba o Docker. Com o
-  Docker fechado (sem processos `Docker Desktop`, `com.docker.backend` nem
+  `%LOCALAPPDATA%\docker-secrets-engine` costumam ficar ilegíveis. Em
+  28/10/2026 o Docker também caiu quando o WSL foi reiniciado durante um
+  `Check` da portaria, que usa o mesmo WSL; a ligação não foi reproduzida. Com
+  o Docker fechado (sem processos `Docker Desktop`, `com.docker.backend` nem
   `docker`), renomeie as duas pastas juntas, com sufixo de data, antes de
-  abrir; ele recria pastas limpas. Nunca apague as pastas nem use "Reset to
-  factory defaults". Atualizar o Docker pede OK do Rodrigo: baixa um
-  instalador e reinicia o motor de todas as conversas.
+  abrir; ele recria pastas limpas. É contorno, não cura: funcionou nas mais de
+  30 vezes desde 21/08/2026, e o erro pode voltar no fechamento seguinte. Nunca
+  apague as pastas nem use "Reset to factory defaults". Atualizar o Docker
+  pede OK do Rodrigo: baixa um instalador e reinicia o motor de todas as
+  conversas.
 - **Máquina esgotada deixa a portaria lenta.** O `Check` abre milhares de
   processos `git`; com a memória comprometida acima de 90%, cada processo passou
   de 50 ms para mais de 1 s e o preparo do snapshot foi de 10 minutos para mais
