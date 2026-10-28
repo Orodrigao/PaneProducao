@@ -319,33 +319,42 @@ Regras curtas tiradas de falhas reais entre julho e outubro de 2026. O
 post-mortem de cada uma está na PR correspondente.
 
 - **Teste de banco: o padrão é o `CI Banco`, não o Docker da máquina.** Em PR
-  que mexe em `supabase/`, cada push roda no GitHub a história inteira de
-  migrations e todos os pgTAP, em 3 a 4 minutos (medido em outubro de 2026).
-  Esse resultado é o que vale, e a falha se corrige na mesma branch e na mesma
-  PR. Para provar vermelho/verde de um teste novo, empurre primeiro o teste e
-  depois a correção, uma rodada do CI para cada. Para prova pontual de um
-  mecanismo SQL (constraint, default, fuso), use um Postgres descartável sem
-  Docker, como em 13/09 e 20/09/2026: `embedded-postgres` numa pasta
-  temporária fora do projeto, só com a tabela e a função envolvidas, e no
-  Windows `taskkill /F /IM postgres.exe` ao final. Declare na PR que provou o
-  mecanismo, não o teste inteiro.
+  que toca migration, teste de banco, seed ou os demais arquivos listados em
+  `scripts/ci-banco-escopo.mjs`, cada push roda no GitHub a história inteira de
+  migrations, o seed e os pgTAP de `supabase/tests/` e de
+  `supabase/tests-local/`, em 3 a 4 minutos (medido em outubro de 2026). O
+  `CI Banco` é a prova padrão das migrations, do seed e dos testes SQL; as
+  demais verificações de `docs/regras/BANCO.md` e `docs/regras/FECHAMENTO.md`
+  continuam obrigatórias (banco por PR, contas fictícias e navegador). Teste
+  novo em `supabase/tests-local/` só roda se ganhar passo próprio em
+  `.github/workflows/ci-banco.yml`. Falha no CI se corrige na mesma branch e na
+  mesma PR. Para prova pontual de um mecanismo SQL (constraint, default, fuso),
+  use um Postgres descartável sem Docker: `embedded-postgres` numa pasta
+  temporária fora do projeto, só com a tabela e a função envolvidas, encerrado
+  pelo próprio `stop()`; se o Windows segurar o processo, encerre só o PID
+  daquela instância, nunca todos os `postgres.exe`. Declare na PR que provou o
+  mecanismo, não o teste inteiro. Quando só o banco inteiro mostrar o
+  vermelho/verde, a PR em rascunho pode receber o teste antes da correção: o CI
+  vermelho temporário não fere a regra de merge.
 - **Docker na máquina só por exceção, e desligado ao terminar.** Ele pesa no
   notebook e cai com frequência (ver o item do Docker Desktop abaixo). Abra só
   quando o CI não bastar, por exemplo para depurar uma falha que o log não
   explica, e escreva o motivo na PR. Suba só o Postgres, como o `CI Banco`:
-  `supabase db start`, `supabase db reset --local` (cerca de 4 minutos) e
-  `docker exec -i supabase_db_<project_id> psql -U postgres -d postgres -f - <
-  supabase/tests/<arquivo>.test.sql`, com o `project_id` de
-  `supabase/config.toml`; confira `grep -c "^ ok"` contra o `plan(N)` e
-  `grep "^ not ok"` para as falhas. O atalho `supabase test db` falha com "No
-  plan found in TAP output" por defeito do container auxiliar. Não use
-  `supabase start`: ele sobe 11 serviços. O banco local volta a ligar sozinho
-  em toda abertura do Docker até ser desligado pelo nome: em 28/10/2026, dois
-  bancos de tarefas já integradas voltaram assim. Ao terminar, rode
-  `supabase stop --project-id <project_id>` (os dados ficam guardados) e
-  confira com `docker ps` que nenhum banco da tarefa ficou ligado. Feche o
-  Docker (`docker desktop stop`) só se `docker ps` não mostrar banco de outra
-  conversa ou de outro projeto. Nunca use `supabase stop --all`.
+  `supabase db start` e `supabase db reset --local` (cerca de 4 minutos); no
+  Git Bash, `docker exec -i supabase_db_<project_id> psql -v ON_ERROR_STOP=1
+  -U postgres -d postgres -f - < supabase/tests/<arquivo>.test.sql`, com o
+  `project_id` de `supabase/config.toml`, e confira `grep -c "^ ok"` contra o
+  `plan(N)` e `grep "^ not ok"` para as falhas. Na máquina, o atalho
+  `supabase test db` falhou com "No plan found in TAP output" por defeito do
+  container auxiliar. Não use `supabase start`, que sobe o Supabase inteiro.
+  Fechar o Docker não desliga o banco: com a regra `unless-stopped`, o
+  container que não foi parado pelo nome volta na abertura seguinte (em
+  28/10/2026, dois bancos de tarefas já integradas voltaram assim). Ao
+  terminar, rode `supabase stop --project-id <project_id>`, sem `--no-backup`
+  para guardar os dados, e confira com `docker ps` que nada da tarefa ficou
+  ligado. Feche o Docker (`docker desktop stop`) só se `docker ps` não mostrar
+  nenhum container de outra conversa ou de outro projeto. Nunca use
+  `supabase stop --all`.
 - **Migration com regex `\nbegin\n` trava `db reset --local` por CRLF, não é
   bug da migration.** Sem `.gitattributes` para `.sql`, `core.autocrlf=true`
   no Windows converte as migrations para CRLF no checkout (`git ls-files
@@ -364,14 +373,15 @@ post-mortem de cada uma está na PR correspondente.
   fixando LF em `supabase/**/*.sql` resolveria de vez, mas é decisão pendente
   do Rodrigo por afetar o checkout de todo mundo.
 - **Docker Desktop cai ao abrir com "rename ... .sock ... The file cannot be
-  accessed by the system".** É defeito conhecido do Docker Desktop no Windows,
-  não desta máquina: o chamado `docker/desktop-feedback#625` reúne casos da
-  4.57 à 4.91, e a equipe do Docker diz ter mandado correções na 4.92, sem
-  confirmação no chamado. Aqui roda a 4.90, e as pastas foram renomeadas mais
-  de 30 vezes desde 21/08/2026. Os sockets de `%LOCALAPPDATA%\Docker\run` e
-  `%LOCALAPPDATA%\docker-secrets-engine` ficam ilegíveis quando o Docker fecha.
-  Com o Docker fechado (sem processos `Docker Desktop`, `com.docker.backend`
-  nem `docker`), renomeie as duas pastas juntas, com sufixo de data, antes de
+  accessed by the system".** É defeito do Docker Desktop no Windows, relatado
+  por outros usuários em https://github.com/docker/desktop-feedback/issues/625
+  (lido em 28/10/2026: casos da 4.57 à 4.91; em 30/09/2026 a equipe do Docker
+  disse ter mandado correções na 4.92, sem confirmação no chamado). Aqui roda a
+  4.90. Depois que o Docker fecha, os sockets de `%LOCALAPPDATA%\Docker\run` e
+  `%LOCALAPPDATA%\docker-secrets-engine` costumam ficar ilegíveis, e reiniciar
+  o WSL (o `Check` da portaria usa o mesmo WSL) também derruba o Docker. Com o
+  Docker fechado (sem processos `Docker Desktop`, `com.docker.backend` nem
+  `docker`), renomeie as duas pastas juntas, com sufixo de data, antes de
   abrir; ele recria pastas limpas. Nunca apague as pastas nem use "Reset to
   factory defaults". Atualizar o Docker pede OK do Rodrigo: baixa um
   instalador e reinicia o motor de todas as conversas.
