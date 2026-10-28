@@ -9,14 +9,15 @@ select ('98000000-0000-4000-8000-00000000000'||n)::uuid,
   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
   'pj-condicoes-'||n||'@example.com','',now(),now(),now(),
   '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,false
-from generate_series(1,5) n;
+from generate_series(1,6) n;
 insert into public.app_profiles(user_id,display_name,role,store,active,allowed_routes)
 values
  ('98000000-0000-4000-8000-000000000001','Piloto Financeiro','financeiro','jc',true,'["/pedidos-pj"]'),
  ('98000000-0000-4000-8000-000000000002','Piloto Expedição','expedicao','jc',true,'["/pedidos-pj"]'),
  ('98000000-0000-4000-8000-000000000003','Piloto Vendas','vendas','ja',true,'["/sobras"]'),
- ('98000000-0000-4000-8000-000000000004','Piloto Admin sem concessão','admin','jc',true,'["/pedidos-pj"]'),
- ('98000000-0000-4000-8000-000000000005','Piloto Expedição EX','expedicao','ex',true,'["/pedidos-pj"]');
+ ('98000000-0000-4000-8000-000000000004','Piloto Admin inativo','admin','jc',false,'["/pedidos-pj"]'),
+ ('98000000-0000-4000-8000-000000000005','Piloto Expedição EX','expedicao','ex',true,'["/pedidos-pj"]'),
+ ('98000000-0000-4000-8000-000000000006','Piloto Admin sem concessão','admin','jc',true,'["/pedidos-pj"]');
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '98000000-0000-4000-8000-000000000001',key,'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.liberar','contas_receber.acessar','contas_receber.lancar',
@@ -114,7 +115,10 @@ select lives_ok($q$select pg_temp.terms('due',11,private.data_na_padaria()+11)$q
 select is((select sum(rr.amount) from public.receivable_receipts rr join public.receivables r on r.id=rr.receivable_id
  where r.origin_ref='98000000-0000-4000-8000-000000000201' and rr.reversed_at is null),10.00,'pagamento não foi apagado nem duplicado');
 select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-000000000004',true);
-select throws_ok($q$select public.change_pj_flow_terms(gen_random_uuid(),'98000000-0000-4000-8000-000000000201',12,'due',gen_random_uuid(),current_date,null,'Novo acordo')$q$,'42501',null,'admin sem concessão bloqueado');
+select throws_ok($q$select public.change_pj_flow_terms(gen_random_uuid(),'98000000-0000-4000-8000-000000000201',12,'due',gen_random_uuid(),current_date,null,'Novo acordo')$q$,'42501',null,'admin inativo bloqueado');
+-- Decisão de 28/10/2026: o administrador ativo passa sem concessão marcada.
+select set_config('request.jwt.claim.sub','98000000-0000-4000-8000-000000000006',true);
+select lives_ok($q$select pg_temp.terms('due',12,private.data_na_padaria()+12)$q$,'admin ativo ajusta o acordo sem concessão marcada');
 reset role;
 select * from finish();
 rollback;

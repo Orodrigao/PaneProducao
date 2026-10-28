@@ -39,7 +39,7 @@ export function parsePjFlowQuantity(value: string): number | null {
 export function pjFlowStatus(flow: Pick<PjFlow, 'departed_at' | 'released_at' | 'checked_at'>): string {
   if (flow.departed_at) return 'Saída física registrada'
   if (flow.released_at) return 'Liberado · Expedição JC pode registrar a saída'
-  if (flow.checked_at) return 'Elis ou Rodrigo: revisar cobrança e confirmar NF · saída bloqueada'
+  if (flow.checked_at) return 'Financeiro ou administrador: revisar cobrança e confirmar NF · saída bloqueada'
   return 'Expedição JC: conferir quantidades · saída bloqueada'
 }
 

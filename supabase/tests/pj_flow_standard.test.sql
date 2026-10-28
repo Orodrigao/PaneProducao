@@ -13,18 +13,26 @@ values
   '{"provider":"email","providers":["email"]}','{}',false),
  ('9f000000-0000-4000-8000-000000000003','00000000-0000-0000-0000-000000000000',
   'authenticated','authenticated','pj-standard-expedicao@example.com','',now(),now(),now(),
+  '{"provider":"email","providers":["email"]}','{}',false),
+ ('9f000000-0000-4000-8000-000000000004','00000000-0000-0000-0000-000000000000',
+  'authenticated','authenticated','pj-standard-financeiro-sem-leitura@example.com','',now(),now(),now(),
   '{"provider":"email","providers":["email"]}','{}',false);
 insert into public.app_profiles(user_id,display_name,role,store,active,allowed_routes)
 values
  ('9f000000-0000-4000-8000-000000000001','Contrato PJ Admin','admin','jc',true,'["/pedidos-pj"]'),
- ('9f000000-0000-4000-8000-000000000002','Contrato PJ sem acesso','admin','jc',true,'["/pedidos-pj"]'),
- ('9f000000-0000-4000-8000-000000000003','Contrato PJ Expedicao','expedicao','jc',true,'["/pedidos-pj"]');
+ ('9f000000-0000-4000-8000-000000000002','Contrato PJ Admin sem concessao','admin','jc',true,'["/pedidos-pj"]'),
+ ('9f000000-0000-4000-8000-000000000003','Contrato PJ Expedicao','expedicao','jc',true,'["/pedidos-pj"]'),
+ -- Desde 28/10/2026 o admin ativo passa na jornada sem concessao; o perfil
+ -- que continua sem a leitura nova e o Financeiro sem Contas a receber.
+ ('9f000000-0000-4000-8000-000000000004','Contrato PJ Financeiro sem leitura nova','financeiro','jc',true,'["/pedidos-pj"]');
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '9f000000-0000-4000-8000-000000000001', key, 'jc'
 from unnest(array['pedidos_pj.acessar','contas_receber.acessar']) key;
 insert into public.app_user_permissions(user_id,permission_key,scope)
 select '9f000000-0000-4000-8000-000000000003', key, 'jc'
 from unnest(array['pedidos_pj.acessar','pedidos_pj.confirmar_envio']) key;
+insert into public.app_user_permissions(user_id,permission_key,scope)
+values ('9f000000-0000-4000-8000-000000000004','pedidos_pj.acessar','jc');
 insert into public.customers(id,name,doc,payment_term_days,active)
 values ('9f000000-0000-4000-8000-000000000010','[TESTE] Cliente contrato PJ','00000000000096',7,true);
 insert into public.breads(id,name,days,active,unit,is_special,is_shelf)
@@ -125,7 +133,7 @@ set state='standard',cutover_at=clock_timestamp(),updated_at=clock_timestamp()
 where singleton;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000002',true);
+select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000004',true);
 select throws_ok($q$select public.create_pj_order_atomic(
   '9f000000-0000-4000-8000-000000000109','9f000000-0000-4000-8000-000000000209',pg_temp.pedido())$q$,
   '42501',null,'depois da virada perfil sem leitura nova nao cria pedido invisivel para si');
@@ -244,9 +252,9 @@ select is((select count(*)::int from private.pj_flow where order_group_id='9f000
 select ok(private.is_pj_flow('9f000000-0000-4000-8000-000000000205'),
   'pedido standard cancelado conserva a protecao de leitura no historico');
 set local role authenticated;
-select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000002',true);
+select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000004',true);
 select is((select count(*)::int from public.orders where order_group_id='9f000000-0000-4000-8000-000000000205'),
-  0,'perfil legado nao passa a enxergar o pedido standard cancelado');
+  0,'perfil sem leitura nova nao passa a enxergar o pedido standard cancelado');
 select set_config('request.jwt.claim.sub','9f000000-0000-4000-8000-000000000001',true);
 select ok(public.read_pj_flow_pilot()::text not like '%9f000000-0000-4000-8000-000000000205%',
   'pedido cancelado nao deixa cartao fantasma na jornada');
