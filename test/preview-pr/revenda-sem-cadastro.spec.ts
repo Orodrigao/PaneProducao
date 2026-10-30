@@ -50,8 +50,12 @@ function notaDeRevenda(stamp: string, sufixo: string): NotaDeRevenda {
   return { xml, chave, numero, fornecedor }
 }
 
-async function abrirImportacao(page: Page, nota: NotaDeRevenda) {
+// Com `jaLancada`, espera a conta dela na lista antes de abrir o arquivo: as
+// contas e os fornecedores chegam do banco juntos, e o fornecedor da nota so e
+// escolhido sozinho (pelo CNPJ) se a lista ja tiver chegado.
+async function abrirImportacao(page: Page, nota: NotaDeRevenda, jaLancada?: NotaDeRevenda) {
   await page.goto('/contas-pagar')
+  if (jaLancada) await expect(conta(page, jaLancada)).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
   await page.locator('input[type="file"]').setInputFiles({ name: 'revenda.xml', mimeType: 'application/xml', buffer: Buffer.from(nota.xml) })
   await expect(page.getByText('Fornecedor do XML:', { exact: false })).toBeVisible({ timeout: 20_000 })
@@ -180,7 +184,8 @@ test('Financeiro JC lanca revenda sem cadastro na importacao, no rascunho e nos 
       ])
 
       // A proxima nota do fornecedor sugere a revenda e ainda pede conferencia.
-      await abrirImportacao(page, proxima)
+      await abrirImportacao(page, proxima, nota)
+      await expect(page.locator('select.ps-select').first()).not.toHaveValue('')
       await expect(page.getByText('revenda sem cadastro reconhecida', { exact: true })).toHaveCount(2, { timeout: 20_000 })
       await expect(page.getByText('Revenda sem cadastro: entra no financeiro como mercadoria', { exact: true })).toHaveCount(2)
       await expect(page.getByRole('button', { name: 'Conferi esta classificação' })).toHaveCount(2)
