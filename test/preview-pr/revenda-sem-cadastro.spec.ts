@@ -125,7 +125,7 @@ test('Financeiro JC lanca revenda sem cadastro na importacao, no rascunho e nos 
       // A quarta escolha aparece ao lado das outras tres, com o custo escondido.
       const lancarRevenda = page.getByRole('button', { name: 'Lançar como revenda sem cadastro' })
       await expect(lancarRevenda).toHaveCount(3)
-      await expect(page.getByText('não controla estoque nem margem').first()).toBeVisible()
+      await expect(page.getByText('Mercadoria para revender sem criar produto: entra no financeiro como mercadoria, sem custo de receita e fora da contagem. Mostra quanto se gastou, mas não controla estoque nem margem; para isso, use a escolha 2. Fica memorizada para este fornecedor.', { exact: true }).first()).toBeVisible()
       await lancarRevenda.first().click()
       await expect(lancarRevenda).toHaveCount(2)
       await expect(page.getByText('Revenda sem cadastro: entra no financeiro como mercadoria', { exact: true })).toHaveCount(1)
@@ -136,7 +136,7 @@ test('Financeiro JC lanca revenda sem cadastro na importacao, no rascunho e nos 
       const rascunho = page.locator('[data-testid="xml-import-draft"]', { hasText: `NF ${nota.numero}` })
       await expect(rascunho).toHaveCount(1, { timeout: 20_000 })
       await rascunho.getByRole('button', { name: 'Continuar conferência' }).click()
-      await expect(page.getByText('Importação retomada')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByText('Importação retomada', { exact: true })).toBeVisible({ timeout: 20_000 })
       await expect(page.getByText('Revenda sem cadastro: entra no financeiro como mercadoria', { exact: true })).toHaveCount(1)
       await expect(page.getByRole('button', { name: 'Lançar como revenda sem cadastro' })).toHaveCount(2)
       await page.getByRole('button', { name: 'Conferi esta classificação' }).click()

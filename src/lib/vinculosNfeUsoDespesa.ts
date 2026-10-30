@@ -1,7 +1,7 @@
 import { nonCatalogKindLabel } from '@/lib/nfeXml'
 import { currencyLabel, dateLabel, factorLabel } from '@/lib/vinculosNfe'
 import type { InvoiceLinkHistory } from '@/lib/vinculosNfeClient'
-import type { ConsumptionImpact, ConsumptionRow, FinanceSlice, ItemCorrectionImpact, PurchaseFinance } from '@/lib/vinculosNfeNotas'
+import type { ConsumptionImpact, ConsumptionRow, FinanceSlice, ItemCorrectionImpact, MemoryRef, PurchaseFinance } from '@/lib/vinculosNfeNotas'
 
 /**
  * Fase 5 dos Vínculos de NF-e: item de nota entre uso ou despesa e insumo. O
@@ -119,6 +119,14 @@ export function describeConsumption(consumption: ConsumptionImpact | null): stri
   return lines
 }
 
+/** A memória gravada por último; sem versão (foto antiga), a primeira da lista. */
+function latestMemory(memories: readonly MemoryRef[]): MemoryRef | undefined {
+  return memories.reduce<MemoryRef | undefined>(
+    (best, memory) => (!best || (memory.version ?? '') > (best.version ?? '') ? memory : best),
+    undefined,
+  )
+}
+
 /**
  * O que a próxima nota do fornecedor vai sugerir para cada item, depois da
  * correção. Uma linha por item; itens com a mesma descrição e o mesmo efeito
@@ -129,16 +137,21 @@ export function describeMemories(impact: ItemCorrectionImpact): string[] {
   for (const item of impact.items) {
     const name = `${item.source_description || 'item sem descrição'} (${item.supplier_name || 'fornecedor não identificado'})`
     const switchedOff = item.memories_before.filter(memory => impact.memories_off.includes(memory.mapping_id))
-    const product = item.memories_after.find(memory => memory.kind === 'insumo')
-    const outside = item.memories_after.find(memory => memory.kind === 'uso_despesa')
+    // O mesmo desempate da importação (XmlPayableImport): entre as memórias que
+    // casam, vale a gravada por último; empate fica com a de fora do cadastro.
+    const productMemory = latestMemory(item.memories_after.filter(memory => memory.kind === 'insumo'))
+    const outside = latestMemory(item.memories_after.filter(memory => memory.kind === 'uso_despesa'))
+    const product = outside && (!productMemory || (outside.version ?? '') >= (productMemory.version ?? '')) ? undefined : productMemory
     const toExpense = item.after.mapping_status === 'nao_aplicavel'
     let next: string
     const factor = product?.conversion_factor != null ? ` com fator ${factorLabel(product.conversion_factor)}` : ''
     if (product) next = `a próxima nota sugere ${product.product_name || 'um produto'}${factor}${toExpense ? '; para ela vir como uso ou despesa, desligue essa memória em Memórias de vínculo, na página do produto' : ''}`
     else if (outside) next = `a próxima nota sugere ${nonCatalogKindLabel(outside.non_catalog_kind)}`
     else next = 'a próxima nota chega sem sugestão e quem importa escolhe'
-    const off = switchedOff.length === 0 ? ''
-      : `a memória de ${nonCatalogKindLabel(switchedOff[0].non_catalog_kind)} deste item será desligada; `
+    const offKinds = [...new Set(switchedOff.map(memory => nonCatalogKindLabel(memory.non_catalog_kind)))]
+    const off = offKinds.length === 0 ? ''
+      : offKinds.length === 1 ? `a memória de ${offKinds[0]} deste item será desligada; `
+        : `as memórias de ${offKinds.join(' e de ')} deste item serão desligadas; `
     const line = `${name}: ${off}${next}.`
     if (!lines.includes(line)) lines.push(line)
   }

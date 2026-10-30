@@ -50,6 +50,8 @@ export interface MemoryRef {
   mapping_id: string
   product_name: string | null
   conversion_factor: number | null
+  /** Última gravação da memória (UTC); decide entre memórias do mesmo item, como na importação. */
+  version?: string | null
 }
 
 export interface FinanceSlice {
@@ -179,6 +181,7 @@ function memories(value: unknown): MemoryRef[] {
     mapping_id: text(memory.mapping_id) ?? '',
     product_name: text(memory.product_name),
     conversion_factor: numberOrNull(memory.conversion_factor),
+    version: text(memory.version),
   }))
 }
 
