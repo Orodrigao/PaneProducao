@@ -1,0 +1,38 @@
+name: Vigia do alarme de rotina
+
+# Confere, de segunda a sabado, se o alarme de rotina parada das 8h concluiu o
+# dia (enviou o e-mail ou nao tinha o que mandar). Independe do pg_cron e do
+# Resend: le pela Edge Function so a data da ultima fotografia concluida, sem
+# segredo. Se falhar, o GitHub avisa por e-mail quem mexeu por ultimo neste
+# agendamento. A regra de decisao fica em scripts/vigia-alarme.mjs, testada no
+# npm test.
+
+on:
+  schedule:
+    # 09:45 em Brasilia (12:45 UTC), segunda a sabado.
+    - cron: "45 12 * * 1-6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vigia-alarme-rotina
+  cancel-in-progress: false
+
+jobs:
+  conferir:
+    name: Conferir o alarme de hoje
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Conferir a data da ultima fotografia concluida
+        env:
+          ALARME_SAUDE_URL: https://gohluceldchoitihrimw.supabase.co/functions/v1/alarme-rotina-parada
+        run: node scripts/vigia-alarme.mjs
