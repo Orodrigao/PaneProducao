@@ -40,13 +40,13 @@ select ok(not has_function_privilege(
 
 select ok(has_function_privilege(
   'authenticated',
-  'public.classify_payable_item_without_product(uuid, boolean)',
+  'public.classify_payable_item_without_product(uuid, boolean, text)',
   'execute'),
   'financeiro pode resolver item sem produto mediante validação interna');
 
 select ok(not has_function_privilege(
   'anon',
-  'public.classify_payable_item_without_product(uuid, boolean)',
+  'public.classify_payable_item_without_product(uuid, boolean, text)',
   'execute'),
   'anon não resolve item sem produto');
 
