@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(51);
+select plan(53);
 
 -- Alarme de rotina parada, fase 1b: fotografia do dia, ciclo novo/continua/
 -- resolvido, expiracao e entrega so pelo servico interno. Datas fixas em
@@ -243,6 +243,23 @@ select is(
   (select row(status, last_error)::text from private.alarme_rotina_envios where report_date = '2025-11-26'),
   row('pendente', 'Resend recusou o envio (503).')::text,
   'a falha fica registrada e a fotografia segue pendente');
+
+select set_config('test.c26_antes', current_setting('test.c26'), true);
+set local role service_role;
+select lives_ok(
+  $$ select set_config('test.c26', public.claim_alarme_rotina_para_envio(current_setting('test.segredo'),
+    '2025-11-26 08:15-03')::text, true) $$,
+  'passados 14 minutos o servico tenta de novo');
+reset role;
+select is(
+  (select row(current_setting('test.c26')::jsonb ->> 'state', envio.id::text = current_setting('test.c26')::jsonb ->> 'envio_id',
+      envio.attempt_token::text = current_setting('test.c26')::jsonb ->> 'attempt_token',
+      current_setting('test.c26')::jsonb ->> 'attempt_token' <> current_setting('test.c26_antes')::jsonb ->> 'attempt_token',
+      current_setting('test.c26')::jsonb -> 'fotografia' = current_setting('test.c26_antes')::jsonb -> 'fotografia',
+      envio.status, envio.last_error is null)::text
+    from private.alarme_rotina_envios as envio where envio.report_date = '2025-11-26'),
+  row('pronto_para_enviar', true, true, true, true, 'pendente', true)::text,
+  'a nova tentativa reaproveita a mesma fotografia com outro identificador de tentativa');
 
 -- Quinta 27/11: a fotografia de quarta expira; a de hoje compara com terca.
 set local role service_role;

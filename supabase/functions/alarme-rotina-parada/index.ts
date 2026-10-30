@@ -49,7 +49,13 @@ async function enviar(claim: ClaimAlarmePronto, cronSecret: string): Promise<voi
     }),
   })
   if (!response.ok) throw new Error(`Resend recusou o envio (${response.status}).`)
-  const providerResult: unknown = await response.json()
+  // Resposta 2xx já é envio aceito: corpo vazio ou ilegível não vira falha.
+  let providerResult: unknown = null
+  try {
+    providerResult = await response.json()
+  } catch {
+    providerResult = null
+  }
   const providerId = providerResult && typeof providerResult === 'object'
     && typeof (providerResult as Record<string, unknown>).id === 'string'
     ? (providerResult as Record<string, string>).id

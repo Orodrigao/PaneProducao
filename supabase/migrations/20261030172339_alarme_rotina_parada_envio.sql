@@ -758,7 +758,7 @@ begin
   from private.alarme_rotina_envios envio
   where envio.report_date = v_hoje
     and envio.status = 'pendente'
-    and (envio.last_attempt_at is null or envio.last_attempt_at <= now() - interval '14 minutes')
+    and (envio.last_attempt_at is null or envio.last_attempt_at <= v_now - interval '14 minutes')
   for update skip locked;
 
   if v_envio.id is null then
@@ -772,9 +772,11 @@ begin
   end if;
 
   v_token := extensions.gen_random_uuid();
+  -- O intervalo entre tentativas usa o mesmo instante da fotografia: em
+  -- producao e o relogio do banco; no teste, o instante informado.
   update private.alarme_rotina_envios
   set attempt_token = v_token,
-      last_attempt_at = now(),
+      last_attempt_at = v_now,
       last_error = null,
       updated_at = now()
   where id = v_envio.id;
