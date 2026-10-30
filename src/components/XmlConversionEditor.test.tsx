@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ProductSelector } from './XmlConversionEditor'
+import { ConversionEditor, ProductSelector } from './XmlConversionEditor'
 import type { NfeItemDraft } from '@/lib/nfeXml'
 import type { PayableProduct } from '@/lib/payables'
 
@@ -69,5 +69,37 @@ describe('escolha do cadastro durante a importação da NF-e', () => {
     const html = render(null)
     expect(html).toContain('value="WHEY"')
     expect(html).not.toContain(recusaDoBanco)
+  })
+})
+
+describe('revenda sem cadastro na importação da NF-e', () => {
+  function renderItem(next: NfeItemDraft) {
+    return renderToStaticMarkup(createElement(ProductSelector, {
+      item: next, products, onChange: () => undefined, onCreate: () => undefined, onWithoutProduct: () => undefined,
+    }))
+  }
+
+  it('mostra a quarta escolha ao lado do uso ou despesa, com o custo escondido escrito', () => {
+    const html = renderItem(item)
+    expect(html).toContain('Escolha um dos quatro caminhos abaixo')
+    expect(html.indexOf('3. Uso ou despesa')).toBeLessThan(html.indexOf('4. Revenda sem cadastro'))
+    expect(html).toContain('Lançar como revenda sem cadastro')
+    expect(html).toContain('não controla estoque nem margem')
+  })
+
+  it('item já lançado como revenda sem cadastro diz o efeito, não uso ou despesa', () => {
+    const resale: NfeItemDraft = { ...item, mappingStatus: 'nao_aplicavel', nonCatalogKind: 'revenda' }
+    const html = renderItem(resale)
+    expect(html).toContain('Revenda sem cadastro: entra no financeiro como mercadoria')
+    expect(html).toContain('fora da contagem semanal')
+    expect(html).not.toContain('Uso ou despesa')
+    const conversion = renderToStaticMarkup(createElement(ConversionEditor, { item: resale, onChange: () => undefined }))
+    expect(conversion).toContain('Revenda sem cadastro: entra no financeiro como mercadoria, sem custo de receita nem contagem.')
+  })
+
+  it('item fora do cadastro sem tipo (lembrado antes da revenda sem cadastro) continua uso ou despesa', () => {
+    const html = renderItem({ ...item, mappingStatus: 'nao_aplicavel' })
+    expect(html).toContain('Uso ou despesa')
+    expect(html).not.toContain('Revenda sem cadastro')
   })
 })

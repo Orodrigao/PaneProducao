@@ -104,11 +104,14 @@ alter table public.payable_non_catalog_mappings
   check (non_catalog_kind in ('uso_despesa', 'revenda'));
 
 -- ---------------------------------------------------------------------------
--- 3. create_xml_payable, a partir da versão vigente
---    (20260916145213_trava_fator_conversao_nfe). Mudanças: cada item pode
---    trazer non_catalog_kind; só item fora do cadastro tem tipo, e sem tipo ele
---    é uso ou despesa; o item e a memória do fornecedor gravam o tipo. Mesma
---    assinatura: `create or replace` mantém os grants de 20260913141048.
+-- 3. create_xml_payable, a partir da versão vigente: o corpo de
+--    20260916145213_trava_fator_conversao_nfe com a trava por request_id que
+--    20260919235223_idempotencia_financeira_concorrente acrescentou por
+--    substituição de texto (conferido contra produção em 30/10/2026: mesmo
+--    md5 do corpo). Mudanças: cada item pode trazer non_catalog_kind; só item
+--    fora do cadastro tem tipo, e sem tipo ele é uso ou despesa; o item e a
+--    memória do fornecedor gravam o tipo. Mesma assinatura: `create or replace`
+--    mantém os grants de 20260913141048.
 -- ---------------------------------------------------------------------------
 create or replace function public.create_xml_payable(
   p_request_id uuid,
@@ -142,6 +145,7 @@ declare
   v_classification_status text := 'completa';
   v_mapping_id uuid;
 begin
+  perform private.lock_financial_request(p_request_id);
   if not private.current_user_can_payables('contas_pagar.importar_xml') then
     raise exception using errcode = '42501', message = 'Sem permissão para importar XML.';
   end if;

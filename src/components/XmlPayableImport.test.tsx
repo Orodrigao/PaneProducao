@@ -17,6 +17,7 @@ describe('classificação durante a importação da NF-e', () => {
     expect(selectorSource).toContain('1. Produto já cadastrado (insumo ou revenda)')
     expect(selectorSource).toContain('2. Produto novo da padaria')
     expect(selectorSource).toContain('3. Uso ou despesa')
+    expect(selectorSource).toContain('4. Revenda sem cadastro')
     expect(alwaysAvailableCreate).toBeGreaterThanOrEqual(0)
     expect(alwaysAvailableCreate).toBeLessThan(conditionalResults)
     expect(noResults).toBeGreaterThan(conditionalResults)
@@ -40,25 +41,32 @@ describe('classificação durante a importação da NF-e', () => {
     )
     expect(blocoPermanente).toContain('!query.trim()')
     expect(blocoPermanente).toContain('onClick={onCreate}')
-    expect(selectorSource).toContain('className="ps-btn ghost sm block" onClick={onWithoutProduct}')
+    expect(selectorSource).toContain(`className="ps-btn ghost sm block" onClick={() => onWithoutProduct('uso_despesa')}`)
+    expect(selectorSource).toContain(`className="ps-btn ghost sm block" onClick={() => onWithoutProduct('revenda')}`)
     expect(source).toContain('onCreate={() => openProductForm(index)}')
-    expect(source).toContain('onWithoutProduct={() => markWithoutProduct(index)}')
+    expect(source).toContain('onWithoutProduct={kind => markWithoutProduct(index, kind)}')
   })
 
-  it('explica a memória por fornecedor antes de marcar uso ou despesa', () => {
+  it('explica a memória por fornecedor antes de marcar uso ou despesa ou revenda sem cadastro', () => {
     const reminder = selectorSource.indexOf('Esta decisão fica memorizada para este fornecedor.')
-    const expenseAction = selectorSource.indexOf('onClick={onWithoutProduct}')
+    const expenseAction = selectorSource.indexOf("onClick={() => onWithoutProduct('uso_despesa')}")
+    const resaleReminder = selectorSource.indexOf('Fica memorizada para este fornecedor.')
+    const resaleAction = selectorSource.indexOf("onClick={() => onWithoutProduct('revenda')}")
 
     expect(reminder).toBeGreaterThanOrEqual(0)
     expect(expenseAction).toBeGreaterThan(reminder)
-    expect(source).toContain('withoutProduct(draft.items[index])')
+    expect(resaleReminder).toBeGreaterThan(expenseAction)
+    expect(resaleAction).toBeGreaterThan(resaleReminder)
+    expect(source).toContain('withoutProduct(draft.items[index], kind)')
     expect(draftsSource).toContain("mappingStatus: 'nao_aplicavel'")
   })
 
-  it('reaproveita tanto vínculos de produto quanto decisões sem produto', () => {
+  it('reaproveita tanto vínculos de produto quanto decisões sem produto, com o tipo lembrado', () => {
     expect(source).toContain("from('payable_non_catalog_mappings')")
     expect(source).toContain('factor_confirmed')
-    expect(source).toContain('withoutProduct(item, true)')
+    expect(source).toContain('withoutProduct(item, nonCatalog.non_catalog_kind, true)')
+    expect(source).toContain('non_catalog_kind: readNonCatalogKind(row.non_catalog_kind)')
+    expect(source).toContain("'revenda sem cadastro reconhecida'")
     expect(draftsSource).toContain("mappingStatus: 'nao_aplicavel'")
   })
 })

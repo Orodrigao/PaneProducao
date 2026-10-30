@@ -44,6 +44,7 @@ function item(lineNumber: number, quantity = 1, purchaseUnit = 'CX'): NfeItemDra
     conversionFactor: null,
     usableQuantity: null,
     mappingStatus: 'pendente',
+    nonCatalogKind: null,
     rememberConversion: true,
     factorConfirmed: false,
     recognized: false,
@@ -88,9 +89,9 @@ describe('decisões do rascunho de importação', () => {
 
     const decisions = extractItemDecisions(classified)
     expect(decisions).toEqual([
-      { line_number: 1, product_id: 'prod-farinha', conversion_basis: 'package', conversion_factor: 25, mapping_status: 'mapeado', factor_confirmed: true, remember_conversion: true },
-      { line_number: 2, product_id: null, conversion_basis: null, conversion_factor: null, mapping_status: 'nao_aplicavel', factor_confirmed: false, remember_conversion: false },
-      { line_number: 3, product_id: null, conversion_basis: null, conversion_factor: null, mapping_status: 'pendente', factor_confirmed: false, remember_conversion: true },
+      { line_number: 1, product_id: 'prod-farinha', conversion_basis: 'package', conversion_factor: 25, mapping_status: 'mapeado', factor_confirmed: true, remember_conversion: true, non_catalog_kind: null },
+      { line_number: 2, product_id: null, conversion_basis: null, conversion_factor: null, mapping_status: 'nao_aplicavel', factor_confirmed: false, remember_conversion: false, non_catalog_kind: 'uso_despesa' },
+      { line_number: 3, product_id: null, conversion_basis: null, conversion_factor: null, mapping_status: 'pendente', factor_confirmed: false, remember_conversion: true, non_catalog_kind: null },
     ])
 
     const resumed = applyItemDecisions(freshDraft(), decisions, catalog)
@@ -98,6 +99,37 @@ describe('decisões do rascunho de importação', () => {
     expect(resumed.draft.items).toEqual(classified.items)
     // O item retomado tem a quantidade útil recalculada: 2 caixas × 25 = 50 kg.
     expect(resumed.draft.items[0].usableQuantity).toBe(50)
+  })
+
+  it('revenda sem cadastro volta como revenda na retomada (antes, toda decisão fora do cadastro voltava uso ou despesa)', () => {
+    const classified = freshDraft()
+    classified.items[0] = withoutProduct(classified.items[0], 'revenda')
+    classified.items[1] = withoutProduct(classified.items[1], 'uso_despesa')
+
+    const decisions = extractItemDecisions(classified)
+    expect(decisions.map(decision => decision.non_catalog_kind)).toEqual(['revenda', 'uso_despesa', null])
+
+    const resumed = applyItemDecisions(freshDraft(), decisions, catalog)
+    expect(resumed.draft.items.map(candidate => [candidate.mappingStatus, candidate.nonCatalogKind])).toEqual([
+      ['nao_aplicavel', 'revenda'],
+      ['nao_aplicavel', 'uso_despesa'],
+      ['pendente', null],
+    ])
+    expect(resumed.draft.items).toEqual(classified.items)
+  })
+
+  it('rascunho salvo antes da revenda sem cadastro, sem o tipo, volta como uso ou despesa', () => {
+    const resumed = applyItemDecisions(freshDraft(), [
+      { line_number: 1, product_id: null, conversion_basis: null, conversion_factor: null, mapping_status: 'nao_aplicavel', factor_confirmed: false, remember_conversion: true },
+    ], catalog)
+    expect(resumed.draft.items[0].mappingStatus).toBe('nao_aplicavel')
+    expect(resumed.draft.items[0].nonCatalogKind).toBe('uso_despesa')
+  })
+
+  it('trocar para produto ou limpar tira o tipo de fora do cadastro', () => {
+    const resale = withoutProduct(item(1), 'revenda')
+    expect(withProduct(resale, farinha, 1).nonCatalogKind).toBeNull()
+    expect(extractItemDecisions({ ...freshDraft(), items: [withProduct(resale, farinha, 1)] })[0].non_catalog_kind).toBeNull()
   })
 
   it('item-base que saiu do catálogo volta a pendente e a linha é apontada', () => {

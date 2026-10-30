@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
+import { nonCatalogKindLabel, readNonCatalogKind, type NfeDraft, type NfeItemDraft, type NfeNonCatalogKind } from '@/lib/nfeXml'
 import { composeNfe } from '@/lib/nfeComposition'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
@@ -177,9 +177,34 @@ export interface PayablePurchaseItemRow {
   normalized_unit_cost?: number | string | null
   /** Falso quando já existia NF-e mais recente do mesmo insumo e o custo não foi trocado. */
   cost_applied?: boolean | null
+  mapping_status?: string | null
+  product_id?: string | null
+  /** Fora do cadastro: uso_despesa ou revenda. Ausente em banco anterior à revenda sem cadastro. */
+  non_catalog_kind?: string | null
 }
 
 export type PendingPayableItemRow = PayablePurchaseItemRow
+
+/**
+ * Para onde foi cada item da NF-e, em "Ver itens da NF-e". Fora do cadastro sem
+ * o tipo (banco anterior à revenda sem cadastro) é uso ou despesa; situação que
+ * esta tela não conhece aparece crua, nunca como outra.
+ */
+export function purchaseItemDestination(item: Pick<PayablePurchaseItemRow, 'mapping_status' | 'non_catalog_kind' | 'item_name' | 'product_id'>): string {
+  switch (item.mapping_status) {
+    case 'nao_aplicavel':
+      return `Destino: ${nonCatalogKindLabel(item.non_catalog_kind)} (sem produto, fora do custo e da contagem)`
+    case 'pendente':
+      return 'Destino: aguardando classificação'
+    case 'mapeado':
+      return `Destino: ${item.item_name} (produto do cadastro)`
+    case null:
+    case undefined:
+      return item.product_id ? `Destino: ${item.item_name} (produto do cadastro)` : 'Destino: não informado'
+    default:
+      return `Destino: ${item.mapping_status}`
+  }
+}
 
 export function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
@@ -511,6 +536,9 @@ export function xmlPayablePayload(draft: NfeDraft, supplierId: string, requestId
       discount_value: item.discountValue,
       factor_confirmed: item.factorConfirmed,
       mapping_status: item.mappingStatus,
+      // Só o item fora do cadastro tem tipo; o banco anterior à revenda sem
+      // cadastro ignora o campo e grava uso ou despesa.
+      non_catalog_kind: item.mappingStatus === 'nao_aplicavel' ? readNonCatalogKind(item.nonCatalogKind) : null,
       remember_conversion: item.rememberConversion,
       fiscal_gross_value: item.grossLineTotal,
       icms_st: item.fiscal.icmsSt,
@@ -596,11 +624,23 @@ export async function classifyPayableItem(
   if (error) throw error
 }
 
-export async function classifyPayableItemWithoutProduct(itemId: string, rememberDecision: boolean): Promise<void> {
-  const { error } = await supabase.rpc('classify_payable_item_without_product', {
-    p_item_id: itemId,
-    p_remember_decision: rememberDecision,
-  })
+function isMissingRpcSignature(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'PGRST202'
+}
+
+/**
+ * Fora do cadastro: uso ou despesa, ou revenda sem cadastro. O banco anterior
+ * à revenda sem cadastro só conhece dois parâmetros (o teste de navegador do CI
+ * roda no banco que espelha a `main`, e há minutos entre o site novo e a
+ * migration): uso ou despesa repete o pedido sem o tipo, que lá é o mesmo;
+ * revenda nunca vira uso ou despesa calada, falha e nada é gravado.
+ */
+export async function classifyPayableItemWithoutProduct(itemId: string, rememberDecision: boolean, kind: NfeNonCatalogKind = 'uso_despesa'): Promise<void> {
+  const base = { p_item_id: itemId, p_remember_decision: rememberDecision }
+  let { error } = await supabase.rpc('classify_payable_item_without_product', { ...base, p_non_catalog_kind: kind })
+  if (error && kind === 'uso_despesa' && isMissingRpcSignature(error)) {
+    ({ error } = await supabase.rpc('classify_payable_item_without_product', base))
+  }
   if (error) throw error
 }
 

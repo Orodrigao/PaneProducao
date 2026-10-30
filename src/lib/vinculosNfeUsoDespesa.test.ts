@@ -161,6 +161,23 @@ describe('item entre uso ou despesa e insumo (fase 5)', () => {
     expect(describeMemories({ ...impact, action: 'desfazer', memories_off: [] }).at(-1)).toContain('Desfazer não religa memória')
   })
 
+  it('memória de revenda sem cadastro é dita como revenda, não como "sem sugestão" nem uso ou despesa', () => {
+    const base = impactJson.items[0]
+    const revendaLigada = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: [],
+      items: [{ ...base, memories_before: [], memories_after: [{ kind: 'revenda', mapping_id: 'm5', product_name: null, conversion_factor: null }] }],
+    })
+    expect(describeMemories(revendaLigada)[0]).toContain('a próxima nota sugere revenda sem cadastro.')
+
+    const revendaDesligada = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: ['m6'],
+      items: [{ ...base, memories_before: [{ kind: 'revenda', mapping_id: 'm6', product_name: null, conversion_factor: null }], memories_after: [] }],
+    })
+    expect(describeMemories(revendaDesligada)[0]).toContain('a memória de revenda sem cadastro deste item será desligada; ')
+  })
+
   it('deixa marcar item de uso ou despesa e só pede a mesma unidade quando o destino é produto', () => {
     expect(itemBlockReason({ status: 'paga', mapping_status: 'nao_aplicavel' })).toBe('')
     const cx = { source_unit: 'CX', status: 'aberta', mapping_status: 'mapeado' }

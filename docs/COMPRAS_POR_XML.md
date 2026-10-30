@@ -1038,6 +1038,46 @@ roteiro de navegador `test/browser/contas-pagar-nome-repetido.smoke.spec.ts`,
 com Financeiro JC nas duas telas contra o banco de teste e Vendas JA barrada
 no Contas a pagar.
 
+### Registro da fase 2 (30/10/2026, em PR)
+
+O item fora do cadastro (`mapping_status = 'nao_aplicavel'`) ganhou o tipo
+`non_catalog_kind`, `uso_despesa` ou `revenda`, no item da conta
+(`payable_purchase_items`) e na memória do fornecedor
+(`payable_non_catalog_mappings`), pela migration
+`20261028193751_revenda_sem_cadastro_tipo`:
+
+- um gatilho dá `uso_despesa` ao item que fica fora do cadastro sem tipo (o site
+  anterior e a correção de notas de Vínculos, que só a fase 3 vai ensinar) e
+  tira o tipo de quem sai de fora do cadastro; tipo escrito de propósito em item
+  ligado a produto ou pendente é recusado pelo check. Os itens e as memórias que
+  já existiam viraram uso ou despesa;
+- `create_xml_payable` e `save_xml_import_draft` recebem o tipo dentro da lista
+  de itens, com a mesma assinatura; `classify_payable_item_without_product`
+  ganhou o terceiro parâmetro `p_non_catalog_kind` com padrão, e a versão de dois
+  parâmetros saiu na mesma transação. O site anterior, que chama com dois,
+  continua gravando uso ou despesa; o site novo, contra o banco anterior, repete
+  o pedido sem o tipo só quando é uso ou despesa;
+- revenda sem cadastro não tem produto: não muda custo, não entra em contagem e
+  guarda o valor de aquisição inteiro, com impostos e despesas da nota;
+- a importação, os pendentes e o rascunho têm a quarta escolha "Revenda sem
+  cadastro"; a memória sugere a revenda na próxima nota e continua pedindo
+  "Conferi esta classificação"; "Ver itens da NF-e" diz o destino de cada item;
+- o consumo semanal separa, dentro do que não é estoque, a revenda sem cadastro
+  (`purchases_resale_no_catalog` em `inventory_consumption_periods`) e lista
+  essas compras pela descrição da nota
+  (`inventory_consumption_resale_items`). O CMV % continua só com o que foi
+  contado, e o painel diz o valor da revenda que ficou fora;
+- em Vínculos NF-e, a lista "Itens lançados como uso ou despesa" mostra só uso ou
+  despesa, e a prévia diz quando a memória é de revenda. Trocar revenda por
+  produto, com o tipo na foto e no desfazer, é a fase 3.
+
+Provas: pgTAP `supabase/tests/revenda_sem_cadastro_tipo.test.sql`, dois
+invariantes em `supabase/tests/invariantes.test.sql`, testes de tela e do
+consumo no Vitest e o roteiro `test/preview-pr/revenda-sem-cadastro.spec.ts`
+(Financeiro JC na importação, no rascunho, nos pendentes e na memória; a
+classificação com dois parâmetros, como o site anterior; Vendas JA e Expedição
+JC barrados na Data API).
+
 ## Decisões pendentes
 
 - **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços
@@ -1058,8 +1098,8 @@ no Contas a pagar.
   A decisão sobre o custo está registrada; fases 0, 1, 2 e 3A feitas (ver o
   registro de cada uma); a fase 3B (aviso de alta de custo na entrada da nota)
   tem sessão e aprovação próprias.
-- Revenda sem cadastro: fase 1 feita em 28/10/2026; a próxima é a fase 2
-  (tipo do item fora do cadastro, com migration), na seção "Revenda sem
-  cadastro (plano de 28/10/2026)" acima.
+- Revenda sem cadastro: fase 1 feita em 28/10/2026 e fase 2 em 30/10/2026; a
+  próxima é a fase 3 (Vínculos NF-e por tipo), na seção "Revenda sem cadastro
+  (plano de 28/10/2026)" acima.
 - Roadmap, fase 1 "Compras por XML": [PLAN.md](PLAN.md).
 - Preço de venda, que consome o custo: [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).

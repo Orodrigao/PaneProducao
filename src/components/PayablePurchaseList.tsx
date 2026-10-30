@@ -12,6 +12,7 @@ import {
   isDueSoon,
   isOverdue,
   prioritizeOverduePayablePurchases,
+  purchaseItemDestination,
   statusLabel,
   type PayableProduct,
   type PayableInstallmentRow,
@@ -232,6 +233,7 @@ export default function PayablePurchaseList({
                               <span style={{ flex: 1 }}>
                                 <b>{item.source_description ?? item.item_name}</b>
                                 <small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 3 }}>{formatQuantity(item.source_quantity ?? item.quantity)} {item.source_unit ?? item.unit} · {formatBRL(item.unit_price)} cada</small>
+                                <small style={{ display: 'block', marginTop: 2 }}>{purchaseItemDestination(item)}</small>
                                 {/* Fase 3A: valor da nota à direita, e aqui o que foi pago com impostos e despesas. */}
                                 {item.acquisition_value != null && Number(item.acquisition_value) !== Number(item.line_total) && (
                                   <small style={{ display: 'block', color: 'var(--ink-soft)', marginTop: 2 }}>

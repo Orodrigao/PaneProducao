@@ -43,7 +43,8 @@ export interface ItemImpact {
 }
 
 export interface MemoryRef {
-  kind: 'insumo' | 'uso_despesa' | string
+  /** Fora do cadastro desde a revenda sem cadastro: uso_despesa ou revenda. */
+  kind: 'insumo' | 'uso_despesa' | 'revenda' | string
   mapping_id: string
   product_name: string | null
   conversion_factor: number | null
