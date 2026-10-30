@@ -88,6 +88,9 @@ Não reabrir sem evidência nova.
    iFood 12% + 3,2% = 15,2% sobre itens e tele; 99Food 10,9% + 3,2% = 14,1%;
    maquininha crédito 3,51% e débito 1,09%. Como o fechamento junta ambos,
    a configuração usa taxa média por maquininha, a conferir pelo extrato.
+   **Revista em 29/10/2026:** a loja passa a lançar crédito, débito e PIX
+   separados por maquininha, cada um com a taxa de quem processou a venda
+   (seção "Crédito, débito e PIX por maquininha", na fase 3).
    O percentual usado fica gravado no lançamento; mudar a taxa não reescreve
    meses antigos e diferença entre prevista e real vira ajuste do mês.
 9. **DRE em dois andares.** Empréstimos, compra de equipamento e retiradas
@@ -119,7 +122,9 @@ esquecimento:
 - **Comprovante anexado** — a v1 exige descrição no lançamento manual; foto
   fica para depois;
 - **Conciliação bancária** — são ~8 contas em 3 CNPJs e extrato nunca foi
-  hábito; começar por aí afundaria o projeto. Fase futura;
+  hábito; começar por aí afundaria o projeto. Fase futura; entrou no
+  [PLAN.md](PLAN.md) em 30/10/2026 com alvo em 02/12/2026, condicionada a
+  desenho e critérios de aceite escritos aqui antes de começar;
 - **Saldo por conta e fluxo de caixa projetado** — depende de saldo inicial
   e conciliação; fase futura;
 - **Provisão automática de 13º/férias** — futura; até lá o DRE de novembro/
@@ -421,6 +426,19 @@ a leitura autorizada e o gatilho de proteção da PR 1 permanecem.
 
 A PR 3 entregará a conferência do mês: comparação por loja e meio, dias sem
 fechamento e recorrências pendentes. Esta PR não declara essa conferência pronta.
+
+### Crédito, débito e PIX por maquininha (decisão do Rodrigo, 29/10/2026)
+
+O fechamento junta crédito e débito num campo por maquininha, e o livro aplica
+a taxa de crédito em tudo; o PIX passado na maquininha também paga taxa e hoje
+não aparece separado. Decisão: a loja lança no fechamento o que o relatório da
+maquininha mostra, por maquininha: crédito, débito e PIX. Vale a taxa de quem
+processou a venda, mesmo quando o dinheiro cai na conta de outra credenciadora;
+PIX direto na conta continua sem taxa. Até a tela nova, os fechamentos seguem
+com a taxa de crédito em tudo, e a frente corrige o período desde 01/09/2026
+sem reescrever taxa já lançada. Entra antes da conferência do mês (PR 3), que
+passa para perto de 10/11/2026. Campos, taxas, migração e testes entram com a
+PR dessa frente, que completa esta seção.
 
 
 **Objetivo:** o fechamento de caixa que a loja já faz vira receita no DRE,
