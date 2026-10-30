@@ -197,7 +197,8 @@ Nenhuma fase que cria tabela financeira começa sem:
 7. idempotência conforme o achado 6 acima;
 8. policies próprias em cada tabela, sem depender da visibilidade da
    tabela-pai;
-9. teste direto por REST, RPC e GraphQL — não apenas pela tela;
+9. teste direto por REST e RPC, não apenas pela tela (o GraphQL está
+   desligado no banco desde 2026-10-24);
 10. matriz no Preview com perfil sem permissão, financeiro autorizado e
     administrador, afirmando que escrita direta na tabela falha.
 
@@ -258,8 +259,8 @@ e pelas definições de uma linha do anexo.
 - Elis lança despesa avulsa em dois toques, com categoria obrigatória;
 - estorno cria contra-lançamento ligado e exige motivo; nada é apagado;
 - repetir a ação (toque duplo, reload) não duplica;
-- perfil sem permissão é bloqueado **pelo banco** (REST, RPC e GraphQL),
-  não só pela tela.
+- perfil sem permissão é bloqueado **pelo banco** (REST e RPC; o GraphQL está
+  desligado desde 2026-10-24), não só pela tela.
 
 **Testes — matriz:** financeiro JC (consegue lançar e estornar) **e** vendas
 JA (bloqueada na tela e no banco). Estados: carregando, vazio, erro,

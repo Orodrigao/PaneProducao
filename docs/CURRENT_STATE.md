@@ -7,7 +7,9 @@ a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas at�
 o PR #441; a de 26/09/2026 registrou a trava da `main` e a separação das
 regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
 11/10/2026, a trava dos agentes, revista em 19/10/2026; a de 23/10/2026, o
-fechamento da exposição GraphQL. As demais seções conservam suas datas de
+fechamento da exposição GraphQL; a de 30/10/2026, sobre `0f1215e` e leitura de
+produção, a fase do projeto, a exposição GraphQL fechada em produção, as vendas
+do balcão e a cobrança da Buck. As demais seções conservam suas datas de
 revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
@@ -202,7 +204,9 @@ produção, só no crachá da Expedição, é a fase 3.
 
 ## Fase estratégica
 
-O projeto está em estabilização e conclusão da Sprint 0 de segurança.
+Desde 23/10/2026 o projeto segue o marco 1 do [PLAN.md](PLAN.md): novembro
+fechado dentro do ERP até 10/12/2026. A Sprint 0 de segurança terminou com a
+exposição GraphQL fechada em produção em 24/10/2026.
 
 **Decisão do Rodrigo, 2026-08-11:** funcionalidade nova com dado financeiro
 **pode andar sem esperar o hardening completo**, desde que cumpra o gate
@@ -213,8 +217,8 @@ teste permitido×bloqueado. Substitui a regra anterior, que exigia a
 conclusão da auditoria e do hardening Auth/RLS antes de qualquer dado
 financeiro novo. Os achados da auditoria live de 2026-07-28 no escopo do ERP
 fecharam: a revisão das funções privilegiadas em 2026-09-23 e a exposição
-GraphQL com a migration de 2026-10-23, que a Action aplica no merge (ver Riscos
-ainda abertos). O hardening das próximas tabelas segue em lotes, em paralelo.
+GraphQL, desligada em produção em 2026-10-24 (ver Riscos ainda abertos). O
+hardening das próximas tabelas segue em lotes, em paralelo.
 
 ## Autenticação
 
@@ -312,8 +316,8 @@ Riscos ainda abertos:
   `current_user_can_sales` é a única das seis funções de permissão que não
   libera `admin` automaticamente, exige concessão explícita de `vendas.*`;
   o último achado, a exposição GraphQL, está no item seguinte;
-- **exposição GraphQL do schema público, fechada em duas trancas** (a
-  segunda entra em produção pela Action no merge da PR #523). O advisor de
+- **fechada em 2026-10-24 a exposição GraphQL do schema público**, em duas
+  trancas; não é mais risco aberto e fica aqui como registro. O advisor de
   segurança do Supabase apontava em 2026-09-23 que `anon` e `authenticated`
   enxergavam pelo GraphQL as tabelas que cada papel lê: 75 do ERP para
   usuário logado e 5 legadas (`pizza_*` e `site_bread_catalog`) para visitante
@@ -322,8 +326,9 @@ Riscos ainda abertos:
   a Data API deixou de publicar o GraphQL, e `/graphql/v1` responde 406,
   conferido em produção em 2026-10-23. Segunda tranca, PR #523: a extensão
   `pg_graphql` desligada, com teste de banco que prende esse estado; sem ela,
-  os avisos 0026 e 0027 do advisor somem. A conferência em produção depois da
-  Action fica registrada na PR. Restauração de backup anterior a 23/10/2026 ou
+  os avisos 0026 e 0027 do advisor somem. A Action aplicou a migration no merge
+  de 24/10/2026, e a leitura de produção de 30/10/2026 confirma a extensão
+  ausente. Restauração de backup anterior a 23/10/2026 ou
   atualização de versão do Postgres pedem nova leitura do advisor;
 - a proteção contra senha vazada foi confirmada **ligada** em auditoria live
   somente leitura de 2026-08-11 (painel do Supabase, projeto de produção):
@@ -573,8 +578,8 @@ disputavam um único banco de teste compartilhado.
   protegidas; RLS ligada e forçada em `receivables` e `receivable_events`. A
   baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
   **com competência no mês do faturamento** — cliente que paga atrasado gera
-  receita em mês anterior ao do recebimento. Geração automática a partir de
-  pedido PJ ainda não existe para o romaneio da Buck (fase 4);
+  receita em mês anterior ao do recebimento. A Buck não passa por aqui: tem
+  cobrança semanal própria, a partir dos romaneios (item da Buck, abaixo);
 - pedido PJ entregue vira cobrança (fase 3 de
   [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)) por dois caminhos que chamam o
   mesmo motor: a ação que confirma o envio gera a cobrança por dentro, sem dar
@@ -735,10 +740,14 @@ lista manual dos não-pães da JC, saiu em 11/10/2026; não tinha lançamento de
 16/06/2026 e apagava ao salvar o dia as linhas de produto que ela não mostrava.
 As 36 linhas antigas de `product_production` ficam no banco, sem tela.
 
-### CNM
+### Vendas do balcão (CNM)
 
-Há trabalhos de leitura XLS e coleta autorizada por navegador. Isso não
-equivale a uma importação consolidada, validada e integrada ao ERP.
+A importação de vendas do balcão por arquivo existe em
+`/relatorios/vendas-balcao`, com o CNM como primeiro adaptador
+([SALES_IMPORT_CNM.md](SALES_IMPORT_CNM.md)), e alimenta os produtos vendidos, a
+curva ABC e o histórico diário. Leitura de produção em 30/10/2026: 87 dias da JC
+confirmados, de 15/07 a 29/10/2026; nenhum da JA. O arquivo ainda é baixado do
+CNM e subido por uma pessoa, e produto novo é vinculado à mão.
 
 ### Sobras
 
