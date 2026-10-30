@@ -7,6 +7,7 @@ import {
   conversionFactorFromUsableQuantity,
   conversionNeedsConfirmation,
   type NfeConversionBasis,
+  type NfeNonCatalogKind,
 } from '@/lib/nfeXml'
 import {
   catalogProductToPreselect,
@@ -111,13 +112,18 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
     finally { setBusy(null) }
   }
 
-  async function saveWithoutProduct(item: PendingPayableItemRow) {
+  async function saveWithoutProduct(item: PendingPayableItemRow, kind: NfeNonCatalogKind) {
     const value = values[item.id]
-    if (!window.confirm('Confirmar como uso ou despesa? O item continuará na NF-e, mas não alterará nenhum custo de receita.')) return
+    const question = kind === 'revenda'
+      ? 'Confirmar como revenda sem cadastro? O item entra no financeiro como mercadoria, sem criar produto, sem alterar custo de receita e fora da contagem semanal.'
+      : 'Confirmar como uso ou despesa? O item continuará na NF-e, mas não alterará nenhum custo de receita.'
+    if (!window.confirm(question)) return
     setBusy(item.id)
     try {
-      await classifyPayableItemWithoutProduct(item.id, value.remember)
-      showToast('Item registrado como uso ou despesa, sem alterar custo de receita.')
+      await classifyPayableItemWithoutProduct(item.id, value.remember, kind)
+      showToast(kind === 'revenda'
+        ? 'Item registrado como revenda sem cadastro, sem alterar custo de receita.'
+        : 'Item registrado como uso ou despesa, sem alterar custo de receita.')
       await onChanged()
     } catch (error) { showToast(getPayableErrorMessage(error, 'Não foi possível classificar o item.')) }
     finally { setBusy(null) }
@@ -140,7 +146,7 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
             <small style={{ display: 'block', marginTop: 3 }}>{quantity} {item.source_unit ?? item.unit} · {item.source_product_code ?? 'sem código'} · {formatBRL(item.acquisition_value ?? item.line_total)}{item.acquisition_value != null && Number(item.acquisition_value) !== Number(item.line_total) ? ' com impostos e despesas' : ''}</small>
             <div role="alert" className="ps-card" style={{ padding: 10, borderColor: 'var(--red-border)', background: 'var(--red-bg)' }}>
               <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
-              <small>Escolha um dos três caminhos: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.</small>
+              <small>Escolha um dos quatro caminhos: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria, marcar o que é apenas uso ou despesa ou lançar mercadoria de revenda sem cadastro.</small>
             </div>
             <div className="ps-fieldgroup" style={{ marginTop: 8 }}>
               <div className="ps-fieldlabel">1. Produto já cadastrado (insumo ou revenda)</div>
@@ -163,11 +169,12 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
               )}
             </div>
 
-            <label className="ps-checkrow" style={{ marginTop: 6 }}><input type="checkbox" checked={value.remember} onChange={event => update(item.id, { remember: event.target.checked })} /><span>Lembrar o vínculo ou o uso/despesa para este fornecedor</span></label>
+            <label className="ps-checkrow" style={{ marginTop: 6 }}><input type="checkbox" checked={value.remember} onChange={event => update(item.id, { remember: event.target.checked })} /><span>Lembrar o vínculo, o uso/despesa ou a revenda sem cadastro para este fornecedor</span></label>
 
             {/* Em 03/09/2026, duas cartelas de queijo para revenda foram
                 marcadas como despesa porque esta tela não mostrava o cadastro
-                de produto novo. As três saídas devem continuar lado a lado. */}
+                de produto novo. As saídas devem continuar lado a lado; a
+                quarta (revenda sem cadastro) veio em 28/10/2026. */}
             <div className="ps-fieldrow" style={{ marginTop: 8 }}>
               <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
                 <div className="ps-fieldlabel">2. Produto novo da padaria</div>
@@ -177,7 +184,12 @@ export default function PendingPayableItems({ items, products, onChanged, onClos
               <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
                 <div className="ps-fieldlabel">3. Uso ou despesa</div>
                 <small className="ps-help">Para o que não entra em receita nem vira produto. Com a opção de lembrar marcada, esta escolha volta na próxima nota deste fornecedor.</small>
-                <button className="ps-btn ghost sm block" disabled={busy === item.id} onClick={() => void saveWithoutProduct(item)}>Marcar como uso ou despesa</button>
+                <button className="ps-btn ghost sm block" disabled={busy === item.id} onClick={() => void saveWithoutProduct(item, 'uso_despesa')}>Marcar como uso ou despesa</button>
+              </div>
+              <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
+                <div className="ps-fieldlabel">4. Revenda sem cadastro</div>
+                <small className="ps-help">Mercadoria para revender sem criar produto: entra no financeiro como mercadoria, sem custo de receita e fora da contagem. Mostra quanto se gastou, mas não controla estoque nem margem; para isso, use a escolha 2.</small>
+                <button className="ps-btn ghost sm block" disabled={busy === item.id} onClick={() => void saveWithoutProduct(item, 'revenda')}>Lançar como revenda sem cadastro</button>
               </div>
             </div>
 

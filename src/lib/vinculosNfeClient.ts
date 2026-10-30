@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { readNonCatalogKind } from '@/lib/nfeXml'
 import type { RecipeUsageIndex } from '@/lib/recipeUsage'
 import type { MemoryCorrectionAction } from '@/lib/vinculosNfe'
 import { parseItemCorrectionImpact, parseItemCorrectionResult, type ItemCorrectionImpact, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
@@ -213,28 +214,35 @@ function invoiceFromRow(row: InvoiceRow & { purchase: NonNullable<InvoiceRow['pu
   }
 }
 
-const INVOICE_COLUMNS = 'id,purchase_id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,usable_quantity,normalized_unit_cost,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))'
+const INVOICE_PURCHASE = 'purchase:payable_purchases!inner(purchase_date,status,nfe_number,nfe_series,nfe_issued_at,supplier_id,supplier:suppliers(name))'
+const INVOICE_COLUMNS = `id,purchase_id,item_name,unit,quantity,unit_price,source_product_code,source_ean,source_description,source_unit,source_quantity,conversion_basis,conversion_factor,usable_quantity,normalized_unit_cost,mapping_status,mapping_confirmed_at,mapping_confirmed_by,factor_confirmed_at,factor_confirmed_by,${INVOICE_PURCHASE}`
 
 export interface NonCatalogItem extends InvoiceLinkHistory {
   /** Valor do item na nota (com os impostos que entram no custo, quando há). */
   item_value: number
 }
 
-type NonCatalogRow = InvoiceRow & { line_total: number | null, acquisition_value: number | null }
+type NonCatalogRow = InvoiceRow & { line_total: number | null, acquisition_value: number | null, non_catalog_kind?: string | null }
 
 /**
  * Itens de NF-e da JC lançados como uso ou despesa, de contas não canceladas,
  * da nota mais nova para a mais antiga. Lê com a permissão de quem está na
  * tela (Contas a pagar da JC ou administrador).
+ *
+ * Revenda sem cadastro também fica fora do cadastro, mas não é uso ou despesa:
+ * a troca dela é da fase 3 da revenda sem cadastro, que leva o tipo à foto e
+ * ao desfazer. Todas as colunas, e não uma lista, porque o tipo só existe
+ * depois da migration e o site novo convive com o banco anterior; sem o tipo,
+ * o item é uso ou despesa.
  */
 export async function loadNonCatalogItems(): Promise<NonCatalogItem[]> {
   const rows = await loadAll<NonCatalogRow>((start, end) => supabase.from('payable_purchase_items')
-    .select(`${INVOICE_COLUMNS},line_total,acquisition_value`)
+    .select(`*,${INVOICE_PURCHASE}`)
     .eq('mapping_status', 'nao_aplicavel')
     .eq('purchase.origin', 'xml').eq('purchase.store', 'jc').neq('purchase.status', 'cancelada')
     .order('id').range(start, end))
   return rows.flatMap(row => {
-    if (!row.purchase) return []
+    if (!row.purchase || readNonCatalogKind(row.non_catalog_kind) !== 'uso_despesa') return []
     return [{
       ...invoiceFromRow({ ...row, purchase: row.purchase }),
       item_value: Number(row.acquisition_value ?? row.line_total ?? 0),

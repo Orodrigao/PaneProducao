@@ -14,6 +14,7 @@ import {
   suggestConversionFactor,
   type NfeConversionBasis,
   type NfeItemDraft,
+  type NfeNonCatalogKind,
 } from '@/lib/nfeXml'
 import type { PayableProduct } from '@/lib/payables'
 import { findCurrentRecipeUsage, type RecipeUsageIndex } from '@/lib/recipeUsage'
@@ -70,7 +71,8 @@ export function ProductSelector({
   products: PayableProduct[]
   onChange: (productId: string) => void
   onCreate: () => void
-  onWithoutProduct: () => void
+  /** Fora do cadastro: uso ou despesa (escolha 3) ou revenda sem cadastro (escolha 4). */
+  onWithoutProduct: (kind: NfeNonCatalogKind) => void
   recipeUsageIndex?: RecipeUsageIndex | null
   recipeUsageError?: boolean
   memoryConfirmed?: boolean
@@ -95,13 +97,17 @@ export function ProductSelector({
   const alternatives = suggested.filter(product => !matches.some(match => match.id === product.id)).slice(0, 4)
 
   if (item.mappingStatus === 'nao_aplicavel') {
+    const resale = item.nonCatalogKind === 'revenda'
     return (
       <div className="ps-fieldgroup">
         <div className="ps-fieldlabel">Classificação do item</div>
         <div className="ps-card" style={{ padding: 10, borderColor: 'var(--teal-border)', background: 'var(--teal-bg)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Check size={16} color="var(--teal)" aria-hidden />
           <div style={{ flex: 1 }}>
-            <b>Uso ou despesa — não entra em receita</b>
+            {resale
+              ? <b>Revenda sem cadastro: entra no financeiro como mercadoria</b>
+              : <b>Uso ou despesa — não entra em receita</b>}
+            {resale && <small style={{ display: 'block', marginTop: 3 }}>Sem produto no cadastro, sem custo de receita e fora da contagem semanal.</small>}
             <small style={{ display: 'block', marginTop: 3 }}>O nome, a marca, o fornecedor e o preço da NF-e continuam guardados. O sistema lembrará desta decisão na próxima nota.</small>
             {requiresReview && <small style={{ display: 'block' }}>{item.recognized ? 'Decisão lembrada deste fornecedor.' : 'Decisão salva em rascunho.'} Confira se também vale para esta NF-e.</small>}
           </div>
@@ -145,12 +151,13 @@ export function ProductSelector({
       >
         <b style={{ color: 'var(--red)' }}>Item ainda não classificado</b>
         <small style={{ display: 'block', marginTop: 3 }}>
-          Escolha um dos três caminhos abaixo: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria ou marcar o que é apenas uso ou despesa.
+          Escolha um dos quatro caminhos abaixo: vincular a um produto já cadastrado (insumo ou revenda), cadastrar um produto novo da padaria, marcar o que é apenas uso ou despesa ou lançar mercadoria de revenda sem cadastro.
         </small>
       </div>
       {/* Em 03/09/2026, duas cartelas de queijo para revenda foram marcadas
           como despesa porque o cadastro de item novo estava escondido depois
-          da busca. As três saídas precisam permanecer visíveis e equivalentes. */}
+          da busca. As saídas precisam permanecer visíveis e equivalentes; a
+          quarta (revenda sem cadastro) veio em 28/10/2026. */}
       <div className="ps-fieldgroup">
         <div className="ps-fieldlabel">1. Produto já cadastrado (insumo ou revenda)</div>
         <small className="ps-help">Procure e vincule ao item que a padaria já usa.</small>
@@ -203,7 +210,12 @@ export function ProductSelector({
         <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
           <div className="ps-fieldlabel">3. Uso ou despesa</div>
           <small className="ps-help">Para limpeza, manutenção, escritório ou material de uso. Esta decisão fica memorizada para este fornecedor.</small>
-          <button className="ps-btn ghost sm block" onClick={onWithoutProduct}>Marcar como uso ou despesa</button>
+          <button className="ps-btn ghost sm block" onClick={() => onWithoutProduct('uso_despesa')}>Marcar como uso ou despesa</button>
+        </div>
+        <div className="ps-fieldgroup" style={{ flexBasis: 220 }}>
+          <div className="ps-fieldlabel">4. Revenda sem cadastro</div>
+          <small className="ps-help">Mercadoria para revender sem criar produto: entra no financeiro como mercadoria, sem custo de receita e fora da contagem. Mostra quanto se gastou, mas não controla estoque nem margem; para isso, use a escolha 2. Fica memorizada para este fornecedor.</small>
+          <button className="ps-btn ghost sm block" onClick={() => onWithoutProduct('revenda')}>Lançar como revenda sem cadastro</button>
         </div>
       </div>
 
@@ -273,7 +285,11 @@ export function ConversionEditor({ item, acquisitionValue, onChange }: {
   const needsAttention = conversionNeedsAttention(item)
   const [open, setOpen] = useState(needsAttention)
 
-  if (item.mappingStatus === 'nao_aplicavel') return <small style={{ color: 'var(--teal)' }}>Resolvido sem item-base: esta compra não altera custo de receita.</small>
+  if (item.mappingStatus === 'nao_aplicavel') {
+    return item.nonCatalogKind === 'revenda'
+      ? <small style={{ color: 'var(--teal)' }}>Revenda sem cadastro: entra no financeiro como mercadoria, sem custo de receita nem contagem.</small>
+      : <small style={{ color: 'var(--teal)' }}>Resolvido sem item-base: esta compra não altera custo de receita.</small>
+  }
   if (!item.baseProductId) return <small style={{ color: 'var(--honey-deep)' }}>Classifique o item para liberar o custo normalizado.</small>
 
   const explanation = formatConversionExplanation(item, acquisitionValue)

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser, PAYABLES_ROUTE, type AppUser } from '@/lib/auth'
 import ConsumptionRevenuePanel from '@/components/ConsumptionRevenuePanel'
 import ConsumptionOutsideItems from '@/components/ConsumptionOutsideItems'
+import ConsumptionResaleItems from '@/components/ConsumptionResaleItems'
 import ConsumptionTrend from '@/components/ConsumptionTrend'
 import {
   CONSUMPTION_STORE,
@@ -18,12 +19,14 @@ import {
   formatMoney,
   formatPeriodDate,
   formatQuantity,
+  nonCatalogPurchases,
   sortConsumptionItems,
   summarizeConsumption,
   type ConsumptionStatusTone,
   type InventoryConsumptionItem,
   type InventoryConsumptionOutsideItem,
   type InventoryConsumptionPeriod,
+  type InventoryConsumptionResaleItem,
   type InventoryConsumptionRevenue,
 } from '@/lib/inventoryConsumption'
 
@@ -52,6 +55,8 @@ export default function ConsumoSemanalPage() {
   const itemsRequest = useRef(0)
   const [outsideItems, setOutsideItems] = useState<InventoryConsumptionOutsideItem[]>([])
   const [outsideError, setOutsideError] = useState<string | null>(null)
+  const [resaleItems, setResaleItems] = useState<InventoryConsumptionResaleItem[]>([])
+  const [resaleError, setResaleError] = useState<string | null>(null)
   const [revenues, setRevenues] = useState<InventoryConsumptionRevenue[]>([])
   const [revenueLoading, setRevenueLoading] = useState(false)
   const [revenueError, setRevenueError] = useState<string | null>(null)
@@ -68,13 +73,19 @@ export default function ConsumoSemanalPage() {
     setItems([])
     setOutsideItems([])
     setOutsideError(null)
+    setResaleItems([])
+    setResaleError(null)
     try {
-      const [itemsResult, outsideResult] = await Promise.all([
+      const [itemsResult, outsideResult, resaleResult] = await Promise.all([
         supabase.rpc('inventory_consumption_items', {
           p_store: CONSUMPTION_STORE,
           p_end_count_id: endCountId,
         }),
         supabase.rpc('inventory_consumption_outside_items', {
+          p_store: CONSUMPTION_STORE,
+          p_end_count_id: endCountId,
+        }),
+        supabase.rpc('inventory_consumption_resale_items', {
           p_store: CONSUMPTION_STORE,
           p_end_count_id: endCountId,
         }),
@@ -85,6 +96,10 @@ export default function ConsumoSemanalPage() {
       // A lista e complemento: falhar nela nao derruba o consumo.
       if (outsideResult.error) setOutsideError('Não foi possível listar os itens fora da contagem.')
       else setOutsideItems((outsideResult.data || []) as InventoryConsumptionOutsideItem[])
+      // Banco anterior a revenda sem cadastro (CI e janela do deploy) nao tem a
+      // funcao: sem revenda sem cadastro para listar, nao e erro.
+      if (resaleResult.error) setResaleError(resaleResult.error.code === 'PGRST202' ? null : 'Não foi possível listar a revenda sem cadastro.')
+      else setResaleItems((resaleResult.data || []) as InventoryConsumptionResaleItem[])
     } catch {
       if (requestId !== itemsRequest.current) return
       setItemsError('Não foi possível carregar o consumo desta semana.')
@@ -150,6 +165,7 @@ export default function ConsumoSemanalPage() {
     [period, items, itemsReady],
   )
   const sortedItems = useMemo(() => sortConsumptionItems(items), [items])
+  const nonCatalog = period ? nonCatalogPurchases(period) : null
   const revenue = period ? revenues.find(row => row.period_end_count_id === period.period_end_count_id) ?? null : null
   const cmv = period && summary && revenue ? cmvOverRevenue(period, summary, revenue) : null
   const trendRows = useMemo(
@@ -260,9 +276,11 @@ export default function ConsumoSemanalPage() {
                     <span style={{color:'var(--ink-soft)'}}>de insumos contados</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_counted)}</span>
                     <span style={{color:'var(--ink-soft)'}}>de itens fora da contagem</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_outside_count)}</span>
                     <span style={{color:'var(--ink-soft)'}}>sem insumo definido</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_unclassified)}</span>
-                    <span style={{color:'var(--ink-soft)'}}>que não é estoque (frete, serviço)</span><span style={{textAlign:'right'}}>{formatMoney(period.purchases_not_stock)}</span>
+                    <span style={{color:'var(--ink-soft)'}}>de uso ou despesa (frete, serviço, limpeza)</span><span style={{textAlign:'right'}}>{formatMoney(nonCatalog?.expense ?? period.purchases_not_stock)}</span>
+                    <span style={{color:'var(--ink-soft)'}}>de revenda sem cadastro (fora do consumo)</span><span style={{textAlign:'right'}}>{formatMoney(nonCatalog?.resale ?? 0)}</span>
                   </div>
                   <ConsumptionOutsideItems items={outsideItems} loading={itemsLoading} error={outsideError}/>
+                  <ConsumptionResaleItems items={resaleItems} loading={itemsLoading} error={resaleError}/>
 
                   <ConsumptionRevenuePanel
                     period={period}

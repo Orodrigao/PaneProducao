@@ -65,6 +65,11 @@ export default function ConsumptionRevenuePanel({
       <div style={{fontSize:11.5, color:'var(--ink-faint)', marginTop:6}}>
         O % conta só os insumos da contagem semanal. O que foi comprado fora dela não entra.
       </div>
+      {cmv.resaleExcluded > 0 && (
+        <div style={{fontSize:11.5, color:'var(--ink-soft)', marginTop:4}}>
+          Revenda sem cadastro desta semana ({formatMoney(cmv.resaleExcluded)}) também fica fora do %: sem contagem, não há como saber quanto foi vendido.
+        </div>
+      )}
 
       {consumptionPartial && cmv.percent !== null && (
         <div className="ps-warning" style={{marginTop:10}}>

@@ -161,6 +161,71 @@ describe('item entre uso ou despesa e insumo (fase 5)', () => {
     expect(describeMemories({ ...impact, action: 'desfazer', memories_off: [] }).at(-1)).toContain('Desfazer não religa memória')
   })
 
+  it('memória de revenda sem cadastro é dita como revenda, não como "sem sugestão" nem uso ou despesa', () => {
+    // O banco manda kind 'uso_despesa' para toda memória fora do cadastro (a
+    // correção desliga por ele) e o tipo em non_catalog_kind.
+    expect(parseItemCorrectionImpact({
+      ...impactJson,
+      items: [{ ...impactJson.items[0], memories_after: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm5' }] }],
+    }).items[0].memories_after[0]).toMatchObject({ kind: 'uso_despesa', non_catalog_kind: 'revenda' })
+    const base = impactJson.items[0]
+    const revendaLigada = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: [],
+      items: [{ ...base, memories_before: [], memories_after: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm5', product_name: null, conversion_factor: null }] }],
+    })
+    expect(describeMemories(revendaLigada)[0]).toContain('a próxima nota sugere revenda sem cadastro.')
+
+    const revendaDesligada = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: ['m6'],
+      items: [{ ...base, memories_before: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm6', product_name: null, conversion_factor: null }], memories_after: [] }],
+    })
+    expect(describeMemories(revendaDesligada)[0]).toContain('a memória de revenda sem cadastro deste item será desligada; ')
+  })
+
+  it('com mais de uma memória para o item, a prévia segue o desempate da importação: a mais recente', () => {
+    const base = impactJson.items[0]
+    const duas = (memories_after: unknown[]) => parseItemCorrectionImpact({
+      ...impactJson, memories_off: [], items: [{ ...base, memories_before: [], memories_after }],
+    })
+    // Código casa com uma memória e GTIN com outra: vale a gravada por último.
+    expect(describeMemories(duas([
+      { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm1', version: '2026-10-29T10:00:00' },
+      { kind: 'uso_despesa', non_catalog_kind: 'uso_despesa', mapping_id: 'm2', version: '2026-10-20T10:00:00' },
+    ]))[0]).toContain('a próxima nota sugere revenda sem cadastro.')
+    expect(describeMemories(duas([
+      { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm1', version: '2026-10-20T10:00:00' },
+      { kind: 'uso_despesa', non_catalog_kind: 'uso_despesa', mapping_id: 'm2', version: '2026-10-29T10:00:00' },
+    ]))[0]).toContain('a próxima nota sugere uso ou despesa.')
+    // Produto contra fora do cadastro: a mais recente vence; empate fica com a de fora.
+    expect(describeMemories(duas([
+      { kind: 'insumo', mapping_id: 'm3', product_name: 'Margarina', conversion_factor: 30, version: '2026-10-29T10:00:00' },
+      { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm4', version: '2026-10-20T10:00:00' },
+    ]))[0]).toContain('a próxima nota sugere Margarina com fator 30')
+    expect(describeMemories(duas([
+      { kind: 'insumo', mapping_id: 'm3', product_name: 'Margarina', conversion_factor: 30, version: '2026-10-20T10:00:00' },
+      { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm4', version: '2026-10-20T10:00:00' },
+    ]))[0]).toContain('a próxima nota sugere revenda sem cadastro.')
+  })
+
+  it('diz todos os tipos de memória que serão desligados', () => {
+    const base = impactJson.items[0]
+    const impact = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: ['m1', 'm2'],
+      items: [{
+        ...base,
+        memories_before: [
+          { kind: 'uso_despesa', non_catalog_kind: 'uso_despesa', mapping_id: 'm1' },
+          { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm2' },
+        ],
+        memories_after: [],
+      }],
+    })
+    expect(describeMemories(impact)[0]).toContain('as memórias de uso ou despesa e de revenda sem cadastro deste item serão desligadas; ')
+  })
+
   it('deixa marcar item de uso ou despesa e só pede a mesma unidade quando o destino é produto', () => {
     expect(itemBlockReason({ status: 'paga', mapping_status: 'nao_aplicavel' })).toBe('')
     const cx = { source_unit: 'CX', status: 'aberta', mapping_status: 'mapeado' }

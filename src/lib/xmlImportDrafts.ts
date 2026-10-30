@@ -1,12 +1,14 @@
 import { supabase } from '@/lib/supabase'
 import {
   calculateUsableQuantity,
+  readNonCatalogKind,
   type NfeConversionBasis,
   type NfeDraft,
   type NfeItemDraft,
   type NfeMappingStatus,
+  type NfeNonCatalogKind,
 } from '@/lib/nfeXml'
-import { legacyXmlPayablePayloadFor, xmlPayablePayload, type PayableProduct } from '@/lib/payables'
+import { ensureResaleWithoutCatalogSupported, legacyXmlPayablePayloadFor, xmlPayablePayload, type PayableProduct } from '@/lib/payables'
 
 /**
  * Importação pendente de conferência (fase 2 das compras por XML).
@@ -40,6 +42,8 @@ export interface XmlImportItemDecision {
   mapping_status: NfeMappingStatus
   factor_confirmed: boolean
   remember_conversion: boolean
+  /** Só fora do cadastro. Rascunho salvo antes da revenda sem cadastro não traz: é uso ou despesa. */
+  non_catalog_kind?: NfeNonCatalogKind | null
 }
 
 export interface XmlImportInstallmentDecision {
@@ -62,7 +66,7 @@ export function formatDraftSavedAt(value: string): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(date)
 }
 
-// --- Item do rascunho: vincular, marcar uso/despesa e limpar -----------------
+// --- Item do rascunho: vincular, deixar fora do cadastro e limpar -----------
 // Estas três funções são a única forma de mudar a classificação de um item na
 // importação; a tela e a retomada usam as mesmas, para que o item retomado seja
 // idêntico ao item classificado na hora.
@@ -89,13 +93,16 @@ export function withProduct(
     conversionFactor: factor,
     usableQuantity: calculateUsableQuantity(item.quantity, factor),
     mappingStatus: 'mapeado',
+    nonCatalogKind: null,
   }
 }
 
-export function withoutProduct(item: NfeItemDraft, recognized = false): NfeItemDraft {
+/** Fora do cadastro: uso ou despesa, ou revenda sem cadastro. */
+export function withoutProduct(item: NfeItemDraft, kind: NfeNonCatalogKind = 'uso_despesa', recognized = false): NfeItemDraft {
   return {
     ...clearProduct(item),
     mappingStatus: 'nao_aplicavel',
+    nonCatalogKind: kind,
     recognized,
   }
 }
@@ -110,6 +117,7 @@ export function clearProduct(item: NfeItemDraft): NfeItemDraft {
     conversionFactor: null,
     usableQuantity: null,
     mappingStatus: 'pendente',
+    nonCatalogKind: null,
     factorConfirmed: false,
     recognized: false,
   }
@@ -127,6 +135,7 @@ export function extractItemDecisions(draft: NfeDraft): XmlImportItemDecision[] {
     mapping_status: item.mappingStatus === 'mapeado' && !item.baseProductId ? 'pendente' : item.mappingStatus,
     factor_confirmed: item.mappingStatus === 'mapeado' && item.factorConfirmed,
     remember_conversion: item.rememberConversion,
+    non_catalog_kind: item.mappingStatus === 'nao_aplicavel' ? readNonCatalogKind(item.nonCatalogKind) : null,
   }))
 }
 
@@ -161,7 +170,7 @@ export function applyItemDecisions(
     const decision = byLine.get(item.lineNumber)
     if (!decision) return clearProduct(item)
     const base = { ...item, rememberConversion: Boolean(decision.remember_conversion) }
-    if (decision.mapping_status === 'nao_aplicavel') return withoutProduct(base)
+    if (decision.mapping_status === 'nao_aplicavel') return withoutProduct(base, readNonCatalogKind(decision.non_catalog_kind))
     if (decision.mapping_status !== 'mapeado' || !decision.product_id) return clearProduct(base)
     const product = catalog.find(candidate => candidate.id === decision.product_id)
     if (!product) {
@@ -260,6 +269,7 @@ export async function confirmXmlImportDraft(
   requestId: string,
   resumed: Pick<XmlImportDraftContent, 'id' | 'updated_at'>,
 ): Promise<string> {
+  await ensureResaleWithoutCatalogSupported(draft)
   const base = { p_draft_id: resumed.id, p_expected_updated_at: resumed.updated_at }
   const payload = xmlPayablePayload(draft, supplierId, requestId)
   let { data, error } = await supabase.rpc('confirm_xml_import_draft', { ...base, ...payload })

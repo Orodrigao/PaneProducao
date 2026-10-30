@@ -11,9 +11,11 @@ import {
   findLatestSupplierMapping,
   isClassificationComplete,
   declaresNoPayment,
+  nonCatalogKindLabel,
   normalizeGtin,
   paymentMethodFromCode,
   rankCatalogCandidates,
+  readNonCatalogKind,
   resolveInstallments,
   suggestConversionFactor,
   unitFamily,
@@ -75,6 +77,24 @@ function item(overrides: Partial<NfeItemDraft> = {}): NfeItemDraft {
     ...overrides,
   }
 }
+
+describe('tipo do item fora do cadastro (revenda sem cadastro)', () => {
+  it('só a revenda escolhida de propósito é revenda; ausente ou desconhecido é uso ou despesa', () => {
+    expect(readNonCatalogKind('revenda')).toBe('revenda')
+    expect(readNonCatalogKind('uso_despesa')).toBe('uso_despesa')
+    expect(readNonCatalogKind(undefined)).toBe('uso_despesa')
+    expect(readNonCatalogKind(null)).toBe('uso_despesa')
+    expect(readNonCatalogKind('REVENDA')).toBe('uso_despesa')
+  })
+
+  it('rótulo de cada tipo; sem tipo é uso ou despesa e valor novo aparece cru', () => {
+    expect(nonCatalogKindLabel('revenda')).toBe('revenda sem cadastro')
+    expect(nonCatalogKindLabel('uso_despesa')).toBe('uso ou despesa')
+    expect(nonCatalogKindLabel(null)).toBe('uso ou despesa')
+    expect(nonCatalogKindLabel(undefined)).toBe('uso ou despesa')
+    expect(nonCatalogKindLabel('brinde')).toBe('brinde')
+  })
+})
 
 describe('conferência de classificações da NF-e', () => {
   it('exige conferência da memória aplicada nesta nota', () => {

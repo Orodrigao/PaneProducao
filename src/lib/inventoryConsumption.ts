@@ -2,8 +2,8 @@ import { PAYABLES_PERMISSION, RECEIVABLES_PERMISSION, type AppUser } from '@/lib
 
 // Consumo semanal de insumos (fase 3A) e CMV sobre a venda (fase 3B): o
 // calculo vive no banco (inventory_consumption_periods / _items / _revenue /
-// _outside_items). Aqui ficam so a leitura dos resultados para a tela:
-// rotulos, resumo e quem pode ver.
+// _outside_items / _resale_items). Aqui ficam so a leitura dos resultados para
+// a tela: rotulos, resumo e quem pode ver.
 
 export const CONSUMPTION_STORE = 'jc'
 
@@ -18,7 +18,11 @@ export type InventoryConsumptionPeriod = {
   purchases_counted: number | string
   purchases_outside_count: number | string
   purchases_unclassified: number | string
+  // Tudo que esta fora do cadastro: uso ou despesa e revenda sem cadastro.
   purchases_not_stock: number | string
+  // Parte de revenda sem cadastro dentro de purchases_not_stock. Ausente no
+  // banco anterior a revenda sem cadastro (CI e janela do deploy).
+  purchases_resale_no_catalog?: number | string | null
   unclassified_lines: number
   late_lines: number
 }
@@ -66,6 +70,18 @@ export type InventoryConsumptionOutsideItem = {
   product_name: string
   product_category: string | null
   purchases_count: number
+  value_purchased: number | string
+}
+
+// Revenda sem cadastro comprada na semana, pela descricao da nota: nao tem
+// produto, contagem nem consumo, e fica fora do CMV %.
+export type InventoryConsumptionResaleItem = {
+  period_end_count_id: string
+  supplier_name: string
+  item_description: string
+  item_unit: string
+  purchases_count: number
+  quantity_purchased: number | string
   value_purchased: number | string
 }
 
@@ -181,6 +197,15 @@ export function summarizeConsumption(
   }
 }
 
+// O que ficou fora do cadastro na semana, separado em uso ou despesa e revenda
+// sem cadastro. Sem a coluna da revenda (banco anterior), tudo e uso ou
+// despesa, como era.
+export function nonCatalogPurchases(period: InventoryConsumptionPeriod): { expense: number; resale: number } {
+  const total = toNumber(period.purchases_not_stock) ?? 0
+  const resale = toNumber(period.purchases_resale_no_catalog) ?? 0
+  return { expense: Math.round((total - resale) * 100) / 100, resale }
+}
+
 const TONE_ORDER: Record<ConsumptionStatusTone, number> = { blocked: 0, warn: 1, ok: 2 }
 
 // Pendencias primeiro: o que impede o numero aparece no topo da lista.
@@ -223,6 +248,10 @@ export type CmvOverRevenue = {
   // para conferir (consumo negativo puxa o total para baixo): o % existe, mas
   // a tela avisa que ele nao fecha.
   isPartial: boolean
+  // Revenda sem cadastro comprada na semana. Fica fora do %: sem contagem,
+  // compra nao prova venda nem consumo. A tela diz o valor, para o % nao
+  // parecer completo quando pendentes viram revenda (parecer de 28/10/2026).
+  resaleExcluded: number
 }
 
 export function cmvOverRevenue(
@@ -244,6 +273,7 @@ export function cmvOverRevenue(
     percent,
     gaps,
     isPartial: summary.isPartial || summary.itemsToCheck > 0 || gaps.length > 0,
+    resaleExcluded: nonCatalogPurchases(period).resale,
   }
 }
 

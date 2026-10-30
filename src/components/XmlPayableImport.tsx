@@ -6,9 +6,11 @@ import {
   findLatestSupplierMapping,
   classificationNeedsReview,
   parseNfeXml,
+  readNonCatalogKind,
   type NfeConversionBasis,
   type NfeDraft,
   type NfeItemDraft,
+  type NfeNonCatalogKind,
 } from '@/lib/nfeXml'
 import {
   createPayableCatalogProduct,
@@ -61,7 +63,10 @@ interface NonCatalogMapping {
   supplier_description: string
   purchase_unit: string
   updated_at: string
+  non_catalog_kind: NfeNonCatalogKind
 }
+
+type NonCatalogMappingRow = Omit<NonCatalogMapping, 'non_catalog_kind'> & { non_catalog_kind?: unknown }
 
 async function fetchSupplierMappings(supplierId: string): Promise<{ products: ProductMapping[]; nonCatalog: NonCatalogMapping[]; fingerprint: string }> {
   const { supabase } = await import('@/lib/supabase')
@@ -69,13 +74,24 @@ async function fetchSupplierMappings(supplierId: string): Promise<{ products: Pr
     supabase.from('payable_product_mappings')
       .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,base_product_id,base_unit,conversion_basis,conversion_factor,factor_confirmed,updated_at')
       .eq('supplier_id', supplierId).eq('active', true),
+    // Todas as colunas, e não uma lista: o tipo (uso ou despesa, ou revenda)
+    // só existe depois da migration da revenda sem cadastro, e o site novo
+    // convive com o banco anterior (CI no banco que espelha a main e a janela
+    // do deploy). Sem o tipo, a memória é de uso ou despesa.
     supabase.from('payable_non_catalog_mappings')
-      .select('supplier_product_code,supplier_ean,supplier_description,purchase_unit,updated_at')
+      .select('*')
       .eq('supplier_id', supplierId).eq('active', true),
   ])
   if (productResult.error || nonCatalogResult.error) throw new Error('Não foi possível conferir a memória deste fornecedor.')
   const products = (productResult.data ?? []) as ProductMapping[]
-  const nonCatalog = (nonCatalogResult.data ?? []) as NonCatalogMapping[]
+  const nonCatalog = ((nonCatalogResult.data ?? []) as NonCatalogMappingRow[]).map((row): NonCatalogMapping => ({
+    supplier_product_code: row.supplier_product_code,
+    supplier_ean: row.supplier_ean,
+    supplier_description: row.supplier_description,
+    purchase_unit: row.purchase_unit,
+    updated_at: row.updated_at,
+    non_catalog_kind: readNonCatalogKind(row.non_catalog_kind),
+  }))
   const fingerprint = JSON.stringify([
     ...products.map(mapping => `p:${JSON.stringify(mapping)}`),
     ...nonCatalog.map(mapping => `n:${JSON.stringify(mapping)}`),
@@ -187,6 +203,7 @@ function CompositionCard({ composition }: { composition: NfeComposition }) {
 }
 
 function itemStatus(item: NfeItemDraft): { label: string; color: string } {
+  if (item.mappingStatus === 'nao_aplicavel' && item.nonCatalogKind === 'revenda') return { label: item.recognized ? 'revenda sem cadastro reconhecida' : 'revenda sem cadastro', color: 'var(--teal)' }
   if (item.mappingStatus === 'nao_aplicavel') return { label: item.recognized ? 'uso/despesa reconhecido' : 'uso/despesa', color: 'var(--teal)' }
   if (!item.baseProductId) return { label: 'item novo', color: 'var(--red)' }
   if (conversionNeedsAttention(item)) return { label: 'confira a embalagem', color: 'var(--red)' }
@@ -372,7 +389,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     const remembered = (item: NfeItemDraft): NfeItemDraft | null => {
       const mapping = findLatestSupplierMapping(item, nextMappings)
       const nonCatalog = findLatestSupplierMapping(item, nonCatalogMappings)
-      if (nonCatalog && (!mapping || nonCatalog.updated_at >= mapping.updated_at)) return withoutProduct(item, true)
+      if (nonCatalog && (!mapping || nonCatalog.updated_at >= mapping.updated_at)) return withoutProduct(item, nonCatalog.non_catalog_kind, true)
       const product = mapping ? catalog.find(candidate => candidate.id === mapping.base_product_id) : undefined
       if (!product) return null
       const factor = Number(mapping?.conversion_factor) || 1
@@ -441,10 +458,10 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     }
   }
 
-  function markWithoutProduct(index: number) {
+  function markWithoutProduct(index: number, kind: NfeNonCatalogKind) {
     if (draft) {
       clearDuplicateNotice(draft.items[index].lineNumber)
-      updateItem(index, withoutProduct(draft.items[index]))
+      updateItem(index, withoutProduct(draft.items[index], kind))
       setConfirmedMemoryLines(previous => new Set(previous).add(draft.items[index].lineNumber))
     }
   }
@@ -664,7 +681,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
           {autoMappedCount > 0 && (
             <div className="ps-banner" style={{ marginTop: 10 }}>
               <b>{autoMappedCount} {autoMappedCount === 1 ? 'classificação reaproveitada' : 'classificações reaproveitadas'} automaticamente</b>
-              <small style={{ display: 'block', marginTop: 3 }}>O ERP lembrou o item-base e o fator, ou que a compra é de uso/despesa. Confira abaixo e altere somente se necessário.</small>
+              <small style={{ display: 'block', marginTop: 3 }}>O ERP lembrou o item-base e o fator, ou que a compra é de uso/despesa ou revenda sem cadastro. Confira abaixo e altere somente se necessário.</small>
             </div>
           )}
           <div className="ps-fieldgroup" style={{ marginTop: 10 }}>
@@ -713,7 +730,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                   + impostos e despesas {formatBRL(itemCosts?.get(item.lineNumber)?.surchargeTotal ?? 0)} · pago {formatBRL(itemCosts?.get(item.lineNumber)?.acquisitionValue ?? 0)}
                 </small>
               )}
-              <ProductSelector key={duplicateNotices[item.lineNumber] ? `nome-repetido-${duplicateNotices[item.lineNumber].attempt}` : 'escolha'} duplicateName={duplicateNotices[item.lineNumber] ?? null} item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={() => markWithoutProduct(index)} recipeUsageIndex={recipeUsageIndex} recipeUsageError={recipeUsageError} requiresReview={item.recognized || Boolean(resumedDraft && item.mappingStatus !== 'pendente')} memoryConfirmed={confirmedMemoryLines.has(item.lineNumber)} onConfirmMemory={() => setConfirmedMemoryLines(previous => new Set(previous).add(item.lineNumber))} />
+              <ProductSelector key={duplicateNotices[item.lineNumber] ? `nome-repetido-${duplicateNotices[item.lineNumber].attempt}` : 'escolha'} duplicateName={duplicateNotices[item.lineNumber] ?? null} item={item} products={catalog} onChange={productId => selectProduct(index, productId)} onCreate={() => openProductForm(index)} onWithoutProduct={kind => markWithoutProduct(index, kind)} recipeUsageIndex={recipeUsageIndex} recipeUsageError={recipeUsageError} requiresReview={item.recognized || Boolean(resumedDraft && item.mappingStatus !== 'pendente')} memoryConfirmed={confirmedMemoryLines.has(item.lineNumber)} onConfirmMemory={() => setConfirmedMemoryLines(previous => new Set(previous).add(item.lineNumber))} />
               {creatingLine === index && (
                 <div className="ps-banner" style={{ marginTop: 8 }}>
                   <div className="ps-fieldgroup">

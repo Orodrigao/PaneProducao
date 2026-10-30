@@ -9,6 +9,7 @@ import {
   consumptionStatusInfo,
   formatPeriodDate,
   isTrendRowFlagged,
+  nonCatalogPurchases,
   sortConsumptionItems,
   summarizeConsumption,
   type InventoryConsumptionItem,
@@ -190,8 +191,36 @@ describe('canViewConsumptionRevenue', () => {
   })
 })
 
+describe('nonCatalogPurchases (revenda sem cadastro)', () => {
+  it('separa o que ficou fora do cadastro em uso ou despesa e revenda sem cadastro', () => {
+    expect(nonCatalogPurchases({ ...period, purchases_not_stock: '135.00', purchases_resale_no_catalog: '105.00' }))
+      .toEqual({ expense: 30, resale: 105 })
+  })
+
+  it('banco anterior à revenda sem cadastro, sem a coluna: tudo é uso ou despesa, como era', () => {
+    expect(nonCatalogPurchases(period)).toEqual({ expense: 15, resale: 0 })
+    expect(nonCatalogPurchases({ ...period, purchases_resale_no_catalog: null })).toEqual({ expense: 15, resale: 0 })
+  })
+
+  it('centavos não sobram na subtração', () => {
+    expect(nonCatalogPurchases({ ...period, purchases_not_stock: '0.30', purchases_resale_no_catalog: '0.10' }).expense).toBe(0.2)
+  })
+})
+
 describe('cmvOverRevenue', () => {
   const completo = summarizeConsumption(period, [item({ value_consumed: '900.00' })])
+
+  it('revenda sem cadastro fica fora do % e o valor vai junto para a tela dizer', () => {
+    const comRevenda = { ...period, purchases_not_stock: '120.00', purchases_resale_no_catalog: '105.00' }
+    const cmv = cmvOverRevenue(comRevenda, summarizeConsumption(comRevenda, [item({ value_consumed: '900.00' })]), revenue({}))
+    // O % é o mesmo de antes: a revenda não entra no consumo contado.
+    expect(cmv.percent).toBe(20)
+    expect(cmv.resaleExcluded).toBe(105)
+  })
+
+  it('sem revenda sem cadastro, nada a avisar', () => {
+    expect(cmvOverRevenue(period, completo, revenue({})).resaleExcluded).toBe(0)
+  })
 
   it('divide o consumo pela venda total da semana', () => {
     const cmv = cmvOverRevenue(period, completo, revenue({}))

@@ -1,5 +1,12 @@
 export type NfePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
 export type NfeMappingStatus = 'pendente' | 'mapeado' | 'nao_aplicavel'
+/**
+ * Tipo do item fora do cadastro (`nao_aplicavel`): uso ou despesa, ou revenda
+ * sem cadastro (mercadoria que entra no financeiro sem virar produto). Desde a
+ * fase 2 da revenda sem cadastro (28/10/2026); antes, fora do cadastro era
+ * sempre uso ou despesa.
+ */
+export type NfeNonCatalogKind = 'uso_despesa' | 'revenda'
 export type NfeConversionBasis = 'simple' | 'package' | 'usable'
 
 /**
@@ -95,6 +102,8 @@ export interface NfeItemDraft {
   conversionFactor: number | null
   usableQuantity: number | null
   mappingStatus: NfeMappingStatus
+  /** Só no item fora do cadastro; ausente é uso ou despesa, como era antes da revenda sem cadastro. */
+  nonCatalogKind?: NfeNonCatalogKind | null
   rememberConversion: boolean
   /** Alguém já olhou o fator deste item nesta importação. */
   factorConfirmed: boolean
@@ -206,6 +215,26 @@ export function rankCatalogCandidates<T extends { name: string }>(description: s
 }
 
 /** Rascunho salvo não prova que a pessoa conferiu a decisão da nota. */
+/**
+ * Tipo vindo do banco, do rascunho ou da memória do fornecedor. Ausente (banco
+ * ou site anteriores à revenda sem cadastro) é uso ou despesa: só a revenda
+ * precisa ter sido escolhida de propósito.
+ */
+export function readNonCatalogKind(value: unknown): NfeNonCatalogKind {
+  return value === 'revenda' ? 'revenda' : 'uso_despesa'
+}
+
+const NON_CATALOG_KIND_LABEL: Record<NfeNonCatalogKind, string> = {
+  uso_despesa: 'uso ou despesa',
+  revenda: 'revenda sem cadastro',
+}
+
+/** Rótulo do tipo; valor que esta tela não conhece aparece cru, nunca como outro tipo. */
+export function nonCatalogKindLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined) return NON_CATALOG_KIND_LABEL.uso_despesa
+  return value in NON_CATALOG_KIND_LABEL ? NON_CATALOG_KIND_LABEL[value as NfeNonCatalogKind] : value
+}
+
 export function classificationNeedsReview(item: NfeItemDraft, resumedDraft: boolean, confirmedLines: ReadonlySet<number>): boolean {
   const classifiedFromDraft = resumedDraft && item.mappingStatus !== 'pendente'
   return (item.recognized || classifiedFromDraft) && !confirmedLines.has(item.lineNumber)
@@ -596,6 +625,7 @@ export function parseNfeXml(xmlText: string): NfeDraft {
       conversionFactor: null,
       usableQuantity: null,
       mappingStatus: 'pendente' as const,
+      nonCatalogKind: null,
       rememberConversion: true,
       factorConfirmed: false,
       recognized: false,

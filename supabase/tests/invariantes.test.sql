@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(140);
+select plan(142);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 55,
@@ -644,5 +644,13 @@ select ok(not exists(
       or r.store is distinct from f.store or r.source_detail is distinct from f.source_detail
       or c.key is distinct from 'taxas_cartao_apps')
 ), 'taxa ativa aponta receita ativa do mesmo fechamento loja e meio na categoria correta');
+-- Revenda sem cadastro, fase 2 (28/10/2026): item fora do cadastro sempre tem
+-- tipo, e só ele tem. Os itens que já existiam viraram uso ou despesa.
+select is((select count(*)::int from public.payable_purchase_items
+  where mapping_status = 'nao_aplicavel' and non_catalog_kind is null), 0,
+  'todo item de NF-e fora do cadastro tem tipo (uso ou despesa, ou revenda)');
+select is((select count(*)::int from public.payable_purchase_items
+  where mapping_status <> 'nao_aplicavel' and non_catalog_kind is not null), 0,
+  'item ligado a produto ou pendente não tem tipo de fora do cadastro');
 select * from finish();
 rollback;

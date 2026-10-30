@@ -29,6 +29,7 @@ import {
   overdueDays,
   payableDetailUrl,
   prioritizeOverduePayablePurchases,
+  purchaseItemDestination,
   summarizeSupplierPurchaseStatus,
   totalInstallments,
   totalItems,
@@ -109,10 +110,68 @@ describe('contas a pagar manual', () => {
 
     await classifyPayableItemWithoutProduct('item-1', true)
 
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
     expect(supabaseMocks.rpc).toHaveBeenCalledWith('classify_payable_item_without_product', {
       p_item_id: 'item-1',
       p_remember_decision: true,
+      p_non_catalog_kind: 'uso_despesa',
     })
+  })
+
+  it('lança revenda sem cadastro com o tipo explícito', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: null })
+
+    await classifyPayableItemWithoutProduct('item-1', false, 'revenda')
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('classify_payable_item_without_product', {
+      p_item_id: 'item-1',
+      p_remember_decision: false,
+      p_non_catalog_kind: 'revenda',
+    })
+  })
+
+  it('banco anterior à revenda sem cadastro: uso ou despesa repete o pedido sem o tipo', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ error: { code: 'PGRST202', message: 'Could not find the function' } })
+      .mockResolvedValueOnce({ error: null })
+
+    await classifyPayableItemWithoutProduct('item-1', true, 'uso_despesa')
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(2)
+    expect(supabaseMocks.rpc.mock.calls[1][1]).toEqual({ p_item_id: 'item-1', p_remember_decision: true })
+  })
+
+  it('banco anterior à revenda sem cadastro: revenda falha e nunca vira uso ou despesa calada', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: { code: 'PGRST202', message: 'Could not find the function' } })
+
+    await expect(classifyPayableItemWithoutProduct('item-1', true, 'revenda')).rejects.toMatchObject({ code: 'PGRST202' })
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('outra recusa do banco na classificação não repete o pedido', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ error: { code: '22023', message: 'Este item já foi classificado como revenda sem cadastro. Recarregue os itens pendentes.' } })
+
+    await expect(classifyPayableItemWithoutProduct('item-1', true)).rejects.toMatchObject({ code: '22023' })
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('Ver itens da NF-e diz o destino de cada item', () => {
+    const item = { item_name: 'WHEY 900G', product_id: null }
+    expect(purchaseItemDestination({ ...item, mapping_status: 'nao_aplicavel', non_catalog_kind: 'revenda' }))
+      .toBe('Destino: revenda sem cadastro (sem produto, fora do custo e da contagem)')
+    expect(purchaseItemDestination({ ...item, mapping_status: 'nao_aplicavel', non_catalog_kind: 'uso_despesa' }))
+      .toBe('Destino: uso ou despesa (sem produto, fora do custo e da contagem)')
+    // Banco anterior à revenda sem cadastro: fora do cadastro era sempre uso ou despesa.
+    expect(purchaseItemDestination({ ...item, mapping_status: 'nao_aplicavel' }))
+      .toBe('Destino: uso ou despesa (sem produto, fora do custo e da contagem)')
+    expect(purchaseItemDestination({ ...item, mapping_status: 'pendente' })).toBe('Destino: aguardando classificação')
+    expect(purchaseItemDestination({ item_name: 'Farinha', product_id: 'p-1', mapping_status: 'mapeado' }))
+      .toBe('Destino: Farinha (produto do cadastro)')
+    // Situação nova vinda do banco aparece crua, nunca como outra.
+    expect(purchaseItemDestination({ ...item, mapping_status: 'outra' })).toBe('Destino: outra')
+    expect(purchaseItemDestination({ ...item, mapping_status: 'nao_aplicavel', non_catalog_kind: 'brinde' }))
+      .toBe('Destino: brinde (sem produto, fora do custo e da contagem)')
   })
 
   it('carrega todos os itens de uma NF-e pela compra, inclusive os já classificados', async () => {
@@ -135,12 +194,50 @@ describe('contas a pagar manual', () => {
       icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0, insurance: 0,
       other_expenses: 0, import_tax: 0, icms_exempt: 0, deducts_exemption: null, composes_total: '1',
     })
+    // Só item fora do cadastro leva tipo.
+    expect(payload.p_items[0].non_catalog_kind).toBeNull()
     // A hora de emissão decide qual nota do mesmo dia é a mais recente para o custo.
     expect(payload.p_issued_at).toBe('2026-09-10T16:00:00-03:00')
     expect(payload.p_nfe_totals).toEqual({
       products: 30, discounts: 0, icms_st: 1.5, fcp_st: 0, ipi: 1, ipi_returned: 0, freight: 0,
       insurance: 0, other_expenses: 0, import_tax: 0, icms_exempt: 0, services: 0, total: 32.5,
     })
+  })
+
+  it('a confirmação leva o tipo do item fora do cadastro; sem tipo, fora do cadastro é uso ou despesa', () => {
+    const draft = nfeDraft()
+    const base = draft.items[0]
+    const outside = { ...base, baseProductId: null, baseProductName: null, baseUnit: null, category: null, conversionFactor: null, usableQuantity: null, mappingStatus: 'nao_aplicavel' as const }
+    draft.items = [
+      { ...outside, lineNumber: 1, nonCatalogKind: 'revenda' },
+      { ...outside, lineNumber: 2, nonCatalogKind: 'uso_despesa' },
+      { ...outside, lineNumber: 3 },
+      { ...base, lineNumber: 4, nonCatalogKind: 'revenda' },
+    ]
+    const payload = xmlPayablePayload(draft, 'supplier-1', 'request-1')
+    expect(payload.p_items.map(item => item.non_catalog_kind)).toEqual(['revenda', 'uso_despesa', 'uso_despesa', null])
+  })
+
+  it('nota com revenda sem cadastro só é gravada quando o banco já guarda o tipo', async () => {
+    const draft = nfeDraft()
+    draft.items = [{ ...draft.items[0], baseProductId: null, baseProductName: null, baseUnit: null, category: null, conversionFactor: null, usableQuantity: null, mappingStatus: 'nao_aplicavel', nonCatalogKind: 'revenda' }]
+    const limit = vi.fn().mockResolvedValue({ data: null, error: { code: '42703', message: 'column non_catalog_kind does not exist' } })
+    supabaseMocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ limit }) })
+
+    await expect(createXmlPayable(draft, 'supplier-1', 'request-1')).rejects.toThrow('ainda está terminando a atualização da revenda sem cadastro. Nada foi gravado')
+    expect(supabaseMocks.from).toHaveBeenCalledWith('payable_non_catalog_mappings')
+    expect(supabaseMocks.rpc).not.toHaveBeenCalled()
+
+    limit.mockResolvedValue({ data: [], error: null })
+    supabaseMocks.rpc.mockResolvedValue({ data: 'purchase-1', error: null })
+    await expect(createXmlPayable(draft, 'supplier-1', 'request-1')).resolves.toBe('purchase-1')
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('nota sem revenda sem cadastro não consulta o banco antes de gravar', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: 'purchase-1', error: null })
+    await expect(createXmlPayable(nfeDraft(), 'supplier-1', 'request-1')).resolves.toBe('purchase-1')
+    expect(supabaseMocks.from).not.toHaveBeenCalled()
   })
 
   it('banco anterior à fase 3A: nota sem acréscimo repete o envio sem o bloco fiscal', async () => {
