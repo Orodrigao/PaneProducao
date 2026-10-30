@@ -6,7 +6,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(68);
+select plan(80);
 
 -- Estrutura e grants ---------------------------------------------------------
 
@@ -58,11 +58,13 @@ insert into auth.users(id, instance_id, aud, role, email, encrypted_password,
 values
   ('97800000-0000-4000-8000-00000000000a','00000000-0000-0000-0000-000000000000','authenticated','authenticated','financeiro-revenda-test@example.com','x',now(),now(),now(),'{}','{}',false),
   ('97800000-0000-4000-8000-00000000000b','00000000-0000-0000-0000-000000000000','authenticated','authenticated','vendas-revenda-test@example.com','x',now(),now(),now(),'{}','{}',false),
-  ('97800000-0000-4000-8000-00000000000c','00000000-0000-0000-0000-000000000000','authenticated','authenticated','expedicao-revenda-test@example.com','x',now(),now(),now(),'{}','{}',false);
+  ('97800000-0000-4000-8000-00000000000c','00000000-0000-0000-0000-000000000000','authenticated','authenticated','expedicao-revenda-test@example.com','x',now(),now(),now(),'{}','{}',false),
+  ('97800000-0000-4000-8000-00000000000d','00000000-0000-0000-0000-000000000000','authenticated','authenticated','admin-revenda-test@example.com','x',now(),now(),now(),'{}','{}',false);
 insert into public.app_profiles(user_id, display_name, role, store, active, allowed_routes) values
   ('97800000-0000-4000-8000-00000000000a', 'Financeiro Revenda', 'financeiro', 'jc', true, '["/contas-pagar","/estoque"]'),
   ('97800000-0000-4000-8000-00000000000b', 'Vendas Revenda', 'vendas', 'ja', true, '["/contas-pagar"]'),
-  ('97800000-0000-4000-8000-00000000000c', 'Expedicao Revenda', 'expedicao', 'jc', true, '["/estoque"]');
+  ('97800000-0000-4000-8000-00000000000c', 'Expedicao Revenda', 'expedicao', 'jc', true, '["/estoque"]'),
+  ('97800000-0000-4000-8000-00000000000d', 'Admin Revenda', 'admin', null, true, '["/produtos"]');
 insert into public.app_user_permissions(user_id, permission_key, scope) values
   ('97800000-0000-4000-8000-00000000000a', 'contas_pagar.importar_xml', '*'),
   ('97800000-0000-4000-8000-00000000000a', 'contas_pagar.lancar', '*'),
@@ -231,6 +233,61 @@ select is((select non_catalog_kind from public.payable_purchase_items where sour
 select is((select status from public.payable_import_drafts where nfe_key = '35261097800000000000550010000000031000000031'),
   'confirmada', 'o rascunho fecha na confirmação');
 
+-- Aba aberta antes do deploy (site anterior, sem o tipo) -------------------------
+-- Ela lê a revenda lembrada ou salva como uso ou despesa. Gravar assim apagaria
+-- a decisão: o banco recusa e pede para recarregar.
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97800000-0000-4000-8000-00000000000a', true);
+
+select throws_ok(
+  $$select public.create_xml_payable(
+      '97800000-0000-4000-8000-000000000005'::uuid, '35261097800000000000550010000000051000000051',
+      '97800000-0000-4000-8000-0000000000f1'::uuid, '5', '1', '2026-10-10', 'boleto', 45, '',
+      '[{"line_number":1,"supplier_product_code":"REV-WHEY","source_description":"[TESTE] WHEY PROTEIN 900G","source_unit":"UN",
+         "source_quantity":1,"product_id":null,"conversion_basis":"simple","conversion_factor":null,"usable_quantity":null,
+         "line_total":45,"unit_price":45,"discount_value":0,"factor_confirmed":false,"remember_conversion":true,
+         "mapping_status":"nao_aplicavel"}]'::jsonb,
+      '[{"installment_number":1,"due_date":"2026-11-10","amount":45}]'::jsonb)$$,
+  '22023', 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.',
+  'site anterior não grava como uso ou despesa o item que o fornecedor tem lembrado como revenda');
+
+select lives_ok(
+  $$select public.save_xml_import_draft('35261097800000000000550010000000061000000061',
+      '97800000-0000-4000-8000-0000000000f1'::uuid, '[TESTE] Fornecedor revenda', '6', '1', '2026-10-10', 25, '<nfe/>',
+      '[{"line_number":1,"product_id":null,"conversion_basis":null,"conversion_factor":null,
+         "mapping_status":"nao_aplicavel","factor_confirmed":false,"remember_conversion":false,"non_catalog_kind":"revenda"}]'::jsonb,
+      '[]'::jsonb)$$,
+  'a tela nova salva o rascunho com a revenda');
+select throws_ok(
+  $$select public.save_xml_import_draft('35261097800000000000550010000000061000000061',
+      '97800000-0000-4000-8000-0000000000f1'::uuid, '[TESTE] Fornecedor revenda', '6', '1', '2026-10-10', 25, '<nfe/>',
+      '[{"line_number":1,"product_id":null,"conversion_basis":null,"conversion_factor":null,
+         "mapping_status":"nao_aplicavel","factor_confirmed":false,"remember_conversion":false}]'::jsonb,
+      '[]'::jsonb)$$,
+  '22023', 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.',
+  'site anterior não sobrescreve a revenda salva no rascunho');
+select throws_ok(
+  $$select public.create_xml_payable(
+      '97800000-0000-4000-8000-000000000006'::uuid, '35261097800000000000550010000000061000000061',
+      '97800000-0000-4000-8000-0000000000f1'::uuid, '6', '1', '2026-10-10', 'boleto', 25, '',
+      '[{"line_number":1,"supplier_product_code":"SEM-MEMORIA","source_description":"[TESTE] Item do rascunho","source_unit":"UN",
+         "source_quantity":1,"product_id":null,"conversion_basis":"simple","conversion_factor":null,"usable_quantity":null,
+         "line_total":25,"unit_price":25,"discount_value":0,"factor_confirmed":false,"remember_conversion":false,
+         "mapping_status":"nao_aplicavel"}]'::jsonb,
+      '[{"installment_number":1,"due_date":"2026-11-10","amount":25}]'::jsonb)$$,
+  '22023', 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.',
+  'site anterior não confirma como uso ou despesa a revenda salva no rascunho');
+
+reset role;
+
+select is((select item_decisions -> 0 ->> 'non_catalog_kind' from public.payable_import_drafts
+  where nfe_key = '35261097800000000000550010000000061000000061' and status = 'pendente'),
+  'revenda', 'o rascunho continua com a revenda depois das recusas');
+select is((select count(*)::int from public.payable_purchases where nfe_key in (
+  '35261097800000000000550010000000051000000051', '35261097800000000000550010000000061000000061')),
+  0, 'nada virou conta nas recusas');
+
 -- Classificação depois da importação --------------------------------------------
 -- NF D, fora do período: três itens pendentes.
 
@@ -240,7 +297,7 @@ select set_config('request.jwt.claim.sub', '97800000-0000-4000-8000-00000000000a
 select lives_ok(
   $$select public.create_xml_payable(
       '97800000-0000-4000-8000-000000000004'::uuid, '35261097800000000000550010000000041000000041',
-      '97800000-0000-4000-8000-0000000000f1'::uuid, '4', '1', '2026-10-10', 'boleto', 60, '',
+      '97800000-0000-4000-8000-0000000000f1'::uuid, '4', '1', '2026-10-10', 'boleto', 100, '',
       '[{"line_number":1,"supplier_product_code":"REV-CREA","source_description":"[TESTE] CREATINA 300G","source_unit":"UN",
          "source_quantity":1,"product_id":null,"conversion_basis":"simple","conversion_factor":null,"usable_quantity":null,
          "line_total":30,"unit_price":30,"discount_value":0,"factor_confirmed":false,"remember_conversion":true,
@@ -252,8 +309,12 @@ select lives_ok(
         {"line_number":3,"supplier_product_code":"PAPEL-2","source_description":"[TESTE] Papel toalha","source_unit":"FD",
          "source_quantity":1,"product_id":null,"conversion_basis":"simple","conversion_factor":null,"usable_quantity":null,
          "line_total":10,"unit_price":10,"discount_value":0,"factor_confirmed":false,"remember_conversion":true,
+         "mapping_status":"pendente"},
+        {"line_number":4,"supplier_product_code":"REV-WHEY","source_description":"[TESTE] WHEY PROTEIN 900G","source_unit":"UN",
+         "source_quantity":1,"product_id":null,"conversion_basis":"simple","conversion_factor":null,"usable_quantity":null,
+         "line_total":40,"unit_price":40,"discount_value":0,"factor_confirmed":false,"remember_conversion":true,
          "mapping_status":"pendente"}]'::jsonb,
-      '[{"installment_number":1,"due_date":"2026-11-10","amount":60}]'::jsonb)$$,
+      '[{"installment_number":1,"due_date":"2026-11-10","amount":100}]'::jsonb)$$,
   'nota com itens pendentes para classificar depois');
 
 select throws_ok(
@@ -283,6 +344,16 @@ select lives_ok(
       p_item_id := (select id from public.payable_purchase_items where source_product_code = 'PAPEL-2'),
       p_remember_decision := true)$$,
   'o site anterior continua classificando como uso ou despesa');
+select throws_ok(
+  $$select public.classify_payable_item_without_product(
+      p_item_id := (select id from public.payable_purchase_items where source_product_code = 'REV-WHEY' and mapping_status = 'pendente'),
+      p_remember_decision := true)$$,
+  '22023', 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.',
+  'site anterior não troca por uso ou despesa a revenda lembrada do fornecedor');
+select lives_ok(
+  $$select public.classify_payable_item_without_product(
+      (select id from public.payable_purchase_items where source_product_code = 'REV-WHEY' and mapping_status = 'pendente'), true, 'revenda')$$,
+  'a tela nova classifica o mesmo item como revenda');
 
 reset role;
 
@@ -308,25 +379,47 @@ select is((select non_catalog_kind from public.payable_non_catalog_mappings
   'uso_despesa', 'a memória gravada pelo site anterior é uso ou despesa');
 
 -- Foto das memórias da correção de notas ---------------------------------------
-select is((select private.memorias_do_item_nfe(id) -> 0 ->> 'kind' from public.payable_purchase_items
+select is((select private.memorias_do_item_nfe(id) -> 0 ->> 'non_catalog_kind' from public.payable_purchase_items
   where source_product_code = 'REV-CREA'),
   'revenda', 'a foto da memória diz que a próxima nota sugere revenda');
 select is((select private.memorias_do_item_nfe(id) -> 0 ->> 'kind' from public.payable_purchase_items
+  where source_product_code = 'REV-CREA'),
+  'uso_despesa', 'kind segue uso_despesa: a correção de notas vigente desliga essa memória como antes');
+select is((select private.memorias_do_item_nfe(id) -> 0 ->> 'non_catalog_kind' from public.payable_purchase_items
   where source_product_code = 'PAPEL-2'),
-  'uso_despesa', 'a foto da memória de uso ou despesa não muda');
+  'uso_despesa', 'a foto da memória de uso ou despesa diz uso ou despesa');
 
 -- Gatilho: gravadores que não conhecem o tipo -----------------------------------
--- Como a correção de notas (fase 3) e os gravadores antigos: só a situação.
+-- Como a correção de notas vigente e os gravadores antigos: só a situação.
 update public.payable_purchase_items
 set mapping_status = 'mapeado', product_id = '97800000-0000-4000-8000-0000000000d2'
-where source_product_code = 'REV-CREA';
-select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'REV-CREA'),
-  null, 'item que sai de fora do cadastro perde o tipo');
+where source_product_code = 'PAPEL-2';
+select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'PAPEL-2'),
+  null, 'item de uso ou despesa que sai de fora do cadastro perde o tipo');
 update public.payable_purchase_items
 set mapping_status = 'nao_aplicavel', product_id = null
-where source_product_code = 'REV-CREA';
-select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'REV-CREA'),
+where source_product_code = 'PAPEL-2';
+select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'PAPEL-2'),
   'uso_despesa', 'item que volta para fora do cadastro sem tipo é uso ou despesa, como sempre foi');
+select throws_ok(
+  $$update public.payable_purchase_items set mapping_status = 'mapeado', product_id = '97800000-0000-4000-8000-0000000000d2'
+    where source_product_code = 'REV-CREA'$$,
+  '22023', 'Revenda sem cadastro ainda não pode ser trocada por produto: essa correção chega na próxima fase de Vínculos NF-e.',
+  'revenda sem cadastro não sai de fora do cadastro até a correção da fase 3');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97800000-0000-4000-8000-00000000000d', true);
+select throws_ok(
+  $$select public.correct_payable_purchase_items(null, 'previa',
+      jsonb_build_array(jsonb_build_object(
+        'item_id', (select id from public.payable_purchase_items where source_product_code = 'REV-CREA'),
+        'product_id', '97800000-0000-4000-8000-0000000000d2',
+        'conversion_factor', 1)))$$,
+  '22023', 'Revenda sem cadastro ainda não pode ser trocada por produto: essa correção chega na próxima fase de Vínculos NF-e.',
+  'a correção de notas vigente não tira revenda de fora do cadastro: o desfazer dela a devolveria como uso ou despesa');
+reset role;
+select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'REV-CREA'),
+  'revenda', 'a revenda continua revenda depois da recusa');
 select throws_ok(
   $$update public.payable_purchase_items set non_catalog_kind = 'revenda' where source_product_code = 'FAR-1'$$,
   '23514', null, 'tipo escrito de propósito em item ligado a produto é recusado, não apagado');

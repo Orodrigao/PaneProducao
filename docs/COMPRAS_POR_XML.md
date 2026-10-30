@@ -1055,8 +1055,12 @@ O item fora do cadastro (`mapping_status = 'nao_aplicavel'`) ganhou o tipo
   de itens, com a mesma assinatura; `classify_payable_item_without_product`
   ganhou o terceiro parâmetro `p_non_catalog_kind` com padrão, e a versão de dois
   parâmetros saiu na mesma transação. O site anterior, que chama com dois,
-  continua gravando uso ou despesa; o site novo, contra o banco anterior, repete
-  o pedido sem o tipo só quando é uso ou despesa;
+  continua gravando uso ou despesa, menos quando isso apagaria uma revenda já
+  decidida (memória do fornecedor ou rascunho da nota): aí o banco recusa e pede
+  para recarregar a página, porque uma aba aberta antes do deploy leria a
+  revenda como uso ou despesa. O site novo, contra o banco anterior, repete a
+  classificação sem o tipo só quando é uso ou despesa e não confirma nota com
+  revenda até o banco mostrar a coluna do tipo;
 - revenda sem cadastro não tem produto: não muda custo, não entra em contagem e
   guarda o valor de aquisição inteiro, com impostos e despesas da nota;
 - a importação, os pendentes e o rascunho têm a quarta escolha "Revenda sem
@@ -1068,8 +1072,11 @@ O item fora do cadastro (`mapping_status = 'nao_aplicavel'`) ganhou o tipo
   (`inventory_consumption_resale_items`). O CMV % continua só com o que foi
   contado, e o painel diz o valor da revenda que ficou fora;
 - em Vínculos NF-e, a lista "Itens lançados como uso ou despesa" mostra só uso ou
-  despesa, e a prévia diz quando a memória é de revenda. Trocar revenda por
-  produto, com o tipo na foto e no desfazer, é a fase 3.
+  despesa, e a prévia diz quando a memória é de revenda (a foto das memórias
+  ganhou `non_catalog_kind`; `kind` segue `uso_despesa` para toda memória fora
+  do cadastro, porque a correção desliga por ele). O banco recusa tirar revenda
+  sem cadastro de fora do cadastro, por qualquer caminho, até a fase 3 levar o
+  tipo à foto e ao desfazer da correção.
 
 Provas: pgTAP `supabase/tests/revenda_sem_cadastro_tipo.test.sql`, dois
 invariantes em `supabase/tests/invariantes.test.sql`, testes de tela e do

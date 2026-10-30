@@ -218,6 +218,28 @@ describe('contas a pagar manual', () => {
     expect(payload.p_items.map(item => item.non_catalog_kind)).toEqual(['revenda', 'uso_despesa', 'uso_despesa', null])
   })
 
+  it('nota com revenda sem cadastro só é gravada quando o banco já guarda o tipo', async () => {
+    const draft = nfeDraft()
+    draft.items = [{ ...draft.items[0], baseProductId: null, baseProductName: null, baseUnit: null, category: null, conversionFactor: null, usableQuantity: null, mappingStatus: 'nao_aplicavel', nonCatalogKind: 'revenda' }]
+    const limit = vi.fn().mockResolvedValue({ data: null, error: { code: '42703', message: 'column non_catalog_kind does not exist' } })
+    supabaseMocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ limit }) })
+
+    await expect(createXmlPayable(draft, 'supplier-1', 'request-1')).rejects.toThrow('ainda está terminando a atualização da revenda sem cadastro. Nada foi gravado')
+    expect(supabaseMocks.from).toHaveBeenCalledWith('payable_non_catalog_mappings')
+    expect(supabaseMocks.rpc).not.toHaveBeenCalled()
+
+    limit.mockResolvedValue({ data: [], error: null })
+    supabaseMocks.rpc.mockResolvedValue({ data: 'purchase-1', error: null })
+    await expect(createXmlPayable(draft, 'supplier-1', 'request-1')).resolves.toBe('purchase-1')
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('nota sem revenda sem cadastro não consulta o banco antes de gravar', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: 'purchase-1', error: null })
+    await expect(createXmlPayable(nfeDraft(), 'supplier-1', 'request-1')).resolves.toBe('purchase-1')
+    expect(supabaseMocks.from).not.toHaveBeenCalled()
+  })
+
   it('banco anterior à fase 3A: nota sem acréscimo repete o envio sem o bloco fiscal', async () => {
     supabaseMocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })

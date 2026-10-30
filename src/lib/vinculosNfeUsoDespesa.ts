@@ -1,3 +1,4 @@
+import { nonCatalogKindLabel } from '@/lib/nfeXml'
 import { currencyLabel, dateLabel, factorLabel } from '@/lib/vinculosNfe'
 import type { InvoiceLinkHistory } from '@/lib/vinculosNfeClient'
 import type { ConsumptionImpact, ConsumptionRow, FinanceSlice, ItemCorrectionImpact, PurchaseFinance } from '@/lib/vinculosNfeNotas'
@@ -129,18 +130,15 @@ export function describeMemories(impact: ItemCorrectionImpact): string[] {
     const name = `${item.source_description || 'item sem descrição'} (${item.supplier_name || 'fornecedor não identificado'})`
     const switchedOff = item.memories_before.filter(memory => impact.memories_off.includes(memory.mapping_id))
     const product = item.memories_after.find(memory => memory.kind === 'insumo')
-    const expense = item.memories_after.find(memory => memory.kind === 'uso_despesa')
-    const resale = item.memories_after.find(memory => memory.kind === 'revenda')
+    const outside = item.memories_after.find(memory => memory.kind === 'uso_despesa')
     const toExpense = item.after.mapping_status === 'nao_aplicavel'
     let next: string
     const factor = product?.conversion_factor != null ? ` com fator ${factorLabel(product.conversion_factor)}` : ''
     if (product) next = `a próxima nota sugere ${product.product_name || 'um produto'}${factor}${toExpense ? '; para ela vir como uso ou despesa, desligue essa memória em Memórias de vínculo, na página do produto' : ''}`
-    else if (expense) next = 'a próxima nota sugere uso ou despesa'
-    else if (resale) next = 'a próxima nota sugere revenda sem cadastro'
+    else if (outside) next = `a próxima nota sugere ${nonCatalogKindLabel(outside.non_catalog_kind)}`
     else next = 'a próxima nota chega sem sugestão e quem importa escolhe'
     const off = switchedOff.length === 0 ? ''
-      : switchedOff.some(memory => memory.kind === 'revenda') ? 'a memória de revenda sem cadastro deste item será desligada; '
-        : 'a memória de uso ou despesa deste item será desligada; '
+      : `a memória de ${nonCatalogKindLabel(switchedOff[0].non_catalog_kind)} deste item será desligada; `
     const line = `${name}: ${off}${next}.`
     if (!lines.includes(line)) lines.push(line)
   }

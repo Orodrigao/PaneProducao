@@ -43,8 +43,10 @@ export interface ItemImpact {
 }
 
 export interface MemoryRef {
-  /** Fora do cadastro desde a revenda sem cadastro: uso_despesa ou revenda. */
-  kind: 'insumo' | 'uso_despesa' | 'revenda' | string
+  /** 'insumo' ou 'uso_despesa', que aqui quer dizer "fora do cadastro"; a correção desliga por ele. */
+  kind: 'insumo' | 'uso_despesa' | string
+  /** Tipo da memória fora do cadastro (uso_despesa ou revenda). Ausente antes da revenda sem cadastro. */
+  non_catalog_kind?: string | null
   mapping_id: string
   product_name: string | null
   conversion_factor: number | null
@@ -173,6 +175,7 @@ function list(value: unknown): Record<string, unknown>[] {
 function memories(value: unknown): MemoryRef[] {
   return list(value).map(memory => ({
     kind: text(memory.kind) ?? '',
+    non_catalog_kind: text(memory.non_catalog_kind),
     mapping_id: text(memory.mapping_id) ?? '',
     product_name: text(memory.product_name),
     conversion_factor: numberOrNull(memory.conversion_factor),

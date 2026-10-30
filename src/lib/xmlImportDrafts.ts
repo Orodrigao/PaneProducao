@@ -8,7 +8,7 @@ import {
   type NfeMappingStatus,
   type NfeNonCatalogKind,
 } from '@/lib/nfeXml'
-import { legacyXmlPayablePayloadFor, xmlPayablePayload, type PayableProduct } from '@/lib/payables'
+import { ensureResaleWithoutCatalogSupported, legacyXmlPayablePayloadFor, xmlPayablePayload, type PayableProduct } from '@/lib/payables'
 
 /**
  * Importação pendente de conferência (fase 2 das compras por XML).
@@ -269,6 +269,7 @@ export async function confirmXmlImportDraft(
   requestId: string,
   resumed: Pick<XmlImportDraftContent, 'id' | 'updated_at'>,
 ): Promise<string> {
+  await ensureResaleWithoutCatalogSupported(draft)
   const base = { p_draft_id: resumed.id, p_expected_updated_at: resumed.updated_at }
   const payload = xmlPayablePayload(draft, supplierId, requestId)
   let { data, error } = await supabase.rpc('confirm_xml_import_draft', { ...base, ...payload })

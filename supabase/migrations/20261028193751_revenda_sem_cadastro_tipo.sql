@@ -16,8 +16,9 @@
 --     'nao_aplicavel' sem tipo é uso ou despesa, como sempre foi; item que sai
 --     de 'nao_aplicavel' perde o tipo que trazia. Tipo escrito de propósito num
 --     item que não está fora do cadastro é recusado pelo check, não apagado.
---     Os itens que já estavam fora do cadastro viram uso ou despesa: nada
---     antigo muda de comportamento;
+--     Revenda sem cadastro não sai de fora do cadastro até a fase 3: a correção
+--     de notas vigente a perderia no desfazer. Os itens que já estavam fora do
+--     cadastro viram uso ou despesa: nada antigo muda de comportamento;
 --   * payable_non_catalog_mappings.non_catalog_kind: a memória do fornecedor
 --     guarda o tipo da última decisão. As memórias que existem são de uso ou
 --     despesa;
@@ -26,9 +27,14 @@
 --     recebem o tipo dentro da lista de itens (mesma assinatura); a terceira
 --     ganha um parâmetro com padrão, e a versão de dois parâmetros sai na mesma
 --     transação, para o PostgREST nunca ver duas candidatas. O site anterior,
---     que chama com dois parâmetros, continua gravando uso ou despesa;
+--     que chama com dois parâmetros, continua gravando uso ou despesa, menos
+--     quando isso apagaria uma revenda já decidida (memória do fornecedor ou
+--     rascunho da nota): aí a gravação é recusada com o pedido de recarregar a
+--     página. O site novo sempre manda o tipo; só o anterior o omite;
 --   * a foto das memórias da correção de notas (private.memorias_do_item_nfe)
---     diz o tipo de cada memória fora do cadastro;
+--     ganha non_catalog_kind; o campo kind continua 'uso_despesa' para toda
+--     memória fora do cadastro, porque a correção vigente decide por ele quais
+--     memórias desligar;
 --   * o consumo semanal separa a revenda sem cadastro: o resumo do período
 --     ganha a parte de revenda dentro do que não é estoque, e uma lista nova
 --     mostra essas compras pela descrição da nota, porque não têm produto.
@@ -55,6 +61,15 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+  -- Revenda sem cadastro só sai de fora do cadastro pela correção de notas da
+  -- fase 3, que leva o tipo à foto e ao desfazer. Até lá, a correção vigente
+  -- (public.correct_payable_purchase_items) a trataria como uso ou despesa e o
+  -- desfazer a devolveria como uso ou despesa: recusa aqui, para toda origem.
+  if tg_op = 'UPDATE' and old.non_catalog_kind = 'revenda'
+     and new.mapping_status is distinct from 'nao_aplicavel' then
+    raise exception using errcode = '22023',
+      message = 'Revenda sem cadastro ainda não pode ser trocada por produto: essa correção chega na próxima fase de Vínculos NF-e.';
+  end if;
   if new.mapping_status = 'nao_aplicavel' then
     -- Quem marca fora do cadastro sem dizer o tipo é o gravador de antes desta
     -- fase: para ele, fora do cadastro sempre foi uso ou despesa.
@@ -261,6 +276,36 @@ begin
       end if;
       if v_item.conversion_factor is not null or v_item.usable_quantity is not null then
         raise exception using errcode = '22023', message = 'Item de uso ou despesa não possui conversão de receita.';
+      end if;
+      -- Sem o tipo é o site anterior, que só conhece uso ou despesa e leria a
+      -- revenda lembrada ou salva no rascunho como uso ou despesa. Gravar assim
+      -- apagaria a decisão: recusa e pede a tela nova.
+      if v_item.non_catalog_kind is null and (
+        exists (
+          select 1 from public.payable_non_catalog_mappings mapping
+          where mapping.active and mapping.non_catalog_kind = 'revenda'
+            and mapping.supplier_id = p_supplier_id
+            and mapping.purchase_unit = v_item.source_unit
+            and (
+              (v_item.supplier_product_code is not null and mapping.supplier_product_code = v_item.supplier_product_code)
+              or (v_item.supplier_ean is not null and mapping.supplier_ean = v_item.supplier_ean)
+              or (v_item.supplier_product_code is null and v_item.supplier_ean is null
+                  and lower(trim(mapping.supplier_description)) = lower(trim(v_item.source_description)))
+            )
+        )
+        or exists (
+          select 1
+          from public.payable_import_drafts draft
+          cross join lateral jsonb_array_elements(
+            case when jsonb_typeof(draft.item_decisions) = 'array' then draft.item_decisions else '[]'::jsonb end
+          ) decision
+          where draft.nfe_key = p_access_key and draft.status = 'pendente'
+            and decision ->> 'line_number' = v_item.line_number::text
+            and decision ->> 'non_catalog_kind' = 'revenda'
+        )
+      ) then
+        raise exception using errcode = '22023',
+          message = 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.';
       end if;
     elsif v_item.product_id is null then
       v_classification_status := 'pendente';
@@ -647,6 +692,25 @@ begin
   where draft.nfe_key = p_access_key and draft.status = 'pendente'
   for update;
 
+  -- O site anterior relê a revenda do rascunho como uso ou despesa e salva sem
+  -- o tipo: sobrescrever apagaria a decisão. Recusa e pede a tela nova.
+  if v_draft_id is not null and exists (
+    select 1
+    from public.payable_import_drafts draft
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(draft.item_decisions) = 'array' then draft.item_decisions else '[]'::jsonb end
+    ) saved
+    cross join lateral jsonb_array_elements(coalesce(p_item_decisions, '[]'::jsonb)) incoming
+    where draft.id = v_draft_id
+      and saved ->> 'non_catalog_kind' = 'revenda'
+      and incoming ->> 'line_number' = saved ->> 'line_number'
+      and incoming ->> 'mapping_status' = 'nao_aplicavel'
+      and incoming ->> 'non_catalog_kind' is null
+  ) then
+    raise exception using errcode = '22023',
+      message = 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.';
+  end if;
+
   if v_draft_id is null then
     insert into public.payable_import_drafts (
       nfe_key, supplier_id, supplier_name, nfe_number, nfe_series, nfe_issued_at,
@@ -754,6 +818,24 @@ begin
   if v_mapping_status = 'mapeado' then
     raise exception using errcode = '22023', message = 'Este item já altera um produto de receita. Troque o vínculo pela tela de correção.';
   end if;
+  -- Sem o tipo é o site anterior, que só conhece uso ou despesa: com a revenda
+  -- lembrada para este item do fornecedor, gravar uso ou despesa trocaria a
+  -- memória sem a pessoa ter visto a escolha de revenda.
+  if p_non_catalog_kind is null and exists (
+    select 1 from public.payable_non_catalog_mappings mapping
+    where mapping.active and mapping.non_catalog_kind = 'revenda'
+      and mapping.supplier_id = v_supplier_id
+      and mapping.purchase_unit = v_source_unit
+      and (
+        (v_source_code is not null and mapping.supplier_product_code = v_source_code)
+        or (v_source_ean is not null and mapping.supplier_ean = v_source_ean)
+        or (v_source_code is null and v_source_ean is null
+            and lower(trim(mapping.supplier_description)) = lower(trim(v_source_description)))
+      )
+  ) then
+    raise exception using errcode = '22023',
+      message = 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.';
+  end if;
 
   update public.payable_purchase_items
   set product_id = null, item_name = v_source_description, unit = v_source_unit,
@@ -827,7 +909,10 @@ grant execute on function public.classify_payable_item_without_product(uuid, boo
 -- ---------------------------------------------------------------------------
 -- 6. Foto das memórias da correção de notas, a partir da versão vigente
 --    (20261019163500_vinculos_nfe_uso_despesa_insumo): a memória fora do
---    cadastro diz o tipo dela, em vez de ser sempre uso ou despesa.
+--    cadastro ganha non_catalog_kind. O campo kind segue 'uso_despesa' para
+--    toda memória fora do cadastro: a correção vigente desliga por ele as
+--    memórias do item que vira produto, e assim continua desligando também a
+--    de revenda. A tela de Vínculos lê o tipo no campo novo.
 -- ---------------------------------------------------------------------------
 create or replace function private.memorias_do_item_nfe(p_item_id uuid)
 returns jsonb
@@ -868,7 +953,8 @@ as $$
     left join public.products product on product.id = mapping.base_product_id
     union all
     select jsonb_build_object(
-             'kind', mapping.non_catalog_kind,
+             'kind', 'uso_despesa',
+             'non_catalog_kind', mapping.non_catalog_kind,
              'mapping_id', mapping.id,
              'product_id', null,
              'product_name', null,

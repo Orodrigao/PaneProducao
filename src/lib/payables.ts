@@ -593,7 +593,20 @@ export function legacyXmlPayablePayloadFor(error: unknown, draft: NfeDraft, payl
   return legacy
 }
 
+/**
+ * O banco anterior à revenda sem cadastro aceita a nota e ignora o tipo: a
+ * revenda viraria uso ou despesa sem aviso (site novo no ar minutos antes da
+ * migration). Nota com revenda só segue quando o banco mostra a coluna do tipo;
+ * qualquer falha nessa conferência barra, e nada é gravado.
+ */
+export async function ensureResaleWithoutCatalogSupported(draft: NfeDraft): Promise<void> {
+  if (!draft.items.some(item => item.mappingStatus === 'nao_aplicavel' && item.nonCatalogKind === 'revenda')) return
+  const { error } = await supabase.from('payable_non_catalog_mappings').select('non_catalog_kind').limit(1)
+  if (error) throw new Error('O sistema ainda está terminando a atualização da revenda sem cadastro. Nada foi gravado: aguarde alguns minutos, recarregue a página e confirme de novo.')
+}
+
 export async function createXmlPayable(draft: NfeDraft, supplierId: string, requestId: string, notes = ''): Promise<string> {
+  await ensureResaleWithoutCatalogSupported(draft)
   const payload = xmlPayablePayload(draft, supplierId, requestId, notes)
   let { data, error } = await supabase.rpc('create_xml_payable', payload)
   const legacy = error ? legacyXmlPayablePayloadFor(error, draft, payload) : null

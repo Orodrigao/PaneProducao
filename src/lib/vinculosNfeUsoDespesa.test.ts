@@ -162,18 +162,24 @@ describe('item entre uso ou despesa e insumo (fase 5)', () => {
   })
 
   it('memória de revenda sem cadastro é dita como revenda, não como "sem sugestão" nem uso ou despesa', () => {
+    // O banco manda kind 'uso_despesa' para toda memória fora do cadastro (a
+    // correção desliga por ele) e o tipo em non_catalog_kind.
+    expect(parseItemCorrectionImpact({
+      ...impactJson,
+      items: [{ ...impactJson.items[0], memories_after: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm5' }] }],
+    }).items[0].memories_after[0]).toMatchObject({ kind: 'uso_despesa', non_catalog_kind: 'revenda' })
     const base = impactJson.items[0]
     const revendaLigada = parseItemCorrectionImpact({
       ...impactJson,
       memories_off: [],
-      items: [{ ...base, memories_before: [], memories_after: [{ kind: 'revenda', mapping_id: 'm5', product_name: null, conversion_factor: null }] }],
+      items: [{ ...base, memories_before: [], memories_after: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm5', product_name: null, conversion_factor: null }] }],
     })
     expect(describeMemories(revendaLigada)[0]).toContain('a próxima nota sugere revenda sem cadastro.')
 
     const revendaDesligada = parseItemCorrectionImpact({
       ...impactJson,
       memories_off: ['m6'],
-      items: [{ ...base, memories_before: [{ kind: 'revenda', mapping_id: 'm6', product_name: null, conversion_factor: null }], memories_after: [] }],
+      items: [{ ...base, memories_before: [{ kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm6', product_name: null, conversion_factor: null }], memories_after: [] }],
     })
     expect(describeMemories(revendaDesligada)[0]).toContain('a memória de revenda sem cadastro deste item será desligada; ')
   })
