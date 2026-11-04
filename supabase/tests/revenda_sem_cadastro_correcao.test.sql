@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(104);
+select plan(107);
 
 -- Revenda sem cadastro, fase 3: corrigir nota gravada entre uso ou despesa,
 -- revenda sem cadastro e produto, pela correção de notas
@@ -108,7 +108,12 @@ insert into public.payable_purchase_items (
   ('97900000-0000-4000-8000-000000000177', '97900000-0000-4000-8000-000000000046', null, 'CEVADA', 'UN', 1, 10, 'CEVA', 'CEVADA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00'),
   -- Dois itens da mesma memória corrigidos em correções separadas (revisão automática).
   ('97900000-0000-4000-8000-000000000179', '97900000-0000-4000-8000-000000000046', null, 'AMENDOIM', 'UN', 1, 10, 'AMEN', 'AMENDOIM', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
-  ('97900000-0000-4000-8000-00000000017a', '97900000-0000-4000-8000-000000000045', null, 'AMENDOIM', 'UN', 1, 10, 'AMEN', 'AMENDOIM', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-00000000017a', '97900000-0000-4000-8000-000000000045', null, 'AMENDOIM', 'UN', 1, 10, 'AMEN', 'AMENDOIM', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  -- Casa com a memória de revenda pelo código e com uma memória de insumo mais
+  -- nova pelo código de barras (revisão de outra família, quinta volta).
+  ('97900000-0000-4000-8000-00000000017b', '97900000-0000-4000-8000-000000000046', null, 'GRANOLA', 'UN', 1, 10, 'GRAN', 'GRANOLA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
+update public.payable_purchase_items set source_ean = '7891000315507'
+where id = '97900000-0000-4000-8000-00000000017b';
 
 -- Conta paga: parcela paga, rateio em despesa e lançamentos no livro gerados
 -- pela função oficial da baixa. As outras contas: rateio em CMV de revenda.
@@ -146,7 +151,8 @@ insert into public.payable_non_catalog_mappings (
   ('97900000-0000-4000-8000-000000000186', '97900000-0000-4000-8000-000000000011', 'FUBA', null, 'FUBA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-000000000187', '97900000-0000-4000-8000-000000000011', 'AVEI', null, 'AVEIA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-000000000188', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00'),
-  ('97900000-0000-4000-8000-00000000018b', '97900000-0000-4000-8000-000000000011', 'AMEN', null, 'AMENDOIM', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-00000000018b', '97900000-0000-4000-8000-000000000011', 'AMEN', null, 'AMENDOIM', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-00000000018c', '97900000-0000-4000-8000-000000000011', 'GRAN', null, 'GRANOLA', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
 insert into public.payable_product_mappings (
   id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
   base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active, last_confirmed_by, updated_at
@@ -159,6 +165,9 @@ insert into public.payable_product_mappings (
 ), (
   '97900000-0000-4000-8000-000000000189', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN',
   '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, false, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'
+), (
+  '97900000-0000-4000-8000-00000000018d', '97900000-0000-4000-8000-000000000011', 'GRAN-B', '7891000315507', 'GRANOLA B', 'UN',
+  '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, true, '97900000-0000-4000-8000-000000000001', '2024-05-03 12:00+00'
 );
 create temporary table memoria_mel_antes on commit drop as
 select mapping.updated_at from public.payable_non_catalog_mappings mapping
@@ -900,6 +909,36 @@ select is(
   public.correct_payable_purchase_items(null, 'previa', null,
     (current_setting('teste.aa1')::jsonb ->> 'correction_id')::uuid) -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
   'mudou_depois', 'desfazer a primeira correção não volta o tipo antigo por cima da confirmação mais nova');
+-- Desfazer a confirmação volta a versão de antes; depois disso, a primeira
+-- correção pode ser desfeita e a memória volta a uso ou despesa.
+select set_config('teste.ua2', public.correct_payable_purchase_items(null, 'previa', null,
+  (current_setting('teste.aa2')::jsonb ->> 'correction_id')::uuid)::text, true);
+select set_config('teste.da2', public.correct_payable_purchase_items('97900000-0000-4000-8000-0000000001d5', 'aplicar', null,
+  (current_setting('teste.aa2')::jsonb ->> 'correction_id')::uuid,
+  current_setting('teste.ua2')::jsonb ->> 'impact_hash')::text, true);
+reset role;
+select results_eq(
+  $$select mapping.non_catalog_kind, mapping.updated_at = correction.corrected_at
+    from public.payable_non_catalog_mappings mapping
+    cross join public.payable_purchase_item_corrections correction
+    where mapping.id = '97900000-0000-4000-8000-00000000018b' and correction.request_id = '97900000-0000-4000-8000-0000000001a4'$$,
+  $$values ('revenda'::text, true)$$,
+  'desfazer a confirmação volta a memória à versão da primeira correção');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
+select is(
+  public.correct_payable_purchase_items(null, 'previa', null,
+    (current_setting('teste.aa1')::jsonb ->> 'correction_id')::uuid) -> 'impact' -> 'memory_changes' -> 0 ->> 'action',
+  'restaurar', 'sem a confirmação, a primeira correção volta a poder religar o tipo antigo');
+-- Memória de insumo ligada e mais nova vence a de revenda: corrigir a nota para
+-- revenda não a carimba, para não passar na frente da decisão mais nova.
+select results_eq(
+  $$select change ->> 'action', change ->> 'reason', preview -> 'impact' -> 'items' -> 0 -> 'next_suggestion' ->> 'kind'
+    from (select public.correct_payable_purchase_items(null, 'previa',
+            '[{"item_id":"97900000-0000-4000-8000-00000000017b","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]') as preview) result
+    cross join lateral jsonb_array_elements(result.preview -> 'impact' -> 'memory_changes') change$$,
+  $$values ('manter'::text, 'ja_certa'::text, 'insumo'::text)$$,
+  'memória de revenda que perde para memória de insumo mais nova não é carimbada; a próxima nota segue com o insumo');
 
 -- Administrador também corrige --------------------------------------------------
 

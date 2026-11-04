@@ -1070,13 +1070,35 @@ begin
         v_memory_after := null;
         v_memory_reason := null;
         if v_target <> 'produto' and v_link.memory ->> 'non_catalog_kind' = v_target then
+          v_memory_reason := 'ja_certa';
           -- A memória já diz o tipo pedido: o conteúdo não muda, mas esta
           -- correção também é decisão sobre ela e a carimba. Assim o desfazer
           -- de uma correção anterior que trocou esse tipo vê a decisão mais
-          -- nova e não volta o tipo antigo por cima dela.
-          v_memory_action := 'confirmar';
-          v_memory_reason := 'ja_certa';
-          v_memory_after := jsonb_build_object('active', true, 'non_catalog_kind', v_target);
+          -- nova e não volta o tipo antigo por cima dela. Só carimba se a
+          -- sugestão que hoje vence (a ligada mais recente; empate para fora
+          -- do cadastro) já concorda com o destino em todos os itens: o
+          -- carimbo novo poria esta memória na frente de outra decisão ligada
+          -- mais nova e incompatível (por exemplo, memória de insumo que casa
+          -- pelo código de barras).
+          if not exists (
+            select 1
+            from unnest(v_link.item_ids) as involved(item_id)
+            cross join lateral (
+              select candidate.memory
+              from jsonb_array_elements(v_memories_before -> involved.item_id::text) as candidate(memory)
+              order by (candidate.memory ->> 'version')::timestamp desc nulls last,
+                       (candidate.memory ->> 'kind' = 'uso_despesa') desc,
+                       candidate.memory ->> 'mapping_id'
+              limit 1
+            ) winner
+            where not (winner.memory ->> 'kind' = 'uso_despesa'
+                       and winner.memory ->> 'non_catalog_kind' = v_target)
+          ) then
+            v_memory_action := 'confirmar';
+            v_memory_after := jsonb_build_object('active', true, 'non_catalog_kind', v_target);
+          else
+            v_memory_action := 'manter';
+          end if;
         elsif v_link.decided_unknown then
           -- Sem a data da decisão não há como saber se a memória é mais nova
           -- (em produção todo item corrigível tem a data; o caso é de item
