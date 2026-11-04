@@ -278,6 +278,62 @@ Fatos medidos em produção nesta data (somente leitura):
   depois 370 g, o que aponta recheio sem porção padrão. Peso assado se mede
   com três unidades de fornadas diferentes.
 
+## Peso da ficha no indicador e no Forno (passos 0c e 0d, novembro de 2026)
+
+O que mudou, na PR dos passos 0c e 0d:
+
+- **O indicador de mão de obra soma quilos de massa crua pela ficha** de cada
+  pão produzido: o produto ligado ao pão e, quando o pão é uma variante, a
+  linha da variante. Produção lançada em quilo conta o quilo, levado à massa
+  crua quando a ficha tem peso assado.
+- **O Forno converte pedido PJ por quilo em peças pelo peso assado da ficha**,
+  linha a linha da programação. Ficha sem peso assado não converte: o pedido
+  em quilo fica fora do previsto e o Forno avisa para lançar o "Assado (g)" na
+  ficha. Converter pela massa crua faria o Forno assar menos pão do que o
+  cliente pediu.
+- **Variante sem linha própria na ficha não usa a linha do produto.** Fica sem
+  peso e aparece na cobertura; o Brioche Forma (400 g) não conta como os 85 g
+  do Brioche sem variante.
+- **O pão da produção sabe qual variante ele é** (`breads.product_variant_id`).
+  Só o Brioche Hamburguer é variante (Hambúrguer do Brioche); a própria
+  migration fez a ligação. O Pão de Cachorro Quente é o produto, não a Mini.
+- **O peso médio do cadastro de pães foi desligado:** nenhuma tela nem função
+  lê `breads.avg_unit_weight_kg`, e o quadro que o editava saiu de Produtos. A
+  coluna sai numa PR futura.
+- **Os números recentes do Financeiro aparecem na Configuração do Sistema**,
+  só para admin, com os quilos de massa crua e a cobertura de peso.
+- **O salário dos donos entra nas despesas fixas como valor fixo da
+  Configuração** (campo "Salário dos donos por mês", em reais, só admin). O
+  indicador soma o valor vigente em todos os meses e marca o mês como
+  provisório enquanto ele não estiver definido. O campo nasce vazio, como o
+  resto da Configuração: gravar os R$ 20.000 é ação do admin pela tela.
+
+Decidido em 2026-11-04: perguntado se o salário dos donos entraria como valor
+fixo ou como o que foi lançado em "Retiradas — distribuição" em cada mês
+(setembro R$ 997, outubro R$ 20.238), Rodrigo respondeu: "Fixo de R$ 20 mil".
+O preço precisa cobrir o salário mesmo num mês apertado em que a retirada foi
+menor.
+
+Fatos medidos em produção em 2026-11-04 (somente leitura):
+
+- Outubro teve 14.229 unidades produzidas de 34 pães, todos ligados a um
+  produto do catálogo; 94% das unidades têm massa crua na ficha. Sem
+  rendimento na ficha: Pão de Alecrim, Pão de Cachorro Quente, Pizza Redonda,
+  Pão de Nozes, Pão de Milho UN, Pizza Romana e Rugbrod (838 unidades).
+- Só três fichas têm peso assado: Baguete, Pão de Gorgonzola e Cinnamon Roll.
+  Os pesos assados de 08/10 (Brioche Hamburguer 72 g, Italiano 350 g,
+  Multigrãos 450 g e outros) ficaram no cadastro de pães e não foram para a
+  ficha.
+- A programação PJ não tem linha desde 26/09/2026, então a regra nova do Forno
+  não muda o previsto de nenhum dia até aqui. O PJ já pediu por quilo Brioche
+  Hambúrguer, Brioche Forma, Pizza Romana, Multigrãos, Integral, Focaccia de
+  Alecrim e Mini Croissant: para voltar a pedir por quilo, o assado precisa
+  estar na ficha.
+- Defeito antigo, fora destes passos: produto do catálogo com pão ligado entra
+  na programação PJ com o pão, e o Forno junta as variantes num pão só. Um
+  pedido de Brioche Forma aparece no Forno como Brioche Hamburguer. A conta das
+  peças agora sai certa por variante, mas o nome continua o do pão.
+
 ## A conta
 
 Todos os percentuais incidem sobre o mesmo preço de venda:
@@ -353,7 +409,9 @@ para cerca de **35% do faturamento**.
 
 Consequência para a fase 2: o indicador de despesas fixas não enxerga a
 retirada, porque ela fica abaixo da linha. Até ele mudar, a conta manual soma
-os R$ 20 mil.
+os R$ 20 mil. *Resolvido nos passos 0c e 0d (novembro de 2026): o valor mora
+na Configuração e o indicador o soma; ver "Peso da ficha no indicador e no
+Forno".*
 
 ### Percentuais
 

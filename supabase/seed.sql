@@ -2127,6 +2127,27 @@ values
   ('pricing-indicators-no-weight', '[TESTE] Indicadores pão sem peso', '{0,1,2,3,4,5,6}', true, 'un', false, false, null)
 on conflict (id) do update set avg_unit_weight_kg = excluded.avg_unit_weight_kg;
 
+-- Desde a formação de preço 0c o peso vem da ficha técnica do produto ligado
+-- ao pão, e o peso médio acima não é mais lido. A ficha tem 600 g de massa
+-- crua e 500 g assado por unidade, de propósito diferente dos 500 g do
+-- cadastro de pães: no Preview, setembro mostra 37,2 kg (62 × 0,6) e não 31 kg.
+-- O pão sem peso não tem produto ligado e segue fora da cobertura.
+insert into public.products (id, name, category, active, unit, kind, is_fabricacao_propria, legacy_bread_id)
+values ('96400000-0000-4000-8000-0000000007a1', '[TESTE] Indicadores pão pesado', 'Paes', true, 'un', 'final', true, 'pricing-indicators-weighted')
+on conflict (id) do update set
+  name = excluded.name,
+  active = excluded.active,
+  unit = excluded.unit,
+  legacy_bread_id = excluded.legacy_bread_id;
+
+insert into public.product_recipe_yields (product_id, product_variant_id, basis, dough_weight_kg, finished_weight_kg, yield_units)
+values ('96400000-0000-4000-8000-0000000007a1', null, 'dough', 1.2, 1.0, 2)
+on conflict (product_id) where product_variant_id is null do update set
+  basis = excluded.basis,
+  dough_weight_kg = excluded.dough_weight_kg,
+  finished_weight_kg = excluded.finished_weight_kg,
+  yield_units = excluded.yield_units;
+
 insert into public.finance_entries (
   id, request_id, entry_type, category_id, account_id, store, competence_month,
   due_date, planned_amount, paid_date, amount, payment_method, description,

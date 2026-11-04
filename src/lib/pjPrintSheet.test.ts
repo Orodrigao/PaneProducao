@@ -72,6 +72,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [30, 20, 30],
       storeTotal: 80,
       pjQuantity: 120,
+      pjWeightPending: false,
       total: 200,
     })
   })
@@ -85,6 +86,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [0, 0, 0],
       storeTotal: 0,
       pjQuantity: 40,
+      pjWeightPending: false,
       total: 40,
     })
   })
@@ -102,6 +104,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [0, 0, 0],
       storeTotal: 0,
       pjQuantity: 12,
+      pjWeightPending: false,
       total: 12,
     })
   })
@@ -121,6 +124,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [30, 20, 30],
       storeTotal: 80,
       pjQuantity: 120,
+      pjWeightPending: false,
       total: 200,
     }])
   })
@@ -134,6 +138,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [100, 100, 100],
       storeTotal: 300,
       pjQuantity: null,
+      pjWeightPending: false,
       total: 300,
     })
   })
@@ -145,8 +150,73 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [30, 20, 30],
       storeTotal: 80,
       pjQuantity: null,
+      pjWeightPending: false,
       total: 80,
     }])
+  })
+
+  it('mantém o pão e avisa quando o pedido PJ por quilo não virou peça no Forno', () => {
+    // A lista do Forno devolve quantidade 0 e needs_weight_setup quando a
+    // ficha não tem peso assado: o pão PJ não pode sumir da folha, e o pão
+    // das lojas mostra que há PJ fora do total.
+    expect(buildPjPrintSheet(breads, [
+      { bread_id: 'hamburguer', quantity: 0, needs_weight_setup: true },
+      { bread_id: 'pj-exclusivo', quantity: 0, needs_weight_setup: true },
+      { bread_id: 'frances', quantity: 12, needs_weight_setup: true },
+    ])).toEqual([
+      {
+        breadId: 'hamburguer',
+        breadName: 'Hamburguer',
+        storeQuantities: [30, 20, 30],
+        storeTotal: 80,
+        pjQuantity: null,
+        pjWeightPending: true,
+        total: 80,
+      },
+      {
+        breadId: 'frances',
+        breadName: 'Frances',
+        storeQuantities: [100, 100, 100],
+        storeTotal: 300,
+        pjQuantity: 12,
+        pjWeightPending: true,
+        total: 312,
+      },
+      {
+        breadId: 'pj-exclusivo',
+        breadName: 'Pão exclusivo PJ',
+        storeQuantities: [0, 0, 0],
+        storeTotal: 0,
+        pjQuantity: null,
+        pjWeightPending: true,
+        total: 0,
+      },
+    ])
+  })
+
+  it('mantém produto do Forno pendente que não está na lista de pães', () => {
+    expect(buildPjPrintSheet(breads, [{
+      product_source: 'product',
+      product_id: 'produto-pendente',
+      product_name: 'Focaccia PJ',
+      quantity: 0,
+      needs_weight_setup: true,
+    }])).toContainEqual({
+      breadId: 'product:produto-pendente',
+      breadName: 'Focaccia PJ',
+      storeQuantities: [0, 0, 0],
+      storeTotal: 0,
+      pjQuantity: null,
+      pjWeightPending: true,
+      total: 0,
+    })
+  })
+
+  it('mostra na folha impressa o aviso de PJ por peso sem conversão', () => {
+    expect(productionPageSource).toContain('{b.pjWeightPending && (')
+    expect(productionPageSource).toContain('+ PJ por peso sem conversão em peças: ver o aviso no Forno')
+    // Fora do Total, que não quebra linha, e na largura toda da folha.
+    expect(productionPageSource).toContain("gridColumn:'1 / -1',textAlign:'left',whiteSpace:'normal'")
   })
 
   it('ignora quantidades PJ zero ou negativas sem criar linha nem alterar total', () => {
@@ -160,6 +230,7 @@ describe('folha de pães com produção PJ', () => {
         storeQuantities: [30, 20, 30],
         storeTotal: 80,
         pjQuantity: null,
+        pjWeightPending: false,
         total: 80,
       },
       {
@@ -168,6 +239,7 @@ describe('folha de pães com produção PJ', () => {
         storeQuantities: [100, 100, 100],
         storeTotal: 300,
         pjQuantity: null,
+        pjWeightPending: false,
         total: 300,
       },
     ])
@@ -183,6 +255,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [30, 20, 30],
       storeTotal: 80,
       pjQuantity: null,
+      pjWeightPending: false,
       total: 80,
     }])
   })
@@ -197,6 +270,7 @@ describe('folha de pães com produção PJ', () => {
       storeQuantities: [30, 20, 30],
       storeTotal: 80,
       pjQuantity: null,
+      pjWeightPending: false,
       total: 80,
     }])
   })

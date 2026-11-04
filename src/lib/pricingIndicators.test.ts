@@ -9,6 +9,8 @@ import {
   formatIndicatorCurrency,
   formatIndicatorMonth,
   loadPricingIndicators,
+  loadPricingIndicatorsInto,
+  type PricingIndicatorsState,
 } from './pricingIndicators'
 
 const month = {
@@ -19,6 +21,7 @@ const month = {
   revenue: 13600,
   fixed_expenses: 1360,
   fixed_expense_pct: 0.1,
+  owner_salary: null,
   production_labor: 116.25,
   kilograms_with_known_weight: 31,
   production_quantity: 100,
@@ -48,6 +51,51 @@ describe('pricingIndicators', () => {
     if (result.status !== 'ready') throw new Error('Esperava indicadores carregados')
     expect(result.data.months[0]?.labor_cost_per_kg).toBe(3.75)
     expect(result.data.average?.months_included).toEqual(['2026-09'])
+  })
+
+  it('lê o salário dos donos e recusa mostrar a conta do banco antigo, que não o manda', async () => {
+    const withSalary = { ...month, fixed_expenses: 21360, owner_salary: 20000 }
+    const average = { ...withSalary, months_included: ['2026-09'], month_count: 1 }
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [withSalary], average }, error: null } as never)
+    const result = await loadPricingIndicators()
+    if (result.status !== 'ready') throw new Error('Esperava indicadores carregados')
+    expect(result.data.months[0]?.owner_salary).toBe(20000)
+    expect(result.data.average?.owner_salary).toBe(20000)
+
+    // Site novo com banco ainda sem a migration: a resposta não tem o campo e
+    // conta o peso pela regra antiga. Mesmo um mês sem ressalva não aparece.
+    const { owner_salary: _semCampo, ...oldMonth } = { ...month, is_provisional: false, provisional_reasons: [] }
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: null }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'outdated' })
+    const oldAverage = { ...oldMonth, months_included: ['2026-09'], month_count: 1 }
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: oldAverage }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'outdated' })
+    // Antiga e quebrada (média sem os campos) continua erro, não "atualizando".
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: { month_count: 1 } }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'error' })
+
+    // Valor que não é número continua recusado.
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [{ ...month, owner_salary: 'muito' }], average: null }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'error' })
+  })
+
+  it('só a leitura mais recente mexe no quadro', async () => {
+    const applied: PricingIndicatorsState[] = []
+    const sequence = { current: 0 }
+    let resolveOld: (state: PricingIndicatorsState) => void = () => {}
+    const old = new Promise<PricingIndicatorsState>((resolve) => { resolveOld = resolve })
+    const first = loadPricingIndicatorsInto(sequence, (state) => applied.push(state), () => old)
+    // Salvar dispara outra leitura, que volta antes da primeira.
+    const fresh: PricingIndicatorsState = { status: 'empty' }
+    await loadPricingIndicatorsInto(sequence, (state) => applied.push(state), async () => fresh)
+    resolveOld({ status: 'error' })
+    await first
+    expect(applied).toEqual([{ status: 'loading' }, { status: 'loading' }, fresh])
+
+    // Leitura que lança erro vira o estado de erro, sem deixar o quadro carregando.
+    const later: PricingIndicatorsState[] = []
+    await loadPricingIndicatorsInto(sequence, (state) => later.push(state), async () => { throw new Error('rede') })
+    expect(later).toEqual([{ status: 'loading' }, { status: 'error' }])
   })
 
   it('usa uma mensagem segura quando o RPC falha ou devolve dados inválidos', async () => {

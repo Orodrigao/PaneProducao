@@ -8,6 +8,8 @@ export interface PricingIndicatorMonth {
   revenue: number
   fixed_expenses: number
   fixed_expense_pct: number | null
+  /** Parte das despesas fixas que é o salário dos donos (Configuração); nulo quando não definido. */
+  owner_salary: number | null
   production_labor: number
   kilograms_with_known_weight: number
   production_quantity: number
@@ -32,9 +34,11 @@ export type PricingIndicatorsState =
   | { status: 'loading' }
   | { status: 'empty' }
   | { status: 'error' }
+  | { status: 'outdated' }
   | { status: 'ready'; data: PricingIndicatorsData }
 
 export const PRICING_INDICATORS_ERROR = 'Não foi possível carregar os indicadores de preço.'
+export const PRICING_INDICATORS_OUTDATED = 'Os números do Financeiro estão passando para a conta nova (massa crua da ficha e salário dos donos). Recarregue a página em alguns minutos.'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -45,6 +49,13 @@ function toNumber(value: unknown): number | null {
   if (value === '') return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+// Nulo é "não definido"; valor que não é número recusa a resposta.
+function toOptionalAmount(value: unknown): number | null | undefined {
+  if (value === null) return null
+  const parsed = toNumber(value)
+  return parsed === null ? undefined : parsed
 }
 
 function toMonth(value: unknown): PricingIndicatorMonth | null {
@@ -66,6 +77,8 @@ function toMonth(value: unknown): PricingIndicatorMonth | null {
   if (laborCostPerKg === null && value.labor_cost_per_kg !== null) return null
   if (typeof value.is_provisional !== 'boolean' || !Array.isArray(value.provisional_reasons)) return null
   if (!value.provisional_reasons.every((reason): reason is string => typeof reason === 'string')) return null
+  const ownerSalary = toOptionalAmount(value.owner_salary)
+  if (ownerSalary === undefined) return null
 
   return {
     month: value.month,
@@ -75,6 +88,7 @@ function toMonth(value: unknown): PricingIndicatorMonth | null {
     revenue: revenue!,
     fixed_expenses: fixedExpenses!,
     fixed_expense_pct: fixedExpensePct,
+    owner_salary: ownerSalary,
     production_labor: productionLabor!,
     kilograms_with_known_weight: kilogramsWithKnownWeight!,
     production_quantity: productionQuantity!,
@@ -103,6 +117,8 @@ function toAverage(value: unknown): PricingIndicatorsAverage | null | undefined 
   if ((fixedExpensePct === null && value.fixed_expense_pct !== null) || (laborCostPerKg === null && value.labor_cost_per_kg !== null)) return undefined
   if (typeof value.is_provisional !== 'boolean' || !Array.isArray(value.provisional_reasons)) return undefined
   if (!value.provisional_reasons.every((reason): reason is string => typeof reason === 'string')) return undefined
+  const ownerSalary = toOptionalAmount(value.owner_salary)
+  if (ownerSalary === undefined) return undefined
 
   return {
     months_included: value.months_included,
@@ -110,6 +126,7 @@ function toAverage(value: unknown): PricingIndicatorsAverage | null | undefined 
     revenue: revenue!,
     fixed_expenses: fixedExpenses!,
     fixed_expense_pct: fixedExpensePct,
+    owner_salary: ownerSalary,
     production_labor: productionLabor!,
     kilograms_with_known_weight: kilogramsWithKnownWeight!,
     production_quantity: productionQuantity!,
@@ -119,6 +136,22 @@ function toAverage(value: unknown): PricingIndicatorsAverage | null | undefined 
     is_provisional: value.is_provisional,
     provisional_reasons: value.provisional_reasons,
   }
+}
+
+// Site e banco publicam separados: por alguns minutos depois do merge o site
+// novo pode ler o banco de antes da migration 20261104150000, que conta o
+// peso pelo cadastro de pães e não soma o salário dos donos. Essa resposta
+// não tem o campo owner_salary; mostrar os números dela sob os títulos novos
+// seria afirmar a conta errada.
+function isOutdatedResponse(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.months)) return false
+  if (!value.months.some((month) => isRecord(month) && !('owner_salary' in month))) return false
+  // Só é a resposta antiga se, fora o campo novo, ela for válida; lixo é erro.
+  const withField = (row: unknown) => (isRecord(row) && !('owner_salary' in row) ? { ...row, owner_salary: null } : row)
+  return parseIndicators({
+    months: value.months.map(withField),
+    average: value.average === null ? null : withField(value.average),
+  }) !== null
 }
 
 function parseIndicators(value: unknown): PricingIndicatorsData | null {
@@ -133,10 +166,33 @@ function parseIndicators(value: unknown): PricingIndicatorsData | null {
 export async function loadPricingIndicators(): Promise<PricingIndicatorsState> {
   const { data, error } = await supabase.rpc('get_pricing_financial_indicators')
   if (error) return { status: 'error' }
+  if (isOutdatedResponse(data)) return { status: 'outdated' }
   const parsed = parseIndicators(data)
   if (!parsed) return { status: 'error' }
   if (parsed.months.length === 0) return { status: 'empty' }
   return { status: 'ready', data: parsed }
+}
+
+/**
+ * Cada abertura da tela e cada salvamento disparam uma leitura; só a mais
+ * recente mexe no quadro (mesmo idioma de src/lib/financeMonthLoad.ts). Uma
+ * resposta atrasada de antes do salvamento mostraria despesas fixas com o
+ * salário antigo ao lado do campo já salvo.
+ */
+export async function loadPricingIndicatorsInto(
+  sequence: { current: number },
+  apply: (state: PricingIndicatorsState) => void,
+  load: () => Promise<PricingIndicatorsState> = loadPricingIndicators,
+): Promise<void> {
+  const seq = ++sequence.current
+  apply({ status: 'loading' })
+  let state: PricingIndicatorsState
+  try {
+    state = await load()
+  } catch {
+    state = { status: 'error' }
+  }
+  if (seq === sequence.current) apply(state)
 }
 
 export function formatIndicatorCurrency(value: number | null): string {

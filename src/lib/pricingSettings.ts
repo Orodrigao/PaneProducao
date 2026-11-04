@@ -5,7 +5,12 @@
 // nova, confere admin ativo e recusa percentual fora de 0 a 100. O que existe
 // aqui é a validação de tela, para o recado chegar antes do envio, e as
 // chamadas. Vazio é "não definido" e nunca vira zero.
+//
+// Desde 04/11/2026 há um valor em reais, o salário mensal dos donos
+// (migration 20261104150000), que entra nas despesas fixas do preço. Ele tem
+// leitura e formato próprios: o resto continua percentual.
 
+import { parseMoneyInput } from '@/lib/cashClosing'
 import type { CatalogType, ProductCategory } from '@/lib/productCategories'
 
 /** Mesmo conjunto do check `channel` da migration; mudar um exige mudar o outro. */
@@ -20,7 +25,7 @@ const CHANNEL_LABELS: Record<PricingChannel, string> = {
 }
 
 /** Mesmo conjunto do check `setting_key` da migration. */
-export const PRICING_SETTING_KEYS = ['imposto_venda', 'taxa_canal', 'margem_desejada', 'margem_minima'] as const
+export const PRICING_SETTING_KEYS = ['imposto_venda', 'taxa_canal', 'margem_desejada', 'margem_minima', 'retirada_donos_mensal'] as const
 export type PricingSettingKey = typeof PRICING_SETTING_KEYS[number]
 
 const SETTING_LABELS: Record<PricingSettingKey, string> = {
@@ -28,6 +33,17 @@ const SETTING_LABELS: Record<PricingSettingKey, string> = {
   taxa_canal: 'Taxa do canal',
   margem_desejada: 'Margem desejada',
   margem_minima: 'Margem mínima',
+  retirada_donos_mensal: 'Salário dos donos por mês',
+}
+
+/** Chave guardada em reais, não em percentual. */
+export const OWNER_SALARY_KEY = 'retirada_donos_mensal' as const
+export const OWNER_SALARY_SLOT: PricingSettingSlot = { key: OWNER_SALARY_KEY, channel: null, categoryId: null }
+/** Mesmo limite do banco. */
+export const OWNER_SALARY_MAX = 1_000_000
+
+export function isMoneySetting(key: string): boolean {
+  return key === OWNER_SALARY_KEY
 }
 
 /** Categorias que podem ter exceção de margem: as mesmas que o banco aceita. */
@@ -82,7 +98,7 @@ export function slotId(slot: PricingSettingSlot): string {
 
 /** As chaves que a tela sempre mostra, na ordem da página. */
 export function baseSlots(): PricingSettingSlot[] {
-  const slots: PricingSettingSlot[] = [{ key: 'imposto_venda', channel: null, categoryId: null }]
+  const slots: PricingSettingSlot[] = [{ key: 'imposto_venda', channel: null, categoryId: null }, OWNER_SALARY_SLOT]
   for (const channel of PRICING_CHANNELS) {
     slots.push({ key: 'taxa_canal', channel, categoryId: null })
     slots.push({ key: 'margem_desejada', channel, categoryId: null })
@@ -120,7 +136,50 @@ export function parsePercentInput(raw: string): PercentParse {
   return { ok: true, value }
 }
 
+/**
+ * Valor mensal em reais. Vazio é "não definido" (null), nunca zero. Aceita
+ * "20000", "20.000", "20.000,00" e "R$ 20.000,50". Ponto sem vírgula só vale
+ * como milhar em grupos de três ("20.000"); "20.5" é recusado, porque
+ * parseMoneyInput leria vinte reais e cinquenta centavos onde a pessoa pode ter
+ * querido vinte mil e quinhentos.
+ */
+export function parseMonthlyAmountInput(raw: string): PercentParse {
+  const clean = raw.trim().replace(/\s/g, '').replace(/^R\$/i, '')
+  if (!clean) return { ok: true, value: null }
+  const withComma = /^\d{1,3}(\.\d{3})*(,\d{1,2})?$/.test(clean) || /^\d+(,\d{1,2})?$/.test(clean)
+  if (!withComma) {
+    return { ok: false, error: 'Digite o valor em reais, como 20.000 ou 20.000,00.' }
+  }
+  const normalized = clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean.replace(/\./g, '')
+  // Confere antes do parseMoneyInput, que devolve 0 para número que não cabe
+  // (centenas de dígitos viram Infinity) e gravaria salário zero.
+  const amount = Number(normalized)
+  if (!Number.isFinite(amount) || amount > OWNER_SALARY_MAX) {
+    return { ok: false, error: 'O valor precisa ficar entre R$ 0 e R$ 1.000.000.' }
+  }
+  return { ok: true, value: parseMoneyInput(normalized) }
+}
+
 const PERCENT_FORMATTER = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+const MONEY_INPUT_FORMATTER = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const MONEY_FORMATTER = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+
+/** Leitura do campo pela chave: reais no salário dos donos, percentual no resto. */
+export function parseSettingInput(key: string, raw: string): PercentParse {
+  return isMoneySetting(key) ? parseMonthlyAmountInput(raw) : parsePercentInput(raw)
+}
+
+/** Texto do campo pela chave: vazio quando não definido. */
+export function settingInputText(key: string, value: number | null): string {
+  if (value === null) return ''
+  return isMoneySetting(key) ? MONEY_INPUT_FORMATTER.format(value) : PERCENT_FORMATTER.format(value)
+}
+
+/** Valor para leitura (histórico, resumo): R$ no salário, % no resto. */
+export function formatSettingValue(key: string, value: number | null): string {
+  if (value === null) return 'não definido'
+  return isMoneySetting(key) ? MONEY_FORMATTER.format(value) : `${PERCENT_FORMATTER.format(value)}%`
+}
 
 export function formatPercent(value: number | null): string {
   return value === null ? 'não definido' : `${PERCENT_FORMATTER.format(value)}%`
@@ -156,7 +215,7 @@ export function buildPricingChanges(
     const id = slotId(slot)
     const text = draft[id]
     if (text === undefined) continue
-    const parsed = parsePercentInput(text)
+    const parsed = parseSettingInput(slot.key, text)
     if (!parsed.ok) {
       errors[id] = parsed.error
       continue
@@ -261,7 +320,7 @@ function asChannel(value: unknown): PricingChannel | null {
 function asNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null
   const parsed = Number(value)
-  if (!Number.isFinite(parsed)) throw new Error('Percentual inválido na configuração.')
+  if (!Number.isFinite(parsed)) throw new Error('Valor inválido na configuração.')
   return parsed
 }
 
@@ -298,7 +357,7 @@ export function describeHistoryEntry(entry: PricingHistoryEntry): string {
   const parts = [pricingSettingLabel(entry.key)]
   if (entry.channel) parts.push(pricingChannelLabel(entry.channel))
   if (entry.categoryId) parts.push(entry.categoryName ?? 'categoria removida')
-  return `${parts.join(' · ')}: ${formatPercent(entry.previousValue)} → ${formatPercent(entry.value)}`
+  return `${parts.join(' · ')}: ${formatSettingValue(entry.key, entry.previousValue)} → ${formatSettingValue(entry.key, entry.value)}`
 }
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('pt-BR', {

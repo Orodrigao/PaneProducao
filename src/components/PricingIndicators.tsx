@@ -4,6 +4,7 @@ import {
   formatIndicatorCurrency,
   formatIndicatorMonth,
   PRICING_INDICATORS_ERROR,
+  PRICING_INDICATORS_OUTDATED,
   type PricingIndicatorMonth,
   type PricingIndicatorsAverage,
   type PricingIndicatorsState,
@@ -29,6 +30,9 @@ function IndicatorCells({ row }: { row: PricingIndicatorMonth | PricingIndicator
       <td>
         {formatIndicatorCurrency(row.fixed_expenses)}
         <small style={{ display: 'block' }}>{formatExpensePercent(row.fixed_expense_pct)} do faturamento</small>
+        {row.owner_salary !== null && row.owner_salary > 0 && (
+          <small style={{ display: 'block' }}>inclui {formatIndicatorCurrency(row.owner_salary)} de salário dos donos</small>
+        )}
         {row.is_provisional && <ProvisionalNotice reasons={row.provisional_reasons} />}
       </td>
       <td>{formatIndicatorCurrency(row.production_labor)}</td>
@@ -54,12 +58,16 @@ export function PricingIndicators({ state }: PricingIndicatorsProps) {
     return <p className="ps-pad" role="alert">{PRICING_INDICATORS_ERROR}</p>
   }
 
+  if (state.status === 'outdated') {
+    return <p className="ps-pad" role="status">{PRICING_INDICATORS_OUTDATED}</p>
+  }
+
   return (
     <section className="ps-card" aria-labelledby="pricing-indicators-title" style={{ marginTop: 14 }}>
       <div className="ps-card-head">
         <div>
           <b id="pricing-indicators-title">Números recentes do Financeiro</b>
-          <small>Meses fechados desde setembro de 2026. Valores provisórios mostram o motivo ao lado.</small>
+          <small>Meses fechados desde setembro de 2026. Os quilos são de massa crua, pela ficha técnica de cada pão produzido. Valores provisórios mostram o motivo ao lado.</small>
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
@@ -70,9 +78,9 @@ export function PricingIndicators({ state }: PricingIndicatorsProps) {
               <th scope="col" style={{ textAlign: 'left' }}>Faturamento</th>
               <th scope="col" style={{ textAlign: 'left' }}>Despesas fixas</th>
               <th scope="col" style={{ textAlign: 'left' }}>Mão de obra</th>
-              <th scope="col" style={{ textAlign: 'left' }}>Quilos com peso</th>
-              <th scope="col" style={{ textAlign: 'left' }}>Cobertura do peso</th>
-              <th scope="col" style={{ textAlign: 'left' }}>Mão de obra por quilo</th>
+              <th scope="col" style={{ textAlign: 'left' }}>Quilos de massa crua</th>
+              <th scope="col" style={{ textAlign: 'left' }}>Produção com peso na ficha</th>
+              <th scope="col" style={{ textAlign: 'left' }}>Mão de obra por quilo de massa</th>
             </tr>
           </thead>
           <tbody>

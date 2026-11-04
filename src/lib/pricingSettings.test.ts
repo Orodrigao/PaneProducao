@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  OWNER_SALARY_SLOT,
   PRICING_CHANNELS,
   PRICING_SETTING_KEYS,
   baseSlots,
@@ -10,20 +11,29 @@ import {
   currentValueMap,
   describeHistoryEntry,
   formatPercent,
+  formatSettingValue,
   marginExceptionCategories,
+  parseMonthlyAmountInput,
   parsePercentInput,
   parsePricingSettingsResponse,
   percentInputText,
   pricingChannelLabel,
   pricingSaveErrorMessage,
   runPricingSave,
+  settingInputText,
   slotId,
   type PricingSettingValue,
 } from './pricingSettings'
 import type { ProductCategory } from './productCategories'
 
-const MIGRATION = readFileSync(
+// O check de canal está na migration do 99Food; a lista de chaves, o check de
+// escopo e a função de gravação vigentes, na do salário dos donos.
+const CHANNEL_MIGRATION = readFileSync(
   new URL('../../supabase/migrations/20261023180000_fechamento_caixa_protegido.sql', import.meta.url),
+  'utf8',
+)
+const KEYS_MIGRATION = readFileSync(
+  new URL('../../supabase/migrations/20261104150000_peso_da_ficha_indicadores_forno.sql', import.meta.url),
   'utf8',
 )
 
@@ -76,9 +86,62 @@ describe('formatação', () => {
 
 describe('paridade com a migration', () => {
   it('canais e parâmetros da tela são os mesmos dos checks do banco', () => {
-    expect(MIGRATION).toContain(`check (channel in (${PRICING_CHANNELS.map(c => `'${c}'`).join(', ')}))`)
-    for (const key of PRICING_SETTING_KEYS) expect(MIGRATION).toContain(`'${key}'`)
-    expect(MIGRATION).toMatch(/v_catalog_type not in \('produto_fabricado', 'produto_revenda'\)/)
+    expect(CHANNEL_MIGRATION).toContain(`check (channel in (${PRICING_CHANNELS.map(c => `'${c}'`).join(', ')}))`)
+    const keysCheck = /add constraint pricing_settings_history_setting_key_check check \(setting_key in \(([^)]*)\)/.exec(KEYS_MIGRATION)
+    expect(keysCheck?.[1].split(',').map(item => item.trim().replace(/'/g, ''))).toEqual([...PRICING_SETTING_KEYS])
+    expect(KEYS_MIGRATION).toContain(`if v_key not in (${PRICING_SETTING_KEYS.map(k => `'${k}'`).join(', ')}) then`)
+    expect(KEYS_MIGRATION).toMatch(/v_catalog_type not in \('produto_fabricado', 'produto_revenda'\)/)
+    // Mesmo teto em reais na tela e no banco.
+    expect(KEYS_MIGRATION).toContain("(setting_key = 'retirada_donos_mensal' and value between 0 and 1000000)")
+    expect(KEYS_MIGRATION).toContain('v_value > 1000000')
+  })
+})
+
+describe('salário dos donos em reais', () => {
+  it('vazio é não definido, nunca zero', () => {
+    expect(parseMonthlyAmountInput('')).toEqual({ ok: true, value: null })
+    expect(parseMonthlyAmountInput('  ')).toEqual({ ok: true, value: null })
+    expect(parseMonthlyAmountInput('0')).toEqual({ ok: true, value: 0 })
+  })
+
+  it('aceita o jeito brasileiro de escrever dinheiro', () => {
+    expect(parseMonthlyAmountInput('20000')).toEqual({ ok: true, value: 20000 })
+    expect(parseMonthlyAmountInput('20.000')).toEqual({ ok: true, value: 20000 })
+    expect(parseMonthlyAmountInput('20.000,00')).toEqual({ ok: true, value: 20000 })
+    expect(parseMonthlyAmountInput('R$ 20.000,50')).toEqual({ ok: true, value: 20000.5 })
+    expect(parseMonthlyAmountInput('1.000.000')).toEqual({ ok: true, value: 1000000 })
+  })
+
+  it('recusa ponto que pode ser decimal ou milhar, e valor fora do limite', () => {
+    // "20.5" seria lido como R$ 20,50 por parseMoneyInput: recusa em vez de adivinhar.
+    expect(parseMonthlyAmountInput('20.5').ok).toBe(false)
+    expect(parseMonthlyAmountInput('20000.00').ok).toBe(false)
+    expect(parseMonthlyAmountInput('-1').ok).toBe(false)
+    expect(parseMonthlyAmountInput('20.000,005').ok).toBe(false)
+    expect(parseMonthlyAmountInput('1.000.000,01').ok).toBe(false)
+    // Número enorme vira Infinity no Number(); não pode cair em zero.
+    expect(parseMonthlyAmountInput('9'.repeat(400)).ok).toBe(false)
+    expect(parseMonthlyAmountInput('2000000').ok).toBe(false)
+  })
+
+  it('o texto do campo relê igual ao valor gravado', () => {
+    expect(settingInputText('retirada_donos_mensal', 20000)).toBe('20.000,00')
+    expect(parseMonthlyAmountInput(settingInputText('retirada_donos_mensal', 20000))).toEqual({ ok: true, value: 20000 })
+    expect(settingInputText('imposto_venda', 8.49)).toBe('8,49')
+    expect(formatSettingValue('retirada_donos_mensal', 20000)).toContain('20.000,00')
+    expect(formatSettingValue('retirada_donos_mensal', null)).toBe('não definido')
+  })
+
+  it('o salário viaja em reais, sem passar pela trava de percentual', () => {
+    const id = slotId(OWNER_SALARY_SLOT)
+    expect(baseSlots().map(slotId)).toContain(id)
+    expect(buildPricingChanges(baseSlots(), { [id]: '20.000' }, new Map())).toEqual({
+      changes: [{ setting_key: 'retirada_donos_mensal', channel: null, category_id: null, value: 20000, previous_value: null }],
+      errors: {},
+    })
+    const current = currentValueMap([saved({ key: 'retirada_donos_mensal', value: 20000 })])
+    expect(buildPricingChanges(baseSlots(), { [id]: '20.000,00' }, current).changes).toEqual([])
+    expect(buildPricingChanges(baseSlots(), { [id]: '20.5' }, current).errors[id]).toBeTruthy()
   })
 })
 
@@ -245,6 +308,8 @@ describe('parsePricingSettingsResponse', () => {
     })
     expect(data.current[1].value).toBeNull()
     expect(describeHistoryEntry(data.history[0])).toBe('Taxa do canal · Balcão: 2,5% → não definido')
+    expect(describeHistoryEntry({ ...data.history[0], key: 'retirada_donos_mensal', channel: null, previousValue: null, value: 20000 }))
+      .toMatch(/^Salário dos donos por mês: não definido → R\$\s20\.000,00$/)
   })
 
   it('recusa formato inesperado e canal fora da lista', () => {

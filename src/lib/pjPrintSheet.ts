@@ -11,6 +11,8 @@ export interface PjProductionPrintSource {
   product_name?: string | null
   production_unit?: string | null
   quantity: unknown
+  /** Pedido PJ por quilo que o Forno não converteu em peças (ficha sem peso assado). */
+  needs_weight_setup?: boolean | null
 }
 
 export interface PjPrintSheetRow {
@@ -19,6 +21,8 @@ export interface PjPrintSheetRow {
   storeQuantities: readonly number[]
   storeTotal: number
   pjQuantity: number | null
+  /** Tem pedido PJ por quilo fora do total: a folha avisa em vez de esconder. */
+  pjWeightPending: boolean
   total: number
 }
 
@@ -40,6 +44,7 @@ export function buildPjPrintSheet(
     productId: string
     productName: string
     quantity: number
+    weightPending: boolean
   }>()
 
   for (const row of pjProduction) {
@@ -47,14 +52,18 @@ export function buildPjPrintSheet(
     if (!productId) continue
     const source = row.product_source === 'product' ? 'product' : 'bread'
     const quantity = positivePjQuantity(row.quantity)
-    if (quantity === null) continue
+    // Quantidade zero só vale como linha quando esconde pedido por quilo sem
+    // conversão: sumir com o pão faria a folha parecer completa.
+    const weightPending = row.needs_weight_setup === true
+    if (quantity === null && !weightPending) continue
     const key = `${source}:${productId}`
     const current = pjByProduct.get(key)
     pjByProduct.set(key, {
       source,
       productId,
       productName: row.product_name || current?.productName || productId,
-      quantity: (current?.quantity ?? 0) + quantity,
+      quantity: (current?.quantity ?? 0) + (quantity ?? 0),
+      weightPending: Boolean(current?.weightPending) || weightPending,
     })
   }
 
@@ -62,10 +71,12 @@ export function buildPjPrintSheet(
   const rows = breads.flatMap((bread) => {
     const key = `bread:${bread.breadId}`
     const storeTotal = bread.storeQuantities.reduce((total, quantity) => total + quantity, 0)
-    const pjQuantity = pjByProduct.get(key)?.quantity ?? null
+    const pj = pjByProduct.get(key)
+    const pjQuantity = pj && pj.quantity > 0 ? pj.quantity : null
+    const pjWeightPending = pj?.weightPending ?? false
     const total = storeTotal + (pjQuantity ?? 0)
 
-    if (total <= 0) return []
+    if (total <= 0 && !pjWeightPending) return []
     usedKeys.add(key)
 
     return [{
@@ -74,6 +85,7 @@ export function buildPjPrintSheet(
       storeQuantities: bread.storeQuantities,
       storeTotal,
       pjQuantity,
+      pjWeightPending,
       total,
     }]
   })
@@ -86,7 +98,8 @@ export function buildPjPrintSheet(
       breadName: product.productName,
       storeQuantities: emptyStoreQuantities,
       storeTotal: 0,
-      pjQuantity: product.quantity,
+      pjQuantity: product.quantity > 0 ? product.quantity : null,
+      pjWeightPending: product.weightPending,
       total: product.quantity,
     })
   }

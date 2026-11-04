@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(73);
+select plan(81);
 
 -- Contrato de acesso ----------------------------------------------------------
 select ok(not has_table_privilege('authenticated', 'private.pricing_settings_history', 'select'),
@@ -270,6 +270,27 @@ select is((public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":
 select is((select (item->>'value')::numeric from jsonb_array_elements(public.get_pricing_settings()->'current') item where item->>'channel'='food99' and item->>'setting_key'='taxa_canal'),14.1::numeric,'99Food relê sua taxa');
 select throws_ok($$select public.save_pricing_settings('[{"setting_key":"taxa_canal","channel":"inventado","value":1,"previous_value":null}]')$$,'22023',null,'canal inventado segue recusado');
 
+-- Salário dos donos (decisão de 04/11/2026: "Fixo de R$ 20 mil"): em reais,
+-- vale para todos os canais, nasce vazio e passa pela mesma porta.
+select ok(not exists (select 1 from pg_catalog.jsonb_array_elements(public.get_pricing_settings() -> 'current') item
+    where item ->> 'setting_key' = 'retirada_donos_mensal'),
+  'salário dos donos nasce não definido');
+select is((public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":20000,"previous_value":null}]') ->> 'saved')::integer, 1,
+  'admin grava o salário dos donos de R$ 20.000');
+select is((select (item ->> 'value')::numeric from pg_catalog.jsonb_array_elements(public.get_pricing_settings() -> 'current') item
+    where item ->> 'setting_key' = 'retirada_donos_mensal'), 20000::numeric,
+  'o salário relê em reais, acima do limite de percentual');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":1000000.01,"previous_value":20000}]')$$,
+  '22023', 'O salário dos donos deve ficar entre R$ 0 e R$ 1.000.000, com centavos.',
+  'salário acima de R$ 1.000.000 é recusado');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","channel":"balcao","value":1,"previous_value":null}]')$$,
+  '22023', null, 'salário dos donos não aceita canal');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"imposto_venda","value":20000,"previous_value":6}]')$$,
+  '22023', 'Percentual deve ficar entre 0 e 100, com até duas casas decimais.',
+  'percentual continua limitado a 100 depois que a coluna aceita reais');
+select throws_ok($$select public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":15000,"previous_value":19000}]')$$,
+  'PT409', null, 'salário com valor anterior desatualizado não atropela outro salvamento');
+
 -- O passado não se reescreve ---------------------------------------------------
 reset role;
 select throws_ok($$update private.pricing_settings_history set value = 1$$, '42501', null,
@@ -280,6 +301,10 @@ select throws_ok($$insert into private.pricing_settings_history
     (setting_key, value, change_id, changed_by, changed_by_name)
     values ('imposto_venda', 150, gen_random_uuid(), gen_random_uuid(), 'x')$$, '23514', null,
   'a tabela recusa percentual acima de 100 mesmo fora da função');
+select throws_ok($$insert into private.pricing_settings_history
+    (setting_key, value, change_id, changed_by, changed_by_name)
+    values ('retirada_donos_mensal', 2000000, gen_random_uuid(), gen_random_uuid(), 'x')$$, '23514', null,
+  'a tabela recusa salário acima do limite mesmo fora da função');
 
 select * from finish();
 rollback;

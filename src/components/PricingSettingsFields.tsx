@@ -4,6 +4,7 @@ import {
   formatChangedAt,
   percentInputText,
   pricingChannelLabel,
+  settingInputText,
   slotId,
   type PricingChannel,
   type PricingSettingSlot,
@@ -43,6 +44,41 @@ export function PricingPercentField({ slot, label, draft, current, errors, disab
           onChange={event => onChange(id, event.target.value)}
         />
         <span className={styles.percentSign}>%</span>
+      </div>
+      {errors[id]
+        ? <small className={styles.fieldError}>{errors[id]}</small>
+        : <small className={styles.fieldMeta}>
+            {saved ? `${saved.value === null ? 'Limpo' : 'Mudado'} por ${saved.changedByName} em ${formatChangedAt(saved.changedAt)}` : 'Nunca definido'}
+          </small>}
+    </div>
+  )
+}
+
+/**
+ * Campo em reais (salário dos donos): vazio é "não definido". Mesmo jeito do
+ * percentual, com o R$ na frente e o valor relido do banco com centavos.
+ */
+export function PricingMoneyField({ slot, label, draft, current, errors, disabled, onChange }: FieldProps) {
+  const id = slotId(slot)
+  const saved = current.get(id)
+  const text = draft[id] ?? settingInputText(slot.key, saved?.value ?? null)
+  const inputId = `pricing-${id.replace(/[^a-z0-9]+/gi, '-')}`
+  return (
+    <div className={styles.field}>
+      <label htmlFor={inputId} className={styles.fieldLabel}>{label}</label>
+      <div className={styles.inputRow}>
+        <span className={styles.percentSign}>R$</span>
+        <input
+          id={inputId}
+          className={`ps-input ${styles.percentInput}`}
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="não definido"
+          value={text}
+          disabled={disabled}
+          aria-invalid={errors[id] ? true : undefined}
+          onChange={event => onChange(id, event.target.value)}
+        />
       </div>
       {errors[id]
         ? <small className={styles.fieldError}>{errors[id]}</small>

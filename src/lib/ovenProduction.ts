@@ -111,10 +111,11 @@ export interface OvenPlanRowWithWeightFlag extends OvenPlanRow {
 }
 
 // Pedido PJ cobrado por peso de um pão vendido por unidade só entra no
-// previsto convertido por um peso médio cadastrado (breads.avg_unit_weight_kg).
-// Sem esse peso, list_pj_production_for_oven_v2 deixa a parcela em kg fora da
-// soma e marca needs_weight_setup — aqui só juntamos as chaves marcadas para
-// o Forno avisar que o previsto daquele pão pode estar incompleto.
+// previsto convertido pelo peso assado da ficha técnica do produto e da
+// variante (private.ficha_peso_por_unidade). Sem esse peso,
+// list_pj_production_for_oven_v2 deixa a parcela em kg fora da soma e marca
+// needs_weight_setup; aqui só juntamos as chaves marcadas para o Forno avisar
+// que o previsto daquele pão pode estar incompleto.
 export function collectWeightSetupWarnings(rows: OvenPlanRowWithWeightFlag[]): Set<string> {
   const warnings = new Set<string>()
 
