@@ -1,7 +1,9 @@
 # CONTAS_A_RECEBER.md — Plano do módulo
 
 **Natureza:** plano de funcionalidade nova, dividido em fases.
-**Status:** descoberta concluída em 2026-08-07. Aguardando aprovação da fase 0.
+**Status (2026-10-30):** fases 0 a 4D e as fases 1 a 3 da Tabela Buck (6A) no
+ar; a fase 5 (extrato por cliente e atrasados por faixa) e a faxina de tabelas da
+fase 6 seguem sem data. Descoberta concluída em 2026-08-07.
 Revisado em 2026-08-10 contra o checklist padrão de contas a receber; quatro
 lacunas incorporadas por decisão do Rodrigo (decisão 9).
 Fase 0 concluída em 2026-08-11 (seed no PR #202, smoke no PR #208).
@@ -318,7 +320,8 @@ A fase 2 só começa depois de:
    a mesma cobrança em vez de erro de unicidade;
 9. policies próprias em cada tabela filha, sem depender da visibilidade da
    tabela-pai;
-10. teste direto por REST, RPC e GraphQL — não apenas pela tela;
+10. teste direto por REST e RPC, não apenas pela tela (o GraphQL está
+    desligado no banco desde 2026-10-24);
 11. matriz no Preview com usuário sem permissão, financeiro autorizado, outra
     loja e administrador, afirmando que escrita direta na tabela falha.
 
