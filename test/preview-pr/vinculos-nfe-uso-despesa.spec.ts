@@ -8,7 +8,8 @@ import { cabecalhosDaSessao, entrarComo, matriz, type Perfil } from './apoio/ent
 // lista do produto e desfaz. Financeiro JC (sem o Catalogo), Vendas JA e
 // Expedicao JC sao barrados na funcao com o token da propria sessao. Os roteiros
 // terminam com os itens como no seed; se uma rodada anterior parou no meio,
-// desfazem primeiro.
+// desfazem primeiro. Desde a revenda sem cadastro (fase 3), a lista se chama
+// "Itens fora do cadastro" e desfazer religa a memoria que ninguem mexeu depois.
 
 const TELA = '/produtos/vinculos'
 const DESTINO = '[TESTE] Vinculo uso destino'
@@ -25,12 +26,12 @@ async function abrirTela(page: Page) {
 }
 
 function secaoUso(page: Page) {
-  return page.locator('section', { has: page.getByRole('heading', { name: 'Itens lançados como uso ou despesa' }) })
+  return page.locator('section', { has: page.getByRole('heading', { name: 'Itens fora do cadastro' }) })
 }
 
 async function abrirUsoDespesa(page: Page, filtro: string) {
   await abrirTela(page)
-  await secaoUso(page).getByRole('button', { name: 'Ver itens lançados como uso ou despesa' }).click()
+  await secaoUso(page).getByRole('button', { name: 'Ver itens fora do cadastro' }).click()
   await expect(page.getByLabel('Filtrar por fornecedor, descrição ou número da nota')).toBeVisible({ timeout: 20_000 })
   await page.getByLabel('Filtrar por fornecedor, descrição ou número da nota').fill(filtro)
 }
@@ -47,7 +48,7 @@ function historico(page: Page) {
   return page.locator('section', { has: page.getByRole('heading', { name: 'Correções de itens de notas' }) })
 }
 
-async function desfazerUltima(page: Page, conferir: RegExp) {
+async function desfazerUltima(page: Page, conferir: RegExp, memoria?: RegExp) {
   const pendente = historico(page).locator('article', { hasText: 'Itens corrigidos' })
     .filter({ has: page.getByRole('button', { name: 'Desfazer' }) }).first()
   await pendente.getByRole('button', { name: 'Desfazer' }).click()
@@ -55,7 +56,7 @@ async function desfazerUltima(page: Page, conferir: RegExp) {
   const previa = pendente.getByRole('region', { name: 'Confira o efeito de desfazer antes de confirmar' })
   await expect(previa).toBeVisible({ timeout: 20_000 })
   await expect(previa.getByText(conferir).first()).toBeVisible()
-  await expect(previa.getByText(/Desfazer não religa memória desligada/)).toBeVisible()
+  if (memoria) await expect(previa.getByRole('list', { name: 'Memória do fornecedor' }).getByText(memoria)).toBeVisible()
   await previa.getByRole('button', { name: 'Confirmar desfazer' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Correção desfeita' })).toBeVisible({ timeout: 20_000 })
 }
@@ -120,7 +121,7 @@ test('Financeiro Catalogo tira de uso ou despesa um item de conta paga, confere 
 
     previa = await pedirPreviaDaMargarina(page)
     await previa.getByRole('button', { name: 'Confirmar correção' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Correção gravada: 1 item(ns) saíram de uso ou despesa' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('status').filter({ hasText: 'Correção gravada: 1 item(ns) saíram de fora do cadastro' })).toBeVisible({ timeout: 20_000 })
     await expect(page.getByLabel(CAIXA_MARGARINA)).toHaveCount(0, { timeout: 20_000 })
 
     // Persistencia: o item sai da lista de uso ou despesa e entra no produto.
@@ -132,7 +133,7 @@ test('Financeiro Catalogo tira de uso ou despesa um item de conta paga, confere 
     await expect(page.getByText(/Conversão registrada: 30 \(package\) · quantidade útil 30 kg/)).toBeVisible()
     await expect(historico(page).getByText(/Itens corrigidos · por Financeiro Catalogo JC Teste/).first()).toBeVisible({ timeout: 20_000 })
 
-    await desfazerUltima(page, /→ uso ou despesa \(fora da receita, do estoque e do custo\)/)
+    await desfazerUltima(page, /→ uso ou despesa \(fora da receita, do estoque e do custo\)/, /a memória deste item volta a uso ou despesa, como era antes da correção/)
     await page.reload()
     await abrirUsoDespesa(page, 'Margarina caixa uso')
     await expect(page.getByLabel(CAIXA_MARGARINA)).toBeVisible({ timeout: 20_000 })

@@ -1076,7 +1076,8 @@ O item fora do cadastro (`mapping_status = 'nao_aplicavel'`) ganhou o tipo
   ganhou `non_catalog_kind`; `kind` segue `uso_despesa` para toda memória fora
   do cadastro, porque a correção desliga por ele). O banco recusa tirar revenda
   sem cadastro de fora do cadastro, por qualquer caminho, até a fase 3 levar o
-  tipo à foto e ao desfazer da correção.
+  tipo à foto e ao desfazer da correção (a fase 3 trocou essas duas regras; ver o
+  registro abaixo).
 
 Provas: pgTAP `supabase/tests/revenda_sem_cadastro_tipo.test.sql`, dois
 invariantes em `supabase/tests/invariantes.test.sql`, testes de tela e do
@@ -1084,6 +1085,67 @@ consumo no Vitest e o roteiro `test/preview-pr/revenda-sem-cadastro.spec.ts`
 (Financeiro JC na importação, no rascunho, nos pendentes e na memória; a
 classificação com dois parâmetros, como o site anterior; Vendas JA e Expedição
 JC barrados na Data API).
+
+### Registro da fase 3 (04/11/2026, em PR)
+
+O que muda para quem corrige notas em Catálogo > Vínculos NF-e:
+
+- a lista "Itens fora do cadastro" separa os itens em dois grupos, uso ou
+  despesa e revenda sem cadastro. Dali o item vai para um produto (com o
+  fator) ou troca de tipo; na lista de notas de cada produto, a terceira
+  escolha é "Revenda sem cadastro";
+- toda troca passa pela prévia do banco (`correct_payable_purchase_items`), com
+  a mesma recusa PT409: uso ou despesa e revenda sem cadastro nos dois
+  sentidos, revenda sem cadastro para produto e produto para revenda sem
+  cadastro. Conta, parcelas, rateio e livro-caixa não mudam. Produto que vira
+  revenda recalcula o custo do cadastro pela nota mais recente que sobrou; sem
+  outra nota, o custo fica como estava. A revenda não tem custo de cadastro,
+  mas o valor de aquisição do item continua o mesmo;
+- a prévia mostra o consumo semanal (a parte de revenda sem cadastro dentro de
+  "não é estoque") e a memória do fornecedor atingida. Regra da memória (só a
+  de fora do cadastro; a de insumo continua em Memórias de vínculo): item que
+  vira produto desliga a memória de fora do cadastro; item que troca de tipo
+  troca o tipo da memória; se houve decisão mais nova sobre alguma memória
+  desse item do fornecedor, a memória fica como está e a prévia diz isso:
+  corrigir nota antiga não muda a sugestão das próximas. A conta é item a item
+  (basta um item da memória com decisão mais nova, ou sem a data da decisão,
+  para ela ficar). Item que já passou por correção desta fase compara as
+  memórias de agora com a foto exata que essa correção gravou
+  (`memories_snapshot`), versão por versão; sem foto, vale o horário
+  (`mapping_confirmed_at` do item contra a versão das memórias). A comparação de
+  horário sozinha falha porque os outros gravadores usam `now()`, o início da
+  transação (achado da revisão de outra família). Itens da mesma memória com
+  destinos diferentes no mesmo pedido são recusados. Desfazer volta a memória,
+  com a versão que ela tinha, só se a foto de agora for igual à que a correção
+  deixou; correção antiga, que não registrou a memória, continua sem religar;
+- o aviso de categoria distingue revenda de despesa: produto que vira revenda
+  numa conta de CMV não recebe o aviso de despesa; revenda numa conta fora do
+  CMV, ou em CMV que não é de revenda, pede conferência; conta dividida entre
+  CMV e outras categorias pede para conferir a parte do item; nota mista recebe
+  cada aviso que se aplica;
+- quando a memória de insumo vence a correção, a prévia diz o tipo certo e onde
+  desligá-la ("para ela vir como revenda sem cadastro, desligue essa memória");
+- a troca de tipo não tem produto em nenhum dos lados: o histórico e o desfazer
+  ficam no próprio item ("Histórico deste item"). A tabela de correções ganhou
+  `item_ids`, preenchida também para as correções antigas;
+- o gatilho `normalizar_tipo_fora_do_cadastro` deixou de travar a revenda até a
+  fase 3: agora só a correção de notas tira a revenda de fora do cadastro ou
+  troca o tipo dela; qualquer outro gravador é recusado;
+- o tipo entra na foto do item, no pedido, no hash, no replay, no desfazer e no
+  evento da conta. Correções antigas, sem o tipo, continuam desfazíveis, e o
+  replay de um pedido gravado antes do tipo devolve o resultado gravado. O site
+  novo não mostra prévia de revenda enquanto o banco não tiver a migration, que
+  a gravaria como uso ou despesa.
+
+Provas: pgTAP `supabase/tests/revenda_sem_cadastro_correcao.test.sql`, ajustes
+em `revenda_sem_cadastro_tipo.test.sql` e `vinculos_nfe_uso_despesa.test.sql`
+(o desfazer agora religa a memória), um invariante novo em
+`supabase/tests/invariantes.test.sql`, testes de tela no Vitest e o roteiro
+`test/preview-pr/vinculos-nfe-revenda.spec.ts` (Financeiro Catálogo JC troca,
+confere depois de recarregar e desfaz; Financeiro JC, Vendas JA e Expedição JC
+barrados na Data API). No seed, a margarina e o pano fictícios da fase 5
+ganharam a data da decisão e a memória gravada junto com a nota, como em
+produção, e o seed apaga também as correções desses itens pelo `item_ids`.
 
 ## Fase 3B: aviso de alta de custo na entrada da nota (2026-11-04)
 
