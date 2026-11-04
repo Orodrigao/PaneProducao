@@ -589,6 +589,11 @@ begin
           raise exception using errcode = '22023',
             message = 'Item ligado a produto não tem tipo de fora do cadastro: envie o tipo vazio.';
         end if;
+        -- O site novo sempre manda a chave (vazia no item com produto); sem ela
+        -- é o site anterior, que não conhece a revenda sem cadastro.
+        if not (v_element ? 'non_catalog_kind') then
+          v_kind_omitted := true;
+        end if;
         if (v_element ->> 'conversion_factor')::numeric <= 0
            or (v_element ->> 'conversion_factor')::numeric >= 100000000
            or (v_element ->> 'conversion_factor')::numeric <> round((v_element ->> 'conversion_factor')::numeric, 6) then
@@ -776,13 +781,15 @@ begin
       end if;
 
       if v_action = 'corrigir' then
+        -- Tela aberta antes da revenda sem cadastro mostra a revenda como uso
+        -- ou despesa, para qualquer destino: pede para recarregar.
+        if v_kind_omitted and v_from = 'revenda' then
+          raise exception using errcode = '22023',
+            message = 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.';
+        end if;
         if v_line.product_id is null then
           if v_from = v_line.non_catalog_kind then
             raise exception using errcode = '22023', message = 'A correção não muda nada em um dos itens.';
-          end if;
-          if v_kind_omitted and v_from = 'revenda' then
-            raise exception using errcode = '22023',
-              message = 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.';
           end if;
           v_usable := null;
         else
@@ -1063,8 +1070,13 @@ begin
         v_memory_after := null;
         v_memory_reason := null;
         if v_target <> 'produto' and v_link.memory ->> 'non_catalog_kind' = v_target then
-          v_memory_action := 'manter';
+          -- A memória já diz o tipo pedido: o conteúdo não muda, mas esta
+          -- correção também é decisão sobre ela e a carimba. Assim o desfazer
+          -- de uma correção anterior que trocou esse tipo vê a decisão mais
+          -- nova e não volta o tipo antigo por cima dela.
+          v_memory_action := 'confirmar';
           v_memory_reason := 'ja_certa';
+          v_memory_after := jsonb_build_object('active', true, 'non_catalog_kind', v_target);
         elsif v_link.decided_unknown then
           -- Sem a data da decisão não há como saber se a memória é mais nova
           -- (em produção todo item corrigível tem a data; o caso é de item
@@ -1119,7 +1131,7 @@ begin
         select value from jsonb_array_elements(
           case when jsonb_typeof(v_undo.impact -> 'memory_changes') = 'array' then v_undo.impact -> 'memory_changes' else '[]'::jsonb end
         )
-        where value ->> 'action' in ('desligar', 'trocar_tipo')
+        where value ->> 'action' in ('desligar', 'trocar_tipo', 'confirmar')
         order by value ->> 'mapping_id'
       loop
         select mapping.active, mapping.non_catalog_kind into v_current_memory
@@ -1194,7 +1206,7 @@ begin
     v_memories_changed := array(
       select (change ->> 'mapping_id')::uuid
       from jsonb_array_elements(v_memory_changes) change
-      where change ->> 'action' in ('desligar', 'trocar_tipo', 'restaurar')
+      where change ->> 'action' in ('desligar', 'trocar_tipo', 'confirmar', 'restaurar')
       order by 1
     );
     update public.payable_non_catalog_mappings mapping
@@ -1207,7 +1219,7 @@ begin
         end
     from jsonb_array_elements(v_memory_changes) change
     where mapping.id = (change ->> 'mapping_id')::uuid
-      and change ->> 'action' in ('desligar', 'trocar_tipo', 'restaurar');
+      and change ->> 'action' in ('desligar', 'trocar_tipo', 'confirmar', 'restaurar');
     v_memories_off := array(
       select (change ->> 'mapping_id')::uuid
       from jsonb_array_elements(v_memory_changes) change
@@ -1219,7 +1231,7 @@ begin
     v_memories_stamped := array(
       select (change ->> 'mapping_id')::uuid
       from jsonb_array_elements(v_memory_changes) change
-      where change ->> 'action' in ('desligar', 'trocar_tipo')
+      where change ->> 'action' in ('desligar', 'trocar_tipo', 'confirmar')
       order by 1
     );
 

@@ -416,7 +416,8 @@ select lives_ok(
       jsonb_build_array(jsonb_build_object(
         'item_id', (select id from public.payable_purchase_items where source_product_code = 'REV-CREA'),
         'product_id', '97800000-0000-4000-8000-0000000000d2',
-        'conversion_factor', 1)))$$,
+        'conversion_factor', 1,
+        'non_catalog_kind', null)))$$,
   'a correção de notas da fase 3 mostra a prévia da revenda virando produto');
 reset role;
 select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'REV-CREA'),

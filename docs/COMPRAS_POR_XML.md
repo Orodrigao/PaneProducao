@@ -913,7 +913,10 @@ fornecedor: a próxima nota chega sem essa sugestão e quem importa escolhe. A
 memória de insumo continua só com a função da fase 3; ao virar uso ou despesa, a
 prévia avisa se ela ainda sugere o produto. Desfazer não religa memória
 desligada, porque religar poderia deixar duas respostas ligadas para o mesmo
-item.
+item. Isso valeu até a revenda sem cadastro: desde a fase 3 dela (registro mais
+abaixo), o desfazer de correção nova religa a memória quando a foto das
+memórias do item continua igual à que a correção deixou; só as correções
+gravadas antes disso continuam sem religar.
 
 **Desfazer** volta o item exatamente como estava (produto, fator, quantidade
 útil e base de conversão, ou uso ou despesa), com prévia própria, e só vale se
@@ -1122,7 +1125,10 @@ O que muda para quem corrige notas em Catálogo > Vínculos NF-e:
   44 dos 54 itens fora do cadastro com memória ligada tinham item e memória
   gravados no mesmo instante (caminho normal), 9 tinham a memória mudada depois
   e nenhum a memória mais velha. Itens da mesma memória com
-  destinos diferentes no mesmo pedido são recusados. Desfazer volta a memória,
+  destinos diferentes no mesmo pedido são recusados. Quando a memória já diz o
+  tipo pedido, a correção a confirma (mesmo conteúdo, carimbo novo), para o
+  desfazer de uma correção anterior não voltar o tipo antigo por cima dessa
+  decisão mais nova. Desfazer volta a memória,
   com a versão que ela tinha, só se a foto de agora for igual à que a correção
   deixou; correção antiga, que não registrou a memória, continua sem religar;
 - o aviso de categoria distingue revenda de despesa: produto que vira revenda
@@ -1142,7 +1148,9 @@ O que muda para quem corrige notas em Catálogo > Vínculos NF-e:
   evento da conta. Correções antigas, sem o tipo, continuam desfazíveis, e o
   replay de um pedido gravado antes do tipo devolve o resultado gravado. O site
   novo não mostra prévia de revenda enquanto o banco não tiver a migration, que
-  a gravaria como uso ou despesa.
+  a gravaria como uso ou despesa; a tela aberta antes do deploy, que não conhece
+  a revenda, tem recusado o pedido que mexe em item de revenda, para qualquer
+  destino, com o aviso de recarregar.
 
 Provas: pgTAP `supabase/tests/revenda_sem_cadastro_correcao.test.sql`, ajustes
 em `revenda_sem_cadastro_tipo.test.sql` e `vinculos_nfe_uso_despesa.test.sql`

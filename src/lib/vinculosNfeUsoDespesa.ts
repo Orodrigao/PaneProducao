@@ -204,6 +204,7 @@ function memoryChangeText(change: MemoryChange): string {
   switch (change.action) {
     case 'desligar': return `a memória de ${before} deste item será desligada`
     case 'trocar_tipo': return `a memória deste item passa de ${before} para ${after}`
+    case 'confirmar': return `a memória deste item já sugere ${after} e fica confirmada por esta correção`
     case 'restaurar': return change.after?.active === false
       ? 'a memória deste item volta a ficar desligada, como era antes da correção'
       : `a memória deste item volta a ${after}, como era antes da correção`

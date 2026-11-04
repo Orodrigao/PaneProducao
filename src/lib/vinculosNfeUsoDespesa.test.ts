@@ -408,6 +408,11 @@ describe('revenda sem cadastro na correção de notas (fase 3)', () => {
       before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: null,
     }])
     expect(describeMemories(incerta)[0]).toContain('a memória deste item foi mexida quase ao mesmo tempo que a decisão desta nota e não dá para saber qual veio depois: a nota será corrigida, mas a sugestão das próximas notas continua como está')
+    const confirmada = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: memory })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'confirmar', reason: 'ja_certa',
+      before: { active: true, non_catalog_kind: 'revenda' }, after: { active: true, non_catalog_kind: 'revenda' }, newer_at: null,
+    }])
+    expect(describeMemories(confirmada)[0]).toBe('WHEY PROTEIN 900G (Giants): a memória deste item já sugere revenda sem cadastro e fica confirmada por esta correção; a próxima nota sugere revenda sem cadastro.')
   })
 
   it('no desfazer, diz se a memória volta ou fica com a escolha mais nova; correção antiga não religa', () => {

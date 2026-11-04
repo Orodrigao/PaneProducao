@@ -69,7 +69,7 @@ export interface MemoryRef {
 }
 
 /** O que a correção faz com uma memória de fora do cadastro. */
-export type MemoryChangeAction = 'desligar' | 'trocar_tipo' | 'restaurar' | 'manter'
+export type MemoryChangeAction = 'desligar' | 'trocar_tipo' | 'confirmar' | 'restaurar' | 'manter'
 
 export interface MemoryState {
   active: boolean | null

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(101);
+select plan(104);
 
 -- Revenda sem cadastro, fase 3: corrigir nota gravada entre uso ou despesa,
 -- revenda sem cadastro e produto, pela correção de notas
@@ -105,7 +105,10 @@ insert into public.payable_purchase_items (
   ('97900000-0000-4000-8000-000000000176', '97900000-0000-4000-8000-000000000046', null, 'AVEIA', 'UN', 1, 10, 'AVEI', 'AVEIA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
   -- Limitação conhecida da janela: memória de insumo desligada por uma nota
   -- anterior, um minuto antes desta, deixa a ordem incerta.
-  ('97900000-0000-4000-8000-000000000177', '97900000-0000-4000-8000-000000000046', null, 'CEVADA', 'UN', 1, 10, 'CEVA', 'CEVADA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00');
+  ('97900000-0000-4000-8000-000000000177', '97900000-0000-4000-8000-000000000046', null, 'CEVADA', 'UN', 1, 10, 'CEVA', 'CEVADA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00'),
+  -- Dois itens da mesma memória corrigidos em correções separadas (revisão automática).
+  ('97900000-0000-4000-8000-000000000179', '97900000-0000-4000-8000-000000000046', null, 'AMENDOIM', 'UN', 1, 10, 'AMEN', 'AMENDOIM', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-00000000017a', '97900000-0000-4000-8000-000000000045', null, 'AMENDOIM', 'UN', 1, 10, 'AMEN', 'AMENDOIM', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now());
 
 -- Conta paga: parcela paga, rateio em despesa e lançamentos no livro gerados
 -- pela função oficial da baixa. As outras contas: rateio em CMV de revenda.
@@ -142,7 +145,8 @@ insert into public.payable_non_catalog_mappings (
   ('97900000-0000-4000-8000-000000000185', '97900000-0000-4000-8000-000000000011', 'MASS', null, 'MASSA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-000000000186', '97900000-0000-4000-8000-000000000011', 'FUBA', null, 'FUBA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-000000000187', '97900000-0000-4000-8000-000000000011', 'AVEI', null, 'AVEIA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
-  ('97900000-0000-4000-8000-000000000188', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00');
+  ('97900000-0000-4000-8000-000000000188', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00'),
+  ('97900000-0000-4000-8000-00000000018b', '97900000-0000-4000-8000-000000000011', 'AMEN', null, 'AMENDOIM', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now());
 insert into public.payable_product_mappings (
   id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
   base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active, last_confirmed_by, updated_at
@@ -378,7 +382,7 @@ select throws_ok(
 -- Revenda sem cadastro -> produto ----------------------------------------------
 
 select set_config('teste.p2', public.correct_payable_purchase_items(null, 'previa',
-  '[{"item_id":"97900000-0000-4000-8000-000000000060","product_id":"97900000-0000-4000-8000-000000000021","conversion_factor":1}]')::text, true);
+  '[{"item_id":"97900000-0000-4000-8000-000000000060","product_id":"97900000-0000-4000-8000-000000000021","conversion_factor":1,"non_catalog_kind":null}]')::text, true);
 select results_eq(
   $$select entry ->> 'action', (entry -> 'after' ->> 'active')::boolean
     from jsonb_array_elements(current_setting('teste.p2')::jsonb -> 'impact' -> 'memory_changes') entry$$,
@@ -398,7 +402,7 @@ select results_eq(
   $$values (0::numeric, 2::numeric)$$,
   'prévia: a semana fechada passa a contar a entrada no produto');
 select set_config('teste.a2', public.correct_payable_purchase_items('97900000-0000-4000-8000-0000000000a2', 'aplicar',
-  '[{"item_id":"97900000-0000-4000-8000-000000000060","product_id":"97900000-0000-4000-8000-000000000021","conversion_factor":1}]',
+  '[{"item_id":"97900000-0000-4000-8000-000000000060","product_id":"97900000-0000-4000-8000-000000000021","conversion_factor":1,"non_catalog_kind":null}]',
   null, current_setting('teste.p2')::jsonb ->> 'impact_hash')::text, true);
 select results_eq(
   $$select mapping_status, non_catalog_kind, product_id, conversion_factor, usable_quantity, normalized_unit_cost
@@ -728,7 +732,7 @@ select is(
 -- com a foto da correção anterior, não com o horário.
 select is(
   public.correct_payable_purchase_items(null, 'previa',
-    '[{"item_id":"97900000-0000-4000-8000-00000000006e","product_id":"97900000-0000-4000-8000-000000000023","conversion_factor":1}]')
+    '[{"item_id":"97900000-0000-4000-8000-00000000006e","product_id":"97900000-0000-4000-8000-000000000023","conversion_factor":1,"non_catalog_kind":null}]')
     -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
   'decisao_posterior', 'correção nova do item não desliga a memória reafirmada depois da correção anterior');
 
@@ -869,6 +873,34 @@ select is(
     -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
   'ordem_incerta', 'limitação conhecida: memória de insumo desligada um minuto antes da decisão deixa a ordem incerta');
 
+-- Revisão automática da PR -------------------------------------------------------
+
+-- Tela aberta antes da revenda sem cadastro (pedido sem a chave do tipo) não
+-- manda revenda para produto: ela mostraria a revenda como uso ou despesa.
+select throws_ok(
+  $$select public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000061","product_id":"97900000-0000-4000-8000-000000000022","conversion_factor":1}]')$$,
+  '22023', 'Esta tela foi aberta antes da revenda sem cadastro e trataria a revenda como uso ou despesa. Recarregue a página e confira a nota de novo.',
+  'pedido sem o tipo (site anterior) não manda revenda para produto');
+-- Duas correções separadas de itens da mesma memória: a segunda confirma o tipo
+-- que a primeira trocou; desfazer a primeira não volta o tipo antigo por cima.
+select set_config('teste.pa1', public.correct_payable_purchase_items(null, 'previa',
+  '[{"item_id":"97900000-0000-4000-8000-000000000179","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')::text, true);
+select set_config('teste.aa1', public.correct_payable_purchase_items('97900000-0000-4000-8000-0000000001a4', 'aplicar',
+  '[{"item_id":"97900000-0000-4000-8000-000000000179","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]',
+  null, current_setting('teste.pa1')::jsonb ->> 'impact_hash')::text, true);
+select set_config('teste.pa2', public.correct_payable_purchase_items(null, 'previa',
+  '[{"item_id":"97900000-0000-4000-8000-00000000017a","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')::text, true);
+select is(current_setting('teste.pa2')::jsonb -> 'impact' -> 'memory_changes' -> 0 ->> 'action', 'confirmar',
+  'a segunda correção confirma a memória que a primeira trocou');
+select set_config('teste.aa2', public.correct_payable_purchase_items('97900000-0000-4000-8000-0000000001a5', 'aplicar',
+  '[{"item_id":"97900000-0000-4000-8000-00000000017a","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]',
+  null, current_setting('teste.pa2')::jsonb ->> 'impact_hash')::text, true);
+select is(
+  public.correct_payable_purchase_items(null, 'previa', null,
+    (current_setting('teste.aa1')::jsonb ->> 'correction_id')::uuid) -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
+  'mudou_depois', 'desfazer a primeira correção não volta o tipo antigo por cima da confirmação mais nova');
+
 -- Administrador também corrige --------------------------------------------------
 
 select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000001', true);
@@ -881,8 +913,8 @@ select results_eq(
     from jsonb_array_elements(public.correct_payable_purchase_items(null, 'previa',
       '[{"item_id":"97900000-0000-4000-8000-000000000066","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
       -> 'impact' -> 'memory_changes') entry$$,
-  $$values ('manter'::text, 'ja_certa'::text)$$,
-  'memória que já sugere o tipo pedido não muda');
+  $$values ('confirmar'::text, 'ja_certa'::text)$$,
+  'memória que já sugere o tipo pedido não muda de conteúdo e fica confirmada (carimbada) por esta correção');
 
 -- Nada do financeiro muda ----------------------------------------------------------
 
