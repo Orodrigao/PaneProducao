@@ -407,7 +407,7 @@ describe('revenda sem cadastro na correção de notas (fase 3)', () => {
       mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'ordem_incerta',
       before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: null,
     }])
-    expect(describeMemories(incerta)[0]).toContain('a memória deste item foi mexida quase ao mesmo tempo que esta nota e não dá para saber qual decisão veio depois, então a memória fica como está')
+    expect(describeMemories(incerta)[0]).toContain('a memória deste item foi mexida quase ao mesmo tempo que a decisão desta nota e não dá para saber qual veio depois: a nota será corrigida, mas a sugestão das próximas notas continua como está')
   })
 
   it('no desfazer, diz se a memória volta ou fica com a escolha mais nova; correção antiga não religa', () => {

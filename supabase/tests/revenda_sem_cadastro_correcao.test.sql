@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(99);
+select plan(101);
 
 -- Revenda sem cadastro, fase 3: corrigir nota gravada entre uso ou despesa,
 -- revenda sem cadastro e produto, pela correção de notas
@@ -100,7 +100,12 @@ insert into public.payable_purchase_items (
   -- Duas correções do item no mesmo instante.
   ('97900000-0000-4000-8000-000000000174', '97900000-0000-4000-8000-000000000046', null, 'MASSA', 'UN', 1, 10, 'MASS', 'MASSA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
   -- Correção com outra do item no mesmo instante: o desfazer não arrisca.
-  ('97900000-0000-4000-8000-000000000175', '97900000-0000-4000-8000-000000000046', null, 'FUBA', 'UN', 1, 10, 'FUBA', 'FUBA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-000000000175', '97900000-0000-4000-8000-000000000046', null, 'FUBA', 'UN', 1, 10, 'FUBA', 'FUBA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  -- Par correção e desfazer no mesmo instante, com identificadores em ordem desfavorável.
+  ('97900000-0000-4000-8000-000000000176', '97900000-0000-4000-8000-000000000046', null, 'AVEIA', 'UN', 1, 10, 'AVEI', 'AVEIA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  -- Limitação conhecida da janela: memória de insumo desligada por uma nota
+  -- anterior, um minuto antes desta, deixa a ordem incerta.
+  ('97900000-0000-4000-8000-000000000177', '97900000-0000-4000-8000-000000000046', null, 'CEVADA', 'UN', 1, 10, 'CEVA', 'CEVADA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00');
 
 -- Conta paga: parcela paga, rateio em despesa e lançamentos no livro gerados
 -- pela função oficial da baixa. As outras contas: rateio em CMV de revenda.
@@ -135,7 +140,9 @@ insert into public.payable_non_catalog_mappings (
   ('97900000-0000-4000-8000-000000000183', '97900000-0000-4000-8000-000000000011', 'QMIN', null, 'QUEIJO MINAS', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00:00+00'),
   ('97900000-0000-4000-8000-000000000184', '97900000-0000-4000-8000-000000000011', 'FARE', null, 'FARELO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-11 10:00+00'),
   ('97900000-0000-4000-8000-000000000185', '97900000-0000-4000-8000-000000000011', 'MASS', null, 'MASSA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
-  ('97900000-0000-4000-8000-000000000186', '97900000-0000-4000-8000-000000000011', 'FUBA', null, 'FUBA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-000000000186', '97900000-0000-4000-8000-000000000011', 'FUBA', null, 'FUBA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-000000000187', '97900000-0000-4000-8000-000000000011', 'AVEI', null, 'AVEIA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-000000000188', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00');
 insert into public.payable_product_mappings (
   id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
   base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active, last_confirmed_by, updated_at
@@ -145,6 +152,9 @@ insert into public.payable_product_mappings (
 ), (
   '97900000-0000-4000-8000-000000000181', '97900000-0000-4000-8000-000000000011', 'MEL', null, 'MEL', 'UN',
   '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, false, '97900000-0000-4000-8000-000000000001', '2024-01-01 12:00+00'
+), (
+  '97900000-0000-4000-8000-000000000189', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN',
+  '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, false, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'
 );
 create temporary table memoria_mel_antes on commit drop as
 select mapping.updated_at from public.payable_non_catalog_mappings mapping
@@ -825,6 +835,39 @@ select throws_ok(
     (current_setting('teste.at')::jsonb ->> 'correction_id')::uuid)$$,
   '22023', 'Um item foi corrigido de novo depois desta correção; desfaça a correção mais nova.',
   'outra correção do item no mesmo instante bloqueia o desfazer');
+reset role;
+-- A correção (id maior) e o desfazer dela (id menor) no mesmo instante: o
+-- desfazer é a última, e a foto dele é a que vale.
+insert into public.payable_purchase_item_corrections (
+  id, request_id, action, undoes_correction_id, product_ids, item_ids, requested, impact, impact_hash, corrected_by, corrected_at
+) values (
+  '97900000-0000-4000-8000-0000000000fe', '97900000-0000-4000-8000-0000000000fd', 'corrigir', null, '{}'::uuid[],
+  array['97900000-0000-4000-8000-000000000176']::uuid[], '[]',
+  '{"action":"corrigir","memory_changes":[],"items":[{"item_id":"97900000-0000-4000-8000-000000000176","memories_snapshot":[{"mapping_id":"97900000-0000-4000-8000-000000000187","version":"2000-01-01T00:00:00"}]}]}',
+  'hash-par-1', '97900000-0000-4000-8000-000000000001', '2024-06-04 12:00+00'
+);
+insert into public.payable_purchase_item_corrections (
+  id, request_id, action, undoes_correction_id, product_ids, item_ids, requested, impact, impact_hash, corrected_by, corrected_at
+)
+select '97900000-0000-4000-8000-0000000000f7', '97900000-0000-4000-8000-0000000000f8', 'desfazer', '97900000-0000-4000-8000-0000000000fe',
+       '{}'::uuid[], array['97900000-0000-4000-8000-000000000176']::uuid[], '[]',
+       jsonb_build_object('action', 'desfazer', 'memory_changes', '[]'::jsonb, 'items', jsonb_build_array(jsonb_build_object(
+         'item_id', '97900000-0000-4000-8000-000000000176',
+         'memories_snapshot', jsonb_build_array(jsonb_build_object('mapping_id', mapping.id, 'version', mapping.updated_at at time zone 'UTC'))))),
+       'hash-par-2', '97900000-0000-4000-8000-000000000001', '2024-06-04 12:00+00'
+from public.payable_non_catalog_mappings mapping where mapping.id = '97900000-0000-4000-8000-000000000187';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000176","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'action',
+  'trocar_tipo', 'no mesmo instante, o desfazer vem depois da correção dele, qualquer que seja o identificador');
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000177","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
+  'ordem_incerta', 'limitação conhecida: memória de insumo desligada um minuto antes da decisão deixa a ordem incerta');
 
 -- Administrador também corrige --------------------------------------------------
 

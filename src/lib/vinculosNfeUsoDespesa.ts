@@ -213,7 +213,7 @@ function memoryChangeText(change: MemoryChange): string {
     case 'ja_certa': return `a memória deste item já sugere ${before}`
     case 'decisao_posterior': return `a memória deste item foi decidida depois desta nota${change.newer_at ? `, em ${utcDateLabel(change.newer_at)}` : ''}, e fica como está: corrigir esta nota não muda a sugestão das próximas`
     case 'data_desconhecida': return 'esta nota não tem a data da decisão para comparar com a memória deste item, então a memória fica como está; para mudar a sugestão das próximas notas, corrija a nota mais recente deste item'
-    case 'ordem_incerta': return 'a memória deste item foi mexida quase ao mesmo tempo que esta nota e não dá para saber qual decisão veio depois, então a memória fica como está; para mudar a sugestão das próximas notas, corrija a nota mais recente deste item'
+    case 'ordem_incerta': return 'a memória deste item foi mexida quase ao mesmo tempo que a decisão desta nota e não dá para saber qual veio depois: a nota será corrigida, mas a sugestão das próximas notas continua como está'
     case 'mudou_depois': return 'a memória deste item mudou depois da correção e fica com a escolha mais nova'
     case 'memoria_apagada': return 'a memória deste item não existe mais'
     default: return 'a memória deste item fica como está'
