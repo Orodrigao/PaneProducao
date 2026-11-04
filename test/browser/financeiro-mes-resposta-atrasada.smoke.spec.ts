@@ -28,7 +28,7 @@ function requestedMonth(url: string): string | null {
   return /competence_month=gte\.(\d{4}-\d{2})-01/.exec(decodeURIComponent(url))?.[1] ?? null
 }
 
-function lateEntry(monthKey: string, description: string) {
+function ledgerEntry(monthKey: string, description: string) {
   return {
     id: randomUUID(),
     entry_type: 'lancamento',
@@ -62,18 +62,23 @@ function lateEntry(monthKey: string, description: string) {
 // passava a ser a do mês atual sob o título do escolhido (PR 535, 30/10). Aqui
 // toda leitura do mês de abertura fica segura (inclusive a repetida pelo
 // Strict Mode do next dev) até a lista do mês escolhido aparecer, e então
-// chega com um lançamento que só ela tem. Somente leitura: nada é gravado.
+// chega com um lançamento que só ela tem. O mês escolhido também é respondido
+// aqui, com um lançamento conhecido, para provar que a lista dele aparece e
+// fica. Somente leitura: nada é gravado.
 test('Financeiro JC troca o mês e a resposta atrasada do mês de abertura não troca a lista', async ({ page }) => {
   await entrarComSessaoGuardada(page, financeiroJc)
 
   const marker = `[TESTE] resposta atrasada ${Date.now()}`
+  const chosenMarker = `[TESTE] lista do mês escolhido ${Date.now()}`
   const held: Route[] = []
   let openedMonth: string | null = null
+  let chosenMonth: string | null = null
   let markHeld: () => void = () => {}
   const firstHeld = new Promise<void>(resolve => { markHeld = resolve })
   await page.route(/\/rest\/v1\/finance_entries\?/, route => {
     const month = requestedMonth(route.request().url())
     openedMonth ??= month
+    if (month !== null && month === chosenMonth) return route.fulfill({ json: [ledgerEntry(month, chosenMarker)] })
     if (month === null || month !== openedMonth) return route.fallback()
     held.push(route)
     markHeld()
@@ -90,24 +95,27 @@ test('Financeiro JC troca o mês e a resposta atrasada do mês de abertura não 
 
     const monthInput = page.getByLabel('Mês')
     await expect(monthInput).toHaveValue(openedMonth!)
-    const chosenMonth = previousMonth(openedMonth!)
-    await monthInput.fill(chosenMonth)
+    const chosen = previousMonth(openedMonth!)
+    chosenMonth = chosen
+    await monthInput.fill(chosen)
 
-    await expect(page.getByText(monthLabel(chosenMonth), { exact: true })).toBeVisible()
-    await expect(page.getByText('Carregando lançamentos...')).toHaveCount(0, { timeout: slowPreviewDataTimeoutMs })
+    await expect(page.getByText(monthLabel(chosen), { exact: true })).toBeVisible()
+    await expect(page.locator('article', { hasText: chosenMarker })).toBeVisible({ timeout: slowPreviewDataTimeoutMs })
+    await expect(page.getByText('Carregando lançamentos...')).toHaveCount(0)
     await expect(page.getByText('Não foi possível carregar o financeiro')).toHaveCount(0)
     const chosenMonthCards = await page.locator('article').count()
 
     const lateResponses = held.map(route => page.waitForResponse(response => response.request() === route.request()))
-    for (const route of held.splice(0)) await route.fulfill({ json: [lateEntry(openedMonth!, marker)] })
+    for (const route of held.splice(0)) await route.fulfill({ json: [ledgerEntry(openedMonth!, marker)] })
     await Promise.all(lateResponses)
     // Prova de ausência: sem ida ao banco no caminho da leitura antiga, três
     // segundos são folga larga para ela pintar a tela, se fosse aceita.
     await page.waitForTimeout(3_000)
 
     await expect(page.locator('article', { hasText: marker })).toHaveCount(0)
-    await expect(monthInput).toHaveValue(chosenMonth)
-    await expect(page.getByText(monthLabel(chosenMonth), { exact: true })).toBeVisible()
+    await expect(page.locator('article', { hasText: chosenMarker })).toBeVisible()
+    await expect(monthInput).toHaveValue(chosen)
+    await expect(page.getByText(monthLabel(chosen), { exact: true })).toBeVisible()
     await expect(page.locator('article')).toHaveCount(chosenMonthCards)
   } finally {
     for (const route of held) await route.abort().catch(() => {})
