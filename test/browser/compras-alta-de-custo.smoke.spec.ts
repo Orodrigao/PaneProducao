@@ -131,6 +131,11 @@ async function cancelarSeAbertas(page: Page, chaves: string[]): Promise<string[]
 
 async function lerNota(page: Page, nota: NotaFicticia) {
   await page.goto('/contas-pagar')
+  // O botao de importar aparece antes de a pagina carregar fornecedores e
+  // cadastros; lido antes disso, o XML da nota B nao acha o fornecedor pelo
+  // CNPJ (reprovou assim no CI em 04/11). O quadro de custos so aparece com a
+  // pagina carregada.
+  await expect(page.getByText('Altas e variações grandes de custo, notas dos últimos 30 dias')).toBeVisible({ timeout: dadosDoBancoTimeoutMs })
   await page.getByRole('button', { name: 'Importar XML da NF-e' }).click()
   await page.locator('input[type="file"]').setInputFiles({ name: `alta-de-custo-${nota.numero}.xml`, mimeType: 'application/xml', buffer: Buffer.from(nota.xml) })
   await expect(page.getByText(`NF ${nota.numero}`, { exact: false })).toBeVisible({ timeout: dadosDoBancoTimeoutMs })
