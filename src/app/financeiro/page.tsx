@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRightLeft, BookOpenCheck, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import FinanceFeeRatesPanel from '@/components/FinanceFeeRatesPanel'
@@ -16,11 +16,6 @@ import {
   formatCompetenceMonth,
   formatFinanceMoney,
   getFinanceErrorMessage,
-  loadFinanceAccounts,
-  loadFinanceCategories,
-  loadFinanceEntries,
-  loadFinanceRecurringRules,
-  loadPayableDueReportStatus,
   reverseFinanceEntry,
   reverseFinanceTransfer,
   summarizeEntries,
@@ -32,6 +27,7 @@ import {
   type FinanceRecurringRuleRow,
   type PayableDueReportStatus,
 } from '@/lib/finance'
+import { createFinanceMonthLoader } from '@/lib/financeMonthLoad'
 import { canAccess, getCurrentUserAsync } from '@/lib/auth'
 import { formatDateBR, showToast } from '@/lib/utils'
 
@@ -60,34 +56,23 @@ export default function FinanceiroPage() {
   const [showTransfer, setShowTransfer] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [categoryRows, accountRows, entryRows, recurringRuleRows] = await Promise.all([
-        loadFinanceCategories(),
-        loadFinanceAccounts(),
-        loadFinanceEntries(monthKey),
-        loadFinanceRecurringRules(),
-      ])
-      const reportStatus = await loadPayableDueReportStatus().catch(reportError => {
-        console.warn('O status do relatório diário ainda não está disponível.', reportError)
-        return [] as PayableDueReportStatus[]
-      })
-      setCategories(categoryRows)
-      setAccounts(accountRows)
-      setEntries(entryRows)
-      setRecurringRules(recurringRuleRows)
-      setPayableDueReportStatus(reportStatus)
-    } catch (loadError) {
-      console.error(loadError)
-      setError('Não foi possível carregar o financeiro. Confira sua permissão e tente novamente.')
-    } finally {
-      setLoading(false)
-    }
-  }, [monthKey])
+  // Troca de mês, Atualizar e a recarga depois de lançar, estornar ou
+  // transferir passam todas pelo mesmo carregador, criado uma vez: só a
+  // leitura mais recente preenche a tela, e a recarga lê o mês escolhido agora.
+  const [monthLoader] = useState(() => createFinanceMonthLoader(monthKey, {
+    setLoading,
+    setError,
+    apply: data => {
+      setCategories(data.categories)
+      setAccounts(data.accounts)
+      setEntries(data.entries)
+      setRecurringRules(data.recurringRules)
+      setPayableDueReportStatus(data.payableDueReportStatus)
+    },
+  }))
+  const load = monthLoader.reload
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void monthLoader.select(monthKey) }, [monthLoader, monthKey])
 
   const categoriesById = useMemo(
     () => new Map(categories.map(category => [category.id, category])),
