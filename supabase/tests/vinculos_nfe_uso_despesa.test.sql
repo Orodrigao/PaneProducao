@@ -7,7 +7,8 @@ select plan(77);
 -- corrigem; Vendas, Financeiro sem Catálogo e perfil inativo são barrados, e a
 -- permissão retirada entre a prévia e a confirmação também barra. Conta paga:
 -- parcelas, rateio e livro-caixa não mudam. Memória de uso ou despesa é
--- desligada só ao corrigir para um produto; desfazer não religa.
+-- desligada só ao corrigir para um produto; desde a revenda sem cadastro
+-- (fase 3), desfazer a religa quando nada desse item do fornecedor mudou depois.
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -82,6 +83,12 @@ insert into public.payable_purchase_categories (purchase_id, category_id, amount
 select '97300000-0000-4000-8000-000000000041', category.id, 270
 from public.finance_categories category where category.key = 'cmv_materia_prima';
 select private.sync_payable_finance_entries('97300000-0000-4000-8000-000000000071', '97300000-0000-4000-8000-000000000001', null);
+
+-- Como todo item classificado em produção, a margarina tem a data da decisão:
+-- desde a revenda sem cadastro (fase 3), item sem essa data deixa a memória
+-- como está.
+update public.payable_purchase_items set mapping_confirmed_at = now()
+where id = '97300000-0000-4000-8000-000000000061';
 
 -- Memórias ligadas: a margarina como uso ou despesa e o pano como insumo.
 insert into public.payable_non_catalog_mappings (
@@ -401,7 +408,8 @@ select is((select cost_applied from public.payable_purchase_items where id = '97
 
 -- Desfazer --------------------------------------------------------------------
 
--- Desfazer a margarina: volta a uso ou despesa; a memória continua desligada.
+-- Desfazer a margarina: volta a uso ou despesa e a memória volta a ligar, porque
+-- nada desse item do fornecedor mudou depois da correção.
 select set_config('teste.u1', public.correct_payable_purchase_items(null, 'previa', null,
   (current_setting('teste.a1')::jsonb ->> 'correction_id')::uuid)::text, true);
 select results_eq(
@@ -409,8 +417,8 @@ select results_eq(
     from jsonb_array_elements(current_setting('teste.u1')::jsonb -> 'impact' -> 'products') entry$$,
   $$values (9.00::numeric, 8.00::numeric)$$,
   'prévia do desfazer: a margarina volta ao custo da nota antiga');
-select is(current_setting('teste.u1')::jsonb -> 'impact' -> 'memories_off', '[]'::jsonb,
-  'prévia do desfazer: memória não é religada');
+select is(current_setting('teste.u1')::jsonb -> 'impact' -> 'memory_changes' -> 0 ->> 'action', 'restaurar',
+  'prévia do desfazer: a memória desligada pela correção volta a ligar');
 select set_config('teste.d1', public.correct_payable_purchase_items('97300000-0000-4000-8000-0000000000d1', 'aplicar', null,
   (current_setting('teste.a1')::jsonb ->> 'correction_id')::uuid,
   current_setting('teste.u1')::jsonb ->> 'impact_hash')::text, true);
@@ -422,7 +430,7 @@ select results_eq(
 select is((select cost_price from public.products where id = '97300000-0000-4000-8000-000000000021'),
   8.00::numeric, 'desfazer: custo da margarina volta pela nota antiga');
 select is((select active from public.payable_non_catalog_mappings where id = '97300000-0000-4000-8000-000000000081'),
-  false, 'desfazer: a memória continua desligada; a próxima nota pergunta');
+  true, 'desfazer: a memória de uso ou despesa volta a ligar');
 select throws_ok(
   $$select public.correct_payable_purchase_items(null, 'previa', null,
     (current_setting('teste.a1')::jsonb ->> 'correction_id')::uuid)$$,

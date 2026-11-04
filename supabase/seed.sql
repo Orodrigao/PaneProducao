@@ -2033,13 +2033,19 @@ where exists (select 1 from public.payable_purchases purchase where purchase.id 
 -- despesa ligada, para o Financeiro Catalogo tirar de uso ou despesa e desfazer;
 -- (2) pano ligado a um produto, para marcar como uso ou despesa e desfazer. Os
 -- roteiros terminam desfazendo; aqui o seed apaga o historico desses produtos
--- e volta itens, custos, livro e memoria ao estado conhecido. Datas fixas em
--- marco de 2025, longe dos meses que os indicadores de preco conferem.
+-- e desses itens (a troca entre uso ou despesa e revenda sem cadastro nao tem
+-- produto) e volta itens, custos, livro e memoria ao estado conhecido. Datas
+-- fixas em marco de 2025, longe dos meses que os indicadores de preco conferem.
+-- Como todo item classificado em producao, os itens tem a data da decisao, e a
+-- memoria da margarina nasce junto com ela (a importacao grava as duas na mesma
+-- transacao): sem isso a correcao nao sabe se a memoria e mais nova que a nota.
 delete from public.payable_purchase_item_corrections
 where undoes_correction_id is not null
-  and product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[];
+  and (product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[]
+       or item_ids && array['96700000-0000-4000-8000-0000000000d1', '96700000-0000-4000-8000-0000000000d2']::uuid[]);
 delete from public.payable_purchase_item_corrections
-where product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[];
+where product_ids && array['96700000-0000-4000-8000-000000000011', '96700000-0000-4000-8000-000000000012']::uuid[]
+   or item_ids && array['96700000-0000-4000-8000-0000000000d1', '96700000-0000-4000-8000-0000000000d2']::uuid[];
 delete from public.finance_entries
 where source = 'contas_pagar' and source_ref = '96700000-0000-4000-8000-0000000000e1';
 delete from public.payable_purchases
@@ -2074,16 +2080,19 @@ where exists (select 1 from public.suppliers supplier where supplier.id = '40000
 insert into public.payable_purchase_items (
   id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_line_number,
   source_product_code, source_description, source_unit, source_quantity, conversion_basis,
-  conversion_factor, usable_quantity, normalized_unit_cost, category_snapshot, mapping_status, cost_applied
+  conversion_factor, usable_quantity, normalized_unit_cost, category_snapshot, mapping_status, cost_applied,
+  mapping_confirmed_at
 )
 select fixture.*
 from (values
   ('96700000-0000-4000-8000-0000000000d1'::uuid, '96700000-0000-4000-8000-0000000000b1'::uuid, null::uuid,
    '[TESTE] Margarina caixa uso', 'CX', 1::numeric, 270::numeric, 1, 'TESTE-MARG-USO', '[TESTE] Margarina caixa uso',
-   'CX', 1::numeric, null::text, null::numeric, null::numeric, null::numeric, null::text, 'nao_aplicavel', null::boolean),
+   'CX', 1::numeric, null::text, null::numeric, null::numeric, null::numeric, null::text, 'nao_aplicavel', null::boolean,
+   timestamptz '2025-03-10 12:00:00+00'),
   ('96700000-0000-4000-8000-0000000000d2'::uuid, '96700000-0000-4000-8000-0000000000b2'::uuid, '96700000-0000-4000-8000-000000000012'::uuid,
    '[TESTE] Vinculo uso pano', 'un', 1::numeric, 95::numeric, 1, 'TESTE-PANO-USO', '[TESTE] Pano multiuso rolao',
-   'UN', 1::numeric, 'simple', 1::numeric, 1::numeric, 95::numeric, 'Higiene e limpeza', 'mapeado', true)
+   'UN', 1::numeric, 'simple', 1::numeric, 1::numeric, 95::numeric, 'Higiene e limpeza', 'mapeado', true,
+   timestamptz '2025-03-12 12:00:00+00')
 ) as fixture
 where exists (select 1 from public.payable_purchases purchase where purchase.id = fixture.column2);
 
@@ -2103,12 +2112,15 @@ from auth.users user_account
 where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
   and exists (select 1 from public.payable_installments installment where installment.id = '96700000-0000-4000-8000-0000000000e1');
 
--- Memoria de uso ou despesa ligada para a margarina: a correcao a desliga.
+-- Memoria de uso ou despesa ligada para a margarina, gravada junto com a nota:
+-- a correcao a desliga (ou troca o tipo) e o desfazer a volta.
 insert into public.payable_non_catalog_mappings (
-  id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit, active, last_confirmed_by
+  id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit, active, last_confirmed_by,
+  last_confirmed_at, updated_at
 )
 select '96700000-0000-4000-8000-0000000000f1', '40000000-0000-4000-8000-000000000001', 'TESTE-MARG-USO', null,
-       '[TESTE] Margarina caixa uso', 'CX', true, user_account.id
+       '[TESTE] Margarina caixa uso', 'CX', true, user_account.id,
+       timestamptz '2025-03-10 12:00:00+00', timestamptz '2025-03-10 12:00:00+00'
 from auth.users user_account
 where lower(user_account.email) = 'rodrigao+teste-financeiro-jc@gmail.com'
   and exists (select 1 from public.suppliers supplier where supplier.id = '40000000-0000-4000-8000-000000000001');

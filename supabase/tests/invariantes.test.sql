@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(142);
+select plan(143);
 
 -- Catálogo de permissões do sistema
 select is((select count(*)::int from public.app_permissions), 55,
@@ -652,5 +652,11 @@ select is((select count(*)::int from public.payable_purchase_items
 select is((select count(*)::int from public.payable_purchase_items
   where mapping_status <> 'nao_aplicavel' and non_catalog_kind is not null), 0,
   'item ligado a produto ou pendente não tem tipo de fora do cadastro');
+-- Revenda sem cadastro, fase 3 (04/11/2026): a troca de tipo não tem produto em
+-- nenhum dos lados, então o histórico da correção de notas é achado pelo item.
+select is((select count(*)::int from public.payable_purchase_item_corrections correction
+  where correction.item_ids = '{}'
+    and jsonb_typeof(correction.requested) = 'array' and jsonb_array_length(correction.requested) > 0), 0,
+  'toda correção de notas com itens no pedido guarda os itens');
 select * from finish();
 rollback;

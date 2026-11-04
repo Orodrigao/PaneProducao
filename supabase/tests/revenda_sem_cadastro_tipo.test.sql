@@ -401,25 +401,26 @@ set mapping_status = 'nao_aplicavel', product_id = null
 where source_product_code = 'PAPEL-2';
 select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'PAPEL-2'),
   'uso_despesa', 'item que volta para fora do cadastro sem tipo é uso ou despesa, como sempre foi');
+-- Desde a fase 3, só a correção de notas tira a revenda de fora do cadastro
+-- (ela leva o tipo à foto e ao desfazer); qualquer outro gravador é recusado.
 select throws_ok(
   $$update public.payable_purchase_items set mapping_status = 'mapeado', product_id = '97800000-0000-4000-8000-0000000000d2'
     where source_product_code = 'REV-CREA'$$,
-  '22023', 'Revenda sem cadastro ainda não pode ser trocada por produto: essa correção chega na próxima fase de Vínculos NF-e.',
-  'revenda sem cadastro não sai de fora do cadastro até a correção da fase 3');
+  '22023', 'Revenda sem cadastro só muda pela correção de notas, em Catálogo > Vínculos NF-e.',
+  'revenda sem cadastro não sai de fora do cadastro por fora da correção de notas');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '97800000-0000-4000-8000-00000000000d', true);
-select throws_ok(
+select lives_ok(
   $$select public.correct_payable_purchase_items(null, 'previa',
       jsonb_build_array(jsonb_build_object(
         'item_id', (select id from public.payable_purchase_items where source_product_code = 'REV-CREA'),
         'product_id', '97800000-0000-4000-8000-0000000000d2',
         'conversion_factor', 1)))$$,
-  '22023', 'Revenda sem cadastro ainda não pode ser trocada por produto: essa correção chega na próxima fase de Vínculos NF-e.',
-  'a correção de notas vigente não tira revenda de fora do cadastro: o desfazer dela a devolveria como uso ou despesa');
+  'a correção de notas da fase 3 mostra a prévia da revenda virando produto');
 reset role;
 select is((select non_catalog_kind from public.payable_purchase_items where source_product_code = 'REV-CREA'),
-  'revenda', 'a revenda continua revenda depois da recusa');
+  'revenda', 'a revenda continua revenda depois da recusa e da prévia');
 select throws_ok(
   $$update public.payable_purchase_items set non_catalog_kind = 'revenda' where source_product_code = 'FAR-1'$$,
   '23514', null, 'tipo escrito de propósito em item ligado a produto é recusado, não apagado');
