@@ -953,7 +953,10 @@ select is(
 -- fornecedor (payable-mapping-supplier:), depois dos itens e antes dos produtos,
 -- na mesma ordem da classificacao. Correcao e classificacao como uso ou despesa
 -- do mesmo fornecedor esperam uma pela outra e terminam sem deadlock, nas duas
--- ordens; a memoria ligada do item corrigido termina desligada.
+-- ordens; a memoria ligada do item corrigido termina desligada. Como em
+-- producao, os itens ja classificados tem a data da decisao, gravada na mesma
+-- transacao da memoria (desde a revenda sem cadastro, fase 3, item sem essa data
+-- deixa a memoria como esta).
 select extensions.dblink_exec(
   'draft_holder',
   $remote$
@@ -971,18 +974,19 @@ select extensions.dblink_exec(
        '98000000-0000-4000-8000-00000000000a');
     insert into public.payable_purchase_items (
       id, purchase_id, item_name, unit, quantity, unit_price, source_line_number,
-      source_product_code, source_description, source_unit, source_quantity, mapping_status
+      source_product_code, source_description, source_unit, source_quantity, mapping_status,
+      mapping_confirmed_at
     ) values
       ('98000000-0000-4000-8000-0000000000a1', '98000000-0000-4000-8000-000000000080', 'USO 1', 'kg', 1, 10, 1,
-       'USO-1', '[TESTE] Uso ou despesa concorrente 1', 'kg', 1, 'nao_aplicavel'),
+       'USO-1', '[TESTE] Uso ou despesa concorrente 1', 'kg', 1, 'nao_aplicavel', now()),
       ('98000000-0000-4000-8000-0000000000a2', '98000000-0000-4000-8000-000000000081', 'PENDENTE USO 2', 'un', 1, 10, 1,
-       'USO-2', '[TESTE] Pendente uso concorrente 2', 'un', 1, 'pendente'),
+       'USO-2', '[TESTE] Pendente uso concorrente 2', 'un', 1, 'pendente', null),
       ('98000000-0000-4000-8000-0000000000a3', '98000000-0000-4000-8000-000000000081', 'PENDENTE USO 3', 'un', 1, 10, 2,
-       'USO-3', '[TESTE] Pendente uso concorrente 3', 'un', 1, 'pendente'),
+       'USO-3', '[TESTE] Pendente uso concorrente 3', 'un', 1, 'pendente', null),
       ('98000000-0000-4000-8000-0000000000a4', '98000000-0000-4000-8000-000000000080', 'USO 4', 'kg', 1, 10, 2,
-       'USO-4', '[TESTE] Uso ou despesa concorrente 4', 'kg', 1, 'nao_aplicavel'),
+       'USO-4', '[TESTE] Uso ou despesa concorrente 4', 'kg', 1, 'nao_aplicavel', now()),
       ('98000000-0000-4000-8000-0000000000a5', '98000000-0000-4000-8000-000000000080', 'USO 5', 'kg', 1, 10, 3,
-       'USO-5', '[TESTE] Uso ou despesa concorrente 5', 'kg', 1, 'nao_aplicavel');
+       'USO-5', '[TESTE] Uso ou despesa concorrente 5', 'kg', 1, 'nao_aplicavel', now());
     -- Duas contagens abertas, longe das semanas do seed, para fechar durante a correcao.
     insert into public.inventory_weekly_counts (id, store, week_start, status, opened_by, opened_by_name) values
       ('98000000-0000-4000-8000-0000000000b7', 'jc', '2025-02-03', 'aberta', '98000000-0000-4000-8000-00000000000a', 'Financeiro rascunho concorrente'),
