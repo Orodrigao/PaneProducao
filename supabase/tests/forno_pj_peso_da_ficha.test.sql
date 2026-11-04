@@ -7,7 +7,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(27);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -83,6 +83,14 @@ select throws_ok($$ update public.breads set product_variant_id = '97100000-0000
 select lives_ok($$ update public.breads set product_variant_id = '97100000-0000-4000-8000-0000000000b1'
   where id = 'teste-brioche-peso-pj' $$,
   'Brioche Hamburguer fica ligado à variante Hambúrguer do Brioche');
+-- A Mini não tem ficha nem opção de venda: só o vínculo novo prende a exclusão.
+update public.breads set product_variant_id = '97100000-0000-4000-8000-0000000000b3'
+where id = 'teste-brioche-peso-pj';
+select throws_like($$ delete from public.product_variants where id = '97100000-0000-4000-8000-0000000000b3' $$,
+  '%breads_product_variant_id_fkey%',
+  'variante ligada a um pão não é apagada: o pão não cai em silêncio na linha do produto');
+update public.breads set product_variant_id = '97100000-0000-4000-8000-0000000000b1'
+where id = 'teste-brioche-peso-pj';
 
 -- Leitura da ficha, a mesma que o indicador de mão de obra usa.
 select results_eq($$ select ficha_massa_crua_kg, ficha_peso_assado_kg

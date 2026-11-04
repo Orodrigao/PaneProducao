@@ -150,11 +150,14 @@ export function parseMonthlyAmountInput(raw: string): PercentParse {
   if (!withComma) {
     return { ok: false, error: 'Digite o valor em reais, como 20.000 ou 20.000,00.' }
   }
-  const value = parseMoneyInput(clean.includes(',') ? clean : clean.replace(/\./g, ''))
-  if (value > OWNER_SALARY_MAX) {
+  const normalized = clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean.replace(/\./g, '')
+  // Confere antes do parseMoneyInput, que devolve 0 para número que não cabe
+  // (centenas de dígitos viram Infinity) e gravaria salário zero.
+  const amount = Number(normalized)
+  if (!Number.isFinite(amount) || amount > OWNER_SALARY_MAX) {
     return { ok: false, error: 'O valor precisa ficar entre R$ 0 e R$ 1.000.000.' }
   }
-  return { ok: true, value }
+  return { ok: true, value: parseMoneyInput(normalized) }
 }
 
 const PERCENT_FORMATTER = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })

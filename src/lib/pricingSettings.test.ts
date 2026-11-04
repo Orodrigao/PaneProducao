@@ -119,6 +119,9 @@ describe('salário dos donos em reais', () => {
     expect(parseMonthlyAmountInput('-1').ok).toBe(false)
     expect(parseMonthlyAmountInput('20.000,005').ok).toBe(false)
     expect(parseMonthlyAmountInput('1.000.000,01').ok).toBe(false)
+    // Número enorme vira Infinity no Number(); não pode cair em zero.
+    expect(parseMonthlyAmountInput('9'.repeat(400)).ok).toBe(false)
+    expect(parseMonthlyAmountInput('2000000').ok).toBe(false)
   })
 
   it('o texto do campo relê igual ao valor gravado', () => {

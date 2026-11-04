@@ -49,9 +49,12 @@ begin;
 -- a. Pão da produção ligado à variante do produto
 -- ---------------------------------------------------------------------------
 
+-- Apagar a variante enquanto um pão está ligado a ela é recusado: com "set
+-- null", o pão passaria em silêncio a ler a linha do produto sem variante (o
+-- Brioche Hamburguer contaria 85 g em vez de 80 g). Tirar o vínculo vem antes.
 alter table public.breads
   add column product_variant_id uuid
-    references public.product_variants(id) on delete set null;
+    references public.product_variants(id) on delete restrict;
 
 comment on column public.breads.product_variant_id is
   'Variante do produto ligado a este pão (products.legacy_bread_id) que o pão representa na produção. Nulo: o pão é o próprio produto, sem variante. Indicador de mão de obra e Forno leem o peso da ficha técnica desta variante.';

@@ -194,6 +194,24 @@ describe('folha de pães com produção PJ', () => {
     ])
   })
 
+  it('mantém produto do Forno pendente que não está na lista de pães', () => {
+    expect(buildPjPrintSheet(breads, [{
+      product_source: 'product',
+      product_id: 'produto-pendente',
+      product_name: 'Focaccia PJ',
+      quantity: 0,
+      needs_weight_setup: true,
+    }])).toContainEqual({
+      breadId: 'product:produto-pendente',
+      breadName: 'Focaccia PJ',
+      storeQuantities: [0, 0, 0],
+      storeTotal: 0,
+      pjQuantity: null,
+      pjWeightPending: true,
+      total: 0,
+    })
+  })
+
   it('mostra na folha impressa o aviso de PJ por peso sem conversão', () => {
     expect(productionPageSource).toContain('{b.pjWeightPending && (')
     expect(productionPageSource).toContain('+ PJ por peso sem conversão em peças: ver o aviso no Forno')
