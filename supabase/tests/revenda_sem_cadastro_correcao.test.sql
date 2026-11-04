@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(107);
+select plan(108);
 
 -- Revenda sem cadastro, fase 3: corrigir nota gravada entre uso ou despesa,
 -- revenda sem cadastro e produto, pela correção de notas
@@ -114,6 +114,16 @@ insert into public.payable_purchase_items (
   ('97900000-0000-4000-8000-00000000017b', '97900000-0000-4000-8000-000000000046', null, 'GRANOLA', 'UN', 1, 10, 'GRAN', 'GRANOLA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
 update public.payable_purchase_items set source_ean = '7891000315507'
 where id = '97900000-0000-4000-8000-00000000017b';
+-- Dois itens da mesma memória de revenda; só o primeiro casa também com uma
+-- memória de insumo mais nova (pelo código de barras).
+insert into public.payable_purchase_items (
+  id, purchase_id, product_id, item_name, unit, quantity, unit_price, source_product_code, source_ean,
+  source_description, source_unit, source_quantity, mapping_status, non_catalog_kind, mapping_confirmed_by, mapping_confirmed_at
+) values
+  ('97900000-0000-4000-8000-00000000017c', '97900000-0000-4000-8000-000000000046', null, 'CACAU', 'UN', 1, 10, 'CACAU', '7891000315514',
+   'CACAU', 'UN', 1, 'nao_aplicavel', 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'),
+  ('97900000-0000-4000-8000-00000000017d', '97900000-0000-4000-8000-000000000045', null, 'CACAU', 'UN', 1, 10, 'CACAU', null,
+   'CACAU', 'UN', 1, 'nao_aplicavel', 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
 
 -- Conta paga: parcela paga, rateio em despesa e lançamentos no livro gerados
 -- pela função oficial da baixa. As outras contas: rateio em CMV de revenda.
@@ -152,7 +162,8 @@ insert into public.payable_non_catalog_mappings (
   ('97900000-0000-4000-8000-000000000187', '97900000-0000-4000-8000-000000000011', 'AVEI', null, 'AVEIA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-000000000188', '97900000-0000-4000-8000-000000000011', 'CEVA', null, 'CEVADA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:01+00'),
   ('97900000-0000-4000-8000-00000000018b', '97900000-0000-4000-8000-000000000011', 'AMEN', null, 'AMENDOIM', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
-  ('97900000-0000-4000-8000-00000000018c', '97900000-0000-4000-8000-000000000011', 'GRAN', null, 'GRANOLA', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
+  ('97900000-0000-4000-8000-00000000018c', '97900000-0000-4000-8000-000000000011', 'GRAN', null, 'GRANOLA', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'),
+  ('97900000-0000-4000-8000-00000000018e', '97900000-0000-4000-8000-000000000011', 'CACAU', null, 'CACAU', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00');
 insert into public.payable_product_mappings (
   id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
   base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active, last_confirmed_by, updated_at
@@ -168,6 +179,9 @@ insert into public.payable_product_mappings (
 ), (
   '97900000-0000-4000-8000-00000000018d', '97900000-0000-4000-8000-000000000011', 'GRAN-B', '7891000315507', 'GRANOLA B', 'UN',
   '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, true, '97900000-0000-4000-8000-000000000001', '2024-05-03 12:00+00'
+), (
+  '97900000-0000-4000-8000-00000000018f', '97900000-0000-4000-8000-000000000011', 'CACAU-B', '7891000315514', 'CACAU B', 'UN',
+  '97900000-0000-4000-8000-000000000023', 'un', 'simple', 1, true, true, '97900000-0000-4000-8000-000000000001', '2024-05-04 12:00+00'
 );
 create temporary table memoria_mel_antes on commit drop as
 select mapping.updated_at from public.payable_non_catalog_mappings mapping
@@ -939,6 +953,14 @@ select results_eq(
     cross join lateral jsonb_array_elements(result.preview -> 'impact' -> 'memory_changes') change$$,
   $$values ('manter'::text, 'ja_certa'::text, 'insumo'::text)$$,
   'memória de revenda que perde para memória de insumo mais nova não é carimbada; a próxima nota segue com o insumo');
+select results_eq(
+  $$select change ->> 'action', change ->> 'reason'
+    from jsonb_array_elements(public.correct_payable_purchase_items(null, 'previa',
+      '[{"item_id":"97900000-0000-4000-8000-00000000017c","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"},
+        {"item_id":"97900000-0000-4000-8000-00000000017d","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+      -> 'impact' -> 'memory_changes') change$$,
+  $$values ('manter'::text, 'ja_certa'::text)$$,
+  'memória compartilhada: basta um item em que outra decisão incompatível vence para ela não ser carimbada');
 
 -- Administrador também corrige --------------------------------------------------
 
