@@ -1137,11 +1137,14 @@ Sem banco nem migration: a leitura usa as tabelas e a RLS de Contas a pagar
 leitura do histórico é inteira ou falha, para não comparar com uma "última
 compra" cortada pela paginação.
 
-Limites conhecidos: com notas do mesmo dia em que só parte tem a hora de
-emissão (compras de antes da fase 3A), a regra do banco não forma uma ordem
-única e a "última compra" escolhida segue a ordem de leitura; desde outubro
-toda nota tem a hora. Uma nota do mesmo cadastro lançada por outra pessoa
-enquanto a importação está aberta só entra na comparação ao reabrir.
+No dia em que o mesmo cadastro tem notas com e sem hora de emissão (compras de
+antes da fase 3A), o dia inteiro vai pela ordem de lançamento: a regra do
+banco, comparando de duas em duas, poderia fechar um ciclo e deixar a "última
+compra" ao acaso. Em 04/11 não havia nenhum dia assim em produção, e desde
+outubro toda nota tem a hora.
+
+Limite conhecido: uma nota do mesmo cadastro lançada por outra pessoa enquanto
+a importação está aberta só entra na comparação ao reabrir.
 
 **Fora desta fase.** Aviso no e-mail das 8h do Rodrigo e limite de alta
 ajustável na Configuração do Sistema; aviso na própria tela dos pendentes e em

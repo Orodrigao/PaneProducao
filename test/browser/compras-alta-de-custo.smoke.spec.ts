@@ -93,9 +93,14 @@ async function cabecalhosDaSessao(page: Page): Promise<Record<string, string>> {
 // comparacao de custo da rodada seguinte. Devolve o que nao conseguiu limpar,
 // relido depois do cancelamento, para o roteiro nao passar deixando conta aberta.
 async function cancelarSeAbertas(page: Page, chaves: string[]): Promise<string[]> {
-  const headers = await cabecalhosDaSessao(page)
-  const { url } = previewApi()
   const sobras: string[] = []
+  let headers: Record<string, string>
+  try {
+    headers = await cabecalhosDaSessao(page)
+  } catch (erro) {
+    return chaves.map(chave => `${chave}: sem sessao para limpar (${erro instanceof Error ? erro.message : String(erro)})`)
+  }
+  const { url } = previewApi()
   const contasDa = async (chave: string) => {
     const resposta = await page.request.get(`${url}/rest/v1/payable_purchases?select=id,status&nfe_key=eq.${chave}`, { headers })
     if (!resposta.ok()) throw new Error(`leitura da NF ${chave} respondeu ${resposta.status()}`)
@@ -196,6 +201,11 @@ test('Financeiro JC ve a alta de custo do item que subiu e nao ve no item que fi
     falha = erro
   }
   const sobras = await cancelarSeAbertas(page, [a.chave, b.chave])
-  if (falha) throw falha
+  if (falha) {
+    // A falha do roteiro vem primeiro, mas a sobra no banco de teste nao some:
+    // fica anotada no relatorio do Playwright.
+    if (sobras.length > 0) test.info().annotations.push({ type: 'limpeza incompleta', description: sobras.join('; ') })
+    throw falha
+  }
   expect(sobras, 'contas ficticias da rodada que ficaram abertas no banco de teste').toEqual([])
 })

@@ -91,9 +91,14 @@ function toNumber(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-/** Centavos, como `round(valor / quantidade, 2)` do banco. */
+/**
+ * Centavos, como `round(valor / quantidade, 2)` do banco, que conta em decimal:
+ * R$ 100,75 por 10 kg dá R$ 10,075 e vira R$ 10,08. Em ponto flutuante a
+ * divisão sai 10,07499..., e arredondar direto daria R$ 10,07; por isso o
+ * valor em centavos é limpo em oito casas antes de arredondar.
+ */
 export function toCents(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100
+  return Math.round(Number((value * 100).toFixed(8))) / 100
 }
 
 function mergeApplied(current: boolean | null | undefined, next: boolean | null): boolean | null {
@@ -180,26 +185,38 @@ export function isLaterNote(a: NoteOrder, b: NoteOrder): boolean {
   return time(a.createdAt) > time(b.createdAt)
 }
 
+type OrderedNote = NoteOrder & { purchaseId?: string | null }
+
 /**
- * Ordem para escolher a última compra: a do banco onde ela decide e, no
- * empate (mesma hora, ou a mesma data sem a hora de uma das duas), a ordem de
- * lançamento e por fim a identidade da nota. Sem o desempate, duas notas com a
- * mesma hora ficariam sem compra anterior uma da outra.
+ * Ordem para escolher a última compra. Notas de dias diferentes vão pela data;
+ * no mesmo dia, pela hora de emissão quando todas as notas daquele dia têm
+ * hora, e pela ordem de lançamento quando alguma não tem (compras de antes da
+ * fase 3A). Comparar só de duas em duas, como o banco, pode fechar um ciclo
+ * (A depois de B, B depois de C, C depois de A) quando o dia mistura notas com
+ * e sem hora; olhando o dia inteiro a ordem é única. No empate, a ordem de
+ * lançamento e por fim a identidade da nota: duas notas com a mesma hora
+ * continuam tendo uma anterior à outra.
  */
-export function compareNotes(a: NoteOrder & { purchaseId?: string | null }, b: NoteOrder & { purchaseId?: string | null }): number {
-  if (a.issueDate !== b.issueDate) return a.issueDate < b.issueDate ? -1 : 1
-  if (a.issuedAt && b.issuedAt && time(a.issuedAt) !== time(b.issuedAt)) return time(a.issuedAt) - time(b.issuedAt)
-  if (a.createdAt !== b.createdAt) {
-    if (a.createdAt === null) return 1
-    if (b.createdAt === null) return -1
-    const difference = time(a.createdAt) - time(b.createdAt)
-    if (difference !== 0) return difference
+export function noteComparator(notes: readonly OrderedNote[]): (a: OrderedNote, b: OrderedNote) => number {
+  const withTime = new Set<string>()
+  const withoutTime = new Set<string>()
+  for (const note of notes) (note.issuedAt ? withTime : withoutTime).add(note.issueDate)
+  return (a, b) => {
+    if (a.issueDate !== b.issueDate) return a.issueDate < b.issueDate ? -1 : 1
+    const dayHasTimes = !withoutTime.has(a.issueDate) || !withTime.has(a.issueDate)
+    if (dayHasTimes && a.issuedAt && b.issuedAt && time(a.issuedAt) !== time(b.issuedAt)) return time(a.issuedAt) - time(b.issuedAt)
+    if (a.createdAt !== b.createdAt) {
+      if (a.createdAt === null) return 1
+      if (b.createdAt === null) return -1
+      const difference = time(a.createdAt) - time(b.createdAt)
+      if (difference !== 0) return difference
+    }
+    return (a.purchaseId ?? '').localeCompare(b.purchaseId ?? '')
   }
-  return (a.purchaseId ?? '').localeCompare(b.purchaseId ?? '')
 }
 
-function latest(points: readonly CostPoint[]): CostPoint | null {
-  return points.reduce<CostPoint | null>((best, point) => (!best || compareNotes(point, best) > 0 ? point : best), null)
+function latest(points: readonly CostPoint[], compare: (a: OrderedNote, b: OrderedNote) => number): CostPoint | null {
+  return points.reduce<CostPoint | null>((best, point) => (!best || compare(point, best) > 0 ? point : best), null)
 }
 
 export type CostChangeKind = 'primeira' | 'nota_antiga' | 'muito_diferente' | 'subiu' | 'sem_alta'
@@ -247,7 +264,8 @@ function otherNotes(points: readonly CostPoint[] | undefined, note: NoteIdentity
 
 /** A última compra antes da nota, sem as que entraram atrasadas e não trocaram o custo. */
 function previousPurchase(others: readonly CostPoint[], note: NoteIdentity): CostPoint | null {
-  return latest(others.filter(point => point.costApplied !== false && compareNotes(point, note) < 0))
+  const compare = noteComparator([...others, note])
+  return latest(others.filter(point => point.costApplied !== false && compare(point, note) < 0), compare)
 }
 
 /**
@@ -259,7 +277,7 @@ export function compareWithLastPurchase(points: readonly CostPoint[] | undefined
   const previous = previousPurchase(others, note)
   // A nota mais recente que impede trocar o custo segue a regra estrita do
   // banco, inclusive para nota que também ficou de fora do custo.
-  const newer = latest(others.filter(point => isLaterNote(point, note)))
+  const newer = latest(others.filter(point => isLaterNote(point, note)), noteComparator(others))
   if (!newer) return againstPrevious(previous, productId, unitCost)
   return { productId, unitCost, previous, newer, kind: 'nota_antiga', ratio: previous && previous.unitCost > 0 ? unitCost / previous.unitCost : null }
 }
@@ -293,7 +311,9 @@ export function noteProductCosts(draft: NfeDraft | null, acquisitionByLine: Read
 /** Altas e diferenças grandes das notas que trocaram o custo a partir de `since` (AAAA-MM-DD). */
 export function recentCostChanges(history: ReadonlyMap<string, readonly CostPoint[]>, since: string): Array<CostChange & { point: CostPoint }> {
   const changes: Array<CostChange & { point: CostPoint }> = []
+  const allPoints: CostPoint[] = []
   for (const points of history.values()) {
+    allPoints.push(...points)
     for (const point of points) {
       if (point.costApplied !== true || point.issueDate < since) continue
       // Contra a compra anterior a ela, pela mesma regra da importação; as que
@@ -302,7 +322,8 @@ export function recentCostChanges(history: ReadonlyMap<string, readonly CostPoin
       if (change.kind === 'subiu' || change.kind === 'muito_diferente') changes.push({ ...change, point })
     }
   }
-  return changes.sort((left, right) => compareNotes(right.point, left.point)
+  const compare = noteComparator(allPoints)
+  return changes.sort((left, right) => compare(right.point, left.point)
     || (left.point.productName ?? '').localeCompare(right.point.productName ?? '', 'pt-BR'))
 }
 

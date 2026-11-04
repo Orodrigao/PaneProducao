@@ -12,6 +12,7 @@ import {
   noteProductCosts,
   packagingLabel,
   recentCostChanges,
+  toCents,
   type CostHistoryRow,
 } from '@/lib/purchaseCostChange'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
@@ -274,7 +275,31 @@ describe('quadro das altas recentes', () => {
   })
 })
 
+describe('ordem sem ciclo quando o dia mistura notas com e sem hora', () => {
+  it('o dia inteiro vai pela ordem de lançamento, e a última compra não depende da ordem de leitura', () => {
+    // Pelo par a par do banco: A depois de C (hora), C depois de B (lançamento),
+    // B depois de A (lançamento). Olhando o dia, vale o lançamento: A é a última.
+    const dia = '2026-09-10'
+    const notas = [
+      row({ purchase: { id: 'c', nfe_issued_at: dia, nfe_issued_timestamp: '2026-09-10T10:00:00-03:00', created_at: '2026-09-10T11:00:00Z' }, acquisition_value: 50 }),
+      row({ purchase: { id: 'b', nfe_issued_at: dia, nfe_issued_timestamp: null, created_at: '2026-09-10T12:00:00Z' }, acquisition_value: 50 }),
+      row({ purchase: { id: 'a', nfe_issued_at: dia, nfe_issued_timestamp: '2026-09-10T09:00:00-03:00', created_at: '2026-09-10T13:00:00Z' }, acquisition_value: 50 }),
+    ]
+    const escolhas = [notas, [...notas].reverse(), [notas[1], notas[2], notas[0]]].map(ordem =>
+      compareWithLastPurchase(buildCostHistory(ordem).get(TOMATE), novaNota, TOMATE, 5).previous?.purchaseId)
+    expect(escolhas).toEqual(['a', 'a', 'a'])
+  })
+})
+
 describe('centavos, como o cadastro guarda o custo', () => {
+  it('meio centavo arredonda para cima, como o banco, mesmo quando o ponto flutuante erra', () => {
+    // A armadilha: 10,075 × 100 sai 1007,4999... e o arredondamento direto dá R$ 10,07.
+    expect(Math.round((100.75 / 10 + Number.EPSILON) * 100) / 100).toBe(10.07)
+    expect(toCents(100.75 / 10)).toBe(10.08)
+    expect(toCents(10.074999)).toBe(10.07)
+    expect(buildCostHistory([row({ acquisition_value: 100.75, usable_quantity: 10 })]).get(TOMATE)?.[0].unitCost).toBe(10.08)
+  })
+
   it('custo miúdo compara o que o cadastro vai mostrar, não a conta bruta', () => {
     const de0096 = buildCostHistory([row({ acquisition_value: 0.96, usable_quantity: 10 })])
     expect(de0096.get(TOMATE)?.[0].unitCost).toBe(0.1)
