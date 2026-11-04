@@ -12,7 +12,7 @@ import {
   noteProductCosts,
   packagingLabel,
   recentCostChanges,
-  toCents,
+  unitCostInCents,
   type CostHistoryRow,
 } from '@/lib/purchaseCostChange'
 import type { NfeDraft, NfeItemDraft } from '@/lib/nfeXml'
@@ -292,11 +292,19 @@ describe('ordem sem ciclo quando o dia mistura notas com e sem hora', () => {
 })
 
 describe('centavos, como o cadastro guarda o custo', () => {
-  it('meio centavo arredonda para cima, como o banco, mesmo quando o ponto flutuante erra', () => {
-    // A armadilha: 10,075 × 100 sai 1007,4999... e o arredondamento direto dá R$ 10,07.
+  it('arredonda como o banco, em decimal, onde o ponto flutuante erra para os dois lados', () => {
+    // 10,075 × 100 sai 1007,4999... em ponto flutuante: arredondar direto dá R$ 10,07.
     expect(Math.round((100.75 / 10 + Number.EPSILON) * 100) / 100).toBe(10.07)
-    expect(toCents(100.75 / 10)).toBe(10.08)
-    expect(toCents(10.074999)).toBe(10.07)
+    expect(unitCostInCents(100.75, 10)).toBe(10.08)
+    // 1,004999999975...: limpar casas no ponto flutuante empurrava para R$ 1,01.
+    expect(Number(((201.04 / 200.039801) * 100).toFixed(8))).toBe(100.5)
+    expect(unitCostInCents(201.04, 200.039801)).toBe(1)
+    expect(unitCostInCents(1.04, 10)).toBe(0.1)
+    expect(unitCostInCents(1.08, 10)).toBe(0.11)
+    expect(unitCostInCents(10, 0)).toBe(0)
+    // Caso real de produção (04/11): o Postgres gravou R$ 20,48 para R$ 245,70 em 12 unidades.
+    expect(Math.round((245.7 / 12 + Number.EPSILON) * 100) / 100).toBe(20.47)
+    expect(unitCostInCents(245.7, 12)).toBe(20.48)
     expect(buildCostHistory([row({ acquisition_value: 100.75, usable_quantity: 10 })]).get(TOMATE)?.[0].unitCost).toBe(10.08)
   })
 

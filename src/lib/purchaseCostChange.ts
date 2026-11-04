@@ -91,14 +91,24 @@ function toNumber(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+const TWO = BigInt(2)
+const MILLION = BigInt(1_000_000)
+
 /**
- * Centavos, como `round(valor / quantidade, 2)` do banco, que conta em decimal:
- * R$ 100,75 por 10 kg dá R$ 10,075 e vira R$ 10,08. Em ponto flutuante a
- * divisão sai 10,07499..., e arredondar direto daria R$ 10,07; por isso o
- * valor em centavos é limpo em oito casas antes de arredondar.
+ * Custo por unidade em centavos, exatamente como `round(valor / quantidade, 2)`
+ * do banco, que conta em decimal: o valor tem duas casas e a quantidade útil
+ * seis (`numeric(12,2)` e `numeric(14,6)`), então a conta é feita em inteiros,
+ * centavos sobre milionésimos, com meio centavo para cima. Em ponto flutuante,
+ * R$ 100,75 por 10 kg arredondava para R$ 10,07 (o banco grava R$ 10,08) e
+ * R$ 201,04 por 200,039801 kg para R$ 1,01 (o banco grava R$ 1,00).
  */
-export function toCents(value: number): number {
-  return Math.round(Number((value * 100).toFixed(8))) / 100
+export function unitCostInCents(value: number, quantity: number): number {
+  const cents = BigInt(Math.round(value * 100))
+  const millionths = BigInt(Math.round(quantity * 1_000_000))
+  if (millionths <= BigInt(0)) return 0
+  // cents / 100 reais divididos por millionths / 1.000.000 unidades, em centavos.
+  const rounded = (cents * MILLION * TWO + millionths) / (millionths * TWO)
+  return Number(rounded) / 100
 }
 
 function mergeApplied(current: boolean | null | undefined, next: boolean | null): boolean | null {
@@ -153,7 +163,7 @@ export function buildCostHistory(rows: readonly CostHistoryRow[]): Map<string, C
   }
   const history = new Map<string, CostPoint[]>()
   for (const { point, value, quantity, applied } of groups.values()) {
-    point.unitCost = toCents(value / quantity)
+    point.unitCost = unitCostInCents(value, quantity)
     point.costApplied = applied ?? null
     const list = history.get(point.productId) ?? []
     list.push(point)
@@ -305,7 +315,7 @@ export function noteProductCosts(draft: NfeDraft | null, acquisitionByLine: Read
     entry.waiting = entry.waiting || conversionNeedsConfirmation(item.purchaseUnit, item.baseUnit ?? '', item.factorConfirmed)
     result.set(item.baseProductId, entry)
   }
-  return new Map([...result].map(([id, { value, quantity, waiting, ...entry }]) => [id, { ...entry, unitCost: waiting ? null : toCents(value / quantity) }]))
+  return new Map([...result].map(([id, { value, quantity, waiting, ...entry }]) => [id, { ...entry, unitCost: waiting ? null : unitCostInCents(value, quantity) }]))
 }
 
 /** Altas e diferenças grandes das notas que trocaram o custo a partir de `since` (AAAA-MM-DD). */
