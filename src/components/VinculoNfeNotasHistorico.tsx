@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { authorName, dateTimeLabel } from '@/lib/vinculosNfe'
-import { applyItemCorrection, ItemCorrectionConflictError, loadItemCorrections, previewItemCorrection, type ItemCorrectionHistory } from '@/lib/vinculosNfeClient'
+import { applyItemCorrection, ITEM_CORRECTION_LIMIT, ItemCorrectionConflictError, loadItemCorrections, previewItemCorrection, type ItemCorrectionFilter, type ItemCorrectionHistory } from '@/lib/vinculosNfeClient'
 import { describeItemImpact, describeProductImpact, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
 import VinculoNfeNotasPrevia from '@/components/VinculoNfeNotasPrevia'
 
 interface Props {
-  productId: string
+  /** De quem é o histórico: um produto ou um item de nota (a troca de tipo não tem produto). */
+  filter: ItemCorrectionFilter
   authors: ReadonlyMap<string, string>
   /** Muda quando a página relê o produto, para o histórico reler junto. */
   reloadKey: unknown
   onSaved: (message: string) => void
 }
 
-/** Correções de itens de notas que tiraram itens deste produto ou trouxeram para ele. */
-export default function VinculoNfeNotasHistorico({ productId, authors, reloadKey, onSaved }: Props) {
+/** Correções de itens de notas de um produto (itens que saíram dele ou vieram para ele) ou de um item. */
+export default function VinculoNfeNotasHistorico({ filter, authors, reloadKey, onSaved }: Props) {
   const [rows, setRows] = useState<ItemCorrectionHistory[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -27,8 +28,13 @@ export default function VinculoNfeNotasHistorico({ productId, authors, reloadKey
   const [conflict, setConflict] = useState(false)
   // Resposta de desfazer que chega depois de trocar de produto ou fechar é descartada.
   const generation = useRef(0)
+  // O objeto do filtro muda a cada render da página; as leituras seguem o
+  // escopo e o identificador.
+  const scope = 'productId' in filter ? 'produto' : 'item'
+  const scopeId = 'productId' in filter ? filter.productId : filter.itemId
+  const filterKey = `${scope}:${scopeId}`
 
-  // Outro produto: nada do histórico ou do desfazer anterior continua na tela.
+  // Outro produto ou item: nada do histórico ou do desfazer anterior continua na tela.
   useEffect(() => {
     generation.current += 1
     setRows(null)
@@ -38,18 +44,18 @@ export default function VinculoNfeNotasHistorico({ productId, authors, reloadKey
     setBusy(false)
     setError('')
     setConflict(false)
-  }, [productId])
+  }, [filterKey])
 
   useEffect(() => {
     let active = true
     setLoadError('')
-    void loadItemCorrections(productId).then(result => {
+    void loadItemCorrections(scope === 'produto' ? { productId: scopeId } : { itemId: scopeId }).then(result => {
       if (active) setRows(result)
     }).catch(cause => {
       if (active) setLoadError(cause instanceof Error ? cause.message : 'Não foi possível carregar as correções de notas.')
     })
     return () => { active = false }
-  }, [productId, reloadKey, attempt])
+  }, [scope, scopeId, reloadKey, attempt])
 
   function close() {
     generation.current += 1
@@ -138,7 +144,7 @@ export default function VinculoNfeNotasHistorico({ productId, authors, reloadKey
           )}
         </article>
       ))}
-      {rows.length === 30 && <small>Mostrando as 30 correções mais recentes.</small>}
+      {rows.length === ITEM_CORRECTION_LIMIT && <small>Mostrando as {ITEM_CORRECTION_LIMIT} correções mais recentes.</small>}
     </>
   )
 }

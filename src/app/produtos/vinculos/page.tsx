@@ -131,6 +131,9 @@ export default function VinculosNfePage() {
   if (!allowed) return <main className="ps-canvas"><div className="ps-shell"><section className="ps-pad"><h1>Acesso não liberado</h1><p>Esta consulta está disponível para Administração e para o Financeiro autorizado.</p><Link href="/" className="ps-btn ghost">Voltar ao início</Link></section></div></main>
 
   const usages = details ? findCurrentRecipeUsage(details.recipeUsageIndex, details.product.id) : null
+  // O histórico de um item fora do cadastro não tem produto para buscar os
+  // autores; quem está na tela é quem costuma corrigir.
+  const currentAuthor = new Map([[user.id, user.displayName]])
 
   return (
     <main className="ps-canvas">
@@ -142,7 +145,7 @@ export default function VinculosNfePage() {
         <div className="ps-scroll ps-pad">
           <section className="ps-card" style={{ marginTop: 14, padding: 14 }}>
             <h1 style={{ margin: '0 0 6px', fontSize: 20 }}>Vínculos por produto</h1>
-            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações. Itens de notas já gravadas se corrigem na seção deles, inclusive entre uso ou despesa e insumo, sempre com prévia do efeito no custo, na conta e no consumo semanal; contas, pagamentos e livro-caixa não mudam.</p>
+            <p style={{ margin: '0 0 12px', color: 'var(--ink-soft)' }}>Consulte separadamente as memórias do fornecedor, os vínculos gravados nas notas e o uso atual nas fichas de receita. Corrigir ou desligar uma memória vale só para as próximas importações. Itens de notas já gravadas se corrigem na seção deles, inclusive entre produto, uso ou despesa e revenda sem cadastro, sempre com prévia do efeito no custo, na conta, no consumo semanal e na memória do fornecedor; contas, pagamentos e livro-caixa não mudam.</p>
             <label htmlFor="nfe-product-search" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Buscar produto do catálogo</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flex: '1 1 280px', position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}/><input id="nfe-product-search" className="ps-input" value={search} onChange={event => { manualChoice.current = true; setSearch(event.target.value); setSelected(null); setNotice(''); setItemNotice('') }} placeholder="Digite o nome do produto" style={{ width: '100%', paddingLeft: 32 }}/></div>
@@ -160,9 +163,9 @@ export default function VinculosNfePage() {
           </section>
 
           <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
-            <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Itens lançados como uso ou despesa</h2>
-            <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de NF-e marcados como uso ou despesa ficam fora da receita, do estoque e do custo. Se algum era insumo ou revenda (margarina, frios, bebidas de revenda), corrija aqui para o produto certo. O contrário, tirar um item de um produto e marcar como uso ou despesa, fica na lista de notas de cada produto, abaixo.</p>
-            <VinculoNfeUsoDespesa onOpenProduct={openProduct} reloadKey={details}/>
+            <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Itens fora do cadastro</h2>
+            <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de NF-e sem produto, separados por tipo. Uso ou despesa fica fora da receita, do estoque e do custo. Revenda sem cadastro é mercadoria comprada para revender sem produto no cadastro: fica fora do estoque e do CMV %, com linha própria no consumo semanal. Se algum era insumo ou revenda com cadastro (margarina, frios, bebidas), corrija aqui para o produto certo; se entrou com o tipo errado, troque o tipo. O contrário, tirar um item de um produto, fica na lista de notas de cada produto, abaixo.</p>
+            <VinculoNfeUsoDespesa onOpenProduct={openProduct} reloadKey={details} authors={currentAuthor}/>
           </section>
 
           {details && (
@@ -202,7 +205,7 @@ export default function VinculosNfePage() {
 
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Vínculos efetivamente salvos nas notas</h2>
-                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor. Marque os itens que entraram no produto ou no fator errado, ou que na verdade são uso ou despesa, para corrigir; a prévia mostra o efeito em cada item, no custo, na conta e no consumo semanal antes de confirmar.</p>
+                <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Esta parte mostra os itens de NF-e que foram gravados apontando para este produto. O sistema não guarda uma ligação entre cada nota e a memória do fornecedor. Marque os itens que entraram no produto ou no fator errado, ou que na verdade são uso ou despesa ou revenda sem cadastro, para corrigir; a prévia mostra o efeito em cada item, no custo, na conta e no consumo semanal antes de confirmar.</p>
                 {itemNotice && <p role="status" style={{ margin: '0 0 10px', color: 'var(--teal)', fontWeight: 600 }}>{itemNotice}</p>}
                 <VinculoNfeNotas product={details.product} invoices={details.invoices} authors={details.authors} onSaved={message => { setItemNotice(message); reload() }}/>
               </section>
@@ -210,7 +213,7 @@ export default function VinculosNfePage() {
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Correções de itens de notas</h2>
                 <p style={{ margin: '0 0 10px', color: 'var(--ink-soft)' }}>Itens de notas que saíram deste produto ou vieram para ele, com quem corrigiu e o custo antes e depois. Desfazer volta os itens e recalcula o custo pelas notas de hoje.</p>
-                <VinculoNfeNotasHistorico productId={details.product.id} authors={details.authors} reloadKey={details} onSaved={message => { setItemNotice(message); reload() }}/>
+                <VinculoNfeNotasHistorico filter={{ productId: details.product.id }} authors={details.authors} reloadKey={details} onSaved={message => { setItemNotice(message); reload() }}/>
               </section>
 
               <section className="ps-card" style={{ marginTop: 12, padding: 14 }}>

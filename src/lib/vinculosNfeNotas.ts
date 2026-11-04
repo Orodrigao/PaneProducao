@@ -1,11 +1,13 @@
+import { readNonCatalogKind, type NfeNonCatalogKind } from '@/lib/nfeXml'
 import { currencyLabel, dateLabel, factorLabel } from '@/lib/vinculosNfe'
 import type { InvoiceLinkHistory } from '@/lib/vinculosNfeClient'
 
 /**
- * Correção de itens de notas já gravadas (fases 4 e 5 dos Vínculos de NF-e). O
- * banco calcula o efeito (public.correct_payable_purchase_items); aqui só ficam
- * as regras de seleção da tela e a leitura do efeito que ele devolve. A parte
- * financeira, o consumo semanal e a memória da fase 5 são descritos em
+ * Correção de itens de notas já gravadas (fases 4 e 5 dos Vínculos de NF-e e
+ * fase 3 da revenda sem cadastro). O banco calcula o efeito
+ * (public.correct_payable_purchase_items); aqui só ficam as regras de seleção
+ * da tela e a leitura do efeito que ele devolve. A parte financeira, o consumo
+ * semanal e a memória do fornecedor são descritos em
  * src/lib/vinculosNfeUsoDespesa.ts.
  */
 
@@ -13,9 +15,14 @@ import type { InvoiceLinkHistory } from '@/lib/vinculosNfeClient'
 export const MAX_ITEMS_PER_CORRECTION = 100
 
 export interface ItemSnapshot {
-  /** 'mapeado' (produto) ou 'nao_aplicavel' (uso ou despesa). Fotos da fase 4 não trazem: eram sempre produto. */
+  /** 'mapeado' (produto) ou 'nao_aplicavel' (fora do cadastro). Fotos da fase 4 não trazem: eram sempre produto. */
   mapping_status: string
-  /** Vazio quando o item é uso ou despesa. */
+  /**
+   * Tipo do item fora do cadastro; nulo no item com produto. Foto sem o tipo
+   * (antes da revenda sem cadastro) fora do cadastro era uso ou despesa.
+   */
+  non_catalog_kind: NfeNonCatalogKind | null
+  /** Vazio quando o item está fora do cadastro. */
   product_id: string
   product_name: string | null
   product_unit: string | null
@@ -40,6 +47,11 @@ export interface ItemImpact {
   /** Memórias ligadas que a importação usaria para este item, antes e depois. */
   memories_before: MemoryRef[]
   memories_after: MemoryRef[]
+  /**
+   * O que a próxima nota deste item vai sugerir depois da correção, calculado
+   * pelo banco como a importação calcula. Ausente em correções antigas.
+   */
+  next_suggestion: MemoryRef | null
 }
 
 export interface MemoryRef {
@@ -52,6 +64,28 @@ export interface MemoryRef {
   conversion_factor: number | null
   /** Última gravação da memória (UTC); decide entre memórias do mesmo item, como na importação. */
   version?: string | null
+  /** A memória foi mexida por esta correção (a versão dela muda na gravação). */
+  changed?: boolean
+}
+
+/** O que a correção faz com uma memória de fora do cadastro. */
+export type MemoryChangeAction = 'desligar' | 'trocar_tipo' | 'restaurar' | 'manter'
+
+export interface MemoryState {
+  active: boolean | null
+  non_catalog_kind: string | null
+}
+
+export interface MemoryChange {
+  mapping_id: string
+  item_ids: string[]
+  action: MemoryChangeAction | string
+  /** Por que fica como está: ja_certa, data_desconhecida, decisao_posterior, mudou_depois, memoria_apagada ou correcao_antiga. */
+  reason: string | null
+  before: MemoryState | null
+  after: MemoryState | null
+  /** Data (UTC) da decisão mais nova que a corrigida, quando houve. */
+  newer_at: string | null
 }
 
 export interface FinanceSlice {
@@ -100,6 +134,8 @@ export interface ConsumptionTotals {
   counted: number
   outside: number
   not_stock: number
+  /** Parte de revenda sem cadastro dentro de "não é estoque". Nula em correções antigas. */
+  resale: number | null
   unclassified: number
 }
 
@@ -141,8 +177,10 @@ export interface ItemCorrectionImpact {
   items: ItemImpact[]
   products: ProductImpact[]
   decisions: CostDecision[]
-  /** Memórias de uso ou despesa desligadas pela correção. */
+  /** Memórias de fora do cadastro desligadas pela correção. */
   memories_off: string[]
+  /** O que a correção faz com cada memória atingida. Nulo em correções anteriores à revenda sem cadastro. */
+  memory_changes: MemoryChange[] | null
   purchases: PurchaseFinance[]
   /** Nulo em correções gravadas antes da fase 5. */
   consumption: ConsumptionImpact | null
@@ -174,14 +212,44 @@ function list(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(record) : []
 }
 
+function memoryRef(raw: Record<string, unknown>): MemoryRef {
+  return {
+    kind: text(raw.kind) ?? '',
+    non_catalog_kind: text(raw.non_catalog_kind),
+    mapping_id: text(raw.mapping_id) ?? '',
+    product_name: text(raw.product_name),
+    conversion_factor: numberOrNull(raw.conversion_factor),
+    version: text(raw.version),
+    changed: raw.changed === true,
+  }
+}
+
 function memories(value: unknown): MemoryRef[] {
-  return list(value).map(memory => ({
-    kind: text(memory.kind) ?? '',
-    non_catalog_kind: text(memory.non_catalog_kind),
-    mapping_id: text(memory.mapping_id) ?? '',
-    product_name: text(memory.product_name),
-    conversion_factor: numberOrNull(memory.conversion_factor),
-    version: text(memory.version),
+  return list(value).map(memoryRef)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function memoryState(value: unknown): MemoryState | null {
+  if (!isRecord(value)) return null
+  return {
+    active: typeof value.active === 'boolean' ? value.active : null,
+    non_catalog_kind: text(value.non_catalog_kind),
+  }
+}
+
+function memoryChanges(value: unknown): MemoryChange[] | null {
+  if (!Array.isArray(value)) return null
+  return list(value).map(change => ({
+    mapping_id: text(change.mapping_id) ?? '',
+    item_ids: Array.isArray(change.item_ids) ? change.item_ids.filter((id): id is string => typeof id === 'string') : [],
+    action: text(change.action) ?? '',
+    reason: text(change.reason),
+    before: memoryState(change.before),
+    after: memoryState(change.after),
+    newer_at: text(change.newer_at),
   }))
 }
 
@@ -213,6 +281,7 @@ function totals(value: unknown): ConsumptionTotals {
     counted: numberOrNull(raw.counted) ?? 0,
     outside: numberOrNull(raw.outside) ?? 0,
     not_stock: numberOrNull(raw.not_stock) ?? 0,
+    resale: numberOrNull(raw.resale),
     unclassified: numberOrNull(raw.unclassified) ?? 0,
   }
 }
@@ -244,8 +313,12 @@ function consumption(value: unknown): ConsumptionImpact | null {
 
 function snapshot(value: unknown): ItemSnapshot {
   const raw = record(value)
+  const mappingStatus = text(raw.mapping_status) ?? 'mapeado'
   return {
-    mapping_status: text(raw.mapping_status) ?? 'mapeado',
+    mapping_status: mappingStatus,
+    // Fora do cadastro sem o tipo é foto antiga, de uso ou despesa; item com
+    // produto nunca tem tipo.
+    non_catalog_kind: mappingStatus === 'nao_aplicavel' ? readNonCatalogKind(raw.non_catalog_kind) : null,
     product_id: text(raw.product_id) ?? '',
     product_name: text(raw.product_name),
     product_unit: text(raw.product_unit),
@@ -275,6 +348,7 @@ export function parseItemCorrectionImpact(value: unknown): ItemCorrectionImpact 
       after: snapshot(item.after),
       memories_before: memories(item.memories_before),
       memories_after: memories(item.memories_after),
+      next_suggestion: isRecord(item.next_suggestion) ? memoryRef(item.next_suggestion) : null,
     })),
     products: list(raw.products).map(product => ({
       product_id: text(product.product_id) ?? '',
@@ -291,6 +365,7 @@ export function parseItemCorrectionImpact(value: unknown): ItemCorrectionImpact 
       cost_from_this_note: decision.cost_from_this_note === true,
     })),
     memories_off: Array.isArray(raw.memories_off) ? raw.memories_off.filter((id): id is string => typeof id === 'string') : [],
+    memory_changes: memoryChanges(raw.memory_changes),
     purchases: list(raw.purchases).map(purchase => ({
       purchase_id: text(purchase.purchase_id) ?? '',
       status: text(purchase.status) ?? '',
@@ -382,12 +457,23 @@ function costLabel(value: number | null): string {
 /** Rótulo de uso ou despesa nas linhas de efeito. */
 export const NON_CATALOG_LABEL = 'uso ou despesa (fora da receita, do estoque e do custo)'
 
+/**
+ * Rótulo da revenda sem cadastro nas linhas de efeito. Sem produto, ela não
+ * muda custo de cadastro; o valor de aquisição da nota continua o mesmo.
+ */
+export const RESALE_NO_CATALOG_LABEL = 'revenda sem cadastro (sem produto: fora do estoque, do custo de cadastro e do CMV %; o valor da compra continua o mesmo)'
+
+/** Rótulo do lado fora do cadastro, pelo tipo. */
+export function nonCatalogSideLabel(kind: string | null | undefined): string {
+  return kind === 'revenda' ? RESALE_NO_CATALOG_LABEL : NON_CATALOG_LABEL
+}
+
 /** Uma linha por item: de onde sai, para onde vai, com quantidade e custo. */
 export function describeItemImpact(item: ItemImpact): string {
   const note = `NF ${item.nfe_number || 'sem número'} de ${dateLabel(item.issue_date)}`
   const source = `${item.source_description || 'Item sem descrição'} (${item.quantity.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.source_unit || ''})`.trim()
   const side = (state: ItemSnapshot) => state.mapping_status === 'nao_aplicavel'
-    ? NON_CATALOG_LABEL
+    ? nonCatalogSideLabel(state.non_catalog_kind)
     : `${state.product_name ?? 'produto sem nome'}, fator ${state.conversion_factor === null ? '?' : factorLabel(state.conversion_factor)}, ${quantityLabel(state.usable_quantity, state.product_unit)}, ${unitCostLabel(state.normalized_unit_cost, state.product_unit)}`
   return `${note} · ${source}: ${side(item.before)} → ${side(item.after)}.`
 }
@@ -420,6 +506,6 @@ export function describeProductImpact(product: ProductImpact, impact: ItemCorrec
 /** Linhas fixas da prévia: o que a correção nunca muda e o que muda junto. */
 export const IMPACT_FOOTNOTES: readonly string[] = [
   'Contas, parcelas, pagamentos, rateio e o livro-caixa não mudam: o valor de cada item é o mesmo.',
-  'O consumo semanal e o custo de referência da contagem passam a contar o item no produto e no fator corrigidos.',
+  'O consumo semanal e o custo de referência da contagem passam a contar o item como ficou: no produto e no fator corrigidos, ou fora do cadastro (a revenda sem cadastro em linha própria, fora do CMV %).',
   'Fichas de receita não mudam. A memória de insumo do fornecedor se corrige em Memórias de vínculo, na página do produto.',
 ]
