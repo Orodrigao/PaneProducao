@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { describeItemImpact, itemBlockReason, parseItemCorrectionImpact, selectionBlockReason } from '@/lib/vinculosNfeNotas'
-import { describeConsumption, describeMemories, describePurchaseFinance, matchesNonCatalogSearch, purchaseStatusLabel } from '@/lib/vinculosNfeUsoDespesa'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const rpc = vi.fn()
+vi.mock('@/lib/supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...args) } }))
+
+import { previewItemCorrection, requestsResale, RESALE_CORRECTION_NOT_READY } from '@/lib/vinculosNfeClient'
+import { describeItemImpact, itemBlockReason, parseItemCorrectionImpact, parseItemCorrectionResult, selectionBlockReason } from '@/lib/vinculosNfeNotas'
+import { describeConsumption, describeMemories, describePurchaseFinance, groupByNonCatalogKind, itemSide, kindSwapTarget, matchesNonCatalogSearch, MIXED_KINDS_REASON, purchaseStatusLabel } from '@/lib/vinculosNfeUsoDespesa'
 
 // Efeito no formato da fase 5 (public.correct_payable_purchase_items): margarina
 // lançada como uso ou despesa numa conta paga vai para o insumo.
@@ -242,5 +247,242 @@ describe('item entre uso ou despesa e insumo (fase 5)', () => {
     expect(matchesNonCatalogSearch(item, '  ')).toBe(true)
     expect(purchaseStatusLabel('paga')).toBe('conta paga')
     expect(purchaseStatusLabel('aberta')).toBe('conta em aberto')
+  })
+})
+
+// Revenda sem cadastro, fase 3: o efeito ganha o tipo do item, o que acontece
+// com cada memória e a próxima sugestão, calculados pelo banco.
+const resaleSplit = [{ key: 'cmv_revenda', label: 'CMV de revenda', group: 'cmv', amount: 50 }]
+const expenseSplit = [{ key: 'outras_despesas', label: 'Outras despesas', group: 'outras', amount: 50 }]
+const rawMaterialSplit = [{ key: 'cmv_materia_prima', label: 'CMV de matéria-prima', group: 'cmv', amount: 50 }]
+
+const outside = (kind: string) => ({ mapping_status: 'nao_aplicavel', non_catalog_kind: kind, product_id: null, product_name: null, conversion_factor: null, usable_quantity: null, normalized_unit_cost: null, cost_applied: null })
+const onProduct = { mapping_status: 'mapeado', non_catalog_kind: null, product_id: 'whey', product_name: 'Whey', product_unit: 'un', conversion_factor: 1, usable_quantity: 2, normalized_unit_cost: 100, cost_applied: true }
+
+function phase3Item(itemId: string, before: object, after: object, extra: object = {}) {
+  return {
+    item_id: itemId, purchase_id: 'p9', supplier_name: 'Giants', nfe_number: '5158', issue_date: '2026-10-20',
+    source_description: 'WHEY PROTEIN 900G', source_unit: 'UN', quantity: 2, item_value: 200,
+    before, after, memories_before: [], memories_after: [], next_suggestion: null,
+    ...extra,
+  }
+}
+
+function phase3Impact(items: object[], split: object[], memoryChanges: object[] = [], action = 'corrigir') {
+  return parseItemCorrectionImpact({
+    action,
+    items,
+    products: [],
+    decisions: [],
+    memories_off: [],
+    memory_changes: memoryChanges,
+    purchases: [{
+      purchase_id: 'p9', status: 'aberta', total_value: 200, competence_month: '2026-10-01',
+      installments: 1, installments_paid: 0, paid_total: 0, late_fees: 0, last_paid_date: null,
+      split, ledger: [],
+    }],
+    consumption: { closed_periods: 2, items: [], periods: [] },
+  })
+}
+
+describe('revenda sem cadastro na correção de notas (fase 3)', () => {
+  beforeEach(() => { rpc.mockReset() })
+
+  it('lê o tipo do item e da memória; foto antiga fora do cadastro é uso ou despesa', () => {
+    const impact = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'))], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'trocar_tipo', reason: null,
+      before: { active: true, non_catalog_kind: 'uso_despesa', version: '2026-10-20T10:00:00' },
+      after: { active: true, non_catalog_kind: 'revenda' }, newer_at: null,
+    }])
+    expect(impact.items[0].before.non_catalog_kind).toBe('uso_despesa')
+    expect(impact.items[0].after.non_catalog_kind).toBe('revenda')
+    expect(impact.memory_changes?.[0]).toMatchObject({ mapping_id: 'm1', action: 'trocar_tipo', after: { active: true, non_catalog_kind: 'revenda' } })
+
+    const antiga = parseItemCorrectionImpact(impactJson)
+    expect(antiga.items[0].before.non_catalog_kind).toBe('uso_despesa')
+    expect(antiga.items[0].after.non_catalog_kind).toBeNull()
+    expect(antiga.memory_changes).toBeNull()
+    expect(antiga.items[0].next_suggestion).toBeNull()
+    expect(antiga.consumption?.periods[0].before.resale).toBeNull()
+  })
+
+  it('diz revenda sem cadastro dos dois lados, sem chamar de uso ou despesa', () => {
+    const impact = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'))], resaleSplit)
+    expect(describeItemImpact(impact.items[0])).toContain('uso ou despesa (fora da receita, do estoque e do custo) → revenda sem cadastro (sem produto: fora do estoque, do custo de cadastro e do CMV %; o valor da compra continua o mesmo).')
+    const fromProduct = phase3Impact([phase3Item('i1', onProduct, outside('revenda'))], resaleSplit)
+    expect(describeItemImpact(fromProduct.items[0])).toContain('Whey, fator 1, 2 un')
+    expect(describeItemImpact(fromProduct.items[0])).toContain('→ revenda sem cadastro')
+    expect(itemSide(fromProduct.items[0].after)).toBe('revenda')
+    expect(itemSide(fromProduct.items[0].before)).toBe('produto')
+  })
+
+  it('produto que vira revenda numa conta de CMV de revenda não ganha o aviso de despesa', () => {
+    const impact = phase3Impact([phase3Item('i1', onProduct, outside('revenda'))], resaleSplit)
+    const line = describePurchaseFinance(impact.purchases[0], impact)
+    expect(line).not.toContain('Atenção')
+    expect(line).not.toContain('a conta inteira está em custo de mercadoria')
+    expect(line).not.toContain('dividida')
+  })
+
+  it('revenda numa conta de despesa avisa que revenda costuma ir para CMV de revenda', () => {
+    const impact = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'))], expenseSplit)
+    expect(describePurchaseFinance(impact.purchases[0], impact)).toContain('revenda costuma ficar em CMV de revenda')
+    const rawMaterial = phase3Impact([phase3Item('i1', onProduct, outside('revenda'))], rawMaterialSplit)
+    expect(describePurchaseFinance(rawMaterial.purchases[0], rawMaterial)).toContain('mas não em CMV de revenda')
+  })
+
+  it('revenda que vira uso ou despesa numa conta toda em CMV avisa como despesa', () => {
+    const impact = phase3Impact([phase3Item('i1', outside('revenda'), outside('uso_despesa'))], resaleSplit)
+    expect(describePurchaseFinance(impact.purchases[0], impact)).toContain('a conta inteira está em custo de mercadoria (CMV)')
+  })
+
+  it('nota mista: cada destino ganha o aviso que se aplica, e a conta dividida pede conferência', () => {
+    const items = [
+      phase3Item('i1', outside('uso_despesa'), outside('revenda')),
+      { ...phase3Item('i2', outside('revenda'), outside('uso_despesa')), source_description: 'PAPEL TOALHA' },
+    ]
+    const despesa = phase3Impact(items, expenseSplit)
+    const despesaLine = describePurchaseFinance(despesa.purchases[0], despesa)
+    expect(despesaLine).toContain('revenda costuma ficar em CMV de revenda')
+    expect(despesaLine).not.toContain('a conta inteira está em custo de mercadoria')
+    const revenda = phase3Impact(items, resaleSplit)
+    const revendaLine = describePurchaseFinance(revenda.purchases[0], revenda)
+    expect(revendaLine).toContain('a conta inteira está em custo de mercadoria (CMV)')
+    expect(revendaLine).not.toContain('revenda costuma ficar')
+    const dividida = phase3Impact([phase3Item('i1', onProduct, outside('uso_despesa'))], [...resaleSplit, ...expenseSplit])
+    expect(describePurchaseFinance(dividida.purchases[0], dividida)).toContain('dividida entre custo de mercadoria (CMV) e outras categorias')
+    // Item que não muda de lado (produto -> produto) não gera aviso.
+    const fator = phase3Impact([phase3Item('i1', onProduct, { ...onProduct, conversion_factor: 2 })], expenseSplit)
+    expect(describePurchaseFinance(fator.purchases[0], fator)).not.toContain('Atenção')
+  })
+
+  it('mostra a parte de revenda sem cadastro nos totais da semana', () => {
+    const consumption = parseItemCorrectionImpact({
+      ...impactJson,
+      consumption: {
+        closed_periods: 2,
+        items: [],
+        periods: [{
+          period_end_count_id: 'c2', start_date: '2026-10-17', end_date: '2026-10-24',
+          before: { counted: 0, outside: 0, not_stock: 250, resale: 50, unclassified: 0 },
+          after: { counted: 0, outside: 0, not_stock: 250, resale: 250, unclassified: 0 },
+        }],
+      },
+    }).consumption
+    expect(describeConsumption(consumption)).toEqual([
+      expect.stringMatching(/não é estoque R\$\s250,00 → R\$\s250,00, dos quais revenda sem cadastro R\$\s50,00 → R\$\s250,00 \(fora do CMV %\)\.$/),
+    ])
+  })
+
+  it('diz qual memória é atingida e o que a próxima nota sugere, com a regra de conflito', () => {
+    const memory = { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm1', product_name: null, conversion_factor: null }
+    const trocar = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: memory })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'trocar_tipo', reason: null,
+      before: { active: true, non_catalog_kind: 'uso_despesa' }, after: { active: true, non_catalog_kind: 'revenda' }, newer_at: null,
+    }])
+    expect(describeMemories(trocar)).toEqual([
+      'WHEY PROTEIN 900G (Giants): a memória deste item passa de uso ou despesa para revenda sem cadastro; a próxima nota sugere revenda sem cadastro.',
+    ])
+    const posterior = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: { ...memory, non_catalog_kind: 'uso_despesa' } })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'decisao_posterior',
+      before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: '2026-11-01T14:00:00',
+    }])
+    expect(describeMemories(posterior)[0]).toContain('a memória deste item foi decidida depois desta nota, em 01/11/2026, e fica como está: corrigir esta nota não muda a sugestão das próximas; a próxima nota sugere uso ou despesa.')
+    const desligar = phase3Impact([phase3Item('i1', outside('revenda'), onProduct)], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'desligar', reason: null,
+      before: { active: true, non_catalog_kind: 'revenda' }, after: { active: false, non_catalog_kind: 'revenda' }, newer_at: null,
+    }])
+    expect(describeMemories(desligar)[0]).toBe('WHEY PROTEIN 900G (Giants): a memória de revenda sem cadastro deste item será desligada; a próxima nota chega sem sugestão e quem importa escolhe.')
+    const jaCerta = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: memory })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'ja_certa',
+      before: { active: true, non_catalog_kind: 'revenda' }, after: null, newer_at: null,
+    }])
+    expect(describeMemories(jaCerta)[0]).toContain('a memória deste item já sugere revenda sem cadastro; ')
+    const semData = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: { ...memory, non_catalog_kind: 'uso_despesa' } })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'data_desconhecida',
+      before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: null,
+    }])
+    expect(describeMemories(semData)[0]).toContain('esta nota não tem a data da decisão para comparar com a memória deste item, então a memória fica como está')
+    const incerta = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: { ...memory, non_catalog_kind: 'uso_despesa' } })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'ordem_incerta',
+      before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: null,
+    }])
+    expect(describeMemories(incerta)[0]).toContain('a memória deste item foi mexida quase ao mesmo tempo que a decisão desta nota e não dá para saber qual veio depois: a nota será corrigida, mas a sugestão das próximas notas continua como está')
+    const confirmada = phase3Impact([phase3Item('i1', outside('uso_despesa'), outside('revenda'), { next_suggestion: memory })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'confirmar', reason: 'ja_certa',
+      before: { active: true, non_catalog_kind: 'revenda' }, after: { active: true, non_catalog_kind: 'revenda' }, newer_at: null,
+    }])
+    expect(describeMemories(confirmada)[0]).toBe('WHEY PROTEIN 900G (Giants): a memória deste item já sugere revenda sem cadastro e fica confirmada por esta correção; a próxima nota sugere revenda sem cadastro.')
+  })
+
+  it('no desfazer, diz se a memória volta ou fica com a escolha mais nova; correção antiga não religa', () => {
+    const memory = { kind: 'uso_despesa', non_catalog_kind: 'revenda', mapping_id: 'm1', product_name: null, conversion_factor: null }
+    const volta = phase3Impact([phase3Item('i1', onProduct, outside('revenda'), { next_suggestion: memory })], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'restaurar', reason: null,
+      before: { active: false, non_catalog_kind: 'revenda' }, after: { active: true, non_catalog_kind: 'revenda' }, newer_at: null,
+    }], 'desfazer')
+    const voltaLines = describeMemories(volta)
+    expect(voltaLines[0]).toContain('a memória deste item volta a revenda sem cadastro, como era antes da correção')
+    expect(voltaLines.join(' ')).not.toContain('Desfazer não religa')
+    const mudou = phase3Impact([phase3Item('i1', outside('revenda'), outside('uso_despesa'))], resaleSplit, [{
+      mapping_id: 'm1', item_ids: ['i1'], action: 'manter', reason: 'mudou_depois',
+      before: { active: true, non_catalog_kind: 'uso_despesa' }, after: null, newer_at: '2026-11-02T12:00:00',
+    }], 'desfazer')
+    expect(describeMemories(mudou)[0]).toContain('a memória deste item mudou depois da correção e fica com a escolha mais nova')
+    const antiga = phase3Impact([phase3Item('i1', outside('uso_despesa'), onProduct)], resaleSplit, [{
+      mapping_id: 'm1', item_ids: [], action: 'manter', reason: 'correcao_antiga', before: null, after: null, newer_at: null,
+    }], 'desfazer')
+    expect(describeMemories(antiga).at(-1)).toBe('Desfazer não religa a memória que esta correção antiga desligou: a próxima nota pergunta de novo.')
+  })
+
+  it('quando a memória de insumo vence, diz o tipo certo e onde desligá-la', () => {
+    const product = { kind: 'insumo', mapping_id: 'm2', product_name: 'Whey', conversion_factor: 1 }
+    const impact = phase3Impact([phase3Item('i1', onProduct, outside('revenda'), { next_suggestion: product })], resaleSplit, [])
+    expect(describeMemories(impact)[0]).toContain('a próxima nota sugere Whey com fator 1; para ela vir como revenda sem cadastro, desligue essa memória em Memórias de vínculo, na página do produto')
+    // Correção antiga, sem a próxima sugestão do banco: a frase também diz o tipo do item.
+    const antiga = parseItemCorrectionImpact({
+      ...impactJson,
+      memories_off: [],
+      items: [{
+        ...impactJson.items[0], before: impactJson.items[0].after, after: { ...impactJson.items[0].before, non_catalog_kind: 'revenda' },
+        memories_before: [product], memories_after: [product],
+      }],
+    })
+    expect(describeMemories(antiga)[0]).toContain('para ela vir como revenda sem cadastro, desligue essa memória')
+  })
+
+  it('separa a lista por tipo e só troca o tipo de itens de um tipo só', () => {
+    const uso = { id: 'a', non_catalog_kind: 'uso_despesa' as const }
+    const revenda = { id: 'b', non_catalog_kind: 'revenda' as const }
+    expect(groupByNonCatalogKind([uso, revenda, uso])).toEqual({ uso_despesa: [uso, uso], revenda: [revenda] })
+    expect(kindSwapTarget([uso, uso])).toEqual({ target: 'revenda', reason: '' })
+    expect(kindSwapTarget([revenda])).toEqual({ target: 'uso_despesa', reason: '' })
+    expect(kindSwapTarget([uso, revenda])).toEqual({ target: null, reason: MIXED_KINDS_REASON })
+    expect(kindSwapTarget([]).target).toBeNull()
+  })
+
+  it('manda o tipo no pedido e recusa a prévia de revenda vinda do banco anterior', async () => {
+    const target = { items: [{ itemId: 'i1', productId: null, conversionFactor: null, nonCatalogKind: 'revenda' as const }] }
+    expect(requestsResale(target)).toBe(true)
+    expect(requestsResale({ items: [{ itemId: 'i1', productId: null, conversionFactor: null }] })).toBe(false)
+    expect(requestsResale({ undoCorrectionId: 'c1' })).toBe(false)
+
+    const oldImpact = { ...impactJson }
+    rpc.mockResolvedValueOnce({ data: { mode: 'previa', impact: oldImpact, impact_hash: 'h' }, error: null })
+    await expect(previewItemCorrection(target)).rejects.toThrow(RESALE_CORRECTION_NOT_READY)
+    expect(rpc).toHaveBeenCalledWith('correct_payable_purchase_items', expect.objectContaining({
+      p_items: [{ item_id: 'i1', product_id: null, conversion_factor: null, non_catalog_kind: 'revenda' }],
+    }))
+
+    rpc.mockResolvedValueOnce({ data: { mode: 'previa', impact: { ...impactJson, memory_changes: [] }, impact_hash: 'h' }, error: null })
+    await expect(previewItemCorrection(target)).resolves.toMatchObject({ impactHash: 'h' })
+
+    // Uso ou despesa e produto seguem com o banco anterior; o produto vai sem tipo.
+    rpc.mockResolvedValueOnce({ data: { mode: 'previa', impact: oldImpact, impact_hash: 'h' }, error: null })
+    await previewItemCorrection({ items: [{ itemId: 'i1', productId: 'p1', conversionFactor: 30 }] })
+    expect(rpc).toHaveBeenLastCalledWith('correct_payable_purchase_items', expect.objectContaining({
+      p_items: [{ item_id: 'i1', product_id: 'p1', conversion_factor: 30, non_catalog_kind: null }],
+    }))
+    expect(parseItemCorrectionResult({ mode: 'previa', impact: oldImpact, impact_hash: 'h' }).impact.memory_changes).toBeNull()
   })
 })

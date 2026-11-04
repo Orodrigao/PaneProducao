@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { readNonCatalogKind } from '@/lib/nfeXml'
+import { readNonCatalogKind, type NfeNonCatalogKind } from '@/lib/nfeXml'
 import type { RecipeUsageIndex } from '@/lib/recipeUsage'
 import type { MemoryCorrectionAction } from '@/lib/vinculosNfe'
 import { parseItemCorrectionImpact, parseItemCorrectionResult, type ItemCorrectionImpact, type ItemCorrectionResult } from '@/lib/vinculosNfeNotas'
@@ -220,20 +220,18 @@ const INVOICE_COLUMNS = `id,purchase_id,item_name,unit,quantity,unit_price,sourc
 export interface NonCatalogItem extends InvoiceLinkHistory {
   /** Valor do item na nota (com os impostos que entram no custo, quando há). */
   item_value: number
+  /** Uso ou despesa, ou revenda sem cadastro. */
+  non_catalog_kind: NfeNonCatalogKind
 }
 
 type NonCatalogRow = InvoiceRow & { line_total: number | null, acquisition_value: number | null, non_catalog_kind?: string | null }
 
 /**
- * Itens de NF-e da JC lançados como uso ou despesa, de contas não canceladas,
- * da nota mais nova para a mais antiga. Lê com a permissão de quem está na
- * tela (Contas a pagar da JC ou administrador).
- *
- * Revenda sem cadastro também fica fora do cadastro, mas não é uso ou despesa:
- * a troca dela é da fase 3 da revenda sem cadastro, que leva o tipo à foto e
- * ao desfazer. Todas as colunas, e não uma lista, porque o tipo só existe
- * depois da migration e o site novo convive com o banco anterior; sem o tipo,
- * o item é uso ou despesa.
+ * Itens de NF-e da JC fora do cadastro (uso ou despesa, e revenda sem
+ * cadastro), de contas não canceladas, da nota mais nova para a mais antiga.
+ * Lê com a permissão de quem está na tela (Contas a pagar da JC ou
+ * administrador). Todas as colunas, e não uma lista, como na fase 2: sem o
+ * tipo, o item é uso ou despesa.
  */
 export async function loadNonCatalogItems(): Promise<NonCatalogItem[]> {
   const rows = await loadAll<NonCatalogRow>((start, end) => supabase.from('payable_purchase_items')
@@ -242,10 +240,11 @@ export async function loadNonCatalogItems(): Promise<NonCatalogItem[]> {
     .eq('purchase.origin', 'xml').eq('purchase.store', 'jc').neq('purchase.status', 'cancelada')
     .order('id').range(start, end))
   return rows.flatMap(row => {
-    if (!row.purchase || readNonCatalogKind(row.non_catalog_kind) !== 'uso_despesa') return []
+    if (!row.purchase) return []
     return [{
       ...invoiceFromRow({ ...row, purchase: row.purchase }),
       item_value: Number(row.acquisition_value ?? row.line_total ?? 0),
+      non_catalog_kind: readNonCatalogKind(row.non_catalog_kind),
     }]
   }).sort((a, b) => (b.invoice_date ?? b.purchase_date).localeCompare(a.invoice_date ?? a.purchase_date) || a.id.localeCompare(b.id))
 }
@@ -318,13 +317,16 @@ export async function correctSupplierMapping(request: MemoryCorrectionRequest): 
 }
 
 /**
- * Um item do pedido de correção. productId nulo = uso ou despesa, e então o
- * fator também vai nulo; o banco recusa campo ausente.
+ * Um item do pedido de correção. productId nulo = fora do cadastro, e então o
+ * fator também vai nulo e o tipo diz se é uso ou despesa ou revenda sem
+ * cadastro; o banco recusa campo ausente.
  */
 export interface ItemCorrectionRequestItem {
   itemId: string
   productId: string | null
   conversionFactor: number | null
+  /** Só no item que fica fora do cadastro; sem ele, uso ou despesa. */
+  nonCatalogKind?: NfeNonCatalogKind
 }
 
 /** O efeito mudou entre a prévia e a confirmação (código PT409 do banco). */
@@ -339,14 +341,27 @@ function itemCorrectionArgs(target: ItemCorrectionTarget) {
       item_id: item.itemId,
       product_id: item.productId,
       conversion_factor: item.productId === null ? null : item.conversionFactor,
+      // Sempre presente: o banco anterior ignora o campo, o atual o confere.
+      non_catalog_kind: item.productId === null ? (item.nonCatalogKind ?? 'uso_despesa') : null,
     })),
     p_undo_correction_id: null,
   }
 }
 
+/** Mensagem quando o site novo chega antes da migration da revenda sem cadastro na correção. */
+export const RESALE_CORRECTION_NOT_READY = 'O banco ainda não recebeu a troca para revenda sem cadastro. Espere alguns minutos e recarregue a página antes de corrigir.'
+
+/** O pedido manda algum item para revenda sem cadastro. */
+export function requestsResale(target: ItemCorrectionTarget): boolean {
+  return 'items' in target && target.items.some(item => item.productId === null && item.nonCatalogKind === 'revenda')
+}
+
 /**
  * Prévia: o banco aplica a correção, mede o efeito e desfaz tudo. Por isso é
- * sempre POST (supabase.rpc), nunca GET.
+ * sempre POST (supabase.rpc), nunca GET. O banco anterior à revenda sem
+ * cadastro ignoraria o tipo e gravaria uso ou despesa: sem o efeito na
+ * memória (memory_changes), que só o banco novo devolve, a prévia de revenda é
+ * recusada aqui, e sem prévia não há confirmação.
  */
 export async function previewItemCorrection(target: ItemCorrectionTarget): Promise<ItemCorrectionResult> {
   const { data, error } = await supabase.rpc('correct_payable_purchase_items', {
@@ -356,7 +371,9 @@ export async function previewItemCorrection(target: ItemCorrectionTarget): Promi
     p_expected_impact_hash: null,
   })
   if (error) throw new Error(error.message || 'Não foi possível calcular a prévia.')
-  return parseItemCorrectionResult(data)
+  const result = parseItemCorrectionResult(data)
+  if (requestsResale(target) && result.impact.memory_changes === null) throw new Error(RESALE_CORRECTION_NOT_READY)
+  return result
 }
 
 /**
@@ -388,15 +405,25 @@ export interface ItemCorrectionHistory {
   undone: boolean
 }
 
-/** Correções recentes de notas que tiraram itens deste produto ou trouxeram para ele. */
-const ITEM_CORRECTION_LIMIT = 30
+/** Quantas correções recentes o histórico mostra. */
+export const ITEM_CORRECTION_LIMIT = 30
 
 type ItemCorrectionRow = Omit<ItemCorrectionHistory, 'impact' | 'undone'> & { impact: unknown }
 
-export async function loadItemCorrections(productId: string): Promise<ItemCorrectionHistory[]> {
-  const { data, error } = await supabase.from('payable_purchase_item_corrections')
+/**
+ * De quem é o histórico: de um produto (itens que saíram dele ou vieram para
+ * ele) ou de um item de nota. A troca entre uso ou despesa e revenda sem
+ * cadastro não tem produto em nenhum dos lados e só é achada pelo item.
+ */
+export type ItemCorrectionFilter = { productId: string } | { itemId: string }
+
+export async function loadItemCorrections(filter: ItemCorrectionFilter): Promise<ItemCorrectionHistory[]> {
+  const base = supabase.from('payable_purchase_item_corrections')
     .select('id,action,undoes_correction_id,corrected_by,corrected_at,impact')
-    .contains('product_ids', [productId])
+  const filtered = 'productId' in filter
+    ? base.contains('product_ids', [filter.productId])
+    : base.contains('item_ids', [filter.itemId])
+  const { data, error } = await filtered
     .order('corrected_at', { ascending: false })
     .limit(ITEM_CORRECTION_LIMIT)
   if (error) throw new Error(error.message)
