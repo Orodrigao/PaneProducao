@@ -38,6 +38,7 @@ import {
 import { showToast } from '@/lib/utils'
 import { allocateItemCosts, composeNfe, compositionBlockReason, compositionCloses, formatCompositionMoney, type NfeComposition } from '@/lib/nfeComposition'
 import { ConversionEditor, ProductSelector, conversionNeedsAttention } from '@/components/XmlConversionEditor'
+import { CostChangeLine, CostChangeSummary, useNoteCostChanges } from '@/components/PurchaseCostChangeNotice'
 import { loadRecipeUsageIndex } from '@/lib/recipeUsageClient'
 import type { RecipeUsageIndex } from '@/lib/recipeUsage'
 import { loadProductCategories, payableCatalogCategoryOptions, type ProductCategory } from '@/lib/productCategories'
@@ -605,6 +606,18 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     const lines = draft ? allocateItemCosts(draft) : null
     return lines ? new Map(lines.map(line => [line.lineNumber, line])) : null
   }, [draft])
+  // Compras fase 3B: o custo de cada cadastro desta nota contra a última
+  // compra dele. Só avisa; nada aqui bloqueia a confirmação nem muda preço.
+  const acquisitionByLine = useMemo(
+    () => itemCosts ? new Map([...itemCosts].map(([lineNumber, line]) => [lineNumber, line.acquisitionValue])) : null,
+    [itemCosts],
+  )
+  const costChanges = useNoteCostChanges(draft, acquisitionByLine)
+  const catalogNames = useMemo(() => new Map(catalog.map(product => [product.id, product.name])), [catalog])
+  const readyCostChanges = useMemo(
+    () => [...costChanges.values()].flatMap(state => state.status === 'pronto' ? [state.change] : []),
+    [costChanges],
+  )
   // A origem do vencimento é fato do XML e não muda; o aviso na tela precisa
   // acompanhar o que está digitado agora, senão continua cobrando o que já foi feito.
   const missingDueDate = draft?.installments.some(item => !item.dueDate) ?? false
@@ -709,6 +722,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
           )}
 
           <div className="ps-label" style={{ marginTop: 14 }}>Itens da NF-e · {mappedCount}/{draft.items.length} classificados</div>
+          <CostChangeSummary changes={readyCostChanges} names={catalogNames} />
           {draft.items.map((item, index) => (
             <div
               className="ps-card"
@@ -766,6 +780,9 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
                 </div>
               )}
               <ConversionEditor item={item} acquisitionValue={itemCosts?.get(item.lineNumber)?.acquisitionValue} onChange={next => updateItem(index, next)} />
+              {item.mappingStatus === 'mapeado' && item.baseProductId && costChanges.has(item.baseProductId) && (
+                <CostChangeLine state={costChanges.get(item.baseProductId) ?? { status: 'carregando' }} unit={item.baseUnit} />
+              )}
             </div>
           ))}
           <div className="ps-banner" style={{ marginTop: 10 }}>

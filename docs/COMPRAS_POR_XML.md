@@ -15,7 +15,7 @@ O estado atual do sistema fica em [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **Status: fase 0 executada parcialmente em 2026-09-10 e ampliada em
 2026-09-12; fases 1 e 2 implementadas em 2026-09-12; fase 3A implementada em
-2026-09-13.** Vinte e quatro arquivos reais, correspondentes a 21 NF-e
+2026-09-13; fase 3B (aviso de alta de custo) em 2026-11-04.** Vinte e quatro arquivos reais, correspondentes a 21 NF-e
 distintas, foram conferidos localmente; cinco padrões fiscais viraram fixtures
 reduzidas, inteiramente fictícias. Doze notas contêm desconto e encerram a
 hipótese sobre onde ele aparece. Alguns casos de borda ainda não têm evidência;
@@ -1085,11 +1085,75 @@ consumo no Vitest e o roteiro `test/preview-pr/revenda-sem-cadastro.spec.ts`
 classificação com dois parâmetros, como o site anterior; Vendas JA e Expedição
 JC barrados na Data API).
 
+## Fase 3B: aviso de alta de custo na entrada da nota (2026-11-04)
+
+Autorizada até o ar pelo plano mestre de 23/10/2026. O preço de venda não muda:
+a decisão segue com o Rodrigo, com o número na mão
+([FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md)).
+
+**Quem confere a nota.** Desde 25/09/2026 quase toda NF-e entra pela automação
+com a conta do Rodrigo (35 notas de 03/09 a 30/10, 26 por rascunho); a Elis
+lançou até 25/09. Um aviso só na tela da importação quase ninguém veria; por
+isso a alta também fica num quadro do Contas a pagar depois de confirmada.
+
+**O que conta como alta.** O custo do cadastro nesta nota (valor pago dividido
+pela quantidade útil, somando as linhas do mesmo cadastro, em centavos, como
+`private.apply_xml_purchase_cost` grava) contra o da última compra por NF-e do
+mesmo cadastro, de qualquer fornecedor, pela ordem que o banco usa para trocar
+o custo (emissão; no mesmo dia, a hora ou a ordem de lançamento; no empate, a
+ordem de lançamento). Conta cancelada e compra manual ficam fora, como no
+custo. Nota que entrou atrasada, com emissão anterior a outra já lançada, não
+trocou o custo (`cost_applied` falso) e não serve de "última compra": a
+importação e o quadro dizem a mesma coisa, de quanto para quanto o custo do
+cadastro foi. Compra anterior à fase 3A, que não guardava essa informação,
+continua valendo como última compra.
+
+- **Alta a partir de 5%.** Leitura de produção em 04/11, só de custos por nota:
+  228 pares de notas seguidas do mesmo cadastro, de 97 cadastros; 76 subiram,
+  50 delas 5% ou mais, e metade das altas ficou abaixo de 6%. Abaixo de 5%, a
+  linha do item mostra a variação sem alerta.
+- **Variação muito grande: 50% para cima ou um terço para baixo.** Dos 9 saltos
+  acima de 50%, a maioria tinha fator de embalagem diferente entre as duas
+  notas (recheio de doce de leite de R$ 3,08 para R$ 22,67 o quilo, com 8,08 kg
+  contra 1,01 kg por unidade). A tela manda conferir a quantidade por embalagem
+  e mostra a da compra anterior. Custo zero de um lado só também cai aqui.
+- **Nota mais antiga que a última** não troca o custo e não acusa alta; a tela
+  diz isso. **Primeira compra** do cadastro diz que não há com o que comparar.
+
+**Onde aparece.**
+
+- Na importação, em cada item ligado a cadastro, abaixo do fator de conversão,
+  e num resumo no alto da lista de itens. Item com embalagem por conferir
+  espera a conferência para comparar. Não bloqueia a confirmação.
+- No quadro "Altas e variações grandes de custo, notas dos últimos 30 dias", no
+  alto do Contas a pagar: as notas emitidas no período que trocaram o custo
+  (`cost_applied`) com alta de 5% ou mais ou variação muito grande, a mais
+  recente primeiro, com as duas notas e os dois custos. Item classificado
+  depois, pelos pendentes, entra por aqui. Nota emitida há mais de 30 dias não
+  aparece, mesmo lançada hoje.
+
+Sem banco nem migration: a leitura usa as tabelas e a RLS de Contas a pagar
+(`src/lib/purchaseCostChange.ts`, `src/lib/purchaseCostChangeClient.ts`), e a
+leitura do histórico é inteira ou falha, para não comparar com uma "última
+compra" cortada pela paginação.
+
+Limites conhecidos: com notas do mesmo dia em que só parte tem a hora de
+emissão (compras de antes da fase 3A), a regra do banco não forma uma ordem
+única e a "última compra" escolhida segue a ordem de leitura; desde outubro
+toda nota tem a hora. Uma nota do mesmo cadastro lançada por outra pessoa
+enquanto a importação está aberta só entra na comparação ao reabrir.
+
+**Fora desta fase.** Aviso no e-mail das 8h do Rodrigo e limite de alta
+ajustável na Configuração do Sistema; aviso na própria tela dos pendentes e em
+"Ver itens da NF-e"; comparação por fornecedor; bloqueio ou aprovação de alta
+grande; desfazer custo ao cancelar a conta, que continua como antes.
+
 ## Decisões pendentes
 
 - **Efeito nos preços de venda.** Decidido em 2026-09-13: a revisão de preços
-  não acompanha a fase 3A. A fase 3B trará o aviso de alta de custo na entrada
-  da nota, e a decisão de preço segue com Rodrigo, com o número na mão. Ver
+  não acompanha a fase 3A. A fase 3B (seção acima) avisa a alta de custo na
+  entrada da nota e no Contas a pagar, e a decisão de preço segue com
+  Rodrigo, com o número na mão. Ver
   [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md).
 
 ## Fora do escopo
@@ -1102,9 +1166,8 @@ JC barrados na Data API).
 ## Onde continuar
 
 - Defeitos abertos e estado real: [CURRENT_STATE.md](CURRENT_STATE.md).
-  A decisão sobre o custo está registrada; fases 0, 1, 2 e 3A feitas (ver o
-  registro de cada uma); a fase 3B (aviso de alta de custo na entrada da nota)
-  tem sessão e aprovação próprias.
+  A decisão sobre o custo está registrada; fases 0, 1, 2, 3A e 3B feitas (ver o
+  registro de cada uma).
 - Revenda sem cadastro: fase 1 feita em 28/10/2026 e fase 2 em 30/10/2026; a
   próxima é a fase 3 (Vínculos NF-e por tipo), na seção "Revenda sem cadastro
   (plano de 28/10/2026)" acima.

@@ -7,6 +7,7 @@ import PayableForm from '@/components/PayableForm'
 import PayablePaymentDialog from '@/components/PayablePaymentDialog'
 import PayablePurchaseList from '@/components/PayablePurchaseList'
 import PayableSupplierStatus from '@/components/PayableSupplierStatus'
+import PurchaseCostChangePanel from '@/components/PurchaseCostChangePanel'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import XmlImportDraftList from '@/components/XmlImportDraftList'
 import { supabase } from '@/lib/supabase'
@@ -294,6 +295,8 @@ export default function ContasPagarPage() {
           </div>
 
           {!loading && !error && <PayableSupplierStatus suppliers={suppliers} purchases={purchases} />}
+          {/* Quase toda nota entra pela automação: a alta de custo precisa ficar à vista depois da importação. */}
+          {!loading && !error && <PurchaseCostChangePanel refreshKey={purchases} />}
 
           {(reminders.overdue > 0 || reminders.dueSoon > 0) && (
             <div className="ps-card" style={{ marginTop: 12, borderColor: reminders.overdue > 0 ? 'var(--berry)' : 'var(--honey-deep)' }}>
