@@ -67,6 +67,12 @@ describe('pricingIndicators', () => {
     const { owner_salary: _semCampo, ...oldMonth } = { ...month, is_provisional: false, provisional_reasons: [] }
     vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: null }, error: null } as never)
     await expect(loadPricingIndicators()).resolves.toEqual({ status: 'outdated' })
+    const oldAverage = { ...oldMonth, months_included: ['2026-09'], month_count: 1 }
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: oldAverage }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'outdated' })
+    // Antiga e quebrada (média sem os campos) continua erro, não "atualizando".
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [oldMonth], average: { month_count: 1 } }, error: null } as never)
+    await expect(loadPricingIndicators()).resolves.toEqual({ status: 'error' })
 
     // Valor que não é número continua recusado.
     vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { months: [{ ...month, owner_salary: 'muito' }], average: null }, error: null } as never)
