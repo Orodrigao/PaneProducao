@@ -612,7 +612,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     () => itemCosts ? new Map([...itemCosts].map(([lineNumber, line]) => [lineNumber, line.acquisitionValue])) : null,
     [itemCosts],
   )
-  const costChanges = useNoteCostChanges(draft, acquisitionByLine)
+  const { states: costChanges, retry: retryCostChanges } = useNoteCostChanges(draft, acquisitionByLine)
   const catalogNames = useMemo(() => new Map(catalog.map(product => [product.id, product.name])), [catalog])
   const readyCostChanges = useMemo(
     () => [...costChanges.values()].flatMap(state => state.status === 'pronto' ? [state.change] : []),
@@ -781,7 +781,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
               )}
               <ConversionEditor item={item} acquisitionValue={itemCosts?.get(item.lineNumber)?.acquisitionValue} onChange={next => updateItem(index, next)} />
               {item.mappingStatus === 'mapeado' && item.baseProductId && costChanges.has(item.baseProductId) && (
-                <CostChangeLine state={costChanges.get(item.baseProductId) ?? { status: 'carregando' }} unit={item.baseUnit} />
+                <CostChangeLine state={costChanges.get(item.baseProductId) ?? { status: 'carregando' }} unit={item.baseUnit} onRetry={retryCostChanges} />
               )}
             </div>
           ))}

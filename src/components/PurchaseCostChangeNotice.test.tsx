@@ -1,8 +1,9 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { CostChangeLine, CostChangeSummary, type NoteCostState } from './PurchaseCostChangeNotice'
-import type { CostChange, CostPoint } from '@/lib/purchaseCostChange'
+import { CostChangeLine, CostChangeSummary, noteCostStates, noteHistoryKey, type NoteCostState } from './PurchaseCostChangeNotice'
+import type { CostChange, CostPoint, NoteProductCost } from '@/lib/purchaseCostChange'
+import type { NfeDraft } from '@/lib/nfeXml'
 
 // A tela aqui é só o desenho; a leitura do banco tem teste próprio e não roda no Vitest.
 vi.mock('@/lib/purchaseCostChangeClient', () => ({ loadCostHistory: vi.fn(), loadRecentCostChanges: vi.fn() }))
@@ -52,6 +53,42 @@ describe('linha de custo de cada item da nota', () => {
     expect(line({ status: 'aguardando_embalagem' })).toContain('Confira a embalagem para comparar o custo com a última compra.')
     expect(line({ status: 'carregando' })).toContain('Comparando com a última compra')
     expect(line({ status: 'erro' })).toContain('A importação segue normal.')
+  })
+
+  it('a alta só promete o quadro se a nota trocar o custo', () => {
+    expect(line({ status: 'pronto', change: change({ kind: 'subiu', unitCost: 6, ratio: 1.2 }) }))
+      .toContain('Se esta nota trocar o custo do cadastro ao ser confirmada, a alta fica no quadro')
+  })
+
+  it('leitura que falhou oferece comparar de novo, quando a tela dá o caminho', () => {
+    expect(renderToStaticMarkup(createElement(CostChangeLine, { state: { status: 'erro' }, unit: 'kg', onRetry: () => undefined }))).toContain('Comparar de novo')
+    expect(line({ status: 'erro' })).not.toContain('Comparar de novo')
+  })
+})
+
+describe('estado de cada cadastro da nota aberta', () => {
+  const nota = { accessKey: 'chave-b', issueDate: '2026-10-20', issuedAt: '2026-10-20T09:00:00-03:00' } as NfeDraft
+  const custo = (productId: string, unitCost: number | null): NoteProductCost => ({ productId, unitCost, lineNumbers: [1] })
+  const costs = new Map([
+    ['tomate', custo('tomate', 6)],
+    ['manjericao', custo('manjericao', 10)],
+    ['farinha', custo('farinha', null)],
+    ['acucar', custo('acucar', 4)],
+  ])
+
+  it('separa embalagem por conferir, erro, carregando e pronto, pela leitura desta nota', () => {
+    const history = new Map([[noteHistoryKey('chave-b', 'tomate'), [previous]], [noteHistoryKey('outra-nota', 'manjericao'), [previous]]])
+    const failed = new Set([noteHistoryKey('chave-b', 'acucar')])
+    const states = noteCostStates(nota, costs, history, failed)
+    expect(states.get('tomate')).toMatchObject({ status: 'pronto', change: { kind: 'subiu', previous: { purchaseId: 'nota-a' } } })
+    // Histórico lido para outra nota não vale para esta.
+    expect(states.get('manjericao')).toEqual({ status: 'carregando' })
+    expect(states.get('farinha')).toEqual({ status: 'aguardando_embalagem' })
+    expect(states.get('acucar')).toEqual({ status: 'erro' })
+  })
+
+  it('sem nota aberta não há estado', () => {
+    expect(noteCostStates(null, costs, new Map(), new Set()).size).toBe(0)
   })
 })
 

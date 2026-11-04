@@ -34,6 +34,11 @@ function dhEmiBrasilia(instante: number): string {
   return `${new Date(instante - 3 * 3_600_000).toISOString().slice(0, 19)}-03:00`
 }
 
+/** Vencimento 30 dias depois da emissao: a importacao recusa vencimento antes da emissao. */
+function vencimento(instante: number): string {
+  return new Date(instante - 3 * 3_600_000 + 30 * 86_400_000).toISOString().slice(0, 10)
+}
+
 interface NotaFicticia { xml: string; chave: string; numero: string }
 
 // Chave, numero e fornecedor unicos por rodada: o banco recusa chave repetida,
@@ -57,7 +62,7 @@ function notasDaRodada(): { a: NotaFicticia; b: NotaFicticia; fornecedor: string
     <det nItem="2"><prod><cProd>ALTA-MANJERICAO</cProd><xProd>MANJERICAO ALTA DE CUSTO</xProd><NCM>07099990</NCM><qCom>2.0000</qCom><uCom>KG</uCom><vUnCom>10.00</vUnCom><vProd>20.00</vProd></prod></det>
     <total><ICMSTot>${totaisSimples(total)}</ICMSTot></total>
     <pag><detPag><tPag>15</tPag><vPag>${total}</vPag></detPag></pag>
-    <cobr><dup><nDup>001</nDup><dVenc>2027-01-15</dVenc><vDup>${total}</vDup></dup></cobr>
+    <cobr><dup><nDup>001</nDup><dVenc>${vencimento(instante)}</dVenc><vDup>${total}</vDup></dup></cobr>
   </infNFe>
 </NFe>`
     return { xml, chave, numero }

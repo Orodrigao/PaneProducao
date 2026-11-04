@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import type { NfeDraft } from '@/lib/nfeXml'
 import { formatDateBR } from '@/lib/utils'
@@ -13,6 +13,7 @@ import {
   packagingLabel,
   type CostChange,
   type CostPoint,
+  type NoteProductCost,
 } from '@/lib/purchaseCostChange'
 import { loadCostHistory } from '@/lib/purchaseCostChangeClient'
 
@@ -37,9 +38,16 @@ function describePrevious(previous: CostPoint, unit: string | null): string {
  * a alta e a diferença grande chamam atenção; o resto é informação miúda, para
  * o aviso não virar ruído que ninguém lê.
  */
-export function CostChangeLine({ state, unit }: { state: NoteCostState; unit: string | null }) {
+export function CostChangeLine({ state, unit, onRetry }: { state: NoteCostState; unit: string | null; onRetry?: () => void }) {
   if (state.status === 'carregando') return <small className="ps-help" style={{ display: 'block', marginTop: 6 }}>Comparando com a última compra deste cadastro...</small>
-  if (state.status === 'erro') return <small className="ps-help" style={{ display: 'block', marginTop: 6 }}>Não foi possível comparar com a última compra agora. A importação segue normal.</small>
+  if (state.status === 'erro') {
+    return (
+      <div style={{ marginTop: 6 }}>
+        <small className="ps-help" style={{ display: 'block' }}>Não foi possível comparar com a última compra agora. A importação segue normal.</small>
+        {onRetry && <button type="button" className="ps-btn ghost sm" style={{ marginTop: 4 }} onClick={onRetry}>Comparar de novo</button>}
+      </div>
+    )
+  }
   if (state.status === 'aguardando_embalagem') return <small className="ps-help" style={{ display: 'block', marginTop: 6 }}>Confira a embalagem para comparar o custo com a última compra.</small>
   const { change } = state
   const current = formatUnitCost(change.unitCost, unit)
@@ -72,7 +80,7 @@ export function CostChangeLine({ state, unit }: { state: NoteCostState; unit: st
       <div role="alert" className="ps-card" style={{ marginTop: 8, padding: 10, borderColor: 'var(--honey-deep)', background: 'var(--cream-raise)' }}>
         <b><TrendingUp size={15} aria-hidden style={{ verticalAlign: '-2px' }} />{` Custo subiu ${size} desde a última compra`}</b>
         <small style={{ display: 'block', marginTop: 3 }}>{`Nesta nota: ${current}. Última compra: ${describePrevious(previous, unit)}.`}</small>
-        <small style={{ display: 'block', marginTop: 3 }}>O preço de venda não muda sozinho. Confirmada a nota, a alta fica no quadro “Altas e variações grandes de custo”, no alto do Contas a pagar, por 30 dias contados da emissão.</small>
+        <small style={{ display: 'block', marginTop: 3 }}>O preço de venda não muda sozinho. Se esta nota trocar o custo do cadastro ao ser confirmada, a alta fica no quadro “Altas e variações grandes de custo”, no alto do Contas a pagar, por 30 dias contados da emissão.</small>
       </div>
     )
   }
@@ -107,13 +115,46 @@ export function CostChangeSummary({ changes, names }: { changes: CostChange[]; n
   )
 }
 
+/** Chave do histórico lido: a nota aberta e o cadastro. Outra nota lê tudo de novo. */
+export function noteHistoryKey(accessKey: string, productId: string): string {
+  return `${accessKey}|${productId}`
+}
+
+/**
+ * O estado de cada cadastro da nota, a partir do que já foi lido. Fora do hook
+ * para o teste conferir sem montar a tela: embalagem por conferir espera,
+ * leitura que falhou mostra o erro, ainda sem leitura é "carregando" e o resto
+ * é a comparação com a última compra.
+ */
+export function noteCostStates(
+  draft: NfeDraft | null,
+  costs: ReadonlyMap<string, NoteProductCost>,
+  history: ReadonlyMap<string, CostPoint[]>,
+  failed: ReadonlySet<string>,
+): Map<string, NoteCostState> {
+  const states = new Map<string, NoteCostState>()
+  if (!draft) return states
+  for (const cost of costs.values()) {
+    const key = noteHistoryKey(draft.accessKey, cost.productId)
+    if (cost.unitCost === null) states.set(cost.productId, { status: 'aguardando_embalagem' })
+    else if (failed.has(key)) states.set(cost.productId, { status: 'erro' })
+    else if (!history.has(key)) states.set(cost.productId, { status: 'carregando' })
+    else states.set(cost.productId, {
+      status: 'pronto',
+      change: compareWithLastPurchase(history.get(key), { issueDate: draft.issueDate, issuedAt: draft.issuedAt, createdAt: null, nfeKey: draft.accessKey }, cost.productId, cost.unitCost),
+    })
+  }
+  return states
+}
+
 /**
  * Lê a última compra de cada cadastro ligado nesta nota e devolve a comparação
  * por cadastro. A leitura vale para a nota aberta (chave de acesso mais
  * cadastro): trocar o vínculo de um item lê só o cadastro novo, e outra nota
- * lê tudo de novo, sem reaproveitar histórico de antes.
+ * lê tudo de novo, sem reaproveitar histórico de antes. `retry` lê de novo o
+ * que falhou, sem fechar a importação.
  */
-export function useNoteCostChanges(draft: NfeDraft | null, acquisitionByLine: ReadonlyMap<number, number> | null): Map<string, NoteCostState> {
+export function useNoteCostChanges(draft: NfeDraft | null, acquisitionByLine: ReadonlyMap<number, number> | null): { states: Map<string, NoteCostState>; retry: () => void } {
   const [history, setHistory] = useState<Map<string, CostPoint[]>>(() => new Map())
   const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const requested = useRef<Set<string>>(new Set())
@@ -121,7 +162,7 @@ export function useNoteCostChanges(draft: NfeDraft | null, acquisitionByLine: Re
   const noteKey = draft?.accessKey ?? ''
   const costs = useMemo(() => noteProductCosts(draft, acquisitionByLine), [draft, acquisitionByLine])
   const missing = useMemo(
-    () => [...costs.keys()].map(productId => `${noteKey}|${productId}`).filter(key => !history.has(key) && !failed.has(key)).sort().join(','),
+    () => [...costs.keys()].map(productId => noteHistoryKey(noteKey, productId)).filter(key => !history.has(key) && !failed.has(key)).sort().join(','),
     [costs, history, failed, noteKey],
   )
 
@@ -152,19 +193,7 @@ export function useNoteCostChanges(draft: NfeDraft | null, acquisitionByLine: Re
     })
   }, [missing])
 
-  return useMemo(() => {
-    const states = new Map<string, NoteCostState>()
-    if (!draft) return states
-    for (const cost of costs.values()) {
-      const key = `${noteKey}|${cost.productId}`
-      if (cost.unitCost === null) states.set(cost.productId, { status: 'aguardando_embalagem' })
-      else if (failed.has(key)) states.set(cost.productId, { status: 'erro' })
-      else if (!history.has(key)) states.set(cost.productId, { status: 'carregando' })
-      else states.set(cost.productId, {
-        status: 'pronto',
-        change: compareWithLastPurchase(history.get(key), { issueDate: draft.issueDate, issuedAt: draft.issuedAt, createdAt: null, nfeKey: draft.accessKey }, cost.productId, cost.unitCost),
-      })
-    }
-    return states
-  }, [draft, costs, history, failed, noteKey])
+  const states = useMemo(() => noteCostStates(draft, costs, history, failed), [draft, costs, history, failed])
+  const retry = useCallback(() => setFailed(new Set()), [])
+  return { states, retry }
 }
