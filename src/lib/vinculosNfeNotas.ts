@@ -80,7 +80,7 @@ export interface MemoryChange {
   mapping_id: string
   item_ids: string[]
   action: MemoryChangeAction | string
-  /** Por que fica como está: ja_certa, data_desconhecida, decisao_posterior, mudou_depois, memoria_apagada ou correcao_antiga. */
+  /** Por que fica como está: ja_certa, data_desconhecida, decisao_posterior, ordem_incerta, mudou_depois, memoria_apagada ou correcao_antiga. */
   reason: string | null
   before: MemoryState | null
   after: MemoryState | null

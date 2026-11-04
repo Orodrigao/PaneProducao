@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(94);
+select plan(99);
 
 -- Revenda sem cadastro, fase 3: corrigir nota gravada entre uso ou despesa,
 -- revenda sem cadastro e produto, pela correção de notas
@@ -91,7 +91,16 @@ insert into public.payable_purchase_items (
   -- Item com duas memórias (fora do cadastro ligada e de insumo desligada antiga).
   ('97900000-0000-4000-8000-000000000170', '97900000-0000-4000-8000-000000000046', null, 'MEL', 'UN', 1, 10, 'MEL', 'MEL', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
   -- Item cuja memória deixa de casar depois da correção.
-  ('97900000-0000-4000-8000-000000000171', '97900000-0000-4000-8000-000000000046', null, 'PAO DE QUEIJO', 'UN', 1, 10, 'PAOQ', 'PAO DE QUEIJO', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-000000000171', '97900000-0000-4000-8000-000000000046', null, 'PAO DE QUEIJO', 'UN', 1, 10, 'PAOQ', 'PAO DE QUEIJO', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  -- Importado às 10:00:01; uma classificação concorrente que começou às 10:00:00
+  -- e esperou a trava gravou a memória depois, com o now() dela (anterior).
+  ('97900000-0000-4000-8000-000000000172', '97900000-0000-4000-8000-000000000046', null, 'QUEIJO MINAS', 'UN', 1, 10, 'QMIN', 'QUEIJO MINAS', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00:01+00'),
+  -- Memória de um dia antes da nota: decisão de fato anterior.
+  ('97900000-0000-4000-8000-000000000173', '97900000-0000-4000-8000-000000000046', null, 'FARELO', 'UN', 1, 10, 'FARE', 'FARELO', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'),
+  -- Duas correções do item no mesmo instante.
+  ('97900000-0000-4000-8000-000000000174', '97900000-0000-4000-8000-000000000046', null, 'MASSA', 'UN', 1, 10, 'MASS', 'MASSA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now()),
+  -- Correção com outra do item no mesmo instante: o desfazer não arrisca.
+  ('97900000-0000-4000-8000-000000000175', '97900000-0000-4000-8000-000000000046', null, 'FUBA', 'UN', 1, 10, 'FUBA', 'FUBA', 'UN', 1, null, null, null, null, null, 'nao_aplicavel', 'uso_despesa', null, '97900000-0000-4000-8000-000000000001', now());
 
 -- Conta paga: parcela paga, rateio em despesa e lançamentos no livro gerados
 -- pela função oficial da baixa. As outras contas: rateio em CMV de revenda.
@@ -122,7 +131,11 @@ insert into public.payable_non_catalog_mappings (
   ('97900000-0000-4000-8000-00000000008e', '97900000-0000-4000-8000-000000000011', 'SUCO', null, 'SUCO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
   ('97900000-0000-4000-8000-00000000008f', '97900000-0000-4000-8000-000000000011', 'BISC', null, 'BISCOITO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00+00'),
   ('97900000-0000-4000-8000-000000000180', '97900000-0000-4000-8000-000000000011', 'MEL', null, 'MEL', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
-  ('97900000-0000-4000-8000-000000000182', '97900000-0000-4000-8000-000000000011', 'PAOQ', null, 'PAO DE QUEIJO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now());
+  ('97900000-0000-4000-8000-000000000182', '97900000-0000-4000-8000-000000000011', 'PAOQ', null, 'PAO DE QUEIJO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-000000000183', '97900000-0000-4000-8000-000000000011', 'QMIN', null, 'QUEIJO MINAS', 'UN', true, 'revenda', '97900000-0000-4000-8000-000000000001', '2024-04-12 10:00:00+00'),
+  ('97900000-0000-4000-8000-000000000184', '97900000-0000-4000-8000-000000000011', 'FARE', null, 'FARELO', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', '2024-04-11 10:00+00'),
+  ('97900000-0000-4000-8000-000000000185', '97900000-0000-4000-8000-000000000011', 'MASS', null, 'MASSA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now()),
+  ('97900000-0000-4000-8000-000000000186', '97900000-0000-4000-8000-000000000011', 'FUBA', null, 'FUBA', 'UN', true, 'uso_despesa', '97900000-0000-4000-8000-000000000001', now());
 insert into public.payable_product_mappings (
   id, supplier_id, supplier_product_code, supplier_ean, supplier_description, purchase_unit,
   base_product_id, base_unit, conversion_basis, conversion_factor, factor_confirmed, active, last_confirmed_by, updated_at
@@ -295,7 +308,7 @@ select is((select count(*)::int from public.payable_purchase_item_corrections), 
 -- Memória mexida entre a prévia e a confirmação: PT409 ---------------------------
 
 reset role;
-update public.payable_non_catalog_mappings set updated_at = updated_at - interval '1 second'
+update public.payable_non_catalog_mappings set updated_at = updated_at - interval '1 day'
 where id = '97900000-0000-4000-8000-000000000081';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
@@ -729,8 +742,17 @@ select results_eq(
     where mapping.id = '97900000-0000-4000-8000-000000000180'$$,
   $$values ('uso_despesa'::text, true)$$,
   'desfazer: a memória do mel volta a uso ou despesa, com a versão de antes');
+-- Depois do desfazer, a memória de insumo do mel deixa de casar com o item: a
+-- foto da última correção acusa a mudança, que o horário sozinho não vê.
+update public.payable_product_mappings set supplier_product_code = 'MEL-OUTRO'
+where id = '97900000-0000-4000-8000-000000000181';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000170","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
+  'decisao_posterior', 'memória que mudou depois da última correção do item, mesmo sem horário mais novo, deixa a memória como está');
 
 -- Memória que deixa de casar com o item depois da correção: o desfazer não a mexe.
 select set_config('teste.pq', public.correct_payable_purchase_items(null, 'previa',
@@ -747,6 +769,62 @@ select is(
   public.correct_payable_purchase_items(null, 'previa', null,
     (current_setting('teste.aq')::jsonb ->> 'correction_id')::uuid) -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
   'mudou_depois', 'desfazer não mexe na memória que deixou de casar com o item');
+
+-- Ordem incerta (terceira revisão de outra família) ----------------------------
+
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000172","product_id":"97900000-0000-4000-8000-000000000023","conversion_factor":1}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
+  'ordem_incerta', 'item sem correção anterior: memória gravada logo antes da decisão fica como está');
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000173","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'action',
+  'trocar_tipo', 'memória bem mais velha que a decisão é decisão anterior: a correção troca o tipo');
+reset role;
+insert into public.payable_purchase_item_corrections (
+  id, request_id, action, undoes_correction_id, product_ids, item_ids, requested, impact, impact_hash, corrected_by, corrected_at
+)
+select fixture.id, fixture.request_id, 'corrigir', null, '{}'::uuid[], array['97900000-0000-4000-8000-000000000174']::uuid[],
+       '[{"item_id":"97900000-0000-4000-8000-000000000174","product_id":null,"conversion_factor":null,"usable_quantity":null,"non_catalog_kind":"uso_despesa"}]',
+       jsonb_build_object('action', 'corrigir', 'memory_changes', '[]'::jsonb, 'items', jsonb_build_array(jsonb_build_object(
+         'item_id', '97900000-0000-4000-8000-000000000174',
+         'memories_snapshot', jsonb_build_array(jsonb_build_object('mapping_id', mapping.id, 'version', mapping.updated_at at time zone 'UTC'))))),
+       'hash-empate', '97900000-0000-4000-8000-000000000001', '2024-06-03 12:00+00'
+from (values ('97900000-0000-4000-8000-0000000000f1'::uuid, '97900000-0000-4000-8000-0000000000f2'::uuid),
+             ('97900000-0000-4000-8000-0000000000f3'::uuid, '97900000-0000-4000-8000-0000000000f4'::uuid)) as fixture(id, request_id)
+cross join public.payable_non_catalog_mappings mapping
+where mapping.id = '97900000-0000-4000-8000-000000000185';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
+select is(
+  public.correct_payable_purchase_items(null, 'previa',
+    '[{"item_id":"97900000-0000-4000-8000-000000000174","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')
+    -> 'impact' -> 'memory_changes' -> 0 ->> 'reason',
+  'ordem_incerta', 'duas correções do item no mesmo instante deixam a ordem incerta e a memória fica');
+select set_config('teste.pt', public.correct_payable_purchase_items(null, 'previa',
+  '[{"item_id":"97900000-0000-4000-8000-000000000175","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]')::text, true);
+select set_config('teste.at', public.correct_payable_purchase_items('97900000-0000-4000-8000-0000000001a3', 'aplicar',
+  '[{"item_id":"97900000-0000-4000-8000-000000000175","product_id":null,"conversion_factor":null,"non_catalog_kind":"revenda"}]',
+  null, current_setting('teste.pt')::jsonb ->> 'impact_hash')::text, true);
+reset role;
+insert into public.payable_purchase_item_corrections (
+  id, request_id, action, undoes_correction_id, product_ids, item_ids, requested, impact, impact_hash, corrected_by, corrected_at
+)
+select '97900000-0000-4000-8000-0000000000f5', '97900000-0000-4000-8000-0000000000f6', 'corrigir', null, '{}'::uuid[],
+       array['97900000-0000-4000-8000-000000000175']::uuid[], '[]',
+       '{"action":"corrigir","items":[{"item_id":"97900000-0000-4000-8000-000000000175"}]}', 'hash-empate-2',
+       '97900000-0000-4000-8000-000000000001', correction.corrected_at
+from public.payable_purchase_item_corrections correction
+where correction.request_id = '97900000-0000-4000-8000-0000000001a3';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '97900000-0000-4000-8000-000000000002', true);
+select throws_ok(
+  $$select public.correct_payable_purchase_items(null, 'previa', null,
+    (current_setting('teste.at')::jsonb ->> 'correction_id')::uuid)$$,
+  '22023', 'Um item foi corrigido de novo depois desta correção; desfaça a correção mais nova.',
+  'outra correção do item no mesmo instante bloqueia o desfazer');
 
 -- Administrador também corrige --------------------------------------------------
 

@@ -1112,9 +1112,16 @@ O que muda para quem corrige notas em Catálogo > Vínculos NF-e:
   para ela ficar). Item que já passou por correção desta fase compara as
   memórias de agora com a foto exata que essa correção gravou
   (`memories_snapshot`), versão por versão; sem foto, vale o horário
-  (`mapping_confirmed_at` do item contra a versão das memórias). A comparação de
-  horário sozinha falha porque os outros gravadores usam `now()`, o início da
-  transação (achado da revisão de outra família). Itens da mesma memória com
+  (`mapping_confirmed_at` do item contra a versão das memórias), e memória
+  mexida até 2 minutos antes da decisão é "ordem incerta": fica como está. A
+  comparação de horário sozinha falha porque os outros gravadores usam `now()`,
+  o início da transação, e uma gravação que esperou a trava do fornecedor grava
+  um horário anterior mesmo vindo depois (achado da revisão de outra família).
+  Duas correções do item no mesmo instante também deixam a ordem incerta, e o
+  desfazer trata empate como correção mais nova. Em produção, em 04/11/2026,
+  44 dos 54 itens fora do cadastro com memória ligada tinham item e memória
+  gravados no mesmo instante (caminho normal), 9 tinham a memória mudada depois
+  e nenhum a memória mais velha. Itens da mesma memória com
   destinos diferentes no mesmo pedido são recusados. Desfazer volta a memória,
   com a versão que ela tinha, só se a foto de agora for igual à que a correção
   deixou; correção antiga, que não registrou a memória, continua sem religar;

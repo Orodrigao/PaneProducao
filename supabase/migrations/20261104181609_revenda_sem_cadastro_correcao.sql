@@ -269,20 +269,28 @@ revoke all on function private.memorias_casadas_item_nfe(uuid) from public, anon
 --     gravando depois dela). Sem essa foto (item decidido na importação ou na
 --     classificação, que gravam item e memória na mesma transação, ou corrigido
 --     antes desta fase), vale o horário: alguma memória com versão maior que a
---     decisão do item. Sem a data da decisão, não há como saber.
+--     decisão do item é decisão mais nova; versão um pouco ANTERIOR à decisão
+--     (até 2 minutos) é ordem incerta, porque uma gravação concorrente que
+--     esperou a trava do fornecedor grava now() anterior mesmo vindo depois. As
+--     transações do site são curtas (o banco corta em segundos), então versão
+--     mais velha que isso é de fato decisão anterior. Sem a data da decisão,
+--     não há como saber. Duas correções do item no mesmo instante (que não
+--     sejam a correção e o desfazer dela) também deixam a ordem incerta.
+--     Incerto conta como conflito: a memória fica como está.
 -- ---------------------------------------------------------------------------
-create or replace function private.memoria_mudou_depois_nfe(
+drop function if exists private.memoria_mudou_depois_nfe(uuid, timestamp, jsonb);
+create function private.memoria_mudou_depois_nfe(
   p_item_id uuid,
   p_decided_at timestamp,
   p_memories jsonb
 )
-returns table (conflict boolean, unknown boolean, newer_at timestamp)
+returns table (conflict boolean, unknown boolean, newer_at timestamp, uncertain boolean)
 language sql
 stable
 set search_path = ''
 as $$
-  with last_correction as (
-    select correction.corrected_at,
+  with item_corrections as (
+    select correction.id, correction.corrected_at, correction.undoes_correction_id,
            (select entry -> 'memories_snapshot'
             from jsonb_array_elements(
               case when jsonb_typeof(correction.impact -> 'items') = 'array' then correction.impact -> 'items' else '[]'::jsonb end
@@ -291,8 +299,24 @@ as $$
             limit 1) as snapshot
     from public.payable_purchase_item_corrections correction
     where correction.item_ids @> array[p_item_id]
-    order by correction.corrected_at desc, correction.id desc
+  ),
+  last_correction as (
+    -- No mesmo instante, o desfazer vem depois da correção que ele desfaz.
+    select item_corrections.*
+    from item_corrections
+    order by item_corrections.corrected_at desc, (item_corrections.undoes_correction_id is not null) desc,
+             item_corrections.id desc
     limit 1
+  ),
+  tie as (
+    select exists (
+      select 1
+      from item_corrections other
+      cross join last_correction
+      where other.corrected_at = last_correction.corrected_at
+        and other.id <> last_correction.id
+        and other.id is distinct from last_correction.undoes_correction_id
+    ) as tied
   ),
   now_entries as (
     select distinct jsonb_build_object('mapping_id', memory ->> 'mapping_id', 'version', memory -> 'version') as entry
@@ -318,14 +342,28 @@ as $$
             where not exists (select 1 from left_entries left_entry where left_entry.entry = now_entry.entry)) as newer
   ),
   by_clock as (
-    select max((memory ->> 'version')::timestamp) as newest
+    select max((memory ->> 'version')::timestamp) as newest,
+           coalesce(bool_or((memory ->> 'version')::timestamp < p_decided_at
+                            and (memory ->> 'version')::timestamp >= p_decided_at - interval '2 minutes'), false) as close_before
     from jsonb_array_elements(coalesce(p_memories, '[]'::jsonb)) memory
+  ),
+  verdict as (
+    select tie.tied,
+           by_snapshot.known,
+           by_snapshot.changed,
+           by_snapshot.newer,
+           by_clock.newest,
+           p_decided_at is not null and coalesce(by_clock.newest > p_decided_at, false) as clock_newer,
+           p_decided_at is not null and by_clock.close_before as clock_close
+    from tie cross join by_snapshot cross join by_clock
   )
-  select case when by_snapshot.known then by_snapshot.changed
-              else p_decided_at is not null and coalesce(by_clock.newest > p_decided_at, false) end,
-         not by_snapshot.known and p_decided_at is null,
-         case when by_snapshot.known then by_snapshot.newer else by_clock.newest end
-  from by_snapshot cross join by_clock;
+  select case when verdict.tied then true
+              when verdict.known then verdict.changed
+              else verdict.clock_newer or verdict.clock_close end,
+         not verdict.tied and not verdict.known and p_decided_at is null,
+         case when verdict.known then verdict.newer else verdict.newest end,
+         verdict.tied or (not verdict.known and not verdict.clock_newer and verdict.clock_close)
+  from verdict;
 $$;
 
 revoke all on function private.memoria_mudou_depois_nfe(uuid, timestamp, jsonb) from public, anon, authenticated;
@@ -789,10 +827,13 @@ begin
         end if;
         -- Mesmo valor não basta: uma correção mais nova que voltou o item ao
         -- mesmo estado também seria apagada. Itens classificados só mudam por
-        -- esta função, então o histórico diz se houve correção depois.
+        -- esta função, então o histórico diz se houve correção depois. Outra
+        -- correção do item no mesmo instante conta como mais nova (na dúvida,
+        -- não desfaz).
         if exists (
           select 1 from public.payable_purchase_item_corrections later
-          where later.corrected_at > v_undo.corrected_at
+          where later.corrected_at >= v_undo.corrected_at
+            and later.id <> v_undo.id
             and later.impact -> 'items' @> jsonb_build_array(jsonb_build_object('item_id', v_line.item_id))
         ) then
           raise exception using errcode = '22023',
@@ -984,14 +1025,16 @@ begin
                -- memória dele (private.memoria_mudou_depois_nfe), para a
                -- memória ficar como está.
                bool_or(link.unknown) as decided_unknown,
-               bool_or(link.conflict) as decided_before,
-               max(link.newer_at) filter (where link.conflict) as newer_at
+               bool_or(link.conflict and not link.uncertain) as decided_before,
+               bool_or(link.uncertain) as decided_uncertain,
+               max(link.newer_at) filter (where link.conflict and not link.uncertain) as newer_at
         from (
           select request.item_id,
                  case when request.product_id is not null then 'produto' else request.non_catalog_kind end as target,
                  decision.conflict,
                  decision.unknown,
                  decision.newer_at,
+                 decision.uncertain,
                  memory
           from jsonb_to_recordset(v_requested) as request(item_id uuid, product_id uuid, non_catalog_kind text)
           cross join lateral private.memoria_mudou_depois_nfe(
@@ -1031,6 +1074,9 @@ begin
         elsif v_link.decided_before then
           v_memory_action := 'manter';
           v_memory_reason := 'decisao_posterior';
+        elsif v_link.decided_uncertain then
+          v_memory_action := 'manter';
+          v_memory_reason := 'ordem_incerta';
         elsif v_target = 'produto' then
           v_memory_action := 'desligar';
           v_memory_after := jsonb_build_object('active', false, 'non_catalog_kind', v_link.memory ->> 'non_catalog_kind');
