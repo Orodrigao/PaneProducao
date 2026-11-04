@@ -7,6 +7,7 @@ import { getCurrentUserAsync, roleColor, type AppUser } from '@/lib/auth'
 import { loadProductCategories, type ProductCategory } from '@/lib/productCategories'
 import {
   PRICING_CHANNELS,
+  OWNER_SALARY_SLOT,
   baseSlots,
   buildPricingChanges,
   categorySlots,
@@ -19,8 +20,10 @@ import {
   savePricingSettings,
   type PricingSettingsData,
 } from '@/lib/pricingSettings'
-import { PricingCategoryCard, PricingChannelCard, PricingPercentField } from '@/components/PricingSettingsFields'
+import { PricingCategoryCard, PricingChannelCard, PricingMoneyField, PricingPercentField } from '@/components/PricingSettingsFields'
 import { PRICING_HISTORY_STEP, PricingSettingsHistory } from '@/components/PricingSettingsHistory'
+import { PricingIndicators } from '@/components/PricingIndicators'
+import { loadPricingIndicatorsInto, type PricingIndicatorsState } from '@/lib/pricingIndicators'
 import styles from './page.module.css'
 
 type Notice = { kind: 'ok' | 'warn' | 'error'; text: string } | null
@@ -38,6 +41,8 @@ export default function ConfiguracaoSistemaPage() {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
   const [historyVisible, setHistoryVisible] = useState(PRICING_HISTORY_STEP)
+  const [indicators, setIndicators] = useState<PricingIndicatorsState>({ status: 'loading' })
+  const indicatorsSeq = useRef(0)
   const savingRef = useRef(false)
 
   const reload = useCallback(async () => {
@@ -48,6 +53,7 @@ export default function ConfiguracaoSistemaPage() {
 
   useEffect(() => {
     let alive = true
+    const indicatorsRequests = indicatorsSeq
     void (async () => {
       const current = await getCurrentUserAsync()
       if (!alive) return
@@ -56,6 +62,9 @@ export default function ConfiguracaoSistemaPage() {
         return
       }
       setUser(current)
+      // Os números do Financeiro carregam à parte: se falharem, a
+      // Configuração continua editável e o quadro mostra o próprio erro.
+      void loadPricingIndicatorsInto(indicatorsRequests, setIndicators)
       try {
         await reload()
       } catch {
@@ -64,7 +73,11 @@ export default function ConfiguracaoSistemaPage() {
         if (alive) setLoading(false)
       }
     })()
-    return () => { alive = false }
+    return () => {
+      alive = false
+      // Leitura em voo depois de sair da tela não mexe mais no quadro.
+      indicatorsRequests.current += 1
+    }
   }, [router, reload])
 
   const current = useMemo(() => currentValueMap(data?.current ?? []), [data])
@@ -110,6 +123,8 @@ export default function ConfiguracaoSistemaPage() {
         setDraft({})
         setAddedCategoryIds([])
       }
+      // O salário dos donos muda as despesas fixas do quadro de números.
+      if (outcome.kind !== 'error') void loadPricingIndicatorsInto(indicatorsSeq, setIndicators)
       setNotice({ kind: outcome.kind === 'saved' ? 'ok' : outcome.kind === 'saved-reload-failed' ? 'warn' : 'error', text: outcome.message })
     } finally {
       savingRef.current = false
@@ -152,6 +167,14 @@ export default function ConfiguracaoSistemaPage() {
                   label="Imposto sobre a venda (vale para todos os canais)" />
               </section>
 
+              <section className={`ps-card ${styles.card}`} aria-label="Salário dos donos">
+                <PricingMoneyField {...fieldProps} slot={OWNER_SALARY_SLOT}
+                  label="Salário dos donos por mês (vale para todos os canais)" />
+                <small className={styles.fieldMeta}>
+                  Entra nas despesas fixas do preço em todos os meses, como o salário de quem faz esse trabalho, e não sai do lucro.
+                </small>
+              </section>
+
               {PRICING_CHANNELS.map(channel => <PricingChannelCard key={channel} channel={channel} {...fieldProps} />)}
 
               <h2 className={styles.sectionTitle}>Exceções de margem por categoria</h2>
@@ -189,6 +212,8 @@ export default function ConfiguracaoSistemaPage() {
                   {notice.text}
                 </p>
               )}
+
+              <PricingIndicators state={indicators} />
 
               <h2 className={styles.sectionTitle}>Histórico de mudanças</h2>
               <PricingSettingsHistory history={data.history} visible={historyVisible}

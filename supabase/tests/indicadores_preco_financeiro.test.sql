@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(23);
+select plan(34);
 
 -- O banco Preview recebe o seed geral antes do pgTAP. Retire as mesmas
 -- fixtures financeiras do relatório dentro desta transação; o rollback no
@@ -49,11 +49,47 @@ insert into public.finance_accounts (id, key, label, kind, active)
 values ('96300000-0000-4000-8000-0000000000a1', 'indicadores_teste', '[TESTE] Indicadores de preço', 'banco', true)
 on conflict (id) do nothing;
 
+-- O peso vem da ficha técnica (passos 0c e 0d da formação de preço). O peso
+-- médio do cadastro de pães fica preenchido com números errados de propósito:
+-- se o relatório voltar a lê-lo, setembro passa de 31 kg e de 62% de cobertura.
 insert into public.breads (id, name, days, active, unit, is_special, is_shelf, avg_unit_weight_kg)
 values
-  ('indicadores-peso', '[TESTE] Indicadores pão pesado', '{0,1,2,3,4,5,6}', true, 'un', false, false, 0.5),
-  ('indicadores-sem-peso', '[TESTE] Indicadores pão sem peso', '{0,1,2,3,4,5,6}', true, 'un', false, false, null)
+  ('indicadores-peso', '[TESTE] Indicadores pão pesado', '{0,1,2,3,4,5,6}', true, 'un', false, false, 0.9),
+  ('indicadores-sem-peso', '[TESTE] Indicadores pão sem peso', '{0,1,2,3,4,5,6}', true, 'un', false, false, 0.7),
+  ('indicadores-brioche', '[TESTE] Indicadores Brioche Hamburguer', '{0,1,2,3,4,5,6}', true, 'un', false, false, 0.06)
 on conflict (id) do update set avg_unit_weight_kg = excluded.avg_unit_weight_kg;
+
+insert into public.products (id, name, category, active, unit, kind, is_fabricacao_propria, legacy_bread_id)
+values
+  ('96300000-0000-4000-8000-0000000007a1', '[TESTE] Indicadores pão pesado', 'Paes', true, 'un', 'final', true, 'indicadores-peso'),
+  ('96300000-0000-4000-8000-0000000007a2', '[TESTE] Indicadores pão sem peso', 'Paes', true, 'un', 'final', true, 'indicadores-sem-peso'),
+  ('96300000-0000-4000-8000-0000000007a3', '[TESTE] Indicadores Brioche', 'Paes', true, 'un', 'final', true, 'indicadores-brioche'),
+  ('96300000-0000-4000-8000-0000000007a4', '[TESTE] Indicadores pão por quilo', 'Paes', true, 'kg', 'final', true, null),
+  ('96300000-0000-4000-8000-0000000007a5', '[TESTE] Indicadores quilo sem assado', 'Paes', true, 'kg', 'final', true, null);
+
+insert into public.product_variants (id, product_id, name, sort_order)
+values
+  ('96300000-0000-4000-8000-0000000007b1', '96300000-0000-4000-8000-0000000007a3', 'Hambúrguer', 1),
+  ('96300000-0000-4000-8000-0000000007b2', '96300000-0000-4000-8000-0000000007a3', 'Forma', 2);
+
+update public.breads
+set product_variant_id = '96300000-0000-4000-8000-0000000007b1'
+where id = 'indicadores-brioche';
+
+-- Pão pesado: 500 g de massa crua e 450 g assado por unidade. A mão de obra é
+-- por quilo de massa crua, então 62 unidades valem 31 kg, não 27,9 kg.
+-- Brioche: a linha do produto (85 g) não vale para o pão, que é a variante
+-- Hambúrguer (80 g). Pão por quilo: 1,1 kg de massa para 1 kg assado. Quilo
+-- sem assado: a ficha só tem massa, então o quilo pronto lançado não tem como
+-- virar massa crua e fica fora da cobertura.
+insert into public.product_recipe_yields (product_id, product_variant_id, basis, dough_weight_kg, finished_weight_kg, yield_units)
+values
+  ('96300000-0000-4000-8000-0000000007a1', null, 'dough', 1.0, 0.9, 2),
+  ('96300000-0000-4000-8000-0000000007a3', null, 'dough', 0.85, 0.85, 10),
+  ('96300000-0000-4000-8000-0000000007a3', '96300000-0000-4000-8000-0000000007b1', 'dough', 0.8, 0.72, 10),
+  ('96300000-0000-4000-8000-0000000007a3', '96300000-0000-4000-8000-0000000007b2', 'dough', 0.8, 0.8, 2),
+  ('96300000-0000-4000-8000-0000000007a4', null, 'dough', 1.1, 1.0, 1),
+  ('96300000-0000-4000-8000-0000000007a5', null, 'dough', 1.0, 1.0, 1);
 
 -- Cada mês usa lançamentos fictícios próprios. Setembro representa cobertura
 -- de peso parcial, um fechamento JA ausente e encargos/diárias sem equipe.
@@ -176,7 +212,10 @@ values
   (date '2026-09-01', 'indicadores-peso', 'bread', 'indicadores-peso', null, '[TESTE] Indicadores pão pesado', 'un', 'L0901', 62, 0, null, 'Admin Indicadores Teste'),
   (date '2026-09-01', 'indicadores-sem-peso', 'bread', 'indicadores-sem-peso', null, '[TESTE] Indicadores pão sem peso', 'un', 'L0901', 38, 0, null, 'Admin Indicadores Teste'),
   (date '2026-10-01', 'indicadores-peso', 'bread', 'indicadores-peso', null, '[TESTE] Indicadores pão pesado', 'un', 'L1001', 95, 0, null, 'Admin Indicadores Teste'),
-  (date '2026-10-01', 'indicadores-sem-peso', 'bread', 'indicadores-sem-peso', null, '[TESTE] Indicadores pão sem peso', 'un', 'L1001', 5, 0, null, 'Admin Indicadores Teste')
+  (date '2026-10-01', 'indicadores-sem-peso', 'bread', 'indicadores-sem-peso', null, '[TESTE] Indicadores pão sem peso', 'un', 'L1001', 5, 0, null, 'Admin Indicadores Teste'),
+  (date '2026-10-01', 'indicadores-brioche', 'bread', 'indicadores-brioche', null, '[TESTE] Indicadores Brioche Hamburguer', 'un', 'L1001', 25, 0, null, 'Admin Indicadores Teste'),
+  (date '2026-10-01', null, 'product', '96300000-0000-4000-8000-0000000007a4', null, '[TESTE] Indicadores pão por quilo', 'kg', 'L1001', 10, 0, null, 'Admin Indicadores Teste'),
+  (date '2026-10-01', null, 'product', '96300000-0000-4000-8000-0000000007a5', null, '[TESTE] Indicadores quilo sem assado', 'kg', 'L1001', 4, 0, null, 'Admin Indicadores Teste')
 on conflict (product_source, product_id, record_date, product_variant_id) do update
 set quantity_baked = excluded.quantity_baked,
     production_unit = excluded.production_unit;
@@ -186,6 +225,13 @@ select ok(has_function_privilege('authenticated', 'public.get_pricing_financial_
 select ok(not has_function_privilege('authenticated', 'private.pricing_financial_indicators_report(date)', 'execute'), 'o auxiliar de data não fica exposto ao cliente');
 
 select set_config('request.jwt.claim.sub', '96300000-0000-4000-8000-000000000001', true);
+
+-- Salário dos donos na Configuração (decisão de 04/11/2026). Zero definido
+-- não é lacuna e não muda a conta: as asserções abaixo valem como antes.
+-- O valor de verdade entra depois, para conferir a soma.
+select is((public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":0,"previous_value":null}]') ->> 'saved')::integer, 1,
+  'admin define o salário dos donos pela porta da Configuração');
+
 select is(
   public.get_pricing_financial_indicators(),
   private.pricing_financial_indicators_report(private.data_na_padaria()),
@@ -197,21 +243,40 @@ select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expenses}')::numeric, 1360::numeric, 'despesas fixas incluem só grupos definidos e ignoram estorno');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expense_pct}')::numeric, 0.1::numeric, 'percentual de despesa fixa usa o faturamento completo');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,production_labor}')::numeric, 116.25::numeric, 'mão de obra de produção fica separada das despesas fixas');
-select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,kilograms_with_known_weight}')::numeric, 31::numeric, 'peso médio da tabela de pães converte unidades em quilos');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,kilograms_with_known_weight}')::numeric, 31::numeric, 'massa crua da ficha converte unidades em quilos; o peso médio do cadastro de pães fica de fora');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,weight_coverage_pct}')::numeric, 62::numeric, 'cobertura considera todas as unidades produzidas');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,labor_cost_per_kg}')::numeric, 3.75::numeric, 'custo de mão de obra por quilo usa apenas quilos com peso conhecido');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,is_provisional}')::boolean, true, 'cobertura baixa marca o mês como provisório');
 select ok((private.pricing_financial_indicators_report(date '2026-11-01') #> '{months,0,provisional_reasons}') @> '["cobertura de peso 62%", "mês sem fechamento de caixa da JA em 1 dia", "encargos e diárias sem equipe"]'::jsonb, 'provisoriedade explica peso, fechamento ausente e encargos sem equipe');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,month}'), '2026-10', 'não inclui o mês que está aberto na data de referência');
-select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,weight_coverage_pct}')::numeric, 95::numeric, 'mês completo usa a cobertura do peso');
+select is(round((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,weight_coverage_pct}')::numeric, 2), 93.53::numeric, 'cobertura de outubro: 130 de 139; o quilo sem assado na ficha fica de fora');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,kilograms_with_known_weight}')::numeric, 60.5::numeric, 'outubro soma 47,5 kg do pão pesado, 2 kg do Brioche pela variante Hambúrguer e 11 kg de massa crua do pão lançado em quilo; os 4 kg sem assado não entram');
+select is((select ficha_massa_crua_kg from private.ficha_peso_por_unidade('bread', 'indicadores-brioche', null)), 0.08::numeric, 'pão que é variante lê a ficha da variante, não a linha do produto');
+select is((select count(*) from private.ficha_peso_por_unidade('bread', 'indicadores-sem-peso', null))::integer, 0, 'produto sem rendimento na ficha não devolve peso, mesmo com peso médio no cadastro de pães');
+select ok(not has_function_privilege('authenticated', 'private.ficha_peso_por_unidade(text, text, uuid)', 'execute'), 'a leitura do peso da ficha não fica exposta ao cliente');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,is_provisional}')::boolean, false, 'mês sem lacunas não é provisório');
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,fixed_expense_pct}')::numeric, 0.1::numeric, 'média de percentuais de fixos é ponderada pelo faturamento');
 select is(
   round((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,labor_cost_per_kg}')::numeric, 6),
-  round((116.25::numeric(12,2) + 178.125::numeric(12,2)) / (31 + 47.5), 6),
+  round((116.25::numeric(12,2) + 178.125::numeric(12,2)) / (31 + 60.5), 6),
   'média pondera mão de obra persistida em centavos pelos quilos conhecidos'
 );
 select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{average,month_count}')::integer, 2, 'a média informa quantos meses entraram');
+
+-- O salário dos donos entra nas despesas fixas de todo mês, pelo valor vigente.
+select is((public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":1360,"previous_value":0}]') ->> 'saved')::integer, 1,
+  'admin muda o salário dos donos para R$ 1.360');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expenses}')::numeric, 2720::numeric,
+  'setembro: R$ 1.360 de despesas do Financeiro mais R$ 1.360 de salário dos donos');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,0,fixed_expense_pct}')::numeric, 0.2::numeric,
+  'o percentual de despesas fixas já inclui o salário dos donos');
+select is((private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,owner_salary}')::numeric, 1360::numeric,
+  'cada mês mostra quanto do fixo é salário dos donos');
+select is((public.save_pricing_settings('[{"setting_key":"retirada_donos_mensal","value":null,"previous_value":1360}]') ->> 'saved')::integer, 1,
+  'admin limpa o salário dos donos');
+select ok((private.pricing_financial_indicators_report(date '2026-11-01') #> '{months,1,provisional_reasons}') @> '["salário dos donos não definido na Configuração"]'::jsonb
+    and (private.pricing_financial_indicators_report(date '2026-11-01') #>> '{months,1,is_provisional}')::boolean,
+  'sem salário definido, o mês completo fica provisório e diz por quê');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '96300000-0000-4000-8000-000000000002', true);

@@ -1744,6 +1744,13 @@ function GeolarScreen({ breads, orders, enc, sheetStatus, geolarDate, delivIdx, 
                   {b.total}
                   {b.pjQuantity !== null && <span className="print-pj-quantity"> ({b.pjQuantity} PJ)</span>}
                 </span>
+                {/* Linha própria, na largura toda e com quebra: dentro do Total
+                    (sem quebra) a frase espremeria o nome do pão no celular. */}
+                {b.pjWeightPending && (
+                  <span style={{gridColumn:'1 / -1',textAlign:'left',whiteSpace:'normal',fontSize:11,color:'var(--text-muted)'}}>
+                    + PJ por peso sem conversão em peças: ver o aviso no Forno
+                  </span>
+                )}
               </div>
             ))}
             {printRows.length>0&&<div className="print-row print-row-pj" style={{fontWeight:500,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>

@@ -626,8 +626,10 @@ export default function FornoPage() {
                         <div className="ps-oven-weight-warning">
                           <AlertTriangle size={15} />
                           <span>
-                            Previsto pode estar incompleto: tem pedido PJ por peso desse pão sem peso médio
-                            cadastrado. Cadastre em Produtos → Fabricação própria para o número fechar certo.
+                            Previsto pode estar incompleto: tem pedido PJ por peso desse pão e a ficha técnica
+                            dele está sem peso assado ou com o peso de venda diferente. Peça ao Compras para
+                            lançar o &quot;Assado (g)&quot; e salvar a ficha (Produtos → Composição) para o número
+                            fechar certo.
                           </span>
                         </div>
                       )}

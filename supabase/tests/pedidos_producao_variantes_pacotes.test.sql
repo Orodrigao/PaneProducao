@@ -80,6 +80,12 @@ values
 insert into public.product_pj_pack_rules(product_id, product_variant_id, pack_size_units, min_order_packs, order_multiple_packs)
 values ('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d2',12,1,1);
 
+-- Ficha da Hamburguer: 88 g de massa crua e 80 g assado por unidade. Desde a
+-- formação de preço 0c o Forno converte pedido em kg pelo peso assado da
+-- ficha, o mesmo que a tela da ficha grava como peso de venda (80 g acima).
+insert into public.product_recipe_yields(product_id, product_variant_id, basis, dough_weight_kg, finished_weight_kg, yield_units)
+values ('9a200000-0000-4000-8000-00000000a0a2','9a200000-0000-4000-8000-00000000d0d2','dough',0.88,0.8,10);
+
 insert into public.customer_price_overrides(
   customer_id, product_id, product_source, product_name, unit_price, pricing_unit, pack_size,
   sale_option_id, active
@@ -235,11 +241,11 @@ select is((select quantity from public.list_pj_production_for_oven_v2(private.da
 select is((select quantity from public.list_pj_production_for_oven_v2(private.data_na_padaria())
   where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
     and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'), 12::numeric,
-  'previsto da Hamburguer converte 0,96kg em 12 pecas pelo peso unitario de 80g');
+  'previsto da Hamburguer converte 0,96kg em 12 pecas pelo peso assado de 80g da ficha');
 select is((select needs_weight_setup from public.list_pj_production_for_oven_v2(private.data_na_padaria())
   where product_source = 'product' and product_id = '9a200000-0000-4000-8000-00000000a0a2'
     and product_variant_id = '9a200000-0000-4000-8000-00000000d0d2'), false,
-  'com peso cadastrado na opcao de venda, nenhum aviso pendente sobra para a Hamburguer');
+  'com peso assado na ficha, nenhum aviso pendente sobra para a Hamburguer');
 
 reset role;
 

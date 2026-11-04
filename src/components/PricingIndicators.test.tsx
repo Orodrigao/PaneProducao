@@ -15,6 +15,7 @@ const month: PricingIndicatorMonth = {
   revenue: 13600,
   fixed_expenses: 1360,
   fixed_expense_pct: 0.1,
+  owner_salary: 20000,
   production_labor: 116.25,
   kilograms_with_known_weight: 31,
   production_quantity: 100,
@@ -36,6 +37,10 @@ describe('PricingIndicators', () => {
     expect(empty).toContain('Ainda não há mês completo no Financeiro')
     expect(error).toContain('role="alert"')
     expect(error).toContain('Não foi possível carregar os indicadores de preço.')
+
+    const outdated = renderToStaticMarkup(createElement(PricingIndicators, { state: { status: 'outdated' } }))
+    expect(outdated).toContain('role="status"')
+    expect(outdated).toContain('passando para a conta nova')
   })
 
   it('mostra mês, média e motivos provisórios junto aos números', () => {
@@ -58,5 +63,9 @@ describe('PricingIndicators', () => {
     expect(html).toContain('10% do faturamento')
     expect(html).toContain('62%')
     expect(html).toContain('cobertura de peso 62%')
+    expect(html).toContain('Quilos de massa crua')
+    expect(html).toContain('de salário dos donos')
+    expect(html).toContain('20.000,00')
+    expect(html).toContain('pela ficha técnica de cada pão produzido')
   })
 })
