@@ -2,7 +2,8 @@ import { formatDateBR } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { CASH_CLOSING_METHOD_LABELS, type CashClosingMethod } from '@/lib/finance'
 
-export const FEE_METHODS = ['banrisul', 'stone', 'sitef', 'pix', 'ifood', 'food99'] as const
+export const EDITABLE_FEE_METHODS = ['banrisul_credito', 'banrisul_debito', 'banrisul_pix', 'stone_credito', 'stone_debito', 'stone_pix', 'sitef_credito', 'sitef_debito', 'sitef_pix', 'pix', 'ifood', 'food99'] as const
+export const FEE_METHODS = ['banrisul', 'stone', 'sitef', ...EDITABLE_FEE_METHODS] as const
 export type FeeMethod = typeof FEE_METHODS[number]
 export { CASH_CLOSING_METHOD_LABELS }
 
@@ -111,7 +112,8 @@ export async function saveFinanceFeeRate(
 }
 
 export function feeMethodLabel(method: CashClosingMethod): string {
-  return CASH_CLOSING_METHOD_LABELS[method]
+  const label = CASH_CLOSING_METHOD_LABELS[method] ?? method
+  return ['banrisul', 'stone', 'sitef'].includes(method) ? label + ', formato antigo' : label
 }
 
 function summarizePending(rows: FinanceFeeRates['pending']) {

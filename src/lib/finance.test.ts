@@ -368,3 +368,15 @@ describe('leitura do livro durante a atualização do banco', () => {
     expect(supabase.from).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('rótulos dos meios separados', () => {
+  it('identifica maquininha e modalidade em todos os nove meios', async () => {
+    const { CASH_CLOSING_METHOD_LABELS } = await import('./finance')
+    expect(CASH_CLOSING_METHOD_LABELS).toMatchObject({
+      banrisul_credito: 'Banrisul crédito', banrisul_debito: 'Banrisul débito', banrisul_pix: 'Banrisul PIX',
+      stone_credito: 'Stone crédito', stone_debito: 'Stone débito', stone_pix: 'Stone PIX',
+      sitef_credito: 'SiTef crédito', sitef_debito: 'SiTef débito', sitef_pix: 'SiTef PIX',
+      banrisul: 'Banrisul', stone: 'Stone', sitef: 'SiTef',
+    })
+  })
+})

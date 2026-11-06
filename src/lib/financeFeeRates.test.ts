@@ -99,3 +99,20 @@ describe('taxas do fechamento', () => {
     await expect(loadFinanceFeeRates()).rejects.toMatchObject({ status: 404 })
   })
 })
+
+// O seletor só oferece os meios separados; o contrato da API mantém os antigos.
+describe('meios separados por maquininha', () => {
+  it('preserva os antigos na API e diferencia seus rótulos', async () => {
+    const { FEE_METHODS, EDITABLE_FEE_METHODS, feeMethodLabel } = await import('./financeFeeRates')
+    expect(EDITABLE_FEE_METHODS).toHaveLength(12)
+    for (const old of ['banrisul', 'stone', 'sitef'] as const) {
+      expect(FEE_METHODS).toContain(old)
+      expect(EDITABLE_FEE_METHODS).not.toContain(old)
+      expect(feeMethodLabel(old)).toContain(', formato antigo')
+    }
+    expect(feeMethodLabel('sitef_pix')).toBe('SiTef PIX')
+    for (const method of EDITABLE_FEE_METHODS) {
+      expect(buildFeeRateRequest({ method, rate: '0,89', validFrom: '2026-09-01', expectedLatestId: null }, 'id', '2026-09-01').p_method).toBe(method)
+    }
+  })
+})

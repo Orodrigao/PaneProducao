@@ -572,6 +572,15 @@ export function categoryAcceptsManualEntry(category: Pick<FinanceCategoryRow, 'k
 }
 
 export const CASH_CLOSING_METHOD_LABELS = {
+  banrisul_credito: 'Banrisul crédito',
+  banrisul_debito: 'Banrisul débito',
+  banrisul_pix: 'Banrisul PIX',
+  stone_credito: 'Stone crédito',
+  stone_debito: 'Stone débito',
+  stone_pix: 'Stone PIX',
+  sitef_credito: 'SiTef crédito',
+  sitef_debito: 'SiTef débito',
+  sitef_pix: 'SiTef PIX',
   dinheiro: 'Dinheiro', banrisul: 'Banrisul', stone: 'Stone', sitef: 'SiTef', pix: 'PIX', ifood: 'iFood', food99: '99Food',
 } as const
 export type CashClosingMethod = keyof typeof CASH_CLOSING_METHOD_LABELS

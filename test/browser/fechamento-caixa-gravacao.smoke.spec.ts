@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { entrarComSessaoGuardada } from './apoio/sessao'
 
 async function probeProtectedClosing(page: Page, request: import('@playwright/test').Request) {
-  const url = new URL('/rest/v1/cash_closings?select=stone_amount&limit=1', request.url())
+  const url = new URL('/rest/v1/cash_closings?select=stone_debit_amount&limit=1', request.url())
   const headers = await request.allHeaders()
   const probe = await page.request.get(url.toString(), {
     headers: { apikey: headers.apikey, Authorization: headers.authorization },
@@ -47,7 +47,7 @@ test('vendas JA salva Stone e 99Food pela função e relê sem somar aplicativo 
   await page.getByLabel('Data', { exact: true }).fill(date)
   await selected
   const cash = page.getByRole('textbox', { name: /^1\. Total em dinheiro/ })
-  const stone = page.getByRole('textbox', { name: /^4\. Stone/ })
+  const stone = page.getByRole('textbox', { name: /^Stone débito/ })
   const food99 = page.getByRole('textbox', { name: /^9\. 99Food/ })
   await cash.fill('100')
   await stone.fill('40,25')
@@ -58,7 +58,7 @@ test('vendas JA salva Stone e 99Food pela função e relê sem somar aplicativo 
   const response = await saved
   expect(response.ok()).toBe(true)
   const row = await response.json()
-  expect(row).toMatchObject({ store: 'ja', stone_amount: 40.25, food99_sales_amount: 80.5, total_amount: 140.25, site_sales_amount: 0 })
+  expect(row).toMatchObject({ store: 'ja', stone_debit_amount: 40.25, food99_sales_amount: 80.5, total_amount: 140.25, site_sales_amount: 0 })
   await expect(page.getByRole('button', { name: 'Atualizar fechamento' })).toBeEnabled({ timeout: 15_000 })
   const reopened = loaded(page)
   await page.reload()
@@ -79,4 +79,32 @@ test('vendas JA salva Stone e 99Food pela função e relê sem somar aplicativo 
   await expect(page.getByText('O sistema está sendo atualizado;', { exact: false })).toBeVisible()
   await expect(stone).toHaveValue('45,50')
   await expect(food99).toHaveValue('80,50')
+  // Linha antiga simulada: a tela nova não transforma o total em crédito.
+  await page.unroute('**/rest/v1/rpc/save_cash_closing')
+  const legacy = { ...row, closing_date: '2026-08-20', banri_amount: 150, stone_amount: 50,
+    sitef_amount: 0, site_sales_amount: 0, pix_amount: 0, food99_sales_amount: 0,
+    cash_withdrawal_amount: 0, opening_cash_amount: 0, closing_cash_amount: 100,
+    ifood_sales_amount: 0, envelope_amount: 0, next_day_cash_amount: 0, total_amount: 300,
+    ...Object.fromEntries(['banri', 'stone', 'sitef'].flatMap(m => ['credit', 'debit', 'pix'].map(k => [m + '_' + k + '_amount', 0]))),
+  }
+  await page.route('**/rest/v1/cash_closings?**', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify(route.request().url().includes('order=') ? [] : legacy),
+  }))
+  let sent: Record<string, unknown> | null = null
+  await page.route('**/rest/v1/rpc/save_cash_closing', route => {
+    sent = route.request().postDataJSON()
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(legacy) })
+  })
+  await page.getByLabel('Data', { exact: true }).fill('2026-08-20')
+  await expect(page.getByRole('textbox', { name: /^3\. Banrisul crédito e débito/ })).toHaveValue('150,00')
+  await expect(page.getByRole('textbox', { name: /^4\. Stone crédito e débito/ })).toHaveValue('50,00')
+  await expect(page.getByRole('textbox', { name: /^Stone débito$/ })).toHaveCount(0)
+  const legacySaved = page.waitForResponse(r => r.url().includes('/rpc/save_cash_closing'))
+  await page.getByRole('button', { name: 'Atualizar fechamento' }).click()
+  await legacySaved
+  expect(sent).toMatchObject({ p_banri_amount: 150, p_stone_amount: 50, p_sitef_amount: 0 })
+  for (const machine of ['banri', 'stone', 'sitef']) for (const method of ['credit', 'debit', 'pix']) {
+    expect(sent?.['p_' + machine + '_' + method + '_amount']).toBe(0)
+  }
 })

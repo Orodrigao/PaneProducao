@@ -2420,3 +2420,8 @@ values
 on conflict (product_source, product_id, record_date, product_variant_id) do update
 set quantity_baked = excluded.quantity_baked,
     production_unit = excluded.production_unit;
+
+-- Fechamento fictício anterior à troca, para prova do formato antigo no preview.
+insert into public.cash_closings(store,closing_date,weekday_label,banri_amount,stone_amount,closing_cash_amount,cash_amount,sales_amount,total_amount,created_by,created_by_name)
+values('jc','2026-08-20','quinta',150,50,100,100,300,300,'fechamento-antigo-seed','[TESTE] Fechamento antigo')
+on conflict(store,closing_date) do nothing;
