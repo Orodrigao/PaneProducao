@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calculateCashClosingTotals,
+  calculateCashClosingTotals, buildCashClosingRequest, isLegacyCashClosing, cashClosingUsesLegacyFields,
+  cashClosingRowToForm, cashClosingFormToInput, CASH_CLOSING_MACHINES,
+  cashClosingMachineSubtotal, showCashClosingSitef, EMPTY_CLOSING_FORM,
   cashClosingInitialSelection,
   cashClosingDifferences,
   describeCashClosingConflict,
@@ -13,6 +15,15 @@ import {
 } from './cashClosing'
 
 const baseInput = {
+  banriCreditAmount: 0,
+  banriDebitAmount: 0,
+  banriPixAmount: 0,
+  stoneCreditAmount: 0,
+  stoneDebitAmount: 0,
+  stonePixAmount: 0,
+  sitefCreditAmount: 0,
+  sitefDebitAmount: 0,
+  sitefPixAmount: 0,
   banriAmount: 0,
   sitefAmount: 0,
   pixAmount: 0,
@@ -203,5 +214,55 @@ describe('link de correção do livro', () => {
   })
   it('preserva o motivo da recusa da ponte', () => {
     expect(cashClosingSaveErrorMessage({ code: '22023', message: 'Conta inativa' })).toBe('Erro ao salvar: Conta inativa')
+  })
+})
+
+describe('crédito, débito e PIX por maquininha', () => {
+  it('mantém o formato do dia e lê colunas ainda ausentes como zero', () => {
+    expect(isLegacyCashClosing(null)).toBe(false)
+    expect(isLegacyCashClosing({ banri_credit_amount: 50 })).toBe(false)
+    for (const column of ['banri_amount', 'stone_amount', 'sitef_amount', 'site_sales_amount']) {
+      expect(isLegacyCashClosing({ [column]: 1 })).toBe(true)
+    }
+    const input = cashClosingFormToInput(cashClosingRowToForm({ stone_amount: 10, site_sales_amount: 20 }))
+    expect(input.stoneAmount).toBe(30)
+    expect(input.stoneCreditAmount).toBe(0)
+    expect(calculateCashClosingTotals(input).declaredTotal).toBe(30)
+    expect(Object.values(input).every(Number.isFinite)).toBe(true)
+  })
+  it('preserva campos antigos no conflito enquanto houver numeros digitados', () => {
+    expect(cashClosingUsesLegacyFields({ banri_amount: 100 }, baseInput)).toBe(true)
+    const updated = { banri_credit_amount: 100 }
+    for (const key of ['banriAmount', 'stoneAmount', 'sitefAmount'] as const) {
+      expect(cashClosingUsesLegacyFields(updated, { ...baseInput, [key]: 0.01 })).toBe(true)
+    }
+    expect(cashClosingUsesLegacyFields(updated, baseInput)).toBe(false)
+    expect(cashClosingUsesLegacyFields(null, baseInput)).toBe(false)
+  })
+  it('soma todos os nove meios, sem apps, e compara cada campo no conflito', () => {
+    const input = cashClosingFormToInput({ ...EMPTY_CLOSING_FORM,
+      banriCreditAmount: '100,10', banriDebitAmount: '20,20', banriPixAmount: '0,30',
+      stoneCreditAmount: '200', stoneDebitAmount: '30', stonePixAmount: '5',
+      sitefCreditAmount: '300', sitefDebitAmount: '40', sitefPixAmount: '6',
+      closingCashAmount: '100', cashWithdrawalAmount: '20', openingCashAmount: '10', pixAmount: '50',
+      ifoodSalesAmount: '999', food99SalesAmount: '999',
+    })
+    expect(CASH_CLOSING_MACHINES.map(m => cashClosingMachineSubtotal(input, m.keys))).toEqual([120.6, 235, 346])
+    expect(calculateCashClosingTotals(input)).toMatchObject({ cashSalesAmount: 110, nonCashPaymentTotal: 751.6, declaredTotal: 861.6 })
+    for (const machine of CASH_CLOSING_MACHINES) for (const key of machine.keys) {
+      expect(cashClosingDifferences(input, { ...input, [key]: input[key] + 1 })).toEqual([key])
+    }
+    expect(showCashClosingSitef('jc', baseInput)).toBe(true)
+    expect(showCashClosingSitef('ja', baseInput)).toBe(false)
+    expect(showCashClosingSitef('ja', { ...baseInput, sitefPixAmount: 10 })).toBe(true)
+    expect(showCashClosingSitef('ja', { ...baseInput, sitefAmount: 10 })).toBe(true)
+  })
+  it('envia exatamente os 25 parâmetros com dinheiro parseado e antigos zerados', () => {
+    const input = cashClosingFormToInput({ ...EMPTY_CLOSING_FORM, stoneDebitAmount: '1.234,56', banriPixAmount: '10,05' })
+    const request = buildCashClosingRequest(input, { requestId: 'pedido', store: 'ja', date: '2026-11-01', updatedAt: null, notes: '  observação  ' })
+    expect(Object.keys(request)).toHaveLength(25)
+    expect(request).toMatchObject({ p_stone_amount: 0, p_banri_amount: 0, p_sitef_amount: 0, p_stone_debit_amount: 1234.56, p_banri_pix_amount: 10.05, p_sitef_pix_amount: 0, p_notes: 'observação' })
+    const legacy = buildCashClosingRequest(cashClosingFormToInput(cashClosingRowToForm({ banri_amount: 150, stone_amount: 50 })), { requestId: 'antigo', store: 'jc', date: '2026-08-20', updatedAt: 'versão', notes: '' })
+    expect(legacy).toMatchObject({ p_banri_amount: 150, p_stone_amount: 50, p_banri_credit_amount: 0, p_stone_debit_amount: 0, p_notes: null })
   })
 })

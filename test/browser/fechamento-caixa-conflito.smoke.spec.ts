@@ -2,7 +2,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import { entrarComSessaoGuardada } from './apoio/sessao'
 
 async function probeProtectedClosing(page: Page, request: import('@playwright/test').Request) {
-  const url = new URL('/rest/v1/cash_closings?select=stone_amount&limit=1', request.url())
+  const url = new URL('/rest/v1/cash_closings?select=stone_debit_amount&limit=1', request.url())
   const headers = await request.allHeaders()
   const probe = await page.request.get(url.toString(), {
     headers: { apikey: headers.apikey, Authorization: headers.authorization },
@@ -134,7 +134,7 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     }
 
     await moneyField(first.page, '1. Total em dinheiro').fill('100')
-    await moneyField(first.page, '3. Banrisul credito/debito').fill('50')
+    await moneyField(first.page, 'Banrisul crédito').fill('50')
     await first.page.getByRole('button', { name: 'Salvar fechamento' }).click()
     await expect(first.page.getByRole('button', { name: 'Atualizar fechamento' })).toBeEnabled({
       timeout: slowPreviewDataTimeoutMs,
@@ -142,7 +142,7 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
 
     // Segunda pessoa, com a tela antiga, tenta criar o mesmo fechamento.
     await moneyField(second.page, '1. Total em dinheiro').fill('200')
-    await moneyField(second.page, '3. Banrisul credito/debito').fill('80')
+    await moneyField(second.page, 'Banrisul crédito').fill('80')
     await second.page.getByRole('button', { name: 'Salvar fechamento' }).click()
 
     const secondNotice = conflictNotice(second.page)
@@ -153,7 +153,7 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await expect(secondNotice).toContainText('280,00')
     // Campo a campo: so o que diverge aparece.
     await expect(secondNotice).toContainText('1. Total em dinheiro')
-    await expect(secondNotice).toContainText('3. Banrisul credito/debito')
+    await expect(secondNotice).toContainText('Banrisul crédito')
     await expect(secondNotice).not.toContainText('5. SiTef')
     await expect(second.page.getByText('duplicate key')).toHaveCount(0)
     await expect(moneyField(second.page, '1. Total em dinheiro')).toHaveValue('200')
@@ -181,15 +181,15 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await expect(moneyField(second.page, '1. Total em dinheiro')).toHaveValue('200,00', {
       timeout: slowPreviewDataTimeoutMs,
     })
-    await expect(moneyField(second.page, '3. Banrisul credito/debito')).toHaveValue('80,00')
+    await expect(moneyField(second.page, 'Banrisul crédito')).toHaveValue('80,00')
     // O que estava gravado (total e cada campo que mudou) fica anotado.
     await expect(second.page.getByLabel('Observacoes')).toHaveValue(
-      /Substituiu o fechamento que .+ salvou em .+: total do dia R\$\s150,00; 1\. Total em dinheiro R\$\s100,00; 3\. Banrisul credito\/debito R\$\s50,00\./,
+      /Substituiu o fechamento que .+ salvou em .+: total do dia R\$\s150,00; 1\. Total em dinheiro R\$\s100,00; Banrisul crédito R\$\s50,00\./,
     )
 
     // A primeira pessoa ainda esta com a versao dela na tela. Atualizar agora
     // apagaria a substituicao em silencio: a tela precisa recusar e explicar.
-    await moneyField(first.page, '3. Banrisul credito/debito').fill('60')
+    await moneyField(first.page, 'Banrisul crédito').fill('60')
     await first.page.getByRole('button', { name: 'Atualizar fechamento' }).click()
 
     const firstNotice = conflictNotice(first.page)
@@ -203,11 +203,11 @@ test('duas pessoas no mesmo caixa: o segundo salvar explica o conflito e nada e 
     await expect(moneyField(first.page, '1. Total em dinheiro')).toHaveValue('200,00', {
       timeout: slowPreviewDataTimeoutMs,
     })
-    await expect(moneyField(first.page, '3. Banrisul credito/debito')).toHaveValue('80,00')
+    await expect(moneyField(first.page, 'Banrisul crédito')).toHaveValue('80,00')
 
     // Relido do banco: continua o que a segunda pessoa escolheu gravar.
     await showClosingJa(first.page, 'admin', date)
-    await expect(moneyField(first.page, '3. Banrisul credito/debito')).toHaveValue('80,00', {
+    await expect(moneyField(first.page, 'Banrisul crédito')).toHaveValue('80,00', {
       timeout: slowPreviewDataTimeoutMs,
     })
   } finally {

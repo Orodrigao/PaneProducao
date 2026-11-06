@@ -630,7 +630,16 @@ select ok(not exists(
         when 'dinheiro' then c.cash_amount when 'banrisul' then c.banri_amount
         when 'stone' then c.stone_amount when 'sitef' then c.sitef_amount
         when 'pix' then c.pix_amount when 'ifood' then c.ifood_sales_amount
-        when 'food99' then c.food99_sales_amount end)
+        when 'food99' then c.food99_sales_amount
+        when 'banrisul_credito' then c.banri_credit_amount
+        when 'banrisul_debito' then c.banri_debit_amount
+        when 'banrisul_pix' then c.banri_pix_amount
+        when 'stone_credito' then c.stone_credit_amount
+        when 'stone_debito' then c.stone_debit_amount
+        when 'stone_pix' then c.stone_pix_amount
+        when 'sitef_credito' then c.sitef_credit_amount
+        when 'sitef_debito' then c.sitef_debit_amount
+        when 'sitef_pix' then c.sitef_pix_amount end)
 ), 'receita ativa da ponte corresponde ao meio do fechamento JC ou JA');
 select ok(not exists(
   select 1 from public.finance_entries f

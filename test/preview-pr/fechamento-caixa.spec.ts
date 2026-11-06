@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './apoio/entrar'
 
 const ESPERA_DO_BANCO = 20_000
-const VALORES = { store: 'ja', closing_cash_amount: 100, stone_amount: 40.25, food99_sales_amount: 80.5, total_amount: 140.25, site_sales_amount: 0 }
+const VALORES = { store: 'ja', closing_cash_amount: 100, stone_debit_amount: 40.25, food99_sales_amount: 80.5, total_amount: 140.25, site_sales_amount: 0 }
 
 function diaDescartavel() {
   return new Date(Date.UTC(1990, 0, 1) + Math.floor(Math.random() * 365 * 30) * 86_400_000).toISOString().slice(0, 10)
@@ -26,7 +26,7 @@ async function ler(page: Page, acesso: AcessoAoBanco, caminho: string) {
   return resposta.json()
 }
 
-// Os quatro casos acompanham a mesma criação, sem depender de dados do seed.
+// Os quatro primeiros casos acompanham a mesma criação, sem depender de dados do seed.
 // A data fictícia fica no banco descartável, pois fechamento não tem exclusão.
 test.describe('Fechamento protegido no banco desta PR', () => {
   test.describe.configure({ mode: 'serial', timeout: 120_000 })
@@ -50,7 +50,7 @@ test.describe('Fechamento protegido no banco desta PR', () => {
       const salvar = page.getByRole('button', { name: 'Salvar fechamento' })
       await expect(salvar).toBeEnabled({ timeout: ESPERA_DO_BANCO })
       const dinheiro = page.getByRole('textbox', { name: /^1\. Total em dinheiro/ })
-      const stone = page.getByRole('textbox', { name: /^4\. Stone/ })
+      const stone = page.getByRole('textbox', { name: /^Stone débito/ })
       const food99 = page.getByRole('textbox', { name: /^9\. 99Food/ })
       await dinheiro.fill('100')
       await stone.fill('40,25')
@@ -88,13 +88,23 @@ test.describe('Fechamento protegido no banco desta PR', () => {
         data: {
           p_request_id: randomUUID(), p_store: 'jc', p_closing_date: dia, p_updated_at: null,
           p_closing_cash_amount: 100, p_cash_withdrawal_amount: 0, p_opening_cash_amount: 0,
-          p_banri_amount: 0, p_stone_amount: 40.25, p_sitef_amount: 0, p_pix_amount: 0,
+          p_banri_amount: 0, p_stone_amount: 0, p_sitef_amount: 0, p_pix_amount: 0,
+          p_banri_credit_amount: 0, p_banri_debit_amount: 0, p_banri_pix_amount: 0, p_stone_credit_amount: 0, p_stone_debit_amount: 40.25, p_stone_pix_amount: 0, p_sitef_credit_amount: 0, p_sitef_debit_amount: 0, p_sitef_pix_amount: 0,
           p_ifood_sales_amount: 0, p_food99_sales_amount: 80.5, p_envelope_amount: 0,
           p_next_day_cash_amount: 0, p_notes: null,
         },
       })
       expect(resposta.status(), await resposta.text()).toBe(403)
       expect(await resposta.json()).toMatchObject({ code: '42501' })
+      const antiga = await page.request.post(acesso.url + '/rest/v1/rpc/save_cash_closing', {
+        headers: await cabecalhosDaSessao(page, acesso), maxRedirects: 0,
+        data: { p_request_id: randomUUID(), p_store: 'ja', p_closing_date: dia, p_updated_at: null,
+          p_closing_cash_amount: 100, p_cash_withdrawal_amount: 0, p_opening_cash_amount: 0,
+          p_banri_amount: 0, p_stone_amount: 40.25, p_sitef_amount: 0, p_pix_amount: 0,
+          p_ifood_sales_amount: 0, p_food99_sales_amount: 0, p_envelope_amount: 0, p_next_day_cash_amount: 0, p_notes: null },
+      })
+      expect(antiga.status(), await antiga.text()).toBe(400)
+      expect(await antiga.json()).toMatchObject({ code: '22023', message: 'Esta tela está desatualizada. Anote os números, recarregue a página e salve de novo.' })
     })
 
   test('Vendas JA não grava diretamente nem apaga os valores salvos',
@@ -125,7 +135,25 @@ test.describe('Fechamento protegido no banco desta PR', () => {
       const revisoes = await ler(page, acesso, `cash_closing_revisions?closing_id=eq.${id}&revision_type=eq.criacao&select=*`)
       expect(revisoes).toEqual([expect.objectContaining({
         author_id: autorId, author_name: autorNome,
-        after_values: expect.objectContaining({ stone_amount: 40.25 }),
+        after_values: expect.objectContaining({ stone_debit_amount: 40.25 }),
       })])
+    })
+
+  test('Administrador abre e salva dia antigo da JC',
+    matriz('Administrador', 'JC', 'permitido: abre e salva dia antigo', 'Fechamento de caixa (formato antigo)'), async ({ page }) => {
+      await entrarComo(page, 'admin')
+      await page.goto('/fechamento-caixa?loja=jc&data=2026-08-20')
+      await expect(page.getByLabel('Data', { exact: true })).toHaveValue('2026-08-20')
+      await expect(page.getByRole('textbox', { name: /^3\. Banrisul crédito e débito \(formato antigo\)/ })).toHaveValue('150,00', { timeout: ESPERA_DO_BANCO })
+      await expect(page.getByRole('textbox', { name: /^4\. Stone crédito e débito \(formato antigo\)/ })).toHaveValue('50,00')
+      await expect(page.getByText('Este dia foi salvo antes da troca, com crédito e débito juntos. Para corrigir, use os mesmos campos.')).toBeVisible()
+      const antigaSalva = page.waitForResponse(r => r.url().includes('/rpc/save_cash_closing') && r.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Atualizar fechamento' }).click()
+      const antigaResposta = await antigaSalva
+      expect(antigaResposta.status(), await antigaResposta.text()).toBe(200)
+      const envio = antigaResposta.request().postDataJSON()
+      expect(envio.p_banri_amount).toBe(150)
+      expect(envio.p_stone_amount).toBe(50)
+      for (const column of ["banri_credit_amount","banri_debit_amount","banri_pix_amount","stone_credit_amount","stone_debit_amount","stone_pix_amount","sitef_credit_amount","sitef_debit_amount","sitef_pix_amount"]) expect(envio['p_' + column]).toBe(0)
     })
 })

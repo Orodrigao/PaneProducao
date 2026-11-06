@@ -19,7 +19,7 @@ create temporary table results(k text primary key,v jsonb);
 grant select,insert,update on results to authenticated;
 create function pg_temp.save(p_store text default 'ja',p_date date default '2026-09-15',p_values jsonb default '{}',p_request uuid default gen_random_uuid()) returns public.cash_closings language sql as $$
  select public.save_cash_closing(p_request,p_store,p_date,(select updated_at from public.cash_closings where store=p_store and closing_date=p_date),
- coalesce((p_values->>'cash')::numeric,100),0,0,coalesce((p_values->>'banrisul')::numeric,200),coalesce((p_values->>'stone')::numeric,300),coalesce((p_values->>'sitef')::numeric,400),coalesce((p_values->>'pix')::numeric,500),coalesce((p_values->>'ifood')::numeric,600),coalesce((p_values->>'food99')::numeric,700),0,0,'teste da ponte');
+ coalesce((p_values->>'cash')::numeric,100),0,0,case when p_date='2026-09-13' then 0 else coalesce((p_values->>'banrisul')::numeric,200) end,0,0,0,case when p_date='2026-09-13' then 0 else coalesce((p_values->>'stone')::numeric,300) end,0,0,0,case when p_date='2026-09-13' then 0 else coalesce((p_values->>'sitef')::numeric,400) end,0,0,0,coalesce((p_values->>'pix')::numeric,500),coalesce((p_values->>'ifood')::numeric,600),coalesce((p_values->>'food99')::numeric,700),0,0,'teste da ponte');
 $$;
 create function pg_temp.fee(p_method text,p_rate numeric,p_date date default '2026-09-01',p_request uuid default gen_random_uuid(),p_expected uuid default null) returns jsonb language sql as $$
  select public.save_finance_fee_rate(p_request,p_method,p_rate,p_date,p_expected);
@@ -43,9 +43,17 @@ select throws_ok($$delete from private.finance_fee_rates$$,'42501',null,'histór
 select throws_ok($$truncate private.finance_fee_rates$$,'0A000',null,'FK recusa truncate antes do gatilho');
 select ok(exists(select 1 from pg_trigger where tgrelid='private.finance_fee_rates'::regclass and tgname='finance_fee_rates_append_only' and not tgisinternal and tgenabled <> 'D' and (tgtype::int & 56)=56),'gatilho imutável cobre UPDATE DELETE e TRUNCATE');
 select ok((select count(*)=0 from pg_policy where polrelid='public.cash_closings'::regclass and polcmd in ('a','w','d','*')),'sem policies de escrita');
-select ok((select strpos(prosrc,'lock_financial_request(p_request_id)')<strpos(prosrc,'lock_cash_closing_bridge()') and strpos(prosrc,'lock_cash_closing_bridge()')<strpos(prosrc,'for update') from pg_proc where proname='save_cash_closing' and pronamespace='public'::regnamespace),'fechamento trava pedido, ponte e linha nesta ordem');
+select ok((select strpos(prosrc,'lock_financial_request(p_request_id)')<strpos(prosrc,'lock_cash_closing_bridge()') and strpos(prosrc,'lock_cash_closing_bridge()')<strpos(prosrc,'for update') from pg_proc where proname='save_cash_closing' and pronargs=25 and pronamespace='public'::regnamespace),'fechamento trava pedido, ponte e linha nesta ordem');
 select ok((select strpos(prosrc,'lock_financial_request(p_request_id)')<strpos(prosrc,'lock_cash_closing_bridge()') and strpos(prosrc,'lock_cash_closing_bridge()')<strpos(prosrc,'for update') from pg_proc where proname='save_finance_fee_rate' and pronamespace='public'::regnamespace),'taxa trava pedido, ponte e linha nesta ordem');
 select ok((select strpos(prosrc,'lock_cash_closing_bridge()')<strpos(prosrc,'for update') from pg_proc where oid='private.resync_cash_closing_finance_entries()'::regprocedure),'carga trava ponte antes das linhas');
+-- Fixtures antigas criadas pelo dono antes da edição autenticada.
+create function pg_temp.old(p_store text,p_day date) returns void language sql as $$
+ insert into public.cash_closings(store,closing_date,weekday_label,banri_amount,created_by,created_by_name)
+ values(p_store,p_day,'teste',1,'97410000-0000-4000-8000-000000000001','Vendas JA ponte')
+ on conflict(store,closing_date) do update set banri_amount=1,created_by=excluded.created_by;
+$$;
+select pg_temp.old('ja','2026-09-15');
+insert into results values('legacy-initial',(select to_jsonb(c) from public.cash_closings c where store='ja' and closing_date='2026-09-15'));
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"97410000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 insert into results values('closing',to_jsonb(pg_temp.save(p_request=>'97420000-0000-4000-8000-000000000001')));
@@ -72,8 +80,8 @@ select ok(not exists(select 1 from jsonb_array_elements(public.get_finance_fee_r
 insert into results values('count',jsonb_build_object('n',(select count(*) from public.finance_entries where source='fechamento_caixa')));
 -- Repetição com mesmo conteúdo precisa do actor original.
 select set_config('request.jwt.claims','{"sub":"97410000-0000-4000-8000-000000000001","role":"authenticated"}',true);
--- A versão enviada na primeira chamada era nula. Chamada exata da RPC para replay.
-select lives_ok($$select public.save_cash_closing('97420000-0000-4000-8000-000000000001','ja','2026-09-15',null,100,0,0,200,300,400,500,600,700,0,0,'teste da ponte')$$,'replay do mesmo request');
+-- A edição inicial enviou a versão da fixture antiga. Replay repete exatamente essa versão.
+select lives_ok($$select public.save_cash_closing('97420000-0000-4000-8000-000000000001','ja','2026-09-15',(select (v->>'updated_at')::timestamptz from results where k='legacy-initial'),100,0,0,200,0,0,0,300,0,0,0,400,0,0,0,500,600,700,0,0,'teste da ponte')$$,'replay do mesmo request');
 select lives_ok($$select pg_temp.save()$$,'salvar sem mudança');
 select set_config('request.jwt.claims','{"sub":"97410000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select is((select count(*) from public.finance_entries where source='fechamento_caixa'),(select (v->>'n')::bigint from results where k='count'),'repetição e sem mudança não criam livro');
@@ -92,9 +100,15 @@ select is((select fee_rate_version_id from public.finance_entries where source_d
 select ok((select bool_and(r.category_id=o.category_id and r.account_id is not distinct from o.account_id and r.store=o.store and r.competence_month=o.competence_month and r.due_date=o.due_date and r.paid_date=o.paid_date and r.source=o.source and r.source_ref=o.source_ref and r.source_detail=o.source_detail and r.fee_of is not distinct from o.fee_of and r.fee_rate is not distinct from o.fee_rate and r.fee_rate_version_id is not distinct from o.fee_rate_version_id and o.reversed_by='97410000-0000-4000-8000-000000000002' and o.reversed_at is not null) from public.finance_entries r join public.finance_entries o on o.id=r.reversal_of where r.source='fechamento_caixa'),'estornos preservam dimensões e marcam original');
 select lives_ok($$select pg_temp.save(p_values=>'{"stone":0}')$$,'zerar Stone estorna receita e taxa');
 select is((select count(*) from public.finance_entries where source_detail='stone' and entry_type='lancamento' and reversed_at is null),0::bigint,'zerado não deixa receita nem taxa ativa');
+reset role;
+select pg_temp.old('jc','2026-09-06');
+set local role authenticated;
 select lives_ok($$select pg_temp.save('jc','2026-09-06')$$,'JC salva sete meios');
 select is((select fee_rate from public.finance_entries where source_detail='stone' and store='jc' and fee_of is not null and entry_type='lancamento' and reversed_at is null),4::numeric,'fechamento novo usa nova taxa');
 select is((select a.key from public.finance_entries e join public.finance_accounts a on a.id=e.account_id where e.source_detail='dinheiro' and e.store='jc' and e.source='fechamento_caixa'),'caixa_fisico_jc','dinheiro JC usa caixa JC');
+reset role;
+select pg_temp.old('ex','2026-09-06');
+set local role authenticated;
 select lives_ok($$select pg_temp.save('ex','2026-09-06')$$,'EX salva sem livro');
 select is((select count(*) from public.finance_entries where source_ref=(select id from public.cash_closings where store='ex' and closing_date='2026-09-06')),0::bigint,'EX não gera receita');
 reset role;
@@ -142,7 +156,13 @@ select ok((select (v->>'created')::integer>0 from results where k='resync'),'rel
 select is(private.resync_cash_closing_finance_entries(),' {"created":0,"reversed":0}'::jsonb,'segunda carga não cria nem estorna');
 -- Datas no corte e na véspera, sempre passadas.
 set local role authenticated;
+reset role;
+select pg_temp.old('jc','2026-09-01');
+set local role authenticated;
 select lives_ok($$select pg_temp.save('jc','2026-09-01')$$,'dia do corte salva');
+reset role;
+select pg_temp.old('jc','2026-08-31');
+set local role authenticated;
 select lives_ok($$select pg_temp.save('jc','2026-08-31')$$,'véspera salva');
 reset role;
 select is((select count(*) from public.finance_entries where source_ref=(select id from public.cash_closings where store='jc' and closing_date='2026-09-01') and fee_of is null),7::bigint,'dia do corte entra');
@@ -160,6 +180,9 @@ $$,'carga e fechamentos batem centavo por centavo por loja e meio');
 select ok((select bool_and(f.amount=round(r.amount*15.2/100,2) and f.fee_rate=15.2) from public.finance_entries f join public.finance_entries r on r.id=f.fee_of where f.source_detail='ifood' and f.entry_type='lancamento' and f.reversed_at is null),'iFood da carga segue 15,2%');
 select is((select count(*) from public.finance_entries where source='fechamento_caixa' and source_detail='pix' and fee_of is not null),0::bigint,'PIX da carga não tem despesa');
 -- 99Food antes da vigência é pendência; a partir de 22/10 usa 14,1%.
+set local role authenticated;
+reset role;
+select pg_temp.old('jc','2026-10-25');
 set local role authenticated;
 select lives_ok($$select pg_temp.save('jc','2026-10-25')$$,'99Food em dia coberto');
 select is((select f.amount from public.finance_entries f join public.cash_closings c on c.id=f.source_ref where c.store='jc' and c.closing_date='2026-10-25' and f.source_detail='food99' and f.fee_of is not null and f.entry_type='lancamento'),98.70::numeric,'99Food aplica 14,1% sobre 700');
@@ -203,6 +226,9 @@ select throws_ok($$select pg_temp.malformed('fechamento_caixa','stone',null,3.51
 -- Pendência obedece a mesma leitura por loja do livro.
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"97410000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+reset role;
+select pg_temp.old('jc','2026-09-28');
+set local role authenticated;
 select lives_ok($$select pg_temp.save('jc','2026-09-28')$$,'fixture JC com Banrisul pendente');
 reset role;
 update public.app_user_permissions set scope='jc' where user_id='97410000-0000-4000-8000-000000000003' and permission_key='financeiro.acessar';

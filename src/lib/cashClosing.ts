@@ -1,4 +1,13 @@
 export interface CashClosingInput {
+  banriCreditAmount: number
+  banriDebitAmount: number
+  banriPixAmount: number
+  stoneCreditAmount: number
+  stoneDebitAmount: number
+  stonePixAmount: number
+  sitefCreditAmount: number
+  sitefDebitAmount: number
+  sitefPixAmount: number
   banriAmount: number
   sitefAmount: number
   pixAmount: number
@@ -85,6 +94,15 @@ export function describeCashClosingConflict(savedBy: string, savedAt: string, ow
 const CASH_CLOSING_INPUT_KEYS: (keyof CashClosingInput)[] = [
   'closingCashAmount',
   'cashWithdrawalAmount',
+  'banriCreditAmount',
+  'banriDebitAmount',
+  'banriPixAmount',
+  'stoneCreditAmount',
+  'stoneDebitAmount',
+  'stonePixAmount',
+  'sitefCreditAmount',
+  'sitefDebitAmount',
+  'sitefPixAmount',
   'banriAmount',
   'stoneAmount',
   'sitefAmount',
@@ -148,6 +166,15 @@ export function calculateCashClosingTotals(input: CashClosingInput): CashClosing
     + toCents(input.stoneAmount)
     + toCents(input.sitefAmount)
     + toCents(input.pixAmount)
+    + toCents(input.banriCreditAmount)
+    + toCents(input.banriDebitAmount)
+    + toCents(input.banriPixAmount)
+    + toCents(input.stoneCreditAmount)
+    + toCents(input.stoneDebitAmount)
+    + toCents(input.stonePixAmount)
+    + toCents(input.sitefCreditAmount)
+    + toCents(input.sitefDebitAmount)
+    + toCents(input.sitefPixAmount)
 
   const declaredTotalCents = cashSalesAmountCents + nonCashPaymentTotalCents
 
@@ -180,5 +207,91 @@ export function cashClosingInitialSelection(search: string, canChangeStore: bool
   return {
     ...(validDate ? { date } : {}),
     ...(canChangeStore && (store === 'jc' || store === 'ja' || store === 'ex') ? { store } : {}),
+  }
+}
+
+export const CLOSING_FIELDS: { key: keyof CashClosingInput; column: string; label: string; helper?: string }[] = [
+  { key: 'closingCashAmount', column: 'closing_cash_amount', label: '1. Total em dinheiro', helper: 'todo dinheiro físico contado no caixa' },
+  { key: 'cashWithdrawalAmount', column: 'cash_withdrawal_amount', label: '2. Sangrias', helper: 'retiradas feitas durante o dia' },
+  { key: 'banriAmount', column: 'banri_amount', label: '3. Banrisul crédito e débito (formato antigo)' },
+  { key: 'stoneAmount', column: 'stone_amount', label: '4. Stone crédito e débito (formato antigo)' },
+  { key: 'sitefAmount', column: 'sitef_amount', label: '5. SiTef (formato antigo)' },
+  { key: 'banriCreditAmount', column: 'banri_credit_amount', label: 'Banrisul crédito' },
+  { key: 'banriDebitAmount', column: 'banri_debit_amount', label: 'Banrisul débito' },
+  { key: 'banriPixAmount', column: 'banri_pix_amount', label: 'Banrisul PIX' },
+  { key: 'stoneCreditAmount', column: 'stone_credit_amount', label: 'Stone crédito' },
+  { key: 'stoneDebitAmount', column: 'stone_debit_amount', label: 'Stone débito' },
+  { key: 'stonePixAmount', column: 'stone_pix_amount', label: 'Stone PIX' },
+  { key: 'sitefCreditAmount', column: 'sitef_credit_amount', label: 'SiTef crédito' },
+  { key: 'sitefDebitAmount', column: 'sitef_debit_amount', label: 'SiTef débito' },
+  { key: 'sitefPixAmount', column: 'sitef_pix_amount', label: 'SiTef PIX' },
+  { key: 'pixAmount', column: 'pix_amount', label: '6. PIX direto na conta (sem maquininha)' },
+  { key: 'openingCashAmount', column: 'opening_cash_amount', label: '7. Abertura do caixa', helper: 'desconta do dinheiro contado' },
+  { key: 'ifoodSalesAmount', column: 'ifood_sales_amount', label: '8. iFood', helper: 'informativo, não soma ao caixa' },
+  { key: 'food99SalesAmount', column: 'food99_sales_amount', label: '9. 99Food', helper: 'informativo, não soma ao caixa' },
+  { key: 'envelopeAmount', column: 'envelope_amount', label: '10. Envelope', helper: 'informativo, malote/depósito' },
+  { key: 'nextDayCashAmount', column: 'next_day_cash_amount', label: '11. Próximo dia', helper: 'informativo, abertura seguinte' },
+]
+export type CashClosingForm = Record<keyof CashClosingInput, string>
+export const EMPTY_CLOSING_FORM = Object.fromEntries(CLOSING_FIELDS.map(f => [f.key, ''])) as CashClosingForm
+export type CashClosingMoneyRow = Partial<Record<'closing_cash_amount' | 'cash_withdrawal_amount' | 'banri_amount' | 'stone_amount' | 'sitef_amount' | 'banri_credit_amount' | 'banri_debit_amount' | 'banri_pix_amount' | 'stone_credit_amount' | 'stone_debit_amount' | 'stone_pix_amount' | 'sitef_credit_amount' | 'sitef_debit_amount' | 'sitef_pix_amount' | 'pix_amount' | 'opening_cash_amount' | 'ifood_sales_amount' | 'food99_sales_amount' | 'envelope_amount' | 'next_day_cash_amount' | 'site_sales_amount', number>>
+
+export function isLegacyCashClosing(row: CashClosingMoneyRow | null): boolean {
+  return Boolean(row && ['banri_amount', 'stone_amount', 'sitef_amount', 'site_sales_amount'].some(key => Number(row[key as keyof CashClosingMoneyRow] ?? 0) > 0))
+}
+
+export function cashClosingUsesLegacyFields(existing: CashClosingMoneyRow | null, input: CashClosingInput): boolean {
+  return isLegacyCashClosing(existing) || input.banriAmount > 0 || input.stoneAmount > 0 || input.sitefAmount > 0
+}
+
+export function cashClosingFormToInput(form: CashClosingForm): CashClosingInput {
+  return Object.fromEntries(CLOSING_FIELDS.map(f => [f.key, parseMoneyInput(form[f.key])])) as unknown as CashClosingInput
+}
+
+export function cashClosingRowToForm(row: CashClosingMoneyRow): CashClosingForm {
+  return Object.fromEntries(CLOSING_FIELDS.map(f => {
+    const amount = Number(row[f.column as keyof CashClosingMoneyRow] ?? 0) + (f.key === 'stoneAmount' ? Number(row.site_sales_amount ?? 0) : 0)
+    return [f.key, amount ? amount.toFixed(2).replace('.', ',') : '']
+  })) as CashClosingForm
+}
+
+export const CASH_CLOSING_MACHINES = [
+  { title: '3. Banrisul', label: 'Banrisul', keys: ['banriCreditAmount', 'banriDebitAmount', 'banriPixAmount'] },
+  { title: '4. Stone', label: 'Stone', keys: ['stoneCreditAmount', 'stoneDebitAmount', 'stonePixAmount'] },
+  { title: '5. SiTef', label: 'SiTef', keys: ['sitefCreditAmount', 'sitefDebitAmount', 'sitefPixAmount'] },
+] as const
+
+export function cashClosingMachineSubtotal(input: CashClosingInput, keys: readonly (keyof CashClosingInput)[]): number {
+  return fromCents(keys.reduce((sum, key) => sum + toCents(input[key]), 0))
+}
+
+export function showCashClosingSitef(store: string, input: CashClosingInput): boolean {
+  return store === 'jc' || input.sitefAmount > 0 || CASH_CLOSING_MACHINES[2].keys.some(key => input[key] > 0)
+}
+
+export function buildCashClosingRequest(input: CashClosingInput, meta: { requestId: string; store: string; date: string; updatedAt: string | null; notes: string }) {
+  return {
+    p_request_id: meta.requestId, p_store: meta.store, p_closing_date: meta.date, p_updated_at: meta.updatedAt,
+    p_closing_cash_amount: input.closingCashAmount,
+    p_cash_withdrawal_amount: input.cashWithdrawalAmount,
+    p_opening_cash_amount: input.openingCashAmount,
+    p_banri_amount: input.banriAmount,
+    p_banri_credit_amount: input.banriCreditAmount,
+    p_banri_debit_amount: input.banriDebitAmount,
+    p_banri_pix_amount: input.banriPixAmount,
+    p_stone_amount: input.stoneAmount,
+    p_stone_credit_amount: input.stoneCreditAmount,
+    p_stone_debit_amount: input.stoneDebitAmount,
+    p_stone_pix_amount: input.stonePixAmount,
+    p_sitef_amount: input.sitefAmount,
+    p_sitef_credit_amount: input.sitefCreditAmount,
+    p_sitef_debit_amount: input.sitefDebitAmount,
+    p_sitef_pix_amount: input.sitefPixAmount,
+    p_pix_amount: input.pixAmount,
+    p_ifood_sales_amount: input.ifoodSalesAmount,
+    p_food99_sales_amount: input.food99SalesAmount,
+    p_envelope_amount: input.envelopeAmount,
+    p_next_day_cash_amount: input.nextDayCashAmount,
+    p_notes: meta.notes.trim() || null,
   }
 }
