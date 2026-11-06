@@ -240,6 +240,10 @@ export function isLegacyCashClosing(row: CashClosingMoneyRow | null): boolean {
   return Boolean(row && ['banri_amount', 'stone_amount', 'sitef_amount', 'site_sales_amount'].some(key => Number(row[key as keyof CashClosingMoneyRow] ?? 0) > 0))
 }
 
+export function cashClosingUsesLegacyFields(existing: CashClosingMoneyRow | null, input: CashClosingInput): boolean {
+  return isLegacyCashClosing(existing) || input.banriAmount > 0 || input.stoneAmount > 0 || input.sitefAmount > 0
+}
+
 export function cashClosingFormToInput(form: CashClosingForm): CashClosingInput {
   return Object.fromEntries(CLOSING_FIELDS.map(f => [f.key, parseMoneyInput(form[f.key])])) as unknown as CashClosingInput
 }

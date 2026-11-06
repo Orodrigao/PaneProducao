@@ -18,7 +18,7 @@ import {
   notesWithReplacement,
   CLOSING_FIELDS, EMPTY_CLOSING_FORM as EMPTY_FORM, CASH_CLOSING_MACHINES,
   cashClosingFormToInput as formToInput, cashClosingRowToForm as rowToForm,
-  isLegacyCashClosing, cashClosingMachineSubtotal, showCashClosingSitef, buildCashClosingRequest,
+  cashClosingUsesLegacyFields, cashClosingMachineSubtotal, showCashClosingSitef, buildCashClosingRequest,
   type CashClosingMoneyRow,
   wasSavedMeanwhile,
   type CashClosingInput,
@@ -198,7 +198,7 @@ export default function FechamentoCaixaPage() {
   const canChangeStore = user?.role === 'admin' || user?.role === 'financeiro'
   const weekday = weekdayFromDate(date)
   const input = useMemo(() => formToInput(form), [form])
-  const legacy = isLegacyCashClosing(existing)
+  const legacy = cashClosingUsesLegacyFields(existing, input)
   const showSitef = showCashClosingSitef(store, input) || Boolean(existing && showCashClosingSitef(store, rowToInput(existing)))
   const totals = useMemo(() => calculateCashClosingTotals(input), [input])
 

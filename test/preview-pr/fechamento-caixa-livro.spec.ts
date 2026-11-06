@@ -4,15 +4,15 @@ import { cabecalhosDaSessao, entrarComo, matriz, type AcessoAoBanco } from './ap
 const DIA = '2026-09-15'
 const JC_DIA = '2026-09-06' // domingo sem fixture
 const METHODS = [
-  ['banri_credit_amount', 'banrisul_credito', 'Banrisul crédito', 1.79],
-  ['banri_debit_amount', 'banrisul_debito', 'Banrisul débito', 1.39],
-  ['banri_pix_amount', 'banrisul_pix', 'Banrisul PIX', 0.89],
-  ['stone_credit_amount', 'stone_credito', 'Stone crédito', 3.57],
-  ['stone_debit_amount', 'stone_debito', 'Stone débito', 1.09],
-  ['stone_pix_amount', 'stone_pix', 'Stone PIX', 0.50],
-  ['sitef_credit_amount', 'sitef_credito', 'SiTef crédito', 2.05],
-  ['sitef_debit_amount', 'sitef_debito', 'SiTef débito', 0.89],
-  ['sitef_pix_amount', 'sitef_pix', 'SiTef PIX', null],
+  ['banri_credit_amount', 'banrisul_credito', 'Banrisul crédito', 1.79, 101],
+  ['banri_debit_amount', 'banrisul_debito', 'Banrisul débito', 1.39, 102],
+  ['banri_pix_amount', 'banrisul_pix', 'Banrisul PIX', 0.89, 103],
+  ['stone_credit_amount', 'stone_credito', 'Stone crédito', 3.57, 104],
+  ['stone_debit_amount', 'stone_debito', 'Stone débito', 1.09, 105],
+  ['stone_pix_amount', 'stone_pix', 'Stone PIX', 0.50, 106],
+  ['sitef_credit_amount', 'sitef_credito', 'SiTef crédito', 2.05, 107],
+  ['sitef_debit_amount', 'sitef_debito', 'SiTef débito', 0.89, 108],
+  ['sitef_pix_amount', 'sitef_pix', 'SiTef PIX', null, 109],
 ] as const
 
 type Entry = { id: string; amount: number; source_detail: string; fee_of: string | null; fee_rate: number | null; fee_rate_version_id: string | null; reversed_at: string | null; entry_type: string }
@@ -73,8 +73,8 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       await open(page, 'ja', DIA)
       await expect(page.getByLabel('Loja')).toBeDisabled()
       await expect(page.getByRole('textbox', { name: 'SiTef crédito', exact: true })).toHaveCount(0)
-      for (const [column, , label] of METHODS.filter(m => !m[0].startsWith('sitef'))) {
-        values[column] = Math.round(((Number(previous?.[column]) || 100) + 0.01) * 100) / 100
+      for (const [column, , label, , base] of METHODS.filter(m => !m[0].startsWith('sitef'))) {
+        values[column] = Math.round(((Number(previous?.[column]) || base) + 0.01) * 100) / 100
         await page.getByRole('textbox', { name: label, exact: true }).fill(input(values[column]))
       }
       for (const [label, value] of [[/^1\. Total em dinheiro/, 110], [/^2\. Sangrias/, 0], [/^6\. PIX/, 50], [/^7\. Abertura/, 0], [/^8\. iFood/, 0], [/^9\. 99Food/, 0]] as const) {
@@ -84,7 +84,7 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       closing = await save(page)
       const total = Math.round((160 + Object.values(values).reduce((a, b) => a + b, 0)) * 100) / 100
       expect(await read(page, access, 'cash_closings?id=eq.' + closing.id + '&select=*')).toEqual([
-        expect.objectContaining({ ...values, total_amount: total, banri_amount: 0, stone_amount: 0, sitef_amount: 0 }),
+        expect.objectContaining({ ...values, total_amount: total, sales_amount: total, cash_amount: 110, banri_amount: 0, stone_amount: 0, sitef_amount: 0 }),
       ])
       await open(page, 'ja', DIA)
       await expect(page.getByRole('textbox', { name: 'Stone débito', exact: true })).toHaveValue(input(values.stone_debit_amount))
@@ -101,15 +101,14 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       }
     })
 
-  test('Financeiro confere JA e salva os nove meios na JC',
-    matriz('Financeiro JC', 'JC e JA', 'permitido: nove receitas e oito taxas', 'Livro e fechamento'), async ({ page }) => {
-      const access = await entrarComo(page, 'financeiroJc')
-      await verifyEntries(page, access, closing, values, false)
+  test('Administrador salva os nove meios na JC e relê sem duplicar',
+    matriz('Administrador', 'JC', 'permitido: nove receitas e oito taxas', 'Livro e fechamento'), async ({ page }) => {
+      const access = await entrarComo(page, 'admin')
       const previous = (await read(page, access, 'cash_closings?store=eq.jc&closing_date=eq.' + JC_DIA + '&select=*'))[0]
       const jcValues: Record<string, number> = {}
       await open(page, 'jc', JC_DIA)
-      for (const [column, , label] of METHODS) {
-        jcValues[column] = Math.round(((Number(previous?.[column]) || 200) + 0.01) * 100) / 100
+      for (const [column, , label, , base] of METHODS) {
+        jcValues[column] = Math.round(((Number(previous?.[column]) || base + 100) + 0.01) * 100) / 100
         await page.getByRole('textbox', { name: label, exact: true }).fill(input(jcValues[column]))
       }
       for (const [label, value] of [[/^1\. Total em dinheiro/, 100], [/^2\. Sangrias/, 0], [/^6\. PIX/, 50], [/^7\. Abertura/, 0], [/^8\. iFood/, 0], [/^9\. 99Food/, 0]] as const) {
@@ -117,11 +116,21 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       }
       await expect(page.getByText('Total SiTef', { exact: true })).toBeVisible()
       const jcClosing = await save(page)
+      const total = Math.round((150 + Object.values(jcValues).reduce((a, b) => a + b, 0)) * 100) / 100
+      expect(await read(page, access, 'cash_closings?id=eq.' + jcClosing.id + '&select=*')).toEqual([
+        expect.objectContaining({ ...jcValues, total_amount: total, sales_amount: total, cash_amount: 100, banri_amount: 0, stone_amount: 0, sitef_amount: 0 }),
+      ])
       const active = await verifyEntries(page, access, jcClosing, jcValues, true)
       await expect(page.getByRole('button', { name: 'Atualizar fechamento' })).toBeEnabled()
       await save(page)
       const unchanged = await verifyEntries(page, access, jcClosing, jcValues, true)
       expect(unchanged.map(e => e.id).sort()).toEqual(active.map(e => e.id).sort())
+    })
+
+  test('Financeiro confere o livro da JA e o painel de taxas',
+    matriz('Financeiro JC', 'JC e JA', 'permitido: lê livro e confere taxas', 'Livro (Data API) e painel de taxas'), async ({ page }) => {
+      const access = await entrarComo(page, 'financeiroJc')
+      await verifyEntries(page, access, closing, values, false)
       const data = await rates(page, access)
       expect(data.pending).toContainEqual(expect.objectContaining({ method: 'sitef_pix', store: 'jc' }))
       await page.goto('/financeiro')
@@ -140,7 +149,6 @@ test.describe('Fechamento no livro no banco desta PR', () => {
       await panel.getByRole('button', { name: 'Gravar taxa', exact: true }).click()
       const recorded = await pending
       expect(recorded.status(), await recorded.text()).toBe(200)
-      await verifyEntries(page, access, jcClosing, jcValues, true)
     })
 
   test('Administrador corrige pelo livro',

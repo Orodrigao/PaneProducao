@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calculateCashClosingTotals, buildCashClosingRequest, isLegacyCashClosing,
+  calculateCashClosingTotals, buildCashClosingRequest, isLegacyCashClosing, cashClosingUsesLegacyFields,
   cashClosingRowToForm, cashClosingFormToInput, CASH_CLOSING_MACHINES,
   cashClosingMachineSubtotal, showCashClosingSitef, EMPTY_CLOSING_FORM,
   cashClosingInitialSelection,
@@ -229,6 +229,15 @@ describe('crédito, débito e PIX por maquininha', () => {
     expect(input.stoneCreditAmount).toBe(0)
     expect(calculateCashClosingTotals(input).declaredTotal).toBe(30)
     expect(Object.values(input).every(Number.isFinite)).toBe(true)
+  })
+  it('preserva campos antigos no conflito enquanto houver numeros digitados', () => {
+    expect(cashClosingUsesLegacyFields({ banri_amount: 100 }, baseInput)).toBe(true)
+    const updated = { banri_credit_amount: 100 }
+    for (const key of ['banriAmount', 'stoneAmount', 'sitefAmount'] as const) {
+      expect(cashClosingUsesLegacyFields(updated, { ...baseInput, [key]: 0.01 })).toBe(true)
+    }
+    expect(cashClosingUsesLegacyFields(updated, baseInput)).toBe(false)
+    expect(cashClosingUsesLegacyFields(null, baseInput)).toBe(false)
   })
   it('soma todos os nove meios, sem apps, e compara cada campo no conflito', () => {
     const input = cashClosingFormToInput({ ...EMPTY_CLOSING_FORM,

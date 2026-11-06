@@ -26,7 +26,7 @@ async function ler(page: Page, acesso: AcessoAoBanco, caminho: string) {
   return resposta.json()
 }
 
-// Os quatro casos acompanham a mesma criação, sem depender de dados do seed.
+// Os quatro primeiros casos acompanham a mesma criação, sem depender de dados do seed.
 // A data fictícia fica no banco descartável, pois fechamento não tem exclusão.
 test.describe('Fechamento protegido no banco desta PR', () => {
   test.describe.configure({ mode: 'serial', timeout: 120_000 })
@@ -137,6 +137,11 @@ test.describe('Fechamento protegido no banco desta PR', () => {
         author_id: autorId, author_name: autorNome,
         after_values: expect.objectContaining({ stone_debit_amount: 40.25 }),
       })])
+    })
+
+  test('Administrador abre e salva dia antigo da JC',
+    matriz('Administrador', 'JC', 'permitido: abre e salva dia antigo', 'Fechamento de caixa (formato antigo)'), async ({ page }) => {
+      await entrarComo(page, 'admin')
       await page.goto('/fechamento-caixa?loja=jc&data=2026-08-20')
       await expect(page.getByLabel('Data', { exact: true })).toHaveValue('2026-08-20')
       await expect(page.getByRole('textbox', { name: /^3\. Banrisul crédito e débito \(formato antigo\)/ })).toHaveValue('150,00', { timeout: ESPERA_DO_BANCO })
