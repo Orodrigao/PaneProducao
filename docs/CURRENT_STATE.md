@@ -1,6 +1,7 @@
 # Estado atual — Pane&Salute ERP
 
-**Data de referência:** 2026-09-23
+**Data de referência:** 2026-09-23, data da última revisão completa; a
+atualização parcial mais recente é de 2026-11-13, sobre `5fb5a35`.
 
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
@@ -579,8 +580,8 @@ disputavam um único banco de teste compartilhado.
   protegidas; RLS ligada e forçada em `receivables` e `receivable_events`. A
   baixa lança a receita no livro-caixa na mesma transação, em `clientes_pj`,
   **com competência no mês do faturamento** — cliente que paga atrasado gera
-  receita em mês anterior ao do recebimento. A Buck não passa por aqui: tem
-  cobrança semanal própria, a partir dos romaneios (item da Buck, abaixo);
+  receita em mês anterior ao do recebimento. A Buck usa um fluxo próprio na
+  mesma tela, a cobrança semanal a partir dos romaneios (item da Buck, abaixo);
 - pedido PJ entregue vira cobrança (fase 3 de
   [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md)) por dois caminhos que chamam o
   mesmo motor: a ação que confirma o envio gera a cobrança por dentro, sem dar
