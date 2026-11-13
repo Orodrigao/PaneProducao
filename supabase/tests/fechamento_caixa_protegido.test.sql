@@ -5,9 +5,9 @@ select plan(70);
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.cash_closing_revisions'::regclass),'RLS do histórico ligada e forçada');
 select ok(not has_table_privilege('authenticated','public.cash_closing_revisions','insert'),'autenticado não insere revisão diretamente');
 select ok(not has_table_privilege('authenticated','private.cash_closing_requests','select'),'recibos não são expostos ao navegador');
-select ok((select prosecdef and proconfig @> array['search_path=""'] from pg_proc where pronamespace='public'::regnamespace and proname='save_cash_closing'),'salvamento roda como dono com caminho fechado');
+select ok((select prosecdef and proconfig @> array['search_path=""'] from pg_proc where pronamespace='public'::regnamespace and proname='save_cash_closing' and pronargs=25),'salvamento roda como dono com caminho fechado');
 select ok((select not prosecdef and proconfig @> array['search_path=""'] from pg_proc where pronamespace='private'::regnamespace and proname='guard_cash_closing_direct_write'),'gatilho de tela antiga mantém current_user do chamador');
-select ok((select not has_function_privilege('anon',oid,'execute') from pg_proc where pronamespace='public'::regnamespace and proname='save_cash_closing'),'anon não executa salvamento');
+select ok((select not has_function_privilege('anon',oid,'execute') from pg_proc where pronamespace='public'::regnamespace and proname='save_cash_closing' and pronargs=25),'anon não executa salvamento');
 select ok(not has_function_privilege('authenticated','private.normalize_cash_closing_stone(date)','execute'),'normalização não é concedida ao navegador');
 
 -- Identidades exclusivamente fictícias e isoladas nesta transação.
@@ -28,9 +28,15 @@ select public.save_cash_closing(p_request,p_store,p_date,p_version,
 case when p_override ? 'closing_cash_amount' then (p_override->>'closing_cash_amount')::numeric else 100 end,
 case when p_override ? 'cash_withdrawal_amount' then (p_override->>'cash_withdrawal_amount')::numeric else 10 end,
 case when p_override ? 'opening_cash_amount' then (p_override->>'opening_cash_amount')::numeric else 20 end,
-case when p_override ? 'banri_amount' then (p_override->>'banri_amount')::numeric else 30 end,
-case when p_override ? 'stone_amount' then (p_override->>'stone_amount')::numeric else 40 end,
-case when p_override ? 'sitef_amount' then (p_override->>'sitef_amount')::numeric else 50 end,
+0,
+case when p_override ? 'banri_credit_amount' then (p_override->>'banri_credit_amount')::numeric else case when p_override ? 'stone_amount' then 0 else 30 end end,
+0,0,
+coalesce((p_override->>'stone_amount')::numeric,0),
+case when p_override ? 'stone_credit_amount' then (p_override->>'stone_credit_amount')::numeric else case when p_override ? 'stone_amount' then 0 else 40 end end,
+0,0,
+0,
+case when p_override ? 'sitef_credit_amount' then (p_override->>'sitef_credit_amount')::numeric else case when p_override ? 'stone_amount' then 0 else 50 end end,
+0,0,
 case when p_override ? 'pix_amount' then (p_override->>'pix_amount')::numeric else 60 end,
 case when p_override ? 'ifood_sales_amount' then (p_override->>'ifood_sales_amount')::numeric else 70 end,
 case when p_override ? 'food99_sales_amount' then (p_override->>'food99_sales_amount')::numeric else 80 end,
@@ -55,7 +61,7 @@ select is((select (value->>'sales_amount')::numeric from result where key='first
 
 select is((select (value->>'site_sales_amount')::numeric from result where key='first'),0::numeric,'site_sales_amount calculado ou preservado pelo banco');
 
-select is((select (value->>'stone_amount')::numeric from result where key='first'),40::numeric,'stone_amount calculado ou preservado pelo banco');
+select is((select (value->>'stone_credit_amount')::numeric from result where key='first'),40::numeric,'stone_credit_amount calculado ou preservado pelo banco');
 
 select is((select (value->>'food99_sales_amount')::numeric from result where key='first'),80::numeric,'food99_sales_amount calculado ou preservado pelo banco');
 
@@ -69,13 +75,13 @@ select is((select value->>'weekday_label' from result where key='first'),'sabado
 
 select is((select count(*) from public.cash_closing_revisions where request_id='97320000-0000-4000-8000-000000000001'),1::bigint,'criação tem uma revisão');
 
-select ok((select before_values is null and after_values->>'stone_amount' = '40.00' and author_name='Vendas JC' and author_id=auth.uid() and request_summary is not null from public.cash_closing_revisions where request_id='97320000-0000-4000-8000-000000000001'),'revisão da criação guarda conteúdo e autor');
+select ok((select before_values is null and after_values->>'stone_credit_amount' = '40.00' and author_name='Vendas JC' and author_id=auth.uid() and request_summary is not null from public.cash_closing_revisions where request_id='97320000-0000-4000-8000-000000000001'),'revisão da criação guarda conteúdo e autor');
 
 select is(to_jsonb(pg_temp.save(p_request=>'97320000-0000-4000-8000-000000000001')),(select value from result where key='first'),'repetição devolve a mesma linha sem alterar carimbo');
 
 select is((select count(*) from public.cash_closing_revisions where request_id='97320000-0000-4000-8000-000000000001'),1::bigint,'repetição não duplica revisão');
 
-select throws_ok($$select pg_temp.save(p_request=>'97320000-0000-4000-8000-000000000001',p_override=>' {"stone_amount":41}')$$,'22023',null,'mesma chave com outro conteúdo é recusada');
+select throws_ok($$select pg_temp.save(p_request=>'97320000-0000-4000-8000-000000000001',p_override=>' {"stone_credit_amount":41}')$$,'22023',null,'mesma chave com outro conteúdo é recusada');
 
 select throws_ok($$select pg_temp.save()$$,'PT409',null,'existente com versão nula é conflito');
 
@@ -97,9 +103,9 @@ select is(to_jsonb(pg_temp.save(p_request=>'97320000-0000-4000-8000-000000000001
 
 select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"closing_cash_amount":0,"opening_cash_amount":100}')$$,'22023',null,'recusa valores inválidos: {"closing_cash_amount":0,"opening_cash_amount":100}');
 
-select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"stone_amount":-1}')$$,'22023',null,'recusa valores inválidos: {"stone_amount":-1}');
+select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"stone_credit_amount":-1}')$$,'22023',null,'recusa valores inválidos: {"stone_credit_amount":-1}');
 
-select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"stone_amount":null}')$$,'22023',null,'recusa valores inválidos: {"stone_amount":null}');
+select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"stone_credit_amount":null}')$$,'22023',null,'recusa valores inválidos: {"stone_credit_amount":null}');
 
 select throws_ok($$select pg_temp.save(p_date=>'2001-02-04',p_override=>'{"food99_sales_amount":1000001}')$$,'22023',null,'recusa valores inválidos: {"food99_sales_amount":1000001}');
 
@@ -107,7 +113,7 @@ select throws_ok($$select pg_temp.save(p_date=>private.data_na_padaria()+1)$$,'2
 
 select throws_ok($$select pg_temp.save(p_date=>null)$$,'22023',null,'data vazia é recusada');
 
-select is((pg_temp.save(p_date=>'2001-02-05',p_override=>'{"stone_amount":40.126}')).stone_amount,40.13::numeric,'arredonda a centavos no banco');
+select is((pg_temp.save(p_date=>'2001-02-05',p_override=>'{"stone_credit_amount":40.126}')).stone_credit_amount,40.13::numeric,'arredonda a centavos no banco');
 
 select throws_ok($$insert into public.cash_closings(store,closing_date,weekday_label,created_by,created_by_name) values('jc','2001-03-01','quinta',auth.uid()::text,'Vendas JC')$$,'42501',null,'insert direto recusado');
 

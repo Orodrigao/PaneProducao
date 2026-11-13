@@ -5,6 +5,7 @@ import { formatCompetenceMonth, formatFinanceMoney } from '@/lib/finance'
 import { formatDateBR, todayKey } from '@/lib/utils'
 import {
   buildFeeRateRequest,
+  EDITABLE_FEE_METHODS,
   feeMethodLabel,
   feeRateErrorMessage,
   feeRateImpact,
@@ -21,7 +22,7 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [method, setMethod] = useState<FeeMethod>('stone')
+  const [method, setMethod] = useState<FeeMethod>('stone_credito')
   const [rate, setRate] = useState('')
   const [validFrom, setValidFrom] = useState('')
   const [busy, setBusy] = useState(false)
@@ -116,6 +117,7 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
           <p>{data.bridge.enabled
             ? 'A venda do fechamento de caixa entra no livro desde ' + formatDateBR(data.bridge.start_date) + '.'
             : 'Entrada automática do fechamento pausada.'}</p>
+          <p>Dias salvos antes da troca, com crédito e débito juntos: a taxa deles será corrigida pelo extrato de cada credenciadora, não por aqui.</p>
           {data.methods.map(row => (
             <div className="ps-card" key={row.method} style={{ marginTop: 8 }}>
               <b>{feeMethodLabel(row.method)}: {formatFeeRate(row.current?.rate ?? null)}</b>
@@ -140,7 +142,7 @@ export default function FinanceFeeRatesPanel({ onSaved }: { onSaved: () => Promi
               <div className="ps-fieldgroup">
                 <label className="ps-fieldlabel" htmlFor="fee-method">Meio de pagamento</label>
                 <select id="fee-method" className="ps-select" value={method} onChange={event => setMethod(event.target.value as FeeMethod)}>
-                  {data.methods.map(row => (
+                  {data.methods.filter(row => (EDITABLE_FEE_METHODS as readonly string[]).includes(row.method)).map(row => (
                     <option key={row.method} value={row.method}>{feeMethodLabel(row.method)}</option>
                   ))}
                 </select>

@@ -16,7 +16,10 @@ import {
   cashClosingSaveErrorMessage,
   isUncertainWriteResult,
   notesWithReplacement,
-  parseMoneyInput,
+  CLOSING_FIELDS, EMPTY_CLOSING_FORM as EMPTY_FORM, CASH_CLOSING_MACHINES,
+  cashClosingFormToInput as formToInput, cashClosingRowToForm as rowToForm,
+  cashClosingUsesLegacyFields, cashClosingMachineSubtotal, showCashClosingSitef, buildCashClosingRequest,
+  type CashClosingMoneyRow,
   wasSavedMeanwhile,
   type CashClosingInput,
 } from '@/lib/cashClosing'
@@ -26,7 +29,7 @@ import CashClosingConflictNotice, { type CashClosingComparison } from '@/compone
 type StoreKey = 'jc' | 'ja' | 'ex'
 type MoneyField = keyof CashClosingInput
 
-interface CashClosingRow {
+interface CashClosingRow extends CashClosingMoneyRow {
   id: string
   closing_date: string
   weekday_label: string
@@ -62,34 +65,6 @@ const STORE_OPTIONS: { key: StoreKey; label: string }[] = [
 
 const WEEKDAYS = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado']
 
-const EMPTY_FORM: Record<MoneyField, string> = {
-  banriAmount: '',
-  sitefAmount: '',
-  pixAmount: '',
-  stoneAmount: '',
-  food99SalesAmount: '',
-  ifoodSalesAmount: '',
-  cashWithdrawalAmount: '',
-  openingCashAmount: '',
-  closingCashAmount: '',
-  envelopeAmount: '',
-  nextDayCashAmount: '',
-}
-
-const CLOSING_FIELDS: { key: MoneyField; label: string; helper?: string }[] = [
-  { key: 'closingCashAmount', label: '1. Total em dinheiro', helper: 'todo dinheiro fisico contado no caixa' },
-  { key: 'cashWithdrawalAmount', label: '2. Sangrias', helper: 'retiradas feitas durante o dia' },
-  { key: 'banriAmount', label: '3. Banrisul credito/debito' },
-  { key: 'stoneAmount', label: '4. Stone credito/debito' },
-  { key: 'sitefAmount', label: '5. SiTef' },
-  { key: 'pixAmount', label: '6. PIX WhatsApp/app' },
-  { key: 'openingCashAmount', label: '7. Abertura do caixa', helper: 'desconta do dinheiro contado' },
-  { key: 'ifoodSalesAmount', label: '8. iFood', helper: 'informativo, nao soma ao caixa' },
-  { key: 'food99SalesAmount', label: '9. 99Food', helper: 'informativo, nao soma ao caixa' },
-  { key: 'envelopeAmount', label: '10. Envelope', helper: 'informativo, malote/deposito' },
-  { key: 'nextDayCashAmount', label: '11. Proximo dia', helper: 'informativo, abertura seguinte' },
-]
-
 function isStoreKey(value: string | null): value is StoreKey {
   return value === 'jc' || value === 'ja' || value === 'ex'
 }
@@ -99,27 +74,6 @@ function weekdayFromDate(date: string): string {
   if (!year || !month || !day) return ''
   const parsed = new Date(Date.UTC(year, month - 1, day, 12))
   return WEEKDAYS[parsed.getUTCDay()] ?? ''
-}
-
-function formToInput(form: Record<MoneyField, string>): CashClosingInput {
-  return {
-    banriAmount: parseMoneyInput(form.banriAmount),
-    sitefAmount: parseMoneyInput(form.sitefAmount),
-    pixAmount: parseMoneyInput(form.pixAmount),
-    stoneAmount: parseMoneyInput(form.stoneAmount),
-    food99SalesAmount: parseMoneyInput(form.food99SalesAmount),
-    ifoodSalesAmount: parseMoneyInput(form.ifoodSalesAmount),
-    cashWithdrawalAmount: parseMoneyInput(form.cashWithdrawalAmount),
-    openingCashAmount: parseMoneyInput(form.openingCashAmount),
-    closingCashAmount: parseMoneyInput(form.closingCashAmount),
-    envelopeAmount: parseMoneyInput(form.envelopeAmount),
-    nextDayCashAmount: parseMoneyInput(form.nextDayCashAmount),
-  }
-}
-
-function moneyToInput(value: number): string {
-  if (!value) return ''
-  return value.toFixed(2).replace('.', ',')
 }
 
 function rowToInput(row: CashClosingRow): CashClosingInput {
@@ -141,22 +95,6 @@ async function writeWithDeadline<T>(write: (signal: AbortSignal) => PromiseLike<
     if (!(error instanceof RequestTimeoutError)) throw error
     controller.abort()
     return null
-  }
-}
-
-function rowToForm(row: CashClosingRow): Record<MoneyField, string> {
-  return {
-    banriAmount: moneyToInput(row.banri_amount),
-    sitefAmount: moneyToInput(row.sitef_amount),
-    pixAmount: moneyToInput(row.pix_amount),
-    stoneAmount: moneyToInput((row.stone_amount ?? 0) + row.site_sales_amount),
-    food99SalesAmount: moneyToInput(row.food99_sales_amount ?? 0),
-    ifoodSalesAmount: moneyToInput(row.ifood_sales_amount),
-    cashWithdrawalAmount: moneyToInput(row.cash_withdrawal_amount),
-    openingCashAmount: moneyToInput(row.opening_cash_amount),
-    closingCashAmount: moneyToInput(row.closing_cash_amount),
-    envelopeAmount: moneyToInput(row.envelope_amount),
-    nextDayCashAmount: moneyToInput(row.next_day_cash_amount),
   }
 }
 
@@ -260,6 +198,8 @@ export default function FechamentoCaixaPage() {
   const canChangeStore = user?.role === 'admin' || user?.role === 'financeiro'
   const weekday = weekdayFromDate(date)
   const input = useMemo(() => formToInput(form), [form])
+  const legacy = cashClosingUsesLegacyFields(existing, input)
+  const showSitef = showCashClosingSitef(store, input) || Boolean(existing && showCashClosingSitef(store, rowToInput(existing)))
   const totals = useMemo(() => calculateCashClosingTotals(input), [input])
 
   const loadClosing = useCallback(async () => {
@@ -407,31 +347,17 @@ export default function FechamentoCaixaPage() {
     }
 
     const valuesPayload = { notes: notesText.trim() || null }
-    const rpcValues = {
-      p_store: store,
-      p_closing_date: date,
-      p_updated_at: existing?.updated_at ?? null,
-      p_closing_cash_amount: input.closingCashAmount,
-      p_cash_withdrawal_amount: input.cashWithdrawalAmount,
-      p_opening_cash_amount: input.openingCashAmount,
-      p_banri_amount: input.banriAmount,
-      p_stone_amount: input.stoneAmount,
-      p_sitef_amount: input.sitefAmount,
-      p_pix_amount: input.pixAmount,
-      p_ifood_sales_amount: input.ifoodSalesAmount,
-      p_food99_sales_amount: input.food99SalesAmount,
-      p_envelope_amount: input.envelopeAmount,
-      p_next_day_cash_amount: input.nextDayCashAmount,
-      p_notes: valuesPayload.notes,
-    }
+    const rpcValues = buildCashClosingRequest(input, {
+      requestId: '', store, date, updatedAt: existing?.updated_at ?? null, notes: notesText,
+    })
     const content = JSON.stringify(rpcValues)
     if (pendingRequest.current?.content !== content) {
       pendingRequest.current = { content, id: crypto.randomUUID() }
     }
     const requestId = pendingRequest.current.id
     const result = await writeWithDeadline(signal => supabase.rpc('save_cash_closing', {
-      p_request_id: requestId,
       ...rpcValues,
+      p_request_id: requestId,
     }).abortSignal(signal).single())
 
     const savedMessage = existing ? 'Fechamento atualizado.' : 'Fechamento salvo.'
@@ -501,6 +427,10 @@ export default function FechamentoCaixaPage() {
     )
     if (!confirmed) return
     loadClosing()
+  }
+
+  function renderMoneyField(field: typeof CLOSING_FIELDS[number]) {
+    return <MoneyInput key={field.key} label={field.label} helper={field.helper} value={form[field.key]} onChange={value => updateField(field.key, value)} />
   }
 
   return (
@@ -601,15 +531,20 @@ export default function FechamentoCaixaPage() {
 
           <div style={{ display: 'grid', gap: 12 }}>
             <FieldGroup title="Preencher nesta ordem">
-              {CLOSING_FIELDS.map(field => (
-                <MoneyInput
-                  key={field.key}
-                  label={field.label}
-                  helper={field.helper}
-                  value={form[field.key]}
-                  onChange={value => updateField(field.key, value)}
-                />
+              {CLOSING_FIELDS.filter(field => ['closingCashAmount', 'cashWithdrawalAmount'].includes(field.key)).map(renderMoneyField)}
+              {legacy ? (
+                <>
+                  <p role="note" style={{ flexBasis: '100%' }}>Este dia foi salvo antes da troca, com crédito e débito juntos. Para corrigir, use os mesmos campos.</p>
+                  {CLOSING_FIELDS.filter(field => ['banriAmount', 'stoneAmount', ...(showSitef ? ['sitefAmount'] : [])].includes(field.key)).map(renderMoneyField)}
+                </>
+              ) : CASH_CLOSING_MACHINES.filter(machine => machine.label !== 'SiTef' || showSitef).map(machine => (
+                <fieldset key={machine.title} className="ps-card" style={{ flex: '1 1 100%', border: '1px solid var(--line)' }}>
+                  <legend>{machine.title}</legend>
+                  <div className="ps-fieldrow">{CLOSING_FIELDS.filter(field => (machine.keys as readonly string[]).includes(field.key)).map(renderMoneyField)}</div>
+                  <SummaryRow label={'Total ' + machine.label} helper="confira com o total do relatório" value={cashClosingMachineSubtotal(input, machine.keys)} />
+                </fieldset>
               ))}
+              {CLOSING_FIELDS.filter(field => ['pixAmount', 'openingCashAmount', 'ifoodSalesAmount', 'food99SalesAmount', 'envelopeAmount', 'nextDayCashAmount'].includes(field.key)).map(renderMoneyField)}
             </FieldGroup>
 
             <section className="ps-card" style={{ gap: 12 }}>

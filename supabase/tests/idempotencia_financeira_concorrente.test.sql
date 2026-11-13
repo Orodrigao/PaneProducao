@@ -86,6 +86,7 @@ select is(
     'reverse_receivable_receipt',
     'rollback_pj_flow_enrollment',
     'save_cash_closing',
+    'save_cash_closing',
     'save_finance_fee_rate',
     'save_pj_order_dispatch_quantities',
     'schedule_pj_production',
@@ -124,6 +125,7 @@ with expected(name) as (
   join expected on expected.name = proc.proname
   where namespace.nspname = 'public'
     and 'p_request_id' = any(proc.proargnames)
+    and (proc.proname <> 'save_cash_closing' or proc.pronargs = 25)
 )
 select is(
   (
