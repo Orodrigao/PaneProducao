@@ -652,19 +652,24 @@ disputavam um único banco de teste compartilhado.
   convertido em pedido e segue a direção visual aprovada por Rodrigo (Apple
   Design), sem mudar regra, quantidade ou permissão;
 - alarme de rotina parada: a regra no banco aponta a rotina que parou de ser
-  lançada por loja (PR #533, 28/10/2026), e um e-mail sai ao Rodrigo de
-  segunda a sábado às 8h, com quatro avisos do financeiro: pedido PJ conferido
-  sem liberar, conta recorrente não confirmada, recebimento parado e parcela a
-  pagar vencida (PR #538, 30/10/2026); um vigia no GitHub avisa se o envio
-  falhar;
+  lançada por loja (PR #533, 28/10/2026). De segunda a sábado, a partir das 8h,
+  a verificação roda e manda e-mail ao Rodrigo quando há atraso, rotina
+  resolvida ou falha de verificação; às segundas vai também o resumo. Entram
+  quatro avisos do financeiro: pedido PJ conferido sem liberar, conta
+  recorrente não confirmada, recebimento parado e parcela a pagar vencida
+  (PR #538, 30/10/2026). Às 9h45 um vigia no GitHub confere se a verificação do
+  dia terminou, com ou sem envio, e acusa falha; não comprova a chegada na
+  caixa de entrada;
 - entrada de NF-e com item fora do cadastro: o item ganha o tipo `uso_despesa`
   ou `revenda`, e a revenda aparece em linha própria no consumo semanal, fora do
-  CMV % (PRs #531 e #535, 28 e 30/10/2026); a tela Vínculos de NF-e troca o tipo
-  de uma nota já gravada entre uso ou despesa, revenda e produto, com prévia e
-  memória do fornecedor (PR #542, 04/11/2026);
-- aviso de alta de custo: ao importar a NF-e, a tela avisa quando um insumo sobe
-  de custo em relação ao cadastro, e as altas que trocaram o custo aparecem num
-  quadro do Contas a pagar (PR #540, 04/11/2026);
+  CMV % (PRs #531 e #535, 28 e 30/10/2026); a tela Vínculos de NF-e corrige
+  itens de notas já gravadas entre uso ou despesa, revenda e produto, com prévia
+  e memória do fornecedor (PR #542, 04/11/2026);
+- aviso de alta de custo: ao importar a NF-e, a tela avisa altas de pelo menos
+  5% sobre a compra anterior válida do mesmo cadastro, e também variações
+  grandes, para cima ou para baixo, que costumam ser embalagem lida errada; o
+  Contas a pagar mostra essas ocorrências nas notas dos últimos 30 dias que
+  trocaram o custo do cadastro (PR #540, 04/11/2026);
 - formação de preço, passos 0c e 0d: os indicadores de mão de obra e o Forno
   leem o peso da ficha, e o salário dos donos é um valor fixo em reais na
   Configuração do Sistema, somado às despesas fixas de todo mês (PR #541,
@@ -672,11 +677,13 @@ disputavam um único banco de teste compartilhado.
 - Financeiro: a lista mostra sempre o mês escolhido, mesmo quando a resposta de
   um mês anterior chega atrasada (PR #539, 04/11/2026);
 - fechamento de caixa com crédito, débito e PIX separados por maquininha
-  (Banrisul, Stone e, só na JC, SiTef) e PIX direto na conta; o livro-caixa
-  lança uma receita e uma taxa por meio, cada uma com a taxa de quem processou a
-  venda (PR #543, 13/11/2026). Dia salvo antes da troca continua no formato
-  antigo; a correção das taxas desses dias depende dos extratos das
-  credenciadoras.
+  (Banrisul e Stone; SiTef por padrão na JC e, nas outras lojas, só quando o
+  fechamento já tem valor de SiTef) e PIX direto na conta. O livro-caixa separa
+  a receita por meio e lança a taxa de quem processou a venda quando ela está
+  cadastrada e dá mais que zero; o PIX do SiTef fica pendente de taxa
+  (PR #543, 13/11/2026). Fechamento com valor nos campos antigos, que juntavam
+  crédito e débito, continua editável neles; a correção das taxas desses dias
+  depende dos extratos das credenciadoras.
 
 ## Capacidades parciais
 

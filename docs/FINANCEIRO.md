@@ -437,9 +437,12 @@ taxa de quem processou a venda, mesmo quando o dinheiro cai na conta de outra
 credenciadora; PIX direto na conta continua sem taxa.
 
 **No ar em 13/11/2026 (PR #543):** o fechamento tem crédito, débito e PIX para
-Banrisul, Stone e, só na JC, SiTef, com o total de cada maquininha à vista, e o
-campo "PIX direto na conta (sem maquininha)". O livro lança uma receita e uma
-taxa por meio, com as taxas semeadas desde 01/09/2026:
+Banrisul e Stone e, por padrão na JC, para o SiTef, com o total de cada
+maquininha à vista, e o campo "PIX direto na conta (sem maquininha)". Nas outras
+lojas o SiTef só aparece quando o fechamento já tem valor nele, para poder ser
+corrigido. O livro separa a receita por meio e lança a taxa quando ela está
+cadastrada e o valor calculado passa de zero (o PIX direto tem taxa zero e não
+gera lançamento). Taxas cadastradas, vigentes desde 01/09/2026:
 
 | Maquininha | Crédito | Débito | PIX |
 | --- | --- | --- | --- |
@@ -447,10 +450,12 @@ taxa por meio, com as taxas semeadas desde 01/09/2026:
 | Stone | 3,57% | 1,09% | 0,50% |
 | SiTef (Sicredi) | 2,05% | 0,89% | não informada (fica pendente no painel de taxas) |
 
-Dia salvo antes da troca continua no formato antigo (crédito e débito juntos)
-e se corrige nos mesmos campos; a tela antiga aberta num tablet não grava e
-pede para recarregar. A migration `20261106200000_fechamento_caixa_por_meio.sql`
-só acrescenta colunas e meios e não muda lançamento existente.
+Fechamento com valor nos campos antigos (crédito e débito juntos) continua
+editável neles; a tela antiga aberta num tablet não grava e pede para
+recarregar. A migration `20261106200000_fechamento_caixa_por_meio.sql`
+acrescenta campos e meios, cadastra as taxas e atualiza as funções de
+gravação, do livro e das taxas, sem converter fechamentos nem reescrever
+lançamentos existentes.
 
 **Falta:** corrigir as taxas de 01/09/2026 até a véspera da troca, sem
 reescrever taxa já lançada. Depende dos extratos de setembro e outubro de cada
