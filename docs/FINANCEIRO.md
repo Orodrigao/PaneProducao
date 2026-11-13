@@ -429,16 +429,33 @@ fechamento e recorrências pendentes. Esta PR não declara essa conferência pro
 
 ### Crédito, débito e PIX por maquininha (decisão do Rodrigo, 29/10/2026)
 
-O fechamento junta crédito e débito num campo por maquininha, e o livro aplica
-a taxa de crédito em tudo; o PIX passado na maquininha também paga taxa e hoje
-não aparece separado. Decisão: a loja lança no fechamento o que o relatório da
-maquininha mostra, por maquininha: crédito, débito e PIX. Vale a taxa de quem
-processou a venda, mesmo quando o dinheiro cai na conta de outra credenciadora;
-PIX direto na conta continua sem taxa. Até a tela nova, os fechamentos seguem
-com a taxa de crédito em tudo, e a frente corrige o período desde 01/09/2026
-sem reescrever taxa já lançada. Entra antes da conferência do mês (PR 3), que
-passa para perto de 10/11/2026. Campos, taxas, migração e testes entram com a
-PR dessa frente, que completa esta seção.
+Até 13/11/2026 o fechamento juntava crédito e débito num campo por maquininha,
+e o livro aplicava a taxa de crédito em tudo; o PIX passado na maquininha também
+paga taxa e não aparecia separado. Decisão: a loja lança no fechamento o que o
+relatório da maquininha mostra, por maquininha: crédito, débito e PIX. Vale a
+taxa de quem processou a venda, mesmo quando o dinheiro cai na conta de outra
+credenciadora; PIX direto na conta continua sem taxa.
+
+**No ar em 13/11/2026 (PR #543):** o fechamento tem crédito, débito e PIX para
+Banrisul, Stone e, só na JC, SiTef, com o total de cada maquininha à vista, e o
+campo "PIX direto na conta (sem maquininha)". O livro lança uma receita e uma
+taxa por meio, com as taxas semeadas desde 01/09/2026:
+
+| Maquininha | Crédito | Débito | PIX |
+| --- | --- | --- | --- |
+| Banrisul | 1,79% | 1,39% | 0,89% |
+| Stone | 3,57% | 1,09% | 0,50% |
+| SiTef (Sicredi) | 2,05% | 0,89% | não informada (fica pendente no painel de taxas) |
+
+Dia salvo antes da troca continua no formato antigo (crédito e débito juntos)
+e se corrige nos mesmos campos; a tela antiga aberta num tablet não grava e
+pede para recarregar. A migration `20261106200000_fechamento_caixa_por_meio.sql`
+só acrescenta colunas e meios e não muda lançamento existente.
+
+**Falta:** corrigir as taxas de 01/09/2026 até a véspera da troca, sem
+reescrever taxa já lançada. Depende dos extratos de setembro e outubro de cada
+credenciadora, por loja, ainda não recebidos. Depois vem a conferência do mês
+(PR 3).
 
 
 **Objetivo:** o fechamento de caixa que a loja já faz vira receita no DRE,

@@ -9,8 +9,9 @@ regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
 11/10/2026, a trava dos agentes, revista em 19/10/2026; a de 23/10/2026, o
 fechamento da exposição GraphQL; a de 30/10/2026, sobre `0f1215e` e leitura de
 produção, a fase do projeto, a exposição GraphQL fechada em produção, as vendas
-do balcão e a cobrança da Buck. As demais seções conservam suas datas de
-revisão anteriores.
+do balcão e a cobrança da Buck; a de 13/11/2026, as entregas dos PRs #535 e
+#538 a #543 em "Capacidades já presentes". As demais seções conservam suas
+datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
 incorporada à `main`.
@@ -649,7 +650,33 @@ disputavam um único banco de teste compartilhado.
   próximo dia útil de produção (considerando o horário e pulando domingo),
   troca de dia por botão em vez de calendário, mostra planejamento parcialmente
   convertido em pedido e segue a direção visual aprovada por Rodrigo (Apple
-  Design), sem mudar regra, quantidade ou permissão.
+  Design), sem mudar regra, quantidade ou permissão;
+- alarme de rotina parada: a regra no banco aponta a rotina que parou de ser
+  lançada por loja (PR #533, 28/10/2026), e um e-mail sai ao Rodrigo de
+  segunda a sábado às 8h, com quatro avisos do financeiro: pedido PJ conferido
+  sem liberar, conta recorrente não confirmada, recebimento parado e parcela a
+  pagar vencida (PR #538, 30/10/2026); um vigia no GitHub avisa se o envio
+  falhar;
+- entrada de NF-e com item fora do cadastro: o item ganha o tipo `uso_despesa`
+  ou `revenda`, e a revenda aparece em linha própria no consumo semanal, fora do
+  CMV % (PRs #531 e #535, 28 e 30/10/2026); a tela Vínculos de NF-e troca o tipo
+  de uma nota já gravada entre uso ou despesa, revenda e produto, com prévia e
+  memória do fornecedor (PR #542, 04/11/2026);
+- aviso de alta de custo: ao importar a NF-e, a tela avisa quando um insumo sobe
+  de custo em relação ao cadastro, e as altas que trocaram o custo aparecem num
+  quadro do Contas a pagar (PR #540, 04/11/2026);
+- formação de preço, passos 0c e 0d: os indicadores de mão de obra e o Forno
+  leem o peso da ficha, e o salário dos donos é um valor fixo em reais na
+  Configuração do Sistema, somado às despesas fixas de todo mês (PR #541,
+  04/11/2026); enquanto o campo estiver vazio, o mês fica provisório;
+- Financeiro: a lista mostra sempre o mês escolhido, mesmo quando a resposta de
+  um mês anterior chega atrasada (PR #539, 04/11/2026);
+- fechamento de caixa com crédito, débito e PIX separados por maquininha
+  (Banrisul, Stone e, só na JC, SiTef) e PIX direto na conta; o livro-caixa
+  lança uma receita e uma taxa por meio, cada uma com a taxa de quem processou a
+  venda (PR #543, 13/11/2026). Dia salvo antes da troca continua no formato
+  antigo; a correção das taxas desses dias depende dos extratos das
+  credenciadoras.
 
 ## Capacidades parciais
 
