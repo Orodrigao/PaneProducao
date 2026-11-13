@@ -88,6 +88,9 @@ Não reabrir sem evidência nova.
    iFood 12% + 3,2% = 15,2% sobre itens e tele; 99Food 10,9% + 3,2% = 14,1%;
    maquininha crédito 3,51% e débito 1,09%. Como o fechamento junta ambos,
    a configuração usa taxa média por maquininha, a conferir pelo extrato.
+   **Revista em 29/10/2026:** a loja passa a lançar crédito, débito e PIX
+   separados por maquininha, cada um com a taxa de quem processou a venda
+   (seção "Crédito, débito e PIX por maquininha", na fase 3).
    O percentual usado fica gravado no lançamento; mudar a taxa não reescreve
    meses antigos e diferença entre prevista e real vira ajuste do mês.
 9. **DRE em dois andares.** Empréstimos, compra de equipamento e retiradas
@@ -119,7 +122,9 @@ esquecimento:
 - **Comprovante anexado** — a v1 exige descrição no lançamento manual; foto
   fica para depois;
 - **Conciliação bancária** — são ~8 contas em 3 CNPJs e extrato nunca foi
-  hábito; começar por aí afundaria o projeto. Fase futura;
+  hábito; começar por aí afundaria o projeto. Fase futura; entrou no
+  [PLAN.md](PLAN.md) em 30/10/2026 com alvo em 02/12/2026, condicionada a
+  desenho e critérios de aceite escritos aqui antes de começar;
 - **Saldo por conta e fluxo de caixa projetado** — depende de saldo inicial
   e conciliação; fase futura;
 - **Provisão automática de 13º/férias** — futura; até lá o DRE de novembro/
@@ -197,7 +202,8 @@ Nenhuma fase que cria tabela financeira começa sem:
 7. idempotência conforme o achado 6 acima;
 8. policies próprias em cada tabela, sem depender da visibilidade da
    tabela-pai;
-9. teste direto por REST, RPC e GraphQL — não apenas pela tela;
+9. teste direto por REST e RPC, não apenas pela tela (o GraphQL está
+   desligado no banco desde 2026-10-24);
 10. matriz no Preview com perfil sem permissão, financeiro autorizado e
     administrador, afirmando que escrita direta na tabela falha.
 
@@ -258,8 +264,8 @@ e pelas definições de uma linha do anexo.
 - Elis lança despesa avulsa em dois toques, com categoria obrigatória;
 - estorno cria contra-lançamento ligado e exige motivo; nada é apagado;
 - repetir a ação (toque duplo, reload) não duplica;
-- perfil sem permissão é bloqueado **pelo banco** (REST, RPC e GraphQL),
-  não só pela tela.
+- perfil sem permissão é bloqueado **pelo banco** (REST e RPC; o GraphQL está
+  desligado desde 2026-10-24), não só pela tela.
 
 **Testes — matriz:** financeiro JC (consegue lançar e estornar) **e** vendas
 JA (bloqueada na tela e no banco). Estados: carregando, vazio, erro,
@@ -420,6 +426,41 @@ a leitura autorizada e o gatilho de proteção da PR 1 permanecem.
 
 A PR 3 entregará a conferência do mês: comparação por loja e meio, dias sem
 fechamento e recorrências pendentes. Esta PR não declara essa conferência pronta.
+
+### Crédito, débito e PIX por maquininha (decisão do Rodrigo, 29/10/2026)
+
+Até 13/11/2026 o fechamento juntava crédito e débito num campo por maquininha,
+e o livro aplicava a taxa de crédito em tudo; o PIX passado na maquininha também
+paga taxa e não aparecia separado. Decisão: a loja lança no fechamento o que o
+relatório da maquininha mostra, por maquininha: crédito, débito e PIX. Vale a
+taxa de quem processou a venda, mesmo quando o dinheiro cai na conta de outra
+credenciadora; PIX direto na conta continua sem taxa.
+
+**No ar em 13/11/2026 (PR #543):** o fechamento tem crédito, débito e PIX para
+Banrisul e Stone e, por padrão na JC, para o SiTef, com o total de cada
+maquininha à vista, e o campo "PIX direto na conta (sem maquininha)". Nas outras
+lojas o SiTef só aparece quando o fechamento já tem valor nele, para poder ser
+corrigido. O livro separa a receita por meio e lança a taxa quando ela está
+cadastrada e o valor calculado passa de zero (o PIX direto tem taxa zero e não
+gera lançamento). Taxas cadastradas, vigentes desde 01/09/2026:
+
+| Maquininha | Crédito | Débito | PIX |
+| --- | --- | --- | --- |
+| Banrisul | 1,79% | 1,39% | 0,89% |
+| Stone | 3,57% | 1,09% | 0,50% |
+| SiTef (Sicredi) | 2,05% | 0,89% | não informada (fica pendente no painel de taxas) |
+
+Fechamento com valor nos campos antigos (crédito e débito juntos) continua
+editável neles; a tela antiga aberta num tablet não grava e pede para
+recarregar. A migration `20261106200000_fechamento_caixa_por_meio.sql`
+acrescenta campos e meios, cadastra as taxas e atualiza as funções de
+gravação, do livro e das taxas, sem converter fechamentos nem reescrever
+lançamentos existentes.
+
+**Falta:** corrigir as taxas de 01/09/2026 até a véspera da troca, sem
+reescrever taxa já lançada. Depende dos extratos de setembro e outubro de cada
+credenciadora, por loja, ainda não recebidos. Depois vem a conferência do mês
+(PR 3).
 
 
 **Objetivo:** o fechamento de caixa que a loja já faz vira receita no DRE,

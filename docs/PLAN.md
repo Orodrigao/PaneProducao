@@ -1,6 +1,8 @@
 # Roadmap canônico do Pane&Salute ERP
 
-**Atualizado em:** 2026-10-23, com o plano mestre aprovado pelo Rodrigo nessa data.
+**Atualizado em:** 2026-10-23, com o plano mestre aprovado pelo Rodrigo nessa data;
+revisto em 2026-10-30 e em 2026-11-13 com as frentes concluídas e as aprovadas
+depois de 23/10.
 **Substitui:** o roteiro de 2026-07-21, organizado em fases de 0A a 10.
 
 Este arquivo define a missão, os marcos com data, a ordem das frentes e o critério
@@ -82,8 +84,8 @@ marcos, porque depende de um hábito novo da equipe.
 | Semana | Foco | O que precisa estar pronto no fim |
 | --- | --- | --- |
 | 26/10 a 30/10 | Limpar a mesa | Decisões pendentes do Rodrigo respondidas; lançamentos de outubro limpos; produtos prioritários escolhidos pela curva ABC; Tabela Buck fase 3 no ar |
-| 03/11 a 06/11 (02/11 é feriado) | Dinheiro entrando certo | Venda do balcão e taxas no livro-caixa; exposição GraphQL fechada |
-| 09/11 a 13/11 | Compras e base do preço | Aviso de alta de custo; indicadores do preço lendo o peso da ficha; famílias dos insumos contados aprovadas |
+| 03/11 a 06/11 (02/11 é feriado) | Dinheiro entrando certo | Crédito, débito e PIX separados por maquininha no fechamento de caixa e no livro-caixa; revenda sem cadastro entrando pela nota |
+| 09/11 a 13/11 | Compras e base do preço | Conferência do mês no Financeiro; aviso de alta de custo; indicadores do preço lendo o peso da ficha; famílias dos insumos contados aprovadas |
 | 16/11 a 19/11 (20/11 é feriado) | DRE e sobras | DRE da JC e da JA com o CMV pela contagem; sobras em reais |
 | 23/11 a 27/11 | Ensaio, com folga | DRE de outubro fechado no ERP pelo financeiro até 27/11; correções do ensaio |
 | 30/11 a 04/12 | Preço e véspera | Formação de preço completa no ar; contas que só existem no CNM conferidas no ERP |
@@ -96,20 +98,27 @@ No máximo três frentes de código ao mesmo tempo, integradas uma por vez. Cada
 passa por revisão de outra família de modelo, testes, CI e selo da portaria antes
 de ir ao ar; os prazos já contam dois dias úteis de folga para correções. A
 aprovação de 23/10/2026 autoriza estas frentes até o ar, nessas condições; as
-decisões de negócio continuam com o Rodrigo. Quem conduz cada frente fica
-registrado na portaria da equipe de IA, não aqui.
+decisões de negócio continuam com o Rodrigo. As frentes que entraram depois de
+23/10 têm aprovação própria, registrada na reserva de cada uma, e a conferência do
+extrato ainda pede o aval da fase. Quando o teto estiver tomado, a frente seguinte
+na ordem da tabela espera outra integrar. Quem conduz cada frente fica registrado
+na portaria da equipe de IA, não aqui.
 
 | No ar até | Frente | Depende de | Desenho |
 | --- | --- | --- | --- |
-| 28/10 | Correções de cadastro pela tela, sem código: a nota de um insumo contado no cadastro certo e duas fichas corrigidas | Acesso do Rodrigo no navegador do app | N/A |
-| 30/10 | Tabela Buck fase 3: o Fechamento EX mostra o que foi cobrado nas semanas já cobradas | Nada | [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md) |
+| Feito em 29/10 | Correções de cadastro pela tela, sem código: a nota de um insumo contado no cadastro certo e as fichas do croissant e da calabresa puxando a massa em quilo | Acesso do Rodrigo no navegador do app | N/A |
+| No ar em 24/10 | Tabela Buck fase 3: o Fechamento EX mostra o que foi cobrado nas semanas já cobradas (PR #525) | Nada | [CONTAS_A_RECEBER.md](CONTAS_A_RECEBER.md) |
 | 30/10 | Lista dos produtos que fazem 80% da venda, pela curva ABC (lista, sem código) | Vendas da JC importadas | N/A |
-| 06/11 | Financeiro fase 3: canal 99Food no fechamento de caixa e na Configuração do Sistema; venda do balcão e taxas de cartão, iFood e 99Food no livro-caixa; histórico da Stone corrigido de setembro em diante, com registro do que mudou | Decisão sobre o histórico da Stone, tomada em 23/10 | [FINANCEIRO.md](FINANCEIRO.md) |
-| 06/11 | Segurança: fechar a exposição GraphQL, última pendência da auditoria de julho | Nada | [CURRENT_STATE.md](CURRENT_STATE.md), Bloqueios atuais |
-| 13/11 | Compras fase 3B: aviso quando um insumo sobe de preço na nota | Nada | [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md) |
-| 13/11 | Formação de preço, passos 0c e 0d: indicadores e Forno lendo o peso da ficha; retirada dos donos tratada nos indicadores | Respostas do Rodrigo sobre as fichas | [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md) |
+| No ar em 24/10 | Segurança: fechar a exposição GraphQL, última pendência da auditoria de julho (PR #523) | Nada | [CURRENT_STATE.md](CURRENT_STATE.md), Riscos ainda abertos |
+| No ar em 30/10 | Revenda sem cadastro na entrada de NF-e, fases 1 e 2: a tela mostra a recusa real do banco e leva ao cadastro existente (fase 1, no ar em 28/10, PR #531); o item fora do cadastro ganha um tipo (`uso_despesa` ou `revenda`), e a revenda aparece em linha própria no consumo semanal, fora do CMV % (fase 2, PR #535) | Nada | [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md) |
+| Conferência do mês a abrir | Financeiro fase 3: canal 99Food no fechamento de caixa e na Configuração do Sistema; venda do balcão e taxas de cartão, iFood e 99Food no livro-caixa; histórico da Stone corrigido de setembro em diante (PRs #524 e #526, no ar em 25 e 26/10). Crédito, débito e PIX lançados por maquininha no fechamento, cada um com a sua taxa (decisão de 29/10), no ar em 13/11 (PR #543). Falta: corrigir as taxas de 01/09 até a véspera da troca e a conferência do mês | Extratos de setembro e outubro de cada credenciadora, por loja, para a correção das taxas antigas | [FINANCEIRO.md](FINANCEIRO.md) |
+| No ar em 30/10 | Alarme de rotina parada: de segunda a sábado, a partir das 8h, e-mail quando uma rotina do ERP para ou volta, com quatro avisos do financeiro (pedido PJ conferido sem liberar, conta recorrente não confirmada, recebimento parado e parcela vencida). A regra no banco entrou em 28/10 (PR #533) e o envio em 30/10 (PR #538) | Nada | N/A |
+| No ar em 04/11 | Compras fase 3B: aviso quando um insumo sobe 5% ou mais na nota, com o quadro de altas no Contas a pagar (PR #540) | Revenda sem cadastro, fase 2, integrada (mesma tela de importação) | [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md) |
+| No ar em 04/11 | Formação de preço, passos 0c e 0d: indicadores e Forno lendo o peso da ficha; salário dos donos como valor fixo em reais na Configuração do Sistema (decisão de 04/11), somado às despesas fixas de todo mês (PR #541) | Respostas do Rodrigo sobre as fichas | [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md) |
 | 18/11 | Financeiro fase 4: DRE da JC e da JA, com o CMV pela contagem sem contar duas vezes, fechar o mês e exportar | Financeiro fase 3; as fontes de receita PJ e Buck (fases 2 a 4 do Contas a Receber) já estão no ar | [FINANCEIRO.md](FINANCEIRO.md) |
 | 19/11 | Sobras em reais pela ficha e consumo semanal por família | Famílias dos insumos contados aprovadas | [CATALOGO_PRODUTOS.md](CATALOGO_PRODUTOS.md) |
+| 02/12, se o desenho for aprovado | Conferência do extrato no ERP: o extrato do banco sobe uma vez por semana e cada linha é ligada ao lançamento que parece ser o mesmo; linha sem par fica "a investigar". Sem desenho aprovado a tempo, ou se atrasar, os extratos de novembro são conferidos à mão por roteiro e planilha prontos até 20/11, para o item 1 do marco não ficar descoberto | Financeiro fase 4 no ar; um extrato de amostra de cada banco; desenho e critérios de aceite escritos no FINANCEIRO.md; aval da fase | A desenhar: o [FINANCEIRO.md](FINANCEIRO.md) ainda trata a conciliação bancária como fase futura |
+| Fase 3 no ar em 04/11; fase 4 pela tela | Revenda sem cadastro, fases 3 e 4: corrigir o tipo de itens de notas já gravadas pelos Vínculos de NF-e, com prévia e memória do fornecedor (fase 3, PR #542), e arrumar pela tela a nota que motivou a frente (fase 4, sem código; faltam itens pendentes de uma nota) | Revenda sem cadastro, fase 2 | [COMPRAS_POR_XML.md](COMPRAS_POR_XML.md) |
 | 04/12 | Formação de preço fase 3: salvar a formação completa; preço sugerido × praticado por canal, com a comissão do aplicativo e o imposto calculados sobre itens e taxa de entrega, mais o custo do motoboy | Passos 0c e 0d; fichas prioritárias conferidas | [FORMACAO_DE_PRECO.md](FORMACAO_DE_PRECO.md) |
 
 ## O que depende de pessoas
@@ -164,13 +173,14 @@ ler histórico; nenhum preço ou custo ativo duplicado entre identidades.
 
 ## O que aconteceu com as fases de 21/07/2026
 
-Situação em 23/10/2026, na `main` em `7f6273f`. O detalhe e o que vier depois
-ficam em [CURRENT_STATE.md](CURRENT_STATE.md) e no código.
+Situação em 23/10/2026, na `main` em `7f6273f`, com a linha 0B revista em
+30/10/2026. O detalhe e o que vier depois ficam em
+[CURRENT_STATE.md](CURRENT_STATE.md) e no código.
 
 | Fase do roteiro antigo | Situação |
 | --- | --- |
 | 0A, estabilização | Virou rotina: trava da `main`, CI por PR, banco de teste por PR e regras em `docs/regras/` |
-| 0B, segurança Supabase e Auth | Acesso só por e-mail e senha, PIN removido, funções privilegiadas revisadas; da auditoria de julho resta fechar a exposição GraphQL, frente do marco 1 (um endpoint sem uso já foi despublicado em 24/09, PR #445); a unificação das permissões antigas fica para depois |
+| 0B, segurança Supabase e Auth | Acesso só por e-mail e senha, PIN removido, funções privilegiadas revisadas; a auditoria de julho fechou com a exposição GraphQL desligada no banco em 24/10 (PR #523), depois de o endpoint sem uso ter sido despublicado em 24/09 (PR #445); a unificação das permissões antigas fica para depois |
 | 1, compras por XML | Fases 1, 2 e 3A no ar, e os Vínculos de NF-e corrigem itens e memória do fornecedor; a fase 3B (aviso de alta) está no marco 1 |
 | 2, unidades e conversões | Conversões de compra com trava do fator, corrigidas pelos Vínculos de NF-e |
 | 3, estoque transacional | Substituída pelo inventário periódico (22/08/2026): contagem semanal pelo celular e consumo semanal da JC no ar |
