@@ -1,0 +1,157 @@
+name: Prova SEFAZ (fase 0)
+
+on:
+  workflow_dispatch:
+    inputs:
+      empresas:
+        description: Empresas da prova
+        type: choice
+        options: [ambas, rgf, sf]
+        default: ambas
+      modo:
+        description: Uma consulta por empresa, sem repeticao automatica
+        type: choice
+        options: [consNSU, distNSU]
+        default: consNSU
+      numero:
+        description: NSU da distribuicao, exatamente 15 digitos
+        type: string
+        required: true
+        default: "000000000000000"
+      adn_nsu:
+        description: NSU do ADN, de 1 a 15 digitos
+        type: string
+        required: true
+        default: "0"
+      evento_homologacao:
+        description: Testar ciencia 210210 apenas na homologacao
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sefaz-prova-fase0-producao
+  cancel-in-progress: false
+
+jobs:
+  provar:
+    name: Consultar sem gravar no ERP
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: gohluceldchoitihrimw
+      INPUT_EMPRESAS: ${{ inputs.empresas }}
+      INPUT_MODO: ${{ inputs.modo }}
+      INPUT_NUMERO: ${{ inputs.numero }}
+      INPUT_ADN_NSU: ${{ inputs.adn_nsu }}
+      INPUT_EVENTO: ${{ inputs.evento_homologacao }}
+    steps:
+      - name: Exigir versao integrada
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "A prova so pode usar a main integrada."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Validar e preparar entrada
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs'
+          import { validarEntrada } from './supabase/functions/sefaz-prova/prova.ts'
+          // INICIO ENTRADA TESTADA
+          const empresas = process.env.INPUT_EMPRESAS === 'ambas' ? ['rgf', 'sf'] : [process.env.INPUT_EMPRESAS]
+          const entrada = validarEntrada({ empresas, modo: process.env.INPUT_MODO,
+            numero: process.env.INPUT_NUMERO, adn_nsu: process.env.INPUT_ADN_NSU,
+            evento_homologacao: process.env.INPUT_EVENTO === 'true' })
+          if (!entrada || !['true', 'false'].includes(process.env.INPUT_EVENTO)) throw new Error('Entrada invalida')
+          writeFileSync(`${process.env.RUNNER_TEMP}/sefaz-entrada.json`, JSON.stringify(entrada), { mode: 0o600 })
+          // FIM ENTRADA TESTADA
+          NODE
+
+      - name: Criar senha de uso unico
+        id: token
+        run: |
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          echo "SEFAZ_PROVA_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "criado=true" >> "$GITHUB_OUTPUT"
+
+      - name: Ligar funcao para esta prova
+        run: |
+          if ! supabase secrets set SEFAZ_PROVA_TOKEN="$SEFAZ_PROVA_TOKEN" --project-ref "$PROJECT_REF" >/dev/null 2>&1; then
+            echo "Nao foi possivel configurar a senha temporaria."
+            exit 1
+          fi
+
+      - name: Esperar funcao ligada e publicar somente resumo saneado
+        run: |
+          # So 503 permite repetir: a funcao ainda nao chamou nenhuma RPC.
+          for tentativa in {1..6}; do
+            if ! code=$(curl --silent --max-time 90 --max-filesize 16777216 \
+            --output "$RUNNER_TEMP/sefaz-resposta.json" --write-out '%{http_code}' \
+            --request POST "https://$PROJECT_REF.supabase.co/functions/v1/sefaz-prova" \
+            --header "Content-Type: application/json" \
+            --header "x-sefaz-prova-token: $SEFAZ_PROVA_TOKEN" \
+            --data-binary "@$RUNNER_TEMP/sefaz-entrada.json"); then
+              echo "A chamada falhou. Nao houve repeticao automatica; aguarde antes de nova distribuicao."
+              exit 1
+            fi
+            if HTTP_CODE="$code" TENTATIVA="$tentativa" node --input-type=module <<'NODE'
+          // INICIO REPETICAO TESTADO
+          const repetir = process.env.HTTP_CODE === '503' && Number(process.env.TENTATIVA) < 6
+          process.exitCode = repetir ? 0 : 1
+          // FIM REPETICAO TESTADO
+          NODE
+            then
+              sleep 10
+            else
+              break
+            fi
+          done
+          if [[ "$code" != "200" ]]; then
+            echo "A funcao recusou a prova (HTTP $code). O corpo nao sera impresso."
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import { sanearResumo } from './supabase/functions/sefaz-prova/prova.ts'
+          let resposta
+          try { resposta = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/sefaz-resposta.json`, 'utf8')) }
+          catch { console.error('Resumo invalido. Corpo omitido.'); process.exit(1) }
+          const resumo = sanearResumo(resposta)
+          const text = JSON.stringify(resumo, null, 2)
+          console.log(text)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Prova SEFAZ, fase 0\n\n\`\`\`json\n${text}\n\`\`\`\n`)
+          // Retorno 200 tambem pode conter falha por empresa; sinalizar no job.
+          // INICIO RESULTADO TESTADO
+          const empresas = process.env.INPUT_EMPRESAS === 'ambas' ? ['rgf', 'sf'] : [process.env.INPUT_EMPRESAS]
+          const provas = ['dfe', 'adn', ...(process.env.INPUT_EVENTO === 'true' ? ['evento_homologacao'] : [])]
+          if (empresas.some(e => provas.some(p => resumo[e]?.[p]?.status !== 'ok'
+            || (p === 'dfe' && resumo[e][p].cStat !== '138')
+            || (p === 'evento_homologacao' && resumo[e][p].assinatura_e_certificado_aceitos !== true)))) process.exitCode = 1
+          // FIM RESULTADO TESTADO
+          NODE
+
+      - name: Desligar funcao apagando senha temporaria
+        if: always() && steps.token.outputs.criado == 'true'
+        run: |
+          if ! supabase secrets unset SEFAZ_PROVA_TOKEN --project-ref "$PROJECT_REF" >/dev/null 2>&1; then
+            echo "FALHA NA LIMPEZA: coordenador deve apagar SEFAZ_PROVA_TOKEN pelo painel imediatamente."
+            exit 1
+          fi
+          echo "Senha temporaria apagada. Funcao desligada."
