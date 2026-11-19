@@ -46,3 +46,6 @@ jobs:
 
       - name: Publicar função do alarme de rotina parada
         run: supabase functions deploy alarme-rotina-parada --project-ref "$PROJECT_REF" --no-verify-jwt
+
+      - name: Publicar função de prova SEFAZ
+        run: supabase functions deploy sefaz-prova --project-ref "$PROJECT_REF" --no-verify-jwt
