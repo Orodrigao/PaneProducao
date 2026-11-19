@@ -43,6 +43,13 @@ select ok(p.prosecdef and p.proowner='postgres'::regrole and 'search_path=""'=an
   'dono e search_path de '||p.oid::regprocedure)
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 where n.nspname in ('public','private') and p.proname like 'sefaz\_%' escape '\';
+select ok(coalesce('client_min_messages=warning'=any(p.proconfig),false),
+  'diagnostico da extensao silenciado em '||f.assinatura)
+from (values
+  ('private.sefaz_http_options(text,text)'::regprocedure),
+  ('private.sefaz_http_call(sefaz_http.http_request)'::regprocedure),
+  ('private.sefaz_transport(text,text,text,text)'::regprocedure)
+) f(assinatura) join pg_proc p on p.oid=f.assinatura;
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname in ('public','private') and c.relname like 'sefaz%' and c.relkind in ('r','p')),0,'nenhuma tabela SEFAZ criada');
 

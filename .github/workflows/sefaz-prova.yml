@@ -11,8 +11,8 @@ on:
       modo:
         description: Uma consulta por empresa, sem repeticao automatica
         type: choice
-        options: [distNSU, consNSU]
-        default: distNSU
+        options: [consNSU, distNSU]
+        default: consNSU
       numero:
         description: NSU da distribuicao, exatamente 15 digitos
         type: string

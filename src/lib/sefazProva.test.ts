@@ -99,6 +99,18 @@ describe('distribuicao e leitura limitada', () => {
       docs: { NFSe: 1, CompNfse: 1, ilegivel: 2 }, bytes: Buffer.byteLength('<NFSe/><CompNfse/>'),
     } } })
   })
+  it.each(['arquivoXml', 'ARQUIVO', 'conteudoXML'])('conta documento invalido pelo nome do campo %s', async campo => {
+    expect(await resumirAdn(JSON.stringify({ loteDFe: [{ [campo]: 'invalido' }] }), 200))
+      .toMatchObject({ status: 'ok', docs: { ilegivel: 1 }, bytes: 0 })
+  })
+  it('abre gzip com quebra de linha em campo desconhecido do ADN', async () => {
+    expect(await resumirAdn(JSON.stringify({ loteDFe: [{ conteudo: `\n${zip('<NFSe/>')} ` }] }), 200))
+      .toMatchObject({ status: 'ok', docs: { NFSe: 1 }, bytes: Buffer.byteLength('<NFSe/>') })
+  })
+  it('ignora metadados do ADN sem contar documentos', async () => {
+    expect(await resumirAdn(JSON.stringify({ dataHoraProcessamento: '2026-11-19T19:00:00Z' }), 200))
+      .toMatchObject({ status: 'ok', docs: {}, bytes: 0 })
+  })
   it('so aceita assinatura em lote processado e resposta de negocio reconhecida', () => {
     expect(resumirEvento(evento('128', '217')).assinatura_e_certificado_aceitos).toBe(true)
     expect(resumirEvento(evento('225', '217')).assinatura_e_certificado_aceitos).toBe(false)
@@ -160,9 +172,10 @@ describe('fronteiras e saneamento', () => {
     expect((await handler(req('GET'))).status).toBe(405)
     expect((await handler(req('POST', 'errado'))).status).toBe(401)
     expect((await handler(req('POST', 'segredo', '{}'))).status).toBe(400)
-    expect((await handler(req('POST', 'segredo', 'x'.repeat(4097)))).status).toBe(400)
+    const body = JSON.stringify(entrada)
+    expect((await handler(req('POST', 'segredo', body.padEnd(4097, ' ')))).status).toBe(400)
     expect(calls).toBe(0)
-    const response = await handler(req())
+    const response = await handler(req('POST', 'segredo', body.padEnd(4096, ' ')))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ funcao: { memoria_rss_mb: 1, heap_mb: 0.5 } })
     expect(calls).toBe(2)

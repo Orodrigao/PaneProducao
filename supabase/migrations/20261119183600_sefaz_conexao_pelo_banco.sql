@@ -384,6 +384,7 @@ $$;
 
 create function private.sefaz_http_options(p_cert text, p_key text)
 returns void language plpgsql volatile security definer set search_path = ''
+set client_min_messages = 'warning'
 as $$
 declare cert_pem text; key_pem text;
 begin
@@ -410,6 +411,7 @@ $$;
 
 create function private.sefaz_http_call(request sefaz_http.http_request)
 returns sefaz_http.http_response language plpgsql volatile security definer set search_path = ''
+set client_min_messages = 'warning'
 as $$
 declare r sefaz_http.http_response;
 begin
@@ -420,6 +422,7 @@ $$;
 
 create function private.sefaz_transport(p_empresa text, p_id text, p_modo text, p_numero text)
 returns jsonb language plpgsql volatile security definer set search_path = ''
+set client_min_messages = 'warning'
 as $$
 declare credentials text[]; meta jsonb; k numeric[]; endpoint text; body text; action_name text;
   response sefaz_http.http_response; started timestamptz := clock_timestamp(); fictitious text;

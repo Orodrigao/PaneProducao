@@ -182,14 +182,14 @@ export async function resumirAdn(body: string, http: number): Promise<Objeto> {
   try { value = JSON.parse(body) } catch { return { status: 'falhou', http, motivo: 'adn_sem_json', docs } }
   const keys = Object.keys(objeto(value))
   let nodes = 0, zipped = 0, bytes = 0
-  async function visitar(v: unknown, depth: number): Promise<void> {
+  async function visitar(v: unknown, depth: number, campo = ''): Promise<void> {
     if (++nodes > 10000 || depth > 32) throw new Error('adn_limite')
-    if (typeof v === 'string' && /^H4sI/.test(v)) {
+    if (typeof v === 'string' && (/xml|arquivo/i.test(campo) || v.trim().startsWith('H4sI'))) {
       if (++zipped > 50) throw new Error('adn_limite')
       bytes += await contarDocumento(v, docs)
       if (bytes > MAX_TOTAL) throw new Error('adn_limite')
-    } else if (Array.isArray(v)) { for (const item of v) await visitar(item, depth + 1) }
-    else if (v && typeof v === 'object') { for (const item of Object.values(v)) await visitar(item, depth + 1) }
+    } else if (Array.isArray(v)) { for (const item of v) await visitar(item, depth + 1, campo) }
+    else if (v && typeof v === 'object') { for (const [nome, item] of Object.entries(v)) await visitar(item, depth + 1, nome) }
   }
   await visitar(value, 0)
   return {

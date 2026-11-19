@@ -27,6 +27,19 @@ A extensão `http` é o componente do banco que faz a conexão. Ela mora numa
 A chave de serviço chama apenas as três consultas de prova, sem
 acesso direto a esse componente ou às funções internas desta frente.
 
+A extensão escreve o valor inteiro das opções em mensagens de diagnóstico,
+inclusive a chave privada, tanto ao configurar as opções quanto ao aplicá-las
+na requisição. As funções `private.sefaz_http_options`, `private.sefaz_http_call`
+e `private.sefaz_transport` fixam `client_min_messages = warning` para impedir
+que essas mensagens cheguem a quem chama, mesmo se a sessão pedir `debug2`.
+Isso não controla o registro do servidor. Na leitura de produção feita pelo
+coordenador em 19/11/2026, `log_min_messages = warning`, `pgaudit.log = none`,
+`pgaudit.log_parameter = off` e `auto_explain.log_nested_statements = off`:
+o registro está em `warning`, com auditoria desligada. Se a plataforma elevar
+o registro do servidor para `debug2`, a chave poderá aparecer ali. Nesse caso,
+apague os quatro segredos do Vault para impedir novas consultas e siga a
+orientação de vazamento em **Emergência e renovação**.
+
 Se a resposta indicar redirecionamento para outro endereço, a prova falha com
 o motivo `redirecionado`, sem devolver o corpo. A biblioteca pode seguir o salto
 antes dessa verificação: nesse caso, o certificado pode ser apresentado ao
@@ -105,20 +118,30 @@ os dois textos necessários ficam no Vault.
 
 ## Como o coordenador faz a prova
 
-Depois de conferir as Actions de banco e funções, o coordenador abre **Actions**,
-**Prova SEFAZ (fase 0)**, **Run workflow**, usando a branch `main`.
-Escolhe as empresas, o modo e o número da distribuição, o NSU do ADN e se quer
-ligar o teste de evento em homologação. Não existe opção de evento real.
+A SEFAZ mantém uma fila por CNPJ, compartilhada por todos os programas que
+consultam aquela empresa, como os scripts do notebook, o Dots e eventualmente
+o sistema do contador. Antes de qualquer prova de distribuição, o coordenador
+confere o uso dessa fila.
 
-`distNSU` busca a partir do último NSU informado, com exatamente 15 dígitos.
-`consNSU` consulta um NSU específico. Há uma única consulta por empresa,
-sem percorrer lotes e sem repetição automática. O ADN usa de 1 a 15 dígitos,
-sem informar outro contribuinte, pois o certificado identifica o titular.
+Use `consNSU`, opção padrão, com um NSU já conhecido, por exemplo o último da
+consulta anterior do notebook, para provar a resposta 138 sem andar na fila.
+Use `distNSU` somente com o último `ultNSU` do consumidor atual e somente se
+nenhum outro programa consultou aquele CNPJ na última hora. O coordenador
+precisa conferir essas condições antes do disparo. Nunca dispare logo depois
+de uma resposta 137 ou 656.
 
 Ao fim da fila, resposta 137, NSU final igual ao máximo ou bloqueio 656,
 aguarde pelo menos uma hora antes de consultar novamente a distribuição da
 mesma empresa. Repetir cedo pode renovar o bloqueio por mais uma hora. Se a
 chamada falhar sem resposta, não suponha que ela deixou de chegar à SEFAZ.
+
+Depois dessas conferências e de conferir as Actions de banco e funções, o
+coordenador abre **Actions**, **Prova SEFAZ (fase 0)**, **Run workflow**, usando
+a branch `main`. Escolhe as empresas, o modo e o NSU com exatamente 15 dígitos,
+o NSU do ADN e se quer ligar o teste de evento em homologação. Não existe opção
+de evento real. Há uma única consulta por empresa, sem percorrer lotes e sem
+repetição automática. O ADN usa de 1 a 15 dígitos, sem informar outro
+contribuinte, pois o certificado identifica o titular.
 
 A Action cria uma senha aleatória para aquela execução, oculta a senha nos
 registros, liga a função e a chama. Apenas se receber **503, desligada**, tenta
