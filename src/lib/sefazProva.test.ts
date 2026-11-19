@@ -55,6 +55,28 @@ describe('distribuicao e leitura limitada', () => {
     expect(summary).toMatchObject({ cStat: code, docs: {}, bytes: 0 })
     expect(summary.xMotivo).not.toContain('nao confiar')
   })
+  it('classifica nota completa pelo schema procNFe, mesmo com raiz nfeProc', async () => {
+    const xml = '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><NFe/></nfeProc>'
+    const documents = `<docZip schema="procNFe_v4.00.xsd">${zip(xml)}</docZip>`
+      + `<docZip schema="desconhecido_v1.xsd">${zip('<resNFe/>')}</docZip>`
+      + `<docZip>${zip('<resNFe/>')}</docZip>`
+    expect(await resumirDfe(dfe('138', documents))).toMatchObject({ docs: { procNFe: 1, outro: 2 } })
+  })
+  it('preserva cStat e NSUs com gzip e XML ilegíveis entre documentos validos', async () => {
+    const documents = `<docZip schema="resNFe_v1.xsd">${zip('<resNFe/>')}</docZip>`
+      + '<docZip schema="procNFe_v4.00.xsd">invalido</docZip>'
+      + `<docZip schema="procNFe_v4.00.xsd">${zip('<nfeProc>')}</docZip>`
+      + `<docZip schema="resEvento_v1.xsd">${zip('<resEvento/>')}</docZip>`
+    const raw = dfe('138', documents)
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({
+      status: 'ok', http: 200, body: name.endsWith('dfe') ? raw : name.endsWith('adn') ? '{}' : evento('128', '217'),
+    }))
+    expect(result).toMatchObject({ rgf: { dfe: { status: 'ok', cStat: '138',
+      ultNSU: '000000000001234', maxNSU: '000000000001290',
+      docs: { resNFe: 1, resEvento: 1, ilegivel: 2 }, bytes: Buffer.byteLength('<resNFe/><resEvento/>'),
+    } } })
+    expect(JSON.stringify(result)).not.toContain('prova_falhou')
+  })
   it('recusa zip, XML e expansao excessiva', async () => {
     await expect(abrirGzip('invalido')).rejects.toThrow()
     await expect(abrirGzip(zip('x'.repeat(2 * 1024 * 1024 + 1)))).rejects.toThrow()
@@ -67,6 +89,15 @@ describe('distribuicao e leitura limitada', () => {
       .toMatchObject({ status: 'ok', http: 200, docs: { NFSe: 1 }, chaves_json: ['loteDFe'], chaves_omitidas: 1 })
     expect(await resumirAdn('[]', 200)).toMatchObject({ status: 'ok', docs: {} })
     expect(await resumirAdn('erro privado', 403)).toMatchObject({ status: 'falhou', http: 403 })
+  })
+  it('conta gzip e XML ilegíveis no ADN e preserva os documentos legiveis', async () => {
+    const body = JSON.stringify({ loteDFe: [zip('<NFSe/>'), 'H4sIinvalido', zip('<NFSe>'), zip('<CompNfse/>')] })
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({
+      status: 'ok', http: 200, body: name.endsWith('adn') ? body : name.endsWith('dfe') ? dfe('137') : evento('128', '217'),
+    }))
+    expect(result).toMatchObject({ sf: { adn: { status: 'ok', http: 200, chaves_json: ['loteDFe'],
+      docs: { NFSe: 1, CompNfse: 1, ilegivel: 2 }, bytes: Buffer.byteLength('<NFSe/><CompNfse/>'),
+    } } })
   })
   it('so aceita assinatura em lote processado e resposta de negocio reconhecida', () => {
     expect(resumirEvento(evento('128', '217')).assinatura_e_certificado_aceitos).toBe(true)
@@ -136,11 +167,52 @@ describe('fronteiras e saneamento', () => {
     expect(await response.json()).toMatchObject({ funcao: { memoria_rss_mb: 1, heap_mb: 0.5 } })
     expect(calls).toBe(2)
   })
+  it('preserva as provas quando o runtime nao consegue medir memoria', async () => {
+    const handler = criarHandler({ token: () => 'segredo', memoria: () => { throw new Error('indisponivel') },
+      rpc: async name => ({ status: 'ok', http: 200,
+        body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : evento('128', '217') }),
+    })
+    const response = await handler(new Request('https://local', { method: 'POST',
+      headers: { 'x-sefaz-prova-token': 'segredo' }, body: JSON.stringify(entrada) }))
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result).toMatchObject({ rgf: { dfe: { status: 'ok', cStat: '137' } }, sf: { adn: { status: 'ok' } } })
+    expect(result.funcao.ms_total).toEqual(expect.any(Number))
+    expect(result.funcao).not.toHaveProperty('memoria_rss_mb')
+    expect(result.funcao).not.toHaveProperty('heap_mb')
+  })
+  it('preserva motivo redirecionado sem repassar corpo da RPC', async () => {
+    const result = await executarProva(validarEntrada(entrada)!, async () => ({
+      status: 'falhou', motivo: 'redirecionado', body: 'NAO PODE SAIR',
+    }))
+    expect(result).toMatchObject({ rgf: { dfe: { status: 'falhou', motivo: 'redirecionado' } } })
+    expect(JSON.stringify(result)).not.toContain('NAO PODE SAIR')
+  })
 })
 
 describe('decisoes do workflow executadas literalmente', () => {
   const workflow = readFileSync('.github/workflows/sefaz-prova.yml', 'utf8')
   const trecho = (name: string) => workflow.split(`// INICIO ${name} TESTAD`)[1].split('\n').slice(1).join('\n').split(`// FIM ${name} TESTAD`)[0]
+  it.each([
+    { codes: ['503', '503', '503', '503', '503', '503', '200'], calls: 6, waits: 5 },
+    { codes: ['503', '200'], calls: 2, waits: 1 },
+    { codes: ['401', '200'], calls: 1, waits: 0 },
+    { codes: ['500', '200'], calls: 1, waits: 0 },
+    { codes: ['200'], calls: 1, waits: 0 },
+  ])('repete somente 503, com teto de seis chamadas: $codes', ({ codes, calls, waits }) => {
+    const run = new Function('process', trecho('REPETICAO'))
+    let count = 0, pausas = 0
+    for (const code of codes) {
+      const state = { env: { HTTP_CODE: code, TENTATIVA: String(++count) }, exitCode: -1 }
+      run(state)
+      if (state.exitCode !== 0) break
+      pausas++
+    }
+    expect(count).toBe(calls)
+    expect(pausas).toBe(waits)
+    expect(workflow).toContain('for tentativa in {1..6}; do')
+    expect(workflow).toMatch(/then\s+sleep 10\s+else\s+break/)
+  })
   it('prepara somente entradas completas e validas, sem interpolacao de shell', () => {
     const run = new Function('process', 'validarEntrada', 'writeFileSync', trecho('ENTRADA'))
     const env = { INPUT_EMPRESAS: 'ambas', INPUT_MODO: 'distNSU', INPUT_NUMERO: '000000000000000', INPUT_ADN_NSU: '0', INPUT_EVENTO: 'true', RUNNER_TEMP: '/teste' }

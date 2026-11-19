@@ -1,16 +1,19 @@
 -- Fase 0: transporte fechado, sem persistencia e sem chave fora do Vault/banco.
 begin;
 
-create extension if not exists http with schema extensions;
+create schema if not exists sefaz_http authorization postgres;
+revoke all on schema sefaz_http from public, anon, authenticated, service_role;
+create extension if not exists http with schema sefaz_http;
 
--- Fechar o conjunto real da extensao, inclusive overloads e funcoes futuras
--- presentes nesta versao. Nao interferir com as outras extensoes do projeto.
+-- O schema bloqueia o acesso mesmo quando o dono da extensao concedeu EXECUTE
+-- a PUBLIC e postgres nao pode revogar essa concessao de supabase_admin.
+-- Manter tambem a revogacao por funcao, sem tocar nas outras extensoes.
 do $block$
 declare f record;
 begin
   if (select extnamespace from pg_catalog.pg_extension where extname = 'http')
-      <> 'extensions'::regnamespace then
-    raise exception 'A extensao http deve estar no schema extensions.';
+      <> 'sefaz_http'::regnamespace then
+    raise exception 'A extensao http deve estar no schema sefaz_http.';
   end if;
   for f in
     select p.oid::regprocedure as assinatura
@@ -384,25 +387,34 @@ returns void language plpgsql volatile security definer set search_path = ''
 as $$
 declare cert_pem text; key_pem text;
 begin
-  perform extensions.http_reset_curlopt();
+  perform sefaz_http.http_reset_curlopt();
   -- Extrair somente os blocos PEM; Bag Attributes/CRLF nao vao para libcurl.
   cert_pem := '-----BEGIN CERTIFICATE-----'||E'\n'||encode(private.sefaz_pem_der(p_cert,'certificado'),'base64')
     ||E'\n-----END CERTIFICATE-----\n';
   key_pem := case when position('-----BEGIN RSA PRIVATE KEY-----' in p_key)>0 then 'RSA PRIVATE KEY' else 'PRIVATE KEY' end;
   key_pem := '-----BEGIN '||key_pem||'-----'||E'\n'||encode(private.sefaz_pem_der(p_key,'chave'),'base64')
     ||E'\n-----END '||key_pem||E'-----\n';
-  if not extensions.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS','1500')
-      or not extensions.http_set_curlopt('CURLOPT_TIMEOUT_MS','4500')
-      or not extensions.http_set_curlopt('CURLOPT_FOLLOWLOCATION','0')
-      or not extensions.http_set_curlopt('CURLOPT_SSL_VERIFYPEER','1')
-      or not extensions.http_set_curlopt('CURLOPT_SSL_VERIFYHOST','2')
-      or not extensions.http_set_curlopt('CURLOPT_SSLCERT_BLOB',cert_pem)
-      or not extensions.http_set_curlopt('CURLOPT_SSLKEY_BLOB',key_pem) then
+  if not sefaz_http.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS','1500')
+      or not sefaz_http.http_set_curlopt('CURLOPT_TIMEOUT_MS','4500')
+      or not sefaz_http.http_set_curlopt('CURLOPT_SSL_VERIFYPEER','1')
+      or not sefaz_http.http_set_curlopt('CURLOPT_SSL_VERIFYHOST','2')
+      or not sefaz_http.http_set_curlopt('CURLOPT_SSLCERT_BLOB',cert_pem)
+      or not sefaz_http.http_set_curlopt('CURLOPT_SSLKEY_BLOB',key_pem) then
     raise exception 'Opcoes TLS indisponiveis.';
   end if;
 exception when others then
-  perform extensions.http_reset_curlopt();
+  perform sefaz_http.http_reset_curlopt();
   raise exception 'Nao foi possivel configurar TLS.';
+end;
+$$;
+
+create function private.sefaz_http_call(request sefaz_http.http_request)
+returns sefaz_http.http_response language plpgsql volatile security definer set search_path = ''
+as $$
+declare r sefaz_http.http_response;
+begin
+  select * into r from sefaz_http.http(request);
+  return r;
 end;
 $$;
 
@@ -410,10 +422,10 @@ create function private.sefaz_transport(p_empresa text, p_id text, p_modo text, 
 returns jsonb language plpgsql volatile security definer set search_path = ''
 as $$
 declare credentials text[]; meta jsonb; k numeric[]; endpoint text; body text; action_name text;
-  response extensions.http_response; started timestamptz := clock_timestamp(); fictitious text;
+  response sefaz_http.http_response; started timestamptz := clock_timestamp(); fictitious text;
   status_text text; etapa text := 'entrada_invalida';
 begin
-  perform extensions.http_reset_curlopt();
+  perform sefaz_http.http_reset_curlopt();
   perform private.sefaz_validate(p_empresa,p_id,p_modo,p_numero);
   endpoint := private.sefaz_endpoint(p_id);
   etapa := 'falha_cofre'; credentials := private.sefaz_credentials(p_empresa);
@@ -442,25 +454,32 @@ begin
   etapa := 'tls_indisponivel'; perform private.sefaz_http_options(credentials[1],credentials[2]);
   etapa := 'falha_transporte';
   if p_id = 'adn_producao' then
-    select * into response from extensions.http(('GET',endpoint,
-      array[extensions.http_header('Accept','application/json')],null,null)::extensions.http_request);
+    select * into response from private.sefaz_http_call(('GET',endpoint,
+      array[sefaz_http.http_header('Accept','application/json')],null,null)::sefaz_http.http_request);
   else
-    select * into response from extensions.http(('POST',endpoint,
-      array[extensions.http_header('Accept','application/soap+xml')],
-      'application/soap+xml; charset=utf-8; action="'||action_name||'"',body)::extensions.http_request);
+    select * into response from private.sefaz_http_call(('POST',endpoint,
+      array[sefaz_http.http_header('Accept','application/soap+xml')],
+      'application/soap+xml; charset=utf-8; action="'||action_name||'"',body)::sefaz_http.http_request);
   end if;
-  perform extensions.http_reset_curlopt();
+  perform sefaz_http.http_reset_curlopt();
+  -- A extensao pode seguir o salto e acumular Location nos cabecalhos.
+  if response.status between 300 and 399 or exists (
+    select 1 from unnest(response.headers) as h where lower(h.field) = 'location'
+  ) then
+    return jsonb_build_object('status','falhou','motivo','redirecionado',
+      'ms_banco',floor(extract(epoch from (clock_timestamp()-started))*1000));
+  end if;
   return jsonb_build_object('status','ok','http',response.status,'body',response.content,
     'dias_para_vencer',floor(extract(epoch from ((meta->>'not_after')::timestamptz-clock_timestamp()))/86400),
     'ms_banco',floor(extract(epoch from (clock_timestamp()-started))*1000));
 exception
   when query_canceled then
-    perform extensions.http_reset_curlopt();
+    perform sefaz_http.http_reset_curlopt();
     return jsonb_build_object('status','falhou','motivo','tempo_banco',
       'ms_banco',floor(extract(epoch from (clock_timestamp()-started))*1000));
   when others then
     status_text := case when sqlstate = 'P0404' then 'sem_certificado' else 'falhou' end;
-    perform extensions.http_reset_curlopt();
+    perform sefaz_http.http_reset_curlopt();
     -- Nunca SQLERRM: libcurl/OpenSSL podem incluir PEM ou informacao fiscal.
     return jsonb_build_object('status',status_text,'motivo',case when sqlstate = 'P0404'
       then 'certificado nao guardado' when sqlstate = 'P0422' then 'chave_cifrada' else etapa end,
@@ -482,7 +501,7 @@ as $$ select private.sefaz_transport(p_empresa,'adn_producao',null,p_nsu); $$;
 
 -- Fixar dono, configuracao e privilegios em TODAS as funcoes desta frente.
 do $block$
-declare f record;
+declare f record; papel text;
 begin
   for f in select p.oid::regprocedure as assinatura, n.nspname
     from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
@@ -492,6 +511,11 @@ begin
     execute format('alter function %s owner to postgres', f.assinatura);
     execute format('revoke all on function %s from public, anon, authenticated, service_role', f.assinatura);
     if f.nspname='public' then execute format('grant execute on function %s to service_role', f.assinatura); end if;
+  end loop;
+  foreach papel in array array['anon','authenticated','service_role'] loop
+    if pg_catalog.has_schema_privilege(papel,'sefaz_http','usage') then
+      raise exception 'Acesso indevido ao schema sefaz_http para %.', papel;
+    end if;
   end loop;
 end;
 $block$;

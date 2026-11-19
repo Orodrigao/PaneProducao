@@ -22,10 +22,16 @@ CNPJ real fica escrito no código. As únicas empresas permitidas são `rgf` e
 mensagem ou conteúdo livre para assinatura. Nesta fase, o único evento é a
 Ciência da Operação, código 210210, com nota fictícia e somente em homologação.
 
-A extensão `http` é o componente do banco que faz a conexão. Suas funções
-ficam fechadas para os usuários do ERP e para o outro sistema que compartilha
-o banco. A chave de serviço chama apenas as três consultas de prova, sem
+A extensão `http` é o componente do banco que faz a conexão. Ela mora numa
+área própria do banco, `sefaz_http`, que só as funções desta frente alcançam.
+A chave de serviço chama apenas as três consultas de prova, sem
 acesso direto a esse componente ou às funções internas desta frente.
+
+Se a resposta indicar redirecionamento para outro endereço, a prova falha com
+o motivo `redirecionado`, sem devolver o corpo. A biblioteca pode seguir o salto
+antes dessa verificação: nesse caso, o certificado pode ser apresentado ao
+destino, mas a chave privada não sai do banco e o servidor de destino precisa
+ter certificado válido.
 
 O resumo permite códigos de resposta, NSU, contagens, bytes, duração, memória
 e dias para o certificado vencer. Não mostra CNPJ, nome, chave de nota, valor,
@@ -115,7 +121,10 @@ mesma empresa. Repetir cedo pode renovar o bloqueio por mais uma hora. Se a
 chamada falhar sem resposta, não suponha que ela deixou de chegar à SEFAZ.
 
 A Action cria uma senha aleatória para aquela execução, oculta a senha nos
-registros, liga a função e a chama uma vez. O último passo apaga a senha mesmo
+registros, liga a função e a chama. Apenas se receber **503, desligada**, tenta
+novamente a cada 10 segundos, até seis tentativas no total, pois essa resposta
+acontece antes de qualquer consulta fiscal. Qualquer outro código ou falha de
+conexão encerra as tentativas. O último passo apaga a senha mesmo
 quando há erro. Sem senha configurada, a função responde **503, desligada**.
 Senha errada responde 401; método diferente de POST, 405; entrada inválida, 400.
 O retorno 200 contém o resultado de cada prova, que pode ser `ok`, `falhou`
@@ -127,6 +136,10 @@ com 138 nas distribuições, ADN lido e, quando solicitado, evento aceito na
 verificação de certificado/assinatura. Uma resposta de negócio desconhecida
 não conta como prova da assinatura. O ADN lista só nomes de campos conhecidos;
 campos novos são contados como omitidos, sem expor seu conteúdo.
+Documentos que não abrem como gzip ou XML são contados como `ilegivel`, sem
+perder os códigos de resposta, NSUs ou os demais documentos. A contagem de bytes
+inclui somente documentos abertos. Se a medição de memória estiver indisponível,
+seus campos ficam ausentes e o restante da prova é preservado.
 
 O tempo do banco inclui leitura do cofre, assinatura e conexão. Cada RPC usa
 o PostgREST, que tem limite de oito segundos; a conexão tem limite de 1,5 segundo

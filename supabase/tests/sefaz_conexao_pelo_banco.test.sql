@@ -17,12 +17,17 @@ insert into sefaz_fixture values (
   '<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento xmlns="http://www.portalfiscal.inf.br/nfe" Id="ID2102104326111122233300018155001000000001100000001601"><cOrgao>91</cOrgao><tpAmb>2</tpAmb><CNPJ>11222333000181</CNPJ><chNFe>43261111222333000181550010000000011000000016</chNFe><dhEvento>2026-11-19T16:00:00-03:00</dhEvento><tpEvento>210210</tpEvento><nSeqEvento>1</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Ciencia da Operacao</descEvento></detEvento></infEvento><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></CanonicalizationMethod><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"></SignatureMethod><Reference URI="#ID2102104326111122233300018155001000000001100000001601"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"></Transform><Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></Transform></Transforms><DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"></DigestMethod><DigestValue>pxXQ5h27FcxFm3Mw1pWEzX9U0ww=</DigestValue></Reference></SignedInfo><SignatureValue>reb10P9WIt6Y4PIxIqhgSkI2KPrGRsAAspjJsvY6pSV4/bDZuHHu1SAVq2l21R7Yiks5Z2HFX/omCO9XYvF7Vcz7CVR+kjp09rTZJjmhKVHkaglxqQUlG/fPWogVehN9NHsw+z76IzCE/ayervzBs2y7deFbm77SO5PaVYoL2F0WsV+YOK3xvS9WtND9JKVRekIL1INOVhfaPpWanf9Nt8Rk927/scZjXIFwlW26/4KhCD8b5CK+VomL0NWtVFS9qLe8E64lR+2+GvZEfXdqr5vKATIFNgJcX72zZL3EiAYtN4aw7TFb9MKBDUBHoxAKnBK5HrNCU1AHBHlrDiYV2A==</SignatureValue><KeyInfo><X509Data><X509Certificate>MIIDyTCCArGgAwIBAgIUMqPamCPppjtu/mcgUYxeDlUBaIYwDQYJKoZIhvcNAQELBQAwdDELMAkGA1UEBhMCQlIxEzARBgNVBAoMCklDUC1CcmFzaWwxGDAWBgNVBAsMD1RFU1RFIFNFTSBWQUxPUjE2MDQGA1UEAwwtRU1QUkVTQSBGSUNUSUNJQSBERSBURVNURSBMVERBOjExMjIyMzMzMDAwMTgxMB4XDTI2MTExOTE4NDA0NVoXDTM2MTExNjE4NDA0NVowdDELMAkGA1UEBhMCQlIxEzARBgNVBAoMCklDUC1CcmFzaWwxGDAWBgNVBAsMD1RFU1RFIFNFTSBWQUxPUjE2MDQGA1UEAwwtRU1QUkVTQSBGSUNUSUNJQSBERSBURVNURSBMVERBOjExMjIyMzMzMDAwMTgxMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt3DASpFFMXvTKIRcwcLOfacI0YTuNVBtDMgupBFyTBI9qRMNPFdwgUlFRA3HjZP+sy1+IeFdkyEa6RvRMrAaJudIyDhiU3qlm1LAHJ4v5GGTia/86WNd31xfZ2FcNc7EmkKJ2oIPD1NCrY5R3NA8JsrwxvfBoYm1jFBLZxQB/kt2uF5+SNJI3hvEmgxp7x2FGaVDyNBDq8PBEyYCzspiIv2pO6BGqu6/V0faddZ8YlFzZZ7RSOZPbai2gZJSQYomF8z42yqjEWCEpURLZro4E816kC+cXhc4qKkN4rTiBkWQxRix5yyZMLAU7QgSJVga9E3fkxdvO98xd5Q9Jgd67wIDAQABo1MwUTAdBgNVHQ4EFgQU9mg538r4Dv7wySb/0UjhP91fao8wHwYDVR0jBBgwFoAU9mg538r4Dv7wySb/0UjhP91fao8wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEATC4Et3zwUzdMNpvHGnWvGIai0teueE+6WhOz5y2F1Hq3Jy+zX/HBxVggigAJTT0EHzaBXYtUA0tec+G5PJi3HyLolgcQMOK1oU5ri1LcbAqXw7UEsClFGQ2G5hLBHMpxXAXz9LsqZ0HyISoAy0zNhXphh4QyIjhUtSsfx+su33B8WW5gmU+u+F4rQr7l3l0ZctXuORVFsWYkCtCNSjcYH9F0LVf3XID6ekdBkatVC/tdyi/kS6SAQeDo//UnC6CxDymgdCABY/BV8c8257iD4dzhYjdgp/L9RPWTkoggrRiA97Mucsk9+f/tq2bfL+s3lRjiPg0wj5jXCNOSSerIqA==</X509Certificate></X509Data></KeyInfo></Signature></evento>'
 );
 
-select is((select extnamespace::regnamespace::text from pg_extension where extname='http'), 'extensions', 'http em extensions');
-select ok(not has_function_privilege(r.rolname,p.oid,'execute'), r.rolname||' bloqueado em '||p.oid::regprocedure)
-from pg_proc p join pg_depend d on d.objid=p.oid and d.classid='pg_proc'::regclass and d.deptype='e'
-join pg_extension e on e.oid=d.refobjid and d.refclassid='pg_extension'::regclass
-cross join (values ('anon'),('authenticated'),('service_role')) r(rolname) where e.extname='http';
+select is((select extnamespace::regnamespace::text from pg_extension where extname='http'), 'sefaz_http', 'http em sefaz_http');
+select ok(not has_schema_privilege(r.rolname,'sefaz_http','usage'), r.rolname||' sem acesso ao schema da extensao')
+from (values ('anon'),('authenticated'),('service_role')) r(rolname);
+select throws_ok($$set local role anon; select sefaz_http.http_reset_curlopt()$$,
+  '42501','permission denied for schema sefaz_http','anon nao chama extensao');
+select throws_ok($$set local role authenticated; select sefaz_http.http_reset_curlopt()$$,
+  '42501','permission denied for schema sefaz_http','authenticated nao chama extensao');
+select throws_ok($$set local role service_role; select sefaz_http.http_reset_curlopt()$$,
+  '42501','permission denied for schema sefaz_http','service_role nao chama extensao');
 
+select ok(to_regprocedure('private.sefaz_http_call(sefaz_http.http_request)') is not null,'involucro HTTP privado existe');
 select ok(not has_function_privilege(r.rolname,p.oid,'execute'), r.rolname||' bloqueado em '||p.oid::regprocedure)
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 cross join (values ('anon'),('authenticated'),('service_role')) r(rolname)
@@ -80,44 +85,60 @@ select ok(private.sefaz_dfe_xml('11222333000181','distNSU','000000000000000') li
 select ok(private.sefaz_dfe_xml('11222333000181','consNSU','000000000000001') like '%<consNSU><NSU>000000000000001</NSU></consNSU>%','consulta monta somente consNSU');
 
 -- Provar a limpeza diretamente e pelo transporte; os stubs sao transacionais.
-select private.sefaz_http_options(cert,key8) from sefaz_fixture;
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),2,'ambos os BLOBs configurados');
-select extensions.http_reset_curlopt();
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'reset remove os BLOBs');
+select lives_ok($$select private.sefaz_http_options(cert,key8) from pg_temp.sefaz_fixture$$,'configura TLS sem abortar os testes seguintes');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),2,'ambos os BLOBs configurados');
+select lives_ok($$select sefaz_http.http_reset_curlopt()$$,'reset executa sem abortar os testes seguintes');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'reset remove os BLOBs');
 select throws_ok($$select private.sefaz_http_options(cert,'invalida') from pg_temp.sefaz_fixture$$,'P0001','Nao foi possivel configurar TLS.','erro de configuracao nao revela chave');
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de configuracao limpa BLOBs');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de configuracao limpa BLOBs');
 
 create or replace function private.sefaz_credentials(p_empresa text)
 returns text[] language sql stable security definer set search_path = ''
 as $$select array[cert,key8] from pg_temp.sefaz_fixture$$;
-create or replace function extensions.http(request extensions.http_request)
-returns extensions.http_response language plpgsql as $$
+create or replace function private.sefaz_http_call(request sefaz_http.http_request)
+returns sefaz_http.http_response language plpgsql security definer set search_path = '' as $$
 begin
-  if (select count(*) from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null) <> 2 then
+  if (select count(*) from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null) <> 2 then
     raise exception 'Stub nao recebeu os BLOBs.';
   end if;
   perform set_config('sefaz_test.uri',request.uri,true);
   perform set_config('sefaz_test.content',coalesce(request.content,''),true);
   if current_setting('sefaz_test.fail',true) = '1' then raise exception 'ERRO SENSIVEL QUE NAO PODE SAIR'; end if;
   if current_setting('sefaz_test.cancel',true) = '1' then raise exception using errcode='57014',message='cancelamento simulado'; end if;
-  return (200,'text/xml',array[]::extensions.http_header[],'<resposta/>')::extensions.http_response;
+  if current_setting('sefaz_test.redirect',true) = 'location' then
+    return (200,'text/xml',array[sefaz_http.http_header('Location','https://exemplo.com')],'CORPO QUE NAO PODE SAIR')::sefaz_http.http_response;
+  end if;
+  if current_setting('sefaz_test.redirect',true) = 'status' then
+    return (302,'text/xml',array[]::sefaz_http.http_header[],'CORPO QUE NAO PODE SAIR')::sefaz_http.http_response;
+  end if;
+  return (200,'text/xml',array[]::sefaz_http.http_header[],'<resposta/>')::sefaz_http.http_response;
 end;
 $$;
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'status','ok','RPC usa transporte com stub sem rede');
-select is(current_setting('sefaz_test.uri'),'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx','URI realmente enviada e fixa');
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'sucesso do transporte limpa BLOBs');
+select is(current_setting('sefaz_test.uri',true),'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx','URI realmente enviada e fixa');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'sucesso do transporte limpa BLOBs');
 select is(public.sefaz_prova_adn('sf','0')->>'status','ok','ADN usa transporte');
-select is(current_setting('sefaz_test.uri'),'https://adn.nfse.gov.br/contribuintes/DFe/0','ADN sem cnpjConsulta');
+select is(current_setting('sefaz_test.uri',true),'https://adn.nfse.gov.br/contribuintes/DFe/0','ADN sem cnpjConsulta');
 select is(public.sefaz_prova_evento('rgf')->>'status','ok','evento assinado chega ao transporte');
-select is(current_setting('sefaz_test.uri'),'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx','evento somente homologacao');
-select ok(current_setting('sefaz_test.content') like '%<tpAmb>2</tpAmb>%' and current_setting('sefaz_test.content') like '%<tpEvento>210210</tpEvento>%','evento fixo 210210 tpAmb 2');
+select is(current_setting('sefaz_test.uri',true),'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx','evento somente homologacao');
+select ok(current_setting('sefaz_test.content',true) like '%<tpAmb>2</tpAmb>%' and current_setting('sefaz_test.content',true) like '%<tpEvento>210210</tpEvento>%','evento fixo 210210 tpAmb 2');
+select set_config('sefaz_test.redirect','location',true);
+select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'status','falhou','Location em 200 recusa resposta');
+select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','redirecionado','Location acumulado acusa redirecionamento');
+select ok(not (public.sefaz_prova_dfe('rgf','distNSU','000000000000000') ? 'body'),'Location nunca devolve body');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'Location limpa BLOBs');
+select set_config('sefaz_test.redirect','status',true);
+select is(public.sefaz_prova_adn('sf','0')->>'motivo','redirecionado','302 sem Location tambem recusa resposta');
+select ok(not (public.sefaz_prova_adn('sf','0') ? 'body'),'302 nunca devolve body');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'302 limpa BLOBs');
+select set_config('sefaz_test.redirect','0',true);
 select set_config('sefaz_test.fail','1',true);
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','falha_transporte','erro bruto do transporte nunca retorna');
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de transporte limpa BLOBs');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de transporte limpa BLOBs');
 select set_config('sefaz_test.fail','0',true);
 select set_config('sefaz_test.cancel','1',true);
 select is(public.sefaz_prova_adn('rgf','0')->>'motivo','tempo_banco','query_canceled tambem e capturado');
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'cancelamento limpa BLOBs');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'cancelamento limpa BLOBs');
 select set_config('sefaz_test.cancel','0',true);
 select is(public.sefaz_prova_dfe('invalida','distNSU','000000000000000')->>'status','falhou','RPC rejeita entrada antes de transporte');
 
@@ -129,6 +150,6 @@ $$;
 set local role service_role;
 select is(public.sefaz_prova_dfe('sf','consNSU','000000000000001')->>'status','sem_certificado','service_role executa RPC publica');
 reset role;
-select is((select count(*)::integer from extensions.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
 select * from finish();
 rollback;

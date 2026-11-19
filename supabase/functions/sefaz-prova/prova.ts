@@ -89,7 +89,8 @@ function filho(node: NoXml | undefined, name: string): string | undefined {
 }
 const codigo = (value: unknown): string | undefined => typeof value === 'string' && /^\d{3}$/.test(value) ? value : undefined
 const nsu = (value: unknown): string | undefined => typeof value === 'string' && /^\d{15}$/.test(value) ? value : undefined
-const tiposDocumento = ['resNFe', 'procNFe', 'resEvento', 'procEventoNFe', 'NFSe', 'Nfse', 'CompNfse', 'procNFSe', 'outro']
+const tiposDfe = ['resNFe', 'procNFe', 'resEvento', 'procEventoNFe']
+const tiposDocumento = [...tiposDfe, 'NFSe', 'Nfse', 'CompNfse', 'procNFSe', 'outro', 'ilegivel']
 const motivos: Record<string, string> = {
   '138': 'Documento localizado', '137': 'Nenhum documento localizado',
   '656': 'Consumo indevido. Aguardar uma hora',
@@ -118,11 +119,20 @@ export async function abrirGzip(base64: string): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true }).decode(result)
 }
 
-function contarXml(xml: string, docs: Record<string, number>): number {
-  const tipo = local(lerXml(xml))
-  const key = tiposDocumento.includes(tipo) ? tipo : 'outro'
-  docs[key] = (docs[key] ?? 0) + 1
-  return new TextEncoder().encode(xml).byteLength
+async function contarDocumento(base64: string, docs: Record<string, number>, schema?: string): Promise<number> {
+  try {
+    const xml = await abrirGzip(base64)
+    const raiz = local(lerXml(xml))
+    // Na distribuicao, procNFe tem raiz nfeProc; o tipo vem do schema.
+    const tipo = schema === undefined ? raiz : schema.split('_')[0]
+    const permitidos = schema === undefined ? tiposDocumento : tiposDfe
+    const key = permitidos.includes(tipo) ? tipo : 'outro'
+    docs[key] = (docs[key] ?? 0) + 1
+    return new TextEncoder().encode(xml).byteLength
+  } catch {
+    docs.ilegivel = (docs.ilegivel ?? 0) + 1
+    return 0
+  }
 }
 
 export async function resumirDfe(xml: string): Promise<Objeto> {
@@ -135,7 +145,7 @@ export async function resumirDfe(xml: string): Promise<Objeto> {
   if (zips.length > 50 || (cStat === '138' && zips.length === 0) || (cStat !== '138' && zips.length)) throw new Error('dfe_invalido')
   let bytes = 0
   for (const zip of zips) {
-    bytes += contarXml(await abrirGzip(zip.texto), docs)
+    bytes += await contarDocumento(zip.texto, docs, zip.atributos.schema ?? '')
     if (bytes > MAX_TOTAL) throw new Error('documentos_limite')
   }
   return {
@@ -176,7 +186,7 @@ export async function resumirAdn(body: string, http: number): Promise<Objeto> {
     if (++nodes > 10000 || depth > 32) throw new Error('adn_limite')
     if (typeof v === 'string' && /^H4sI/.test(v)) {
       if (++zipped > 50) throw new Error('adn_limite')
-      bytes += contarXml(await abrirGzip(v), docs)
+      bytes += await contarDocumento(v, docs)
       if (bytes > MAX_TOTAL) throw new Error('adn_limite')
     } else if (Array.isArray(v)) { for (const item of v) await visitar(item, depth + 1) }
     else if (v && typeof v === 'object') { for (const item of Object.values(v)) await visitar(item, depth + 1) }
@@ -191,7 +201,7 @@ export async function resumirAdn(body: string, http: number): Promise<Objeto> {
 
 const MOTIVOS = ['certificado nao guardado', 'falha_banco_ou_transporte', 'tempo_banco',
   'entrada_invalida', 'falha_cofre', 'certificado_invalido', 'chave_invalida', 'chave_cifrada',
-  'assinatura_falhou', 'tls_indisponivel', 'falha_transporte',
+  'assinatura_falhou', 'tls_indisponivel', 'falha_transporte', 'redirecionado',
   'falha_rpc', 'resposta_invalida', 'adn_sem_json', 'http_recusado', 'prova_falhou']
 function numero(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e10 ? Math.round(value * 100) / 100 : undefined
@@ -302,8 +312,13 @@ export function criarHandler(config: {
     if (!entrada) return responder({ status: 'entrada_invalida' }, 400)
     try {
       const result = await executarProva(entrada, config.rpc)
-      const memory = config.memoria()
-      result.funcao = { memoria_rss_mb: memory.rss / 1048576, heap_mb: memory.heapUsed / 1048576, ms_total: performance.now() - start }
+      const metrics: Objeto = {}
+      try {
+        const memory = config.memoria()
+        metrics.memoria_rss_mb = memory.rss / 1048576
+        metrics.heap_mb = memory.heapUsed / 1048576
+      } catch { /* Medida opcional: runtime sem memoria nao invalida a prova. */ }
+      result.funcao = { ...metrics, ms_total: performance.now() - start }
       return responder(sanearResumo(result), 200)
     } catch { return responder({ status: 'falhou', motivo: 'prova_falhou' }, 200) }
   }

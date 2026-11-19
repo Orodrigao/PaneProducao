@@ -98,18 +98,31 @@ jobs:
             exit 1
           fi
 
-      - name: Chamar uma unica vez e publicar somente resumo saneado
+      - name: Esperar funcao ligada e publicar somente resumo saneado
         run: |
-          # Sem retry: repetir distribuicao pode bloquear o CNPJ por uma hora.
-          if ! code=$(curl --silent --max-time 90 --max-filesize 16777216 \
+          # So 503 permite repetir: a funcao ainda nao chamou nenhuma RPC.
+          for tentativa in {1..6}; do
+            if ! code=$(curl --silent --max-time 90 --max-filesize 16777216 \
             --output "$RUNNER_TEMP/sefaz-resposta.json" --write-out '%{http_code}' \
             --request POST "https://$PROJECT_REF.supabase.co/functions/v1/sefaz-prova" \
             --header "Content-Type: application/json" \
             --header "x-sefaz-prova-token: $SEFAZ_PROVA_TOKEN" \
             --data-binary "@$RUNNER_TEMP/sefaz-entrada.json"); then
-            echo "A chamada falhou. Nao houve repeticao automatica; aguarde antes de nova distribuicao."
-            exit 1
-          fi
+              echo "A chamada falhou. Nao houve repeticao automatica; aguarde antes de nova distribuicao."
+              exit 1
+            fi
+            if HTTP_CODE="$code" TENTATIVA="$tentativa" node --input-type=module <<'NODE'
+          // INICIO REPETICAO TESTADO
+          const repetir = process.env.HTTP_CODE === '503' && Number(process.env.TENTATIVA) < 6
+          process.exitCode = repetir ? 0 : 1
+          // FIM REPETICAO TESTADO
+          NODE
+            then
+              sleep 10
+            else
+              break
+            fi
+          done
           if [[ "$code" != "200" ]]; then
             echo "A funcao recusou a prova (HTTP $code). O corpo nao sera impresso."
             exit 1
