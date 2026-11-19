@@ -200,7 +200,7 @@ export async function resumirAdn(body: string, http: number): Promise<Objeto> {
 }
 
 const MOTIVOS = ['certificado nao guardado', 'falha_banco_ou_transporte', 'tempo_banco',
-  'entrada_invalida', 'falha_cofre', 'certificado_invalido', 'chave_invalida', 'chave_cifrada',
+  'entrada_invalida', 'registro_inseguro', 'falha_cofre', 'certificado_invalido', 'chave_invalida', 'chave_cifrada',
   'assinatura_falhou', 'tls_indisponivel', 'falha_transporte', 'redirecionado',
   'falha_rpc', 'resposta_invalida', 'adn_sem_json', 'http_recusado', 'prova_falhou']
 function numero(value: unknown): number | undefined {

@@ -420,6 +420,16 @@ begin
 end;
 $$;
 
+create function private.sefaz_registro_seguro()
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select coalesce(lower(current_setting('log_min_messages',true))
+      not in ('debug5','debug4','debug3','debug2','debug1'),false)
+    and coalesce(lower(current_setting('pgaudit.log_parameter',true)),'off') <> 'on'
+    and coalesce(lower(current_setting('pgaudit.log',true)),'') in ('','none')
+    and coalesce(lower(current_setting('auto_explain.log_nested_statements',true)),'off') <> 'on';
+$$;
+
 create function private.sefaz_transport(p_empresa text, p_id text, p_modo text, p_numero text)
 returns jsonb language plpgsql volatile security definer set search_path = ''
 set client_min_messages = 'warning'
@@ -430,6 +440,10 @@ declare credentials text[]; meta jsonb; k numeric[]; endpoint text; body text; a
 begin
   perform sefaz_http.http_reset_curlopt();
   perform private.sefaz_validate(p_empresa,p_id,p_modo,p_numero);
+  if private.sefaz_registro_seguro() is not true then
+    return jsonb_build_object('status','falhou','motivo','registro_inseguro',
+      'ms_banco',floor(extract(epoch from (clock_timestamp()-started))*1000));
+  end if;
   endpoint := private.sefaz_endpoint(p_id);
   etapa := 'falha_cofre'; credentials := private.sefaz_credentials(p_empresa);
   etapa := 'certificado_invalido'; meta := private.sefaz_certificate(credentials[1]);

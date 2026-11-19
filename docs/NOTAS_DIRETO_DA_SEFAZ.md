@@ -35,10 +35,13 @@ que essas mensagens cheguem a quem chama, mesmo se a sessão pedir `debug2`.
 Isso não controla o registro do servidor. Na leitura de produção feita pelo
 coordenador em 19/11/2026, `log_min_messages = warning`, `pgaudit.log = none`,
 `pgaudit.log_parameter = off` e `auto_explain.log_nested_statements = off`:
-o registro está em `warning`, com auditoria desligada. Se a plataforma elevar
-o registro do servidor para `debug2`, a chave poderá aparecer ali. Nesse caso,
-apague os quatro segredos do Vault para impedir novas consultas e siga a
-orientação de vazamento em **Emergência e renovação**.
+o registro está em `warning`, com auditoria desligada. A cada chamada, além da
+conferência do coordenador antes e depois da prova, o banco recusa sozinho
+com o motivo `registro_inseguro` quando o registro ou a auditoria estão num
+nível que gravaria a chave. Essa recusa acontece antes de ler o cofre ou
+configurar a conexão segura. A trava exige `log_min_messages` presente e fora
+de `debug1` a `debug5`, `pgaudit.log` ausente, vazio ou `none`, e as opções
+`pgaudit.log_parameter` e `auto_explain.log_nested_statements` diferentes de `on`.
 
 Se a resposta indicar redirecionamento para outro endereço, a prova falha com
 o motivo `redirecionado`, sem devolver o corpo. A biblioteca pode seguir o salto

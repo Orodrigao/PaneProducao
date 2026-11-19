@@ -201,6 +201,14 @@ describe('fronteiras e saneamento', () => {
     expect(result).toMatchObject({ rgf: { dfe: { status: 'falhou', motivo: 'redirecionado' } } })
     expect(JSON.stringify(result)).not.toContain('NAO PODE SAIR')
   })
+  it('preserva registro_inseguro no saneamento sem repassar corpo da RPC', async () => {
+    const result = await executarProva(validarEntrada(entrada)!, async () => ({
+      status: 'falhou', motivo: 'registro_inseguro', body: 'NAO PODE SAIR',
+    }))
+    expect(result).toMatchObject({ rgf: { dfe: { status: 'falhou', motivo: 'registro_inseguro' } } })
+    expect(sanearResumo(result)).toMatchObject({ sf: { adn: { status: 'falhou', motivo: 'registro_inseguro' } } })
+    expect(JSON.stringify(result)).not.toContain('NAO PODE SAIR')
+  })
 })
 
 describe('decisoes do workflow executadas literalmente', () => {

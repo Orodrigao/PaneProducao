@@ -28,6 +28,7 @@ select throws_ok($$set local role service_role; select sefaz_http.http_reset_cur
   '42501','permission denied for schema sefaz_http','service_role nao chama extensao');
 
 select ok(to_regprocedure('private.sefaz_http_call(sefaz_http.http_request)') is not null,'involucro HTTP privado existe');
+select is(private.sefaz_registro_seguro(),true,'registro e auditoria seguros no banco de teste');
 select ok(not has_function_privilege(r.rolname,p.oid,'execute'), r.rolname||' bloqueado em '||p.oid::regprocedure)
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 cross join (values ('anon'),('authenticated'),('service_role')) r(rolname)
@@ -158,5 +159,22 @@ set local role service_role;
 select is(public.sefaz_prova_dfe('sf','consNSU','000000000000001')->>'status','sem_certificado','service_role executa RPC publica');
 reset role;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
+
+-- Ultimo cenario: as substituicoes sao desfeitas no rollback final, sem rede.
+create or replace function private.sefaz_registro_seguro()
+returns boolean language sql stable security definer set search_path = ''
+as $$select false$$;
+create or replace function private.sefaz_credentials(p_empresa text)
+returns text[] language plpgsql volatile security definer set search_path = '' as $$
+begin
+  perform set_config('sefaz_test.credentials','chamado',true);
+  return (select array[cert,key8] from pg_temp.sefaz_fixture);
+end;
+$$;
+select set_config('sefaz_test.credentials','',true);
+select is(public.sefaz_prova_dfe('rgf','consNSU','000000000000001') - 'ms_banco',
+  '{"status":"falhou","motivo":"registro_inseguro"}'::jsonb,'RPC recusa registro inseguro sem corpo');
+select is(current_setting('sefaz_test.credentials',true),'','registro inseguro nao le credenciais');
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'registro inseguro deixa TLS vazio');
 select * from finish();
 rollback;
