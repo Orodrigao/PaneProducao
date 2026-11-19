@@ -123,12 +123,21 @@ consultam aquela empresa, como os scripts do notebook, o Dots e eventualmente
 o sistema do contador. Antes de qualquer prova de distribuição, o coordenador
 confere o uso dessa fila.
 
-Use `consNSU`, opção padrão, com um NSU já conhecido, por exemplo o último da
-consulta anterior do notebook, para provar a resposta 138 sem andar na fila.
-Use `distNSU` somente com o último `ultNSU` do consumidor atual e somente se
-nenhum outro programa consultou aquele CNPJ na última hora. O coordenador
-precisa conferir essas condições antes do disparo. Nunca dispare logo depois
-de uma resposta 137 ou 656.
+Na fase 0, a prova de produção usa só `consNSU`, opção padrão, com um NSU já
+conhecido, por exemplo o último da consulta anterior do notebook: ela prova a
+resposta 138 sem andar na fila. Uma hora sem consultas não garante que outro
+programa continue parado; se a prova avançar a fila, ele pode voltar com o
+número antigo e receber 656. Por isso `distNSU` em produção só vale para um
+CNPJ sem nenhum outro consumidor ativo, o que só acontece quando a fase 1
+aposentar os scripts do notebook. O coordenador confere isso antes do disparo.
+Nunca dispare logo depois de uma resposta 137 ou 656.
+
+Antes de cada prova, o coordenador lê em produção, só leitura, que
+`log_min_messages` continua em `warning` ou acima e que `pgaudit.log` continua
+em `none`; se não estiver, a prova não roda. Depois da prova, ele procura no
+registro do banco por `pgsql-http`: o resultado precisa ser zero linhas. Se
+aparecer qualquer linha, apague os quatro segredos do Vault e siga
+**Emergência e renovação**.
 
 Ao fim da fila, resposta 137, NSU final igual ao máximo ou bloqueio 656,
 aguarde pelo menos uma hora antes de consultar novamente a distribuição da
