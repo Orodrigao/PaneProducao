@@ -215,6 +215,10 @@ function sanearProva(value: unknown): Objeto {
   if (MOTIVOS.includes(String(o.motivo))) out.motivo = o.motivo
   if (typeof o.erro === 'string' && TIPOS_DE_FALHA.includes(o.erro)) out.erro = o.erro
   if (typeof o.codigo === 'string' && o.codigo.length === 5 && /^[0-9A-Z]{5}$/.test(o.codigo)) out.codigo = o.codigo
+  if (typeof o.erro_texto === 'string' && o.erro_texto.length <= 200
+    && !/[^ -~]|[A-Za-z0-9+/=]{20,}|[0-9]{11,}|-----|begin|private/i.test(o.erro_texto)) {
+    out.erro_texto = o.erro_texto
+  }
   for (const k of ['http', 'bytes', 'ms_banco', 'ms_total', 'dias_para_vencer', 'chaves_omitidas']) {
     const n = numero(o[k]); if (n !== undefined) out[k] = n
   }

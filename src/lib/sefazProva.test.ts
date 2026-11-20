@@ -119,6 +119,30 @@ describe('distribuicao e leitura limitada', () => {
 })
 
 describe('fronteiras e saneamento', () => {
+  it.each([
+    "Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn't connect to server",
+    'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure',
+    'Recv failure: Connection reset by peer',
+    '[omitido]', 'Certificado [...] numero [n]', 'x '.repeat(100),
+    'A'.repeat(19), '1234567890', ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~',
+  ])('preserva texto de falha seguro: %s', erro_texto => {
+    expect(sanearResumo({ rgf: { dfe: { status: 'falhou', erro_texto } } }))
+      .toEqual({ rgf: { dfe: { status: 'falhou', erro_texto } }, funcao: {} })
+  })
+  it.each([
+    ['tamanho', 'x '.repeat(100) + 'x'],
+    ['controle', 'Recv\nfailure'], ['tabulacao', 'Recv\tfailure'],
+    ['DEL', 'Recv\x7ffailure'], ['nao ASCII', 'conexão encerrada'],
+    ['base64', 'Certificado ' + 'Ab9+/='.repeat(11) + ' invalido'],
+    ['base64 no limite', 'A'.repeat(20)],
+    ['numero longo', 'CNPJ 11222333000181 invalido'], ['numero no limite', '12345678901'],
+    ['PEM', '-----BEGIN PRIVATE KEY-----'], ['delimitador', 'falha ----- fim'],
+    ['begin', 'falha BeGiN fim'], ['private', 'falha PrIvAtE fim'],
+    ['nulo', null], ['numero', 42], ['objeto', { toString: () => 'seguro' }],
+  ])('descarta o campo inteiro de texto proibido: %s', (_caso, erro_texto) => {
+    expect(sanearResumo({ rgf: { dfe: { status: 'falhou', erro_texto } } }))
+      .toEqual({ rgf: { dfe: { status: 'falhou' } }, funcao: {} })
+  })
   it.each(['dns', 'tempo_esgotado', 'conexao_recusada', 'certificado_local',
     'certificado_servidor', 'renegociacao', 'conexao_encerrada', 'handshake_tls',
     'opcao_curl', 'cancelado', 'permissao', 'outro'])('preserva somente tipo conhecido: %s', erro => {
@@ -134,11 +158,12 @@ describe('fronteiras e saneamento', () => {
     expect(sanearResumo({ rgf: { dfe: { status: 'falhou', erro, codigo } } }))
       .toEqual({ rgf: { dfe: { status: 'falhou' } }, funcao: {} })
   })
-  it('leva tipo e codigo da falha RPC ate a resposta saneada do handler', async () => {
+  it('leva tipo, codigo e texto mascarado da falha RPC ate a resposta saneada do handler', async () => {
+    const erro_texto = 'Recv failure: Connection reset by peer; [...] [n]'
     const handler = criarHandler({
       token: () => 'segredo', memoria: () => ({ rss: 0, heapUsed: 0 }),
       rpc: async () => ({ status: 'falhou', motivo: 'falha_transporte',
-        erro: 'conexao_recusada', codigo: 'XX000', body: 'PEM SENSIVEL' }),
+        erro: 'conexao_recusada', codigo: 'XX000', erro_texto, body: 'PEM SENSIVEL' }),
     })
     const response = await handler(new Request('https://local', {
       method: 'POST', headers: { 'x-sefaz-prova-token': 'segredo' }, body: JSON.stringify(entrada),
@@ -148,7 +173,7 @@ describe('fronteiras e saneamento', () => {
     for (const empresa of ['rgf', 'sf']) {
       for (const prova of ['dfe', 'adn', 'evento_homologacao']) {
         expect(result[empresa][prova]).toEqual({ status: 'falhou', motivo: 'falha_transporte',
-          erro: 'conexao_recusada', codigo: 'XX000' })
+          erro: 'conexao_recusada', codigo: 'XX000', erro_texto })
       }
     }
     expect(JSON.stringify(result)).not.toMatch(/PEM|SENSIVEL/)
