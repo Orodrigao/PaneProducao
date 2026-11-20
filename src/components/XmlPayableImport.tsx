@@ -105,6 +105,7 @@ interface XmlPayableImportProps {
   products: PayableProduct[]
   /** Importação salva pela metade para retomar; a nota é relida do XML guardado. */
   initialDraft?: XmlImportDraftContent | null
+  initialXmlText?: string | null
   onSaved: () => Promise<void> | void
   onCancel: () => void
 }
@@ -219,7 +220,7 @@ function lostLinesMessage(lines: readonly number[]): string {
     : `Os itens-base das linhas ${list} saíram do catálogo desde que a importação foi salva. Classifique essas linhas de novo.`
 }
 
-export default function XmlPayableImport({ suppliers, products, initialDraft = null, onSaved, onCancel }: XmlPayableImportProps) {
+export default function XmlPayableImport({ suppliers, products, initialDraft = null, initialXmlText = null, onSaved, onCancel }: XmlPayableImportProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const requestIdRef = useRef(crypto.randomUUID())
   const mappingSnapshotRef = useRef<{ supplierId: string; fingerprint: string } | null>(null)
@@ -323,10 +324,25 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   }, [])
 
   async function readFile(file: File) {
+    try { await readXmlText(await file.text()) }
+    catch (readError) { setDraft(null); setDuplicateNfe(false); setError(getPayableErrorMessage(readError, 'Não foi possível ler o XML.')) }
+  }
+
+  // A caixa abre a mesma leitura de arquivo, uma única vez por montagem.
+  const initialXmlRead = useRef(false)
+  const readInitialXml = useRef(() => {
+    if (initialXmlText && !initialDraft) void readXmlText(initialXmlText)
+  })
+  useEffect(() => {
+    if (initialXmlRead.current) return
+    initialXmlRead.current = true
+    readInitialXml.current()
+  }, [])
+
+  async function readXmlText(text: string) {
     setError(null)
     setDuplicateNfe(false)
     try {
-      const text = await file.text()
       const nextDraft = parseNfeXml(text)
       const { supabase } = await import('@/lib/supabase')
       const { data: existingPurchase, error: duplicateError } = await supabase

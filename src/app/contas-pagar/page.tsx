@@ -10,6 +10,9 @@ import PayableSupplierStatus from '@/components/PayableSupplierStatus'
 import PurchaseCostChangePanel from '@/components/PurchaseCostChangePanel'
 import XmlPayableImport, { type XmlSupplierOption } from '@/components/XmlPayableImport'
 import XmlImportDraftList from '@/components/XmlImportDraftList'
+import NfeInboxPanel from '@/components/NfeInboxPanel'
+import { getCurrentUserAsync } from '@/lib/auth'
+import { canUseNfeInbox, loadNfeInboxXml, type NfeInboxRow } from '@/lib/nfeInbox'
 import { supabase } from '@/lib/supabase'
 import {
   discardXmlImportDraft,
@@ -83,6 +86,14 @@ export default function ContasPagarPage() {
   // Retomar reaplica decisões sobre fornecedores e produtos: só com os dois
   // carregados com sucesso nesta visita. Terminar com erro não conta.
   const [catalogsReady, setCatalogsReady] = useState(false)
+  const [inboxAllowed, setInboxAllowed] = useState(false)
+  const [inboxXml, setInboxXml] = useState<{ id: string; text: string } | null>(null)
+  useEffect(() => {
+    let active = true
+    void getCurrentUserAsync().then(user => { if (active) setInboxAllowed(canUseNfeInbox(user)) })
+      .catch(() => { if (active) setInboxAllowed(false) })
+    return () => { active = false }
+  }, [])
 
   const loadImportDrafts = useCallback(async () => {
     try {
@@ -220,6 +231,20 @@ export default function ContasPagarPage() {
     await load()
   }
 
+  async function reviewInboxNote(row: NfeInboxRow) {
+    if (!catalogsReady) { showToast('Os cadastros de fornecedores e insumos ainda não carregaram. Atualize a página antes de continuar a conferência.'); return }
+    setBusyId(row.id)
+    try {
+      const text = await loadNfeInboxXml(row.id)
+      setResumeDraft(null)
+      setInboxXml({ id: row.id, text })
+      setShowForm(false)
+      setShowXmlImport(true)
+    } catch (loadError) {
+      showToast(getPayableErrorMessage(loadError, 'Não foi possível abrir o XML desta nota.'))
+    } finally { setBusyId(null) }
+  }
+
   async function resumeImportDraft(draft: XmlImportDraftRow) {
     // A retomada reaplica decisões sobre o catálogo e o cadastro de
     // fornecedores; antes de eles chegarem, itens ativos pareceriam sumidos.
@@ -227,6 +252,7 @@ export default function ContasPagarPage() {
     setBusyId(draft.id)
     try {
       setResumeDraft(await loadXmlImportDraft(draft.id))
+      setInboxXml(null)
       setShowForm(false)
       setShowXmlImport(true)
     } catch (loadError) {
@@ -259,6 +285,7 @@ export default function ContasPagarPage() {
   function closeXmlImport() {
     setShowXmlImport(false)
     setResumeDraft(null)
+    setInboxXml(null)
   }
 
   async function handleCancel(purchaseId: string) {
@@ -316,10 +343,11 @@ export default function ContasPagarPage() {
             />
           ) : showXmlImport ? (
             <XmlPayableImport
-              key={resumeDraft?.id ?? 'nova-importacao'}
+              key={inboxXml ? 'caixa-' + inboxXml.id : resumeDraft?.id ?? 'nova-importacao'}
               suppliers={suppliers}
               products={products}
               initialDraft={resumeDraft}
+              initialXmlText={inboxXml?.text}
               onCancel={closeXmlImport}
               onSaved={async () => { closeXmlImport(); await load() }}
             />
@@ -330,6 +358,7 @@ export default function ContasPagarPage() {
                 <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
                 <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
               </div>
+              {inboxAllowed && <NfeInboxPanel refreshKey={purchases} busyId={busyId} onReview={reviewInboxNote} />}
               {importDraftsError && (
                 <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
                   <b>Importações pendentes não carregaram</b>
