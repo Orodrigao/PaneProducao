@@ -176,6 +176,24 @@ perder os códigos de resposta, NSUs ou os demais documentos. A contagem de byte
 inclui somente documentos abertos. Se a medição de memória estiver indisponível,
 seus campos ficam ausentes e o restante da prova é preservado.
 
+Se o motivo for `falha_transporte`, o campo `erro` indica o tipo da falha:
+
+- `dns`: não conseguiu localizar o endereço do serviço.
+- `tempo_esgotado`: o serviço não respondeu dentro do prazo.
+- `conexao_recusada`: não conseguiu abrir a conexão com o serviço.
+- `certificado_local`: não conseguiu usar o certificado ou a chave da empresa.
+- `certificado_servidor`: não conseguiu validar o certificado do serviço.
+- `renegociacao`: falhou a segunda negociação de segurança da conexão.
+- `conexao_encerrada`: a conexão caiu durante a troca de dados.
+- `handshake_tls`: falhou a negociação inicial de segurança.
+- `opcao_curl`: uma opção da biblioteca de conexão não foi aceita.
+- `cancelado`: a requisição foi cancelada.
+- `permissao`: uma permissão impediu a chamada.
+- `outro`: a falha não corresponde aos tipos conhecidos.
+
+O banco nunca mostra o texto do erro, só o tipo. O campo `codigo`, quando
+presente, contém o código de cinco caracteres do erro do banco.
+
 O tempo do banco inclui leitura do cofre, assinatura e conexão. Cada RPC usa
 o PostgREST, que tem limite de oito segundos; a conexão tem limite de 1,5 segundo
 e a libcurl, 4,5 segundos para a resposta. A função mede também descompactação

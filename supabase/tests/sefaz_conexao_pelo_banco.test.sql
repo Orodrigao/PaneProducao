@@ -3,6 +3,71 @@
 begin;
 set local search_path = public, extensions, pg_temp;
 select no_plan();
+
+-- Exemplos reais de libcurl/OpenSSL e limites do classificador, sem rede.
+select is(private.sefaz_tipo_de_falha(mensagem),esperado,'tipo fixo: '||caso::text)
+from (values
+  (1,'Could not resolve host: www1.nfe.fazenda.gov.br','dns'),
+  (2,'Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server','conexao_recusada'),
+  (3,'Connection timed out after 1501 milliseconds','tempo_esgotado'),
+  (4,'Operation timed out after 4500 milliseconds with 0 bytes received','tempo_esgotado'),
+  (5,'could not load PEM client certificate from PEM BLOB, OpenSSL error error:0480006C:PEM routines::no start line, (no key found, wrong pass phrase, or wrong file format?)','certificado_local'),
+  (6,'unable to set private key file: ''...'' type PEM','certificado_local'),
+  (7,'SSL certificate problem: unable to get local issuer certificate','certificado_servidor'),
+  (8,'OpenSSL SSL_connect: Connection reset by peer in connection to hom1.nfe.fazenda.gov.br:443','conexao_encerrada'),
+  (9,'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure','handshake_tls'),
+  (10,'Recv failure: Connection reset by peer','conexao_encerrada'),
+  (11,'curl option ''X'' is not available for run-time configuration','opcao_curl'),
+  (12,'','outro'),
+  (13,null,'outro'),
+  (14,'ERRO SENSIVEL QUE NAO PODE SAIR','outro'),
+  (15,'couldn''t resolve','dns'),
+  (16,'resolve host','dns'),
+  (17,'timeout','tempo_esgotado'),
+  (18,'couldn''t connect','conexao_recusada'),
+  (19,'connection refused','conexao_recusada'),
+  (20,'network is unreachable','conexao_recusada'),
+  (21,'no route to host','conexao_recusada'),
+  (22,'local ssl certificate','certificado_local'),
+  (23,'private key','certificado_local'),
+  (24,'unable to use client','certificado_local'),
+  (25,'unable to set','certificado_local'),
+  (26,'pem blob','certificado_local'),
+  (27,'could not load pem','certificado_local'),
+  (28,'key values mismatch','certificado_local'),
+  (29,'peer certificate','certificado_servidor'),
+  (30,'unable to get local issuer','certificado_servidor'),
+  (31,'certificate verify failed','certificado_servidor'),
+  (32,'self-signed','certificado_servidor'),
+  (33,'self signed','certificado_servidor'),
+  (34,'certificate has expired','certificado_servidor'),
+  (35,'renegotiation','renegociacao'),
+  (36,'failure when receiving','conexao_encerrada'),
+  (37,'send failure','conexao_encerrada'),
+  (38,'failure when sending','conexao_encerrada'),
+  (39,'empty reply','conexao_encerrada'),
+  (40,'unexpected eof','conexao_encerrada'),
+  (41,'connection died','conexao_encerrada'),
+  (42,'ssl connect error','handshake_tls'),
+  (43,'ssl_connect','handshake_tls'),
+  (44,'handshake','handshake_tls'),
+  (45,'alert','handshake_tls'),
+  (46,'wrong version number','handshake_tls'),
+  (47,'unsupported protocol','handshake_tls'),
+  (48,'no protocols available','handshake_tls'),
+  (49,'cipher','handshake_tls'),
+  (50,'invalid curlopt','opcao_curl'),
+  (51,'unknown option','opcao_curl'),
+  (52,'not available for run-time','opcao_curl'),
+  (53,'request cancelled','cancelado'),
+  (54,'permission denied','permissao'),
+  (55,'could not resolve host timed out','dns'),
+  (56,'failed to connect: timed out','tempo_esgotado'),
+  (57,'renegotiation handshake failure','renegociacao'),
+  (58,'sslXconnect','outro')
+) exemplos(caso,mensagem,esperado);
+select is((select provolatile::text from pg_proc
+  where oid='private.sefaz_tipo_de_falha(text)'::regprocedure),'i','classificador imutavel existe e entra nos lacos de seguranca');
 create temporary table sefaz_fixture(cert text, key8 text, key1 text, chave text, at_time timestamptz,
   info text, si text, signature text, digest text, evento text);
 insert into sefaz_fixture values (
@@ -111,7 +176,9 @@ begin
   end if;
   perform set_config('sefaz_test.uri',request.uri,true);
   perform set_config('sefaz_test.content',coalesce(request.content,''),true);
-  if current_setting('sefaz_test.fail',true) = '1' then raise exception 'ERRO SENSIVEL QUE NAO PODE SAIR'; end if;
+  if current_setting('sefaz_test.fail',true) = '1' then
+    raise exception using message=coalesce(nullif(current_setting('sefaz_test.fail_msg',true),''),'ERRO SENSIVEL QUE NAO PODE SAIR');
+  end if;
   if current_setting('sefaz_test.cancel',true) = '1' then raise exception using errcode='57014',message='cancelamento simulado'; end if;
   if current_setting('sefaz_test.redirect',true) = 'location' then
     return (200,'text/xml',array[sefaz_http.http_header('Location','https://exemplo.com')],'CORPO QUE NAO PODE SAIR')::sefaz_http.http_response;
@@ -143,6 +210,30 @@ select set_config('sefaz_test.redirect','0',true);
 select set_config('sefaz_test.fail','1',true);
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','falha_transporte','erro bruto do transporte nunca retorna');
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de transporte limpa BLOBs');
+-- Cada resposta e capturada uma vez para conferir o JSON inteiro, sem texto bruto.
+create temporary table sefaz_falhas_rpc(mensagem text, esperado text, fragmento text, resultado jsonb);
+insert into sefaz_falhas_rpc(mensagem,esperado,fragmento) values
+  ('Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server','conexao_recusada','adn.nfse.gov.br'),
+  ('could not load PEM client certificate from PEM BLOB, OpenSSL error error:0480006C:PEM routines::no start line','certificado_local','PEM routines'),
+  ('ERRO SENSIVEL QUE NAO PODE SAIR','outro','SENSIVEL');
+do $block$
+declare caso record;
+begin
+  for caso in select mensagem from pg_temp.sefaz_falhas_rpc loop
+    perform set_config('sefaz_test.fail_msg',caso.mensagem,true);
+    update pg_temp.sefaz_falhas_rpc
+      set resultado=public.sefaz_prova_dfe('rgf','distNSU','000000000000000')
+      where mensagem=caso.mensagem;
+  end loop;
+end;
+$block$;
+select is(resultado->>'status','falhou','RPC falha sem texto: '||esperado) from sefaz_falhas_rpc;
+select is(resultado->>'motivo','falha_transporte','RPC identifica etapa: '||esperado) from sefaz_falhas_rpc;
+select is(resultado->>'erro',esperado,'RPC classifica: '||esperado) from sefaz_falhas_rpc;
+select matches(resultado->>'codigo','^[0-9A-Z]{5}$','RPC devolve codigo fechado: '||esperado) from sefaz_falhas_rpc;
+select ok(position(mensagem in resultado::text)=0 and position(fragmento in resultado::text)=0,
+  'JSON inteiro nao contem mensagem nem fragmento: '||esperado) from sefaz_falhas_rpc;
+select set_config('sefaz_test.fail_msg','',true);
 select set_config('sefaz_test.fail','0',true);
 select set_config('sefaz_test.cancel','1',true);
 select is(public.sefaz_prova_adn('rgf','0')->>'motivo','tempo_banco','query_canceled tambem e capturado');
@@ -160,6 +251,16 @@ select is(public.sefaz_prova_dfe('sf','consNSU','000000000000001')->>'status','s
 reset role;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
 
+select ok(not (public.sefaz_prova_dfe('sf','consNSU','000000000000001') ? 'erro'),'cofre vazio nao acrescenta erro');
+
+-- Credencial cifrada passa pela RPC sem acrescentar diagnostico de transporte.
+create or replace function private.sefaz_credentials(p_empresa text)
+returns text[] language sql stable security definer set search_path = ''
+as $$select array[cert,'-----BEGIN ENCRYPTED PRIVATE KEY-----'] from pg_temp.sefaz_fixture$$;
+select is(public.sefaz_prova_dfe('rgf','consNSU','000000000000001')->>'motivo','chave_cifrada','RPC identifica chave cifrada');
+select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ? 'erro'),'chave cifrada nao acrescenta erro');
+
+
 -- Ultimo cenario: as substituicoes sao desfeitas no rollback final, sem rede.
 create or replace function private.sefaz_registro_seguro()
 returns boolean language sql stable security definer set search_path = ''
@@ -174,6 +275,7 @@ $$;
 select set_config('sefaz_test.credentials','',true);
 select is(public.sefaz_prova_dfe('rgf','consNSU','000000000000001') - 'ms_banco',
   '{"status":"falhou","motivo":"registro_inseguro"}'::jsonb,'RPC recusa registro inseguro sem corpo');
+select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ? 'erro'),'registro inseguro nao acrescenta erro');
 select is(current_setting('sefaz_test.credentials',true),'','registro inseguro nao le credenciais');
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'registro inseguro deixa TLS vazio');
 select * from finish();
