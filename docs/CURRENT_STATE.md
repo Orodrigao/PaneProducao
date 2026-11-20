@@ -1,7 +1,7 @@
 # Estado atual — Pane&Salute ERP
 
 **Data de referência:** 2026-09-23, data da última revisão completa; a
-atualização parcial mais recente é de 2026-11-13, sobre `5fb5a35`.
+atualização parcial mais recente é de 2026-11-20, sobre `1e875ee`.
 
 **Base observada:** `origin/main` em `ed66c21`. A revisão de 11/09/2026 cobriu
 a virada da jornada PJ; a atualização de 23/09/2026 incorporou as entregas até
@@ -11,7 +11,8 @@ regras em `docs/regras/`; a de 28/09/2026, o `CI Banco` na trava; a de
 fechamento da exposição GraphQL; a de 30/10/2026, sobre `0f1215e` e leitura de
 produção, a fase do projeto, a exposição GraphQL fechada em produção, as vendas
 do balcão e a cobrança da Buck; a de 13/11/2026, as entregas dos PRs #535 e
-#538 a #543 em "Capacidades já presentes". As demais seções conservam suas
+#538 a #543 em "Capacidades já presentes"; a de 20/11/2026, a caixa de notas
+recebidas na mesma seção. As demais seções conservam suas
 datas de revisão anteriores.
 
 **Natureza:** mapa operacional. Atualizar somente após mudança material
@@ -685,6 +686,15 @@ disputavam um único banco de teste compartilhado.
   (PR #543, 13/11/2026). Fechamento com valor nos campos antigos, que juntavam
   crédito e débito, continua editável neles; a correção das taxas desses dias
   depende dos extratos das credenciadoras.
+- caixa "Notas recebidas" dentro de Contas a pagar (fase 1a das notas direto
+  da SEFAZ, 20/11/2026): quem importa XML sobe vários arquivos de uma vez; o
+  banco lê cada XML e só aceita NF-e modelo 55, de produção, autorizada, com
+  chave coerente (inclusive a avulsa) e destinatário do grupo (RGF, SF,
+  PAES & ART ou a antiga final 64). Cada chave entra uma vez, o XML original
+  fica guardado sem apagar e o estado de cada nota sai das compras e dos
+  rascunhos, nunca de clique. "Conferir" abre a importação de hoje com o XML;
+  nada vira conta a pagar sem confirmação. Ainda não há robô nem descarte de
+  nota cancelada pelo fornecedor (fases 1b e 2).
 
 ## Capacidades parciais
 
