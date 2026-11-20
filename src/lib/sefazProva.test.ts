@@ -119,6 +119,103 @@ describe('distribuicao e leitura limitada', () => {
 })
 
 describe('fronteiras e saneamento', () => {
+  it.each(['ok', 'falhou'] as const)('preserva a sondagem somente no evento com RPC %s', async status => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 32.125, body: 'CORPO PROIBIDO',
+      headers: { segredo: 'PROIBIDO' }, campo_estranho: true, bytes: 123,
+      sondagem_sem_certificado: { status: 'ok' } }
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({
+      status, http: 200, ms_banco: 12,
+      ...(status === 'falhou' ? { motivo: 'falha_transporte', erro: 'conexao_encerrada', codigo: 'XX000' } : {}),
+      body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : evento('128', '217'),
+      sondagem_sem_certificado: sondagem,
+    }))
+    const expected = { status: 'ok', http: 403, ms_banco: 32.13 }
+    for (const empresa of ['rgf', 'sf']) {
+      const item = result[empresa] as Record<string, Record<string, unknown>>
+      expect(item.evento_homologacao).toMatchObject({ status, sondagem_sem_certificado: expected })
+      expect(item.evento_homologacao.sondagem_sem_certificado).toEqual(expected)
+      for (const prova of ['dfe', 'adn', 'certificado']) expect(item[prova] ?? {}).not.toHaveProperty('sondagem_sem_certificado')
+    }
+    expect(JSON.stringify(result)).not.toMatch(/body|headers|PROIBIDO|campo_estranho/)
+    expect(sanearResumo(result)).toEqual(result)
+    expect(resumirEvento(evento('128', '217'), sondagem)).toMatchObject({ sondagem_sem_certificado: expected })
+  })
+  it('preserva diagnostico seguro da sondagem e a prova com certificado independente', async () => {
+    const sondagem = { status: 'falhou', motivo: 'falha_transporte', erro: 'conexao_encerrada',
+      codigo: 'XX000', erro_texto: 'Recv failure: Connection reset by peer; [...] [n]', ms_banco: 4 }
+    const handler = criarHandler({ token: () => 'segredo', memoria: () => ({ rss: 0, heapUsed: 0 }),
+      rpc: async name => ({ status: 'ok', http: 200,
+        body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : evento('128', '217'),
+        sondagem_sem_certificado: { ...sondagem, body: 'CORPO PROIBIDO' } }),
+    })
+    const response = await handler(new Request('https://local', { method: 'POST',
+      headers: { 'x-sefaz-prova-token': 'segredo' }, body: JSON.stringify(entrada) }))
+    const result = await response.json()
+    expect(response.status).toBe(200)
+    for (const empresa of ['rgf', 'sf']) {
+      expect(result[empresa].evento_homologacao).toMatchObject({ status: 'ok',
+        assinatura_e_certificado_aceitos: true, sondagem_sem_certificado: sondagem })
+      expect(result[empresa].evento_homologacao.sondagem_sem_certificado).toEqual(sondagem)
+      for (const prova of ['dfe', 'adn', 'certificado']) expect(result[empresa][prova]).not.toHaveProperty('sondagem_sem_certificado')
+    }
+    expect(JSON.stringify(result)).not.toMatch(/body|PROIBIDO/)
+  })
+  it('preserva a comparacao quando hom1 recusa o HTTP da chamada com certificado', async () => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 10 }
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({ status: 'ok',
+      http: name.endsWith('evento') ? 403 : 200,
+      body: name.endsWith('dfe') ? dfe('137') : '{}', sondagem_sem_certificado: sondagem,
+    }))
+    expect(result).toMatchObject({ rgf: { evento_homologacao: { status: 'falhou',
+      motivo: 'http_recusado', http: 403, sondagem_sem_certificado: sondagem } } })
+    expect(JSON.stringify(result)).not.toContain('body')
+  })
+  it('preserva a sondagem saneada quando o corpo do evento com HTTP 200 e ilegivel', async () => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 10 }
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({
+      status: 'ok', http: 200,
+      body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : '<resposta/>',
+      sondagem_sem_certificado: { ...sondagem, body: 'CORPO PROIBIDO', headers: { segredo: 'PROIBIDO' } },
+    }))
+    for (const empresa of ['rgf', 'sf']) {
+      const item = result[empresa] as Record<string, Record<string, unknown>>
+      expect(item.evento_homologacao).toMatchObject({ status: 'falhou', motivo: 'prova_falhou' })
+      expect(item.evento_homologacao.sondagem_sem_certificado).toEqual(sondagem)
+      for (const prova of ['dfe', 'adn', 'certificado']) expect(item[prova]).not.toHaveProperty('sondagem_sem_certificado')
+    }
+    expect(JSON.stringify(result)).not.toMatch(/body|headers|PROIBIDO|resposta/)
+  })
+  it('nao reaproveita sondagem quando a RPC do evento lanca excecao sem resposta', async () => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 10 }
+    const result = await executarProva(validarEntrada(entrada)!, async (name, args) => {
+      if (name.endsWith('evento') && args.p_empresa === 'sf') throw new Error('ERRO PROIBIDO')
+      return { status: 'ok', http: 200,
+        body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : evento('128', '217'),
+        sondagem_sem_certificado: sondagem }
+    })
+    expect(result).toMatchObject({ rgf: { evento_homologacao: { status: 'ok', sondagem_sem_certificado: sondagem } },
+      sf: { evento_homologacao: { status: 'falhou', motivo: 'prova_falhou' } } })
+    const sf = result.sf as Record<string, Record<string, unknown>>
+    expect(sf.evento_homologacao).not.toHaveProperty('sondagem_sem_certificado')
+    expect(JSON.stringify(result)).not.toContain('PROIBIDO')
+  })
+  it.each([
+    '-----BEGIN PRIVATE KEY-----', 'CNPJ 11222333000181 invalido', 'A'.repeat(20),
+    'falha\ncontrole', 'x '.repeat(101), 'conexão encerrada',
+  ])('descarta texto proibido dentro da sondagem: %s', erro_texto => {
+    const result = sanearResumo({ rgf: { evento_homologacao: { status: 'falhou',
+      sondagem_sem_certificado: { status: 'falhou', erro_texto } } } })
+    expect(result).toEqual({ rgf: { evento_homologacao: { status: 'falhou',
+      sondagem_sem_certificado: { status: 'falhou' } } }, funcao: {} })
+  })
+  it('restringe os campos e os valores da sondagem ao contrato', () => {
+    const result = sanearResumo({ rgf: { evento_homologacao: { status: 'ok',
+      sondagem_sem_certificado: { status: 'sem_certificado', motivo: 'inventado', erro: 'DNS',
+        codigo: 'xx000', http: Infinity, ms_banco: '12', ms_total: 15, docs: { resNFe: 1 },
+        lote_cStat: '128', assinatura_e_certificado_aceitos: true } } } })
+    expect(result).toEqual({ rgf: { evento_homologacao: { status: 'ok',
+      sondagem_sem_certificado: { status: 'falhou' } } }, funcao: {} })
+  })
   it.each([
     "Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn't connect to server",
     'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure',
