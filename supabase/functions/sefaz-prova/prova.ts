@@ -159,7 +159,7 @@ export async function resumirDfe(xml: string): Promise<Objeto> {
 export const REJEICOES_TECNICAS = [215, 225, 242, 243, 280, 281, 282, 283, 284, 285, 286,
   290, 291, 292, 293, 294, 295, 296, 297, 298, 299]
 const EVENTOS_NEGOCIO = ['135', '136', '155', '217', '494', '573']
-export function resumirEvento(xml: string): Objeto {
+export function resumirEvento(xml: string, sondagem?: unknown): Objeto {
   const ret = achar(lerXml(xml), 'retEnvEvento')
   const lote = codigo(filho(ret, 'cStat'))
   const evento = codigo(filho(ret && achar(ret, 'infEvento'), 'cStat'))
@@ -168,6 +168,7 @@ export function resumirEvento(xml: string): Objeto {
     status: 'ok', lote_cStat: lote, evento_cStat: evento,
     assinatura_e_certificado_aceitos: lote === '128' && !!evento
       && !REJEICOES_TECNICAS.includes(Number(evento)) && EVENTOS_NEGOCIO.includes(evento),
+    ...(sondagem !== undefined ? { sondagem_sem_certificado: sanearSondagem(sondagem) } : {}),
   }
 }
 
@@ -209,7 +210,15 @@ export const TIPOS_DE_FALHA = ['dns', 'tempo_esgotado', 'conexao_recusada', 'cer
 function numero(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e10 ? Math.round(value * 100) / 100 : undefined
 }
-function sanearProva(value: unknown): Objeto {
+function sanearSondagem(value: unknown): Objeto {
+  const safe = sanearProva(value), out: Objeto = {}
+  out.status = safe.status === 'ok' ? 'ok' : 'falhou'
+  for (const k of ['motivo', 'http', 'ms_banco', 'erro', 'codigo', 'erro_texto']) {
+    if (safe[k] !== undefined) out[k] = safe[k]
+  }
+  return out
+}
+function sanearProva(value: unknown, incluirSondagem = false): Objeto {
   const o = objeto(value), out: Objeto = {}
   out.status = ['ok', 'falhou', 'sem_certificado'].includes(String(o.status)) ? o.status : 'falhou'
   if (MOTIVOS.includes(String(o.motivo))) out.motivo = o.motivo
@@ -235,6 +244,9 @@ function sanearProva(value: unknown): Objeto {
     for (const k of tiposDocumento) { const n = numero(docs[k]); if (n !== undefined && n >= 0) safe[k] = n }
     out.docs = safe
   }
+  if (incluirSondagem && o.sondagem_sem_certificado !== undefined) {
+    out.sondagem_sem_certificado = sanearSondagem(o.sondagem_sem_certificado)
+  }
   return out
 }
 
@@ -244,7 +256,9 @@ export function sanearResumo(value: unknown): Objeto {
   for (const empresa of ['rgf', 'sf']) {
     if (!source[empresa]) continue
     const item = objeto(source[empresa]), safe: Objeto = {}
-    for (const k of ['dfe', 'adn', 'evento_homologacao', 'certificado']) if (item[k]) safe[k] = sanearProva(item[k])
+    for (const k of ['dfe', 'adn', 'evento_homologacao', 'certificado']) {
+      if (item[k]) safe[k] = sanearProva(item[k], k === 'evento_homologacao')
+    }
     out[empresa] = safe
   }
   const metrics = objeto(source.funcao), safe: Objeto = {}
@@ -272,12 +286,14 @@ export async function executarProva(entrada: Entrada, rpc: Rpc): Promise<Objeto>
           company.certificado = company[key]
           break // Seguir com a outra empresa sem RPCs redundantes.
         }
-        if (raw.status !== 'ok') { company[key] = sanearProva(raw); continue }
+        if (raw.status !== 'ok') { company[key] = sanearProva(raw, key === 'evento_homologacao'); continue }
         company.certificado = { status: 'ok', dias_para_vencer: numero(raw.dias_para_vencer) }
         if (typeof raw.body !== 'string' || raw.body.length > MAX_TOTAL || typeof raw.http !== 'number') throw new Error('resposta_invalida')
         const parsed = key === 'adn' ? await resumirAdn(raw.body, raw.http)
-          : raw.http !== 200 ? { status: 'falhou', motivo: 'http_recusado', http: raw.http }
-          : key === 'dfe' ? await resumirDfe(raw.body) : resumirEvento(raw.body)
+          : raw.http !== 200 ? { status: 'falhou', motivo: 'http_recusado', http: raw.http,
+            ...(key === 'evento_homologacao' && raw.sondagem_sem_certificado !== undefined
+              ? { sondagem_sem_certificado: sanearSondagem(raw.sondagem_sem_certificado) } : {}) }
+          : key === 'dfe' ? await resumirDfe(raw.body) : resumirEvento(raw.body, raw.sondagem_sem_certificado)
         company[key] = { ...parsed, ms_banco: numero(raw.ms_banco), ms_total: performance.now() - start }
       } catch {
         company[key] = { status: 'falhou', motivo: 'prova_falhou', ms_total: performance.now() - start }

@@ -128,6 +128,7 @@ select throws_ok($$set local role service_role; select sefaz_http.http_reset_cur
   '42501','permission denied for schema sefaz_http','service_role nao chama extensao');
 
 select ok(to_regprocedure('private.sefaz_http_call(sefaz_http.http_request)') is not null,'involucro HTTP privado existe');
+select ok(to_regprocedure('private.sefaz_sondagem_sem_certificado()') is not null,'sondagem privada existe e participa dos lacos de seguranca');
 select is(private.sefaz_registro_seguro(),true,'registro e auditoria seguros no banco de teste');
 select ok(not has_function_privilege(r.rolname,p.oid,'execute'), r.rolname||' bloqueado em '||p.oid::regprocedure)
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
@@ -144,12 +145,17 @@ select ok(p.prosecdef and p.proowner='postgres'::regrole and 'search_path=""'=an
   'dono e search_path de '||p.oid::regprocedure)
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 where n.nspname in ('public','private') and p.proname like 'sefaz\_%' escape '\';
+select ok(not exists (select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+  where a.grantee=0 and a.privilege_type='EXECUTE'),'PUBLIC sem execucao em '||p.oid::regprocedure)
+from pg_proc p where p.oid in ('private.sefaz_sondagem_sem_certificado()'::regprocedure,
+  'public.sefaz_prova_evento(text)'::regprocedure);
 select ok(coalesce('client_min_messages=warning'=any(p.proconfig),false),
   'diagnostico da extensao silenciado em '||f.assinatura)
 from (values
   ('private.sefaz_http_options(text,text)'::regprocedure),
   ('private.sefaz_http_call(sefaz_http.http_request)'::regprocedure),
-  ('private.sefaz_transport(text,text,text,text)'::regprocedure)
+  ('private.sefaz_transport(text,text,text,text)'::regprocedure),
+  ('private.sefaz_sondagem_sem_certificado()'::regprocedure)
 ) f(assinatura) join pg_proc p on p.oid=f.assinatura;
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname in ('public','private') and c.relname like 'sefaz%' and c.relkind in ('r','p')),0,'nenhuma tabela SEFAZ criada');
@@ -205,12 +211,28 @@ returns text[] language sql stable security definer set search_path = ''
 as $$select array[cert,key8] from pg_temp.sefaz_fixture$$;
 create or replace function private.sefaz_http_call(request sefaz_http.http_request)
 returns sefaz_http.http_response language plpgsql security definer set search_path = '' as $$
+declare blobs integer; sondagem boolean;
 begin
-  if (select count(*) from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null) <> 2 then
+  select count(*) into blobs from sefaz_http.http_list_curlopt()
+    where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null;
+  sondagem := request.content = '<x/>' and request.uri = private.sefaz_endpoint('evento_homologacao');
+  if blobs <> case when sondagem then 0 else 2 end then
     raise exception 'Stub nao recebeu os BLOBs.';
   end if;
+  perform set_config('sefaz_test.calls',
+    (coalesce(nullif(current_setting('sefaz_test.calls',true),'')::jsonb,'[]'::jsonb)
+      || jsonb_build_array(jsonb_build_object('blobs',blobs,'uri',request.uri,'content',request.content,
+        'method',request.method,'content_type',request.content_type,'headers',to_jsonb(request.headers),
+        'options',(select jsonb_object_agg(curlopt,value) from sefaz_http.http_list_curlopt()
+          where curlopt in ('CURLOPT_CONNECTTIMEOUT_MS','CURLOPT_TIMEOUT_MS','CURLOPT_SSL_VERIFYPEER','CURLOPT_SSL_VERIFYHOST')))))::text,true);
   perform set_config('sefaz_test.uri',request.uri,true);
   perform set_config('sefaz_test.content',coalesce(request.content,''),true);
+  if sondagem and nullif(current_setting('sefaz_test.sondagem_fail_msg',true),'') is not null then
+    raise exception using errcode='XX000',message=current_setting('sefaz_test.sondagem_fail_msg',true);
+  end if;
+  if sondagem and current_setting('sefaz_test.sondagem_cancel',true) = '1' then
+    raise exception using errcode='57014',message='cancelamento simulado';
+  end if;
   if current_setting('sefaz_test.fail',true) = '1' then
     raise exception using message=coalesce(nullif(current_setting('sefaz_test.fail_msg',true),''),'ERRO SENSIVEL QUE NAO PODE SAIR');
   end if;
@@ -221,7 +243,7 @@ begin
   if current_setting('sefaz_test.redirect',true) = 'status' then
     return (302,'text/xml',array[]::sefaz_http.http_header[],'CORPO QUE NAO PODE SAIR')::sefaz_http.http_response;
   end if;
-  return (200,'text/xml',array[]::sefaz_http.http_header[],'<resposta/>')::sefaz_http.http_response;
+  return (case when sondagem then 403 else 200 end,'text/xml',array[]::sefaz_http.http_header[],'<resposta/>')::sefaz_http.http_response;
 end;
 $$;
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'status','ok','RPC usa transporte com stub sem rede');
@@ -229,9 +251,49 @@ select is(current_setting('sefaz_test.uri',true),'https://www1.nfe.fazenda.gov.b
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'sucesso do transporte limpa BLOBs');
 select is(public.sefaz_prova_adn('sf','0')->>'status','ok','ADN usa transporte');
 select is(current_setting('sefaz_test.uri',true),'https://adn.nfse.gov.br/contribuintes/DFe/0','ADN sem cnpjConsulta');
-select is(public.sefaz_prova_evento('rgf')->>'status','ok','evento assinado chega ao transporte');
+select set_config('sefaz_test.calls','[]',true);
+create temporary table sefaz_evento_resultado as select public.sefaz_prova_evento('rgf') as resultado;
+select is(resultado->>'status','ok','evento assinado chega ao transporte') from sefaz_evento_resultado;
 select is(current_setting('sefaz_test.uri',true),'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx','evento somente homologacao');
-select ok(current_setting('sefaz_test.content',true) like '%<tpAmb>2</tpAmb>%' and current_setting('sefaz_test.content',true) like '%<tpEvento>210210</tpEvento>%','evento fixo 210210 tpAmb 2');
+select is(jsonb_array_length(current_setting('sefaz_test.calls')::jsonb),2,'evento faz exatamente duas chamadas');
+select is(current_setting('sefaz_test.calls')::jsonb#>>'{0,blobs}','2','primeira chamada usa os dois BLOBs');
+select ok(current_setting('sefaz_test.calls')::jsonb#>>'{0,content}' like '%<tpAmb>2</tpAmb>%'
+  and current_setting('sefaz_test.calls')::jsonb#>>'{0,content}' like '%<tpEvento>210210</tpEvento>%','evento fixo 210210 tpAmb 2 vem primeiro');
+select is(current_setting('sefaz_test.calls')::jsonb#>>'{1,blobs}','0','segunda chamada nao usa BLOBs');
+select is(current_setting('sefaz_test.calls')::jsonb#>>'{1,content}','<x/>','sondagem envia somente corpo fixo');
+select is(c->>'uri',private.sefaz_endpoint('evento_homologacao'),'ambas as chamadas vao somente a hom1')
+from jsonb_array_elements(current_setting('sefaz_test.calls')::jsonb) c;
+select is(current_setting('sefaz_test.calls')::jsonb#>>'{1,method}','POST','sondagem usa POST');
+select is(current_setting('sefaz_test.calls')::jsonb#>>'{1,content_type}','application/soap+xml; charset=utf-8','tipo SOAP fixo da sondagem');
+select is(current_setting('sefaz_test.calls')::jsonb#>'{1,headers}',
+  '[{"field":"Accept","value":"application/soap+xml"}]'::jsonb,'sondagem envia somente Accept SOAP');
+select is(current_setting('sefaz_test.calls')::jsonb#>'{1,options}',
+  '{"CURLOPT_CONNECTTIMEOUT_MS":"1500","CURLOPT_TIMEOUT_MS":"4500","CURLOPT_SSL_VERIFYPEER":"1","CURLOPT_SSL_VERIFYHOST":"2"}'::jsonb,
+  'sondagem limita o tempo e verifica certificado e host do servidor');
+select is(resultado->'sondagem_sem_certificado' - 'ms_banco','{"status":"ok","http":403}'::jsonb,
+  'sondagem devolve so status HTTP e tempo, sem corpo nem cabecalhos') from sefaz_evento_resultado;
+select ok(jsonb_typeof(resultado#>'{sondagem_sem_certificado,ms_banco}')='number','sondagem mede tempo no banco') from sefaz_evento_resultado;
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'RPC com sondagem limpa BLOBs');
+
+-- Falha somente na segunda chamada: a prova com certificado deve continuar intacta.
+select set_config('sefaz_test.sondagem_fail_msg','Recv failure: Connection reset by peer; CNPJ 11222333000181 '||repeat('Ab9+/=',11),true);
+update sefaz_evento_resultado set resultado=public.sefaz_prova_evento('rgf');
+select is(resultado->>'status','ok','falha da sondagem preserva status da prova com certificado') from sefaz_evento_resultado;
+select is(resultado->>'http','200','falha da sondagem preserva HTTP com certificado') from sefaz_evento_resultado;
+select is(resultado->'sondagem_sem_certificado' - 'ms_banco',
+  '{"status":"falhou","motivo":"falha_transporte","erro":"conexao_encerrada","codigo":"XX000","erro_texto":"Recv failure: Connection reset by peer; CNPJ [n] [...]"}'::jsonb,
+  'falha da sondagem classificada e mascarada, sem corpo nem cabecalhos') from sefaz_evento_resultado;
+select ok(position('11222333000181' in resultado::text)=0 and position(repeat('Ab9+/=',11) in resultado::text)=0,
+  'resultado inteiro nao expoe fragmentos protegidos da sondagem') from sefaz_evento_resultado;
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'falha da sondagem limpa BLOBs');
+select set_config('sefaz_test.sondagem_fail_msg','',true);
+select set_config('sefaz_test.sondagem_cancel','1',true);
+update sefaz_evento_resultado set resultado=public.sefaz_prova_evento('rgf');
+select is(resultado->'sondagem_sem_certificado' - 'ms_banco','{"status":"falhou","motivo":"tempo_banco"}'::jsonb,
+  'cancelamento da sondagem capturado sem diagnostico nem corpo') from sefaz_evento_resultado;
+select is(resultado->>'status','ok','cancelamento da sondagem preserva prova com certificado') from sefaz_evento_resultado;
+select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'cancelamento da sondagem limpa BLOBs');
+select set_config('sefaz_test.sondagem_cancel','0',true);
 select set_config('sefaz_test.redirect','location',true);
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'status','falhou','Location em 200 recusa resposta');
 select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','redirecionado','Location acumulado acusa redirecionamento');
@@ -298,6 +360,8 @@ begin raise exception using errcode='P0404',message='Certificado nao guardado.';
 $$;
 set local role service_role;
 select is(public.sefaz_prova_dfe('sf','consNSU','000000000000001')->>'status','sem_certificado','service_role executa RPC publica');
+select is(public.sefaz_prova_evento('sf')#>>'{sondagem_sem_certificado,status}','ok',
+  'service_role executa evento e sondagem nao depende do cofre nem do certificado');
 reset role;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
 
