@@ -2,7 +2,10 @@
 
 O objetivo é buscar as notas emitidas contra RGF e SF sem depender do notebook,
 do e-mail ou de um navegador com o login do dono. A fase 0 apenas consulta e
-mede as respostas, sem guardar notas nem lançar parcelas no ERP.
+mede as respostas, sem guardar notas nem lançar parcelas no ERP. A fase 1a,
+no ar desde 20/11/2026, criou a caixa "Notas recebidas" em Contas a pagar,
+onde as notas entram por envio de XML e, na fase 1b, pelo robô (ver
+[Caixa "Notas recebidas"](#caixa-notas-recebidas-fase-1a)).
 
 A conversa sai do banco da Supabase porque a SEFAZ pede uma segunda negociação
 de segurança durante a conexão, que o servidor das funções não consegue concluir.
@@ -221,3 +224,59 @@ Depois, o coordenador repete a prova respeitando o intervalo da SEFAZ.
 Para remover a implementação, o coordenador prepara uma migration nova que
 remove estas funções e, depois de conferir dependências, a extensão `http`.
 Não se edita uma migration já aplicada nem se altera o banco manualmente.
+
+## Caixa "Notas recebidas" (fase 1a)
+
+Antes do robô, as notas de compra entram por uma caixa dentro de **Contas a
+pagar**, sem menu novo. Quem tem a permissão de importar XML vê a caixa; os
+outros perfis não a veem, e o banco recusa sozinho qualquer tentativa por
+fora da tela.
+
+Como usar:
+
+1. Em Contas a pagar, toque em **Enviar XML das notas** e escolha todos os
+   arquivos de uma vez, por exemplo os da pasta "A importar" do Drive.
+2. O ERP manda um arquivo por vez ao banco e, no fim, mostra um resumo por
+   arquivo: o que entrou, o que já estava na caixa e o que foi recusado, com
+   o motivo. Um arquivo recusado não impede os outros. Enquanto o envio não
+   termina, as outras entradas da página ficam travadas.
+3. Em cada nota que entrou, toque em **Conferir**. Abre a importação de
+   sempre, com aquele XML. Dali em diante nada muda: salvar pela metade,
+   confirmar, conta a pagar e custo. Nada vira conta a pagar sem a
+   confirmação de uma pessoa.
+
+O banco lê cada XML sozinho e só aceita NF-e de compra modelo 55, de
+produção, com o protocolo de autorização da SEFAZ, com itens completos e com
+a chave de acesso conferida contra os dados da nota. Na NF-e avulsa, emitida
+pelo fisco em nome do vendedor, a chave traz o CNPJ do órgão, e o ERP guarda
+o vendedor como emitente. O destinatário precisa ser uma empresa do grupo:
+RGF, SF, PAES & ART ou a antiga final 64. Recusas e o que fazer:
+
+| Motivo na tela | O que fazer |
+| --- | --- |
+| Destinatário que não é do grupo | Nota de outra empresa, por exemplo um cliente PJ. Não lançar. |
+| Sem a autorização da SEFAZ | Pedir ao fornecedor o XML autorizado, com o protocolo. |
+| Sem pagamento (bonificação, brinde ou remessa) | Não gera conta a pagar. Se for compra, confirmar com o fornecedor. |
+| Nota de teste (homologação) | Não vale como compra. |
+| Modelo diferente de 55 | Cupom (65) ou outro documento: fica fora. |
+| Evento da nota | É cancelamento, carta de correção ou ciência, não a nota. |
+| Nota de serviço (NFS-e) | Entra numa fase futura. |
+| Chave que não confere ou itens incompletos | Arquivo alterado ou corrompido: pedir de novo ao fornecedor. |
+
+Cada chave entra uma vez só. O XML original fica guardado no banco e não
+pode ser apagado nem trocado. O estado de cada nota sai das compras e dos
+rascunhos, nunca de um clique:
+
+- **Esperando conferência**: ainda ninguém tocou em Conferir.
+- **Conferência começada**: existe importação salva pela metade.
+- **Lançada**: a conta a pagar nasceu depois de a nota chegar à caixa.
+- **Já estava no ERP**: a conta já existia antes, pela importação antiga.
+- **Conta cancelada no ERP**: a conta desta chave foi cancelada.
+- **Esperando o XML** e **Ilegível**: estados que o robô vai usar na fase
+  1b, quando a SEFAZ manda só o resumo ou um documento que não abre.
+
+Limites desta fase: nota cancelada pelo fornecedor depois de autorizada
+continua "Esperando conferência" até existir o descarte registrado (fase 2).
+O robô da fase 1b vai gravar na mesma caixa, com origem `sefaz`; ao completar
+um resumo com o XML, o banco confere destinatário, emitente e valor e não
+sobrescreve o que a SEFAZ mandou.
