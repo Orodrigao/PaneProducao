@@ -181,7 +181,7 @@ begin
         or substring(chave from 35 for 1) <> nota.tipo_emissao
         or substring(chave from 36 for 8) <> lpad(nota.codigo, 8, '0')
         or right(chave, 1) <> nota.dv or right(chave, 1)::integer <> digito
-        or (protocolo_chave is not null and protocolo_chave <> chave) then
+        or (tem_protocolo and protocolo_chave is distinct from chave) then
         motivo := 'chave_incoerente'; mensagem := 'A chave da nota não confere com os dados do XML.';
       elsif not tem_protocolo then
         motivo := 'sem_protocolo'; mensagem := 'O XML não traz a autorização da SEFAZ. Peça ao fornecedor o XML autorizado, com o protocolo.';
@@ -218,6 +218,19 @@ begin
           exception when others then
             motivo := 'ilegivel'; mensagem := 'O valor total da nota não pôde ser lido.';
           end;
+        end if;
+        if motivo is null and (
+          cardinality(xpath('(//*[local-name()="infNFe"])[1]/*[local-name()="det"]', doc)) = 0
+          or cardinality(xpath('(//*[local-name()="infNFe"])[1]/*[local-name()="det"][not(*[local-name()="prod"])]', doc)) > 0
+        ) then
+          motivo := 'ilegivel'; mensagem := 'A nota não traz os itens completos e não pode ser conferida.';
+        end if;
+        if motivo is null and (
+          select count(*) > 0 and bool_and(coalesce(p.codigo, '') = '90')
+          from xmltable('//*[local-name()="detPag"]' passing doc columns
+            codigo text path 'normalize-space(*[local-name()="tPag"])') p
+        ) then
+          motivo := 'sem_pagamento'; mensagem := 'Esta NF-e declara sem pagamento (bonificação, brinde ou remessa). Ela não gera conta a pagar.';
         end if;
         if motivo is null then
           return jsonb_build_object('ok', true, 'chave', chave, 'recipient_cnpj', nota.destinatario,

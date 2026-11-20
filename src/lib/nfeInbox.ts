@@ -63,7 +63,7 @@ export function formatCnpj(value: string): string {
 }
 
 export async function loadNfeInbox(): Promise<NfeInboxRow[]> {
-  const { data, error } = await supabase.rpc('list_nfe_inbox')
+  const { data, error } = await supabase.rpc('list_nfe_inbox', { p_limit: 1000 })
   if (error) throw error
   return ((data ?? []) as Record<string, unknown>[]).map(row =>
     Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/^inbox_/, ''), value])) as unknown as NfeInboxRow,
@@ -88,9 +88,8 @@ export async function readXmlFileText(file: Pick<File, 'text'>): Promise<string>
   let raw: string
   try { raw = await file.text() }
   catch { throw new XmlFileReadError('Não foi possível ler este arquivo. Tente de novo.') }
-  const text = raw.replace(/^[\uFEFF\s]+/, '')
-  if (text.length > 2_000_000) throw new XmlFileReadError('O arquivo passa do limite de 2.000.000 de caracteres.')
-  return text
+  if (raw.length > 2_000_000) throw new XmlFileReadError('O arquivo passa do limite de 2.000.000 de caracteres.')
+  return raw
 }
 
 /** Um arquivo por vez; erro de leitura, rede ou recusa não perde o restante do lote. */

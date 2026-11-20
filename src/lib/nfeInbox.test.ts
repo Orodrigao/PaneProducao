@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc: vi.fn() } }))
-import { canUseNfeInbox, formatCnpj, inboxBatchSummary, nfeInboxResultLabel, nfeInboxStatusLabel, readXmlFileText, sendInboxFiles, type NfeInboxReceiveResult } from './nfeInbox'
+import { supabase } from '@/lib/supabase'
+import { canUseNfeInbox, formatCnpj, inboxBatchSummary, loadNfeInbox, nfeInboxResultLabel, nfeInboxStatusLabel, readXmlFileText, sendInboxFiles, type NfeInboxReceiveResult } from './nfeInbox'
 
 const success: NfeInboxReceiveResult = { resultado: 'entrou', motivo: null, mensagem: 'Recebida', id: '1', chave: '1', numero: '1', emitente: '[TESTE]', ja_no_erp: false }
 const file = (name: string, text = '<NFe/>') => ({ name, text: async () => text })
@@ -42,16 +43,22 @@ it('envia em ordem, sem simultaneidade, mesmo com erro e recusa no meio', async 
   expect(progress.mock.calls.map(call => call[0])).toEqual([1, 2, 3, 4].map(current => ({ current, total: 4 })))
   expect(inboxBatchSummary(results)).toBe('2 entraram, 1 recusada, 1 não enviado')
 })
-it('remove BOM e espaços iniciais e aceita exatamente o limite; acima do limite não chama o banco', async () => {
-  expect(await readXmlFileText(file('a', '\uFEFF<NFe/>'))).toBe('<NFe/>')
-  expect(await readXmlFileText(file('a', '\uFEFF \r\n\t<?xml version="1.0"?><NFe/>'))).toBe('<?xml version="1.0"?><NFe/>')
-  expect(await readXmlFileText(file('a', ' \n<NFe> texto preservado </NFe> \n'))).toBe('<NFe> texto preservado </NFe> \n')
+it('preserva o texto decodificado pelo navegador, inclusive espaços iniciais, e aplica o limite ao texto inteiro', async () => {
+  const text = ' \r\n\t<?xml version="1.0"?><NFe> texto preservado </NFe> \n'
+  expect(await readXmlFileText(file('a', text))).toBe(text)
+  // A decodificação de file.text() já remove o BOM do arquivo.
+  expect(await readXmlFileText(new Blob(['\uFEFF' + text]))).toBe(text)
   expect((await readXmlFileText(file('a', 'x'.repeat(2_000_000)))).length).toBe(2_000_000)
   const send = vi.fn(async () => success)
-  const result = await sendInboxFiles([file('grande', 'x'.repeat(2_000_001)), file('bom', '\uFEFF<NFe/>')], send)
+  const result = await sendInboxFiles([file('grande', ' ' + 'x'.repeat(2_000_000)), file('bom', text)], send)
   expect(result[0].resultado).toBe('nao_enviado')
   expect(result[0].mensagem).toContain('2.000.000')
-  expect(send).toHaveBeenCalledExactlyOnceWith('<NFe/>', 'bom')
+  expect(send).toHaveBeenCalledExactlyOnceWith(text, 'bom')
+})
+it('pede as mil notas e mantém a conversão das colunas da listagem', async () => {
+  vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: [{ inbox_id: 'nota-1', inbox_status: 'esperando_conferencia' }], error: null } as Awaited<ReturnType<typeof supabase.rpc>>)
+  expect(await loadNfeInbox()).toEqual([{ id: 'nota-1', status: 'esperando_conferencia' }])
+  expect(supabase.rpc).toHaveBeenCalledWith('list_nfe_inbox', { p_limit: 1000 })
 })
 it('falha ao ler um arquivo não impede o seguinte', async () => {
   const result = await sendInboxFiles([{ name: 'quebrado', text: async () => { throw new Error('Leitura falhou') } }, file('ok')], async () => success)

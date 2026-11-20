@@ -233,6 +233,7 @@ export default function ContasPagarPage() {
   }
 
   async function reviewInboxNote(row: NfeInboxRow) {
+    if (inboxSending) return
     if (!catalogsReady) { showToast('Os cadastros de fornecedores e insumos ainda não carregaram. Atualize a página antes de continuar a conferência.'); return }
     setBusyId(row.id)
     try {
@@ -357,10 +358,10 @@ export default function ContasPagarPage() {
               <div className="ps-fieldrow" style={{ marginTop: 14 }}>
                 <button className="ps-btn primary block" disabled={inboxSending} onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
                 <button className="ps-btn ghost block" disabled={inboxSending} onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
-                <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
+                <button className="ps-btn ghost block" disabled={inboxSending} onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
               </div>
               {inboxSending && <p role="status">Aguarde terminar o envio das notas.</p>}
-              {inboxAccess === 'liberada' && <NfeInboxPanel refreshKey={purchases} busyId={busyId} onReview={reviewInboxNote} onSendingChange={setInboxSending} />}
+              {inboxAccess === 'liberada' && <NfeInboxPanel refreshKey={purchases} busyId={busyId} sendingElsewhere={inboxSending} onReview={reviewInboxNote} onSendingChange={setInboxSending} />}
               {importDraftsError && (
                 <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
                   <b>Importações pendentes não carregaram</b>
