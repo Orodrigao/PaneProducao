@@ -203,6 +203,9 @@ const MOTIVOS = ['certificado nao guardado', 'falha_banco_ou_transporte', 'tempo
   'entrada_invalida', 'registro_inseguro', 'falha_cofre', 'certificado_invalido', 'chave_invalida', 'chave_cifrada',
   'assinatura_falhou', 'tls_indisponivel', 'falha_transporte', 'redirecionado',
   'falha_rpc', 'resposta_invalida', 'adn_sem_json', 'http_recusado', 'prova_falhou']
+export const TIPOS_DE_FALHA = ['dns', 'tempo_esgotado', 'conexao_recusada', 'certificado_local',
+  'certificado_servidor', 'renegociacao', 'conexao_encerrada', 'handshake_tls',
+  'opcao_curl', 'cancelado', 'permissao', 'outro']
 function numero(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e10 ? Math.round(value * 100) / 100 : undefined
 }
@@ -210,6 +213,8 @@ function sanearProva(value: unknown): Objeto {
   const o = objeto(value), out: Objeto = {}
   out.status = ['ok', 'falhou', 'sem_certificado'].includes(String(o.status)) ? o.status : 'falhou'
   if (MOTIVOS.includes(String(o.motivo))) out.motivo = o.motivo
+  if (typeof o.erro === 'string' && TIPOS_DE_FALHA.includes(o.erro)) out.erro = o.erro
+  if (typeof o.codigo === 'string' && o.codigo.length === 5 && /^[0-9A-Z]{5}$/.test(o.codigo)) out.codigo = o.codigo
   for (const k of ['http', 'bytes', 'ms_banco', 'ms_total', 'dias_para_vencer', 'chaves_omitidas']) {
     const n = numero(o[k]); if (n !== undefined) out[k] = n
   }

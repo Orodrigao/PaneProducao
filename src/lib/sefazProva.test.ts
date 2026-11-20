@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import {
-  abrirGzip, conferirToken, criarHandler, executarProva, REJEICOES_TECNICAS,
+  abrirGzip, conferirToken, criarHandler, executarProva, REJEICOES_TECNICAS, TIPOS_DE_FALHA,
   resumirAdn, resumirDfe, resumirEvento, sanearResumo, validarEntrada,
 } from '../../supabase/functions/sefaz-prova/prova'
 
@@ -119,6 +119,40 @@ describe('distribuicao e leitura limitada', () => {
 })
 
 describe('fronteiras e saneamento', () => {
+  it.each(['dns', 'tempo_esgotado', 'conexao_recusada', 'certificado_local',
+    'certificado_servidor', 'renegociacao', 'conexao_encerrada', 'handshake_tls',
+    'opcao_curl', 'cancelado', 'permissao', 'outro'])('preserva somente tipo conhecido: %s', erro => {
+    expect(TIPOS_DE_FALHA).toContain(erro)
+    expect(sanearResumo({ rgf: { dfe: { status: 'falhou', motivo: 'falha_transporte', erro, codigo: 'XX000' } } }))
+      .toMatchObject({ rgf: { dfe: { status: 'falhou', motivo: 'falha_transporte', erro, codigo: 'XX000' } } })
+  })
+  it.each([
+    ['desconhecido', 'xx000'], ['could not load PEM client certificate', 'XX00'],
+    ['conexao_recusada extra', 'XX0000'], [null, 'XX00!'], [42, 12345],
+    [{ toString: () => 'dns' }, 'XX000\n'], ['DNS', null],
+  ])('descarta tipo e codigo fora do contrato (%s, %s)', (erro, codigo) => {
+    expect(sanearResumo({ rgf: { dfe: { status: 'falhou', erro, codigo } } }))
+      .toEqual({ rgf: { dfe: { status: 'falhou' } }, funcao: {} })
+  })
+  it('leva tipo e codigo da falha RPC ate a resposta saneada do handler', async () => {
+    const handler = criarHandler({
+      token: () => 'segredo', memoria: () => ({ rss: 0, heapUsed: 0 }),
+      rpc: async () => ({ status: 'falhou', motivo: 'falha_transporte',
+        erro: 'conexao_recusada', codigo: 'XX000', body: 'PEM SENSIVEL' }),
+    })
+    const response = await handler(new Request('https://local', {
+      method: 'POST', headers: { 'x-sefaz-prova-token': 'segredo' }, body: JSON.stringify(entrada),
+    }))
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    for (const empresa of ['rgf', 'sf']) {
+      for (const prova of ['dfe', 'adn', 'evento_homologacao']) {
+        expect(result[empresa][prova]).toEqual({ status: 'falhou', motivo: 'falha_transporte',
+          erro: 'conexao_recusada', codigo: 'XX000' })
+      }
+    }
+    expect(JSON.stringify(result)).not.toMatch(/PEM|SENSIVEL/)
+  })
   it('valida estritamente empresa, modo, NSU e evento somente booleano', () => {
     expect(validarEntrada(entrada)).toEqual(entrada)
     for (const bad of [null, {}, { ...entrada, empresas: ['rgf', 'rgf'] }, { ...entrada, empresas: ['ex'] },
