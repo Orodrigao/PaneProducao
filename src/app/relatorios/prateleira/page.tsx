@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Download, ChevronLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -10,6 +10,7 @@ import KPICard from '@/components/reports/KPICard'
 import ReportTable, { ReportTableColumn } from '@/components/reports/ReportTable'
 import { csvExport } from '@/components/reports/csvExport'
 import { formatDateBR } from '@/lib/utils'
+import { loadShelfCounts } from '@/lib/shelfCountsLoad'
 
 interface DBRow {
   id: string
@@ -59,6 +60,7 @@ export default function PrateleiraReport() {
   const [breadsMap, setBreadsMap] = useState<Map<string, ProductInfo>>(new Map())
   const [productsMap, setProductsMap] = useState<Map<string, ProductInfo>>(new Map())
   const [loading, setLoading] = useState(true)
+  const countsSequence = useRef(0)
 
   useEffect(() => {
     setUser(getCurrentUser())
@@ -80,19 +82,16 @@ export default function PrateleiraReport() {
 
   useEffect(() => {
     if (!range) return
-    setLoading(true)
     const fromStr = toISODate(range.from)
     const toStr   = toISODate(range.to)
-    supabase
+    void loadShelfCounts(countsSequence, { setRows, setLoading }, () => supabase
       .from('shelf_counts')
       .select('*')
       .gte('record_date', fromStr)
       .lte('record_date', toStr)
       .order('record_date', { ascending: false })
-      .then(
-        ({ data }) => { setRows(data || []); setLoading(false) },
-        () => setLoading(false)
-      )
+    )
+    return () => { countsSequence.current += 1 }
   }, [range])
 
   const displayRows: DisplayRow[] = useMemo(() => {
