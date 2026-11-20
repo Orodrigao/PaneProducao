@@ -86,12 +86,13 @@ export default function ContasPagarPage() {
   // Retomar reaplica decisões sobre fornecedores e produtos: só com os dois
   // carregados com sucesso nesta visita. Terminar com erro não conta.
   const [catalogsReady, setCatalogsReady] = useState(false)
-  const [inboxAllowed, setInboxAllowed] = useState(false)
+  const [inboxAccess, setInboxAccess] = useState<'carregando' | 'liberada' | 'bloqueada'>('carregando')
+  const [inboxSending, setInboxSending] = useState(false)
   const [inboxXml, setInboxXml] = useState<{ id: string; text: string } | null>(null)
   useEffect(() => {
     let active = true
-    void getCurrentUserAsync().then(user => { if (active) setInboxAllowed(canUseNfeInbox(user)) })
-      .catch(() => { if (active) setInboxAllowed(false) })
+    void getCurrentUserAsync().then(user => { if (active) setInboxAccess(canUseNfeInbox(user) ? 'liberada' : 'bloqueada') })
+      .catch(() => { if (active) setInboxAccess('bloqueada') })
     return () => { active = false }
   }, [])
 
@@ -305,7 +306,7 @@ export default function ContasPagarPage() {
   }
 
   return (
-    <div className="ps-canvas">
+    <div className="ps-canvas" data-caixa-notas={inboxAccess}>
       <div className="ps-shell">
         <header className="ps-header">
           <div className="ps-wordmark">
@@ -354,11 +355,12 @@ export default function ContasPagarPage() {
           ) : (
             <>
               <div className="ps-fieldrow" style={{ marginTop: 14 }}>
-                <button className="ps-btn primary block" onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
-                <button className="ps-btn ghost block" onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
+                <button className="ps-btn primary block" disabled={inboxSending} onClick={() => setShowForm(true)}><Plus size={16} /> Nova compra manual</button>
+                <button className="ps-btn ghost block" disabled={inboxSending} onClick={() => setShowXmlImport(true)}>Importar XML da NF-e</button>
                 <button className="ps-btn ghost block" onClick={() => router.push('/contas-pagar/relatorio')}><BarChart3 size={16} /> Relatório por período</button>
               </div>
-              {inboxAllowed && <NfeInboxPanel refreshKey={purchases} busyId={busyId} onReview={reviewInboxNote} />}
+              {inboxSending && <p role="status">Aguarde terminar o envio das notas.</p>}
+              {inboxAccess === 'liberada' && <NfeInboxPanel refreshKey={purchases} busyId={busyId} onReview={reviewInboxNote} onSendingChange={setInboxSending} />}
               {importDraftsError && (
                 <div className="ps-card" style={{ marginTop: 14, borderColor: 'var(--berry)' }}>
                   <b>Importações pendentes não carregaram</b>
@@ -366,12 +368,14 @@ export default function ContasPagarPage() {
                 </div>
               )}
               {catalogsReady && (
-                <XmlImportDraftList
-                  drafts={importDrafts}
-                  busyId={busyId}
-                  onResume={draft => void resumeImportDraft(draft)}
-                  onDiscard={draft => void discardImportDraft(draft)}
-                />
+                <fieldset disabled={inboxSending} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+                  <XmlImportDraftList
+                    drafts={importDrafts}
+                    busyId={busyId}
+                    onResume={draft => void resumeImportDraft(draft)}
+                    onDiscard={draft => void discardImportDraft(draft)}
+                  />
+                </fieldset>
               )}
             </>
           )}

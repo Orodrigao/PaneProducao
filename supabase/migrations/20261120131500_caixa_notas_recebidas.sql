@@ -29,6 +29,8 @@ create table public.payable_nfe_inbox (
   document_state text not null check (document_state in ('xml_completo', 'somente_resumo', 'ilegivel')),
   xml_content text check (length(xml_content) between 1 and 2000000),
   original_file_name text check (length(original_file_name) <= 255),
+  xml_attached_by uuid references auth.users(id),
+  xml_attached_at timestamptz,
   received_by uuid references auth.users(id),
   received_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
@@ -37,8 +39,7 @@ create table public.payable_nfe_inbox (
   check (document_state <> 'xml_completo' or xml_content is not null),
   check (document_state <> 'somente_resumo' or xml_content is null),
   check (source <> 'xml_manual' or document_state = 'xml_completo'),
-  check (substring(nfe_key from 7 for 14) = emitter_cnpj
-    and substring(nfe_key from 23 for 3) = lpad(nfe_series, 3, '0')
+  check (substring(nfe_key from 23 for 3) = lpad(nfe_series, 3, '0')
     and substring(nfe_key from 26 for 9) = lpad(nfe_number, 9, '0'))
 );
 create index payable_nfe_inbox_received_at_idx on public.payable_nfe_inbox (received_at desc);
@@ -62,6 +63,8 @@ begin
     or new.source is distinct from old.source
     or new.received_at is distinct from old.received_at
     or new.received_by is distinct from old.received_by
+    or (old.xml_attached_by is not null and new.xml_attached_by is distinct from old.xml_attached_by)
+    or (old.xml_attached_at is not null and new.xml_attached_at is distinct from old.xml_attached_at)
     or (old.xml_content is not null and new.xml_content is distinct from old.xml_content) then
     raise exception 'O XML original da nota fica guardado e não pode ser apagado nem trocado.';
   end if;
@@ -83,6 +86,8 @@ declare
   protocolo_chave text;
   protocolo_status text;
   emitente text;
+  documento_chave text;
+  tem_protocolo boolean;
   emissao timestamptz;
   valor numeric(12,2);
   soma integer := 0;
@@ -98,7 +103,7 @@ begin
     motivo := 'ilegivel'; mensagem := 'Este XML contém uma declaração não permitida.';
   else
     begin
-      doc := xmlparse(document p_xml);
+      doc := xmlparse(document ltrim(p_xml, chr(65279) || E' \t\r\n'));
     exception when others then
       motivo := 'ilegivel'; mensagem := 'Não deu para ler este arquivo como XML.';
     end;
@@ -114,6 +119,8 @@ begin
     modelo text path '*[local-name()="ide"]/*[local-name()="mod"]',
     ambiente text path '*[local-name()="ide"]/*[local-name()="tpAmb"]',
     uf text path '*[local-name()="ide"]/*[local-name()="cUF"]',
+    processo_emissao text path '*[local-name()="ide"]/*[local-name()="procEmi"]',
+    avulsa_cnpj text path '*[local-name()="avulsa"]/*[local-name()="CNPJ"]',
     cnpj text path '*[local-name()="emit"]/*[local-name()="CNPJ"]',
     cpf text path '*[local-name()="emit"]/*[local-name()="CPF"]',
     nome text path '*[local-name()="emit"]/*[local-name()="xNome"]',
@@ -129,7 +136,9 @@ begin
     total text path '*[local-name()="total"]/*[local-name()="ICMSTot"]/*[local-name()="vNF"]'
   );
   if not found then
-    if cardinality(xpath('//*[local-name()="infEvento"] | /*[local-name()="procEventoNFe" or local-name()="evento" or local-name()="envEvento" or local-name()="retEnvEvento"]', doc)) > 0 then
+    if cardinality(xpath('//*[local-name()="NFS" or local-name()="NFSe" or local-name()="Nfse" or local-name()="CompNfse" or local-name()="infNFSe" or local-name()="infNFS"]', doc)) > 0 then
+      motivo := 'nota_servico'; mensagem := 'É uma nota de serviço (NFS-e). Ela entra numa fase futura, não por esta caixa.';
+    elsif cardinality(xpath('//*[local-name()="infEvento"] | /*[local-name()="procEventoNFe" or local-name()="evento" or local-name()="envEvento" or local-name()="retEnvEvento"]', doc)) > 0 then
       motivo := 'evento'; mensagem := 'Este arquivo é um evento da nota (cancelamento, carta de correção ou ciência), não a nota.';
     else
       motivo := 'nao_e_nfe'; mensagem := 'Este arquivo não contém uma NF-e.';
@@ -149,10 +158,15 @@ begin
       resto := soma % 11;
       digito := case when resto in (0, 1) then 0 else 11 - resto end;
       emitente := coalesce(nota.cnpj, '000' || nota.cpf);
+      -- Na avulsa a chave identifica o órgão; o emitente guardado continua sendo o vendedor.
+      documento_chave := case when nota.processo_emissao in ('1', '2') and nota.avulsa_cnpj is not null
+        then nota.avulsa_cnpj else emitente end;
       select x.chave, x.status into protocolo_chave, protocolo_status
       from xmltable('(//*[local-name()="protNFe"]/*[local-name()="infProt"])[1]' passing doc columns
         chave text path '*[local-name()="chNFe"]', status text path '*[local-name()="cStat"]') x;
+      tem_protocolo := found;
       if emitente is null or emitente !~ '^[0-9]{14}$'
+        or documento_chave is null or documento_chave !~ '^[0-9]{14}$'
         or nota.uf is null or nota.uf !~ '^[0-9]{2}$'
         or nota.serie is null or nota.serie !~ '^[0-9]{1,3}$'
         or nota.numero is null or nota.numero !~ '^[0-9]{1,9}$'
@@ -160,7 +174,7 @@ begin
         or nota.codigo is null or nota.codigo !~ '^[0-9]{1,8}$'
         or nota.dv is null or nota.dv !~ '^[0-9]$'
         or substring(chave from 1 for 2) <> nota.uf
-        or substring(chave from 7 for 14) <> emitente
+        or substring(chave from 7 for 14) <> documento_chave
         or substring(chave from 21 for 2) <> nota.modelo
         or substring(chave from 23 for 3) <> lpad(nota.serie, 3, '0')
         or substring(chave from 26 for 9) <> lpad(nota.numero, 9, '0')
@@ -169,8 +183,10 @@ begin
         or right(chave, 1) <> nota.dv or right(chave, 1)::integer <> digito
         or (protocolo_chave is not null and protocolo_chave <> chave) then
         motivo := 'chave_incoerente'; mensagem := 'A chave da nota não confere com os dados do XML.';
-      elsif protocolo_status is not null and protocolo_status not in ('100', '150') then
-        motivo := 'nao_autorizada'; mensagem := 'A nota não está autorizada: código ' || protocolo_status || '.';
+      elsif not tem_protocolo then
+        motivo := 'sem_protocolo'; mensagem := 'O XML não traz a autorização da SEFAZ. Peça ao fornecedor o XML autorizado, com o protocolo.';
+      elsif protocolo_status is null or protocolo_status not in ('100', '150') then
+        motivo := 'nao_autorizada'; mensagem := 'A nota não está autorizada: código ' || coalesce(protocolo_status, 'não informado') || '.';
       elsif nullif(trim(nota.destinatario), '') is null then
         motivo := 'sem_destinatario'; mensagem := 'A nota não informa o CNPJ do destinatário.';
       elsif not exists (select 1 from private.nfe_group_companies c where c.cnpj = nota.destinatario) then
@@ -237,10 +253,10 @@ begin
       'id', null, 'chave', nota->>'chave', 'numero', null, 'emitente', null, 'ja_no_erp', false);
   end if;
   insert into public.payable_nfe_inbox (nfe_key, recipient_cnpj, emitter_cnpj, nfe_number, nfe_series,
-    emitter_name, issued_at, total_value, source, document_state, xml_content, original_file_name, received_by)
+    emitter_name, issued_at, total_value, source, document_state, xml_content, original_file_name, received_by, xml_attached_by, xml_attached_at)
   values (nota->>'chave', nota->>'recipient_cnpj', nota->>'emitter_cnpj', nota->>'numero', nota->>'serie',
     nota->>'emitter_name', (nota->>'issued_at')::timestamptz, (nota->>'total_value')::numeric,
-    'xml_manual', 'xml_completo', p_xml_content, left(p_file_name, 255), auth.uid())
+    'xml_manual', 'xml_completo', p_xml_content, left(p_file_name, 255), auth.uid(), auth.uid(), clock_timestamp())
   on conflict (nfe_key) do nothing returning * into registro;
   if found then
     resultado := 'entrou'; mensagem := 'Nota recebida para conferência.';
@@ -248,10 +264,21 @@ begin
     -- A trava também serializa dois XML que tentam completar o mesmo resumo.
     select * into registro from public.payable_nfe_inbox where nfe_key = nota->>'chave' for update;
     if registro.xml_content is null then
+      if registro.recipient_cnpj is distinct from nota->>'recipient_cnpj'
+        or registro.emitter_cnpj is distinct from nota->>'emitter_cnpj'
+        or (registro.total_value is not null and registro.total_value is distinct from (nota->>'total_value')::numeric) then
+        return jsonb_build_object('resultado', 'recusada', 'motivo', 'diverge_do_resumo',
+          'mensagem', 'Este XML não confere com o resumo que a SEFAZ mandou para esta chave (destinatário, emitente ou valor). Nada foi gravado.',
+          'id', null, 'chave', nota->>'chave', 'numero', nota->>'numero', 'emitente', nota->>'emitter_name',
+          'ja_no_erp', exists (select 1 from public.payable_purchases p where p.nfe_key = nota->>'chave'));
+      end if;
       update public.payable_nfe_inbox set xml_content = p_xml_content, document_state = 'xml_completo',
-        emitter_cnpj = nota->>'emitter_cnpj', nfe_number = nota->>'numero', nfe_series = nota->>'serie',
-        emitter_name = nota->>'emitter_name', issued_at = (nota->>'issued_at')::timestamptz,
-        total_value = (nota->>'total_value')::numeric, original_file_name = left(p_file_name, 255)
+        emitter_name = coalesce(registro.emitter_name, nota->>'emitter_name'),
+        issued_at = coalesce(registro.issued_at, (nota->>'issued_at')::timestamptz),
+        total_value = coalesce(registro.total_value, (nota->>'total_value')::numeric),
+        original_file_name = coalesce(registro.original_file_name, left(p_file_name, 255)),
+        xml_attached_by = coalesce(registro.xml_attached_by, auth.uid()),
+        xml_attached_at = coalesce(registro.xml_attached_at, clock_timestamp())
       where id = registro.id;
       resultado := 'completou'; mensagem := 'XML anexado à nota que já estava na caixa.';
     else
@@ -285,10 +312,11 @@ begin
   left join public.payable_purchases p on p.nfe_key = i.nfe_key
   left join public.payable_import_drafts d on d.nfe_key = i.nfe_key and d.status = 'pendente'
   cross join lateral (select case
+    when p.id is not null and p.status = 'cancelada' then 'conta_cancelada'
     when p.id is not null then case when p.created_at < i.received_at then 'ja_no_erp' else 'lancada' end
     when i.document_state = 'ilegivel' then 'ilegivel'
-    when d.id is not null then 'conferencia_comecada'
     when i.document_state = 'somente_resumo' then 'aguardando_xml'
+    when d.id is not null then 'conferencia_comecada'
     else 'esperando_conferencia' end as status) estado
   where i.store = 'jc'
   order by (estado.status in ('esperando_conferencia', 'conferencia_comecada', 'aguardando_xml', 'ilegivel')) desc,

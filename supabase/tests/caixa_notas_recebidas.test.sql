@@ -1,7 +1,7 @@
 -- XML e usuários fictícios. Cada asserção roda na mesma transação e é desfeita no fim.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(118);
+select plan(149);
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at) values
 ('98100000-0000-4000-8000-00000000000a', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'inbox-a@example.com', now(), now()),
 ('98100000-0000-4000-8000-00000000000b', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'inbox-b@example.com', now(), now()),
@@ -27,6 +27,12 @@ insert into inbox_fixture values
 (7, '43261195000000000199550010000000071981000014', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000071981000014"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>7</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>4</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000071981000014</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
 (8, '43261195000000000199550010000000081981000011', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000081981000011"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>8</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>1</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000081981000011</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
 (9, '43261195000000000199550010000000091981000019', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000091981000019"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>9</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>9</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000091981000019</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>');
+insert into inbox_fixture values
+(10, '43261195000000000199550010000000101981000010', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000101981000010"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>10</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>0</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000101981000010</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
+(11, '43261195000000000199550010000000111981000017', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000111981000017"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>11</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>7</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000111981000017</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
+(12, '43261195000000000199550010000000121981000014', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000121981000014"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>12</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>4</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi><procEmi>1</procEmi></ide><emit><CNPJ>95000000000270</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><avulsa><CNPJ>95000000000199</CNPJ></avulsa><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000121981000014</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
+(13, '43261195000000000199550010000000131981000011', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000131981000011"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>13</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>1</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi><procEmi>2</procEmi></ide><emit><CPF>95000000001</CPF><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><avulsa><CNPJ>95000000000199</CNPJ></avulsa><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000131981000011</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'),
+(14, '43261195000000000199550010000000141981000019', '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000141981000019"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>14</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>9</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000141981000019</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>');
 grant select on inbox_fixture to authenticated;
 
 
@@ -110,7 +116,16 @@ select is((select emitter_name from public.payable_nfe_inbox where nfe_key='4326
 
 select is((select public.receive_nfe_inbox_xml(xml_text,'copia.xml')->>'resultado' from inbox_fixture where n=1), 'ja_existia', 'repetição não duplica');
 
+select is((select public.receive_nfe_inbox_xml(replace(xml_text, '<cStat>100</cStat>', '<cStat>150</cStat>'))->>'resultado'
+  from inbox_fixture where n=1), 'ja_existia', 'autorização código 150 continua aceita');
+
+select is((select public.receive_nfe_inbox_xml(replace(xml_text, '<cStat>100</cStat>', ''))->>'motivo'
+  from inbox_fixture where n=9), 'nao_autorizada', 'protocolo sem código de autorização não entra');
+
 select is((select count(*)::int from public.payable_nfe_inbox), 1, 'uma única linha');
+
+select ok((select xml_attached_by = auth.uid() and xml_attached_at is not null
+  from public.payable_nfe_inbox where nfe_key = (select chave from inbox_fixture where n=1)), 'entrada registra quem anexou e quando');
 
 select is((select inbox_status from public.list_nfe_inbox()), 'esperando_conferencia', 'estado inicial derivado');
 
@@ -213,12 +228,15 @@ select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key=
 select ok((select inbox_purchase_id is not null and inbox_purchase_status='aberta' from public.list_nfe_inbox() where inbox_nfe_key='43261195000000000199550010000000021981000018'), 'compra e estado aparecem na lista');
 
 reset role;
-insert into public.payable_nfe_inbox (nfe_key,recipient_cnpj,emitter_cnpj,nfe_number,nfe_series,emitter_name,issued_at,total_value,source,document_state)
-values ('43261195000000000199550010000000041981000012','55800425000177','95000000000199','4','1','[TESTE] Resumo','2026-11-20T10:00:00-03:00',10,'sefaz','somente_resumo'),
-('43261195000000000199550010000000051981000010','55800425000177','95000000000199','5','1',null,null,null,'sefaz','ilegivel');
+insert into public.payable_nfe_inbox (nfe_key,recipient_cnpj,emitter_cnpj,nfe_number,nfe_series,emitter_name,issued_at,total_value,source,document_state,original_file_name)
+values ('43261195000000000199550010000000041981000012','55800425000177','95000000000199','4','1','[TESTE] Resumo','2026-11-20T09:00:00-03:00',10,'sefaz','somente_resumo',null),
+('43261195000000000199550010000000051981000010','55800425000177','95000000000199','5','1',null,null,null,'sefaz','ilegivel','resumo-original.xml');
 set local role authenticated;
 
 select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key='43261195000000000199550010000000041981000012'), 'aguardando_xml', 'resumo espera XML');
+
+select ok((select xml_attached_by is null and xml_attached_at is null from public.payable_nfe_inbox
+  where nfe_key = (select chave from inbox_fixture where n=4)), 'resumo sem XML ainda não tem autoria de anexo');
 
 select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key='43261195000000000199550010000000051981000010'), 'ilegivel', 'ilegível aparece com estado próprio');
 
@@ -228,13 +246,33 @@ select is((select public.receive_nfe_inbox_xml(xml_text,'outra-copia.xml')->>'re
 
 select is((select source from public.payable_nfe_inbox where nfe_key='43261195000000000199550010000000041981000012'), 'sefaz', 'origem do resumo preservada');
 
+select ok((select emitter_name = '[TESTE] Resumo' and issued_at = '2026-11-20T09:00:00-03:00'::timestamptz
+  and total_value = 10 and received_by is null and xml_attached_by = auth.uid() and xml_attached_at is not null
+  and original_file_name = 'completo.xml' from public.payable_nfe_inbox
+  where nfe_key = (select chave from inbox_fixture where n=4)), 'completar preserva preenchidos, preenche nome de arquivo nulo e registra o autor do anexo');
+
 select is((select xml_content from public.payable_nfe_inbox where nfe_key='43261195000000000199550010000000041981000012'), '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000041981000012"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>4</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>2</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261195000000000199550010000000041981000012</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>', 'XML anexado idêntico');
 
 select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key='43261195000000000199550010000000041981000012'), 'esperando_conferencia', 'XML anexado permite conferência');
 
 select is((select public.receive_nfe_inbox_xml(xml_text)->>'resultado' from inbox_fixture where n=5), 'completou', 'ilegível sem XML também pode ser completado');
 
-select is((public.receive_nfe_inbox_xml('<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261195000000000199550010000000061981000017"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>6</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>7</cDV><tpAmb>1</tpAmb><dhEmi>2026-12-01T00:00:00-03:00</dhEmi></ide><emit><CNPJ>95000000000199</CNPJ><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>')->>'resultado'), 'entrou', 'sem protocolo e mês diferente da chave são aceitos');
+select ok((select emitter_name = '[TESTE] Emitente & Filhos' and issued_at = '2026-11-20T10:00:00-03:00'::timestamptz
+  and total_value = 10 and xml_attached_by = auth.uid() and xml_attached_at is not null
+  and original_file_name = 'resumo-original.xml' from public.payable_nfe_inbox
+  where nfe_key = (select chave from inbox_fixture where n=5)),
+  'completar ilegível preenche nulos e autoria, preservando nome de arquivo preenchido');
+
+select is((select public.receive_nfe_inbox_xml(replace(xml_text, '2026-11-20T10:00:00-03:00', '2026-12-01T00:00:00-03:00'))->>'resultado'
+  from inbox_fixture where n=6), 'entrou', 'mês diferente da chave continua aceito com protocolo');
+
+select is((select public.receive_nfe_inbox_xml(regexp_replace(xml_text, '<protNFe>.*</protNFe>', ''))->>'motivo'
+  from inbox_fixture where n=9), 'sem_protocolo', 'nota sem autorização da SEFAZ é recusada');
+
+select is((select public.receive_nfe_inbox_xml(regexp_replace(xml_text, '<protNFe>.*</protNFe>', ''))->>'mensagem'
+  from inbox_fixture where n=9), 'O XML não traz a autorização da SEFAZ. Peça ao fornecedor o XML autorizado, com o protocolo.', 'recusa orienta pedir XML autorizado');
+
+select is((select count(*)::int from public.payable_nfe_inbox where nfe_key = (select chave from inbox_fixture where n=9)), 0, 'sem protocolo não grava');
 
 select is((public.receive_nfe_inbox_xml('<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe43261100095000000001550010000000071981000017"><ide><cUF>43</cUF><mod>55</mod><serie>1</serie><nNF>7</nNF><tpEmis>1</tpEmis><cNF>98100001</cNF><cDV>7</cDV><tpAmb>1</tpAmb><dhEmi>2026-11-20T10:00:00-03:00</dhEmi></ide><emit><CPF>95000000001</CPF><xNome>[TESTE] Emitente &amp; Filhos</xNome></emit><dest><CNPJ>55800425000177</CNPJ><xNome>[TESTE] Destinatário</xNome></dest><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>43261100095000000001550010000000071981000017</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>')->>'resultado'), 'entrou', 'emitente CPF usa 000 mais CPF na chave');
 
@@ -250,9 +288,89 @@ select is((select count(*)::int from public.list_nfe_inbox(-30)),1,'limite negat
 
 select ok((select inbox_status not in ('lancada','ja_no_erp') from public.list_nfe_inbox(1)), 'pendentes vêm antes das concluídas');
 
+-- Regressões da rodada 2, sempre com documentos fictícios.
+select is((public.receive_nfe_inbox_xml('<CompNfse><Nfse><infNFS/></Nfse></CompNfse>')->>'motivo'), 'nota_servico', 'NFS-e tem recusa própria');
+
+select is((public.receive_nfe_inbox_xml('<CompNfse><Nfse><infNFS/></Nfse></CompNfse>')->>'mensagem'),
+  'É uma nota de serviço (NFS-e). Ela entra numa fase futura, não por esta caixa.', 'NFS-e informa a fase futura');
+
+select is((select public.receive_nfe_inbox_xml(xml_text)->>'resultado' from inbox_fixture where n=12), 'entrou', 'avulsa procEmi 1 aceita a chave do órgão');
+
+select is((select emitter_cnpj from public.payable_nfe_inbox where nfe_key = (select chave from inbox_fixture where n=12)),
+  '95000000000270', 'avulsa guarda CNPJ do vendedor, não o do órgão');
+
+select is((select public.receive_nfe_inbox_xml(xml_text)->>'resultado' from inbox_fixture where n=13), 'entrou', 'avulsa procEmi 2 aceita produtor CPF');
+
+select is((select emitter_cnpj from public.payable_nfe_inbox where nfe_key = (select chave from inbox_fixture where n=13)),
+  '00095000000001', 'avulsa de produtor guarda 000 mais CPF do vendedor');
+
+select is((select public.receive_nfe_inbox_xml(replace(xml_text, '<avulsa><CNPJ>95000000000199</CNPJ></avulsa>',
+  '<avulsa><CNPJ>95000000000350</CNPJ></avulsa>'))->>'motivo' from inbox_fixture where n=12), 'chave_incoerente', 'avulsa recusa chave diferente do órgão');
+
+select is((select public.receive_nfe_inbox_xml(replace(replace(xml_text, '</ide>', '<procEmi>0</procEmi></ide>'),
+  '</emit>', '</emit><avulsa/>'))->>'resultado' from inbox_fixture where n=1), 'ja_existia', 'nota comum aceita avulsa vazia mantendo emitente na chave');
+
+select is((select public.receive_nfe_inbox_xml(replace(replace(xml_text, '<emit><CNPJ>95000000000199</CNPJ>',
+  '<emit><CNPJ>95000000000270</CNPJ>'), '</emit>', '</emit><avulsa/>'))->>'motivo' from inbox_fixture where n=9),
+  'chave_incoerente', 'nota comum com avulsa vazia ainda exige o vendedor na chave');
+
+select is((select public.receive_nfe_inbox_xml(chr(65279) || E' \r\n\t' || '<?xml version="1.0" encoding="UTF-8"?>' || xml_text)->>'resultado'
+  from inbox_fixture where n=14), 'entrou', 'BOM e espaço antes da declaração XML não impedem a leitura');
+
+select is((select xml_content from public.payable_nfe_inbox where nfe_key = (select chave from inbox_fixture where n=14)),
+  (select chr(65279) || E' \r\n\t' || '<?xml version="1.0" encoding="UTF-8"?>' || xml_text from inbox_fixture where n=14), 'XML recebido é guardado inclusive com espaço inicial');
+
+-- Um resumo sem XML continua bloqueado mesmo que exista rascunho pendente.
+select public.save_xml_import_draft(chave, null, '[TESTE] Resumo', '9', '1', '2026-11-20', 10, xml_text, '[]', '[]')
+  from inbox_fixture where n=9;
+reset role;
+insert into public.payable_nfe_inbox (nfe_key, recipient_cnpj, emitter_cnpj, nfe_number, nfe_series,
+  emitter_name, issued_at, total_value, source, document_state, original_file_name)
+select chave, case when n=10 then '58286372000106' else '55800425000177' end,
+  case when n=11 then '95000000000270' else '95000000000199' end, n::text, '1',
+  '[TESTE] Resumo protegido', '2026-11-20T09:00:00-03:00'::timestamptz,
+  case when n=9 then 11 else 10 end, 'sefaz', 'somente_resumo', 'nome-do-resumo.xml'
+from inbox_fixture where n in (9,10,11);
+create temp table inbox_resumos_antes as
+  select i.nfe_key, to_jsonb(i) as registro from public.payable_nfe_inbox i
+  where i.nfe_key in (select chave from inbox_fixture where n in (9,10,11));
+grant select on inbox_resumos_antes to authenticated;
+update public.payable_purchases set status = 'cancelada' where nfe_key = (select chave from inbox_fixture where n=2);
+set local role authenticated;
+
+select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key = (select chave from inbox_fixture where n=9)),
+  'aguardando_xml', 'resumo com rascunho pendente espera XML antes de conferir');
+
+select is((select public.receive_nfe_inbox_xml(xml_text)->>'motivo' from inbox_fixture where n=9), 'diverge_do_resumo', 'valor diferente do resumo é recusado');
+
+select is((select to_jsonb(i) from public.payable_nfe_inbox i where nfe_key = (select chave from inbox_fixture where n=9)),
+  (select registro from inbox_resumos_antes where nfe_key = (select chave from inbox_fixture where n=9)), 'recusa por valor preserva a linha inteira');
+
+select is((select public.receive_nfe_inbox_xml(xml_text)->>'motivo' from inbox_fixture where n=10), 'diverge_do_resumo', 'destinatário diferente do resumo é recusado');
+
+select is((select to_jsonb(i) from public.payable_nfe_inbox i where nfe_key = (select chave from inbox_fixture where n=10)),
+  (select registro from inbox_resumos_antes where nfe_key = (select chave from inbox_fixture where n=10)), 'recusa por destinatário preserva a linha inteira');
+
+select is((select public.receive_nfe_inbox_xml(xml_text)->>'motivo' from inbox_fixture where n=11), 'diverge_do_resumo', 'vendedor diferente do resumo é recusado');
+
+select is((select to_jsonb(i) from public.payable_nfe_inbox i where nfe_key = (select chave from inbox_fixture where n=11)),
+  (select registro from inbox_resumos_antes where nfe_key = (select chave from inbox_fixture where n=11)), 'recusa por vendedor preserva a linha inteira');
+
+select is((select inbox_status from public.list_nfe_inbox() where inbox_nfe_key = (select chave from inbox_fixture where n=2)),
+  'conta_cancelada', 'compra cancelada não aparece como lançada');
+
+select is((select inbox_purchase_status from public.list_nfe_inbox() where inbox_nfe_key = (select chave from inbox_fixture where n=2)),
+  'cancelada', 'estado original da compra cancelada continua disponível');
+
 reset role;
 
 select throws_ok('delete from public.payable_nfe_inbox where nfe_key=''43261195000000000199550010000000011981000010''','P0001','O XML original da nota fica guardado e não pode ser apagado nem trocado.','guarda mesmo para postgres: delete from public.payable_nfe_inbox');
+
+select throws_ok('update public.payable_nfe_inbox set xml_attached_by=''98100000-0000-4000-8000-00000000000d'' where nfe_key=''43261195000000000199550010000000011981000010''',
+  'P0001','O XML original da nota fica guardado e não pode ser apagado nem trocado.','guarda recusa trocar autor do anexo');
+
+select throws_ok('update public.payable_nfe_inbox set xml_attached_at=xml_attached_at+interval ''1 second'' where nfe_key=''43261195000000000199550010000000011981000010''',
+  'P0001','O XML original da nota fica guardado e não pode ser apagado nem trocado.','guarda recusa trocar data do anexo');
 
 select throws_ok('update public.payable_nfe_inbox set xml_content=''<trocado/>'' where nfe_key=''43261195000000000199550010000000011981000010''','P0001','O XML original da nota fica guardado e não pode ser apagado nem trocado.','guarda mesmo para postgres: update public.payable_nfe_inbox');
 

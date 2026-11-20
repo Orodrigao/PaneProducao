@@ -10,10 +10,11 @@ import {
 interface Props {
   refreshKey: unknown
   onReview: (row: NfeInboxRow) => Promise<void>
+  onSendingChange: (sending: boolean) => void
   busyId: string | null
 }
 
-export default function NfeInboxPanel({ refreshKey, onReview, busyId }: Props) {
+export default function NfeInboxPanel({ refreshKey, onReview, onSendingChange, busyId }: Props) {
   const input = useRef<HTMLInputElement>(null)
   const sending = useRef(false)
   const request = useRef(0)
@@ -43,19 +44,21 @@ export default function NfeInboxPanel({ refreshKey, onReview, busyId }: Props) {
   async function upload(files: File[]) {
     if (sending.current || files.length === 0) return
     sending.current = true
+    onSendingChange(true)
     try {
       const next = await sendInboxFiles(files, receiveNfeInboxXml, setProgress)
       setResults(previous => [...previous, ...next])
       await reload()
     } finally {
       sending.current = false
+      onSendingChange(false)
       setProgress(null)
       if (input.current) input.current.value = ''
     }
   }
 
   function note(row: NfeInboxRow) {
-    const reviewable = row.status === 'esperando_conferencia' || row.status === 'conferencia_comecada'
+    const reviewable = row.has_xml && (row.status === 'esperando_conferencia' || row.status === 'conferencia_comecada')
     return <article key={row.id} data-testid="nfe-inbox-row" className="ps-card" style={{ marginTop: 8 }}>
       <b>{row.emitter_name ?? 'Emitente ainda não identificado'}</b>
       <p style={{ margin: '4px 0', overflowWrap: 'anywhere' }}>Nota {row.number} · Série {row.series} · {row.recipient_label}</p>
@@ -68,8 +71,9 @@ export default function NfeInboxPanel({ refreshKey, onReview, busyId }: Props) {
       {row.status === 'ilegivel' && <small>Não foi possível ler o documento recebido. Envie um XML completo desta nota.</small>}
     </article>
   }
-  const completed = rows.filter(row => row.status === 'lancada' || row.status === 'ja_no_erp')
-  const pending = rows.filter(row => row.status !== 'lancada' && row.status !== 'ja_no_erp')
+  const isCompleted = (row: NfeInboxRow) => ['lancada', 'ja_no_erp', 'conta_cancelada'].includes(row.status)
+  const completed = rows.filter(isCompleted)
+  const pending = rows.filter(row => !isCompleted(row))
   return <section className="ps-card" aria-label="Notas recebidas" style={{ marginTop: 14 }}>
     <h2 style={{ fontSize: 18, margin: '0 0 8px' }}>Notas recebidas</h2>
     <p>Suba os XML das notas de compra. Cada nota entra uma vez só; depois é só tocar em Conferir.</p>
@@ -85,9 +89,13 @@ export default function NfeInboxPanel({ refreshKey, onReview, busyId }: Props) {
       </ul>
       <button className="ps-btn ghost sm" onClick={() => setResults([])}>Fechar resumo</button>
     </div>}
-    {loading ? <p>Carregando a caixa de notas…</p> : error ? <div role="alert">
+    {loading && (rows.length === 0 ? <p role="status">Carregando a caixa de notas…</p>
+      : <small role="status" style={{ display: 'block', marginTop: 8 }}>Atualizando…</small>)}
+    {error && <div role="alert">
       <p>{error}</p><button className="ps-btn ghost sm" onClick={() => void reload()}>Tentar novamente</button>
-    </div> : rows.length === 0 ? <p>Nenhuma nota na caixa ainda.</p> : <>
+    </div>}
+    {!loading && !error && rows.length === 0 && <p>Nenhuma nota na caixa ainda.</p>}
+    {rows.length > 0 && <>
       {pending.map(note)}
       {completed.length > 0 && <details style={{ marginTop: 12 }}><summary>Concluídas ({completed.length})</summary>{completed.map(note)}</details>}
     </>}

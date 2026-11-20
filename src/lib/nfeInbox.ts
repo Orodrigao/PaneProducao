@@ -45,7 +45,7 @@ export function canUseNfeInbox(user: Pick<AppUser, 'role' | 'permissions'> | nul
 export function nfeInboxStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     esperando_conferencia: 'Esperando conferência', conferencia_comecada: 'Conferência começada',
-    ja_no_erp: 'Já estava no ERP', lancada: 'Lançada', ilegivel: 'Ilegível', aguardando_xml: 'Esperando o XML',
+    ja_no_erp: 'Já estava no ERP', lancada: 'Lançada', conta_cancelada: 'Conta cancelada no ERP', ilegivel: 'Ilegível', aguardando_xml: 'Esperando o XML',
   }
   return labels[status] ?? status
 }
@@ -88,7 +88,7 @@ export async function readXmlFileText(file: Pick<File, 'text'>): Promise<string>
   let raw: string
   try { raw = await file.text() }
   catch { throw new XmlFileReadError('Não foi possível ler este arquivo. Tente de novo.') }
-  const text = raw.replace(/^\uFEFF/, '')
+  const text = raw.replace(/^[\uFEFF\s]+/, '')
   if (text.length > 2_000_000) throw new XmlFileReadError('O arquivo passa do limite de 2.000.000 de caracteres.')
   return text
 }

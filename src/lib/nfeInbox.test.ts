@@ -16,7 +16,7 @@ describe('permissão da caixa', () => {
   })
 })
 it('mostra todos os estados e preserva um estado novo vindo do banco', () => {
-  expect(['esperando_conferencia', 'conferencia_comecada', 'ja_no_erp', 'lancada', 'ilegivel', 'aguardando_xml'].map(nfeInboxStatusLabel)).toEqual(['Esperando conferência', 'Conferência começada', 'Já estava no ERP', 'Lançada', 'Ilegível', 'Esperando o XML'])
+  expect(['esperando_conferencia', 'conferencia_comecada', 'ja_no_erp', 'lancada', 'conta_cancelada', 'ilegivel', 'aguardando_xml'].map(nfeInboxStatusLabel)).toEqual(['Esperando conferência', 'Conferência começada', 'Já estava no ERP', 'Lançada', 'Conta cancelada no ERP', 'Ilegível', 'Esperando o XML'])
   expect(nfeInboxStatusLabel('estado_futuro')).toBe('estado_futuro')
   expect(['entrou', 'ja_existia', 'completou', 'recusada', 'nao_enviado'].map(resultado => nfeInboxResultLabel({ resultado, ja_no_erp: false }))).toEqual(['Entrou', 'Já estava na caixa', 'XML anexado', 'Recusada', 'Não enviado, tente de novo'])
   expect(nfeInboxResultLabel({ resultado: 'entrou', ja_no_erp: true })).toContain('já estava lançada no ERP')
@@ -42,8 +42,10 @@ it('envia em ordem, sem simultaneidade, mesmo com erro e recusa no meio', async 
   expect(progress.mock.calls.map(call => call[0])).toEqual([1, 2, 3, 4].map(current => ({ current, total: 4 })))
   expect(inboxBatchSummary(results)).toBe('2 entraram, 1 recusada, 1 não enviado')
 })
-it('remove BOM e aceita exatamente o limite; acima do limite não chama o banco', async () => {
+it('remove BOM e espaços iniciais e aceita exatamente o limite; acima do limite não chama o banco', async () => {
   expect(await readXmlFileText(file('a', '\uFEFF<NFe/>'))).toBe('<NFe/>')
+  expect(await readXmlFileText(file('a', '\uFEFF \r\n\t<?xml version="1.0"?><NFe/>'))).toBe('<?xml version="1.0"?><NFe/>')
+  expect(await readXmlFileText(file('a', ' \n<NFe> texto preservado </NFe> \n'))).toBe('<NFe> texto preservado </NFe> \n')
   expect((await readXmlFileText(file('a', 'x'.repeat(2_000_000)))).length).toBe(2_000_000)
   const send = vi.fn(async () => success)
   const result = await sendInboxFiles([file('grande', 'x'.repeat(2_000_001)), file('bom', '\uFEFF<NFe/>')], send)

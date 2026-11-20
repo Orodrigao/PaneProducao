@@ -127,7 +127,7 @@ interface ResumedImport {
  * de um arquivo novo.
  */
 function resumeImport(content: XmlImportDraftContent, suppliers: readonly XmlSupplierOption[], catalog: readonly PayableProduct[]): ResumedImport {
-  const parsed = parseNfeXml(content.xml_content)
+  const parsed = parseNfeXml(content.xml_content.replace(/^[\uFEFF\s]+/, ''))
   const applied = applyItemDecisions(parsed, content.item_decisions, catalog)
   const draft = applyInstallmentDecisions(applied.draft, content.installments)
   const matched = suppliers.find(supplier => digits(supplier.cnpj) === digits(draft.supplierCnpj) && digits(draft.supplierCnpj) !== '')
@@ -343,7 +343,7 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
     setError(null)
     setDuplicateNfe(false)
     try {
-      const nextDraft = parseNfeXml(text)
+      const nextDraft = parseNfeXml(text.replace(/^[\uFEFF\s]+/, ''))
       const { supabase } = await import('@/lib/supabase')
       const { data: existingPurchase, error: duplicateError } = await supabase
         .from('payable_purchases')

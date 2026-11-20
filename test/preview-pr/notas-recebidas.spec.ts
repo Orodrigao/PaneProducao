@@ -52,17 +52,32 @@ test('Financeiro recebe um lote, confere e lança pela caixa, com persistência 
     const homologacao = nota(stamp, 3, '55800425000177', '2')
     try {
       await page.goto('/contas-pagar')
+      await expect(page.locator('[data-caixa-notas="liberada"]')).toBeVisible({ timeout: 20_000 })
       const caixa = page.getByRole('region', { name: 'Notas recebidas', exact: true })
       await expect(caixa).toBeVisible({ timeout: 20_000 })
       await expect(page.getByText('Carregando contas...', { exact: true })).toHaveCount(0)
-      await caixa.getByLabel('Escolher XML das notas recebidas').setInputFiles([
-        { name: 'a.xml', mimeType: 'application/xml', buffer: Buffer.from(a.xml) },
-        { name: 'copia-a.xml', mimeType: 'application/xml', buffer: Buffer.from(a.xml) },
-        { name: 'fora.xml', mimeType: 'application/xml', buffer: Buffer.from(fora.xml) },
-        { name: 'homologacao.xml', mimeType: 'application/xml', buffer: Buffer.from(homologacao.xml) },
-      ])
+      let liberarEnvio = () => {}
+      const envioLiberado = new Promise<void>(resolve => { liberarEnvio = resolve })
+      await page.route('**/rest/v1/rpc/receive_nfe_inbox_xml', async route => {
+        await envioLiberado
+        await route.fallback()
+      }, { times: 1 })
+      try {
+        await caixa.getByLabel('Escolher XML das notas recebidas').setInputFiles([
+          { name: 'a.xml', mimeType: 'application/xml', buffer: Buffer.from(a.xml) },
+          { name: 'copia-a.xml', mimeType: 'application/xml', buffer: Buffer.from(a.xml) },
+          { name: 'fora.xml', mimeType: 'application/xml', buffer: Buffer.from(fora.xml) },
+          { name: 'homologacao.xml', mimeType: 'application/xml', buffer: Buffer.from(homologacao.xml) },
+        ])
+        await expect(page.getByRole('button', { name: 'Nova compra manual', exact: true })).toBeDisabled()
+        await expect(page.getByRole('button', { name: 'Importar XML da NF-e', exact: true })).toBeDisabled()
+        await expect(page.getByText('Aguarde terminar o envio das notas.', { exact: true })).toBeVisible()
+        await expect(caixa.getByRole('button', { name: 'Enviar XML das notas', exact: true })).toBeDisabled()
+      } finally { liberarEnvio() }
       const resumo = caixa.getByRole('status').filter({ hasText: 'a.xml' })
       await expect(resumo).toContainText('1 entrou, 1 já estava na caixa, 2 recusadas', { timeout: 20_000 })
+      await expect(page.getByRole('button', { name: 'Nova compra manual', exact: true })).toBeEnabled()
+      await expect(page.getByRole('button', { name: 'Importar XML da NF-e', exact: true })).toBeEnabled()
       await expect(resumo.locator('li').filter({ hasText: /^a.xml:/ })).toContainText('Entrou')
       await expect(resumo.locator('li').filter({ hasText: 'copia-a.xml:' })).toContainText('Já estava na caixa')
       const recusada = resumo.locator('li').filter({ hasText: 'fora.xml:' })
@@ -97,12 +112,32 @@ test('Financeiro recebe um lote, confere e lança pela caixa, com persistência 
       await expect(linha).toContainText('Lançada', { timeout: 20_000 })
       await expect(caixa.getByTestId('nfe-inbox-row').filter({ hasText: 'Nota ' + fora.numero + ' ·' })).toHaveCount(0)
       await expect(caixa.getByTestId('nfe-inbox-row').filter({ hasText: 'Nota ' + homologacao.numero + ' ·' })).toHaveCount(0)
+      // Uma recarga mantém as linhas e o bloco aberto enquanto o banco responde.
+      let liberarLista = () => {}
+      const listaLiberada = new Promise<void>(resolve => { liberarLista = resolve })
+      await page.route('**/rest/v1/rpc/list_nfe_inbox', async route => {
+        await listaLiberada
+        await route.fallback()
+      }, { times: 1 })
+      try {
+        await page.getByRole('button', { name: 'Atualizar contas', exact: true }).click()
+        await expect(caixa.getByText('Atualizando…', { exact: true })).toBeVisible()
+        await expect(caixa.getByText('Carregando a caixa de notas…', { exact: true })).toHaveCount(0)
+        await expect(linha).toBeVisible()
+        await expect(caixa.locator('details')).toHaveAttribute('open', '')
+      } finally { liberarLista() }
+      await expect(caixa.getByText('Atualizando…', { exact: true })).toHaveCount(0)
+      await expect(linha).toBeVisible()
       // Persistência e ausência das recusadas também pela leitura do próprio usuário.
       const resposta = await page.request.get(acesso.url + '/rest/v1/payable_nfe_inbox?select=nfe_key&nfe_key=in.(' + [a.chave, fora.chave, homologacao.chave].join(',') + ')', {
         headers: await cabecalhosDaSessao(page, acesso), maxRedirects: 0,
       })
       expect(resposta.ok(), await resposta.text()).toBe(true)
       expect(await resposta.json()).toEqual([{ nfe_key: a.chave }])
+      await cancelarSeAberta(page, acesso, a.chave)
+      await page.getByRole('button', { name: 'Atualizar contas', exact: true }).click()
+      await expect(linha).toContainText('Conta cancelada no ERP', { timeout: 20_000 })
+      await expect(linha.getByRole('button', { name: 'Conferir', exact: true })).toHaveCount(0)
     } finally {
       await cancelarSeAberta(page, acesso, a.chave)
     }
@@ -113,6 +148,7 @@ test('Financeiro Catálogo abre a página, mas não usa nem lê a caixa de notas
     test.setTimeout(115_000)
     const acesso = await entrarComo(page, 'financeiroCatalogoJc')
     await page.goto('/contas-pagar')
+    await expect(page.locator('[data-caixa-notas="bloqueada"]')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText('Financeiro da JC', { exact: true })).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText('Carregando contas...', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('region', { name: 'Notas recebidas', exact: true })).toHaveCount(0)
