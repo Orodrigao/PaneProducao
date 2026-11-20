@@ -105,6 +105,7 @@ interface XmlPayableImportProps {
   products: PayableProduct[]
   /** Importação salva pela metade para retomar; a nota é relida do XML guardado. */
   initialDraft?: XmlImportDraftContent | null
+  initialXmlText?: string | null
   onSaved: () => Promise<void> | void
   onCancel: () => void
 }
@@ -126,7 +127,7 @@ interface ResumedImport {
  * de um arquivo novo.
  */
 function resumeImport(content: XmlImportDraftContent, suppliers: readonly XmlSupplierOption[], catalog: readonly PayableProduct[]): ResumedImport {
-  const parsed = parseNfeXml(content.xml_content)
+  const parsed = parseNfeXml(content.xml_content.replace(/^[\uFEFF\s]+/, ''))
   const applied = applyItemDecisions(parsed, content.item_decisions, catalog)
   const draft = applyInstallmentDecisions(applied.draft, content.installments)
   const matched = suppliers.find(supplier => digits(supplier.cnpj) === digits(draft.supplierCnpj) && digits(draft.supplierCnpj) !== '')
@@ -219,7 +220,7 @@ function lostLinesMessage(lines: readonly number[]): string {
     : `Os itens-base das linhas ${list} saíram do catálogo desde que a importação foi salva. Classifique essas linhas de novo.`
 }
 
-export default function XmlPayableImport({ suppliers, products, initialDraft = null, onSaved, onCancel }: XmlPayableImportProps) {
+export default function XmlPayableImport({ suppliers, products, initialDraft = null, initialXmlText = null, onSaved, onCancel }: XmlPayableImportProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const requestIdRef = useRef(crypto.randomUUID())
   const mappingSnapshotRef = useRef<{ supplierId: string; fingerprint: string } | null>(null)
@@ -323,11 +324,26 @@ export default function XmlPayableImport({ suppliers, products, initialDraft = n
   }, [])
 
   async function readFile(file: File) {
+    try { await readXmlText(await file.text()) }
+    catch (readError) { setDraft(null); setDuplicateNfe(false); setError(getPayableErrorMessage(readError, 'Não foi possível ler o XML.')) }
+  }
+
+  // A caixa abre a mesma leitura de arquivo, uma única vez por montagem.
+  const initialXmlRead = useRef(false)
+  const readInitialXml = useRef(() => {
+    if (initialXmlText && !initialDraft) void readXmlText(initialXmlText)
+  })
+  useEffect(() => {
+    if (initialXmlRead.current) return
+    initialXmlRead.current = true
+    readInitialXml.current()
+  }, [])
+
+  async function readXmlText(text: string) {
     setError(null)
     setDuplicateNfe(false)
     try {
-      const text = await file.text()
-      const nextDraft = parseNfeXml(text)
+      const nextDraft = parseNfeXml(text.replace(/^[\uFEFF\s]+/, ''))
       const { supabase } = await import('@/lib/supabase')
       const { data: existingPurchase, error: duplicateError } = await supabase
         .from('payable_purchases')
