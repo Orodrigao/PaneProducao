@@ -6,8 +6,8 @@ as $$
 declare response sefaz_http.http_response; started timestamptz := clock_timestamp();
 begin
   perform sefaz_http.http_reset_curlopt();
-  if not sefaz_http.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS','1500')
-      or not sefaz_http.http_set_curlopt('CURLOPT_TIMEOUT_MS','4500')
+  if not sefaz_http.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS','1000')
+      or not sefaz_http.http_set_curlopt('CURLOPT_TIMEOUT_MS','2000')
       or not sefaz_http.http_set_curlopt('CURLOPT_SSL_VERIFYPEER','1')
       or not sefaz_http.http_set_curlopt('CURLOPT_SSL_VERIFYHOST','2') then
     raise exception 'Opcoes TLS indisponiveis.';

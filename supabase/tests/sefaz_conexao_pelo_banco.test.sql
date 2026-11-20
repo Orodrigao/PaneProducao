@@ -268,7 +268,7 @@ select is(current_setting('sefaz_test.calls')::jsonb#>>'{1,content_type}','appli
 select is(current_setting('sefaz_test.calls')::jsonb#>'{1,headers}',
   '[{"field":"Accept","value":"application/soap+xml"}]'::jsonb,'sondagem envia somente Accept SOAP');
 select is(current_setting('sefaz_test.calls')::jsonb#>'{1,options}',
-  '{"CURLOPT_CONNECTTIMEOUT_MS":"1500","CURLOPT_TIMEOUT_MS":"4500","CURLOPT_SSL_VERIFYPEER":"1","CURLOPT_SSL_VERIFYHOST":"2"}'::jsonb,
+  '{"CURLOPT_CONNECTTIMEOUT_MS":"1000","CURLOPT_TIMEOUT_MS":"2000","CURLOPT_SSL_VERIFYPEER":"1","CURLOPT_SSL_VERIFYHOST":"2"}'::jsonb,
   'sondagem limita o tempo e verifica certificado e host do servidor');
 select is((resultado->'sondagem_sem_certificado') - 'ms_banco','{"status":"ok","http":403}'::jsonb,
   'sondagem devolve so status HTTP e tempo, sem corpo nem cabecalhos') from sefaz_evento_resultado;

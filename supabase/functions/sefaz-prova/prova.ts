@@ -279,8 +279,12 @@ export async function executarProva(entrada: Entrada, rpc: Rpc): Promise<Objeto>
     if (entrada.evento_homologacao) provas.push(['evento_homologacao', 'sefaz_prova_evento', { p_empresa: empresa }])
     for (const [key, name, args] of provas) {
       const start = performance.now()
+      let sondagem: Objeto = {}
       try {
         const raw = objeto(await rpc(name, args))
+        if (key === 'evento_homologacao' && raw.sondagem_sem_certificado !== undefined) {
+          sondagem = { sondagem_sem_certificado: sanearSondagem(raw.sondagem_sem_certificado) }
+        }
         if (raw.status === 'sem_certificado') {
           company[key] = { status: 'sem_certificado', motivo: 'certificado nao guardado' }
           company.certificado = company[key]
@@ -290,13 +294,11 @@ export async function executarProva(entrada: Entrada, rpc: Rpc): Promise<Objeto>
         company.certificado = { status: 'ok', dias_para_vencer: numero(raw.dias_para_vencer) }
         if (typeof raw.body !== 'string' || raw.body.length > MAX_TOTAL || typeof raw.http !== 'number') throw new Error('resposta_invalida')
         const parsed = key === 'adn' ? await resumirAdn(raw.body, raw.http)
-          : raw.http !== 200 ? { status: 'falhou', motivo: 'http_recusado', http: raw.http,
-            ...(key === 'evento_homologacao' && raw.sondagem_sem_certificado !== undefined
-              ? { sondagem_sem_certificado: sanearSondagem(raw.sondagem_sem_certificado) } : {}) }
-          : key === 'dfe' ? await resumirDfe(raw.body) : resumirEvento(raw.body, raw.sondagem_sem_certificado)
-        company[key] = { ...parsed, ms_banco: numero(raw.ms_banco), ms_total: performance.now() - start }
+          : raw.http !== 200 ? { status: 'falhou', motivo: 'http_recusado', http: raw.http }
+          : key === 'dfe' ? await resumirDfe(raw.body) : resumirEvento(raw.body)
+        company[key] = { ...parsed, ...sondagem, ms_banco: numero(raw.ms_banco), ms_total: performance.now() - start }
       } catch {
-        company[key] = { status: 'falhou', motivo: 'prova_falhou', ms_total: performance.now() - start }
+        company[key] = { status: 'falhou', motivo: 'prova_falhou', ...sondagem, ms_total: performance.now() - start }
       }
     }
   }

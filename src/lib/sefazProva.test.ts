@@ -170,6 +170,35 @@ describe('fronteiras e saneamento', () => {
       motivo: 'http_recusado', http: 403, sondagem_sem_certificado: sondagem } } })
     expect(JSON.stringify(result)).not.toContain('body')
   })
+  it('preserva a sondagem saneada quando o corpo do evento com HTTP 200 e ilegivel', async () => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 10 }
+    const result = await executarProva(validarEntrada(entrada)!, async name => ({
+      status: 'ok', http: 200,
+      body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : '<resposta/>',
+      sondagem_sem_certificado: { ...sondagem, body: 'CORPO PROIBIDO', headers: { segredo: 'PROIBIDO' } },
+    }))
+    for (const empresa of ['rgf', 'sf']) {
+      const item = result[empresa] as Record<string, Record<string, unknown>>
+      expect(item.evento_homologacao).toMatchObject({ status: 'falhou', motivo: 'prova_falhou' })
+      expect(item.evento_homologacao.sondagem_sem_certificado).toEqual(sondagem)
+      for (const prova of ['dfe', 'adn', 'certificado']) expect(item[prova]).not.toHaveProperty('sondagem_sem_certificado')
+    }
+    expect(JSON.stringify(result)).not.toMatch(/body|headers|PROIBIDO|resposta/)
+  })
+  it('nao reaproveita sondagem quando a RPC do evento lanca excecao sem resposta', async () => {
+    const sondagem = { status: 'ok', http: 403, ms_banco: 10 }
+    const result = await executarProva(validarEntrada(entrada)!, async (name, args) => {
+      if (name.endsWith('evento') && args.p_empresa === 'sf') throw new Error('ERRO PROIBIDO')
+      return { status: 'ok', http: 200,
+        body: name.endsWith('dfe') ? dfe('137') : name.endsWith('adn') ? '{}' : evento('128', '217'),
+        sondagem_sem_certificado: sondagem }
+    })
+    expect(result).toMatchObject({ rgf: { evento_homologacao: { status: 'ok', sondagem_sem_certificado: sondagem } },
+      sf: { evento_homologacao: { status: 'falhou', motivo: 'prova_falhou' } } })
+    const sf = result.sf as Record<string, Record<string, unknown>>
+    expect(sf.evento_homologacao).not.toHaveProperty('sondagem_sem_certificado')
+    expect(JSON.stringify(result)).not.toContain('PROIBIDO')
+  })
   it.each([
     '-----BEGIN PRIVATE KEY-----', 'CNPJ 11222333000181 invalido', 'A'.repeat(20),
     'falha\ncontrole', 'x '.repeat(101), 'conexão encerrada',
