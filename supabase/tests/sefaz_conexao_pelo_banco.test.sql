@@ -68,6 +68,41 @@ from (values
 ) exemplos(caso,mensagem,esperado);
 select is((select provolatile::text from pg_proc
   where oid='private.sefaz_tipo_de_falha(text)'::regprocedure),'i','classificador imutavel existe e entra nos lacos de seguranca');
+-- Saida esperada independente da implementacao; mascaras antes do corte.
+select is(private.sefaz_texto_de_falha(mensagem),esperado,'texto mascarado: '||caso::text)
+from (values
+  (1,'Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server',
+    'Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server'),
+  (2,'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure',
+    'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure'),
+  (3,'Recv failure: Connection reset by peer','Recv failure: Connection reset by peer'),
+  (4,'-----BEGIN PRIVATE KEY-----','[omitido]'),
+  (5,'BEGIN CERTIFICATE','[omitido]'),
+  (6,'certificado '||repeat('Ab9+/=',10)||'AB=='||' invalido','certificado [...] invalido'),
+  (7,'CNPJ 11222333000181 invalido','CNPJ [n] invalido'),
+  (8,E'Recv\nfailure\treset','Recv?failure?reset'),
+  (9,repeat('x ',150),repeat('x ',100)),
+  (10,null,null), (11,'',null), (12,'   ',null), (13,E'\t\n\r',null),
+  (14,'aviso ----- fim','[omitido]'),
+  (15,E'bEgIn\nqualquer CeRtIfIcAtE','[omitido]'),
+  (16,'BEGIN outra PRIVATE informacao','[omitido]'),
+  (17,'begin outra key informacao','[omitido]'),
+  (18,'unable to set PrIvAtE KeY file','[omitido]'),
+  (19,'valor '||repeat('A',19),'valor '||repeat('A',19)),
+  (20,'valor '||repeat('A',20),'valor [...]'),
+  (21,'numero 1234567890','numero 1234567890'),
+  (22,'numero 12345678901','numero [n]'),
+  (23,'numero '||repeat('1',20),'numero [...]'),
+  (24,'numero 12345678901 e 11222333000181','numero [n] e [n]'),
+  (25,repeat('A',20)||' e '||repeat('B',20),'[...] e [...]'),
+  (26,'conexão'||chr(127)||'encerrada','conex?o?encerrada'),
+  (27,repeat('x ',95)||repeat('A',64),repeat('x ',95)||'[...]'),
+  (28,repeat('x ',150)||'BEGIN CERTIFICATE','[omitido]'),
+  (29,'Could not resolve host: www1.nfe.fazenda.gov.br','Could not resolve host: www1.nfe.fazenda.gov.br'),
+  (30,'Connection timed out after 1501 milliseconds','Connection timed out after 1501 milliseconds')
+) exemplos(caso,mensagem,esperado);
+select is((select provolatile::text from pg_proc
+  where oid='private.sefaz_texto_de_falha(text)'::regprocedure),'i','mascara imutavel existe e entra nos lacos de dono, search_path e bloqueio');
 create temporary table sefaz_fixture(cert text, key8 text, key1 text, chave text, at_time timestamptz,
   info text, si text, signature text, digest text, evento text);
 insert into sefaz_fixture values (
@@ -208,14 +243,22 @@ select ok(not (public.sefaz_prova_adn('sf','0') ? 'body'),'302 nunca devolve bod
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'302 limpa BLOBs');
 select set_config('sefaz_test.redirect','0',true);
 select set_config('sefaz_test.fail','1',true);
-select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','falha_transporte','erro bruto do transporte nunca retorna');
+select is(public.sefaz_prova_dfe('rgf','distNSU','000000000000000')->>'motivo','falha_transporte','falha do transporte identificada');
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'erro de transporte limpa BLOBs');
--- Cada resposta e capturada uma vez para conferir o JSON inteiro, sem texto bruto.
-create temporary table sefaz_falhas_rpc(mensagem text, esperado text, fragmento text, resultado jsonb);
-insert into sefaz_falhas_rpc(mensagem,esperado,fragmento) values
-  ('Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server','conexao_recusada','adn.nfse.gov.br'),
-  ('could not load PEM client certificate from PEM BLOB, OpenSSL error error:0480006C:PEM routines::no start line','certificado_local','PEM routines'),
-  ('ERRO SENSIVEL QUE NAO PODE SAIR','outro','SENSIVEL');
+-- Cada resposta e capturada uma vez: texto legivel ou mascarado, nunca o trecho protegido.
+create temporary table sefaz_falhas_rpc(mensagem text, esperado text, texto_esperado text, fragmento text, resultado jsonb);
+insert into sefaz_falhas_rpc(mensagem,esperado,texto_esperado,fragmento) values
+  ('Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server','conexao_recusada',
+    'Failed to connect to adn.nfse.gov.br port 443 after 3 ms: Couldn''t connect to server',null),
+  ('OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure','handshake_tls',
+    'OpenSSL/3.5.7: error:0A000410:SSL routines::ssl/tls alert handshake failure',null),
+  ('Recv failure: Connection reset by peer','conexao_encerrada','Recv failure: Connection reset by peer',null),
+  ('could not load PEM client certificate from PEM BLOB, OpenSSL error error:0480006C:PEM routines::no start line','certificado_local',
+    'could not load PEM client certificate from PEM BLOB, OpenSSL error error:0480006C:PEM routines::no start line',null),
+  ('-----BEGIN PRIVATE KEY-----','certificado_local','[omitido]','PRIVATE KEY'),
+  ('BEGIN CERTIFICATE','outro','[omitido]','BEGIN CERTIFICATE'),
+  ('certificado '||repeat('Ab9+/=',10)||'AB=='||' invalido','outro','certificado [...] invalido',repeat('Ab9+/=',10)||'AB=='),
+  ('CNPJ 11222333000181 invalido','outro','CNPJ [n] invalido','11222333000181');
 do $block$
 declare caso record;
 begin
@@ -227,19 +270,26 @@ begin
   end loop;
 end;
 $block$;
-select is(resultado->>'status','falhou','RPC falha sem texto: '||esperado) from sefaz_falhas_rpc;
+select is(resultado->>'status','falhou','RPC falha: '||esperado) from sefaz_falhas_rpc;
 select is(resultado->>'motivo','falha_transporte','RPC identifica etapa: '||esperado) from sefaz_falhas_rpc;
 select is(resultado->>'erro',esperado,'RPC classifica: '||esperado) from sefaz_falhas_rpc;
 select matches(resultado->>'codigo','^[0-9A-Z]{5}$','RPC devolve codigo fechado: '||esperado) from sefaz_falhas_rpc;
+select is(resultado->>'erro_texto',texto_esperado,'RPC devolve somente texto mascarado: '||esperado) from sefaz_falhas_rpc;
 select ok(position(mensagem in resultado::text)=0 and position(fragmento in resultado::text)=0,
-  'JSON inteiro nao contem mensagem nem fragmento: '||esperado) from sefaz_falhas_rpc;
+  'JSON inteiro nao contem mensagem nem fragmento protegido: '||esperado) from sefaz_falhas_rpc where fragmento is not null;
+select set_config('sefaz_test.fail_msg','Recv failure: Connection reset by peer',true);
+select is(public.sefaz_prova_adn('sf','0')->>'erro_texto','Recv failure: Connection reset by peer','ADN tambem devolve texto seguro');
+select is(public.sefaz_prova_evento('rgf')->>'erro_texto','Recv failure: Connection reset by peer','evento tambem devolve texto seguro');
 select set_config('sefaz_test.fail_msg','',true);
 select set_config('sefaz_test.fail','0',true);
 select set_config('sefaz_test.cancel','1',true);
 select is(public.sefaz_prova_adn('rgf','0')->>'motivo','tempo_banco','query_canceled tambem e capturado');
+select ok(not (public.sefaz_prova_adn('rgf','0') ?| array['erro','erro_texto']),'cancelamento nao acrescenta erro nem texto');
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'cancelamento limpa BLOBs');
 select set_config('sefaz_test.cancel','0',true);
 select is(public.sefaz_prova_dfe('invalida','distNSU','000000000000000')->>'status','falhou','RPC rejeita entrada antes de transporte');
+select ok(not (public.sefaz_prova_dfe('invalida','distNSU','000000000000000') ?| array['erro','erro_texto']),
+  'entrada invalida nao acrescenta erro nem texto');
 
 -- Substituir leitura do cofre por ausencia controlada, sem alterar Vault.
 create or replace function private.sefaz_credentials(p_empresa text)
@@ -251,14 +301,14 @@ select is(public.sefaz_prova_dfe('sf','consNSU','000000000000001')->>'status','s
 reset role;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'ausencia de cofre nao deixa BLOBs');
 
-select ok(not (public.sefaz_prova_dfe('sf','consNSU','000000000000001') ? 'erro'),'cofre vazio nao acrescenta erro');
+select ok(not (public.sefaz_prova_dfe('sf','consNSU','000000000000001') ?| array['erro','erro_texto']),'cofre vazio nao acrescenta erro nem texto');
 
 -- Credencial cifrada passa pela RPC sem acrescentar diagnostico de transporte.
 create or replace function private.sefaz_credentials(p_empresa text)
 returns text[] language sql stable security definer set search_path = ''
 as $$select array[cert,'-----BEGIN ENCRYPTED PRIVATE KEY-----'] from pg_temp.sefaz_fixture$$;
 select is(public.sefaz_prova_dfe('rgf','consNSU','000000000000001')->>'motivo','chave_cifrada','RPC identifica chave cifrada');
-select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ? 'erro'),'chave cifrada nao acrescenta erro');
+select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ?| array['erro','erro_texto']),'chave cifrada nao acrescenta erro nem texto');
 
 
 -- Ultimo cenario: as substituicoes sao desfeitas no rollback final, sem rede.
@@ -275,7 +325,7 @@ $$;
 select set_config('sefaz_test.credentials','',true);
 select is(public.sefaz_prova_dfe('rgf','consNSU','000000000000001') - 'ms_banco',
   '{"status":"falhou","motivo":"registro_inseguro"}'::jsonb,'RPC recusa registro inseguro sem corpo');
-select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ? 'erro'),'registro inseguro nao acrescenta erro');
+select ok(not (public.sefaz_prova_dfe('rgf','consNSU','000000000000001') ?| array['erro','erro_texto']),'registro inseguro nao acrescenta erro nem texto');
 select is(current_setting('sefaz_test.credentials',true),'','registro inseguro nao le credenciais');
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'registro inseguro deixa TLS vazio');
 select * from finish();

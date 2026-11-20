@@ -191,7 +191,9 @@ Se o motivo for `falha_transporte`, o campo `erro` indica o tipo da falha:
 - `permissao`: uma permissão impediu a chamada.
 - `outro`: a falha não corresponde aos tipos conhecidos.
 
-O banco nunca mostra o texto do erro, só o tipo. O campo `codigo`, quando
+O banco mostra a mensagem da falha de conexão só mascarada, no campo `erro_texto`,
+sem nada parecido com chave, certificado ou número longo, em até 200 caracteres,
+porque o resumo da prova fica no log público do GitHub. O campo `codigo`, quando
 presente, contém o código de cinco caracteres do erro do banco.
 
 O tempo do banco inclui leitura do cofre, assinatura e conexão. Cada RPC usa
