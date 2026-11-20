@@ -270,7 +270,7 @@ select is(current_setting('sefaz_test.calls')::jsonb#>'{1,headers}',
 select is(current_setting('sefaz_test.calls')::jsonb#>'{1,options}',
   '{"CURLOPT_CONNECTTIMEOUT_MS":"1500","CURLOPT_TIMEOUT_MS":"4500","CURLOPT_SSL_VERIFYPEER":"1","CURLOPT_SSL_VERIFYHOST":"2"}'::jsonb,
   'sondagem limita o tempo e verifica certificado e host do servidor');
-select is(resultado->'sondagem_sem_certificado' - 'ms_banco','{"status":"ok","http":403}'::jsonb,
+select is((resultado->'sondagem_sem_certificado') - 'ms_banco','{"status":"ok","http":403}'::jsonb,
   'sondagem devolve so status HTTP e tempo, sem corpo nem cabecalhos') from sefaz_evento_resultado;
 select ok(jsonb_typeof(resultado#>'{sondagem_sem_certificado,ms_banco}')='number','sondagem mede tempo no banco') from sefaz_evento_resultado;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'RPC com sondagem limpa BLOBs');
@@ -280,7 +280,7 @@ select set_config('sefaz_test.sondagem_fail_msg','Recv failure: Connection reset
 update sefaz_evento_resultado set resultado=public.sefaz_prova_evento('rgf');
 select is(resultado->>'status','ok','falha da sondagem preserva status da prova com certificado') from sefaz_evento_resultado;
 select is(resultado->>'http','200','falha da sondagem preserva HTTP com certificado') from sefaz_evento_resultado;
-select is(resultado->'sondagem_sem_certificado' - 'ms_banco',
+select is((resultado->'sondagem_sem_certificado') - 'ms_banco',
   '{"status":"falhou","motivo":"falha_transporte","erro":"conexao_encerrada","codigo":"XX000","erro_texto":"Recv failure: Connection reset by peer; CNPJ [n] [...]"}'::jsonb,
   'falha da sondagem classificada e mascarada, sem corpo nem cabecalhos') from sefaz_evento_resultado;
 select ok(position('11222333000181' in resultado::text)=0 and position(repeat('Ab9+/=',11) in resultado::text)=0,
@@ -289,7 +289,7 @@ select is((select count(*)::integer from sefaz_http.http_list_curlopt() where cu
 select set_config('sefaz_test.sondagem_fail_msg','',true);
 select set_config('sefaz_test.sondagem_cancel','1',true);
 update sefaz_evento_resultado set resultado=public.sefaz_prova_evento('rgf');
-select is(resultado->'sondagem_sem_certificado' - 'ms_banco','{"status":"falhou","motivo":"tempo_banco"}'::jsonb,
+select is((resultado->'sondagem_sem_certificado') - 'ms_banco','{"status":"falhou","motivo":"tempo_banco"}'::jsonb,
   'cancelamento da sondagem capturado sem diagnostico nem corpo') from sefaz_evento_resultado;
 select is(resultado->>'status','ok','cancelamento da sondagem preserva prova com certificado') from sefaz_evento_resultado;
 select is((select count(*)::integer from sefaz_http.http_list_curlopt() where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null),0,'cancelamento da sondagem limpa BLOBs');
