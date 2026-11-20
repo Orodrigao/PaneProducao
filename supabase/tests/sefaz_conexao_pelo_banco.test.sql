@@ -216,7 +216,7 @@ begin
   select count(*) into blobs from sefaz_http.http_list_curlopt()
     where curlopt in ('CURLOPT_SSLCERT_BLOB','CURLOPT_SSLKEY_BLOB') and value is not null;
   sondagem := request.content = '<x/>' and request.uri = private.sefaz_endpoint('evento_homologacao');
-  if blobs <> case when sondagem then 0 else 2 end then
+  if blobs <> (case when sondagem then 0 else 2 end) then
     raise exception 'Stub nao recebeu os BLOBs.';
   end if;
   perform set_config('sefaz_test.calls',
