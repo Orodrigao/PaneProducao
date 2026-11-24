@@ -21,6 +21,7 @@ import {
   ledgerAccountPrefill,
   loadPaidInstallmentLedgerAccount,
   loadPayablePurchaseItems,
+  loadPayablePurchases,
   otherPaidInstallmentNumbers,
   reclassificationDoneMessage,
   reclassificationNotice,
@@ -39,6 +40,29 @@ import {
   type PayablePurchaseRow,
 } from './payables'
 import { buildPayablesReport, buildPayablesReportExportRows } from './payablesReport'
+
+describe('leitura paginada de compras', () => {
+  function mockPages(results: { data: unknown[] | null; count: number | null; error: unknown }[]) {
+    const chain = { select: vi.fn(), order: vi.fn(), range: vi.fn() }
+    chain.select.mockReturnValue(chain)
+    chain.order.mockReturnValue(chain)
+    for (const result of results) chain.range.mockResolvedValueOnce(result)
+    supabaseMocks.from.mockReturnValue(chain)
+    return chain
+  }
+  it('lê todas as compras com parcelas e desempate por id', async () => {
+    const rows = Array.from({ length: 1201 }, (_, id) => ({ id: String(id), payable_installments: [{ id: `p-${id}` }] }))
+    const chain = mockPages([0, 500, 1000].map(from => ({ data: rows.slice(from, from + 500), count: rows.length, error: null })))
+    expect(await loadPayablePurchases()).toEqual(rows)
+    expect(chain.range.mock.calls).toEqual([[0, 499], [500, 999], [1000, 1499]])
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining('payable_installments('), { count: 'exact' })
+    expect(chain.order).toHaveBeenCalledWith('id', { ascending: false })
+  })
+  it('não devolve compras parciais se uma página falha', async () => {
+    mockPages([{ data: [{ id: '1' }], count: 2, error: null }, { data: null, count: null, error: new Error('sem rede') }])
+    await expect(loadPayablePurchases()).rejects.toThrow('sem rede')
+  })
+})
 
 const baseDraft: PayableDraft = {
   supplierId: 'supplier-ceasa',

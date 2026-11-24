@@ -7,6 +7,11 @@ import { supabase } from '@/lib/supabase'
 
 import {
   loadFinanceEntries,
+  loadFinanceAccounts,
+  loadFinanceCategories,
+  loadLedgerSearchIdentities,
+  loadLedgerPaymentPage,
+  loadInstallmentFinanceEntries,
   buildFinanceRecurringForecasts,
   competenceMonthOf,
   entryDifference,
@@ -325,20 +330,22 @@ describe('receita do fechamento', () => {
 
 
 describe('leitura do livro durante a atualização do banco', () => {
-  function mockQueries(results: { data: unknown; error: { code: string; message: string } | null }[]) {
+  function mockQueries(results: { data: unknown[] | null; error: { code: string; message: string } | null; count?: number }[]) {
     const select = vi.fn()
     const gte = vi.fn()
     const lt = vi.fn()
     const order = vi.fn()
-    const chain = { select, gte, lt, order }
+    const range = vi.fn()
+    const chain = { select, gte, lt, order, range }
     select.mockReturnValue(chain)
     gte.mockReturnValue(chain)
     lt.mockReturnValue(chain)
+    order.mockReturnValue(chain)
     for (const result of results) {
-      order.mockReturnValueOnce(chain).mockResolvedValueOnce(result)
+      range.mockResolvedValueOnce({ count: result.count ?? result.data?.length ?? null, ...result })
     }
     vi.mocked(supabase.from).mockReset().mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
-    return { select, gte, lt, order }
+    return { select, gte, lt, order, range }
   }
 
   it.each([
@@ -357,7 +364,9 @@ describe('leitura do livro durante a atualização do banco', () => {
     expect(query.lt.mock.calls).toEqual([['competence_month', '2026-09-01'], ['competence_month', '2026-09-01']])
     expect(query.order.mock.calls).toEqual([
       ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+      ['id', { ascending: false }],
       ['paid_date', { ascending: false }], ['created_at', { ascending: false }],
+      ['id', { ascending: false }],
     ])
   })
 
@@ -366,6 +375,80 @@ describe('leitura do livro durante a atualização do banco', () => {
     mockQueries([{ data: null, error }])
     await expect(loadFinanceEntries('2026-08')).rejects.toEqual(error)
     expect(supabase.from).toHaveBeenCalledTimes(1)
+  })
+
+  it('mês com 2.500 lançamentos mostra o total e o resumo inteiro', async () => {
+    const rows = Array.from({ length: 2500 }, (_, id) => entry({ id: String(id), amount: 2 }))
+    const queries = mockQueries(Array.from({ length: 5 }, (_, page) => ({ data: rows.slice(page * 500, (page + 1) * 500), error: null, count: 2500 })))
+    const loaded = await loadFinanceEntries('2026-08')
+    expect(loaded).toHaveLength(2500)
+    expect(summarizeEntries(loaded, new Map([[despesa.id, despesa]])).despesa).toBe(5000)
+    expect(queries.range.mock.calls).toEqual([[0, 499], [500, 999], [1000, 1499], [1500, 1999], [2000, 2499]])
+    expect(queries.select).toHaveBeenCalledWith(expect.any(String), { count: 'exact' })
+  })
+
+  it('segunda página falha em vez de entregar parte do mês', async () => {
+    mockQueries([{ data: [entry()], error: null, count: 2 }, { data: null, error: { code: 'network', message: 'sem rede' } }])
+    await expect(loadFinanceEntries('2026-08')).rejects.toMatchObject({ message: 'sem rede' })
+  })
+
+  it('recuo de colunas novas também pagina até terminar', async () => {
+    const rows = Array.from({ length: 501 }, (_, id) => entry({ id: String(id) }))
+    const queries = mockQueries([
+      { data: null, error: { code: '42703', message: 'source_detail does not exist' } },
+      { data: rows.slice(0, 500), error: null, count: 501 },
+      { data: rows.slice(500), error: null, count: 501 },
+    ])
+    expect(await loadFinanceEntries('2026-08')).toHaveLength(501)
+    expect(queries.range.mock.calls).toEqual([[0, 499], [0, 499], [500, 999]])
+  })
+})
+
+describe('consultas da busca no livro', () => {
+  function mockSearch(results: { data: unknown[] | null; count: number | null; error: unknown }[]) {
+    const chain = { select: vi.fn(), order: vi.fn(), eq: vi.fn(), in: vi.fn(), or: vi.fn(), gte: vi.fn(), lt: vi.fn(), range: vi.fn() }
+    for (const [name, method] of Object.entries(chain)) if (name !== 'range') method.mockReturnValue(chain)
+    for (const result of results) chain.range.mockResolvedValueOnce(result)
+    vi.mocked(supabase.from).mockReset().mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
+    return chain
+  }
+  it('filtra no servidor, com período e ordem estável', async () => {
+    const chain = mockSearch([{ data: [], count: 0, error: null }])
+    await loadLedgerSearchIdentities({ term: '987,65', period: 'chosen', month: '2026-08', date: 'paid_date' })
+    expect(chain.or).toHaveBeenCalledWith('amount.eq.987.65,planned_amount.eq.987.65')
+    expect(chain.select).toHaveBeenCalledWith('id,source,source_ref', { count: 'exact' })
+    expect(chain.gte).toHaveBeenCalledWith('paid_date', '2026-08-01')
+    expect(chain.lt).toHaveBeenCalledWith('paid_date', '2026-09-01')
+    expect(chain.order.mock.calls).toEqual([['paid_date', { ascending: false }], ['created_at', { ascending: false }], ['id', { ascending: false }]])
+  })
+  it('reúne as duas linhas ativas e preserva histórico, sem reaplicar filtro que cortaria o valor', async () => {
+    const rows = [entry({ id: 'principal', amount: 700, source: 'contas_pagar', source_ref: 'paid' }),
+      entry({ id: 'rateio', amount: 287.65, source: 'contas_pagar', source_ref: 'paid' }),
+      entry({ id: 'antiga', amount: 987.65, source: 'contas_pagar', source_ref: 'paid', reversed_at: '2026-11-20T13:00:00Z' })]
+    const chain = mockSearch([{ data: rows, count: 3, error: null }])
+    const result = await loadLedgerPaymentPage([{ id: 'principal', source: 'contas_pagar', source_ref: 'paid' }], 0)
+    expect(result[0].entries).toEqual(rows)
+    expect(chain.in).toHaveBeenCalledWith('source_ref', ['paid'])
+    expect(chain.or).not.toHaveBeenCalled()
+    expect(chain.gte).not.toHaveBeenCalled()
+  })
+  it('composição consulta ids em blocos e não ultrapassa tamanho da URL', async () => {
+    const chain = mockSearch([{ data: [], count: 0, error: null }, { data: [], count: 0, error: null }])
+    await loadInstallmentFinanceEntries(Array.from({ length: 81 }, (_, id) => String(id)))
+    expect(chain.in.mock.calls.map(call => call[1].length)).toEqual([80, 1])
+  })
+  it('rótulos históricos incluem inativos; formulários preservam filtro ativo', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [{ id: 'old', label: 'Banco desativado' }], error: null })
+    const chain = { select: vi.fn(), eq: vi.fn(), order }
+    chain.select.mockReturnValue(chain)
+    chain.eq.mockReturnValue(chain)
+    vi.mocked(supabase.from).mockReset().mockReturnValue(chain as unknown as ReturnType<typeof supabase.from>)
+    expect((await loadFinanceAccounts(true))[0].label).toBe('Banco desativado')
+    await loadFinanceCategories(true)
+    expect(chain.eq).not.toHaveBeenCalled()
+    await loadFinanceAccounts()
+    await loadFinanceCategories()
+    expect(chain.eq.mock.calls).toEqual([['active', true], ['active', true]])
   })
 })
 

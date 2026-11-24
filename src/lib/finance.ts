@@ -7,6 +7,10 @@
 import { supabase } from '@/lib/supabase'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
+import {
+  ledgerPaymentKey, ledgerSearchFilter, parsePaymentSearch, readCompletePages, searchMonth,
+  type LedgerSearchIdentity, type PaymentSearchCriteria,
+} from '@/lib/financeSearch'
 
 // A rota e a permissão vivem em src/lib/auth.ts, junto das demais — importar
 // auth aqui só para reexportá-las carregaria a autenticação em toda tela que
@@ -391,22 +395,22 @@ export function buildFinanceRecurringForecasts(
     .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || left.rule.name.localeCompare(right.rule.name))
 }
 
-export async function loadFinanceCategories(): Promise<FinanceCategoryRow[]> {
-  const { data, error } = await supabase
+export async function loadFinanceCategories(includeInactive = false): Promise<FinanceCategoryRow[]> {
+  let query = supabase
     .from('finance_categories')
     .select('id,key,label,dre_tier,dre_group,nature,team,sort_order')
-    .eq('active', true)
-    .order('sort_order')
+  if (!includeInactive) query = query.eq('active', true)
+  const { data, error } = await query.order('sort_order')
   if (error) throw error
   return (data ?? []) as FinanceCategoryRow[]
 }
 
-export async function loadFinanceAccounts(): Promise<FinanceAccountRow[]> {
-  const { data, error } = await supabase
+export async function loadFinanceAccounts(includeInactive = false): Promise<FinanceAccountRow[]> {
+  let query = supabase
     .from('finance_accounts')
     .select('id,key,label,kind,store,cnpj_label,sort_order')
-    .eq('active', true)
-    .order('sort_order')
+  if (!includeInactive) query = query.eq('active', true)
+  const { data, error } = await query.order('sort_order')
   if (error) throw error
   return (data ?? []) as FinanceAccountRow[]
 }
@@ -430,30 +434,95 @@ export async function loadFinanceEntries(monthKey: string): Promise<FinanceEntry
   const { start, end } = monthRange(monthKey)
   const legacyColumns = 'id,entry_type,category_id,account_id,store,competence_month,paid_date,planned_amount,amount,payment_method,description,source,source_ref,recurrence_month,transfer_id,transfer_leg,reversal_of,reversal_reason,reversed_at,created_at'
   const newColumns = ['source_detail', 'fee_of', 'fee_rate', 'fee_rate_version_id']
-  const query = (columns: string) => supabase
+  const query = (columns: string) => readCompletePages<FinanceEntryRow>((from, to) => supabase
     .from('finance_entries')
-    .select(columns)
+    .select(columns, { count: 'exact' })
     .gte('competence_month', start)
     .lt('competence_month', end)
     .order('paid_date', { ascending: false })
     .order('created_at', { ascending: false })
-  const { data, error } = await query(legacyColumns + ',' + newColumns.join(','))
-  if (!error) return (data ?? []) as unknown as FinanceEntryRow[]
-  const missingNewColumn = newColumns.some(column =>
-    new RegExp('\\b' + column + '\\b', 'i').test(error.message)
-      && /does not exist|could not find|inexistente|não existe/i.test(error.message))
-  if (error.code !== '42703' && !missingNewColumn) throw error
-
-  // O site pode publicar antes do banco; remover após a migration estar em produção.
-  const legacy = await query(legacyColumns)
-  if (legacy.error) throw legacy.error
-  return ((legacy.data ?? []) as unknown as Omit<FinanceEntryRow, 'source_detail' | 'fee_of' | 'fee_rate' | 'fee_rate_version_id'>[]).map(row => ({
+    .order('id', { ascending: false })
+    .range(from, to) as unknown as PromiseLike<{ data: FinanceEntryRow[] | null; count: number | null; error: unknown }>)
+  try {
+    return await query(legacyColumns + ',' + newColumns.join(','))
+  } catch (error) {
+    const failure = error as { code?: string; message?: string }
+    const missingNewColumn = newColumns.some(column =>
+      new RegExp('\\b' + column + '\\b', 'i').test(failure.message ?? '')
+      && /does not exist|could not find|inexistente|não existe/i.test(failure.message ?? ''))
+    if (failure.code !== '42703' && !missingNewColumn) throw error
+  }
+  // Reinicia TODAS as páginas quando o banco ainda não tem as colunas novas.
+  return (await query(legacyColumns)).map(row => ({
     ...row,
     source_detail: null,
     fee_of: null,
     fee_rate: null,
     fee_rate_version_id: null,
-  })) as unknown as FinanceEntryRow[]
+  }))
+}
+
+function orderedLedgerQuery<Columns extends string>(columns: Columns) {
+  return supabase.from('finance_entries').select(columns, { count: 'exact' })
+    .order('paid_date', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: false })
+}
+
+export async function loadFirstFinanceDate(): Promise<string | null> {
+  const { data, error } = await supabase.from('finance_entries').select('paid_date')
+    .order('paid_date', { ascending: true }).order('id', { ascending: true }).limit(1)
+  if (error) throw error
+  return data?.[0]?.paid_date ?? null
+}
+
+/** Só identidades já filtradas no banco. Permite contar pagamentos, sem confundir rateios com boletos. */
+export async function loadLedgerSearchIdentities(criteria: PaymentSearchCriteria): Promise<LedgerSearchIdentity[]> {
+  if (criteria.term.trim().length < 2) return []
+  const filter = ledgerSearchFilter(parsePaymentSearch(criteria.term))
+  const month = searchMonth(criteria)
+  return readCompletePages<LedgerSearchIdentity>((from, to) => {
+    let query = orderedLedgerQuery('id,source,source_ref').or(filter)
+    if (month) {
+      const { start, end } = monthRange(month)
+      query = query.gte(criteria.date, start).lt(criteria.date, end)
+    }
+    return query.range(from, to) as unknown as PromiseLike<{ data: LedgerSearchIdentity[] | null; count: number | null; error: unknown }>
+  })
+}
+
+/** Sem filtro de texto/data: o valor de uma parcela precisa de TODAS as suas linhas. */
+export async function loadInstallmentFinanceEntries(refs: readonly string[]): Promise<FinanceEntryRow[]> {
+  const rows: FinanceEntryRow[] = []
+  const unique = [...new Set(refs)]
+  for (let index = 0; index < unique.length; index += 80) {
+    const block = unique.slice(index, index + 80)
+    rows.push(...await readCompletePages<FinanceEntryRow>((from, to) => orderedLedgerQuery('*')
+      .eq('source', 'contas_pagar').in('source_ref', block).range(from, to)))
+  }
+  return rows
+}
+
+export interface LedgerPaymentResult { key: string; entries: FinanceEntryRow[] }
+export async function loadLedgerPaymentPage(identities: readonly LedgerSearchIdentity[], offset: number): Promise<LedgerPaymentResult[]> {
+  const page = identities.slice(offset, offset + 50)
+  const refs = page.filter(row => row.source === 'contas_pagar' && row.source_ref).map(row => row.source_ref!)
+  const ids = page.filter(row => row.source !== 'contas_pagar' || !row.source_ref).map(row => row.id)
+  const [installmentRows, entries] = await Promise.all([
+    loadInstallmentFinanceEntries(refs),
+    ids.length ? readCompletePages<FinanceEntryRow>((from, to) => orderedLedgerQuery('*').in('id', ids).range(from, to)) : Promise.resolve([]),
+  ])
+  const groups = new Map<string, FinanceEntryRow[]>()
+  for (const entry of [...installmentRows, ...entries]) {
+    const key = ledgerPaymentKey(entry)
+    const group = groups.get(key) ?? []
+    group.push(entry)
+    groups.set(key, group)
+  }
+  return page.map(identity => {
+    const key = ledgerPaymentKey(identity)
+    const rows = groups.get(key)
+    if (!rows?.length) throw new Error('Um pagamento mudou durante a busca. Tente novamente.')
+    return { key, entries: rows }
+  })
 }
 
 export async function loadFinanceRecurringRules(): Promise<FinanceRecurringRuleRow[]> {

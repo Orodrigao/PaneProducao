@@ -280,7 +280,7 @@ export default function PayablePurchaseList({
                           ? ` · boleto atualizado ${formatDate(installment.current_due_date)}`
                           : ''
                         return (
-                          <div key={installment.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                          <div key={installment.id} id={`payable-installment-${installment.id}`} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
                             <span style={{ flex: 1 }}>
                               Parcela {installment.installment_number} · paga em {installment.paid_date ? formatDate(installment.paid_date) : 'data não informada'}{dueDate}
                               <small style={{ display: 'block', color: 'var(--ink-soft)' }}>
