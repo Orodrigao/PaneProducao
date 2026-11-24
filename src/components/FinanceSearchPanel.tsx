@@ -150,9 +150,10 @@ export default function FinanceSearchPanel({ canOpenPayables, restrictedStores, 
     const category = categoryOf(entry)
     const inflow = entry.transfer_id ? transferLegIsInflow(entry)
       : category ? entrySignedAmount(entry, category.nature) >= 0 : null
+    const dateLabel = entry.transfer_id || inflow === null ? 'Em' : inflow ? 'Recebido em' : 'Pago em'
     return <div key={entry.id} style={{ marginTop: 8 }}>
       <b>{entry.description}</b>
-      <div>Pago em {formatDate(entry.paid_date)} · {inflow === null ? 'Sinal não identificado: ' : inflow ? '+' : '−'}{formatFinanceMoney(Number(entry.amount))}</div>
+      <div>{dateLabel} {formatDate(entry.paid_date)} · {inflow === null ? 'Sinal não identificado: ' : inflow ? '+' : '−'}{formatFinanceMoney(Number(entry.amount))}</div>
       <small>{accountName(entry.account_id)} · {FINANCE_STORE_LABELS[entry.store] ?? entry.store} · {category?.label ?? 'Categoria não identificada'} · {financeSourceLabel(entry.source)}</small>
       {entry.competence_month.slice(0, 7) !== entry.paid_date.slice(0, 7) && <div>Conta do mês: {formatCompetenceMonth(entry.competence_month)}</div>}
       {entryDifference(entry) !== 0 && <div>Previsto {formatFinanceMoney(Number(entry.planned_amount))} · pago {formatFinanceMoney(Number(entry.amount))}</div>}

@@ -110,6 +110,10 @@ export default function PayablePurchaseList({
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null)
 
   useEffect(() => {
+    setSearch(new URLSearchParams(window.location.search).get('busca') ?? '')
+  }, [])
+
+  useEffect(() => {
     if (!focusedPurchaseId) return
     setExpandedPurchaseId(focusedPurchaseId)
   }, [focusedPurchaseId])

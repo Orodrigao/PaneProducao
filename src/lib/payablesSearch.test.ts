@@ -17,6 +17,15 @@ const purchase: PayablePurchaseRow = {
 const criteria = (term: string, changes: Partial<PaymentSearchCriteria> = {}): PaymentSearchCriteria => ({ term, period: 'all', date: 'paid_date', month: '2026-09', ...changes })
 
 describe('busca por parcela', () => {
+  it.each(['01/08', 'Aluguel 01/08', 'NF 10101', 'NF 0010101', 'valor 1.000,00'])('preserva datas e moeda no texto e normaliza números puros: %s', term => {
+    const dated = { ...purchase, notes: 'Aluguel 01/08 valor 1.000,00 NF 0010101' }
+    expect(searchPayableInstallments([dated], criteria(term))).toHaveLength(3)
+  })
+  it('não confunde datas nem valores escritos de formas diferentes', () => {
+    const dated = { ...purchase, notes: 'Aluguel 01/08 valor 1.000,00' }
+    expect(searchPayableInstallments([dated], criteria('aluguel 1/8'))).toHaveLength(0)
+    expect(searchPayableInstallments([dated], criteria('valor 1.0,00'))).toHaveLength(0)
+  })
   it.each(['10101', '0010101', 'fornecedor a', '10101 fornecedor', 'eletrica', 'ENERGIA', 'acucar'])('encontra %s com motivo', term => {
     const results = searchPayableInstallments([purchase], criteria(term))
     expect(results).toHaveLength(3)

@@ -16,6 +16,17 @@ describe('leitura do termo e filtros seguros', () => {
     expect(ledgerSearchFilter(parsePaymentSearch('987,65'))).toBe('amount.eq.987.65,planned_amount.eq.987.65')
     expect(ledgerSearchFilter(parsePaymentSearch('R$ ' + '9'.repeat(60) + ',00'))).toBe('id.is.null')
   })
+  it.each([
+    ['01/08', '01/08'], ['1.000,00', '1.000,00'], ['0010101', '10101'],
+    ['NF 0010101', 'nf 10101'], ['000', '0'], ['NF0010101', 'nf0010101'],
+  ])('normaliza zeros só em palavras numéricas: %s', (text, normalized) => {
+    expect(normalizeSearchText(text)).toBe(normalized)
+  })
+  it.each([['01/08', 'Aluguel 01/08'], ['0010101', 'NF 10101']])('%s encontra %s no filtro do livro', (term, description) => {
+    const parsed = parsePaymentSearch(term)
+    expect(parsed.tokens.every(token => new RegExp(searchRegex(token), 'i').test(description))).toBe(true)
+    expect(parsed.tokens.every(token => normalizeSearchText(description).includes(token))).toBe(true)
+  })
   it('44 dígitos, mesmo com espaços, são chave e não valor', () => {
     const key = '1'.repeat(44)
     expect(parsePaymentSearch(`${key.slice(0, 22)} ${key.slice(22)}`)).toMatchObject({ key, cents: null })

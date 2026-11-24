@@ -20,7 +20,7 @@ export interface PaymentSearchTerm {
 
 export function normalizeSearchText(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/\b0+(?=\d)/g, '')
+    .replace(/(^|\s)0+(?=\d+(?:\s|$))/g, '$1')
 }
 
 export function parsePaymentSearch(raw: string): PaymentSearchTerm {
