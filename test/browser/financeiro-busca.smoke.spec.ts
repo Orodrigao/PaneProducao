@@ -62,11 +62,12 @@ async function simulate(page: Page, options: Simulation = {}) {
   }
   await page.route('**/rest/v1/rpc/get_payable_due_report_status*', route => route.fulfill({ json: [] }))
   await page.route('**/rest/v1/payable_purchases*', route => options.failPayables
-    ? route.fulfill({ status: 503, json: { message: 'Indisponível' } }) : counted(route, [purchase]))
+    ? route.fulfill({ status: 500, json: { message: 'Indisponível' } }) : counted(route, [purchase]))
   await page.route('**/rest/v1/finance_entries?*', route => {
     const url = new URL(route.request().url())
-    const filter = url.searchParams.get('or') ?? ''
-    if (options.holdTerm && filter.includes(options.holdTerm)) { held.push(route); return }
+    const filter = (url.searchParams.get('or') ?? '')
+      .replace(/\[([^\]]+)\]/g, (_match, letters: string) => letters[0]).toLowerCase()
+    if (options.holdTerm && filter.includes(options.holdTerm.toLowerCase())) { held.push(route); return }
     if (url.searchParams.get('select') === 'paid_date') return route.fulfill({ json: [{ paid_date: '2026-06-19' }] })
     if (url.searchParams.has('source_ref')) return counted(route, payableRows)
     if (url.searchParams.has('id')) {
