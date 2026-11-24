@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import PendingPayableItems from '@/components/PendingPayableItems'
+import { matchesPayablePurchaseSearch } from '@/lib/payablesSearch'
 import {
   formatBRL,
   formatDate,
@@ -66,16 +67,6 @@ function documentLabel(purchase: PayablePurchaseRow): string {
   return purchase.document_type === 'sem_nota' ? 'Sem nota' : 'Recibo'
 }
 
-function purchaseSearchText(purchase: PayablePurchaseRow): string {
-  return [
-    supplierName(purchase),
-    purchase.nfe_number,
-    purchase.nfe_key,
-    purchase.notes,
-    documentLabel(purchase),
-  ].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR')
-}
-
 function statusClass(status: PayablePurchaseRow['status']): string {
   return status === 'paga' ? 'conferido' : status === 'cancelada' ? 'cancelado' : 'separado'
 }
@@ -110,6 +101,10 @@ export default function PayablePurchaseList({
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null)
 
   useEffect(() => {
+    setSearch(new URLSearchParams(window.location.search).get('busca') ?? '')
+  }, [])
+
+  useEffect(() => {
     if (!focusedPurchaseId) return
     setExpandedPurchaseId(focusedPurchaseId)
   }, [focusedPurchaseId])
@@ -121,10 +116,9 @@ export default function PayablePurchaseList({
   }, [focusedInstallmentId, expandedPurchaseId, purchases])
 
   const filteredPurchases = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
     const matchingPurchases = purchases.filter(purchase => (
       (statusFilter === 'todas' || purchase.status === statusFilter)
-      && (!normalizedSearch || purchaseSearchText(purchase).includes(normalizedSearch))
+      && matchesPayablePurchaseSearch(purchase, search)
     ))
     return prioritizeOverduePayablePurchases(matchingPurchases)
   }, [purchases, search, statusFilter])
@@ -280,7 +274,7 @@ export default function PayablePurchaseList({
                           ? ` · boleto atualizado ${formatDate(installment.current_due_date)}`
                           : ''
                         return (
-                          <div key={installment.id} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                          <div key={installment.id} id={`payable-installment-${installment.id}`} className="ps-list-row" style={{ gap: 8, alignItems: 'flex-start' }}>
                             <span style={{ flex: 1 }}>
                               Parcela {installment.installment_number} · paga em {installment.paid_date ? formatDate(installment.paid_date) : 'data não informada'}{dueDate}
                               <small style={{ display: 'block', color: 'var(--ink-soft)' }}>

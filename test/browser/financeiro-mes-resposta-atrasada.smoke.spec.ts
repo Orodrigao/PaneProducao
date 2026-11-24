@@ -78,7 +78,7 @@ test('Financeiro JC troca o mês e a resposta atrasada do mês de abertura não 
   await page.route(/\/rest\/v1\/finance_entries\?/, route => {
     const month = requestedMonth(route.request().url())
     openedMonth ??= month
-    if (month !== null && month === chosenMonth) return route.fulfill({ json: [ledgerEntry(month, chosenMarker)] })
+    if (month !== null && month === chosenMonth) return route.fulfill({ json: [ledgerEntry(month, chosenMarker)], headers: { 'content-range': '0-0/1', 'access-control-expose-headers': 'content-range' } })
     if (month === null || month !== openedMonth) return route.fallback()
     held.push(route)
     markHeld()
@@ -106,7 +106,7 @@ test('Financeiro JC troca o mês e a resposta atrasada do mês de abertura não 
     const chosenMonthCards = await page.locator('article').count()
 
     const lateResponses = held.map(route => page.waitForResponse(response => response.request() === route.request()))
-    for (const route of held.splice(0)) await route.fulfill({ json: [ledgerEntry(openedMonth!, marker)] })
+    for (const route of held.splice(0)) await route.fulfill({ json: [ledgerEntry(openedMonth!, marker)], headers: { 'content-range': '0-0/1', 'access-control-expose-headers': 'content-range' } })
     await Promise.all(lateResponses)
     // Prova de ausência: sem ida ao banco no caminho da leitura antiga, três
     // segundos são folga larga para ela pintar a tela, se fosse aceita.

@@ -7,6 +7,7 @@ import FinanceFeeRatesPanel from '@/components/FinanceFeeRatesPanel'
 import FinanceEntryForm from '@/components/FinanceEntryForm'
 import FinanceRecurringPanel from '@/components/FinanceRecurringPanel'
 import FinanceTransferForm from '@/components/FinanceTransferForm'
+import FinanceSearchPanel from '@/components/FinanceSearchPanel'
 import {
   currentMonthKey,
   cashClosingCorrectionHref,
@@ -34,11 +35,18 @@ import { formatDateBR, showToast } from '@/lib/utils'
 export default function FinanceiroPage() {
   const router = useRouter()
   const [canOpenCashClosing, setCanOpenCashClosing] = useState<boolean | null>(null)
+  const [searchAccess, setSearchAccess] = useState<{ payables: boolean; restricted: boolean } | null>(null)
+  const [searchActive, setSearchActive] = useState(false)
+  const [searchRefresh, setSearchRefresh] = useState(0)
 
   useEffect(() => {
     let active = true
     void getCurrentUserAsync().then(user => {
-      if (active) setCanOpenCashClosing(user ? canAccess(user, '/fechamento-caixa') : false)
+      if (active) {
+        setCanOpenCashClosing(user ? canAccess(user, '/fechamento-caixa') : false)
+        setSearchAccess({ payables: !!user && canAccess(user, '/contas-pagar'),
+          restricted: user?.role !== 'admin' && !user?.permissions?.some(permission => permission.permission_key === 'financeiro.acessar' && permission.scope === '*') })
+      }
     }).catch(() => {
       if (active) setCanOpenCashClosing(false)
     })
@@ -135,7 +143,7 @@ export default function FinanceiroPage() {
             <div className="ps-mark"><BookOpenCheck size={18} /></div>
             <div className="ps-brand"><b>Financeiro</b><span>livro de entradas e saídas</span></div>
           </div>
-          <button className="ps-iconbtn" onClick={() => void load()} aria-label="Atualizar lançamentos" title="Atualizar"><RefreshCw size={17} /></button>
+          <button className="ps-iconbtn" onClick={() => searchActive ? setSearchRefresh(value => value + 1) : void load()} aria-label="Atualizar lançamentos" title="Atualizar"><RefreshCw size={17} /></button>
         </header>
 
         <div className="ps-scroll ps-pad">
@@ -144,6 +152,10 @@ export default function FinanceiroPage() {
             <small>Todo dinheiro que entra ou sai é registrado aqui, com categoria. Errou? Corrija na tela de origem. Avulsos podem ser estornados, preservando o histórico.</small>
           </div>
 
+          {searchAccess && <FinanceSearchPanel canOpenPayables={searchAccess.payables} restrictedStores={searchAccess.restricted}
+            refresh={searchRefresh} onActive={setSearchActive} onOpenMonth={setMonthKey} />}
+
+          {!searchActive && <>
           <div className="ps-card" style={{ marginTop: 12, background: 'var(--cream-raise)' }}>
             <small>
               <b>Compra de fornecedor não se lança aqui.</b> Ela entra em{' '}
@@ -371,6 +383,7 @@ export default function FinanceiroPage() {
               </article>
             )
           })}
+          </>}
         </div>
       </div>
     </div>

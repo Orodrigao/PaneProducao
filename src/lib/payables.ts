@@ -3,6 +3,7 @@ import { nonCatalogKindLabel, readNonCatalogKind, type NfeDraft, type NfeItemDra
 import { composeNfe } from '@/lib/nfeComposition'
 import { parseMoneyInput } from '@/lib/cashClosing'
 import { todayKey } from '@/lib/utils'
+import { readCompletePages } from '@/lib/financeSearch'
 
 export type PayableStatus = 'aberta' | 'paga' | 'cancelada'
 export type PayablePaymentMethod = 'dinheiro' | 'pix' | 'transferencia' | 'boleto' | 'cartao' | 'outro'
@@ -394,13 +395,11 @@ export function prioritizeOverduePayablePurchases(purchases: PayablePurchaseRow[
 }
 
 export async function loadPayablePurchases(): Promise<PayablePurchaseRow[]> {
-  const { data, error } = await supabase
+  return readCompletePages<PayablePurchaseRow>((from, to) => supabase
     .from('payable_purchases')
-    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,finance_account_id,supplier_id,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)')
+    .select('id,purchase_date,document_type,payment_method,status,total_value,notes,origin,nfe_key,nfe_number,nfe_series,classification_status,finance_account_id,supplier_id,suppliers(name),payable_installments(id,installment_number,due_date,current_due_date,amount,status,paid_at,paid_date,paid_amount,paid_method)', { count: 'exact' })
     .order('purchase_date', { ascending: false })
-
-  if (error) throw error
-  return (data ?? []) as PayablePurchaseRow[]
+    .order('id', { ascending: false }).range(from, to))
 }
 
 export async function loadPendingPayableItems(purchaseId: string): Promise<PendingPayableItemRow[]> {
