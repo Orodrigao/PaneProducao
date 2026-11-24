@@ -7,6 +7,26 @@ export interface PayableSearchResult {
   reasons: string[]
 }
 
+export function matchesPayablePurchaseSearch(purchase: PayablePurchaseRow, term: string): boolean {
+  const normalizedSearch = term.trim().toLocaleLowerCase('pt-BR')
+  const supplier = Array.isArray(purchase.suppliers) ? purchase.suppliers[0] : purchase.suppliers
+  const documentLabel = purchase.origin === 'xml'
+    ? `NF-e ${purchase.nfe_number ?? 'sem número'}`
+    : purchase.document_type === 'sem_nota' ? 'Sem nota' : 'Recibo'
+  const legacySearchText = [
+    supplier?.name ?? 'Fornecedor não identificado',
+    purchase.nfe_number,
+    purchase.nfe_key,
+    purchase.notes,
+    documentLabel,
+  ].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR')
+  // A lista preserva a busca anterior e encontra parcelas sem recorte de mês.
+  return !normalizedSearch || legacySearchText.includes(normalizedSearch)
+    || searchPayableInstallments([purchase], {
+      term, period: 'all', date: 'paid_date', month: '2026-01',
+    }).length > 0
+}
+
 function payableMatchReasons(purchase: PayablePurchaseRow, installment: PayableInstallmentRow, term: PaymentSearchTerm): string[] {
   if (term.key) return purchase.nfe_key === term.key ? ['chave da nota'] : []
   const reasons = new Set<string>()

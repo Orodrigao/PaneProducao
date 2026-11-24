@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
-import { searchPayableInstallments } from './payablesSearch'
+import { matchesPayablePurchaseSearch, searchPayableInstallments } from './payablesSearch'
 import type { PaymentSearchCriteria } from './financeSearch'
 import type { PayablePurchaseRow } from './payables'
 
@@ -15,6 +15,27 @@ const purchase: PayablePurchaseRow = {
   ],
 }
 const criteria = (term: string, changes: Partial<PaymentSearchCriteria> = {}): PaymentSearchCriteria => ({ term, period: 'all', date: 'paid_date', month: '2026-09', ...changes })
+
+describe('filtro de texto da lista de contas a pagar', () => {
+  it.each(['987,65', 'acucar', '990,00', '2.962,95', '980,00', '1'.repeat(44)])('encontra %s em qualquer mês e situação da parcela', term => {
+    expect(matchesPayablePurchaseSearch(purchase, term)).toBe(true)
+  })
+  it.each(['fornecedor a', '10101', 'energia', 'elétrica', ' FORNECEDOR A '])('preserva a busca anterior por %s, mesmo sem parcelas', term => {
+    expect(matchesPayablePurchaseSearch({ ...purchase, payable_installments: [] }, term)).toBe(true)
+  })
+  it.each(['', '   ', 'a', 'recibo', '11111'])('preserva termos vazios, curtos, rótulos e trechos da chave: %s', term => {
+    expect(matchesPayablePurchaseSearch(purchase, term)).toBe(true)
+  })
+  it('preserva os rótulos de nota e fornecedor sem parcelas', () => {
+    const withoutInstallments = { ...purchase, payable_installments: [] }
+    expect(matchesPayablePurchaseSearch({ ...withoutInstallments, origin: 'xml' }, 'NF-e 0010101')).toBe(true)
+    expect(matchesPayablePurchaseSearch({ ...withoutInstallments, document_type: 'sem_nota' }, 'sem nota')).toBe(true)
+    expect(matchesPayablePurchaseSearch({ ...withoutInstallments, suppliers: null }, 'fornecedor não identificado')).toBe(true)
+  })
+  it('mantém fora uma compra sem correspondência', () => {
+    expect(matchesPayablePurchaseSearch(purchase, 'fornecedor inexistente')).toBe(false)
+  })
+})
 
 describe('busca por parcela', () => {
   it.each(['01/08', 'Aluguel 01/08', 'NF 10101', 'NF 0010101', 'valor 1.000,00'])('preserva datas e moeda no texto e normaliza números puros: %s', term => {

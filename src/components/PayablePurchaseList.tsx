@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import PendingPayableItems from '@/components/PendingPayableItems'
+import { matchesPayablePurchaseSearch } from '@/lib/payablesSearch'
 import {
   formatBRL,
   formatDate,
@@ -66,16 +67,6 @@ function documentLabel(purchase: PayablePurchaseRow): string {
   return purchase.document_type === 'sem_nota' ? 'Sem nota' : 'Recibo'
 }
 
-function purchaseSearchText(purchase: PayablePurchaseRow): string {
-  return [
-    supplierName(purchase),
-    purchase.nfe_number,
-    purchase.nfe_key,
-    purchase.notes,
-    documentLabel(purchase),
-  ].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR')
-}
-
 function statusClass(status: PayablePurchaseRow['status']): string {
   return status === 'paga' ? 'conferido' : status === 'cancelada' ? 'cancelado' : 'separado'
 }
@@ -125,10 +116,9 @@ export default function PayablePurchaseList({
   }, [focusedInstallmentId, expandedPurchaseId, purchases])
 
   const filteredPurchases = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
     const matchingPurchases = purchases.filter(purchase => (
       (statusFilter === 'todas' || purchase.status === statusFilter)
-      && (!normalizedSearch || purchaseSearchText(purchase).includes(normalizedSearch))
+      && matchesPayablePurchaseSearch(purchase, search)
     ))
     return prioritizeOverduePayablePurchases(matchingPurchases)
   }, [purchases, search, statusFilter])
