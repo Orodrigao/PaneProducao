@@ -1,4 +1,4 @@
-﻿import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 import { entrarComSessaoGuardada } from './apoio/sessao'
 
 test.use({ browserName: 'chromium', channel: 'chrome' })
@@ -77,6 +77,40 @@ async function simulate(page: Page, options: Simulation = {}) {
   })
   return held
 }
+
+test('banco real: busca sem acento, valor, competência e caracteres especiais', async ({ page }) => {
+  // Só leitura do seed compartilhado, sem simular respostas da Data API.
+  await entrarComSessaoGuardada(page, financeiroJc)
+  await page.goto('/financeiro?busca=balcao')
+  const panel = page.getByRole('region', { name: 'Buscar pagamento', exact: true })
+  const ledger = panel.getByRole('region', { name: 'No livro', exact: true })
+  const search = panel.getByRole('textbox', { name: 'Buscar pagamento', exact: true })
+  const submit = panel.getByRole('button', { name: 'Buscar', exact: true })
+  const period = panel.getByLabel('Período', { exact: true })
+  await expect(period).toHaveValue('all')
+  await expect(ledger).toContainText('[TESTE] Balcão setembro')
+  await expect(ledger).toContainText('[TESTE] Balcão outubro')
+
+  await search.fill('200,00')
+  await submit.click()
+  await expect(ledger).toContainText('[TESTE] Balcão setembro')
+
+  await search.fill('balcao')
+  await submit.click()
+  await expect(ledger).toContainText('[TESTE] Balcão outubro')
+  await panel.getByLabel('Qual data vale').selectOption('competence_month')
+  await period.selectOption('chosen')
+  await panel.getByLabel('Mês da busca').fill('2026-10')
+  await expect(ledger).toContainText('[TESTE] Balcão outubro')
+  await expect(ledger).not.toContainText('[TESTE] Balcão setembro')
+
+  await period.selectOption('all')
+  await expect(ledger).toContainText('[TESTE] Balcão setembro')
+  await search.fill('a,(b)"*')
+  await submit.click()
+  await expect(panel.getByText(/Nenhum registro encontrado com estes critérios/)).toBeVisible()
+  await expect(panel).not.toContainText('Não foi possível buscar agora')
+})
 
 test('busca mostra parcela paga e avulso, composição, histórico e banco desativado', async ({ page }) => {
   await simulate(page)
