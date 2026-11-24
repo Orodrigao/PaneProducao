@@ -173,17 +173,22 @@ export default function FinanceSearchPanel({ canOpenPayables, restrictedStores, 
       </div>
       <small id="finance-search-help">{disabledReason}</small>
       <div className="ps-fieldrow" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-        <label className="ps-fieldgroup">Período
-          <select className="ps-input" value={draft.period} onChange={event => change({ ...draft, period: event.target.value as PaymentSearchCriteria['period'] }, true)}>
+        <div className="ps-fieldgroup">
+          <label className="ps-fieldlabel" htmlFor="finance-search-period">Período</label>
+          <select id="finance-search-period" className="ps-input" value={draft.period} onChange={event => change({ ...draft, period: event.target.value as PaymentSearchCriteria['period'] }, true)}>
             <option value="all">Tudo</option><option value="current">Este mês</option><option value="previous">Mês passado</option><option value="chosen">Escolher mês</option>
           </select>
-        </label>
-        {draft.period === 'chosen' && <label className="ps-fieldgroup">Mês da busca<input className="ps-input" type="month" value={draft.month} onChange={event => change({ ...draft, month: event.target.value }, true)} /></label>}
-        <label className="ps-fieldgroup">Qual data vale
-          <select className="ps-input" value={draft.date} onChange={event => change({ ...draft, date: event.target.value as PaymentSearchCriteria['date'] }, true)}>
+        </div>
+        {draft.period === 'chosen' && <div className="ps-fieldgroup">
+          <label className="ps-fieldlabel" htmlFor="finance-search-month">Mês da busca</label>
+          <input id="finance-search-month" className="ps-input" type="month" value={draft.month} onChange={event => change({ ...draft, month: event.target.value }, true)} />
+        </div>}
+        <div className="ps-fieldgroup">
+          <label className="ps-fieldlabel" htmlFor="finance-search-date">Qual data vale</label>
+          <select id="finance-search-date" className="ps-input" value={draft.date} onChange={event => change({ ...draft, date: event.target.value as PaymentSearchCriteria['date'] }, true)}>
             <option value="paid_date">Pago em</option><option value="competence_month">Conta do mês</option>
           </select>
-        </label>
+        </div>
       </div>
     </form>
     {!canOpenPayables && <p>Busca nas parcelas do Contas a pagar disponível para quem acessa o Contas a pagar</p>}

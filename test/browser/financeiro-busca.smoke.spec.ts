@@ -33,7 +33,10 @@ function counted(route: Route, rows: unknown[]) {
   const from = Number(url.searchParams.get('offset') ?? 0)
   const size = Number(url.searchParams.get('limit') ?? 500)
   const data = rows.slice(from, from + size)
-  return route.fulfill({ json: data, headers: { 'content-range': data.length ? `${from}-${from + data.length - 1}/${rows.length}` : `*/${rows.length}` } })
+  return route.fulfill({ json: data, headers: {
+    'content-range': data.length ? `${from}-${from + data.length - 1}/${rows.length}` : `*/${rows.length}`,
+    'access-control-expose-headers': 'content-range',
+  } })
 }
 
 interface Simulation {
