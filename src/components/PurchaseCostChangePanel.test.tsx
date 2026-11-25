@@ -94,6 +94,9 @@ describe('quadro das altas de custo no Contas a pagar', () => {
     expect(html).toContain(summary)
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('disabled')
+    expect(html).toContain('cursor:default')
+    expect(html).not.toContain('lucide-chevron-down')
+    expect(html).not.toContain('lucide-chevron-up')
     expect(html).not.toContain('<li')
     expect(html).not.toContain('O preço de venda não muda sozinho.')
     if (state.status === 'erro') {

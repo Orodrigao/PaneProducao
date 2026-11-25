@@ -82,7 +82,7 @@ export function CostChangePanelView({ state }: { state: CostChangePanelState }) 
       <button
         type="button"
         className="ps-link"
-        style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left' }}
+        style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left', cursor: changes.length === 0 ? 'default' : undefined }}
         onClick={() => setOpen(previous => !previous)}
         disabled={changes.length === 0}
         aria-expanded={expanded}
@@ -91,7 +91,7 @@ export function CostChangePanelView({ state }: { state: CostChangePanelState }) 
           <b><TrendingUp size={15} aria-hidden style={{ verticalAlign: '-2px' }} />{` Altas e variações grandes de custo, notas dos últimos ${PANEL_DAYS} dias`}</b>
           <small role={state.status === 'erro' ? 'alert' : undefined} style={{ display: 'block', marginTop: 2, color: warning ? 'var(--berry)' : undefined }}>{panelSummary(state)}</small>
         </span>
-        {expanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+        {changes.length > 0 && (expanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />)}
       </button>
       {expanded && <CostChangePanelContent changes={changes} />}
     </div>
