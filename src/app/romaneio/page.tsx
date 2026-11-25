@@ -474,13 +474,21 @@ export default function RomaneioPage() {
   useEffect(() => {
     const globalUser = getCurrentUser()
     if (!globalUser) { router.replace('/login'); return }
+    let ativo = true
     ;(async () => {
       try {
         const activePermissions = await loadCurrentRomaneioPermissions()
-        if (activePermissions.length > 0) await enterRomaneio(activePermissions)
-        else router.replace(firstAllowedRoute(globalUser))
-      } catch(e) { handleInitialLoadError(e) }
+        if (!ativo) return
+        if (activePermissions.length > 0) {
+          await enterRomaneio(activePermissions)
+          if (!ativo) return
+        } else router.replace(firstAllowedRoute(globalUser))
+      } catch(e) {
+        if (!ativo) return
+        handleInitialLoadError(e)
+      }
     })()
+    return () => { ativo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
