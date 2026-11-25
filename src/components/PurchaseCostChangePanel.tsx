@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { TrendingUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, TrendingUp } from 'lucide-react'
 import { formatDateBR, todayKey } from '@/lib/utils'
 import { daysBefore, formatUnitCost, formatVariation, MINIMUM_INCREASE, type CostChange, type CostPoint } from '@/lib/purchaseCostChange'
 import { loadRecentCostChanges } from '@/lib/purchaseCostChangeClient'
@@ -41,33 +41,59 @@ function ChangeRow({ change }: { change: RecentCostChange }) {
   )
 }
 
-/** O quadro em si, sem leitura: a página e o teste montam o estado. */
-export function CostChangePanelView({ state }: { state: CostChangePanelState }) {
+/** Conteúdo expandido, com oito cadastros por vez. */
+export function CostChangePanelContent({ changes }: { changes: RecentCostChange[] }) {
   const [showAll, setShowAll] = useState(false)
   const minimum = `${Math.round(MINIMUM_INCREASE * 100)}%`
   return (
+    <>
+      <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>
+        {`Alta de ${minimum} ou mais, ou variação grande para cima ou para baixo, sobre a compra anterior do mesmo cadastro, nas notas emitidas no período que trocaram o custo. O preço de venda não muda sozinho.`}
+      </small>
+      <ul style={{ margin: 0, padding: 0 }}>
+        {(showAll ? changes : changes.slice(0, VISIBLE_ROWS)).map(change => <ChangeRow key={`${change.point.purchaseId}-${change.productId}`} change={change} />)}
+      </ul>
+      {changes.length > VISIBLE_ROWS && (
+        <button type="button" className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={() => setShowAll(value => !value)}>
+          {showAll ? 'Mostrar menos' : `Mostrar todas as ${changes.length}`}
+        </button>
+      )}
+    </>
+  )
+}
+
+function panelSummary(state: CostChangePanelState): string {
+  if (state.status === 'carregando') return 'Conferindo as notas recentes...'
+  if (state.status === 'erro') return 'Não foi possível conferir as altas de custo agora. O restante do Contas a pagar segue normal; atualize a página para tentar de novo.'
+  const count = state.changes.length
+  if (count === 0) return `Nenhum cadastro subiu ${Math.round(MINIMUM_INCREASE * 100)}% ou mais, nem teve variação grande, sobre a compra anterior.`
+  const large = state.changes.filter(change => change.kind === 'muito_diferente').length
+  return `${count} ${count === 1 ? 'cadastro com alta ou variação grande' : 'cadastros com alta ou variação grande'}${large > 0 ? ` · ${large} ${large === 1 ? 'pede' : 'pedem'} conferir a embalagem` : ''}`
+}
+
+/** O quadro em si, sem leitura: cada visita começa recolhida. */
+export function CostChangePanelView({ state }: { state: CostChangePanelState }) {
+  const [open, setOpen] = useState(false)
+  const changes = state.status === 'pronto' ? state.changes : []
+  const expanded = open && changes.length > 0
+  const warning = state.status === 'erro' || changes.some(change => change.kind === 'muito_diferente')
+  return (
     <div className="ps-card" style={{ marginTop: 12 }}>
-      <b><TrendingUp size={15} aria-hidden style={{ verticalAlign: '-2px' }} />{` Altas e variações grandes de custo, notas dos últimos ${PANEL_DAYS} dias`}</b>
-      {state.status === 'carregando' && <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>Conferindo as notas recentes...</small>}
-      {state.status === 'erro' && <small role="alert" style={{ display: 'block', marginTop: 4, color: 'var(--berry)' }}>Não foi possível conferir as altas de custo agora. O restante do Contas a pagar segue normal; atualize a página para tentar de novo.</small>}
-      {state.status === 'pronto' && state.changes.length === 0 && (
-        <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>{`Nenhum cadastro subiu ${minimum} ou mais, nem teve variação grande, sobre a compra anterior.`}</small>
-      )}
-      {state.status === 'pronto' && state.changes.length > 0 && (
-        <>
-          <small className="ps-help" style={{ display: 'block', marginTop: 4 }}>
-            {`Alta de ${minimum} ou mais, ou variação grande para cima ou para baixo, sobre a compra anterior do mesmo cadastro, nas notas emitidas no período que trocaram o custo. O preço de venda não muda sozinho.`}
-          </small>
-          <ul style={{ margin: 0, padding: 0 }}>
-            {(showAll ? state.changes : state.changes.slice(0, VISIBLE_ROWS)).map(change => <ChangeRow key={`${change.point.purchaseId}-${change.productId}`} change={change} />)}
-          </ul>
-          {state.changes.length > VISIBLE_ROWS && (
-            <button type="button" className="ps-btn ghost sm" style={{ marginTop: 8 }} onClick={() => setShowAll(value => !value)}>
-              {showAll ? 'Mostrar menos' : `Mostrar todas as ${state.changes.length}`}
-            </button>
-          )}
-        </>
-      )}
+      <button
+        type="button"
+        className="ps-link"
+        style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left' }}
+        onClick={() => setOpen(previous => !previous)}
+        disabled={changes.length === 0}
+        aria-expanded={expanded}
+      >
+        <span>
+          <b><TrendingUp size={15} aria-hidden style={{ verticalAlign: '-2px' }} />{` Altas e variações grandes de custo, notas dos últimos ${PANEL_DAYS} dias`}</b>
+          <small role={state.status === 'erro' ? 'alert' : undefined} style={{ display: 'block', marginTop: 2, color: warning ? 'var(--berry)' : undefined }}>{panelSummary(state)}</small>
+        </span>
+        {expanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+      </button>
+      {expanded && <CostChangePanelContent changes={changes} />}
     </div>
   )
 }
